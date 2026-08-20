@@ -162,8 +162,10 @@ continues to receive an unavailable row. Nonempty Return is also admitted:
 Rust resolves the exact certified physical segment, commits the quote prefix,
 and Core constructs a bounded projected transition that hides it through
 recertification. Prefix Backspace on a later physical line now publishes an
-ordered quote/plain surface set; literal successors map that set through their
-exact splice without dropping an unaffected peer. ABI 4.16 closes the empty
+ordered quote/plain surface set. The predecessor implementation mapped literal
+successors through that set; section 4.4.1 supersedes that retention path
+because a structural receipt contains no result-revision inline-fact proof.
+ABI 4.16 closes the empty
 continuation boundary: the parser publishes a synthetic zero-length row only
 when a BlockQuote container marker remains unrepresented after its last
 renderable child. Runtime derives the exact final-line prefix and caret, so an
@@ -260,14 +262,31 @@ in which the host guesses. Presentation retained through an envelope is
 *proven* correct for the new revision: the parser computed the proof in
 advance and the host applied it, so section 4.4's invariant holds unchanged.
 
+**Landed minimum (2026-08-20).** The first implementation deliberately exposes
+only two insertion classes. `asciiWordInsertion` covers one non-empty insertion
+made entirely of ASCII letters or digits inside an eligible inline fact whose
+complete, non-empty content slice is itself one flat ASCII letter/digit word
+(with no punctuation, whitespace, nested syntax, or code normalization).
+This narrow whole-slice rule prevents an outer fact from certifying across a
+nested or latent delimiter boundary. `singleAsciiSpaceInsertion` covers exactly one U+0020
+at the editable row end when an eligible inline fact's outer closing boundary
+is also the row end. The latter envelope is zero-width and one-shot: after that
+space, fresh parser authority is required because a second space can form a
+hard line break. Thematic-break and table rows publish neither class.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
-positional, not lexical. Whitespace after a closing delimiter run is inert;
-the same whitespace after an opening run destroys the construct. The
-implementation publishes at minimum the conservative intersection — ranges
-safe for any grammar-inert insertion — and may publish wider per-class ranges
-where the grammar permits. Insertion, deletion, and replacement are covered
-uniformly; deletions carry their own adjacency effects and are not assumed
-safe because their inserted text is empty.
+positional, not lexical. A space after an outer closing delimiter at row end is
+inert; the same space after an opening run can destroy the construct. Edits
+outside the two landed insertion classes fail closed to exact source. Deletion,
+replacement, non-ASCII insertion, table-specific classes, broader literal
+classes, and chained edits remain pending; they are not covered uniformly or
+inferred from an empty replacement.
+
+ABI 4.26 exposes the new records only through the capability-gated
+`SEMANTIC_PROJECTED_LITERAL_SAFE` query kind. `SEMANTIC` and
+`SEMANTIC_PROJECTED` retain their pre-envelope record vocabulary. Because the
+ABI has no per-client negotiation state, 4.26 rejects a 4.25 negotiation rather
+than claiming it can preserve every legacy row flag while serving new clients.
 
 **Transform.** Retained presentation is transformed by pure range arithmetic
 over the ranges the parser already publishes: the row's source and editable
@@ -279,17 +298,29 @@ grow. Because the source/display mapping is derived from those same
 structures, transforming them keeps caret and selection geometry coherent
 without a separate mechanism. The transform never inspects source text.
 
-**Deleted by this amendment.** The row continuity policy and its ABI field,
-the inline and table continuity receipts, and the host-side
-Markdown-sensitive character classification. No Markdown decision remains in
-`flark_core` or `flark`.
+**Removed from the active decision path.** The row continuity policy and its
+ABI field, inline-fact policy flags, and host-side Markdown-sensitive character
+classification no longer authorize presentation retention. The old inline and
+table authorization entry points are removed; the transaction receipt now binds
+one parser envelope to one exact insertion and cannot chain. No Markdown
+decision remains in `flark_core` or `flark`.
+
+Structural receipts remain authoritative for their exact source splice and
+temporary block partition only. They never preserve predecessor inline styles,
+hidden inline delimiters, or character-reference projection as current. The
+affected temporary surface paints exact source until result-revision facts
+arrive, and an immediate ordinary successor clears the structural surface;
+only a fresh literal-safe envelope can authorize inline projection retention.
 
 **Soundness obligation.** An envelope is a claim the parser must be able to
 prove exhaustively: for every position in a published envelope, applying an
 edit of the declared class must leave the row's published facts unchanged.
 This is differentially testable across the conformance corpus and replaces a
-measured frame count with a structural guarantee. A frame receipt remains a
-quality measurement; it is no longer the evidence for the continuity claim.
+measured frame count with a structural guarantee. The landed tests cover the
+two minimum classes and their fail-closed boundaries; an exhaustive corpus-wide
+differential remains required before adding more classes. A frame receipt
+remains a quality measurement; it is no longer the evidence for the continuity
+claim.
 
 **Unchanged.** Genuinely uncertified regions — during load, over-cap
 constructs, composition — keep the existing pending exact-source island
@@ -299,10 +330,18 @@ certification, and a retained presentation never grants edit authority.
 
 ### 4.5 Composition islands
 
-An active platform composing range is exact current source and remains stable
-until the platform commits or cancels it. Projection outside the composing
-island remains current. The surface may retain a certified surrounding style
-only when the current runtime result or a continuity receipt authorizes it.
+An active platform composing value is exact current source and remains stable
+until the platform commits or cancels it. The landed minimum treats its active
+row as the exact composition island: the current ABI has no result-revision
+proof that an arbitrary composition delta leaves other inline facts in that row
+unchanged. Markers in the active row may therefore be visible while composition
+is pending; unrelated certified rows remain projected.
+
+Narrowing the island to the composing range is pending parser-authored
+result-revision/dependency authority. The surface may retain a surrounding
+style only when a current runtime result or a transaction-bound receipt
+explicitly authorizes it; predecessor facts plus a source splice are not such
+authority. This narrower island remains part of T3 input truth below.
 
 Projection changes do not retire or recreate the input connection merely to
 hide syntax. Composing endpoints, selection, candidate/prompt rectangles, and
@@ -399,7 +438,7 @@ runtime, ABI, `flark_core`, and custom `flark` path.
 | --- | --- | --- |
 | Hidden delimiters create several source positions at one visual boundary. | A scalar offset map gives incorrect arrows, insertion affinity, and deletion. | Model legal caret stops plus affinity as a topology. |
 | The parser may not recertify before the next frame. | Raw syntax could flash during ordinary styled typing. | The Mac spike proved the gap; use a transaction-bound Rust-authored continuity receipt and retire it only after covering recertification. |
-| Composition may span a marker or replacement run. | Reprojecting can corrupt the IME transaction or candidate rectangle. | Freeze an exact composition island and project around it. |
+| Composition may span a marker or replacement run. | Reprojecting can corrupt the IME transaction or candidate rectangle. | Freeze the active row as an exact composition island; narrow it only after Rust supplies result-revision authority for the surrounding facts. |
 | A certified reference definition edit has non-local dependents. | Retaining old link presentation would be stale. | Pending dependency ranges become exact/local; unrelated certified presentation remains. |
 | A valid construct has no editable rendered text, such as a reference definition. | Hiding it makes exact source unreachable. | Editor shows an explicit source-material affordance; read-only mode follows GFM output. |
 | Link destinations and image metadata are hidden in rendered content. | Direct text editing cannot address every source field. | Use parser-authored semantic actions/popovers; retain a later explicit source mode. |

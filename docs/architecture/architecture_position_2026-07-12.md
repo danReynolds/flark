@@ -6,17 +6,21 @@ launch/Phase-4 sequencing decision; merging this document does not by itself
 adopt §5. Its conclusion did not survive the later large-document, source,
 parser-authority, output-lifetime, and Flutter-layout gates for the product now
 in scope. The chronological findings and RFC 023 are themselves outdated; the
-current candidate and remaining falsifiers are maintained in the
-[live proof ledger](../../tool/parser_research/ARCHITECTURE_PROOF_LEDGER.md)
-and its linked state partitions. Preserve this paper as the evidence-backed
-small-document/v2 position that the subsequent investigation challenged, not
-as the current implementation recommendation.
+[archived proof ledger](../../legacy/root_package/tool/parser_research/ARCHITECTURE_PROOF_LEDGER.md)
+preserves that investigation, while the
+[current v4 build plan](v4/build_plan.md) owns the remaining work. Preserve
+this paper as the evidence-backed small-document/v2 position that the
+subsequent investigation challenged, not as the current implementation
+recommendation.
 **Author:** architecture review follow-through (see PRs #27, #29, #30–#34)
 **Related:** `rfc/rfc_022_parser_grammar_monopoly.md` (the accepted contract
-and phase log), `../production_readiness/audit_2026-05-01.md` (the pre-split
-audit this supersedes in spirit), `../../doc/architecture/live_edit_intent_pipeline.md`,
-`../../doc/architecture/live_rendered_rebuild_isolation.md`,
-`../testing/ime_device_protocol.md`, `rfc/rfc_021_flark_surface_edit_convergence.md`.
+and phase log),
+`../../legacy/docs/v2_v3/production_readiness/audit_2026-05-01.md` (the pre-split
+audit this supersedes in spirit),
+`../../legacy/docs/v2_v3/doc/architecture/live_edit_intent_pipeline.md`,
+`../../legacy/docs/v2_v3/doc/architecture/live_rendered_rebuild_isolation.md`,
+`../../legacy/docs/v2_v3/testing/ime_device_protocol.md`,
+`rfc/rfc_021_flark_surface_edit_convergence.md`.
 
 ## 1. Position
 
@@ -158,7 +162,8 @@ budgeted tax.
 ## 5. Proposal from here
 
 **Step 1 — Run the IME device matrix now (the protocol in
-`../testing/ime_device_protocol.md`), and treat it as two gates in one.**
+`../../legacy/docs/v2_v3/testing/ime_device_protocol.md`), and treat it as two
+gates in one.**
 S1–S10 validate *today's* editor on real keyboards (launch evidence); S11
 across rows 1–8 is the *convergence* gate (Phase 4 evidence). Roughly a day
 of manual work across the device rows; record outcomes per the protocol's

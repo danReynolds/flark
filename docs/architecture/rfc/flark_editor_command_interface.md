@@ -1,5 +1,10 @@
 # Flark Editor Command Interface
 
+> **Historical v2/v3 API record.** [RFC 026](rfc_026_flark_v4_product_architecture.md),
+> [RFC 027](rfc_027_continuously_rendered_markdown.md), and the
+> [v4 build plan](../v4/build_plan.md) control the active product. The commands
+> and source paths below are not v4 API or release guidance.
+
 **Status**: implemented (source-of-truth API reference)  
 **Status date**: 2026-05-02
 **Related RFC**: `docs/architecture/rfc/rfc_016_flark_markdown_command_layer.md`

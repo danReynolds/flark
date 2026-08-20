@@ -1,9 +1,14 @@
 # G2 — jank harness: first run
 
+> **Historical pre-cutover evidence (2026-08-05).** This blocked result and its
+> command describe the retired v3 root package, not the active v4 product. The
+> harness is preserved at
+> [`legacy/root_package/example/lib/g2_jank_harness.dart`](../../../legacy/root_package/example/lib/g2_jank_harness.dart).
+
 **Status:** BLOCKED. The harness works; the engine could not survive long
 enough to be measured. 2026-08-05.
 
-Harness: `example/lib/g2_jank_harness.dart`. Run with
+Historical command as recorded (not an active command):
 `flutter run --profile -d macos -t lib/g2_jank_harness.dart`.
 Eight configurations planned (5 KB / 25 KB / 100 KB / 1 MB × plain / dense),
 10 keystrokes/sec, 2 s warm-up + 15 s measured, `FrameTiming`-based.
@@ -77,10 +82,11 @@ why.**
 
 ## D-A bisected: the engine is innocent
 
-Ran 2026-08-06, `example/lib/g2_dense_bisect.dart`, which drives
-`FlarkV3DocumentRuntime` **directly — pure Dart, no Flutter layer** — over the
-same constructs and sizes, opening, applying one edit, and waiting for
-structure-current.
+Ran 2026-08-06 using the archived
+[`g2_dense_bisect.dart`](../../../legacy/root_package/example/lib/g2_dense_bisect.dart),
+which drives `FlarkV3DocumentRuntime` **directly — pure Dart, no Flutter layer**
+— over the same constructs and sizes, opening, applying one edit, and waiting
+for structure-current.
 
 ```
 bisect heading/x1        bytes=    22 :: OK  5ms

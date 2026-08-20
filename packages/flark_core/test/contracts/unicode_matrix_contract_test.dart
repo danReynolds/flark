@@ -3,10 +3,31 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
+import 'package:flark_core/flark_core.dart';
 import 'package:test/test.dart';
 
 void main() {
   final matrix = _object('test/fixtures/v4/unicode_matrix_v1.json');
+
+  test('public String opening boundaries reject malformed UTF-16 eagerly', () {
+    for (final source in [
+      String.fromCharCode(0xd800),
+      String.fromCharCode(0xdc00),
+    ]) {
+      expect(
+        () => FlarkCoreDocument.open(source),
+        throwsA(_invalidHostUtf16<FlarkCoreNativeException>()),
+      );
+      expect(
+        () => FlarkCoreDocument.openStreaming(source),
+        throwsA(_invalidHostUtf16<FlarkCoreNativeException>()),
+      );
+      expect(
+        () => FlarkNativeDocument.open(source),
+        throwsA(_invalidHostUtf16<FlarkNativeException>()),
+      );
+    }
+  });
 
   test('pins exact bytes, UTF-16 units, and Unicode 16 graphemes', () {
     final grapheme = _map(matrix['grapheme']);
@@ -135,6 +156,26 @@ void main() {
     expect(_isUtf16ScalarBoundary(emojiUnits, 2), isTrue);
   });
 }
+
+Matcher _invalidHostUtf16<T>() => isA<T>()
+    .having(
+      (error) => switch (error) {
+        FlarkCoreNativeException() => error.status,
+        FlarkNativeException() => error.status,
+        _ => -1,
+      },
+      'status',
+      0x020b,
+    )
+    .having(
+      (error) => switch (error) {
+        FlarkCoreNativeException() => error.detail,
+        FlarkNativeException() => error.detail,
+        _ => -1,
+      },
+      'invalid UTF-16 offset',
+      0,
+    );
 
 List<int> _lineStartsUtf8(String source) {
   final bytes = utf8.encode(source);

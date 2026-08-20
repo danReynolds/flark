@@ -15,6 +15,7 @@ export 'src/document.dart'
         FlarkCoreHistoryToken,
         FlarkCoreNativeException,
         FlarkCoreSessionInspection,
+        FlarkCoreSourceTransactionReceiptV1,
         FlarkCoreWorkerException;
 export 'src/editor_session.dart'
     show
@@ -36,7 +37,8 @@ export 'src/models.dart'
         FlarkHeadingStyle,
         FlarkInlineFact,
         FlarkInlineFactKind,
-        FlarkInlineContinuityPolicy,
+        FlarkLiteralEditClass,
+        FlarkLiteralSafeEnvelope,
         FlarkListItemPresentation,
         FlarkListMarkerStyle,
         FlarkProjectionSegment,
@@ -49,14 +51,9 @@ export 'src/models.dart'
         FlarkTablePresentation,
         FlarkViewport,
         FlarkViewportRow,
-        FlarkViewportRowContinuityPolicy,
         FlarkViewportRowEditCapability;
 export 'src/projection_continuity.dart'
-    show
-        FlarkProjectionContinuityReceipt,
-        authorizeInlineProjectionContinuity,
-        authorizeRowProjectionContinuity,
-        authorizeTableCellProjectionContinuity;
+    show FlarkProjectionContinuityReceipt, authorizeRowProjectionContinuity;
 export 'src/presentation.dart'
     show
         FlarkCoreCommittedPresentationGapV1,
@@ -65,7 +62,16 @@ export 'src/presentation.dart'
         FlarkCorePresentationInlineStyle,
         FlarkCorePresentationRow,
         FlarkCorePresentationRun,
-        mapCommittedPresentationSurfacesThroughLiteralSpliceV1,
         resolveCommittedPresentationTransitionV1;
 export 'src/native/native_document.dart'
-    show FlarkNativeDocument, FlarkNativeException;
+    show
+        FlarkNativeDocument,
+        FlarkNativeEditIntentDispositionV1,
+        FlarkNativeEditIntentReceiptV1,
+        FlarkNativeEditIntentV1,
+        FlarkNativeEditPresentationTransitionV1,
+        FlarkNativeEditReceipt,
+        FlarkNativeException,
+        FlarkNativeHistoryDisposition,
+        FlarkNativeSessionInspection,
+        FlarkNativeSourceTransactionReceiptV1;

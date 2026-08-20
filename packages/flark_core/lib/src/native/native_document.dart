@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../models.dart';
+import '../text_unicode.dart';
 import 'bindings.dart';
 
 const _ok = 0;
@@ -69,8 +70,7 @@ const _knownCodeVariantBits = 0x3f0000;
 const _thematicBreakPresentation = 0x10000;
 const _tablePresentation = 0x4000000;
 const _inlineAuthoritative = 0x8;
-const _continuityPlainTextEdit = 0x10;
-const _knownViewportRowFlags = 0x1f;
+const _knownViewportRowFlags = 0xf;
 const _viewportEditCapabilityFlags = 0x7;
 const _inlineFactCountMask = 0xffff;
 const _projectionSegmentCountShift = 16;
@@ -88,16 +88,21 @@ const _inlineFactDirectImage = 11;
 const _inlineFactReferenceLink = 12;
 const _inlineFactReferenceImage = 13;
 const _inlineFactTableCell = 14;
+const _inlineFactLiteralSafeEnvelope = 15;
+const _literalEditClassAsciiWordInsertion = 1;
+const _literalEditClassSingleAsciiSpaceInsertion = 2;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
-const _inlineFactContinuityPlainText = 1 << 7;
 const _inlineFactTableAlignmentMask = 0x3;
 const _inlineFactTableHeader = 0x4;
 const _inlineFactTableRowStart = 0x8;
 const _inlineFactTableAutocompleted = 0x10;
 const _knownInlineFactTableFlags = 0x1f;
-const _maxInlineFactsPerRow = 512;
+// The ABI semantic record stream carries the parser's inline facts followed by
+// its literal-safe envelopes. A row can contain at most 512 facts, one word
+// envelope per eligible fact, and one trailing-space boundary envelope.
+const _maxSemanticRecordsPerRow = 1025;
 const _maxProjectionSegmentsPerRow = 256;
 const _absentPresentationPrefix = 0xffffffffffffffff;
 const _maxChunkBytes = 64 * 1024;
@@ -147,6 +152,7 @@ const _bulkCommitWorkUnits = 1;
 // feature; default builds reject it with INVALID_ARGUMENT.
 const _createFlagOpening = 1;
 const _coordinateOutOfRange = 0x0206;
+const _invalidUtf16HostInput = 0x020b;
 // Per-grant parser budget while draining staged opening pages to adoption,
 // and a fail-stop ceiling on grants per append: a bounded chunk implies
 // bounded parse work, so exhausting the ceiling is a runtime defect, not
@@ -163,12 +169,20 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 25;
+const _abiMinor = 26;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
+const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x3ffffff;
+const _requiredCapabilityBits = 0x7ffffff;
+
+/// Whether a runtime version can satisfy this stateless Dart ABI client.
+///
+/// Kept as a pure package-internal predicate so exact-minor negotiation can be
+/// regression-tested without constructing a fake dynamic library.
+bool flarkV4AbiVersionIsCompatible(int major, int minor) =>
+    major == _abiMajor && minor == _abiMinor;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -180,6 +194,17 @@ final class FlarkNativeException implements Exception {
   @override
   String toString() =>
       'FlarkNativeException($operation, status: $status, detail: $detail)';
+}
+
+void _requireWellFormedHostUtf16(String source, String operation) {
+  final invalidOffset = firstInvalidUtf16Offset(source);
+  if (invalidOffset != null) {
+    throw FlarkNativeException(
+      operation,
+      _invalidUtf16HostInput,
+      invalidOffset,
+    );
+  }
 }
 
 final class FlarkNativeEditReceipt {
@@ -418,6 +443,7 @@ final class FlarkNativeDocument {
     if (historyBudgetBytes < 0) {
       throw RangeError.value(historyBudgetBytes, 'historyBudgetBytes');
     }
+    _requireWellFormedHostUtf16(source, 'create_begin');
     final bindings = libraryPath == null
         ? FlarkV4Bindings.nativeAsset()
         : FlarkV4Bindings(DynamicLibrary.open(libraryPath));
@@ -574,7 +600,12 @@ final class FlarkNativeDocument {
             ..chunkOffset = _openingStagedBytes
             ..chunkLen = length;
           _fillSession(request.ref.session);
-          final status = _bindings.createAppend(request, piece, length, outcome);
+          final status = _bindings.createAppend(
+            request,
+            piece,
+            length,
+            outcome,
+          );
           _requireStatus('create_append', status, outcome.ref, {_ok});
         } finally {
           calloc.free(piece);
@@ -785,6 +816,7 @@ final class FlarkNativeDocument {
         endUtf16 > _sourceUtf16Length) {
       throw RangeError.range(endUtf16, startUtf16, _sourceUtf16Length);
     }
+    _requireWellFormedHostUtf16(replacement, 'edit_small');
     final startByte = _convertCoordinate(startUtf16, from: 2, to: 1);
     final endByte = _convertCoordinate(endUtf16, from: 2, to: 1);
     final replacementBytes = utf8.encode(replacement);
@@ -899,6 +931,7 @@ final class FlarkNativeDocument {
     required bool selectionAffinityDownstream,
     required bool selectionDirectional,
   }) {
+    _requireWellFormedHostUtf16(replacement, 'source_transaction_v1');
     final replacementBytes = utf8.encode(replacement);
     final request = calloc<FlarkV4SourceTransactionRequestV1>();
     final outcome = calloc<FlarkV4Outcome>();
@@ -1056,6 +1089,7 @@ final class FlarkNativeDocument {
     required String replacement,
     required int resultSelectionUtf16,
   }) {
+    _requireWellFormedHostUtf16(replacement, 'staged_source_transaction_v1');
     final replacementBytes = utf8.encode(replacement);
     final begin = calloc<FlarkV4BulkBeginRequest>();
     final stage = calloc<FlarkV4StageRequest>();
@@ -1857,7 +1891,12 @@ final class FlarkNativeDocument {
             range.sourceBytes.start < range.sourceBytes.end,
       );
       if (certified) {
-        return _queryViewportPage(4, startByte, resolvedEnd, maxRows);
+        return _queryViewportPage(
+          _literalSafeProjectedQuery,
+          startByte,
+          resolvedEnd,
+          maxRows,
+        );
       }
       // Uncertified: the pending answer for the full requested range keeps
       // exact parity with today's parse-pending query, including its result
@@ -1866,7 +1905,12 @@ final class FlarkNativeDocument {
           ? probe
           : _queryViewportPage(3, startByte, resolvedEnd, maxRows);
     }
-    return _queryViewportPage(_ready ? 4 : 3, startByte, resolvedEnd, maxRows);
+    return _queryViewportPage(
+      _ready ? _literalSafeProjectedQuery : 3,
+      startByte,
+      resolvedEnd,
+      maxRows,
+    );
   }
 
   FlarkViewport _queryViewportPage(
@@ -2055,6 +2099,7 @@ final class FlarkNativeDocument {
       );
       _requireStatus('continuation_next', status, outcome.ref, {
         _ok,
+        _notCertified,
         _resultCapReached,
       });
       return _decodeViewport(output);
@@ -2210,7 +2255,7 @@ final class FlarkNativeDocument {
       if (record.flags & ~_knownViewportRowFlags != 0 ||
           !const {1, 2, 4}.contains(editCapabilityFlags) ||
           (!inlineIsAuthoritative && inlineFactCount != 0) ||
-          inlineFactCount > _maxInlineFactsPerRow ||
+          inlineFactCount > _maxSemanticRecordsPerRow ||
           projectionSegmentCount > _maxProjectionSegmentsPerRow ||
           (projected
               ? projectionSegmentCount < 2
@@ -2458,18 +2503,35 @@ final class FlarkNativeDocument {
           record.semanticVariant,
         );
       }
-      final decodedFacts = record.flags & _inlineAuthoritative != 0
-          ? List<FlarkInlineFact>.generate(inlineFactCount, (index) {
-              final fact = _decodeInlineFact(
-                (inlineRecords + nextInlineFact + index).ref,
+      final inlineIsAuthoritative = record.flags & _inlineAuthoritative != 0;
+      final decodedFacts = inlineIsAuthoritative ? <FlarkInlineFact>[] : null;
+      final literalSafeEnvelopes = <FlarkLiteralSafeEnvelope>[];
+      if (inlineIsAuthoritative) {
+        for (var index = 0; index < inlineFactCount; index += 1) {
+          final semantic = (inlineRecords + nextInlineFact + index).ref;
+          if (semantic.kind == _inlineFactLiteralSafeEnvelope) {
+            literalSafeEnvelopes.add(
+              _decodeLiteralSafeEnvelope(
+                semantic,
                 sourceBytes: sourceBytes,
                 sourceUtf16: sourceUtf16,
                 editableBytes: editableBytes,
                 editableUtf16: editableUtf16,
-              );
-              return fact;
-            }, growable: false)
-          : null;
+              ),
+            );
+          } else {
+            decodedFacts!.add(
+              _decodeInlineFact(
+                semantic,
+                sourceBytes: sourceBytes,
+                sourceUtf16: sourceUtf16,
+                editableBytes: editableBytes,
+                editableUtf16: editableUtf16,
+              ),
+            );
+          }
+        }
+      }
       nextInlineFact += inlineFactCount;
       final projectionSegments =
           capability == FlarkViewportRowEditCapability.projectedReserved
@@ -2529,9 +2591,6 @@ final class FlarkNativeDocument {
         editableBytes: editableBytes,
         editableUtf16: editableUtf16,
         editCapability: capability,
-        continuityPolicy: record.flags & _continuityPlainTextEdit != 0
-            ? FlarkViewportRowContinuityPolicy.plainTextEdit
-            : FlarkViewportRowContinuityPolicy.none,
         headingLevel: headingLevel,
         headingStyle: headingStyle,
         listItem: listItem,
@@ -2541,6 +2600,7 @@ final class FlarkNativeDocument {
         table: table,
         pathDepth: record.pathDepth,
         inlineFacts: inlineFacts,
+        literalSafeEnvelopes: List.unmodifiable(literalSafeEnvelopes),
         projectionSegments: projectionSegments,
       );
     }, growable: false);
@@ -2598,6 +2658,62 @@ final class FlarkNativeDocument {
         previousUtf16End == editableUtf16.end;
   }
 
+  static FlarkLiteralSafeEnvelope _decodeLiteralSafeEnvelope(
+    FlarkV4InlineFactRecord record, {
+    required FlarkSourceRange sourceBytes,
+    required FlarkSourceRange sourceUtf16,
+    required FlarkSourceRange? editableBytes,
+    required FlarkSourceRange? editableUtf16,
+  }) {
+    final editClass = switch (record.flags) {
+      _literalEditClassAsciiWordInsertion =>
+        FlarkLiteralEditClass.asciiWordInsertion,
+      _literalEditClassSingleAsciiSpaceInsertion =>
+        FlarkLiteralEditClass.singleAsciiSpaceInsertion,
+      _ => throw FlarkNativeException(
+        'decode_viewport',
+        _notCertified,
+        record.flags,
+      ),
+    };
+    final byteStart = record.sourceStartByte;
+    final byteEnd = record.sourceEndByte;
+    final utf16Start = record.sourceStartUtf16;
+    final utf16End = record.sourceEndUtf16;
+    final empty = byteStart == byteEnd && utf16Start == utf16End;
+    final validShape = switch (editClass) {
+      FlarkLiteralEditClass.asciiWordInsertion =>
+        byteStart < byteEnd && utf16Start < utf16End,
+      FlarkLiteralEditClass.singleAsciiSpaceInsertion => empty,
+    };
+    if (editableBytes == null ||
+        editableUtf16 == null ||
+        byteStart > byteEnd ||
+        utf16Start > utf16End ||
+        byteStart < sourceBytes.start ||
+        byteEnd > sourceBytes.end ||
+        utf16Start < sourceUtf16.start ||
+        utf16End > sourceUtf16.end ||
+        byteStart < editableBytes.start ||
+        byteEnd > editableBytes.end ||
+        utf16Start < editableUtf16.start ||
+        utf16End > editableUtf16.end ||
+        !validShape ||
+        record.contentStartByte != 0 ||
+        record.contentEndByte != 0 ||
+        record.contentStartUtf16 != 0 ||
+        record.contentEndUtf16 != 0 ||
+        record.replacementFirst != 0 ||
+        record.replacementSecond != 0) {
+      throw FlarkNativeException('decode_viewport', _notCertified, record.kind);
+    }
+    return FlarkLiteralSafeEnvelope(
+      editClass: editClass,
+      sourceBytes: FlarkSourceRange(byteStart, byteEnd),
+      sourceUtf16: FlarkSourceRange(utf16Start, utf16End),
+    );
+  }
+
   static FlarkInlineFact _decodeInlineFact(
     FlarkV4InlineFactRecord record, {
     required FlarkSourceRange sourceBytes,
@@ -2648,16 +2764,10 @@ final class FlarkNativeDocument {
       FlarkInlineFactKind.code =>
         record.flags &
                 ~(_inlineFactCodeNormalizeLineEndings |
-                    _inlineFactCodeTrimOneSpace |
-                    _inlineFactContinuityPlainText) ==
+                    _inlineFactCodeTrimOneSpace) ==
             0,
       FlarkInlineFactKind.tableCell =>
         record.flags & ~_knownInlineFactTableFlags == 0,
-      FlarkInlineFactKind.emphasis ||
-      FlarkInlineFactKind.strong ||
-      FlarkInlineFactKind.strikethrough ||
-      FlarkInlineFactKind.directLink =>
-        record.flags & ~_inlineFactContinuityPlainText == 0,
       _ => record.flags == 0,
     };
     final replacement = kind == FlarkInlineFactKind.replacement
@@ -2938,8 +3048,7 @@ final class FlarkNativeDocument {
       final value = info.ref;
       final compatible =
           value.structSize >= sizeOf<FlarkV4AbiInfo>() &&
-          value.abiMajor == _abiMajor &&
-          value.abiMinor >= _abiMinor &&
+          flarkV4AbiVersionIsCompatible(value.abiMajor, value.abiMinor) &&
           value.capabilityBits & _requiredCapabilityBits ==
               _requiredCapabilityBits &&
           value.maxSmallEditBytes >= _maximumSmallEditBytes &&

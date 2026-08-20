@@ -106,14 +106,14 @@ const VENDORED_DONOR_FUNCTIONS: &[FunctionSnapshot] = &[
     },
     FunctionSnapshot {
         path: "native/comrak_bridge/crates/flark_parser/vendor/comrak/src/parser/block_spine_facade.rs",
-        start_line: 53,
-        end_line: 69,
+        start_line: 58,
+        end_line: 74,
         sha256: "faab22f00db25ea0be33e7631606a8e5c3aa74a81aa095eabd1beba6d988a14d",
     },
     FunctionSnapshot {
         path: "native/comrak_bridge/crates/flark_parser/vendor/comrak/src/parser/block_spine_facade.rs",
-        start_line: 80,
-        end_line: 140,
+        start_line: 85,
+        end_line: 145,
         sha256: "d03c68594b0aa798fbe29be69c12af58239fe53bac4ade348671ee8ae4f62728",
     },
     FunctionSnapshot {
@@ -130,14 +130,14 @@ const VENDORED_DONOR_FUNCTIONS: &[FunctionSnapshot] = &[
     },
     FunctionSnapshot {
         path: "native/comrak_bridge/crates/flark_parser/vendor/comrak/src/parser/block_spine_facade.rs",
-        start_line: 249,
-        end_line: 260,
+        start_line: 591,
+        end_line: 602,
         sha256: "65278eaf43e53537a8a7297b6da6e73babf2f2c823cd670e877f172363576c4c",
     },
     FunctionSnapshot {
         path: "native/comrak_bridge/crates/flark_parser/vendor/comrak/src/parser/block_spine_facade.rs",
-        start_line: 263,
-        end_line: 319,
+        start_line: 605,
+        end_line: 661,
         sha256: "27e1ab06fed594827581fbded0cbb400118575e800054c2b4a685a42764cd5cd",
     },
 ];
@@ -253,17 +253,30 @@ const REFERENCE_VALUE_DONOR_FUNCTIONS: &[FunctionSnapshot] = &[
     },
     FunctionSnapshot {
         path: "native/comrak_bridge/crates/flark_parser/vendor/comrak/src/parser/block_spine_facade.rs",
-        start_line: 381,
-        end_line: 406,
+        start_line: 723,
+        end_line: 748,
         sha256: "7e839db266d72ba295d746d907f7770437ee895bacc24bedcee66dc78c4bf995",
     },
 ];
 
-fn repository_root() -> PathBuf {
+fn package_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../..")
         .canonicalize()
-        .expect("workspace root")
+        .expect("flark_core package root")
+}
+
+fn audited_source_path(package_root: &Path, path: &str) -> PathBuf {
+    if let Some(research_path) = path.strip_prefix("tool/parser_research/") {
+        // The direct v4 cutover archived the immutable research lab with the
+        // former root package. Promotion receipts still audit that exact
+        // source material; production donor paths remain package-relative.
+        package_root
+            .join("../../legacy/root_package/tool/parser_research")
+            .join(research_path)
+    } else {
+        package_root.join(path)
+    }
 }
 
 fn digest(bytes: &[u8]) -> String {
@@ -271,7 +284,7 @@ fn digest(bytes: &[u8]) -> String {
 }
 
 fn verify_module(root: &Path, snapshot: ModuleSnapshot) {
-    let bytes = fs::read(root.join(snapshot.path)).expect("audited source file");
+    let bytes = fs::read(audited_source_path(root, snapshot.path)).expect("audited source file");
     let line_count = std::str::from_utf8(&bytes)
         .expect("audited Rust source is UTF-8")
         .lines()
@@ -286,7 +299,8 @@ fn verify_module(root: &Path, snapshot: ModuleSnapshot) {
 }
 
 fn verify_function(root: &Path, snapshot: FunctionSnapshot) {
-    let bytes = fs::read(root.join(snapshot.path)).expect("audited function source");
+    let bytes =
+        fs::read(audited_source_path(root, snapshot.path)).expect("audited function source");
     let mut hasher = Sha256::new();
     let mut selected = 0;
     for (index, line) in bytes.split_inclusive(|byte| *byte == b'\n').enumerate() {
@@ -308,8 +322,8 @@ fn verify_function(root: &Path, snapshot: FunctionSnapshot) {
 }
 
 #[test]
-fn recorded_compile_boundary_matches_the_live_research_sources() {
-    let root = repository_root();
+fn recorded_compile_boundary_matches_the_archived_research_sources() {
+    let root = package_root();
     for snapshot in RESEARCH_CONTROLLER_CLOSURE
         .iter()
         .chain(GENERATED_ATX_CLOSURE)
@@ -363,7 +377,7 @@ fn recorded_compile_boundary_matches_the_live_research_sources() {
 
 #[test]
 fn manually_mirrored_lexical_helpers_have_function_level_drift_receipts() {
-    let root = repository_root();
+    let root = package_root();
     for snapshot in SEGMENTED_LEXICAL_DONOR_MODULES
         .iter()
         .chain(REFERENCE_VALUE_DONOR_MODULES)

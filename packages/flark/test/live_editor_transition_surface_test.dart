@@ -206,6 +206,96 @@ void main() {
     skip: libraryPath == null,
   );
 
+  test(
+    'structural receipt and successor cannot retain stale inline styling',
+    () async {
+      final probe = await LiveEditorTransitionProbe.open(
+        '> *¦foo*',
+        libraryPath: libraryPath!,
+      );
+      addTearDown(probe.close);
+      final publicationStart = probe.publications.length;
+
+      probe.pressReturn();
+      probe.typeText(' ');
+      await probe.expectSourceAndCaret('> *\n>  ¦foo*');
+      await probe.presentationSettled();
+
+      final transitionSamples = probe.publications
+          .skip(publicationStart)
+          .where(
+            (sample) =>
+                sample.visibleSource == '> *\n> foo*' ||
+                sample.visibleSource == '> *\n>  foo*',
+          )
+          .toList(growable: false);
+      expect(transitionSamples, isNotEmpty);
+      for (final sample in transitionSamples) {
+        expect(
+          sample.rows
+              .expand((row) => row.runs)
+              .any((run) => run.styles.contains('emphasis')),
+          isFalse,
+          reason:
+              'a block-transition receipt carries no result-revision inline '
+              'fact authority',
+        );
+        expect(
+          sample.presentation,
+          contains('*'),
+          reason: 'invalidated delimiters must stay exact until recertified',
+        );
+      }
+      await probe.expectHealthy();
+      await probe.expectConvergesWithCleanRebuild();
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'paragraph split receipt cannot retain stale inline styling',
+    () async {
+      final probe = await LiveEditorTransitionProbe.open(
+        '*fo¦o*',
+        libraryPath: libraryPath!,
+      );
+      addTearDown(probe.close);
+      final publicationStart = probe.publications.length;
+
+      probe.pressReturn();
+      await probe.expectSourceAndCaret('*fo\n\n¦o*');
+      await probe.presentationSettled();
+
+      final transitionSamples = probe.publications
+          .skip(publicationStart)
+          .where((sample) => sample.visibleSource == '*fo\n\no*')
+          .toList(growable: false);
+      expect(transitionSamples, isNotEmpty);
+      for (final sample in transitionSamples.where(
+        (candidate) => !candidate.semanticsCurrent,
+      )) {
+        expect(
+          sample.rows
+              .expand((row) => row.runs)
+              .any((run) => run.styles.contains('emphasis')),
+          isFalse,
+          reason:
+              'a paragraph-gap receipt carries no result-revision inline '
+              'fact authority',
+        );
+        expect(sample.presentation, contains('*'));
+      }
+      expect(
+        transitionSamples.any((candidate) => !candidate.semanticsCurrent),
+        isTrue,
+        reason: 'the transient pending publication must be observed',
+      );
+      await probe.expectHealthy();
+      await probe.expectConvergesWithCleanRebuild();
+    },
+    skip: libraryPath == null,
+  );
+
   testWidgets(
     'projected heading start retains its hidden-prefix source identity',
     (tester) async {

@@ -11,12 +11,13 @@ use flark_runtime::{
     DocumentActorError, DocumentBulletMarker, DocumentCodeBlockStyle,
     DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
-    DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan, DocumentProjectionSegment,
+    DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
+    DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentProjectionSegment,
     DocumentSemanticTargetKind, DocumentSemanticTargetSyntax, DocumentSessionError,
-    DocumentSessionPhase, DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, HistoryDisposition, HistoryToken, OperationCode,
-    OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, ResultPageReceipt,
-    ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt, SessionState, SnapshotId,
+    DocumentSessionPhase, DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
+    HistoryDisposition, HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome,
+    ProgressState, ProgressToken, QueryKind, ResultPageReceipt, ResultRecordKind, Revision,
+    SessionHandle, SessionInspectionReceipt, SessionState, SnapshotId,
     SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES,
     MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES,
     MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
@@ -49,16 +50,16 @@ use crate::{
     EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL,
     INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
     INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
-    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
-    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
-    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
+    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_LITERAL_SAFE_ENVELOPE, INLINE_FACT_REFERENCE_IMAGE,
+    INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH,
+    INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
+    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
     VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
     VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION, VIEWPORT_ROW_CODE_CLOSED,
     VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT, VIEWPORT_ROW_CODE_PRESENTATION,
-    VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
-    VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
+    VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
     VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
     VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT,
     VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_LIST_ASTERISK, VIEWPORT_ROW_LIST_DEPTH_SHIFT,
@@ -95,7 +96,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 22)
     | (1 << 23)
     | (1 << 24)
-    | (1 << 25);
+    | (1 << 25)
+    | (1 << 26);
 
 struct Registry {
     next_handle: u64,
@@ -360,14 +362,14 @@ fn opening_create_begin(
 ) -> Result<RuntimeOutcome, StatusCode> {
     if request.owner_token == 0
         || input.len() > MAX_SOURCE_CHUNK_BYTES as usize
-        || (request.expected_total_bytes != 0
-            && input.len() as u64 > request.expected_total_bytes)
+        || (request.expected_total_bytes != 0 && input.len() as u64 > request.expected_total_bytes)
         || request.config.struct_size != size_of::<crate::SessionConfig>() as u32
     {
         return Err(StatusCode::InvalidArgument);
     }
     if request.config.max_document_bytes != 0
-        && request.expected_total_bytes > request.config.max_document_bytes
+        && (request.expected_total_bytes > request.config.max_document_bytes
+            || input.len() as u64 > request.config.max_document_bytes)
     {
         return Err(StatusCode::ResourceLimitExceeded);
     }
@@ -430,11 +432,16 @@ fn opening_stage_bytes(
     opening: &mut OpeningTransaction,
     input: &[u8],
 ) -> Result<(), StatusCode> {
+    let next_received = opening
+        .received_bytes
+        .checked_add(input.len() as u64)
+        .ok_or(StatusCode::ResourceLimitExceeded)?;
     let joined;
     let bytes: &[u8] = if opening.utf8_carry.is_empty() {
         input
     } else {
-        let mut buffer = std::mem::take(&mut opening.utf8_carry);
+        let mut buffer = Vec::with_capacity(opening.utf8_carry.len().saturating_add(input.len()));
+        buffer.extend_from_slice(&opening.utf8_carry);
         buffer.extend_from_slice(input);
         joined = buffer;
         &joined
@@ -459,10 +466,7 @@ fn opening_stage_bytes(
         remaining = &remaining[cut..];
     }
     opening.utf8_carry = carry.to_vec();
-    opening.received_bytes = opening
-        .received_bytes
-        .checked_add(input.len() as u64)
-        .ok_or(StatusCode::ResourceLimitExceeded)?;
+    opening.received_bytes = next_received;
     Ok(())
 }
 
@@ -1243,16 +1247,17 @@ pub extern "C" fn flark_v4_negotiate(
 ) -> u32 {
     emit(OperationCode::Negotiate, outcome, || {
         let request = unsafe { read_record(request, size_of::<NegotiateRequest>() as u32)? };
-        if info.is_null()
-            || request.requested_major != ABI_MAJOR
-            || request.requested_minor > ABI_MINOR
-            || request.required_capability_bits & !IMPLEMENTED_CAPABILITIES != 0
-        {
-            return Err(if request.requested_major != ABI_MAJOR {
-                StatusCode::UnsupportedAbiVersion
-            } else {
-                StatusCode::UnsupportedCapability
-            });
+        if info.is_null() {
+            return Err(StatusCode::InvalidArgument);
+        }
+        // Negotiation is intentionally exact-minor. The ABI has no retained
+        // per-client negotiation state, so accepting an older minor could not
+        // tailor later row flags or record vocabulary safely for that client.
+        if request.requested_major != ABI_MAJOR || request.requested_minor != ABI_MINOR {
+            return Err(StatusCode::UnsupportedAbiVersion);
+        }
+        if request.required_capability_bits & !IMPLEMENTED_CAPABILITIES != 0 {
+            return Err(StatusCode::UnsupportedCapability);
         }
         let value = AbiInfo {
             struct_size: size_of::<AbiInfo>() as u32,
@@ -1379,14 +1384,23 @@ pub extern "C" fn flark_v4_create_append(
         let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
         let entry = session_entry(&mut registry, request.session)?;
         #[cfg(feature = "opening-session")]
+        let max_document_bytes = entry.max_document_bytes;
+        #[cfg(feature = "opening-session")]
         if let Some(opening) = entry.opening.as_mut() {
             if opening.transaction != request.transaction
                 || request.chunk_offset != opening.received_bytes
-                || (opening.expected_bytes != 0
-                    && opening.received_bytes.saturating_add(input.len() as u64)
-                        > opening.expected_bytes)
             {
                 return Err(StatusCode::TransactionConflict);
+            }
+            let next_received = opening
+                .received_bytes
+                .checked_add(input.len() as u64)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            if opening.expected_bytes != 0 && next_received > opening.expected_bytes {
+                return Err(StatusCode::TransactionConflict);
+            }
+            if max_document_bytes != 0 && next_received > max_document_bytes {
+                return Err(StatusCode::ResourceLimitExceeded);
             }
             let StoredSessionState::Open(document) = &entry.state else {
                 return Err(StatusCode::InternalFault);
@@ -4081,7 +4095,7 @@ pub extern "C" fn flark_v4_query_viewport(
         if !valid_budget(request.budget, true)
             || request.continuation != 0
             || request.range.start_byte > request.range.end_byte
-            || !matches!(request.query_kind, 1 | 2 | 3 | 4 | 5)
+            || !matches!(request.query_kind, 1 | 2 | 3 | 4 | 5 | 6)
             || request.reserved != [0; 1]
         {
             return Err(StatusCode::InvalidArgument);
@@ -4556,9 +4570,9 @@ fn query_page(
     session: SessionRef,
     revision: u64,
     snapshot: u64,
-    requested_start: u64,
-    requested_end: u64,
-    page_start: u64,
+    mut requested_start: u64,
+    mut requested_end: u64,
+    mut page_start: u64,
     query_kind: u32,
     budget: WorkBudget,
     prior_continuation: Option<u64>,
@@ -4592,8 +4606,6 @@ fn query_page(
             && document
                 .opening_certified()
                 .map_err(|error| map_actor_error(&error))?;
-        #[cfg(not(feature = "opening-session"))]
-        let opening_semantic_query = false;
         let inspection = document
             .inspect()
             .map_err(|error| map_actor_error(&error))?;
@@ -4613,12 +4625,65 @@ fn query_page(
         {
             return Err(StatusCode::RangeOutOfBounds);
         }
+        // Viewport ranges are byte-budget hints, so the host cannot be
+        // required to place them on UTF-8 scalar boundaries. Resolve the
+        // effective interval once at the ABI boundary and use it for the
+        // runtime query, returned page header, and any stored continuation.
+        // Semantic-target activation is an exact parser-authored range and
+        // remains strict instead of silently changing the selected fact.
+        if query_kind != QueryKind::SemanticTarget as u32 {
+            requested_start = document
+                .snapped_to_scalar_boundary(
+                    usize::try_from(requested_start).map_err(|_| StatusCode::RangeOutOfBounds)?,
+                )
+                .map_err(|error| map_actor_error(&error))? as u64;
+            requested_end = document
+                .snapped_to_scalar_boundary(
+                    usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?,
+                )
+                .map_err(|error| map_actor_error(&error))? as u64;
+            page_start = document
+                .snapped_to_scalar_boundary(
+                    usize::try_from(page_start).map_err(|_| StatusCode::RangeOutOfBounds)?,
+                )
+                .map_err(|error| map_actor_error(&error))? as u64;
+        }
         let payload_capacity = usize::try_from(
             output_capacity
                 .saturating_sub(size_of::<ResultPageHeader>() as u64)
                 .min(u64::from(budget.max_result_bytes)),
         )
         .unwrap_or(usize::MAX);
+
+        // During a progressive open, semantic rows may only cover the
+        // contiguous certified span beginning at this page. A continuation
+        // that has reached pending source therefore falls back to the exact
+        // pending-source page below instead of claiming empty certified
+        // semantics for the remainder of the request.
+        #[cfg(feature = "opening-session")]
+        let opening_semantic_end = if opening_semantic_query
+            && matches!(query_kind, 2 | 4 | 6)
+            && page_start < requested_end
+        {
+            let start = usize::try_from(page_start).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end = usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let live = document
+                .query_live_viewport(revision, start..end, 3)
+                .map_err(|error| map_actor_error(&error))?;
+            live.spans.first().and_then(|span| match span {
+                DocumentLiveViewportSpan::CertifiedUnchanged { source_range, .. }
+                    if source_range.start == page_start =>
+                {
+                    Some(source_range.end)
+                }
+                _ => None,
+            })
+        } else {
+            None
+        };
+        #[cfg(not(feature = "opening-session"))]
+        let opening_semantic_end: Option<u64> = None;
+        let opening_semantic_page = opening_semantic_end.is_some();
 
         if query_kind == 5 {
             if page_start != requested_start || requested_start >= requested_end {
@@ -4699,9 +4764,6 @@ fn query_page(
             let viewport = document
                 .query_live_viewport(revision, start..end, maximum_spans)
                 .map_err(|error| map_actor_error(&error))?;
-            if !viewport.complete {
-                return Err(StatusCode::InternalFault);
-            }
             let records = viewport
                 .spans
                 .iter()
@@ -4714,6 +4776,9 @@ fn query_page(
             let source = document
                 .source_bytes(covered_start..covered_end)
                 .map_err(|error| map_actor_error(&error))?;
+            if !viewport.complete && covered_end <= covered_start {
+                return Err(StatusCode::InternalFault);
+            }
             let required_payload_bytes = records
                 .len()
                 .saturating_mul(size_of::<CertificationRangeRecord>())
@@ -4752,18 +4817,24 @@ fn query_page(
                 },
                 item_count: records.len() as u32,
                 payload_bytes: required_payload_bytes as u32,
-                continuation: ContinuationHandle::NONE,
+                continuation: if viewport.complete {
+                    ContinuationHandle::NONE
+                } else {
+                    ContinuationHandle(continuation_candidate)
+                },
             };
             (
                 page,
-                if certification == CertificationState::CurrentCertified {
+                if !viewport.complete {
+                    StatusCode::ResultCapReached
+                } else if certification == CertificationState::CurrentCertified {
                     StatusCode::Ok
                 } else {
                     StatusCode::NotCertified
                 },
                 QueryPayload::CertificationRanges { records, source },
             )
-        } else if (inspection.phase != DocumentSessionPhase::Ready && !opening_semantic_query)
+        } else if (inspection.phase != DocumentSessionPhase::Ready && !opening_semantic_page)
             || query_kind == 1
         {
             let maximum = payload_capacity
@@ -4801,7 +4872,7 @@ fn query_page(
                 },
                 item_count: 0,
                 payload_bytes: bytes.len() as u32,
-                continuation: if query_kind == 1 && has_more {
+                continuation: if has_more {
                     ContinuationHandle(continuation_candidate)
                 } else {
                     ContinuationHandle::NONE
@@ -4809,12 +4880,10 @@ fn query_page(
             };
             (
                 page,
-                if query_kind == 1 {
-                    if has_more {
-                        StatusCode::ResultCapReached
-                    } else {
-                        StatusCode::Ok
-                    }
+                if has_more {
+                    StatusCode::ResultCapReached
+                } else if query_kind == 1 {
+                    StatusCode::Ok
                 } else {
                     StatusCode::NotCertified
                 },
@@ -4836,19 +4905,29 @@ fn query_page(
                 });
             }
             let start = usize::try_from(page_start).map_err(|_| StatusCode::RangeOutOfBounds)?;
-            let end = usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let semantic_end = opening_semantic_end.unwrap_or(requested_end);
+            let end = usize::try_from(semantic_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let query_maximum_rows =
+                maximum_rows.saturating_add(usize::from(opening_semantic_page));
             let viewport = document
-                .query_viewport(revision, start..end, maximum_rows as u32)
+                .query_viewport(
+                    revision,
+                    start..end,
+                    u32::try_from(query_maximum_rows).map_err(|_| StatusCode::InternalFault)?,
+                )
                 .map_err(|error| map_actor_error(&error))?;
-            let row_payload_bytes = viewport.rows.len() * size_of::<ViewportRowRecord>();
+            let encoded_row_count = viewport.rows.len().min(maximum_rows);
+            let opening_rows_capped =
+                opening_semantic_page && viewport.rows.len() > encoded_row_count;
+            let row_payload_bytes = encoded_row_count * size_of::<ViewportRowRecord>();
             let mut remaining_payload_bytes = payload_capacity.saturating_sub(row_payload_bytes);
-            let mut records = Vec::with_capacity(viewport.rows.len());
+            let mut records = Vec::with_capacity(encoded_row_count);
             let mut inline_facts = Vec::new();
             let mut projection_segments = Vec::new();
-            for row in &viewport.rows {
+            for row in viewport.rows.iter().take(encoded_row_count) {
                 let projection_segment_count = match &row.projection_segments {
                     Some(segments)
-                        if query_kind == 4
+                        if matches!(query_kind, 4 | 6)
                             && segments.len() > 1
                             && segments.len() <= u16::MAX as usize
                             && segments.len() * size_of::<ProjectionSegmentRecord>()
@@ -4861,17 +4940,35 @@ fn query_page(
                     }
                     _ => 0,
                 };
+                let literal_safe_envelope_count =
+                    if query_kind == QueryKind::SemanticProjectedLiteralSafe as u32 {
+                        row.literal_safe_envelopes.len()
+                    } else {
+                        0
+                    };
                 let (inline_authoritative, inline_fact_count) = match &row.inline_facts {
                     Some(facts)
-                        if facts.len() <= VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize
-                            && facts.len() * size_of::<InlineFactRecord>()
+                        if facts.len() + literal_safe_envelope_count
+                            <= VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize
+                            && (facts.len() + literal_safe_envelope_count)
+                                * size_of::<InlineFactRecord>()
                                 <= remaining_payload_bytes =>
                     {
-                        remaining_payload_bytes -= facts.len() * size_of::<InlineFactRecord>();
+                        let semantic_record_count = facts.len() + literal_safe_envelope_count;
+                        remaining_payload_bytes -=
+                            semantic_record_count * size_of::<InlineFactRecord>();
                         inline_facts.extend(facts.iter().map(inline_fact_record));
+                        if literal_safe_envelope_count != 0 {
+                            inline_facts.extend(
+                                row.literal_safe_envelopes
+                                    .iter()
+                                    .map(literal_safe_envelope_record),
+                            );
+                        }
                         (
                             true,
-                            u32::try_from(facts.len()).map_err(|_| StatusCode::InternalFault)?,
+                            u32::try_from(semantic_record_count)
+                                .map_err(|_| StatusCode::InternalFault)?,
                         )
                     }
                     _ => (false, 0),
@@ -4883,16 +4980,26 @@ fn query_page(
                     projection_segment_count,
                 ));
             }
-            let has_more = !viewport.complete && !records.is_empty();
-            let covered_end = if has_more {
+            let semantic_rows_complete = if opening_semantic_page {
+                !opening_rows_capped
+            } else {
+                viewport.complete
+            };
+            let has_more = !semantic_rows_complete || semantic_end < requested_end;
+            let covered_end = if !semantic_rows_complete {
                 viewport
                     .rows
+                    .iter()
+                    .take(encoded_row_count)
                     .last()
                     .map_or(page_start, |row| row.source_range.end)
-                    .min(requested_end)
+                    .min(semantic_end)
             } else {
-                requested_end
+                semantic_end
             };
+            if has_more && covered_end <= page_start {
+                return Err(StatusCode::InternalFault);
+            }
             let page = ResultPageReceipt {
                 record_kind: ResultRecordKind::SemanticFacts,
                 certification: CertificationState::CurrentCertified,
@@ -5138,9 +5245,6 @@ fn viewport_record(
     if inline_authoritative {
         flags |= VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE;
     }
-    if row.continuity_policy == DocumentViewportRowContinuityPolicy::PlainTextEdit {
-        flags |= VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT;
-    }
     let (
         presentation_prefix_start_byte,
         presentation_prefix_end_byte,
@@ -5368,6 +5472,23 @@ fn inline_fact_record(fact: &DocumentInlineFact) -> InlineFactRecord {
             .replacement
             .and_then(|value| value.second)
             .map_or(0, u32::from),
+    }
+}
+
+fn literal_safe_envelope_record(envelope: &DocumentLiteralSafeEnvelope) -> InlineFactRecord {
+    InlineFactRecord {
+        kind: INLINE_FACT_LITERAL_SAFE_ENVELOPE,
+        flags: match envelope.edit_class {
+            DocumentLiteralEditClass::AsciiWordInsertion => LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
+            DocumentLiteralEditClass::SingleAsciiSpaceInsertion => {
+                LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION
+            }
+        },
+        source_start_byte: envelope.source_range.start,
+        source_end_byte: envelope.source_range.end,
+        source_start_utf16: envelope.source_utf16_range.start,
+        source_end_utf16: envelope.source_utf16_range.end,
+        ..InlineFactRecord::default()
     }
 }
 

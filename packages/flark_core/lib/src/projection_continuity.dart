@@ -1,7 +1,11 @@
 import 'models.dart';
 
-/// A transaction-bound authorization derived from one parser-authored inline
-/// continuity policy. It is separate from current-revision certification.
+/// One parser-authored literal-safe envelope bound to an exact source
+/// transaction and its result revision.
+///
+/// This receipt carries no Markdown policy. The parser already proved the
+/// matching edit class safe at the published position; Core performs only
+/// edit-class matching and range containment.
 final class FlarkProjectionContinuityReceipt {
   const FlarkProjectionContinuityReceipt._({
     required this.baseRevision,
@@ -10,10 +14,7 @@ final class FlarkProjectionContinuityReceipt {
     required this.editStartUtf16,
     required this.editEndUtf16,
     required this.replacement,
-    required String? rowContent,
-    bool tableCell = false,
-  }) : _rowContent = rowContent,
-       _tableCell = tableCell;
+  });
 
   final int baseRevision;
   final int resultRevision;
@@ -21,364 +22,57 @@ final class FlarkProjectionContinuityReceipt {
   final int editStartUtf16;
   final int editEndUtf16;
   final String replacement;
-
-  /// Exact bounded content retained only for parser-authorized row edits.
-  /// Inline-fact continuity remains range-only because the fact itself owns
-  /// the complete safe content boundary.
-  final String? _rowContent;
-  final bool _tableCell;
-
-  FlarkProjectionContinuityReceipt? continueWith({
-    required int startUtf16,
-    required int endUtf16,
-    required String replacement,
-  }) {
-    if (_tableCell && replacement.contains('|')) return null;
-    final retainedRowContent = _rowContent;
-    if (retainedRowContent == null) {
-      if (!_plainTextTransactionAllowed(
-        authorizedContentUtf16,
-        startUtf16,
-        endUtf16,
-        replacement,
-      )) {
-        return null;
-      }
-    } else if (!_rowPlainTextTransactionAllowed(
-      authorizedContentUtf16,
-      retainedRowContent,
-      startUtf16,
-      endUtf16,
-      replacement,
-    )) {
-      return null;
-    }
-    final delta = replacement.length - (endUtf16 - startUtf16);
-    final nextRowContent = retainedRowContent?.replaceRange(
-      startUtf16 - authorizedContentUtf16.start,
-      endUtf16 - authorizedContentUtf16.start,
-      replacement,
-    );
-    return FlarkProjectionContinuityReceipt._(
-      baseRevision: resultRevision,
-      resultRevision: resultRevision + 1,
-      authorizedContentUtf16: FlarkSourceRange(
-        authorizedContentUtf16.start,
-        authorizedContentUtf16.end + delta,
-      ),
-      editStartUtf16: startUtf16,
-      editEndUtf16: endUtf16,
-      replacement: replacement,
-      rowContent: nextRowContent,
-      tableCell: _tableCell,
-    );
-  }
 }
 
-/// Executes the generic edit policy published by Rust with current inline
-/// facts. This code recognizes no Markdown syntax; it only validates a typed
-/// capability and binds it to one exact source transaction.
-FlarkProjectionContinuityReceipt? authorizeInlineProjectionContinuity({
-  required int revision,
-  required List<FlarkInlineFact> facts,
-  required int startUtf16,
-  required int endUtf16,
-  required String replacement,
-  FlarkTablePresentation? table,
-}) {
-  if (revision <= 0 || startUtf16 > endUtf16) return null;
-
-  // Touching any parser-owned marker or replacement invalidates continuity.
-  for (final fact in facts) {
-    final source = fact.sourceUtf16;
-    final content = fact.contentUtf16;
-    final touchesSource = startUtf16 == endUtf16
-        ? startUtf16 >= source.start && startUtf16 <= source.end
-        : startUtf16 < source.end && source.start < endUtf16;
-    if (touchesSource &&
-        (startUtf16 < content.start || endUtf16 > content.end)) {
-      return null;
-    }
-  }
-
-  FlarkInlineFact? authority;
-  for (final fact in facts) {
-    if (fact.continuityPolicy != FlarkInlineContinuityPolicy.plainTextContent) {
-      continue;
-    }
-    final content = fact.contentUtf16;
-    if (!_plainTextTransactionAllowed(
-      content,
-      startUtf16,
-      endUtf16,
-      replacement,
-    )) {
-      continue;
-    }
-    if (authority == null || content.length < authority.contentUtf16.length) {
-      authority = fact;
-    }
-  }
-  if (authority == null) return null;
-  if (table != null) {
-    if (replacement.contains('|') ||
-        !_singleRealTableCellOwns(
-          table,
-          startUtf16,
-          endUtf16,
-          ownedSource: authority.sourceUtf16,
-        )) {
-      return null;
-    }
-  }
-  return FlarkProjectionContinuityReceipt._(
-    baseRevision: revision,
-    resultRevision: revision + 1,
-    authorizedContentUtf16: FlarkSourceRange(
-      authority.contentUtf16.start,
-      authority.contentUtf16.end + replacement.length - (endUtf16 - startUtf16),
-    ),
-    editStartUtf16: startUtf16,
-    editEndUtf16: endUtf16,
-    replacement: replacement,
-    rowContent: null,
-    tableCell: table != null,
-  );
-}
-
-/// Binds a parser-authored row policy to one exact conservative source edit.
-/// The bounded exact row content lets deletions fail closed when they touch a
-/// boundary or could join Markdown-sensitive source.
+/// Binds one exact edit to a parser-published literal-safe envelope.
 FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
   required int revision,
-  required FlarkViewportRowContinuityPolicy policy,
-  required FlarkSourceRange editableUtf16,
-  required String editableText,
-  required List<FlarkInlineFact> inlineFacts,
+  required List<FlarkLiteralSafeEnvelope> envelopes,
+  required FlarkSourceRange authorizedContentUtf16,
   required int startUtf16,
   required int endUtf16,
   required String replacement,
 }) {
   if (revision <= 0 ||
-      policy != FlarkViewportRowContinuityPolicy.plainTextEdit ||
-      editableText.length != editableUtf16.length ||
-      !_rowPlainTextTransactionAllowed(
-        editableUtf16,
-        editableText,
-        startUtf16,
-        endUtf16,
-        replacement,
+      authorizedContentUtf16.start > authorizedContentUtf16.end ||
+      startUtf16 != endUtf16 ||
+      envelopes.any(
+        (envelope) =>
+            envelope.sourceUtf16.start > envelope.sourceUtf16.end ||
+            envelope.sourceUtf16.start < authorizedContentUtf16.start ||
+            envelope.sourceUtf16.end > authorizedContentUtf16.end,
       )) {
     return null;
   }
-  for (final fact in inlineFacts) {
-    final source = fact.sourceUtf16;
-    final touchesFact = startUtf16 == endUtf16
-        ? source.start <= startUtf16 && startUtf16 <= source.end
-        : startUtf16 < source.end && source.start < endUtf16;
-    if (touchesFact) {
-      return null;
-    }
-  }
-  final nextText = editableText.replaceRange(
-    startUtf16 - editableUtf16.start,
-    endUtf16 - editableUtf16.start,
-    replacement,
+  final matching = envelopes.where(
+    (envelope) =>
+        envelope.sourceUtf16.start <= startUtf16 &&
+        startUtf16 <= envelope.sourceUtf16.end &&
+        _matchesEditClass(envelope.editClass, replacement),
   );
+  if (matching.isEmpty) return null;
   return FlarkProjectionContinuityReceipt._(
     baseRevision: revision,
     resultRevision: revision + 1,
     authorizedContentUtf16: FlarkSourceRange(
-      editableUtf16.start,
-      editableUtf16.end + replacement.length - (endUtf16 - startUtf16),
+      authorizedContentUtf16.start,
+      authorizedContentUtf16.end + replacement.length,
     ),
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,
     replacement: replacement,
-    rowContent: nextText,
   );
 }
 
-/// Binds one conservative literal edit to exactly one parser-authored table
-/// cell. The table shape and cell boundaries come from Rust; this function
-/// does not recognize table syntax.
-///
-/// Unescaped delimiters, autocompleted cells, cross-cell edits, and edits that
-/// touch an inline fact fail closed so a frontend can show exact current
-/// source until the parser certifies the result.
-FlarkProjectionContinuityReceipt? authorizeTableCellProjectionContinuity({
-  required int revision,
-  required FlarkTablePresentation table,
-  required FlarkSourceRange tableUtf16,
-  required String tableText,
-  required List<FlarkInlineFact> inlineFacts,
-  required int startUtf16,
-  required int endUtf16,
-  required String replacement,
-}) {
-  if (revision <= 0 ||
-      startUtf16 > endUtf16 ||
-      tableText.length != tableUtf16.length ||
-      replacement.contains('|')) {
-    return null;
-  }
-
-  final authority = _singleRealTableCell(
-    table,
-    startUtf16,
-    endUtf16,
-    containingRange: tableUtf16,
-  );
-  if (authority == null) return null;
-
-  final content = authority.contentUtf16;
-  final localStart = content.start - tableUtf16.start;
-  final localEnd = content.end - tableUtf16.start;
-  final exactContent = tableText.substring(localStart, localEnd);
-  if (!_rowPlainTextTransactionAllowed(
-        content,
-        exactContent,
-        startUtf16,
-        endUtf16,
-        replacement,
-      ) ||
-      (startUtf16 < endUtf16 &&
-          exactContent
-              .substring(startUtf16 - content.start, endUtf16 - content.start)
-              .contains('|'))) {
-    return null;
-  }
-
-  for (final fact in inlineFacts) {
-    final source = fact.sourceUtf16;
-    final touchesFact = startUtf16 == endUtf16
-        ? source.start <= startUtf16 && startUtf16 <= source.end
-        : startUtf16 < source.end && source.start < endUtf16;
-    if (touchesFact) return null;
-  }
-
-  return FlarkProjectionContinuityReceipt._(
-    baseRevision: revision,
-    resultRevision: revision + 1,
-    authorizedContentUtf16: FlarkSourceRange(
-      content.start,
-      content.end + replacement.length - (endUtf16 - startUtf16),
-    ),
-    editStartUtf16: startUtf16,
-    editEndUtf16: endUtf16,
-    replacement: replacement,
-    rowContent: exactContent.replaceRange(
-      startUtf16 - content.start,
-      endUtf16 - content.start,
-      replacement,
-    ),
-    tableCell: true,
-  );
-}
-
-bool _singleRealTableCellOwns(
-  FlarkTablePresentation table,
-  int start,
-  int end, {
-  required FlarkSourceRange ownedSource,
-}) => _singleRealTableCell(table, start, end, ownedSource: ownedSource) != null;
-
-FlarkTableCellPresentation? _singleRealTableCell(
-  FlarkTablePresentation table,
-  int start,
-  int end, {
-  FlarkSourceRange? containingRange,
-  FlarkSourceRange? ownedSource,
-}) {
-  FlarkTableCellPresentation? authority;
-  for (final row in table.rows) {
-    for (final cell in row) {
-      final content = cell.contentUtf16;
-      if (cell.autocompleted ||
-          (containingRange != null &&
-              (content.start < containingRange.start ||
-                  content.end > containingRange.end)) ||
-          start < content.start ||
-          end > content.end ||
-          (ownedSource != null &&
-              (ownedSource.start < content.start ||
-                  ownedSource.end > content.end))) {
-        continue;
-      }
-      if (authority != null) return null;
-      authority = cell;
-    }
-  }
-  return authority;
-}
-
-bool _rowPlainTextTransactionAllowed(
-  FlarkSourceRange content,
-  String exactContent,
-  int start,
-  int end,
-  String replacement,
-) {
-  if (!_plainTextTransactionAllowed(content, start, end, replacement)) {
-    return false;
-  }
-  if (exactContent.length != content.length) return false;
-  if (start == end) {
-    if (replacement.isEmpty) return false;
-    // At a block content boundary, otherwise-inline-safe punctuation can
-    // create a heading, quote, list, or other block construct. Fail closed;
-    // the parser will publish the new presentation for the result revision.
-    if (start == content.start &&
-        _containsMarkdownSensitiveAscii(replacement)) {
-      return false;
-    }
-    return true;
-  }
-
-  // A boundary deletion can expose a block marker that was previously plain
-  // text. Deletes in the interior are retained only when the removed source
-  // and the two newly adjacent scalars are all syntax-insensitive.
-  if (start == content.start) return false;
-  final localStart = start - content.start;
-  final localEnd = end - content.start;
-  final removed = exactContent.substring(localStart, localEnd);
-  if (!_plainTextReplacementAllowed(removed)) return false;
-  final left = exactContent.substring(localStart - 1, localStart);
-  final right = localEnd == exactContent.length
-      ? ''
-      : exactContent.substring(localEnd, localEnd + 1);
-  return !_containsMarkdownSensitiveAscii(left) &&
-      !_containsMarkdownSensitiveAscii(right);
-}
-
-bool _plainTextTransactionAllowed(
-  FlarkSourceRange content,
-  int start,
-  int end,
-  String replacement,
-) {
-  // The parser publishes this policy only for constructs whose delimiters stay
-  // valid under conservative plain-text edits at their content boundaries.
-  // Empty constructs are never retained speculatively.
-  if (start < content.start || end > content.end || end < start) return false;
-  final resultingLength = content.length - (end - start) + replacement.length;
-  if (resultingLength <= 0) return false;
-  return _plainTextReplacementAllowed(replacement);
-}
-
-bool _plainTextReplacementAllowed(String replacement) {
-  for (final scalar in replacement.runes) {
-    if (scalar == 0x0a || scalar == 0x0d || scalar == 0x00) return false;
-    if (scalar <= 0x7f && r'\*_~`[]<>'.codeUnits.contains(scalar)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool _containsMarkdownSensitiveAscii(String value) {
-  const sensitive = r'\*_~`[]<>#>-+.!()|';
-  return value.runes.any(
-    (scalar) => scalar <= 0x7f && sensitive.codeUnits.contains(scalar),
-  );
-}
+bool _matchesEditClass(FlarkLiteralEditClass editClass, String replacement) =>
+    switch (editClass) {
+      FlarkLiteralEditClass.asciiWordInsertion =>
+        replacement.isNotEmpty &&
+            replacement.codeUnits.every(
+              (unit) =>
+                  (unit >= 0x30 && unit <= 0x39) ||
+                  (unit >= 0x41 && unit <= 0x5a) ||
+                  (unit >= 0x61 && unit <= 0x7a),
+            ),
+      FlarkLiteralEditClass.singleAsciiSpaceInsertion => replacement == ' ',
+    };

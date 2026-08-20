@@ -1,9 +1,11 @@
 # M1 package identity rename manifest
 
-**Status:** M0 execution contract. **Inventory commit:**
-`47692297661489bcbc2a2af4574a6a422cf68ef7`. **Authority:**
-[RFC 026](../../rfc/rfc_026_flark_v4_product_architecture.md) and the
-[v4 build plan](../build_plan.md).
+**Status:** HISTORICAL EXECUTED M0/M1 PLAN. **Inventory commit:**
+`47692297661489bcbc2a2af4574a6a422cf68ef7`. This inventory-specific document
+preserves the staged rename that preceded the direct physical split. Its
+commands, package topology, Web/WASM scope, and archive requirements are not
+active. Current work is controlled by the [v4 build plan](../build_plan.md) and
+the [development guide](../../../development.md).
 
 This manifest makes M1A and M1B mechanical identity changes. It is not a
 license to rename every occurrence of `flark`, move package directories,
@@ -284,7 +286,8 @@ paths, artifact names, and package identities in:
 
 - `docs/architecture/v2/**` and `docs/architecture/v3/**`;
 - RFCs 016-025 and their referenced evidence;
-- `docs/production_readiness/execution_log.md` and dated readiness records;
+- `legacy/docs/v2_v3/production_readiness/execution_log.md` and the other dated
+  readiness records;
 - `docs/architecture/v4/g2_*.log`, `g2_jank_results.md`,
   `g3_inframe_results.md`, `m0_certification_findings.md`, and M0 baseline
   receipts.

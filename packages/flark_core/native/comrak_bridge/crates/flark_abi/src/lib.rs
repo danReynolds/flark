@@ -26,7 +26,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 25;
+pub const ABI_MINOR: u16 = 26;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -278,7 +278,6 @@ pub const VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT: u32 = 1 << 0;
 pub const VIEWPORT_ROW_FLAG_PROJECTED_RESERVED: u32 = 1 << 1;
 pub const VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE: u32 = 1 << 2;
 pub const VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE: u32 = 1 << 3;
-pub const VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT: u32 = 1 << 4;
 pub const VIEWPORT_ROW_INLINE_FACT_COUNT_MASK: u32 = 0x0000_ffff;
 pub const VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT: u32 = 16;
 pub const VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_MASK: u32 = 0xffff_0000;
@@ -367,6 +366,12 @@ pub const INLINE_FACT_DIRECT_IMAGE: u32 = 11;
 pub const INLINE_FACT_REFERENCE_LINK: u32 = 12;
 pub const INLINE_FACT_REFERENCE_IMAGE: u32 = 13;
 pub const INLINE_FACT_TABLE_CELL: u32 = 14;
+/// A parser-authored literal-safe envelope transported in the semantic-record
+/// stream. The source ranges carry the envelope and `flags` carries one
+/// `LITERAL_EDIT_CLASS_*` value; content/replacement fields are zero.
+pub const INLINE_FACT_LITERAL_SAFE_ENVELOPE: u32 = 15;
+pub const LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION: u32 = 1;
+pub const LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION: u32 = 2;
 pub const INLINE_FACT_TABLE_ALIGNMENT_MASK: u32 = 0x03;
 pub const INLINE_FACT_TABLE_HEADER: u32 = 1 << 2;
 pub const INLINE_FACT_TABLE_ROW_START: u32 = 1 << 3;

@@ -117,6 +117,32 @@ fn tiny_and_empty_opens_seal_to_ready() {
 }
 
 #[test]
+fn oversized_first_block_finishes_under_one_unit_pump_grants() {
+    let source = "x".repeat(70 * 1024);
+    let mut session = DocumentSession::begin_opening().expect("begin oversized opening");
+    for page in source.as_bytes().chunks(PAGE_BYTES) {
+        session
+            .opening_append_page(std::str::from_utf8(page).expect("ASCII page"))
+            .expect("append oversized block page");
+    }
+    session.seal_opening().expect("seal oversized opening");
+
+    let mut turns = 0;
+    while session.phase() != DocumentSessionPhase::Ready {
+        let receipt = session.pump(1).expect("one-unit opening pump");
+        assert_eq!(receipt.work_units, 1, "the one-unit ceiling is exact");
+        turns += 1;
+        assert!(turns < 1_000_000, "oversized opening converges");
+    }
+    assert_eq!(session.source_byte_len(), source.len());
+    let viewport = session
+        .query_viewport(session.revision(), 0..source.len(), 4)
+        .expect("ready oversized viewport");
+    assert_eq!(viewport.rows.len(), 1);
+    session.close().expect("close oversized opening");
+}
+
+#[test]
 fn progressive_open_serves_certified_rows_before_eof_and_matches_the_oracle() {
     let source = fixture();
     let mut session = DocumentSession::begin_opening().expect("begin opening");
@@ -125,7 +151,7 @@ fn progressive_open_serves_certified_rows_before_eof_and_matches_the_oracle() {
     // Admit the first two pages and pump: the certified viewport must appear
     // long before EOF, with the tail still pending.
     let mut offset = 0;
-    let mut admit_page = |session: &mut DocumentSession, offset: &mut usize| {
+    let admit_page = |session: &mut DocumentSession, offset: &mut usize| {
         let end = source.len().min(*offset + PAGE_BYTES);
         session
             .opening_append_page(&source[*offset..end])
@@ -143,6 +169,22 @@ fn progressive_open_serves_certified_rows_before_eof_and_matches_the_oracle() {
         (span.end as usize) < source.len(),
         "certification precedes EOF"
     );
+    let capped = session
+        .query_live_viewport(session.revision(), 0..session.source_byte_len(), 1)
+        .expect("one-span live viewport");
+    assert_eq!(capped.spans.len(), 1);
+    assert!(!capped.complete, "a capped head omits the pending tail");
+    assert_eq!(capped.covered_range, 0..span.end);
+    assert!(!capped.is_fully_certified());
+    let pending_tail = session
+        .query_viewport(
+            session.revision(),
+            span.end as usize..session.source_byte_len(),
+            64,
+        )
+        .expect("pending semantic tail");
+    assert!(pending_tail.rows.is_empty());
+    assert!(!pending_tail.complete);
     let early = certified_rows(&mut session, span.end as usize);
     assert_eq!(early.start_ordinal, 0);
     assert!(!early.rows.is_empty());

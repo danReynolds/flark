@@ -3,15 +3,17 @@ use std::mem::size_of;
 use flark_abi::{
     flark_v4_close_begin, flark_v4_close_finish, flark_v4_close_pump, flark_v4_continuation_next,
     flark_v4_continuation_release, flark_v4_create_begin, flark_v4_create_commit,
-    flark_v4_history_release, flark_v4_history_replay, flark_v4_pump, flark_v4_query_viewport,
-    flark_v4_small_edit, flark_v4_source_read, CloseRequest, ContinuationRequest, CreateRequest,
-    EditDescriptor, HistoryRequest, InlineFactRecord, Outcome, ProjectionSegmentRecord,
-    PumpRequest, QueryRequest, ResultPageHeader, SemanticTargetRecord, SessionConfig, SessionRef,
-    SmallEditRequest, SourceRange, SourceReadRequest, TransactionRequest, ViewportRowRecord,
-    WorkBudget, INLINE_FACT_EMPHASIS, INLINE_FACT_TABLE_CELL,
-    VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT, VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
-    VIEWPORT_ROW_FLAG_PROJECTED_RESERVED, VIEWPORT_ROW_INLINE_FACT_COUNT_MASK,
-    VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT, VIEWPORT_ROW_TABLE_PRESENTATION,
+    flark_v4_history_release, flark_v4_history_replay, flark_v4_negotiate, flark_v4_pump,
+    flark_v4_query_viewport, flark_v4_small_edit, flark_v4_source_read, AbiInfo, CloseRequest,
+    ContinuationRequest, CreateRequest, EditDescriptor, HistoryRequest, InlineFactRecord,
+    NegotiateRequest, Outcome, ProjectionSegmentRecord, PumpRequest, QueryRequest,
+    ResultPageHeader, SemanticTargetRecord, SessionConfig, SessionRef, SmallEditRequest,
+    SourceRange, SourceReadRequest, TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR,
+    ABI_MINOR, INLINE_FACT_EMPHASIS, INLINE_FACT_LITERAL_SAFE_ENVELOPE, INLINE_FACT_TABLE_CELL,
+    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
+    VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
+    VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
+    VIEWPORT_ROW_TABLE_PRESENTATION,
 };
 use flark_runtime::{HistoryDisposition, StatusCode};
 
@@ -29,7 +31,39 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(size_of::<ViewportRowRecord>(), 128);
     assert_eq!(size_of::<ProjectionSegmentRecord>(), 32);
     assert_eq!(size_of::<InlineFactRecord>(), 80);
-    let source = b"# *Flark*\n\nA quick paragraph.\n\n- one\n- two\n\n> first\n> second\n\n| left | right |\n| :--- | ---: |\n| a | b |\n\nA [target](https://example.com/path \"title\").\n";
+    let preceding_minor = NegotiateRequest {
+        struct_size: size_of::<NegotiateRequest>() as u32,
+        requested_major: ABI_MAJOR,
+        requested_minor: 25,
+        required_capability_bits: (1_u64 << 26) - 1,
+    };
+    let mut info = AbiInfo::default();
+    let mut outcome = Outcome::default();
+    assert_eq!(
+        flark_v4_negotiate(&preceding_minor, &mut info, &mut outcome),
+        StatusCode::UnsupportedAbiVersion as u32,
+        "the stateless ABI must reject a preceding minor it cannot tailor"
+    );
+    let negotiate = NegotiateRequest {
+        requested_minor: ABI_MINOR,
+        required_capability_bits: (1_u64 << 27) - 1,
+        ..preceding_minor
+    };
+    assert_eq!(
+        flark_v4_negotiate(&negotiate, &mut info, &mut outcome),
+        StatusCode::Ok as u32
+    );
+
+    let source_text = concat!(
+        "# *Flark*\n\n",
+        "A quick paragraph.\n\n",
+        "- one\n- two\n\n",
+        "> first\n> second\n\n",
+        "| left | right |\n| :--- | ---: |\n| a | b |\n\n",
+        "A [target](https://example.com/path \"title\").\n\n",
+        "😀 tail.\n",
+    );
+    let source = source_text.as_bytes();
     let owner = 71;
     let create = CreateRequest {
         struct_size: size_of::<CreateRequest>() as u32,
@@ -45,7 +79,6 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
             reserved: [0; 4],
         },
     };
-    let mut outcome = Outcome::default();
     let status = flark_v4_create_begin(&create, source.as_ptr(), source.len() as u64, &mut outcome);
     assert_eq!(status, StatusCode::Ok as u32);
     let session = outcome.primary_handle;
@@ -84,15 +117,15 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(outcome.revision, 1);
 
     let mut page = vec![0_u8; 64 * 1024];
-    let query = QueryRequest {
+    let legacy_query = QueryRequest {
         struct_size: size_of::<QueryRequest>() as u32,
-        query_kind: 2,
+        query_kind: 4,
         session: commit.session,
         revision: 1,
         snapshot: 0,
         range: SourceRange {
             start_byte: 0,
-            end_byte: source.len() as u64,
+            end_byte: b"# *Flark*\n".len() as u64,
         },
         continuation: 0,
         budget: WorkBudget {
@@ -101,6 +134,39 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         },
         reserved: [0; 1],
     };
+    status = flark_v4_query_viewport(
+        &legacy_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert_eq!(status, StatusCode::Ok as u32);
+    let legacy_header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    let legacy_row = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>())
+            .cast::<ViewportRowRecord>()
+            .read_unaligned()
+    };
+    assert_eq!(legacy_header.payload_bytes, 128 + 80);
+    assert_eq!(legacy_row.inline_fact_count, 1);
+    let legacy_fact = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>())
+            .cast::<InlineFactRecord>()
+            .read_unaligned()
+    };
+    assert_eq!(legacy_fact.kind, INLINE_FACT_EMPHASIS);
+
+    let query = QueryRequest {
+        query_kind: 6,
+        range: SourceRange {
+            start_byte: 0,
+            end_byte: source.len() as u64,
+        },
+        ..legacy_query
+    };
+    page.fill(0);
     status = flark_v4_query_viewport(&query, page.as_mut_ptr(), page.len() as u64, &mut outcome);
     assert!(status == StatusCode::Ok as u32 || status == StatusCode::ResultCapReached as u32);
     let header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
@@ -115,14 +181,9 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     };
     assert_eq!(first.kind, 12, "ATX heading kind");
     assert_eq!(first.semantic_variant, 1, "parser-authored H1 variant");
-    assert_ne!(
-        first.flags & VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT,
-        0,
-        "heading content authorizes stable plain-text edit presentation"
-    );
     assert_ne!(first.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, 0);
-    assert_eq!(first.inline_fact_count, 1);
-    assert_eq!(header.payload_bytes, 128 + 80);
+    assert_eq!(first.inline_fact_count, 3);
+    assert_eq!(header.payload_bytes, 128 + 3 * 80);
     let inline = unsafe {
         page.as_ptr()
             .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>())
@@ -134,6 +195,87 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(inline.source_end_byte, 9);
     assert_eq!(inline.content_start_byte, 3);
     assert_eq!(inline.content_end_byte, 8);
+    let word_envelope = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>() + 80)
+            .cast::<InlineFactRecord>()
+            .read_unaligned()
+    };
+    assert_eq!(word_envelope.kind, INLINE_FACT_LITERAL_SAFE_ENVELOPE);
+    assert_eq!(word_envelope.flags, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION);
+    assert_eq!(word_envelope.source_start_utf16, 3);
+    assert_eq!(word_envelope.source_end_utf16, 8);
+    let space_envelope = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>() + 160)
+            .cast::<InlineFactRecord>()
+            .read_unaligned()
+    };
+    assert_eq!(space_envelope.kind, INLINE_FACT_LITERAL_SAFE_ENVELOPE);
+    assert_eq!(
+        space_envelope.flags,
+        LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION
+    );
+    assert_eq!(space_envelope.source_start_utf16, 9);
+    assert_eq!(space_envelope.source_end_utf16, 9);
+
+    let emoji_start = source_text.find('😀').expect("emoji byte offset");
+    let unsnapped_end = emoji_start + 1;
+    assert!(!source_text.is_char_boundary(unsnapped_end));
+    let scalar_query = QueryRequest {
+        range: SourceRange {
+            start_byte: 0,
+            end_byte: unsnapped_end as u64,
+        },
+        ..query
+    };
+    page.fill(0);
+    status = flark_v4_query_viewport(
+        &scalar_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert_eq!(status, StatusCode::ResultCapReached as u32);
+    let scalar_header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    assert_eq!(scalar_header.requested_range.start_byte, 0);
+    assert_eq!(
+        scalar_header.requested_range.end_byte, emoji_start as u64,
+        "the ABI must publish the runtime's scalar-aligned effective end"
+    );
+    assert!(source_text.is_char_boundary(scalar_header.covered_range.end_byte as usize));
+    assert_ne!(scalar_header.continuation, 0);
+
+    let scalar_continuation = ContinuationRequest {
+        struct_size: size_of::<ContinuationRequest>() as u32,
+        flags: 0,
+        session: commit.session,
+        revision: scalar_header.revision,
+        snapshot: scalar_header.snapshot,
+        continuation: scalar_header.continuation,
+        budget: scalar_query.budget,
+        reserved: [0; 1],
+    };
+    page.fill(0);
+    status = flark_v4_continuation_next(
+        &scalar_continuation,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert!(status == StatusCode::Ok as u32 || status == StatusCode::ResultCapReached as u32);
+    let scalar_next = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    assert_eq!(scalar_next.requested_range, scalar_header.requested_range);
+    assert!(source_text.is_char_boundary(scalar_next.covered_range.start_byte as usize));
+    assert!(source_text.is_char_boundary(scalar_next.covered_range.end_byte as usize));
+    if scalar_next.continuation != 0 {
+        let release = ContinuationRequest {
+            continuation: scalar_next.continuation,
+            ..scalar_continuation
+        };
+        status = flark_v4_continuation_release(&release, &mut outcome);
+        assert_eq!(status, StatusCode::Ok as u32);
+    }
 
     let quote_start = source
         .windows(b"> first".len())

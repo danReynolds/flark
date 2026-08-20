@@ -1,11 +1,10 @@
 /// Flutter's custom live Markdown editing surface.
 library;
 
-export 'package:flark_core/flark_core.dart'
-    show
-        FlarkSemanticTarget,
-        FlarkSemanticTargetKind,
-        FlarkSemanticTargetSyntax;
+// Re-export Core because public controller methods expose its viewport,
+// selection, and semantic model types. A consumer of the supported Flutter
+// barrel must not need a deep import merely to name those signatures.
+export 'package:flark_core/flark_core.dart';
 
 export 'src/controller.dart'
     show

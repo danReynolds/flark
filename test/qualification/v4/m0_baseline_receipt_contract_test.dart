@@ -1,4 +1,6 @@
 @Tags(<String>['historical-receipt'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

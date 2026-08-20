@@ -1,8 +1,8 @@
 use flark_runtime::{
     DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
-    DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan,
-    DocumentSession, DocumentSessionPhase, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
+    DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
+    DocumentLiveViewportSpan, DocumentSession, DocumentSessionPhase,
+    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
 };
 
 fn pump_ready(document: &mut DocumentSession) -> usize {
@@ -14,6 +14,13 @@ fn pump_ready(document: &mut DocumentSession) -> usize {
         assert!(work < 1_000_000, "small fixture should converge");
     }
     work
+}
+
+fn expected_utf16_range(source: &str, bytes: &std::ops::Range<u64>) -> std::ops::Range<u64> {
+    let start = usize::try_from(bytes.start).expect("source-range start fits usize");
+    let end = usize::try_from(bytes.end).expect("source-range end fits usize");
+    u64::try_from(source[..start].encode_utf16().count()).expect("UTF-16 start fits u64")
+        ..u64::try_from(source[..end].encode_utf16().count()).expect("UTF-16 end fits u64")
 }
 
 #[test]
@@ -690,13 +697,22 @@ fn viewport_carries_complete_parser_authored_inline_geometry_or_fails_closed() {
             DocumentInlineFactKind::AutolinkUri,
         ]
     );
-    assert!(facts[..4]
-        .iter()
-        .all(|fact| fact.flags & DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT != 0));
+    let envelopes = &viewport.rows[0].literal_safe_envelopes;
     assert_eq!(
-        facts[4].flags & DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
-        0,
-        "autolink validity must be recertified"
+        envelopes
+            .iter()
+            .filter(|envelope| {
+                envelope.edit_class == DocumentLiteralEditClass::AsciiWordInsertion
+            })
+            .count(),
+        4,
+        "only parser-proven inline content publishes word insertion envelopes"
+    );
+    assert!(
+        envelopes.iter().all(|envelope| {
+            envelope.edit_class != DocumentLiteralEditClass::SingleAsciiSpaceInsertion
+        }),
+        "a row whose final construct is an autolink has no trailing-space proof"
     );
     for (fact, spelling, content) in [
         (&facts[0], "*em*", "em"),
@@ -719,6 +735,82 @@ fn viewport_carries_complete_parser_authored_inline_geometry_or_fails_closed() {
         assert_eq!(fact.content_utf16_range, fact.content_range);
     }
     document.close().expect("close inline document");
+
+    let mut boundary = DocumentSession::begin("*test*\n").expect("begin boundary document");
+    pump_ready(&mut boundary);
+    let boundary_viewport = boundary
+        .query_viewport(1, 0..7, 8)
+        .expect("boundary viewport");
+    assert_eq!(
+        boundary_viewport.rows[0].literal_safe_envelopes,
+        vec![
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+                source_range: 1..5,
+                source_utf16_range: 1..5,
+            },
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
+                source_range: 6..6,
+                source_utf16_range: 6..6,
+            },
+        ]
+    );
+    boundary.close().expect("close boundary document");
+
+    let nested_source = "*a _b_ c*\n";
+    let mut nested = DocumentSession::begin(nested_source).expect("begin nested document");
+    pump_ready(&mut nested);
+    let nested_viewport = nested
+        .query_viewport(1, 0..nested_source.len(), 8)
+        .expect("nested viewport");
+    let nested_opening = nested_source.find('_').expect("nested opening") as u64;
+    assert!(
+        nested_viewport.rows[0]
+            .literal_safe_envelopes
+            .iter()
+            .filter(|envelope| {
+                envelope.edit_class == DocumentLiteralEditClass::AsciiWordInsertion
+            })
+            .all(|envelope| {
+                !(envelope.source_range.start <= nested_opening
+                    && nested_opening <= envelope.source_range.end)
+            }),
+        "an outer fact must not authorize insertion at a nested delimiter boundary"
+    );
+    assert!(
+        nested_viewport.rows[0]
+            .literal_safe_envelopes
+            .iter()
+            .any(|envelope| {
+                envelope.edit_class == DocumentLiteralEditClass::AsciiWordInsertion
+                    && envelope.source_range == ((nested_opening + 1)..(nested_opening + 2))
+            }),
+        "the parser may still authorize the nested flat word itself"
+    );
+    nested.close().expect("close nested document");
+
+    let latent_source = "*a &am; z*\n";
+    let mut latent = DocumentSession::begin(latent_source).expect("begin latent syntax document");
+    pump_ready(&mut latent);
+    let latent_viewport = latent
+        .query_viewport(1, 0..latent_source.len(), 8)
+        .expect("latent syntax viewport");
+    let entity_completion = latent_source.find(';').expect("latent entity terminator") as u64;
+    assert!(
+        latent_viewport.rows[0]
+            .literal_safe_envelopes
+            .iter()
+            .filter(|envelope| {
+                envelope.edit_class == DocumentLiteralEditClass::AsciiWordInsertion
+            })
+            .all(|envelope| {
+                !(envelope.source_range.start <= entity_completion
+                    && entity_completion <= envelope.source_range.end)
+            }),
+        "plain-looking punctuation that can become syntax must not be certified"
+    );
+    latent.close().expect("close latent syntax document");
 
     let transformed_source = "\\* &ngE; ` a ` [ref][id] ![alt](image.png)\n\n[id]: /target\n";
     let mut transformed =
@@ -986,5 +1078,158 @@ fn certified_burst_edits_resume_through_bounded_backpressure() {
             Err(error) => panic!("burst edit {index} failed: {error:?}"),
         }
     }
+    document.close().expect("close document");
+}
+
+#[test]
+fn nonzero_multibyte_viewport_rows_keep_global_utf16_coordinates() {
+    let initial = "Head.\n\nTrailing.\n";
+    let mut document = DocumentSession::begin(initial).expect("begin multibyte document");
+    pump_ready(&mut document);
+    let mut inserted = String::new();
+    for chunk in 0..5 {
+        let paragraphs = (0..9)
+            .map(|index| format!("{} {chunk}-{index}", "😀".repeat(100)))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let structured_tail = if chunk == 4 {
+            "Active.\n\nalpha123\n\n> **bold** and `code`\n> tail\n\n- [x] task with *emphasis*\n\n| α | β |\n| :--- | ---: |\n| *x* | [y](https://example.test) |\n"
+        } else {
+            ""
+        };
+        let addition = format!("{paragraphs}\n\n{structured_tail}");
+        let insertion_offset = 5 + inserted.len();
+        document
+            .apply_edit(
+                document.revision(),
+                insertion_offset..insertion_offset,
+                &addition,
+            )
+            .expect("insert multibyte viewport chunk");
+        inserted.push_str(&addition);
+    }
+    pump_ready(&mut document);
+    let source = format!("Head.{inserted}\n\nTrailing.\n");
+    let active = source.find("Active.").expect("active row");
+
+    let viewport = document
+        .query_viewport(document.revision(), active..source.len(), 32)
+        .expect("query nonzero multibyte viewport");
+    assert!(!viewport.rows.is_empty());
+    let active_utf16 = source[..active].encode_utf16().count() as u64;
+    let mut saw_inline_fact = false;
+    let mut saw_literal_safe_envelope = false;
+    let mut saw_list_prefix = false;
+    let mut saw_quote_prefix = false;
+    let mut saw_projection_segments = false;
+    let mut saw_table_metadata = false;
+    for row in &viewport.rows {
+        assert!(row.source_utf16_range.start >= active_utf16);
+        assert_eq!(
+            row.source_utf16_range,
+            expected_utf16_range(&source, &row.source_range),
+            "row byte and UTF-16 ranges must share global source coordinates"
+        );
+        if let (Some(bytes), Some(utf16)) = (&row.editable_range, &row.editable_utf16_range) {
+            assert_eq!(
+                *utf16,
+                expected_utf16_range(&source, bytes),
+                "editable byte and UTF-16 ranges must share global source coordinates"
+            );
+        } else {
+            assert_eq!(
+                row.editable_range.is_some(),
+                row.editable_utf16_range.is_some()
+            );
+        }
+        match row.presentation {
+            DocumentViewportRowPresentation::ListItem {
+                prefix_start_byte,
+                prefix_end_byte,
+                prefix_start_utf16,
+                prefix_end_utf16,
+                item_end_byte,
+                item_end_utf16,
+                ..
+            } => {
+                assert_eq!(
+                    prefix_start_utf16..prefix_end_utf16,
+                    expected_utf16_range(&source, &(prefix_start_byte..prefix_end_byte))
+                );
+                assert_eq!(
+                    item_end_utf16,
+                    expected_utf16_range(&source, &(item_end_byte..item_end_byte)).start
+                );
+                saw_list_prefix = true;
+            }
+            DocumentViewportRowPresentation::BlockQuote {
+                prefix_start_byte,
+                prefix_end_byte,
+                prefix_start_utf16,
+                prefix_end_utf16,
+                ..
+            } => {
+                assert_eq!(
+                    prefix_start_utf16..prefix_end_utf16,
+                    expected_utf16_range(&source, &(prefix_start_byte..prefix_end_byte))
+                );
+                saw_quote_prefix = true;
+            }
+            DocumentViewportRowPresentation::Table => saw_table_metadata = true,
+            _ => {}
+        }
+        for fact in row.inline_facts.iter().flatten() {
+            assert_eq!(
+                fact.source_utf16_range,
+                expected_utf16_range(&source, &fact.source_range)
+            );
+            assert_eq!(
+                fact.content_utf16_range,
+                expected_utf16_range(&source, &fact.content_range)
+            );
+            saw_inline_fact = true;
+            if fact.kind == DocumentInlineFactKind::TableCell {
+                saw_table_metadata = true;
+            }
+        }
+        for envelope in &row.literal_safe_envelopes {
+            assert_eq!(
+                envelope.source_utf16_range,
+                expected_utf16_range(&source, &envelope.source_range)
+            );
+            saw_literal_safe_envelope = true;
+        }
+        for segment in row.projection_segments.iter().flatten() {
+            assert_eq!(
+                segment.source_utf16_range,
+                expected_utf16_range(&source, &segment.source_range)
+            );
+            saw_projection_segments = true;
+        }
+    }
+    assert!(
+        saw_inline_fact,
+        "fixture must exercise inline fact geometry"
+    );
+    assert!(
+        saw_literal_safe_envelope,
+        "fixture must exercise literal-safe envelope geometry"
+    );
+    assert!(
+        saw_list_prefix,
+        "fixture must exercise List prefix geometry"
+    );
+    assert!(
+        saw_quote_prefix,
+        "fixture must exercise quote prefix geometry"
+    );
+    assert!(
+        saw_projection_segments,
+        "fixture must exercise projected-segment geometry"
+    );
+    assert!(
+        saw_table_metadata,
+        "fixture must exercise table-cell geometry"
+    );
     document.close().expect("close document");
 }

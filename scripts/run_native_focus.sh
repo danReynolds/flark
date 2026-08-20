@@ -45,7 +45,6 @@ fi
 package="$1"
 test_filter="$2"
 shift 2
-cargo_flags=("$@")
 
 if ! mkdir "$LEASE_DIR" 2>/dev/null; then
   owner_pid="unknown"
@@ -82,7 +81,7 @@ started="$(date '+%s')"
   printf 'repository=%s\n' "$REPO_ROOT"
   printf 'package=%s\n' "$package"
   printf 'exact_test_filter=%s\n' "$test_filter"
-  for flag in "${cargo_flags[@]}"; do
+  for flag in "$@"; do
     printf 'cargo_flag=%s\n' "$flag"
   done
 } >"$log_file"
@@ -95,7 +94,7 @@ set +e
   cargo test \
     --manifest-path "$MANIFEST" \
     --package "$package" \
-    "${cargo_flags[@]}" \
+    "$@" \
     "$test_filter" \
     -- \
     --exact \

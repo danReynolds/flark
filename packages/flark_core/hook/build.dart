@@ -24,8 +24,8 @@ void main(List<String> args) async {
             '${code.targetOS}/${code.targetArchitecture}. Supported hook '
             'targets are macOS arm64/x64, Linux arm64/x64, Android '
             'arm/arm64/x64, and iOS arm64 (device) / arm64+x64 (simulator). '
-            'See doc/parser_and_platforms.md ("Build Prerequisites") in the '
-            'flark package.',
+            'See https://github.com/danReynolds/flark/blob/main/docs/'
+            'parser_and_platforms.md#build-prerequisites.',
       );
     }
 
@@ -175,8 +175,8 @@ Future<_CargoCommand> _cargoCommand() async {
         'Unable to find cargo or rustup on PATH. Flark compiles its native '
         'Comrak bridge from the bundled Rust crate, so building for this '
         'target requires a Rust toolchain (https://rustup.rs). See '
-        'doc/parser_and_platforms.md ("Build Prerequisites") in the flark '
-        'package.',
+        'https://github.com/danReynolds/flark/blob/main/docs/'
+        'parser_and_platforms.md#build-prerequisites.',
   );
 }
 

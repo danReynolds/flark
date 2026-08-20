@@ -191,7 +191,7 @@ void main() {
   );
 
   test(
-    'repeated Return then typing keeps one truthful platform window',
+    'repeated Return then typing keeps one truthful window through exact pending frames',
     () async {
       final controller = await open(
         'A quick paragraph with **bold text**.\n\nTrailing paragraph.\n',
@@ -261,14 +261,14 @@ void main() {
           controller.rows
               .map((row) => controller.surfaceRow(row).text)
               .join('\n'),
-          isNot(contains('**')),
-          reason: 'burst ${index + 1} exposed Markdown markers',
+          contains('**'),
+          reason: 'burst ${index + 1} did not fail closed to exact source',
         );
       }
       expect(
         frames.where((frame) => frame.contains('**')),
-        isEmpty,
-        reason: 'completed Markdown flashed during a structural burst',
+        isNotEmpty,
+        reason: 'the affected structural row never failed closed',
       );
       expect(
         frames.where((frame) => frame.isEmpty),
@@ -363,7 +363,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
-    'typing behind semantic Backspace maps from the pre-command window',
+    'typing behind semantic Backspace maps exactly until certification',
     () async {
       final controller = await open('Before **bold**.\n\nAfter.\n');
       addTearDown(controller.close);
@@ -379,11 +379,24 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(controller.semanticSuccessorHighWatermark, 1);
       expect(controller.visibleSource, 'Before **bold**.xAfter.\n');
       expect(controller.globalCaretOffset, 'Before **bold**.x'.length);
+      final pendingSurfaces = controller.rows
+          .map((row) => controller.surfaceRow(row))
+          .toList(growable: false);
+      expect(
+        pendingSurfaces.any(
+          (surface) => surface.kind == 0 && surface.text.contains('**'),
+        ),
+        isTrue,
+        reason: 'the affected structural range did not fail closed',
+      );
+      await controller.continueParsing();
+      expect(controller.semanticsCurrent, isTrue);
       expect(
         controller.rows
             .map((row) => controller.surfaceRow(row).text)
             .join('\n'),
         isNot(contains('**')),
+        reason: 'fresh parser certification did not restore projection',
       );
     },
     skip: libraryPath == null,

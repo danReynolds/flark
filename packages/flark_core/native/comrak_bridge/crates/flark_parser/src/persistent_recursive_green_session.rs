@@ -28,17 +28,14 @@ use flark_engine::parser_internal::{
     M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
     M11ReferenceResolver, BLOCK_QUOTE_WINDOW_MAX_BYTES,
 };
+#[cfg(any(test, feature = "m11-compact-probe"))]
+use flark_engine::SourceAuthority;
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
     ExactUnchangedSuffixWitness, SourceSnapshotLease, SourceVersion,
 };
-#[cfg(any(test, feature = "m11-compact-probe"))]
-use flark_engine::SourceAuthority;
 #[cfg(feature = "m11-compact-probe")]
-use flark_engine::{
-    OpeningSourceAppendProof, OpeningSourceStore, OpeningSourceVersion,
-    SOURCE_SEED_PAGE_MAX_UTF16,
-};
+use flark_engine::{OpeningSourceAppendProof, OpeningSourceStore, OpeningSourceVersion};
 
 use crate::block_core::{
     resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
@@ -1400,9 +1397,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             || self
                 .progressive_source_lease
                 .as_ref()
-                .is_none_or(|lease| {
-                    lease.version() != previous || lease.authority() != authority
-                })
+                .is_none_or(|lease| lease.version() != previous || lease.authority() != authority)
         {
             return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                 "opening append does not continue the starved parser authority",
@@ -5317,6 +5312,10 @@ pub struct M11ProgressiveOpenSession {
     first_slice_before_eof: bool,
     early: Option<M11CompactViewportProbe>,
     early_source: Option<SourceVersion>,
+    final_early: Option<M11CompactViewportProbe>,
+    final_session: Option<M11PersistentRecursiveGreenSession>,
+    final_release_started: bool,
+    last_poll_transitions: usize,
     complete: bool,
 }
 
@@ -5346,6 +5345,10 @@ impl M11ProgressiveOpenSession {
             first_slice_before_eof: false,
             early: None,
             early_source: None,
+            final_early: None,
+            final_session: None,
+            final_release_started: false,
+            last_poll_transitions: 0,
             complete: false,
         })
     }
@@ -5368,15 +5371,26 @@ impl M11ProgressiveOpenSession {
         fuel: usize,
     ) -> Result<M11ProgressiveOpenSessionPoll, M11CompactViewportProbeError> {
         if self.complete {
+            self.last_poll_transitions = 0;
             return Ok(M11ProgressiveOpenSessionPoll::Complete);
         }
+        let (status, transitions) = {
+            let build = self
+                .build
+                .as_mut()
+                .ok_or(M11CompactViewportProbeError::InvalidState(
+                    "progressive open session already finished",
+                ))?;
+            let poll = build.poll(runtime, fuel)?;
+            (poll.status(), poll.transitions())
+        };
+        self.last_poll_transitions = transitions;
         let build = self
             .build
             .as_mut()
             .ok_or(M11CompactViewportProbeError::InvalidState(
                 "progressive open session already finished",
             ))?;
-        let status = build.poll(runtime, fuel)?.status();
         if self.first_slice.is_none() {
             if let Some(slice) = build.take_compact_probe_first_slice() {
                 self.first_slice_before_eof = !build.progressive_sealed;
@@ -5415,6 +5429,14 @@ impl M11ProgressiveOpenSession {
                 ));
             }
         })
+    }
+
+    /// Exact inner parser transitions consumed by the most recent successful
+    /// [`Self::poll`]. The runtime uses this receipt instead of assuming that
+    /// a starvation or completion consumed only one work unit.
+    #[must_use]
+    pub const fn last_poll_transitions(&self) -> usize {
+        self.last_poll_transitions
     }
 
     fn try_certify(
@@ -5459,7 +5481,7 @@ impl M11ProgressiveOpenSession {
     /// exhaustion; the unterminated tail, if any, becomes final.
     pub fn seal_exhausted(
         &mut self,
-        runtime: &mut DocumentRuntime,
+        _runtime: &mut DocumentRuntime,
     ) -> Result<(), M11CompactViewportProbeError> {
         let build = self.build_mut()?;
         let sealed_end = build.source.byte_len();
@@ -5522,18 +5544,87 @@ impl M11ProgressiveOpenSession {
         finish_compact_viewport_probe(runtime, build, first_slice)
     }
 
+    /// Converts a completed progressive parse into a bounded release state.
+    /// The final compact slice is not needed by the product runtime, which
+    /// immediately rebuilds the ordinary retained session; avoiding that
+    /// transient slice also lets valid documents whose first block exceeded
+    /// the early-slice cap finish normally.
+    pub fn begin_final_release(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11CompactViewportProbeError> {
+        if !self.complete || self.final_release_started {
+            return Err(M11CompactViewportProbeError::InvalidState(
+                "progressive open final release begins exactly once after completion",
+            ));
+        }
+        let mut build = self
+            .build
+            .take()
+            .ok_or(M11CompactViewportProbeError::InvalidState(
+                "progressive open final release retains its completed build",
+            ))?;
+        let mut session =
+            build
+                .take_session()
+                .ok_or(M11CompactViewportProbeError::InvalidState(
+                    "progressive open final release retains its completed session",
+                ))?;
+        session.begin_release(runtime)?;
+        let mut early = self.early.take();
+        if let Some(viewport) = early.as_mut() {
+            viewport.begin_release(runtime)?;
+        }
+        self.early_source = None;
+        self.first_slice = None;
+        self.final_early = early;
+        self.final_session = Some(session);
+        self.final_release_started = true;
+        Ok(())
+    }
+
+    /// Advances at most one bounded release grant. Callers normally pass one
+    /// so each outer pump work unit corresponds to one release transition.
+    pub fn poll_final_release(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<bool, M11CompactViewportProbeError> {
+        if !self.final_release_started || fuel == 0 {
+            return Err(M11CompactViewportProbeError::InvalidState(
+                "progressive open final release requires a started nonzero grant",
+            ));
+        }
+        if let Some(early) = self.final_early.as_mut() {
+            if early.poll_release(runtime, fuel)? {
+                self.final_early = None;
+            }
+            return Ok(self.final_early.is_none() && self.final_session.is_none());
+        }
+        if let Some(session) = self.final_session.as_mut() {
+            if session.poll_release(runtime, fuel)? {
+                self.final_session = None;
+            }
+        }
+        Ok(self.final_early.is_none() && self.final_session.is_none())
+    }
+
     /// Reclaims every live resource on the abandonment path: the early
     /// viewport releases and the unfinished build cancels.
     pub fn release(&mut self, runtime: &mut DocumentRuntime) {
         release_early_compact_viewport(runtime, &mut self.early);
         self.early_source = None;
+        if let Some(mut early) = self.final_early.take() {
+            while matches!(early.poll_release(runtime, 4_096), Ok(false)) {}
+        }
+        if let Some(mut session) = self.final_session.take() {
+            while matches!(session.poll_release(runtime, 4_096), Ok(false)) {}
+        }
         if let Some(mut build) = self.build.take() {
             if build.begin_cancel(runtime).is_ok() {
                 while build
                     .poll(runtime, 4_096)
-                    .map(|poll| {
-                        poll.status() != M11PersistentRecursiveGreenBuildStatus::Cancelled
-                    })
+                    .map(|poll| poll.status() != M11PersistentRecursiveGreenBuildStatus::Cancelled)
                     .unwrap_or(false)
                 {}
             }
@@ -5571,7 +5662,9 @@ pub fn build_m11_progressive_open_probe<F>(
     mut feed: F,
 ) -> Result<M11ProgressiveCompactProbe, M11CompactViewportProbeError>
 where
-    F: FnMut(&mut OpeningSourceStore) -> Result<M11ProgressiveOpenFeed, M11CompactViewportProbeError>,
+    F: FnMut(
+        &mut OpeningSourceStore,
+    ) -> Result<M11ProgressiveOpenFeed, M11CompactViewportProbeError>,
 {
     let source =
         runtime
@@ -5765,11 +5858,12 @@ fn certify_first_slice_candidate(
     let Some(root) = root else {
         return Ok(None);
     };
-    let source = runtime
-        .current_source_version()
-        .ok_or(M11CompactViewportProbeError::InvalidState(
-            "early compact slice source is current",
-        ))?;
+    let source =
+        runtime
+            .current_source_version()
+            .ok_or(M11CompactViewportProbeError::InvalidState(
+                "early compact slice source is current",
+            ))?;
     // Committed-prefix winners are final under the GFM first-winner rule;
     // only absence stays unknown.
     let resolver = build
@@ -5823,13 +5917,11 @@ fn early_compact_viewport_is_certifiable(
     use flark_engine::parser_internal::{M11RecursiveGreenPoint, M11RecursiveGreenRowQueryLimits};
 
     let source_range = candidate.root.source_range();
-    let start = usize::try_from(source_range.start).map_err(|_| {
-        M11CompactViewportProbeError::InvalidState("early audit start fits usize")
+    let start = usize::try_from(source_range.start)
+        .map_err(|_| M11CompactViewportProbeError::InvalidState("early audit start fits usize"))?;
+    let start_utf16 = usize::try_from(candidate.root.source_utf16_range().start).map_err(|_| {
+        M11CompactViewportProbeError::InvalidState("early audit UTF-16 start fits usize")
     })?;
-    let start_utf16 =
-        usize::try_from(candidate.root.source_utf16_range().start).map_err(|_| {
-            M11CompactViewportProbeError::InvalidState("early audit UTF-16 start fits usize")
-        })?;
     let limits = M11RecursiveGreenRowQueryLimits::new(32, 8_192, 65_536, 64, 65_536).ok_or(
         M11CompactViewportProbeError::InvalidState("early audit query limits are nonzero"),
     )?;
@@ -5848,7 +5940,12 @@ fn early_compact_viewport_is_certifiable(
         match preparation {
             Some(preparation) => {
                 let unknown_before = resolver.unknown_lookups();
-                audit_prepared_inline_capture(runtime, candidate.syntax_profile, resolver, preparation)?;
+                audit_prepared_inline_capture(
+                    runtime,
+                    candidate.syntax_profile,
+                    resolver,
+                    preparation,
+                )?;
                 if resolver.unknown_lookups() > unknown_before {
                     return Ok(false);
                 }
@@ -5891,7 +5988,10 @@ fn audit_prepared_inline_capture(
     )?;
     let drive = (|| -> Result<(), M11CompactViewportProbeError> {
         loop {
-            let poll = job.poll(runtime, crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS)?;
+            let poll = job.poll(
+                runtime,
+                crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+            )?;
             if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
                 return Ok(());
             }
@@ -8730,15 +8830,30 @@ mod tests {
         );
 
         let bounded_cells: [(&str, &str, usize, M11CompactRevisionCarriedDeltas); 5] = [
-            ("nested_mid_replace", &nested, nested.len() / 2, paragraph_content_carried(0, 0)),
-            ("crlf_mid_replace", &crlf, crlf.len() / 2, paragraph_content_carried(0, 0)),
+            (
+                "nested_mid_replace",
+                &nested,
+                nested.len() / 2,
+                paragraph_content_carried(0, 0),
+            ),
+            (
+                "crlf_mid_replace",
+                &crlf,
+                crlf.len() / 2,
+                paragraph_content_carried(0, 0),
+            ),
             (
                 "multibyte_mid_replace",
                 &multibyte,
                 multibyte.len() / 2,
                 paragraph_content_carried(0, 0),
             ),
-            ("table_mid_replace", &table, table.len() / 2, paragraph_content_carried(0, 0)),
+            (
+                "table_mid_replace",
+                &table,
+                table.len() / 2,
+                paragraph_content_carried(0, 0),
+            ),
             (
                 "table_bof_replace",
                 &table,
@@ -8875,7 +8990,11 @@ mod tests {
                 paragraph_content_carried(0, 0),
             );
             runtime
-                .apply_edit(source, at..at + 1, replacement_letter_at(&definition_run, at))
+                .apply_edit(
+                    source,
+                    at..at + 1,
+                    replacement_letter_at(&definition_run, at),
+                )
                 .expect("definition-run edit");
             let rejected = M11CompactIndexRevisionUpdate::begin(
                 base_journal,

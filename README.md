@@ -15,11 +15,15 @@ do not install a separate library or configure a runtime path.
 ## Development gates
 
 ```sh
-./scripts/verify_v4.sh
-./scripts/v4_android.sh verify <device-id>
-./scripts/v4_android.sh profile <device-id>
+bash scripts/verify_v4.sh
+FLARK_V4_FEATURES=opening-session bash scripts/verify_v4.sh
+bash scripts/verify_v4_release.sh
+bash scripts/verify_v4_publish_archives.sh
+bash scripts/v4_android.sh verify <device-id>
+bash scripts/v4_android.sh profile <device-id>
 ```
 
-The repository root is a non-publishable qualification workspace. The old
-root implementation and `packages/flark_flutter` remain only as inert v2/v3
-historical evidence and are excluded from active gates.
+The repository root is a non-publishable qualification workspace. Superseded
+v2/v3 sources live only under [`legacy/`](legacy) as historical evidence; active
+package resolution, builds, and gates must not depend on them. Flark v4 is
+currently native-only, so there is no active Web/Pages deployment.

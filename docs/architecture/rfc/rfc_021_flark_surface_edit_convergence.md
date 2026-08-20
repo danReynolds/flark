@@ -1,10 +1,18 @@
 # RFC 021: Surface edit/selection convergence
 
-**Status:** Motivating bug FIXED surgically (2026-07-11, §3a); broader convergence
+> **Historical v2/v3 design record.** [RFC 026](rfc_026_flark_v4_product_architecture.md),
+> [RFC 027](rfc_027_continuously_rendered_markdown.md), and the
+> [v4 build plan](../v4/build_plan.md) control the active product. Its status and
+> implementation references below are retained only as prior evidence.
+
+**Historical status (2026-07-11):** Motivating bug FIXED surgically (§3a); broader convergence
 **deferred** as an optional simplification, not a bug-fix necessity. Empirical
 tracing refuted this RFC's original premise — see §3.
 **Author:** (this RFC)
-**Related:** RFC 017 (controller module boundaries), `doc/architecture/live_edit_intent_pipeline.md`, `doc/architecture/live_rendered_rebuild_isolation.md`, `docs/architecture/v2/inline_delimiter_validity_2026-07-10.md`.
+**Related:** RFC 017 (controller module boundaries),
+`legacy/docs/v2_v3/doc/architecture/live_edit_intent_pipeline.md`,
+`legacy/docs/v2_v3/doc/architecture/live_rendered_rebuild_isolation.md`,
+`docs/architecture/v2/inline_delimiter_validity_2026-07-10.md`.
 
 ## 1. Summary
 
@@ -150,7 +158,13 @@ After convergence, each surface's remaining responsibilities are exactly: **rend
 
 ## 7. Performance: what convergence must not touch
 
-The per-block surface exists for **rebuild isolation** (`doc/architecture/live_rendered_rebuild_isolation.md`): whole-document rebuild is ~0.6 ms/block linear (breaches 60 fps at ~20-25 blocks); stable-id widget reuse (`flark_live_block_reconciler.dart`) collapses a keystroke to ~1 block rebuilt (40 blocks: 1.16 ms median; 80: 1.53 ms). **Convergence keeps all of this** — it changes *where an edit is resolved*, not *how blocks are rendered or reused*. The invariant to preserve:
+The per-block surface exists for **rebuild isolation**
+(`legacy/docs/v2_v3/doc/architecture/live_rendered_rebuild_isolation.md`):
+whole-document rebuild is ~0.6 ms/block linear (breaches 60 fps at ~20-25
+blocks); stable-id widget reuse (`flark_live_block_reconciler.dart`) collapses
+a keystroke to ~1 block rebuilt (40 blocks: 1.16 ms median; 80: 1.53 ms).
+**Convergence keeps all of this** — it changes *where an edit is resolved*,
+not *how blocks are rendered or reused*. The invariant to preserve:
 
 > The shared resolver must be reachable **without** rebuilding unchanged blocks — i.e. it reads the controller's document selection at edit time and must **not** fold document-selection state into a block's content signature (`live_block_editor.dart:234` `liveBlockContentSignature`) or its reuse key (`:250-257`).
 

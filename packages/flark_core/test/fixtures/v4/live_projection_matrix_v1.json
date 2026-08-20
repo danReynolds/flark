@@ -13,7 +13,7 @@
       "id": "LP-INCOMPLETE-EMPHASIS-001",
       "category": "incomplete_syntax",
       "currentStatus": "seed_evidence",
-      "evidence": "example/lib/m0_certification_probe.dart",
+      "evidence": "legacy/root_package/example/lib/m0_certification_probe.dart",
       "initial": {
         "source": "*hello*\n\nDistant.\n",
         "revision": 1,
@@ -47,7 +47,7 @@
       "id": "LP-MARKER-REVEAL-001",
       "category": "marker_reveal_hide",
       "currentStatus": "seed_evidence",
-      "evidence": "packages/flark_flutter/test/v3/flutter/flark_v3_inline_editing_presentation_test.dart",
+      "evidence": "legacy/flark_flutter/test/v3/flutter/flark_v3_inline_editing_presentation_test.dart",
       "initial": {
         "source": "before **bold** after",
         "revision": 1,
@@ -81,7 +81,7 @@
       "id": "LP-HIDDEN-SELECTION-001",
       "category": "selection_hidden_markers",
       "currentStatus": "seed_evidence",
-      "evidence": "test/v3/editor/flark_v3_source_projection_test.dart",
+      "evidence": "legacy/root_package/test/v3/editor/flark_v3_source_projection_test.dart",
       "initial": {
         "source": "**bold**",
         "revision": 1,
@@ -115,7 +115,7 @@
       "id": "LP-SPLIT-MERGE-001",
       "category": "split_merge",
       "currentStatus": "seed_evidence",
-      "evidence": "packages/flark_flutter/test/v2/flutter/flark_live_rendered_transition_matrix_test.dart",
+      "evidence": "legacy/flark_flutter/test/v2/flutter/flark_live_rendered_transition_matrix_test.dart",
       "initial": {
         "source": "alpha beta",
         "revision": 1,
@@ -262,7 +262,7 @@
       "id": "LP-COMPOSITION-001",
       "category": "composition",
       "currentStatus": "seed_evidence",
-      "evidence": "packages/flark_flutter/test/v3/flutter/flark_v3_virtualized_ime_composition_acceptance_test.dart",
+      "evidence": "legacy/flark_flutter/test/v3/flutter/flark_v3_virtualized_ime_composition_acceptance_test.dart",
       "initial": {
         "source": "A😀B",
         "revision": 1,
@@ -364,7 +364,7 @@
       "id": "LP-LINE-ENDINGS-001",
       "category": "line_endings",
       "currentStatus": "seed_evidence",
-      "evidence": "test/v3/source/flark_v3_source_document_test.dart",
+      "evidence": "legacy/root_package/test/v3/source/flark_v3_source_document_test.dart",
       "initial": {
         "source": "a\r\nb\rc\n",
         "revision": 1,

@@ -6,8 +6,10 @@ import 'dart:typed_data';
 
 import 'models.dart';
 import 'native/native_document.dart';
+import 'text_unicode.dart';
 
 const _notReadySourceGapStatus = 8;
+const _invalidUtf16HostInputStatus = 0x020b;
 // One streamed-open transport slice: the ABI's MAX_SOURCE_CHUNK_BYTES. The
 // owner isolate forwards at most one slice per worker acknowledgement, so
 // derived ingress buffers stay bounded far below the 2 MiB product gate and
@@ -413,15 +415,18 @@ final class FlarkCoreDocument {
     int historyBudgetBytes = 8 * 1024 * 1024,
     Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
     bool debugDropFirstEditIntentReply = false,
-  }) => _open(
-    source: source,
-    chunks: null,
-    expectedBytes: 0,
-    libraryPath: libraryPath,
-    historyBudgetBytes: historyBudgetBytes,
-    editIntentReplyTimeout: editIntentReplyTimeout,
-    debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
-  );
+  }) {
+    _requireWellFormedHostUtf16(source, 'open');
+    return _open(
+      source: source,
+      chunks: null,
+      expectedBytes: 0,
+      libraryPath: libraryPath,
+      historyBudgetBytes: historyBudgetBytes,
+      editIntentReplyTimeout: editIntentReplyTimeout,
+      debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
+    );
+  }
 
   /// Opens a document from a raw UTF-8 byte stream without ever holding the
   /// complete source on the Dart side (RFC 029 A3).
@@ -494,14 +499,20 @@ final class FlarkCoreDocument {
     Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
     void Function()? onOpeningProgress,
     bool debugDropFirstEditIntentReply = false,
-  }) => openUtf8Stream(
-    _utf8Chunks(source, _openingForwardChunkBytes),
-    libraryPath: libraryPath,
-    historyBudgetBytes: historyBudgetBytes,
-    editIntentReplyTimeout: editIntentReplyTimeout,
-    onOpeningProgress: onOpeningProgress,
-    debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
-  );
+  }) {
+    // Validate the complete host value before admitting its first byte. A
+    // later chunk must never discover malformed UTF-16 after a prefix has
+    // already mutated the opening document.
+    _requireWellFormedHostUtf16(source, 'open_streaming');
+    return openUtf8Stream(
+      _utf8Chunks(source, _openingForwardChunkBytes),
+      libraryPath: libraryPath,
+      historyBudgetBytes: historyBudgetBytes,
+      editIntentReplyTimeout: editIntentReplyTimeout,
+      onOpeningProgress: onOpeningProgress,
+      debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
+    );
+  }
 
   static Future<FlarkCoreDocument> _open({
     required String? source,
@@ -668,8 +679,8 @@ final class FlarkCoreDocument {
   /// materializing a second complete encoded copy: each chunk's byte width
   /// is measured code unit by code unit and only that substring is encoded.
   /// Cuts always land on Unicode scalar boundaries (a surrogate pair moves
-  /// as one), matching how [Utf8Codec.encode] would treat the whole string —
-  /// including its U+FFFD replacement of unpaired surrogates.
+  /// as one). The public caller validates the complete UTF-16 value before
+  /// this generator admits its first byte.
   static Stream<Uint8List> _utf8Chunks(String source, int maxBytes) async* {
     assert(maxBytes >= 4, 'a chunk must fit any single scalar');
     var start = 0;
@@ -705,6 +716,7 @@ final class FlarkCoreDocument {
     int endUtf16,
     String replacement,
   ) async {
+    _requireWellFormedHostUtf16(replacement, 'edit');
     final result = await _request('edit', {
       'start': startUtf16,
       'end': endUtf16,
@@ -736,6 +748,7 @@ final class FlarkCoreDocument {
   }) async {
     _requireOwnedAnchor(selectionBaseAnchor);
     _requireOwnedAnchor(selectionExtentAnchor);
+    _requireWellFormedHostUtf16(replacement, 'source_transaction_v1');
     final arguments = <String, Object?>{
       'expectedRevision': expectedRevision,
       'selectionBaseAnchor': selectionBaseAnchor._value,
@@ -812,6 +825,7 @@ final class FlarkCoreDocument {
   }) async {
     _requireOwnedAnchor(selectionBaseAnchor);
     _requireOwnedAnchor(selectionExtentAnchor);
+    _requireWellFormedHostUtf16(replacement, 'staged_source_transaction_v1');
     final arguments = <String, Object?>{
       'expectedRevision': expectedRevision,
       'selectionBaseAnchor': selectionBaseAnchor._value,
@@ -1250,6 +1264,17 @@ FlarkCoreNativeException _decodeNativeException(Map<Object?, Object?> error) =>
 String _workerErrorText(Object? error) {
   if (error is List && error.isNotEmpty) return error.first.toString();
   return error.toString();
+}
+
+void _requireWellFormedHostUtf16(String source, String operation) {
+  final invalidOffset = firstInvalidUtf16Offset(source);
+  if (invalidOffset != null) {
+    throw FlarkCoreNativeException(
+      operation,
+      _invalidUtf16HostInputStatus,
+      invalidOffset,
+    );
+  }
 }
 
 Future<void> _documentWorker(List<Object?> startup) async {

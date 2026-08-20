@@ -118,16 +118,16 @@ fn assert_probe_matches_clean(
         if !early_queryable {
             release(early, &mut progressive_runtime);
         } else {
-        let early_rows = rows(&early, &progressive_runtime);
-        assert_eq!(early_rows.rows(), progressive_rows.rows());
-        let early_inline = early
-            .capture_inline_projection(&mut progressive_runtime, point)
-            .expect("early inline")
-            .expect("early paragraph");
-        assert_eq!(early_inline.inline_source, progressive_inline.inline_source);
-        assert_eq!(early_inline.facts, progressive_inline.facts);
-        assert_eq!(early_inline.link_values, progressive_inline.link_values);
-        release(early, &mut progressive_runtime);
+            let early_rows = rows(&early, &progressive_runtime);
+            assert_eq!(early_rows.rows(), progressive_rows.rows());
+            let early_inline = early
+                .capture_inline_projection(&mut progressive_runtime, point)
+                .expect("early inline")
+                .expect("early paragraph");
+            assert_eq!(early_inline.inline_source, progressive_inline.inline_source);
+            assert_eq!(early_inline.facts, progressive_inline.facts);
+            assert_eq!(early_inline.link_values, progressive_inline.link_values);
+            release(early, &mut progressive_runtime);
         }
     }
 
@@ -288,11 +288,9 @@ fn opening_store_appends_drive_the_live_parser_to_clean_equality() {
     }
 
     let mut store = OpeningSourceStore::new(SourceRevision::new(7), None).expect("opening store");
-    let mut progressive_runtime = DocumentRuntime::from_opening_snapshot(
-        store.snapshot(),
-        DocumentRuntimeConfig::default(),
-    )
-    .expect("opening runtime");
+    let mut progressive_runtime =
+        DocumentRuntime::from_opening_snapshot(store.snapshot(), DocumentRuntimeConfig::default())
+            .expect("opening runtime");
     let admitted = store.version();
     let mut remaining = pages.into_iter();
     let probe = build_m11_progressive_open_probe(
@@ -355,7 +353,10 @@ fn hostile_shape_heads_certify_before_eof() {
     let (_, before_eof, certified) = assert_progressive_matches_clean(
         &tables,
         &[tables_visible, tables.len()],
-        tables.find("Paragraph 2").expect("table-adjacent paragraph") + 1,
+        tables
+            .find("Paragraph 2")
+            .expect("table-adjacent paragraph")
+            + 1,
     );
     assert!(before_eof);
     assert!(certified, "table heads certify");
@@ -396,11 +397,9 @@ fn open_session_regenerates_certification_as_definitions_arrive() {
     store
         .append_page(v0, 0..page1.len(), &page1)
         .expect("page 1");
-    let mut runtime = DocumentRuntime::from_opening_snapshot(
-        store.snapshot(),
-        DocumentRuntimeConfig::default(),
-    )
-    .expect("opening runtime");
+    let mut runtime =
+        DocumentRuntime::from_opening_snapshot(store.snapshot(), DocumentRuntimeConfig::default())
+            .expect("opening runtime");
     let mut session = M11ProgressiveOpenSession::begin(&mut runtime, 1).expect("open session");
 
     assert_eq!(
@@ -478,6 +477,65 @@ fn open_session_regenerates_certification_as_definitions_arrive() {
 }
 
 #[test]
+fn open_session_releases_an_oversized_first_block_without_a_slice() {
+    use flark_engine::{OpeningSourceStore, SourceRevision, SOURCE_SEED_PAGE_MAX_UTF16};
+    use flark_parser::{M11ProgressiveOpenSession, M11ProgressiveOpenSessionPoll};
+
+    // No physical line is admissible before EOF, and the eventual first block
+    // exceeds the 64 KiB early-slice cap. That disables early certification;
+    // it must not make the completed parse unreleasable.
+    let source = "x".repeat(70 * 1024);
+    let mut store = OpeningSourceStore::new(SourceRevision::new(9), None).expect("opening store");
+    let mut offset = 0;
+    while offset < source.len() {
+        let end = source.len().min(offset + SOURCE_SEED_PAGE_MAX_UTF16);
+        let version = store.version();
+        store
+            .append_page(version, offset..end, &source[offset..end])
+            .expect("append oversized block page");
+        offset = end;
+    }
+    let mut runtime =
+        DocumentRuntime::from_opening_snapshot(store.snapshot(), DocumentRuntimeConfig::default())
+            .expect("opening runtime");
+    let mut session = M11ProgressiveOpenSession::begin(&mut runtime, 1).expect("open session");
+
+    loop {
+        let poll = session.poll(&mut runtime, 64).expect("poll to starvation");
+        assert!(session.last_poll_transitions() <= 64);
+        if poll == M11ProgressiveOpenSessionPoll::Starved {
+            break;
+        }
+    }
+    session
+        .seal_exhausted(&mut runtime)
+        .expect("seal oversized block");
+    loop {
+        let poll = session.poll(&mut runtime, 64).expect("poll to completion");
+        assert!(session.last_poll_transitions() <= 64);
+        if poll == M11ProgressiveOpenSessionPoll::Complete {
+            break;
+        }
+    }
+    assert!(
+        session.certified_early().is_none(),
+        "an over-cap first block has no early viewport"
+    );
+    session
+        .begin_final_release(&mut runtime)
+        .expect("begin bounded final release without a first slice");
+    let mut release_turns = 0;
+    while !session
+        .poll_final_release(&mut runtime, 1)
+        .expect("poll bounded final release")
+    {
+        release_turns += 1;
+        assert!(release_turns < 1_000_000, "final release converges");
+    }
+    close(runtime);
+}
+
+#[test]
 fn a_frontier_between_carriage_return_and_line_feed_is_rejected() {
     let source = "alpha\r\nbeta\r\ngamma\r\n";
     let mut runtime =
@@ -485,11 +543,7 @@ fn a_frontier_between_carriage_return_and_line_feed_is_rejected() {
     let result = build_m11_progressive_compact_probe(
         &mut runtime,
         1,
-        &[
-            "alpha\r".len(),
-            "alpha\r\nbeta\r\n".len(),
-            source.len(),
-        ],
+        &["alpha\r".len(), "alpha\r\nbeta\r\n".len(), source.len()],
     );
     assert!(result.is_err());
     close(runtime);

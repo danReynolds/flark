@@ -1,14 +1,14 @@
 # Flark v4 runtime and ABI contract, version 1
 
-**Status:** implemented direct v4 boundary. All twenty-nine header operations
+**Status:** implemented direct v4 boundary. All thirty-one header operations
 are implemented. The checked-in manifest, C header, Rust encoder, and Dart
 decoder are contract-tested together; later product milestones still determine
 release readiness.
 
 The machine-readable authority is
-[`test/fixtures/v4/runtime_abi_v1.json`](../../../../test/fixtures/v4/runtime_abi_v1.json).
+[`packages/flark_core/test/fixtures/v4/runtime_abi_v1.json`](../../../../packages/flark_core/test/fixtures/v4/runtime_abi_v1.json).
 The C declaration is
-[`native/comrak_bridge/include/flark_v4.h`](../../../../native/comrak_bridge/include/flark_v4.h).
+[`packages/flark_core/native/comrak_bridge/include/flark_v4.h`](../../../../packages/flark_core/native/comrak_bridge/include/flark_v4.h).
 Rust and C constants or layouts that disagree with the manifest fail the
 contract tests.
 
@@ -34,14 +34,16 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 6. `NEGOTIATE` is the only operation
+The direct ABI is major 4, minor 26. `NEGOTIATE` is the only operation
 permitted without a session. The host supplies its requested version and all
 required capability bits. The runtime returns its supported version, supported
 bits, and actual hard caps in `FlarkV4AbiInfo`.
 
-A major mismatch returns `UNSUPPORTED_ABI_VERSION`. A missing required bit
-returns `UNSUPPORTED_CAPABILITY`. Minor versions may append behavior only behind
-a capability and may use previously reserved fields; they may not reinterpret a
+A major or minor mismatch returns `UNSUPPORTED_ABI_VERSION`; this stateless ABI
+accepts only its exact current minor because it cannot retain per-client
+negotiation state and safely tailor later payloads. A missing required bit
+returns `UNSUPPORTED_CAPABILITY`. A future minor may append behavior only behind
+a capability and may use previously reserved fields; it may not reinterpret a
 field or code.
 
 All input records with `struct_size` must set it to the versioned size and set
@@ -224,15 +226,21 @@ contains a page begins its buffer with the fixed 96-byte
 `FlarkV4ResultPageHeader`; payload begins
 at `header.struct_size`, and `Outcome.written_bytes` includes header plus
 payload. The header carries ABI major/minor, `record_kind`, revision, snapshot,
-the original requested byte range, the byte range actually covered by this
-page, certification state, item count, payload-byte count, and continuation.
+the effective scalar-aligned requested byte range, the byte range actually
+covered by this page, certification state, item count, payload-byte count, and
+continuation. Viewport byte ranges are bounded window hints: for query kinds
+1, 2, 3, 4, and 6 the ABI floors the requested start, requested end, and page
+start to UTF-8 scalar boundaries once before runtime dispatch. Query kind 5
+selects an exact semantic target and therefore remains strict rather than
+silently changing its requested fact range.
 The host-neutral runtime returns these values as a typed
 `flark_runtime::ResultPageReceipt`; only `flark-abi` encodes the C header.
 Therefore a host can validate a page at the ABI boundary without decoding an
 opaque payload or trusting the separate `Outcome` alone. The request and header
 revision/snapshot must agree, the covered range must be contained in the
-requested range, and a continuation page preserves the original requested
-range. Any mismatch is an invalid page and must not be painted or merged.
+effective requested range, and a continuation page preserves that same
+effective range. Any mismatch is an invalid page and must not be painted or
+merged.
 
 Ordinary `SOURCE_BYTES` pages use `NOT_APPLICABLE` certification and carry exact
 source. A semantic query that is not yet certified instead returns
@@ -283,6 +291,16 @@ retains the bounded exact row content. Deletion fails closed at the content
 boundary, beside Markdown-sensitive source, when it empties the content, or
 when it touches an inline fact. Syntax-shaped input, tables, and thematic
 breaks remain unauthorized. The fixed row record remains 128 bytes.
+
+ABI 4.26 adds capability `LITERAL_SAFE_ENVELOPES_V1`, inline-record kind 15,
+and query kind `SEMANTIC_PROJECTED_LITERAL_SAFE`. Only that query kind may
+append literal-safe-envelope records after a row's ordinary inline facts.
+`SEMANTIC` and `SEMANTIC_PROJECTED` retain their pre-envelope payload vocabulary,
+while the stateless runtime rejects a 4.25 negotiation rather than pretending
+it can tailor every legacy flag and record. The landed word class is limited to
+a complete non-empty content slice containing
+only ASCII letters/digits (and zero code-normalization flags); the one-space
+class is a zero-width row-end proof. Both are one-shot authorities.
 
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
@@ -337,8 +355,11 @@ generation-checked runtime handle and is the only authority for the remainder.
 
 Coordinates are never bare interchangeable integers. Requests name
 `SOURCE_BYTE` or `UTF16_CODE_UNIT`, revision, and affinity where relevant.
-Source-byte positions must be scalar boundaries. An unpaired UTF-16 surrogate
-must normally be rejected by the host binding before byte conversion;
+Exact source-byte positions must be scalar boundaries. Viewport window hints
+are the bounded exception described above: the ABI normalizes them and reports
+the resulting effective range, so a host byte cap cannot manufacture an
+invalid covered coordinate. An unpaired UTF-16 surrogate must normally be
+rejected by the host binding before byte conversion;
 `INVALID_UTF16_HOST_INPUT` is reserved as the cross-layer typed receipt so that
 this failure cannot collapse into `INVALID_UTF8` or `INVALID_ARGUMENT`.
 

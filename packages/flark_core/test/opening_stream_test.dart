@@ -73,8 +73,10 @@ void main() {
       const chunkSizes = [8192, 65536, 24576, 49152, 16384, 32768];
       var next = 0;
       while (offset < bytes.length ~/ 2) {
-        final end = (offset + chunkSizes[next % chunkSizes.length])
-            .clamp(0, bytes.length ~/ 2);
+        final end = (offset + chunkSizes[next % chunkSizes.length]).clamp(
+          0,
+          bytes.length ~/ 2,
+        );
         chunks.add(Uint8List.sublistView(bytes, offset, end));
         offset = end;
         next++;
@@ -119,7 +121,11 @@ void main() {
       expect(document.isOpening, isFalse);
       expect(document.isReady, isTrue);
 
-      final edited = source.replaceRange(editAt, editAt + 'bold'.length, 'BOLD');
+      final edited = source.replaceRange(
+        editAt,
+        editAt + 'bold'.length,
+        'BOLD',
+      );
       expect(document.sourceByteLength, utf8.encode(edited).length);
       expect(document.sourceUtf16Length, edited.length);
       expect(await document.readSource(), edited);
@@ -136,10 +142,70 @@ void main() {
     timeout: const Timeout(Duration(minutes: 4)),
   );
 
+  test('pre-certification streamed queries answer pending-neutral, not '
+      'exceptions', () async {
+    final chunks = StreamController<Uint8List>();
+    final document = await FlarkCoreDocument.openUtf8Stream(
+      chunks.stream,
+      libraryPath: libraryPath,
+    );
+    addTearDown(document.dispose);
+
+    // Nothing admitted yet: the empty-range query answers without rows
+    // and without an exception (an empty range is vacuously certified).
+    final empty = await document.queryViewport();
+    expect(empty.rows, isEmpty);
+    expect(empty.coveredBytes.length, 0);
+
+    // A partial unsealed line can never certify; the answer stays the
+    // familiar pending-neutral shape while the parser waits for source.
+    chunks.add(utf8.encode('An unterminated opening paragraph without'));
+    var pending = false;
+    for (var attempt = 0; attempt < 32; attempt++) {
+      await document.pump(workUnits: 512);
+      final viewport = await document.queryViewport(maxRows: 16);
+      if (viewport.certification == FlarkCertification.pendingNeutral) {
+        pending = true;
+      }
+      expect(viewport.rows, isEmpty);
+    }
+    expect(pending, isTrue);
+
+    // Finish the line, then a real body: the native opening session can
+    // only seal after capturing a first compact slice, so the stream must
+    // grow past that threshold before it closes (a tiny streamed document
+    // fails its seal with a typed PARSER_FAULT — a known limitation of
+    // the experiment surface, covered by the API documentation).
+    chunks.add(utf8.encode(' its line ever ending.\n\n'));
+    final body = StringBuffer();
+    for (var index = 0; index < 400; index++) {
+      body.write(
+        'Body paragraph $index keeps the seal above the '
+        'first-slice threshold.\n\n',
+      );
+    }
+    chunks.add(utf8.encode(body.toString()));
+    await chunks.close();
+    await document.pumpUntilReady();
+    expect(document.isReady, isTrue);
+    expect(
+      await document.readSource(),
+      startsWith(
+        'An unterminated opening paragraph without its line ever '
+        'ending.\n\nBody paragraph 0',
+      ),
+    );
+  }, skip: libraryPath == null ? _librarySkipMessage : false);
+
   test(
-    'pre-certification streamed queries answer pending-neutral, not '
-    'exceptions',
+    'literal-safe opening continuation decodes its pending-neutral tail',
     () async {
+      final buffer = StringBuffer();
+      for (var index = 0; index < 200; index++) {
+        buffer.write('Paragraph $index on the terrace has **bold** words.\n\n');
+      }
+      final source = buffer.toString();
+      final bytes = Uint8List.fromList(utf8.encode(source));
       final chunks = StreamController<Uint8List>();
       final document = await FlarkCoreDocument.openUtf8Stream(
         chunks.stream,
@@ -147,48 +213,50 @@ void main() {
       );
       addTearDown(document.dispose);
 
-      // Nothing admitted yet: the empty-range query answers without rows
-      // and without an exception (an empty range is vacuously certified).
-      final empty = await document.queryViewport();
-      expect(empty.rows, isEmpty);
-      expect(empty.coveredBytes.length, 0);
+      chunks.add(bytes);
+      await pollViewport(
+        document,
+        (viewport) =>
+            document.sourceByteLength == bytes.length &&
+            viewport.isCertified &&
+            viewport.rows.isNotEmpty,
+      );
 
-      // A partial unsealed line can never certify; the answer stays the
-      // familiar pending-neutral shape while the parser waits for source.
-      chunks.add(utf8.encode('An unterminated opening paragraph without'));
-      var pending = false;
-      for (var attempt = 0; attempt < 32; attempt++) {
-        await document.pump(workUnits: 512);
-        final viewport = await document.queryViewport(maxRows: 16);
-        if (viewport.certification == FlarkCertification.pendingNeutral) {
-          pending = true;
+      // An opening query with a certified head selects semantic query kind 6.
+      // Its parser-authored envelopes distinguish that stream from the legacy
+      // semantic query, while maxRows forces a continuation before the
+      // unsealed source tail.
+      final head = await document.queryViewport(maxRows: 1);
+      expect(head.isCertified, isTrue);
+      expect(head.rows, hasLength(1));
+      expect(head.rows.single.literalSafeEnvelopes, isNotEmpty);
+      expect(head.continuation, isNonZero);
+
+      var previous = head;
+      FlarkViewport? tail;
+      for (var page = 0; page < 16; page++) {
+        final next = await document.queryViewportNext(previous, maxRows: 512);
+        expect(next.coveredBytes.start, previous.coveredBytes.end);
+        if (next.certification == FlarkCertification.pendingNeutral) {
+          tail = next;
+          break;
         }
-        expect(viewport.rows, isEmpty);
+        expect(next.continuation, isNonZero);
+        previous = next;
       }
-      expect(pending, isTrue);
 
-      // Finish the line, then a real body: the native opening session can
-      // only seal after capturing a first compact slice, so the stream must
-      // grow past that threshold before it closes (a tiny streamed document
-      // fails its seal with a typed PARSER_FAULT — a known limitation of
-      // the experiment surface, covered by the API documentation).
-      chunks.add(utf8.encode(' its line ever ending.\n\n'));
-      final body = StringBuffer();
-      for (var index = 0; index < 400; index++) {
-        body.write('Body paragraph $index keeps the seal above the '
-            'first-slice threshold.\n\n');
-      }
-      chunks.add(utf8.encode(body.toString()));
-      await chunks.close();
-      await document.pumpUntilReady();
-      expect(document.isReady, isTrue);
+      expect(tail, isNotNull);
+      expect(tail!.rows, isEmpty);
+      expect(tail.continuation, 0);
       expect(
-        await document.readSource(),
-        startsWith(
-          'An unterminated opening paragraph without its line ever '
-          'ending.\n\nBody paragraph 0',
+        tail.neutralSource,
+        utf8.decode(
+          bytes.sublist(tail.coveredBytes.start, tail.coveredBytes.end),
         ),
       );
+
+      await chunks.close();
+      await document.pumpUntilReady();
     },
     skip: libraryPath == null ? _librarySkipMessage : false,
   );

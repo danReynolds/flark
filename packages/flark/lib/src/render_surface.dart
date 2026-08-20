@@ -1353,8 +1353,9 @@ final class RenderFlarkSurface extends RenderBox {
   ({_PaintedRow row, List<FlarkTableCellPresentation> cells, int index})?
   _tableCellPosition(int offset) {
     final row = _logicalRowForSourceUtf16(offset);
-    final table = row?.row?.table;
-    if (row == null || table == null) return null;
+    if (row == null || row.presentation.kind == 0) return null;
+    final table = row.row?.table;
+    if (table == null) return null;
     final cells = table.rows
         .expand((cells) => cells)
         .where((cell) => !cell.autocompleted)
@@ -1496,7 +1497,8 @@ final class RenderFlarkSurface extends RenderBox {
   }
 
   Rect? _taskActionBox(_PaintedRow row) {
-    if (row.fragmentStart != 0 ||
+    if (row.presentation.kind == 0 ||
+        row.fragmentStart != 0 ||
         row.leadingLength == 0 ||
         row.row?.listItem?.taskChecked == null) {
       return null;
@@ -1720,7 +1722,9 @@ final class RenderFlarkSurface extends RenderBox {
         rowConfig.label = _semanticLabel(row);
       }
       if (row.presentation.headingLevel != null) rowConfig.isHeader = true;
-      final task = row.row?.listItem?.taskChecked;
+      final task = row.presentation.kind == 0
+          ? null
+          : row.row?.listItem?.taskChecked;
       if (task != null) {
         final checked = row.presentation.leadingText.contains('☑');
         rowConfig.isChecked = checked;

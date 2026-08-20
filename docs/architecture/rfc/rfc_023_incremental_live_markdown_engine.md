@@ -1,10 +1,17 @@
 # RFC 023: Incremental live Markdown engine
 
-**Status:** SELECTED ARCHITECTURE — production implementation active; launch
+> **Historical v3 architecture record.** [RFC 026](rfc_026_flark_v4_product_architecture.md),
+> [RFC 027](rfc_027_continuously_rendered_markdown.md), and
+> [RFC 029](rfc_029_large_document_architecture.md) replace its Dart-first
+> topology and production status. The [v4 build plan](../v4/build_plan.md) is
+> the current execution contract; the paths and acceptance table below are
+> historical receipts, not active gates.
+
+**Historical status (2026-07-22):** SELECTED ARCHITECTURE — production implementation active; launch
 remains HOLD, 2026-07-22.
 **Author:** architecture investigation follow-through.
 **Implementation baseline:** [Flark v3 definitive architecture summary](../v3/architecture_summary.md).
-**Current disposition:** This RFC is the selected architecture for the v3
+**Historical disposition:** This RFC was the selected architecture for the v3
 engine. The engine is Dart-first: the `flark` package is pure Dart and
 `flark_flutter` is a dependent platform adapter. The topology is one exact
 Flark-owned, donor-correspondent controller;
@@ -95,8 +102,8 @@ Sections describing earlier donor experiments remain dated evidence; section
 [checkpoint-restart spike](../../../tool/parser_research/checkpoint_restart_state/README.md),
 [architecture position, 2026-07-12](../architecture_position_2026-07-12.md),
 [RFC 022: parser grammar monopoly](rfc_022_parser_grammar_monopoly.md),
-[live edit intent pipeline](../../../doc/architecture/live_edit_intent_pipeline.md),
-[IME device protocol](../../testing/ime_device_protocol.md), RFC 017, RFC 020,
+[live edit intent pipeline](../../../legacy/docs/v2_v3/doc/architecture/live_edit_intent_pipeline.md),
+[IME device protocol](../../../legacy/docs/v2_v3/testing/ime_device_protocol.md), RFC 017, RFC 020,
 and RFC 021.
 
 ## 1. Decision

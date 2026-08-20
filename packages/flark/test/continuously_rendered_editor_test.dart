@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
-import 'package:flark_core/flark_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -618,7 +617,7 @@ void main() {
   );
 
   test(
-    'composition inside strong text stays projected and undoes as one unit',
+    'composition inside strong text is exact while pending and undoes as one unit',
     () async {
       const source = 'Before **β😀** and _em_.\n';
       final controller = await FlarkEditorController.open(
@@ -661,19 +660,11 @@ void main() {
         TextRange(start: localCaret, end: localCaret + 1),
       );
       final composingSurface = controller.surfaceRow(row);
-      expect(composingSurface.text, 'Before βに😀 and em.');
-      expect(
-        composingSurface.text,
-        isNot(anyOf(contains('**'), contains('_'))),
-      );
-      expect(
-        composingSurface.runs.any(
-          (run) =>
-              run.text == 'βに😀' &&
-              run.styles.contains(FlarkSurfaceInlineStyle.strong),
-        ),
-        isTrue,
-      );
+      expect(composingSurface.kind, 0);
+      expect(composingSurface.text, 'Before **βに😀** and _em_.\n');
+      expect(composingSurface.runs, hasLength(1));
+      expect(composingSurface.runs.single.sourceExact, isTrue);
+      expect(composingSurface.runs.single.styles, isEmpty);
 
       controller.updateEditingValue(
         controller.inputValue.copyWith(composing: TextRange.empty),
@@ -683,6 +674,18 @@ void main() {
       expect(
         controller.surfaceRow(controller.rows.first).text,
         'Before βに😀 and em.',
+      );
+      expect(controller.surfaceRow(controller.rows.first).kind, 5);
+      expect(
+        controller
+            .surfaceRow(controller.rows.first)
+            .runs
+            .any(
+              (run) =>
+                  run.text == 'βに😀' &&
+                  run.styles.contains(FlarkSurfaceInlineStyle.strong),
+            ),
+        isTrue,
       );
 
       expect(await controller.undo(), isTrue);
@@ -730,7 +733,7 @@ void main() {
   );
 
   test(
-    'shorter styled selection replacements retain projection while pending',
+    'shorter styled selection replacement is exact while pending',
     () async {
       const source = 'Before **bold** after.\n';
       final controller = await FlarkEditorController.open(
@@ -746,18 +749,24 @@ void main() {
       controller.replaceSelection('X');
 
       final pending = controller.surfaceRow(row);
-      expect(pending.text, 'Before bXd after.');
-      expect(pending.text, isNot(contains('**')));
+      expect(pending.kind, 0);
+      expect(pending.text, 'Before **bXd** after.\n');
+      expect(pending.runs, hasLength(1));
+      expect(pending.runs.single.sourceExact, isTrue);
+      expect(pending.runs.single.styles, isEmpty);
+      await _settle(controller);
+      expect(controller.visibleSource, 'Before **bXd** after.\n');
+      final recertified = controller.surfaceRow(controller.rows.first);
+      expect(recertified.kind, 5);
+      expect(recertified.text, 'Before bXd after.');
       expect(
-        pending.runs.any(
+        recertified.runs.any(
           (run) =>
               run.text == 'bXd' &&
               run.styles.contains(FlarkSurfaceInlineStyle.strong),
         ),
         isTrue,
       );
-      await _settle(controller);
-      expect(controller.visibleSource, 'Before **bXd** after.\n');
     },
     skip: libraryPath == null,
   );
@@ -791,7 +800,7 @@ void main() {
   );
 
   test(
-    'plain heading typing never demotes the visible page between receipts',
+    'plain heading typing fails closed locally and preserves its sibling',
     () async {
       const source = '# Heading\n\nPlain paragraph.\n\n## Sibling\n';
       final controller = await FlarkEditorController.open(
@@ -835,26 +844,23 @@ void main() {
       capture();
       await _settle(controller);
       expect(observed, isNotEmpty);
+      expect(observed.every((state) => state.lastKind == 12), isTrue);
       expect(
-        observed,
-        everyElement(
-          isA<({int firstKind, int lastKind, String firstText})>()
-              .having((state) => state.firstKind, 'active heading kind', 12)
-              .having((state) => state.lastKind, 'sibling heading kind', 12)
-              .having(
-                (state) => state.firstText,
-                'projected active text',
-                isNot(contains('#')),
-              ),
+        observed.any(
+          (state) => state.firstKind == 0 && state.firstText == '# Headingx\n',
         ),
+        isTrue,
       );
+      final recertified = controller.surfaceRow(controller.rows.first);
+      expect(recertified.kind, 12);
+      expect(recertified.text, 'Headingx');
       expect(controller.visibleSource, startsWith('# Headingx'));
     },
     skip: libraryPath == null,
   );
 
   test(
-    'plain heading backspace never demotes the visible page between receipts',
+    'plain heading backspace fails closed locally and preserves its sibling',
     () async {
       const source = '# Heading\n\nPlain paragraph.\n\n## Sibling\n';
       final controller = await FlarkEditorController.open(
@@ -884,26 +890,23 @@ void main() {
       await _settle(controller);
 
       expect(observed, isNotEmpty);
+      expect(observed.every((state) => state.lastKind == 12), isTrue);
       expect(
-        observed,
-        everyElement(
-          isA<({int firstKind, int lastKind, String firstText})>()
-              .having((state) => state.firstKind, 'active heading kind', 12)
-              .having((state) => state.lastKind, 'sibling heading kind', 12)
-              .having(
-                (state) => state.firstText,
-                'projected active text',
-                isNot(contains('#')),
-              ),
+        observed.any(
+          (state) => state.firstKind == 0 && state.firstText == '# Headin\n',
         ),
+        isTrue,
       );
+      final recertified = controller.surfaceRow(controller.rows.first);
+      expect(recertified.kind, 12);
+      expect(recertified.text, 'Headin');
       expect(controller.visibleSource, startsWith('# Headin\n'));
     },
     skip: libraryPath == null,
   );
 
   test(
-    'plain paragraph backspace retains block and sibling presentation',
+    'plain paragraph backspace fails closed locally and preserves its sibling',
     () async {
       const source = 'Plain paragraph.\n\n## Sibling\n';
       final controller = await FlarkEditorController.open(
@@ -932,14 +935,9 @@ void main() {
       await _settle(controller);
 
       expect(observed, isNotEmpty);
-      expect(
-        observed,
-        everyElement(
-          isA<({int paragraphKind, int siblingKind})>()
-              .having((state) => state.paragraphKind, 'paragraph kind', 5)
-              .having((state) => state.siblingKind, 'sibling heading kind', 12),
-        ),
-      );
+      expect(observed.every((state) => state.siblingKind == 12), isTrue);
+      expect(observed.any((state) => state.paragraphKind == 0), isTrue);
+      expect(controller.surfaceRow(controller.rows.first).kind, 5);
       expect(controller.visibleSource, startsWith('Plain paragraph\n'));
     },
     skip: libraryPath == null,
@@ -1009,7 +1007,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       RenderFlarkSurface surface() =>
           tester.renderObject(find.byType(FlarkRenderSurfaceWidget));
       expect(controller.rows.map((row) => controller.surfaceRow(row).kind), [
-        5,
+        0,
         12,
         5,
       ]);
@@ -1022,6 +1020,11 @@ only incomplete or temporarily pending syntax becomes exact source locally.
 
       await tester.runAsync(controller.continueParsing);
       await tester.pump();
+      expect(controller.rows.map((row) => controller.surfaceRow(row).kind), [
+        5,
+        12,
+        5,
+      ]);
       emptyBlock = surface().debugPaintedPlan.singleWhere(
         (entry) =>
             entry.neutral && entry.sourceStart == controller.globalCaretOffset,
@@ -1110,7 +1113,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
-    'syntax-shaped edits keep certified inline surroundings stable',
+    'syntax-shaped edits are exact while pending and recertify locally',
     () async {
       const source = '**bold** after\n';
       final controller = await FlarkEditorController.open(
@@ -1136,14 +1139,22 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       ]);
 
       final pending = controller.surfaceRow(row);
-      expect(pending.text, 'bo*ld after');
-      expect(pending.text, isNot(contains('**')));
+      expect(pending.kind, 0);
+      expect(pending.text, '**bo*ld** after\n');
+      expect(pending.runs, hasLength(1));
+      expect(pending.runs.single.sourceExact, isTrue);
+      expect(pending.runs.single.styles, isEmpty);
+      await _settle(controller);
+      final recertified = controller.surfaceRow(controller.rows.first);
+      expect(recertified.kind, 5);
+      expect(recertified.text, 'bo*ld after');
       expect(
-        pending.runs.where((run) => run.text.contains('bo*ld')).single.styles,
+        recertified.runs
+            .where((run) => run.text.contains('bo*ld'))
+            .single
+            .styles,
         contains(FlarkSurfaceInlineStyle.strong),
       );
-      await _settle(controller);
-      expect(controller.surfaceRow(controller.rows.first).text, 'bo*ld after');
     },
     skip: libraryPath == null,
   );

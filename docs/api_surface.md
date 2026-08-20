@@ -1,65 +1,45 @@
-# API Surface
+# API surface
 
-## App Import
+Flark v4 exposes two supported library barrels and no compatibility barrel.
+Anything under `lib/src/` is implementation detail.
 
-Most Flutter apps should import only:
-
-```dart
-import 'package:flark_flutter/flark_flutter.dart';
-```
-
-Flutter apps import `package:flark_flutter/flark_flutter.dart`. It re-exports
-the shared engine types and adds the promoted application surface:
-
-- `MarkdownEditor`
-- `MarkdownEditorFormField`
-- `Markdown`
-- `FlarkFlutterController`
-- editing modes, interaction config, overlay callbacks, and preview builders
-- standard Markdown commands through `controller.commands`
-- core runtime result and transaction types commonly needed by app toolbars
-- `FlarkNativeComrakParseBackend` and native preflight diagnostics
-
-## Dart Engine
-
-Pure-Dart consumers normally import:
+## Flutter applications
 
 ```dart
 import 'package:flark/flark.dart';
 ```
 
-For narrower or preview surfaces, `package:flark/flark_core.dart` exports the
-v2 core and `package:flark/flark_v3.dart` exposes the in-progress v3
-document-session engine. None imports Flutter.
+The `flark` barrel exports its Flutter surface and the complete supported Core
+surface. Primary types are:
 
-The v3 preview barrel is deliberately small: the document runtime, source-edit
-values, semantic revision status, bounded query values, and explicit Web asset
-configuration. Parser bindings, host stores, source certification, endpoint
-frames, and attachment choreography are not normal application API.
+- `FlarkEditorController`: document/controller lifecycle, selection, history,
+  edits, paging, streaming open, and source reads.
+- `FlarkEditor`: the continuously rendered editable custom render surface.
+- `FlarkMarkdownView`: the read-only surface sharing the same controller.
+- `FlarkEditorStatus`, `FlarkViewportRow`, and the presentation/receipt models
+  re-exported from Core.
 
-## Advanced Integrations
+Open with `FlarkEditorController.open` or `openUtf8Stream`, and always finish
+with `close`. The optional `libraryPath` argument is a test/embedding override;
+normal consumers use the automatically bundled native asset.
 
-Use the advanced barrel for custom parsers, native bridge tests, extension
-work, or deeper render-plan integration:
+## Headless Dart
 
 ```dart
-import 'package:flark_flutter/flark_flutter_advanced.dart';
+import 'package:flark_core/flark_core.dart';
 ```
 
-Use `package:flark/flark_advanced.dart` when the integration is Dart-only.
-Both advanced barrels remain broader than the normal app imports.
-Official adapter work that needs the unstable v3 assembly SPI uses
-`package:flark/flark_adapter.dart`; applications should not import it.
+`FlarkCoreDocument` is the source-authoritative document API. It exposes exact
+source reads, UTF-16 edits and transactions, bounded viewport queries,
+certification, anchors, history, semantic edit intents, and streamed open.
+`FlarkCoreEditorSession` adds host-neutral editing/history policy.
 
-## Widget Rule
+Open with `FlarkCoreDocument.open` or `openUtf8Stream`, and always finish with
+`dispose`.
 
-There are three public widgets:
+## Authority boundary
 
-| Widget | Purpose |
-| --- | --- |
-| `MarkdownEditor` | Editable Markdown. Pass either `initialMarkdown` or `controller`. |
-| `MarkdownEditorFormField` | Editable Markdown wired into Flutter `FormField<String>`. Pass either `initialMarkdown` or `controller`. |
-| `Markdown` | Read-only Markdown. Pass either `markdown` or `controller`. |
-
-Low-level editing widgets, read-only adapter widgets, parser schedulers, and
-text delta adapters are implementation details behind those widgets.
+Application code owns values, layout, focus placement, and visible error UI.
+Rust owns canonical source, GFM grammar, source-to-projection identity,
+certification, and semantic mutation receipts. Dart and Flutter do not infer
+Markdown syntax to authorize projected edits.

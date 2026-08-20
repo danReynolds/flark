@@ -1,5 +1,9 @@
 # Live-rendered rebuild isolation — findings & path forward
 
+> Historical v2 performance note. The retired harness is preserved under
+> `legacy/scripts/v2_v3/`; current v4 profiling starts at
+> [`docs/benchmarks.md`](../benchmarks.md).
+
 **Status:** Stages 1-4 implemented, guarded, and profile-validated. Viewport
 virtualization remains optional.
 **Goal:** make a keystroke in `liveRendered` mode rebuild only the edited block
@@ -13,8 +17,9 @@ block-based WYSIWYG editor measured flat across 10-80 blocks vs old Flark's
 ## Why this is warranted (profile-mode validation)
 
 The debug-VM benchmarks understated the problem by ~10×. Measured in **profile
-mode** on a real engine (macOS, AOT) via `example/lib/perf_harness.dart`, the
-per-keystroke **build phase** of live-rendered editing is:
+mode** on a real engine (macOS, AOT) via the archived
+[`perf_harness.dart`](../../legacy/root_package/example/lib/perf_harness.dart),
+the per-keystroke **build phase** of live-rendered editing is:
 
 | Blocks | Build median | Build p95 | Raster |
 | --- | --- | --- | --- |
@@ -60,10 +65,10 @@ Current post-handle profile gate:
 | 80 blocks, end edit | `1.53ms` | `1.80ms` | `666us` | `820us` |
 | 80 blocks, start edit | `1.53ms` | `1.76ms` | `604us` | `715us` |
 
-Run the full device sweep with:
+The historical sweep was run with the now-archived command:
 
 ```bash
-./scripts/verify_live_rendered_profile.sh
+./legacy/scripts/v2_v3/verify_live_rendered_profile.sh
 ```
 
 Stage 4's caret/content decoupling is folded into Stage 3's per-block selection

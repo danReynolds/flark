@@ -10,12 +10,12 @@ use flark_engine::parser_internal::{
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
-#[cfg(feature = "opening-session")]
-use flark_engine::{OpeningSourceError, OpeningSourceStore, OpeningSourceVersion, SourceRevision};
 use flark_engine::{
     ArenaMetrics, DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError, ParserProfileId,
     SourceBoundaryAffinity, SourceEditError, SourceSnapshotLease, SourceVersion,
 };
+#[cfg(feature = "opening-session")]
+use flark_engine::{OpeningSourceError, OpeningSourceStore, OpeningSourceVersion, SourceRevision};
 use flark_parser::{
     block_core::{
         m11_block_quote_prefix_lineage, m11_recursive_green_row_presentation, BulletMarker,
@@ -93,16 +93,23 @@ pub enum DocumentViewportRowEditCapability {
     Unavailable,
 }
 
-/// Parser-authored authority for retaining one row's presentation while an
-/// exact source transaction is waiting for current-revision certification.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum DocumentViewportRowContinuityPolicy {
-    #[default]
-    None,
-    /// A conservative plain-text edit inside the parser's contiguous editable
-    /// range can retain identity when the host's bounded validator approves
-    /// the exact transaction.
-    PlainTextEdit,
+/// Parser-declared literal edit class for one certified safe envelope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentLiteralEditClass {
+    /// A non-empty insertion containing only ASCII letters and digits.
+    AsciiWordInsertion,
+    /// One U+0020 insertion. This deliberately does not authorize a second
+    /// edit before the parser certifies the first one.
+    SingleAsciiSpaceInsertion,
+}
+
+/// Parser-authored positional proof that one declared literal edit class
+/// cannot change the row's published facts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentLiteralSafeEnvelope {
+    pub edit_class: DocumentLiteralEditClass,
+    pub source_range: Range<u64>,
+    pub source_utf16_range: Range<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -172,10 +179,6 @@ pub const DOCUMENT_TABLE_CELL_ALIGNMENT_MASK: u8 = 0x03;
 pub const DOCUMENT_TABLE_CELL_HEADER: u8 = 1 << 2;
 pub const DOCUMENT_TABLE_CELL_ROW_START: u8 = 1 << 3;
 pub const DOCUMENT_TABLE_CELL_AUTOCOMPLETED: u8 = 1 << 4;
-/// The parser authorizes transaction-bound continuity for conservative plain
-/// text edits wholly inside this fact's visible content range.
-pub const DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT: u8 = 1 << 7;
-
 /// Parser-cooked visible text replacing one exact source range.
 ///
 /// The selected grammar currently needs at most two Unicode scalar values for
@@ -295,11 +298,13 @@ pub struct DocumentViewportRow {
     pub editable_range: Option<Range<u64>>,
     pub editable_utf16_range: Option<Range<u64>>,
     pub edit_capability: DocumentViewportRowEditCapability,
-    pub continuity_policy: DocumentViewportRowContinuityPolicy,
     pub presentation: DocumentViewportRowPresentation,
     /// `Some` means the complete bounded inline leaf is authoritative. Empty
     /// is distinct from `None`, which requires exact-source neutral display.
     pub inline_facts: Option<Vec<DocumentInlineFact>>,
+    /// Exact parser-authored ranges for typed literal edits that may retain
+    /// this row's presentation until current-revision certification arrives.
+    pub literal_safe_envelopes: Vec<DocumentLiteralSafeEnvelope>,
     /// Present only for `ProjectedReserved` rows. Every segment is exact
     /// source; gaps are parser-certified hidden container material.
     pub projection_segments: Option<Vec<DocumentProjectionSegment>>,
@@ -364,9 +369,12 @@ pub struct DocumentLiveViewport {
 impl DocumentLiveViewport {
     #[must_use]
     pub fn is_fully_certified(&self) -> bool {
-        self.spans
-            .iter()
-            .all(|span| matches!(span, DocumentLiveViewportSpan::CertifiedUnchanged { .. }))
+        self.complete
+            && self.covered_range == self.requested_range
+            && self
+                .spans
+                .iter()
+                .all(|span| matches!(span, DocumentLiveViewportSpan::CertifiedUnchanged { .. }))
     }
 }
 
@@ -376,7 +384,10 @@ pub enum DocumentSessionError {
     Busy,
     NotReady,
     Faulted,
-    StaleRevision { expected: u64, actual: u64 },
+    StaleRevision {
+        expected: u64,
+        actual: u64,
+    },
     RangeOutOfBounds,
     EditIntentLimitExceeded,
     UnsupportedEditIntentSelection,
@@ -483,6 +494,7 @@ struct OpeningState {
     session: M11ProgressiveOpenSession,
     adopted: OpeningSourceVersion,
     seal_requested: bool,
+    finalizing: bool,
 }
 
 enum ParseState {
@@ -554,6 +566,7 @@ impl DocumentSession {
                 session,
                 adopted,
                 seal_requested: false,
+                finalizing: false,
             })),
             last_edit_work: M11PersistentRecursiveGreenAdoptionWork::default(),
             fault_arena_metrics: None,
@@ -745,9 +758,7 @@ impl DocumentSession {
     fn advance_one(&mut self, state: ParseState) -> Result<ParseState, DocumentSessionError> {
         match state {
             #[cfg(feature = "opening-session")]
-            ParseState::Opening(state) => {
-                self.advance_opening(state, 1).map(|(state, _)| state)
-            }
+            ParseState::Opening(state) => self.advance_opening(state, 1).map(|(state, _)| state),
             ParseState::Clean(build) => self.advance_clean(build, 1).map(|(state, _)| state),
             ParseState::CancellingClean(mut build) => {
                 let poll = build.poll_cancel(&mut self.runtime, 1)?;
@@ -4277,20 +4288,22 @@ fn document_viewport_row_with_inline_facts(
                 })
                 .collect::<Vec<_>>()
         });
-    let continuity_policy = if matches!(
+    let literal_safe_envelopes = if matches!(
         edit_capability,
         DocumentViewportRowEditCapability::Contiguous
             | DocumentViewportRowEditCapability::ProjectedReserved
-    ) && editable_utf16_range
-        .as_ref()
-        .is_some_and(|range| range.start < range.end)
-        && !matches!(
-            presentation,
-            DocumentViewportRowPresentation::ThematicBreak | DocumentViewportRowPresentation::Table
-        ) {
-        DocumentViewportRowContinuityPolicy::PlainTextEdit
+    ) && !matches!(
+        presentation,
+        DocumentViewportRowPresentation::ThematicBreak | DocumentViewportRowPresentation::Table
+    ) {
+        document_literal_safe_envelopes(
+            runtime,
+            inline_facts.as_deref(),
+            editable_range.as_ref(),
+            editable_utf16_range.as_ref(),
+        )?
     } else {
-        DocumentViewportRowContinuityPolicy::None
+        Vec::new()
     };
     Ok(DocumentViewportRow {
         ordinal: row.ordinal(),
@@ -4300,9 +4313,9 @@ fn document_viewport_row_with_inline_facts(
         editable_range,
         editable_utf16_range,
         edit_capability,
-        continuity_policy,
         presentation,
         inline_facts,
+        literal_safe_envelopes,
         projection_segments,
         path_depth: u32::try_from(row.path().len()).unwrap_or(u32::MAX),
     })
@@ -4700,19 +4713,11 @@ fn map_document_inline_facts(
         {
             return Err(DocumentSessionError::Faulted);
         }
-        let continuity = match kind {
-            DocumentInlineFactKind::Emphasis
-            | DocumentInlineFactKind::Strong
-            | DocumentInlineFactKind::Code
-            | DocumentInlineFactKind::Strikethrough
-            | DocumentInlineFactKind::DirectLink => DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
-            _ => 0,
-        };
         push_document_inline_fact(
             &mut mapped,
             &lease,
             kind,
-            fact.flags() | continuity,
+            fact.flags(),
             source,
             content,
             replacement,
@@ -4738,6 +4743,83 @@ fn map_document_inline_facts(
         return Ok(None);
     }
     Ok(Some(mapped))
+}
+
+fn document_literal_safe_envelopes(
+    runtime: &DocumentRuntime,
+    facts: Option<&[DocumentInlineFact]>,
+    editable_range: Option<&Range<u64>>,
+    editable_utf16_range: Option<&Range<u64>>,
+) -> Result<Vec<DocumentLiteralSafeEnvelope>, DocumentSessionError> {
+    let (Some(facts), Some(editable), Some(editable_utf16)) =
+        (facts, editable_range, editable_utf16_range)
+    else {
+        return Ok(Vec::new());
+    };
+    if editable.is_empty() || editable_utf16.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let eligible = |fact: &&DocumentInlineFact| {
+        matches!(
+            fact.kind,
+            DocumentInlineFactKind::Emphasis
+                | DocumentInlineFactKind::Strong
+                | DocumentInlineFactKind::Code
+                | DocumentInlineFactKind::Strikethrough
+                | DocumentInlineFactKind::DirectLink
+        ) && editable.start <= fact.source_range.start
+            && fact.source_range.end <= editable.end
+            && editable_utf16.start <= fact.source_utf16_range.start
+            && fact.source_utf16_range.end <= editable_utf16.end
+    };
+
+    let mut envelopes = Vec::new();
+    for fact in facts.iter().filter(eligible) {
+        if fact.content_range.is_empty() || fact.content_utf16_range.is_empty() {
+            continue;
+        }
+        // A container fact's content range can include nested delimiters and
+        // other inline syntax. Publishing that whole range would let the host
+        // retain a stale projection when an insertion changes a nested fact's
+        // delimiter flanking. Until the parser exposes literal leaf spans,
+        // certify only a complete content range whose source is one flat
+        // non-empty ASCII word. This deliberately narrow proof still covers
+        // ordinary typing in `*word*`, `**word**`, `` `word` ``, `~~word~~`,
+        // and `[word](destination)` while failing closed around punctuation,
+        // whitespace, and nested syntax.
+        let content = read_utf8_source_range(runtime, &fact.content_range)?;
+        let content_byte_len = fact.content_range.end - fact.content_range.start;
+        let content_utf16_len = fact.content_utf16_range.end - fact.content_utf16_range.start;
+        if content.len() as u64 != content_byte_len
+            || content_byte_len != content_utf16_len
+            || (fact.kind == DocumentInlineFactKind::Code && fact.flags != 0)
+            || !content.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        {
+            continue;
+        }
+        envelopes.push(DocumentLiteralSafeEnvelope {
+            edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+            source_range: fact.content_range.clone(),
+            source_utf16_range: fact.content_utf16_range.clone(),
+        });
+    }
+
+    // A construct ending at the editable row boundary has no following
+    // source that a single inserted space can reclassify. The zero-width
+    // envelope is intentionally one-shot: after the insertion, the host waits
+    // for fresh parser authority instead of assuming a second trailing space
+    // is harmless (two spaces can create a hard line break).
+    if facts.iter().filter(eligible).any(|fact| {
+        fact.source_range.end == editable.end && fact.source_utf16_range.end == editable_utf16.end
+    }) {
+        envelopes.push(DocumentLiteralSafeEnvelope {
+            edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
+            source_range: editable.end..editable.end,
+            source_utf16_range: editable_utf16.end..editable_utf16.end,
+        });
+    }
+    Ok(envelopes)
 }
 
 fn append_document_table_facts(
@@ -4997,32 +5079,36 @@ fn opening_live_viewport(
             ..lease.utf16_offset_for_byte(range.end)? as u64)
     };
     let mut spans = Vec::new();
+    let mut cursor = requested_range.start;
     let maximum_spans = maximum_spans as usize;
-    if requested_range.start < certified.start && spans.len() < maximum_spans {
-        let range = requested_range.start..certified.start;
+    if cursor < certified.start && spans.len() < maximum_spans {
+        let range = cursor..certified.start;
         spans.push(DocumentLiveViewportSpan::Pending {
             source_range: range.start as u64..range.end as u64,
             source_utf16_range: utf16(&range)?,
         });
+        cursor = certified.start;
     }
-    if spans.len() < maximum_spans {
+    if cursor < certified.end && spans.len() < maximum_spans {
         spans.push(DocumentLiveViewportSpan::CertifiedUnchanged {
-            source_range: certified.start as u64..certified.end as u64,
-            source_utf16_range: utf16(&certified)?,
+            source_range: cursor as u64..certified.end as u64,
+            source_utf16_range: utf16(&(cursor..certified.end))?,
         });
+        cursor = certified.end;
     }
-    if certified.end < requested_range.end && spans.len() < maximum_spans {
-        let range = certified.end..requested_range.end;
+    if cursor < requested_range.end && spans.len() < maximum_spans {
+        let range = cursor..requested_range.end;
         spans.push(DocumentLiveViewportSpan::Pending {
             source_range: range.start as u64..range.end as u64,
             source_utf16_range: utf16(&range)?,
         });
+        cursor = requested_range.end;
     }
     Ok(DocumentLiveViewport {
         revision,
         requested_range: requested_range.start as u64..requested_range.end as u64,
-        covered_range: requested_range.start as u64..requested_range.end as u64,
-        complete: true,
+        covered_range: requested_range.start as u64..cursor as u64,
+        complete: cursor == requested_range.end,
         spans,
         receipt: DocumentQueryReceipt::default(),
     })
@@ -5047,8 +5133,8 @@ fn query_opening_viewport(
         return Err(DocumentSessionError::NotReady);
     }
     let slice = early.root().source_range();
-    let slice_start = usize::try_from(slice.start)
-        .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+    let slice_start =
+        usize::try_from(slice.start).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
     let slice_end =
         usize::try_from(slice.end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
     let start = requested_range.start.max(slice_start);
@@ -5064,8 +5150,7 @@ fn query_opening_viewport(
             receipt: DocumentQueryReceipt::default(),
         });
     }
-    let limits =
-        row_query_limits(maximum_rows).ok_or(DocumentSessionError::QueryBudgetExceeded)?;
+    let limits = row_query_limits(maximum_rows).ok_or(DocumentSessionError::QueryBudgetExceeded)?;
     let lease = runtime.snapshot_current_source()?;
     let start_utf16 = lease.utf16_offset_for_byte(start)?;
     drop(lease);
@@ -5252,8 +5337,30 @@ impl DocumentSession {
         mut state: Box<OpeningState>,
         fuel: usize,
     ) -> Result<(ParseState, usize), DocumentSessionError> {
-        match state.session.poll(&mut self.runtime, fuel)? {
-            M11ProgressiveOpenSessionPoll::Pending => Ok((ParseState::Opening(state), fuel)),
+        if state.finalizing {
+            let complete = state.session.poll_final_release(&mut self.runtime, 1)?;
+            return if complete {
+                let build = begin_clean_build(&mut self.runtime)?;
+                Ok((ParseState::Clean(Box::new(build)), 1))
+            } else {
+                Ok((ParseState::Opening(state), 1))
+            };
+        }
+        let poll = state.session.poll(&mut self.runtime, fuel)?;
+        let parser_transitions = state.session.last_poll_transitions();
+        if parser_transitions > fuel {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "progressive open parser violated its bounded work grant",
+            )
+            .into());
+        }
+        // An already-starved frontier legitimately reports zero inner parser
+        // transitions. Polling it and applying the associated adopt/seal/yield
+        // decision is still one outer session work unit, so the pump always
+        // makes bounded accounting progress.
+        let work_units = parser_transitions.max(1);
+        match poll {
+            M11ProgressiveOpenSessionPoll::Pending => Ok((ParseState::Opening(state), work_units)),
             M11ProgressiveOpenSessionPoll::Starved => {
                 if state.store.version() != state.adopted {
                     let proof = state.store.prove_append_since(state.adopted)?;
@@ -5262,22 +5369,21 @@ impl DocumentSession {
                         .session
                         .adopt_append(&mut self.runtime, proof, state.seal_requested)?;
                     state.adopted = current;
-                    Ok((ParseState::Opening(state), 1))
+                    Ok((ParseState::Opening(state), work_units))
                 } else if state.seal_requested {
                     state.session.seal_exhausted(&mut self.runtime)?;
-                    Ok((ParseState::Opening(state), 1))
+                    Ok((ParseState::Opening(state), work_units))
                 } else {
-                    // Awaiting transport: consume the grant so the pump
-                    // yields instead of spinning on starvation.
+                    // Awaiting transport: conservatively consume the unused
+                    // grant so the bounded outer pump yields instead of
+                    // repeatedly polling the same zero-transition frontier.
                     Ok((ParseState::Opening(state), fuel))
                 }
             }
             M11ProgressiveOpenSessionPoll::Complete => {
-                let mut final_viewport = state.session.take_final(&mut self.runtime)?;
-                final_viewport.begin_release(&mut self.runtime)?;
-                while !final_viewport.poll_release(&mut self.runtime, 4_096)? {}
-                let build = begin_clean_build(&mut self.runtime)?;
-                Ok((ParseState::Clean(Box::new(build)), 1))
+                state.session.begin_final_release(&mut self.runtime)?;
+                state.finalizing = true;
+                Ok((ParseState::Opening(state), work_units))
             }
         }
     }
@@ -5327,6 +5433,7 @@ impl DocumentSession {
                 session,
                 adopted,
                 seal_requested,
+                finalizing: false,
             })
         })();
         match restart {

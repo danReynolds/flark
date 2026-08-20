@@ -14,12 +14,12 @@ pub use actor::{DocumentActor, DocumentActorError, DocumentActorInspection};
 pub use document::{
     DocumentBulletMarker, DocumentCloseReceipt, DocumentCodeBlockStyle, DocumentEditReceipt,
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
-    DocumentInlineReplacement, DocumentListDelimiter, DocumentListMarker, DocumentLiveViewport,
-    DocumentLiveViewportSpan, DocumentProjectionSegment, DocumentPumpReceipt, DocumentQueryReceipt,
-    DocumentSemanticTarget, DocumentSemanticTargetKind, DocumentSemanticTargetSyntax,
-    DocumentSession, DocumentSessionError, DocumentSessionPhase, DocumentViewport,
-    DocumentViewportRow, DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
+    DocumentInlineReplacement, DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
+    DocumentLiteralSafeEnvelope, DocumentLiveViewport, DocumentLiveViewportSpan,
+    DocumentProjectionSegment, DocumentPumpReceipt, DocumentQueryReceipt, DocumentSemanticTarget,
+    DocumentSemanticTargetKind, DocumentSemanticTargetSyntax, DocumentSession,
+    DocumentSessionError, DocumentSessionPhase, DocumentViewport, DocumentViewportRow,
+    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
     DOCUMENT_TABLE_CELL_ALIGNMENT_MASK, DOCUMENT_TABLE_CELL_AUTOCOMPLETED,
     DOCUMENT_TABLE_CELL_HEADER, DOCUMENT_TABLE_CELL_ROW_START,
 };
@@ -461,6 +461,7 @@ pub enum QueryKind {
     SourceAndSemantic = 3,
     SemanticProjected = 4,
     SemanticTarget = 5,
+    SemanticProjectedLiteralSafe = 6,
 }
 
 pub const QUERY_KINDS: &[(&str, u32)] = &[
@@ -469,6 +470,10 @@ pub const QUERY_KINDS: &[(&str, u32)] = &[
     ("SOURCE_AND_SEMANTIC", QueryKind::SourceAndSemantic as u32),
     ("SEMANTIC_PROJECTED", QueryKind::SemanticProjected as u32),
     ("SEMANTIC_TARGET", QueryKind::SemanticTarget as u32),
+    (
+        "SEMANTIC_PROJECTED_LITERAL_SAFE",
+        QueryKind::SemanticProjectedLiteralSafe as u32,
+    ),
 ];
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -549,6 +554,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("STAGED_SOURCE_TRANSACTIONS_V1", 1 << 23),
     ("LIST_INDENTATION_V1", 1 << 24),
     ("SEMANTIC_TARGETS_V1", 1 << 25),
+    ("LITERAL_SAFE_ENVELOPES_V1", 1 << 26),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;

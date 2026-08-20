@@ -8,6 +8,9 @@
 # payload-budget stress are historical/certification lanes, not everyday gates.
 # No pipeline here may mask an exit code.
 set -euo pipefail
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BRIDGE="$ROOT/packages/flark_core/native/comrak_bridge"
@@ -19,15 +22,27 @@ PROFILE="${FLARK_V4_PROFILE:-debug}"
 # FLARK_V4_OPENING_LIBRARY_PATH and skip unless it is exported below.
 FEATURES="${FLARK_V4_FEATURES:-}"
 
+# Default and feature-gated lanes may run concurrently on developer machines.
+# Keep their native artifacts physically separate so one lane cannot replace
+# the dylib after another lane has built it but before Dart/Flutter load it.
+if [[ -n "$FEATURES" ]]; then
+  feature_key="$(printf '%s' "$FEATURES" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')"
+else
+  feature_key="default"
+fi
+FLARK_V4_CARGO_TARGET_DIR="$BRIDGE/target/verify-v4-$feature_key"
+export CARGO_TARGET_DIR="$FLARK_V4_CARGO_TARGET_DIR"
+
 build_args=(--manifest-path "$BRIDGE/Cargo.toml" --package flark-abi)
 if [[ "$PROFILE" == "release" ]]; then
   build_args+=(--release)
 fi
 if [[ -n "$FEATURES" ]]; then
-  build_args+=(--features "$FEATURES")
+  cargo build "${build_args[@]}" --features "$FEATURES"
+else
+  cargo build "${build_args[@]}"
 fi
-cargo build "${build_args[@]}"
-LIBRARY="$BRIDGE/target/$PROFILE/libflark_abi.dylib"
+LIBRARY="$FLARK_V4_CARGO_TARGET_DIR/$PROFILE/libflark_abi.dylib"
 if [[ ! -f "$LIBRARY" ]]; then
   echo "verify_v4: missing $LIBRARY" >&2
   exit 1
@@ -36,16 +51,26 @@ fi
 # only exist when the feature was compiled in. Exporting the path is the
 # explicit signal that this library carries them; without it those suites
 # skip rather than fail against a default-feature library.
-if [[ ",$FEATURES," == *",opening-session,"* ]]; then
+feature_words=" ${FEATURES//,/ } "
+if [[ "$feature_words" == *" opening-session "* ]]; then
   export FLARK_V4_OPENING_LIBRARY_PATH="$LIBRARY"
 fi
 
-# Every first-party target must at least compile, so a broken engine/parser
-# test or example cannot rot invisibly outside the runtime/abi suites.
-cargo check --manifest-path "$BRIDGE/Cargo.toml" \
-  -p flark-engine -p flark-parser -p flark-runtime -p flark-abi --all-targets
-
-cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
+# Every first-party target must compile and execute its tests. The explicit
+# conformance lane below remains the locked, named grammar receipt.
+if [[ -n "$FEATURES" ]]; then
+  cargo check --manifest-path "$BRIDGE/Cargo.toml" \
+    -p flark-engine -p flark-parser -p flark-runtime -p flark-abi --all-targets \
+    --features "$FEATURES"
+  cargo test --manifest-path "$BRIDGE/Cargo.toml" \
+    -p flark-engine -p flark-parser -p flark-runtime -p flark-abi \
+    --features "$FEATURES"
+else
+  cargo check --manifest-path "$BRIDGE/Cargo.toml" \
+    -p flark-engine -p flark-parser -p flark-runtime -p flark-abi --all-targets
+  cargo test --manifest-path "$BRIDGE/Cargo.toml" \
+    -p flark-engine -p flark-parser -p flark-runtime -p flark-abi
+fi
 "$ROOT/scripts/verify_v4_markdown_conformance.sh"
 
 (cd "$ROOT" && dart test test/qualification/v4 --exclude-tags historical-receipt)

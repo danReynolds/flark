@@ -6,8 +6,8 @@
   production-readiness goal from the engineering side. Remaining prior-goal
   blockers are owner decisions: license and canonical public URLs.
 - Reviewed current standalone package docs and code shape, including
-  `docs/production_readiness/execution_plan.md`,
-  `docs/production_readiness/audit_2026-05-01.md`,
+  `legacy/docs/v2_v3/production_readiness/execution_plan.md`,
+  `legacy/docs/v2_v3/production_readiness/audit_2026-05-01.md`,
   `docs/architecture/flark/flark_editor_how_it_works.md`, and
   `docs/architecture/rfc/rfc_017_flark_controller_module_boundaries.md`.
 - Confirmed the current v1 architecture is production-hardened but still

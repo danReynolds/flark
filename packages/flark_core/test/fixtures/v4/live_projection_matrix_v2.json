@@ -32,13 +32,13 @@
     {"id": "LP2-UNDO-PROJECTION-001", "category": "split_merge_paste_history", "ownerTranche": "T3", "status": "implemented", "evidence": "packages/flark/test/editor_transaction_vertical_slice_test.dart"},
     {"id": "LP2-CROSS-RANGE-001", "category": "cross_block_page_selection", "ownerTranche": "T3", "status": "implemented", "evidence": "packages/flark/test/editor_transaction_vertical_slice_test.dart"},
     {"id": "LP2-COMPOSITION-BEGIN-001", "category": "composition_lifecycle", "ownerTranche": "T3", "status": "device_required", "evidence": "packages/flark/test/editor_transaction_vertical_slice_test.dart"},
-    {"id": "LP2-UNICODE-BIDI-001", "category": "grapheme_emoji_bidi_line_endings", "ownerTranche": "T3", "status": "device_required", "evidence": "test/fixtures/v4/unicode_matrix_v1.json"},
+    {"id": "LP2-UNICODE-BIDI-001", "category": "grapheme_emoji_bidi_line_endings", "ownerTranche": "T3", "status": "device_required", "evidence": "packages/flark_core/test/fixtures/v4/unicode_matrix_v1.json"},
     {"id": "LP2-CERTIFICATION-TRANSITION-001", "category": "pending_nonlocal_invalidation", "ownerTranche": "T3", "status": "implemented", "evidence": "packages/flark/test/live_projection_vertical_slice_test.dart"},
     {"id": "LP2-EXACT-FALLBACK-001", "category": "source_gap_fault_oversized_fallback", "ownerTranche": "T3", "status": "implemented", "evidence": "packages/flark_core/test/native_vertical_slice_test.dart; packages/flark_core/test/editor_session_test.dart; packages/flark/test/editor_transaction_vertical_slice_test.dart"},
     {"id": "LP2-GFM-CONSTRUCTS-001", "category": "gfm_construct_behavior", "ownerTranche": "T4", "status": "implemented", "evidence": "packages/flark/test/live_projection_vertical_slice_test.dart"},
     {"id": "LP2-GESTURE-ARBITRATION-001", "category": "desktop_mobile_gestures", "ownerTranche": "T2", "status": "implemented", "evidence": "packages/flark/test/continuously_rendered_editor_test.dart"},
     {"id": "LP2-VIEW-PARITY-001", "category": "editor_view_parity", "ownerTranche": "T1", "status": "implemented", "evidence": "packages/flark/test/continuously_rendered_editor_test.dart"},
-    {"id": "LP2-BOUNDED-PERFORMANCE-001", "category": "bounded_shape_performance", "ownerTranche": "T5", "status": "implemented", "evidence": "packages/flark/example/integration_test/frame_profile_test.dart; native/comrak_bridge/crates/flark_runtime/tests/fault_containment.rs"}
+    {"id": "LP2-BOUNDED-PERFORMANCE-001", "category": "bounded_shape_performance", "ownerTranche": "T5", "status": "implemented", "evidence": "packages/flark/example/integration_test/frame_profile_test.dart; packages/flark_core/native/comrak_bridge/crates/flark_runtime/tests/fault_containment.rs"}
   ],
   "executableCases": [
     {

@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(25)
+#define FLARK_V4_ABI_MINOR UINT16_C(26)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -171,6 +171,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_QUERY_SOURCE_AND_SEMANTIC UINT32_C(3)
 #define FLARK_V4_QUERY_SEMANTIC_PROJECTED UINT32_C(4)
 #define FLARK_V4_QUERY_SEMANTIC_TARGET UINT32_C(5)
+#define FLARK_V4_QUERY_SEMANTIC_PROJECTED_LITERAL_SAFE UINT32_C(6)
 
 #define FLARK_V4_RESULT_RECORD_SOURCE_BYTES UINT32_C(1)
 #define FLARK_V4_RESULT_RECORD_SEMANTIC_FACTS UINT32_C(2)
@@ -220,6 +221,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_CAPABILITY_STAGED_SOURCE_TRANSACTIONS_V1 UINT64_C(0x0000000000800000)
 #define FLARK_V4_CAPABILITY_LIST_INDENTATION_V1 UINT64_C(0x0000000001000000)
 #define FLARK_V4_CAPABILITY_SEMANTIC_TARGETS_V1 UINT64_C(0x0000000002000000)
+#define FLARK_V4_CAPABILITY_LITERAL_SAFE_ENVELOPES_V1 UINT64_C(0x0000000004000000)
 
 #define FLARK_V4_SEMANTIC_TARGET_LINK UINT32_C(1)
 #define FLARK_V4_SEMANTIC_TARGET_IMAGE UINT32_C(2)
@@ -326,7 +328,10 @@ typedef struct FlarkV4CertificationRangeRecord {
   FlarkV4SourceRange source_utf16_range;
 } FlarkV4CertificationRangeRecord;
 
-/* Prefix of every source/query/continuation output; payload starts at struct_size. */
+/* Prefix of every source/query/continuation output; payload starts at
+ * struct_size. Viewport requested_range is the ABI-resolved scalar-aligned
+ * effective range and is preserved by its continuations; query kind 5
+ * semantic-target ranges remain exact. */
 typedef struct FlarkV4ResultPageHeader {
   uint32_t struct_size;
   uint16_t abi_major;
@@ -418,8 +423,10 @@ typedef struct FlarkV4ProjectionSegmentRecord {
 #define FLARK_V4_VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION UINT32_C(0x10000)
 #define FLARK_V4_VIEWPORT_ROW_TABLE_PRESENTATION UINT32_C(0x4000000)
 
-/* Parser-authored inline facts grouped in row order after the fixed row array.
- * source_* spans the complete Markdown form; content_* spans visible content. */
+/* Parser-authored semantic records grouped in row order after the fixed row
+ * array. Inline facts use source_* for the complete Markdown form and
+ * content_* for visible content. Literal-safe envelope records use source_*
+ * for the exact authority range and leave content/replacement fields zero. */
 typedef struct FlarkV4InlineFactRecord {
   uint32_t kind;
   uint32_t flags;
@@ -468,6 +475,9 @@ typedef struct FlarkV4SemanticTargetRecord {
 #define FLARK_V4_INLINE_FACT_REFERENCE_LINK UINT32_C(12)
 #define FLARK_V4_INLINE_FACT_REFERENCE_IMAGE UINT32_C(13)
 #define FLARK_V4_INLINE_FACT_TABLE_CELL UINT32_C(14)
+#define FLARK_V4_INLINE_FACT_LITERAL_SAFE_ENVELOPE UINT32_C(15)
+#define FLARK_V4_LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION UINT32_C(1)
+#define FLARK_V4_LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION UINT32_C(2)
 #define FLARK_V4_INLINE_FACT_TABLE_ALIGNMENT_MASK UINT32_C(0x3)
 #define FLARK_V4_INLINE_FACT_TABLE_HEADER UINT32_C(0x4)
 #define FLARK_V4_INLINE_FACT_TABLE_ROW_START UINT32_C(0x8)

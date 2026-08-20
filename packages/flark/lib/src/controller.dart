@@ -14,6 +14,10 @@ const _maximumPaintCodeUnits = 2 * 1024;
 const _maximumSmallEditBytes = 4 * 1024;
 const _smallEditDescriptorBytes = 32;
 const _viewportRowsPerPage = 32;
+const _maximumActiveViewportPageHops =
+    (_maximumInputCodeUnits + _viewportRowsPerPage - 1) ~/
+        _viewportRowsPerPage +
+    1;
 const _parseIdleDelay = Duration(milliseconds: 32);
 const _maximumSemanticSuccessors = 7;
 // The bounded head window every parse-pending consumer polls during a
@@ -206,29 +210,33 @@ final class _OptimisticViewportEdit {
   int get delta => replacementLength - (end - start);
 }
 
+final class _ViewportPageAnchor {
+  const _ViewportPageAnchor({required this.byte, required this.utf16});
+
+  static const zero = _ViewportPageAnchor(byte: 0, utf16: 0);
+
+  final int byte;
+  final int utf16;
+}
+
+final class _ViewportQueryPage {
+  const _ViewportQueryPage({required this.viewport, required this.anchor});
+
+  final FlarkViewport viewport;
+  final _ViewportPageAnchor anchor;
+}
+
 final class _ProjectionContinuitySurface {
   const _ProjectionContinuitySurface.authorized({
     required this.receipt,
     required this.presentation,
-  }) : provisionalResultRevision = null,
-       provisionalContentUtf16 = null;
+  });
 
-  const _ProjectionContinuitySurface.provisional({
-    required this.provisionalResultRevision,
-    required this.provisionalContentUtf16,
-    required this.presentation,
-  }) : receipt = null;
-
-  final FlarkProjectionContinuityReceipt? receipt;
-  final int? provisionalResultRevision;
-  final FlarkSourceRange? provisionalContentUtf16;
+  final FlarkProjectionContinuityReceipt receipt;
   final FlarkSurfaceRow presentation;
 
-  bool get semanticsAuthorized => receipt != null;
-  int get resultRevision =>
-      receipt?.resultRevision ?? provisionalResultRevision!;
-  FlarkSourceRange get contentUtf16 =>
-      receipt?.authorizedContentUtf16 ?? provisionalContentUtf16!;
+  int get resultRevision => receipt.resultRevision;
+  FlarkSourceRange get contentUtf16 => receipt.authorizedContentUtf16;
 }
 
 final class _EditorSelectionSnapshot {
@@ -515,8 +523,9 @@ final class FlarkEditorController extends ChangeNotifier {
   Future<void>? _parserTask;
   Timer? _parseTimer;
   Future<bool>? _pageTask;
-  final List<int> _pageStarts = [0];
+  final List<_ViewportPageAnchor> _pageAnchors = [_ViewportPageAnchor.zero];
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
+  _ViewportPageAnchor? _optimisticRefreshAnchor;
   _ProjectionContinuitySurface? _projectionContinuity;
   FlarkCoreCommittedPresentationGapV1? _committedParagraphSplit;
   List<FlarkCoreCommittedPresentationSurfaceV1> _committedStructuralSurfaces =
@@ -580,8 +589,14 @@ final class FlarkEditorController extends ChangeNotifier {
   int get visibleUtf16Start => _visibleUtf16Start;
   int get viewportPageIndex => _pageIndex;
   bool get canPageBackward => _semanticViewportCurrent && _pageIndex > 0;
-  bool get canPageForward =>
-      _semanticViewportCurrent && (_viewport?.continuation ?? 0) != 0;
+  bool get canPageForward {
+    final viewport = _viewport;
+    return _semanticViewportCurrent &&
+        viewport != null &&
+        (viewport.continuation != 0 ||
+            viewport.coveredBytes.end < sourceByteLength);
+  }
+
   bool get semanticsCurrent => _semanticViewportCurrent;
   TextEditingValue get inputValue => _inputValue;
   int get revision => _document.revision;
@@ -992,7 +1007,7 @@ final class FlarkEditorController extends ChangeNotifier {
         text: paintInput.text,
         globalUtf16Start: paintInput.globalStart,
         kind: rowCertified ? row.kind : 0,
-        headingLevel: row.headingLevel,
+        headingLevel: rowCertified ? row.headingLevel : null,
         blockQuoteDepth: rowCertified ? blockQuote?.nestingDepth : null,
         codeBlock: rowCertified ? row.codeBlock : null,
         thematicBreak: rowCertified && row.thematicBreak,
@@ -1039,7 +1054,7 @@ final class FlarkEditorController extends ChangeNotifier {
       text: text,
       globalUtf16Start: range.start,
       kind: rowCertified ? row.kind : 0,
-      headingLevel: row.headingLevel,
+      headingLevel: rowCertified ? row.headingLevel : null,
       blockQuoteDepth: rowCertified ? blockQuote?.nestingDepth : null,
       codeBlock: rowCertified ? row.codeBlock : null,
       thematicBreak: rowCertified && row.thematicBreak,
@@ -1234,10 +1249,13 @@ final class FlarkEditorController extends ChangeNotifier {
     FlarkCoreCommittedPresentationSurfaceV1 structural, {
     required bool includeEditingState,
   }) {
-    final presentation = structural.presentation;
-    final runs = presentation.runs
-        .map(_surfaceRunFromCore)
-        .toList(growable: false);
+    // A structural receipt proves the committed source splice and temporary
+    // block partition, but it carries no result-revision inline-fact proof.
+    // Render each temporary partition as exact current source until a fresh
+    // parser publication arrives; reusing the predecessor's hidden delimiters
+    // or styles can retain invalid emphasis/entities across the transition.
+    final run = _exactSurfaceRun(structural.sourceUtf16);
+    final runs = <FlarkSurfaceTextRun>[run];
     final active =
         includeEditingState &&
         structural.sourceUtf16.start <= _globalSelectionExtent &&
@@ -1247,20 +1265,18 @@ final class FlarkEditorController extends ChangeNotifier {
         _crossRowSelection &&
         _selectionIntersects(structural.sourceUtf16);
     return FlarkSurfaceRow(
-      leadingText: presentation.blockQuoteDepth == null
-          ? presentation.leadingText
-          : _projectedBlockQuotePrefixDepth(presentation.blockQuoteDepth!),
-      text: presentation.text,
-      globalUtf16Start: presentation.globalUtf16Start,
-      kind: presentation.kind,
-      headingLevel: presentation.headingLevel,
-      blockQuoteDepth: presentation.blockQuoteDepth,
-      codeBlock: presentation.codeBlock,
-      thematicBreak: presentation.thematicBreak,
+      leadingText: '',
+      text: run.text,
+      globalUtf16Start: structural.sourceUtf16.start,
+      kind: 0,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: null,
+      thematicBreak: false,
       ordinal: structural.rowOrdinal,
       active: active,
       selection: active || selected
-          ? _projectedSelection(runs, presentation.text.length)
+          ? _projectedSelection(runs, run.text.length)
           : null,
       runs: runs,
     );
@@ -1983,6 +1999,7 @@ final class FlarkEditorController extends ChangeNotifier {
       TextSelection.collapsed(offset: caret),
       null,
     );
+    _retainOptimisticRefreshAnchor(start, deriveFromInput: true);
     _globalSelectionBase = caret;
     _globalSelectionExtent = caret;
     _crossRowSelection = false;
@@ -2801,6 +2818,11 @@ final class FlarkEditorController extends ChangeNotifier {
     final preferredOrdinal = _surfaceOrdinalAt(globalStart);
     final compositionHistoryGroup = _compositionGroupForMutation(composing);
 
+    // Preserve an exact origin while this still carries the pre-edit input
+    // text. A splice crossing a deep viewport start invalidates that page's
+    // byte position, but an origin at or before the splice remains stable.
+    _retainOptimisticRefreshAnchor(globalStart, deriveFromInput: true);
+
     if (nextLength <= _maximumInputCodeUnits) {
       _inputValue =
           fullValue ??
@@ -3044,32 +3066,79 @@ final class FlarkEditorController extends ChangeNotifier {
     _parseTimer?.cancel();
     _parseTimer = null;
     await _editTail;
+    // Closing prevents parser/page completions from scheduling new session
+    // commands. Reclaim session history and anchors at the edit-tail boundary;
+    // the remaining parser/page work uses only the document actor and must be
+    // drained before that document is disposed.
     await _session.dispose();
+    final parserTask = _parserTask;
+    if (parserTask != null) await parserTask;
+    final pageTask = _pageTask;
+    if (pageTask != null) await pageTask;
     await _document.dispose();
     _status = FlarkEditorStatus.disposed;
   }
 
   Future<bool> _loadNextViewportPage() async {
     final current = _viewport;
-    if (current == null || current.continuation == 0) return false;
+    if (current == null || !canPageForward) return false;
+    final generation = _editGeneration;
+    FlarkViewport? queriedViewport;
     try {
-      final next = await _document.queryViewportNext(
-        current,
-        maxRows: _viewportRowsPerPage,
-      );
-      final source = await _readViewportSource(next);
-      final nextIndex = _pageIndex + 1;
-      if (_pageStarts.length > nextIndex) {
-        _pageStarts
-          ..removeRange(nextIndex, _pageStarts.length)
-          ..add(next.coveredBytes.start);
+      late final FlarkViewport next;
+      late final _ViewportPageAnchor nextAnchor;
+      if (current.continuation != 0) {
+        next = await _document.queryViewportNext(
+          current,
+          maxRows: _viewportRowsPerPage,
+        );
+        nextAnchor = _ViewportPageAnchor(
+          byte: next.coveredBytes.start,
+          utf16: next.coveredUtf16.start,
+        );
       } else {
-        _pageStarts.add(next.coveredBytes.start);
+        final queried = await _queryViewportAtAnchor(
+          _ViewportPageAnchor(
+            byte: current.coveredBytes.end,
+            utf16: current.coveredUtf16.end,
+          ),
+        );
+        next = queried.viewport;
+        nextAnchor = queried.anchor;
+        if (nextAnchor.byte <= current.coveredBytes.start ||
+            next.coveredBytes.end <= current.coveredBytes.end) {
+          if (next.continuation != 0) {
+            await _document.releaseViewportContinuation(next);
+          }
+          return false;
+        }
+      }
+      queriedViewport = next;
+      if (generation != _editGeneration) {
+        await _discardViewport(next);
+        return false;
+      }
+      final source = await _readViewportSource(next);
+      if (generation != _editGeneration) {
+        await _discardViewport(next);
+        return false;
+      }
+      final nextIndex = _pageIndex + 1;
+      if (_pageAnchors.length > nextIndex) {
+        _pageAnchors
+          ..removeRange(nextIndex, _pageAnchors.length)
+          ..add(nextAnchor);
+      } else {
+        _pageAnchors.add(nextAnchor);
       }
       _pageIndex = nextIndex;
       _installViewport(next, source, restoreInputWindow: false);
       return true;
     } catch (error) {
+      if (queriedViewport != null) {
+        await _discardViewport(queriedViewport);
+      }
+      if (generation != _editGeneration) return false;
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
       notifyListeners();
@@ -3081,19 +3150,34 @@ final class FlarkEditorController extends ChangeNotifier {
     final current = _viewport;
     final previousIndex = _pageIndex - 1;
     if (current == null || previousIndex < 0) return false;
+    final generation = _editGeneration;
+    FlarkViewport? queriedViewport;
     try {
-      await _document.releaseViewportContinuation(current);
-      final pageStart = _pageStarts[previousIndex];
-      final previous = await _document.queryViewport(
-        startByte: pageStart,
-        endByte: math.min(sourceByteLength, pageStart + _maximumVisibleBytes),
-        maxRows: _viewportRowsPerPage,
-      );
+      if (current.continuation != 0) {
+        await _document.releaseViewportContinuation(current);
+      }
+      if (generation != _editGeneration) return false;
+      final queried = await _queryViewportAtAnchor(_pageAnchors[previousIndex]);
+      final previous = queried.viewport;
+      queriedViewport = previous;
+      if (generation != _editGeneration) {
+        await _discardViewport(previous);
+        return false;
+      }
       final source = await _readViewportSource(previous);
+      if (generation != _editGeneration) {
+        await _discardViewport(previous);
+        return false;
+      }
       _pageIndex = previousIndex;
+      _pageAnchors[previousIndex] = queried.anchor;
       _installViewport(previous, source, restoreInputWindow: false);
       return true;
     } catch (error) {
+      if (queriedViewport != null) {
+        await _discardViewport(queriedViewport);
+      }
+      if (generation != _editGeneration) return false;
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
       notifyListeners();
@@ -3448,6 +3532,7 @@ final class FlarkEditorController extends ChangeNotifier {
     bool recenterAfterOptimisticEdit = false,
     bool restoreSelectionAfterCommit = false,
   }) {
+    _retainOptimisticRefreshAnchor(start, deriveFromInput: false);
     final split = _committedParagraphSplit;
     if (split != null &&
         (start < split.rowEndUtf16 || end > _committedGapEnd(split))) {
@@ -3455,19 +3540,12 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     final structurals = _committedStructuralSurfaces;
     if (structurals.isNotEmpty) {
-      final mapped = mapCommittedPresentationSurfacesThroughLiteralSpliceV1(
-        surfaces: structurals,
-        startUtf16: start,
-        endUtf16: end,
-        replacement: replacement,
-      );
-      if (mapped != null) {
-        _committedStructuralSurfaces = mapped;
-        _projectionContinuity = null;
-      } else {
-        _prepareProjectionContinuity(start, end, replacement);
-        _committedStructuralSurfaces = const [];
-      }
+      // A structural edit receipt proves only its own committed transition.
+      // It does not authorize a later literal splice through that temporary
+      // presentation, and the cached pre-transition envelopes belong to the
+      // prior revision. Fail closed until the parser publishes fresh rows.
+      _committedStructuralSurfaces = const [];
+      _projectionContinuity = null;
     } else {
       _prepareProjectionContinuity(start, end, replacement);
     }
@@ -3678,12 +3756,12 @@ final class FlarkEditorController extends ChangeNotifier {
   bool handleListIndent({required bool outdent}) {
     if (_closed || _status == FlarkEditorStatus.faulted) return false;
     final row = _activeCachedRow();
-    final item = row?.listItem;
-    final editableUtf16 = row?.editableUtf16;
-    if (row == null ||
-        item == null ||
-        !item.simpleContinuation ||
-        editableUtf16 == null) {
+    if (row == null || surfaceRow(row, includeEditingState: false).kind == 0) {
+      return false;
+    }
+    final item = row.listItem;
+    final editableUtf16 = row.editableUtf16;
+    if (item == null || !item.simpleContinuation || editableUtf16 == null) {
       return false;
     }
     // Once Tab belongs to a list item it must not escape into Flutter focus
@@ -3903,6 +3981,14 @@ final class FlarkEditorController extends ChangeNotifier {
     if (transition?.clearPriorGap ?? false) {
       _committedParagraphSplit = null;
     }
+    // The semantic receipt supplies a result-revision byte/UTF-16 pair even
+    // when its structural splice crosses the cached page boundary. Preserve
+    // that authoritative origin before the optimistic cache update can clear
+    // the old viewport; the next query will rewind it to any enclosing row.
+    _optimisticRefreshAnchor = _ViewportPageAnchor(
+      byte: receipt.resultByteStart,
+      utf16: receipt.resultUtf16Start,
+    );
     _applyOptimisticViewportEdit(
       receipt.baseUtf16Start,
       receipt.baseUtf16End,
@@ -3986,22 +4072,9 @@ final class FlarkEditorController extends ChangeNotifier {
     ),
   );
 
-  FlarkSurfaceTextRun _surfaceRunFromCore(FlarkCorePresentationRun run) =>
-      FlarkSurfaceTextRun(
-        text: run.text,
-        sourceUtf16Start: run.sourceUtf16Start,
-        sourceUtf16End: run.sourceUtf16End,
-        sourceExact: run.sourceExact,
-        styles: Set.unmodifiable(run.styles.map(_surfaceStyleFromCore)),
-      );
-
   static FlarkCorePresentationInlineStyle _coreStyleFromSurface(
     FlarkSurfaceInlineStyle style,
   ) => FlarkCorePresentationInlineStyle.values[style.index];
-
-  static FlarkSurfaceInlineStyle _surfaceStyleFromCore(
-    FlarkCorePresentationInlineStyle style,
-  ) => FlarkSurfaceInlineStyle.values[style.index];
 
   bool _installCommittedSemanticInputWindow(
     FlarkCoreEditIntentReceiptV1 receipt,
@@ -4288,50 +4361,18 @@ final class FlarkEditorController extends ChangeNotifier {
   void _prepareProjectionContinuity(int start, int end, String replacement) {
     final current = _projectionContinuity;
     if (current != null) {
-      final receipt = current.receipt?.continueWith(
-        startUtf16: start,
-        endUtf16: end,
-        replacement: replacement,
-      );
-      if (receipt != null) {
-        final presentation = _spliceContinuityPresentation(
-          current.presentation,
-          receipt.authorizedContentUtf16,
-          start,
-          end,
-          replacement,
-        );
-        _projectionContinuity = presentation == null
-            ? null
-            : _ProjectionContinuitySurface.authorized(
-                receipt: receipt,
-                presentation: presentation,
-              );
-        return;
-      }
-      _projectionContinuity = _continueProvisionalProjection(
-        current,
-        start,
-        end,
-        replacement,
-      );
+      // Envelopes prove one exact transaction. A second input before fresh
+      // certification fails closed to exact current source.
+      _projectionContinuity = null;
       return;
     }
-    // A committed structural surface is already mapped to the current
-    // revision by its authoritative receipt. It may therefore seed the next
-    // conservative literal continuation even though the older viewport rows
-    // still have an optimistic splice in front of them.
-    if (_optimisticViewportEdits.isNotEmpty &&
-        _committedStructuralSurfaces.isEmpty) {
+    // Cached envelopes predate any optimistic edit. Only a fresh parser
+    // publication can authorize another literal transaction.
+    if (_optimisticViewportEdits.isNotEmpty) {
       return;
     }
     final row = _activeCachedRow();
-    final facts =
-        row?.inlineFacts ??
-        (row?.projectionSegments != null ? const <FlarkInlineFact>[] : null);
-    if (row == null || facts == null) {
-      return;
-    }
+    if (row == null) return;
     final activation = _mapViewportRange(_activationRange(row));
     if (!_rowSemanticsCurrent(activation)) {
       return;
@@ -4339,51 +4380,17 @@ final class FlarkEditorController extends ChangeNotifier {
     final editable = _mapViewportRange(
       row.editableUtf16 ?? _activationRange(row),
     );
-    final inlineReceipt = facts.isEmpty
-        ? null
-        : authorizeInlineProjectionContinuity(
-            revision: revision,
-            facts: facts,
-            startUtf16: start,
-            endUtf16: end,
-            replacement: replacement,
-            table: row.table,
-          );
-    final tableReceipt = inlineReceipt != null || row.table == null
-        ? null
-        : authorizeTableCellProjectionContinuity(
-            revision: revision,
-            table: row.table!,
-            tableUtf16: activation,
-            tableText: _sliceVisibleUtf16(activation.start, activation.end),
-            inlineFacts: facts,
-            startUtf16: start,
-            endUtf16: end,
-            replacement: replacement,
-          );
-    final receipt =
-        inlineReceipt ??
-        tableReceipt ??
-        (row.table == null
-            ? authorizeRowProjectionContinuity(
-                revision: revision,
-                policy: row.continuityPolicy,
-                editableUtf16: editable,
-                editableText: _sliceVisibleUtf16(editable.start, editable.end),
-                inlineFacts: facts,
-                startUtf16: start,
-                endUtf16: end,
-                replacement: replacement,
-              )
-            : null);
+    final receipt = authorizeRowProjectionContinuity(
+      revision: revision,
+      envelopes: row.literalSafeEnvelopes,
+      authorizedContentUtf16: editable,
+      startUtf16: start,
+      endUtf16: end,
+      replacement: replacement,
+    );
     final base = surfaceRow(row, includeEditingState: false);
     if (receipt == null) {
-      _projectionContinuity = _seedProvisionalProjection(
-        base,
-        start,
-        end,
-        replacement,
-      );
+      _projectionContinuity = null;
       return;
     }
     final presentation = _spliceContinuityPresentation(
@@ -4401,99 +4408,6 @@ final class FlarkEditorController extends ChangeNotifier {
       presentation: presentation,
     );
   }
-
-  _ProjectionContinuitySurface? _seedProvisionalProjection(
-    FlarkSurfaceRow base,
-    int start,
-    int end,
-    String replacement,
-  ) {
-    if (!_boundedSingleLinePresentationEdit(replacement)) return null;
-    final target = _singleExactRunOwning(base, start, end);
-    if (target == null) return null;
-    final delta = replacement.length - (end - start);
-    final content = FlarkSourceRange(
-      target.sourceUtf16Start,
-      target.sourceUtf16End + delta,
-    );
-    final presentation = _spliceContinuityPresentation(
-      base,
-      content,
-      start,
-      end,
-      replacement,
-    );
-    if (presentation == null) return null;
-    return _ProjectionContinuitySurface.provisional(
-      provisionalResultRevision: revision + 1,
-      provisionalContentUtf16: content,
-      presentation: presentation,
-    );
-  }
-
-  _ProjectionContinuitySurface? _continueProvisionalProjection(
-    _ProjectionContinuitySurface current,
-    int start,
-    int end,
-    String replacement,
-  ) {
-    if (!_boundedSingleLinePresentationEdit(replacement)) return null;
-    final target = _singleExactRunOwning(
-      current.presentation,
-      start,
-      end,
-      within: current.contentUtf16,
-    );
-    if (target == null) return null;
-    final delta = replacement.length - (end - start);
-    final content = FlarkSourceRange(
-      current.contentUtf16.start,
-      current.contentUtf16.end + delta,
-    );
-    final presentation = _spliceContinuityPresentation(
-      current.presentation,
-      content,
-      start,
-      end,
-      replacement,
-    );
-    if (presentation == null) return null;
-    return _ProjectionContinuitySurface.provisional(
-      provisionalResultRevision: current.resultRevision + 1,
-      provisionalContentUtf16: content,
-      presentation: presentation,
-    );
-  }
-
-  FlarkSurfaceTextRun? _singleExactRunOwning(
-    FlarkSurfaceRow presentation,
-    int start,
-    int end, {
-    FlarkSourceRange? within,
-  }) {
-    FlarkSurfaceTextRun? target;
-    for (final run in presentation.runs) {
-      if (!run.sourceExact ||
-          (within != null &&
-              (run.sourceUtf16Start < within.start ||
-                  run.sourceUtf16End > within.end))) {
-        continue;
-      }
-      final owns = start == end
-          ? run.sourceUtf16Start <= start && start <= run.sourceUtf16End
-          : run.sourceUtf16Start <= start && end <= run.sourceUtf16End;
-      if (!owns) continue;
-      if (target != null) return null;
-      target = run;
-    }
-    return target;
-  }
-
-  bool _boundedSingleLinePresentationEdit(String replacement) =>
-      replacement.length <= _maximumSmallEditBytes &&
-      !replacement.contains('\n') &&
-      !replacement.contains('\r') &&
-      !replacement.contains('\u0000');
 
   FlarkSurfaceRow? _spliceContinuityPresentation(
     FlarkSurfaceRow presentation,
@@ -4528,7 +4442,56 @@ final class FlarkEditorController extends ChangeNotifier {
         break;
       }
     }
-    if (target < 0) return null;
+    if (target < 0) {
+      if (start != end ||
+          start < baseAuthorizedContent.start ||
+          start > baseAuthorizedContent.end) {
+        return null;
+      }
+      var insertionIndex = presentation.runs.length;
+      for (var index = 0; index < presentation.runs.length; index += 1) {
+        if (presentation.runs[index].sourceUtf16Start >= start) {
+          insertionIndex = index;
+          break;
+        }
+      }
+      final inserted = <FlarkSurfaceTextRun>[
+        ...presentation.runs.take(insertionIndex),
+        FlarkSurfaceTextRun(
+          text: replacement,
+          sourceUtf16Start: start,
+          sourceUtf16End: start + replacement.length,
+          sourceExact: true,
+          styles: const {},
+        ),
+        ...presentation.runs
+            .skip(insertionIndex)
+            .map(
+              (run) => FlarkSurfaceTextRun(
+                text: run.text,
+                sourceUtf16Start: run.sourceUtf16Start + delta,
+                sourceUtf16End: run.sourceUtf16End + delta,
+                sourceExact: run.sourceExact,
+                styles: run.styles,
+              ),
+            ),
+      ];
+      final projected = List<FlarkSurfaceTextRun>.unmodifiable(inserted);
+      return FlarkSurfaceRow(
+        leadingText: presentation.leadingText,
+        text: projected.map((run) => run.text).join(),
+        globalUtf16Start: presentation.globalUtf16Start,
+        kind: presentation.kind,
+        headingLevel: presentation.headingLevel,
+        blockQuoteDepth: presentation.blockQuoteDepth,
+        codeBlock: presentation.codeBlock,
+        thematicBreak: presentation.thematicBreak,
+        ordinal: presentation.ordinal,
+        active: false,
+        selection: null,
+        runs: projected,
+      );
+    }
 
     final runs = <FlarkSurfaceTextRun>[];
     for (var index = 0; index < presentation.runs.length; index += 1) {
@@ -4865,12 +4828,24 @@ final class FlarkEditorController extends ChangeNotifier {
         _status = FlarkEditorStatus.parsing;
         notifyListeners();
       }
+      parseLoop:
       while (!_closed && !_session.compositionActive) {
+        // An older idle parser task can survive into a newer edit generation.
+        // Wait for that generation's native edit tail before pumping/querying;
+        // otherwise it can publish a shorter pre-commit source window beside
+        // the optimistic input for the same generation.
+        final generation = _editGeneration;
+        final editBarrier = _editTail;
+        await editBarrier;
+        if (_closed || _session.compositionActive) return;
+        if (generation != _editGeneration) continue;
         while (!_document.isReady && !_closed) {
           await _document.pump(workUnits: 512);
+          if (_session.compositionActive) return;
+          if (generation != _editGeneration) continue parseLoop;
         }
         if (_closed || _session.compositionActive) return;
-        final generation = _editGeneration;
+        if (generation != _editGeneration) continue;
         await _refreshViewport(
           restoreInputWindow: true,
           expectedEditGeneration: generation,
@@ -4893,46 +4868,387 @@ final class FlarkEditorController extends ChangeNotifier {
     }
   }
 
+  Future<FlarkViewport> _queryViewportPageAt(int startByte) =>
+      _document.queryViewport(
+        startByte: startByte,
+        endByte: math.min(sourceByteLength, startByte + _maximumVisibleBytes),
+        maxRows: _viewportRowsPerPage,
+      );
+
+  Future<void> _discardViewport(FlarkViewport viewport) async {
+    if (viewport.continuation == 0) return;
+    try {
+      await _document.releaseViewportContinuation(viewport);
+    } catch (_) {
+      // Cleanup must not turn a superseded query into an editor fault.
+    }
+  }
+
+  Future<_ViewportQueryPage> _queryViewportAtAnchor(
+    _ViewportPageAnchor requested,
+  ) async {
+    var viewport = await _queryViewportPageAt(requested.byte);
+    var anchor = _ViewportPageAnchor(
+      byte: viewport.coveredBytes.start,
+      utf16: viewport.coveredUtf16.start,
+    );
+    FlarkViewportRow? enclosing;
+    for (final row in viewport.rows) {
+      if (row.sourceBytes.start >= anchor.byte) continue;
+      if (enclosing == null ||
+          row.sourceBytes.start < enclosing.sourceBytes.start) {
+        enclosing = row;
+      }
+    }
+    if (enclosing != null) {
+      if (viewport.continuation != 0) {
+        await _document.releaseViewportContinuation(viewport);
+      }
+      anchor = _ViewportPageAnchor(
+        byte: enclosing.sourceBytes.start,
+        utf16: enclosing.sourceUtf16.start,
+      );
+      viewport = await _queryViewportPageAt(anchor.byte);
+      anchor = _ViewportPageAnchor(
+        byte: viewport.coveredBytes.start,
+        utf16: viewport.coveredUtf16.start,
+      );
+    }
+    return _ViewportQueryPage(viewport: viewport, anchor: anchor);
+  }
+
+  bool _rowsFitViewport(FlarkViewport viewport) => viewport.rows.every(
+    (row) =>
+        viewport.coveredBytes.start <= row.sourceBytes.start &&
+        row.sourceBytes.end <= viewport.coveredBytes.end &&
+        viewport.coveredUtf16.start <= row.sourceUtf16.start &&
+        row.sourceUtf16.end <= viewport.coveredUtf16.end,
+  );
+
+  _ViewportPageAnchor _knownRefreshAnchor(int editStart) {
+    var candidate = _ViewportPageAnchor.zero;
+    for (final anchor in _pageAnchors) {
+      if (anchor.utf16 <= editStart && anchor.utf16 >= candidate.utf16) {
+        candidate = anchor;
+      }
+    }
+    final viewport = _viewport;
+    if (viewport != null &&
+        viewport.coveredUtf16.start <= editStart &&
+        viewport.coveredUtf16.start >= candidate.utf16) {
+      candidate = _ViewportPageAnchor(
+        byte: viewport.coveredBytes.start,
+        utf16: viewport.coveredUtf16.start,
+      );
+    }
+    return candidate;
+  }
+
+  void _retainOptimisticRefreshAnchor(
+    int editStart, {
+    required bool deriveFromInput,
+  }) {
+    final retained = _optimisticRefreshAnchor;
+    if (retained != null) {
+      if (retained.utf16 <= editStart) return;
+      _optimisticRefreshAnchor = _knownRefreshAnchor(editStart);
+      return;
+    }
+
+    var candidate = _knownRefreshAnchor(editStart);
+    final viewport = _viewport;
+    final inputEnd = _inputGlobalUtf16Start + _inputValue.text.length;
+    if (deriveFromInput &&
+        viewport != null &&
+        editStart < viewport.coveredUtf16.start &&
+        _inputGlobalUtf16Start <= editStart &&
+        viewport.coveredUtf16.start <= inputEnd) {
+      final localEdit = editStart - _inputGlobalUtf16Start;
+      final localOrigin = viewport.coveredUtf16.start - _inputGlobalUtf16Start;
+      var localAnchor = localEdit == 0
+          ? 0
+          : _inputValue.text.lastIndexOf('\n', localEdit - 1) + 1;
+      if (localAnchor == localEdit && localAnchor > 0) {
+        localAnchor = localAnchor == 1
+            ? 0
+            : _inputValue.text.lastIndexOf('\n', localAnchor - 2) + 1;
+      }
+      if (localAnchor <= localOrigin) {
+        final byteDistance = utf8
+            .encode(_inputValue.text.substring(localAnchor, localOrigin))
+            .length;
+        final derivedByte = viewport.coveredBytes.start - byteDistance;
+        final derivedUtf16 = _inputGlobalUtf16Start + localAnchor;
+        if (derivedByte >= 0 && derivedUtf16 >= candidate.utf16) {
+          candidate = _ViewportPageAnchor(
+            byte: derivedByte,
+            utf16: derivedUtf16,
+          );
+        }
+      }
+    }
+    _optimisticRefreshAnchor = candidate;
+  }
+
+  ({int startByte, int startUtf16, int caretByte})? _activeViewportByteWindow(
+    _ViewportPageAnchor origin,
+  ) {
+    final localOrigin = origin.utf16 - _visibleUtf16Start;
+    final localCaret = _globalSelectionExtent - _visibleUtf16Start;
+    if (localOrigin < 0 ||
+        localOrigin > _visibleSource.length ||
+        localCaret < 0 ||
+        localCaret > _visibleSource.length) {
+      return null;
+    }
+
+    var lineStart = localCaret == 0
+        ? 0
+        : _visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
+    // A caret immediately after a newline owns the preceding line boundary.
+    // Include that line so a blank active line does not retarget to the next
+    // semantic row merely because the direct query starts at the caret.
+    if (lineStart == localCaret && lineStart > 0) {
+      lineStart = lineStart == 1
+          ? 0
+          : _visibleSource.lastIndexOf('\n', lineStart - 2) + 1;
+    }
+    final startByte = lineStart >= localOrigin
+        ? origin.byte +
+              utf8
+                  .encode(_visibleSource.substring(localOrigin, lineStart))
+                  .length
+        : origin.byte -
+              utf8
+                  .encode(_visibleSource.substring(lineStart, localOrigin))
+                  .length;
+    final caretByte =
+        startByte +
+        utf8.encode(_visibleSource.substring(lineStart, localCaret)).length;
+    if (startByte < 0 ||
+        caretByte < startByte ||
+        caretByte > sourceByteLength ||
+        caretByte - startByte > _maximumVisibleBytes) {
+      return null;
+    }
+    return (
+      startByte: startByte,
+      startUtf16: _visibleUtf16Start + lineStart,
+      caretByte: caretByte,
+    );
+  }
+
+  List<_ViewportPageAnchor> _pageHistoryEndingAt(
+    _ViewportPageAnchor anchor,
+    Iterable<_ViewportPageAnchor> history,
+  ) {
+    if (anchor.byte == 0) return <_ViewportPageAnchor>[anchor];
+    final result = <_ViewportPageAnchor>[_ViewportPageAnchor.zero];
+    for (final candidate in history) {
+      if (candidate.byte <= 0 ||
+          candidate.byte >= anchor.byte ||
+          candidate.utf16 > anchor.utf16) {
+        continue;
+      }
+      final last = result.last;
+      if (candidate.byte > last.byte && candidate.utf16 >= last.utf16) {
+        result.add(candidate);
+      }
+    }
+    if (result.last.byte != anchor.byte || result.last.utf16 != anchor.utf16) {
+      result.add(anchor);
+    }
+    return result;
+  }
+
   Future<void> _refreshViewport({
     required bool restoreInputWindow,
     int? expectedEditGeneration,
     bool ensureActiveInputVisible = false,
   }) async {
-    final previous = _viewport;
-    if (previous != null && previous.continuation != 0) {
-      await _document.releaseViewportContinuation(previous);
-    }
-    // The visible cache is bounded by bytes as well as rows: one giant
-    // physical line would otherwise make a 32-row page exceed the 16 KiB
-    // window. Until giant-line fragmentation lands, the page request itself
-    // enforces the byte bound in every parse state.
-    final requestedEnd = math.min(sourceByteLength, _maximumVisibleBytes);
-    final viewport = await _document.queryViewport(
-      startByte: 0,
-      endByte: requestedEnd,
-      maxRows: _viewportRowsPerPage,
-    );
     if (expectedEditGeneration != null &&
         expectedEditGeneration != _editGeneration) {
-      await _document.releaseViewportContinuation(viewport);
       return;
     }
-    final source = await _readViewportSource(viewport);
-    if (expectedEditGeneration != null &&
-        expectedEditGeneration != _editGeneration) {
-      await _document.releaseViewportContinuation(viewport);
-      return;
+    FlarkViewport? pendingViewport;
+    try {
+      final previous = _viewport;
+      _ViewportPageAnchor? activeOrigin;
+      if (ensureActiveInputVisible) {
+        final retained = _optimisticRefreshAnchor;
+        if (retained != null && retained.utf16 <= _globalSelectionExtent) {
+          activeOrigin = retained;
+        } else if (previous != null &&
+            previous.coveredUtf16.start == _visibleUtf16Start &&
+            _optimisticViewportEdits.every(
+              (edit) => edit.start >= previous.coveredUtf16.start,
+            )) {
+          activeOrigin = _ViewportPageAnchor(
+            byte: previous.coveredBytes.start,
+            utf16: previous.coveredUtf16.start,
+          );
+        }
+      }
+      final activeByteWindow = activeOrigin == null
+          ? null
+          : _activeViewportByteWindow(activeOrigin);
+      var requestedAnchor = _ViewportPageAnchor.zero;
+      var requestedPageAnchors = <_ViewportPageAnchor>[
+        _ViewportPageAnchor.zero,
+      ];
+      if (ensureActiveInputVisible &&
+          previous != null &&
+          _pageIndex > 0 &&
+          _pageIndex < _pageAnchors.length &&
+          _globalSelectionExtent >= _visibleUtf16Start &&
+          previous.coveredUtf16.start == _visibleUtf16Start &&
+          previous.coveredBytes.start == _pageAnchors[_pageIndex].byte &&
+          previous.coveredUtf16.start == _pageAnchors[_pageIndex].utf16 &&
+          _optimisticViewportEdits.every(
+            (edit) => edit.start >= previous.coveredUtf16.start,
+          ) &&
+          previous.coveredBytes.start <= sourceByteLength) {
+        requestedAnchor = _pageAnchors[_pageIndex];
+        requestedPageAnchors = _pageAnchors
+            .take(_pageIndex + 1)
+            .toList(growable: true);
+      }
+      if (previous != null && previous.continuation != 0) {
+        await _document.releaseViewportContinuation(previous);
+      }
+      // The visible cache is bounded by bytes as well as rows: one giant
+      // physical line would otherwise make a 32-row page exceed the 16 KiB
+      // window. Until giant-line fragmentation lands, the page request itself
+      // enforces the byte bound in every parse state.
+      var queried = await _queryViewportAtAnchor(requestedAnchor);
+      var viewport = queried.viewport;
+      pendingViewport = viewport;
+      requestedAnchor = queried.anchor;
+      requestedPageAnchors = _pageHistoryEndingAt(
+        requestedAnchor,
+        requestedPageAnchors,
+      );
+      var requestedPageIndex = requestedPageAnchors.length - 1;
+      if (expectedEditGeneration != null &&
+          expectedEditGeneration != _editGeneration) {
+        await _discardViewport(viewport);
+        return;
+      }
+      var pageHops = 0;
+      while (ensureActiveInputVisible &&
+          _globalSelectionExtent > viewport.coveredUtf16.end &&
+          pageHops < _maximumActiveViewportPageHops) {
+        late final _ViewportPageAnchor nextAnchor;
+        if (viewport.continuation != 0) {
+          viewport = await _document.queryViewportNext(
+            viewport,
+            maxRows: _viewportRowsPerPage,
+          );
+          nextAnchor = _ViewportPageAnchor(
+            byte: viewport.coveredBytes.start,
+            utf16: viewport.coveredUtf16.start,
+          );
+        } else if (viewport.coveredBytes.end < sourceByteLength) {
+          final prior = viewport;
+          queried = await _queryViewportAtAnchor(
+            _ViewportPageAnchor(
+              byte: prior.coveredBytes.end,
+              utf16: prior.coveredUtf16.end,
+            ),
+          );
+          viewport = queried.viewport;
+          nextAnchor = queried.anchor;
+          if (nextAnchor.byte <= prior.coveredBytes.start ||
+              viewport.coveredBytes.end <= prior.coveredBytes.end) {
+            await _discardViewport(viewport);
+            viewport = prior;
+            break;
+          }
+        } else {
+          break;
+        }
+        pendingViewport = viewport;
+        requestedAnchor = nextAnchor;
+        requestedPageAnchors = _pageHistoryEndingAt(
+          nextAnchor,
+          requestedPageAnchors,
+        );
+        requestedPageIndex = requestedPageAnchors.length - 1;
+        pageHops += 1;
+        if (expectedEditGeneration != null &&
+            expectedEditGeneration != _editGeneration) {
+          await _discardViewport(viewport);
+          return;
+        }
+      }
+      if (ensureActiveInputVisible &&
+          _globalSelectionExtent > viewport.coveredUtf16.end &&
+          viewport.continuation == 0 &&
+          activeByteWindow != null &&
+          activeByteWindow.startByte > requestedAnchor.byte) {
+        final fallback = viewport;
+        queried = await _queryViewportAtAnchor(
+          _ViewportPageAnchor(
+            byte: activeByteWindow.startByte,
+            utf16: activeByteWindow.startUtf16,
+          ),
+        );
+        final direct = queried.viewport;
+        pendingViewport = direct;
+        if (expectedEditGeneration != null &&
+            expectedEditGeneration != _editGeneration) {
+          await _discardViewport(direct);
+          return;
+        }
+        final directOwnsCaret =
+            direct.coveredUtf16.start <= _globalSelectionExtent &&
+            _globalSelectionExtent <= direct.coveredUtf16.end;
+        if (_rowsFitViewport(direct) &&
+            directOwnsCaret &&
+            activeByteWindow.caretByte - queried.anchor.byte <=
+                _maximumVisibleBytes) {
+          viewport = direct;
+          requestedAnchor = queried.anchor;
+          requestedPageAnchors = _pageHistoryEndingAt(
+            requestedAnchor,
+            requestedPageAnchors,
+          );
+          requestedPageIndex = requestedPageAnchors.length - 1;
+        } else {
+          if (direct.continuation != 0) {
+            await _document.releaseViewportContinuation(direct);
+          }
+          viewport = fallback;
+          pendingViewport = fallback;
+        }
+      }
+      final source = await _readViewportSource(viewport);
+      if (expectedEditGeneration != null &&
+          expectedEditGeneration != _editGeneration) {
+        await _discardViewport(viewport);
+        return;
+      }
+      _pageAnchors
+        ..clear()
+        ..addAll(requestedPageAnchors);
+      _pageIndex = requestedPageIndex;
+      _installViewport(
+        viewport,
+        source,
+        restoreInputWindow: restoreInputWindow,
+        ensureActiveInputVisible: ensureActiveInputVisible,
+      );
+      pendingViewport = null;
+    } catch (error) {
+      if (pendingViewport != null) {
+        await _discardViewport(pendingViewport);
+      }
+      if (expectedEditGeneration != null &&
+          expectedEditGeneration != _editGeneration) {
+        return;
+      }
+      rethrow;
     }
-    _pageStarts
-      ..clear()
-      ..add(0);
-    _pageIndex = 0;
-    _installViewport(
-      viewport,
-      source,
-      restoreInputWindow: restoreInputWindow,
-      ensureActiveInputVisible: ensureActiveInputVisible,
-    );
   }
 
   Future<String> _readViewportSource(FlarkViewport viewport) async {
@@ -4952,18 +5268,31 @@ final class FlarkEditorController extends ChangeNotifier {
     bool ensureActiveInputVisible = false,
   }) {
     _viewport = viewport;
-    final hasCommittedSurface =
-        _projectionContinuity != null ||
-        _committedParagraphSplit != null ||
-        _committedStructuralSurfaces.isNotEmpty ||
-        _committedTaskChecks.isNotEmpty;
+    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    final cachedRowsFitVisibleSource = _cachedRows.every((row) {
+      final range = _mapViewportRange(row.sourceUtf16);
+      return _visibleUtf16Start <= range.start && range.end <= visibleEnd;
+    });
+    final viewportMatchesVisibleSource =
+        viewport.coveredUtf16.start == _visibleUtf16Start &&
+        viewport.coveredUtf16.end == visibleEnd &&
+        source == _visibleSource;
     final retainsExistingSurface =
-        !viewport.isCertified && hasCommittedSurface && _cachedRows.isNotEmpty;
+        !viewport.isCertified &&
+        _cachedRows.isNotEmpty &&
+        cachedRowsFitVisibleSource &&
+        viewportMatchesVisibleSource;
+    final sourceFitsViewport =
+        source.length == viewport.coveredUtf16.length &&
+        utf8.encode(source).length == viewport.coveredBytes.length;
     final installsFreshRows =
-        viewport.rows.isNotEmpty && !retainsExistingSurface;
+        viewport.rows.isNotEmpty &&
+        sourceFitsViewport &&
+        _rowsFitViewport(viewport) &&
+        !retainsExistingSurface;
     if (installsFreshRows) {
       _cachedRows = viewport.rows;
-    } else if (viewport.isCertified) {
+    } else if (!retainsExistingSurface) {
       _cachedRows = const [];
     }
     // Rows and their source cache are one publication. A pending viewport can
@@ -4979,7 +5308,22 @@ final class FlarkEditorController extends ChangeNotifier {
     _certificationRevisionCurrent = viewport.certificationRanges.isNotEmpty;
     if (installsFreshRows) {
       _optimisticViewportEdits.clear();
+      if (viewport.coveredUtf16.start <= _globalSelectionExtent &&
+          _globalSelectionExtent <= viewport.coveredUtf16.end) {
+        _optimisticRefreshAnchor = null;
+      }
       _committedTaskChecks.clear();
+    } else if (!retainsExistingSurface &&
+        sourceFitsViewport &&
+        viewport.coveredUtf16.start <= _globalSelectionExtent &&
+        _globalSelectionExtent <= viewport.coveredUtf16.end) {
+      // A pending-neutral page still carries exact current source. Preserve
+      // its paired byte/UTF-16 origin so the Ready refresh can requery this
+      // deep window even after replacing the earlier visible cache.
+      _optimisticRefreshAnchor = _ViewportPageAnchor(
+        byte: viewport.coveredBytes.start,
+        utf16: viewport.coveredUtf16.start,
+      );
     }
     _semanticViewportCurrent = viewport.isCertified && installsFreshRows;
     // A streamed open's head page is typically mixed — certified head rows
@@ -5253,9 +5597,9 @@ final class FlarkEditorController extends ChangeNotifier {
       _visibleUtf16Start += window.start;
       _viewport = null;
       _cachedRows = const [];
-      _pageStarts
+      _pageAnchors
         ..clear()
-        ..add(0);
+        ..add(_ViewportPageAnchor.zero);
       _pageIndex = 0;
       _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
       _optimisticViewportEdits.clear();
@@ -5491,14 +5835,14 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _rowSemanticsCurrent(FlarkSourceRange mappedSource) {
     if (_semanticViewportCurrent) return true;
-    // The committed splice proves that prior rows remain unchanged while the
-    // newly introduced gap is painted from exact source as a neutral island.
-    if (_committedParagraphSplit != null) return true;
+    // A gap receipt proves only the source splice. Unaffected cached rows are
+    // retained by _optimisticEditsLeaveRangeUnchanged; the touched row must
+    // stay exact until Rust publishes result-revision inline facts.
     // A transaction-bound continuity receipt proves that the conservative
     // source edit cannot alter presentation outside its authorized active
     // content. Keep unchanged cached rows semantic as well; demoting the whole
     // viewport for one safe keystroke produces a visible page-wide flash.
-    if (_projectionContinuity?.semanticsAuthorized ?? false) return true;
+    if (_projectionContinuity != null) return true;
     if (_committedStructuralSurfaces.isNotEmpty) return true;
     if (_committedTaskChecks.isNotEmpty) return true;
     if (!_certificationRevisionCurrent) return false;

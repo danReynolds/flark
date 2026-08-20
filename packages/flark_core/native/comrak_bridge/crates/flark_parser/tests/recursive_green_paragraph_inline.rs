@@ -251,7 +251,9 @@ fn paragraph_near_twenty_thousand_block_eof_has_prefix_independent_query_work() 
         source.push('\n');
     }
     let target_start = source.len();
-    for index in 0..160 {
+    // Keep the selected paragraph large enough to cross several compact event
+    // pages after the variable-width Green encoding raised page density.
+    for index in 0..512 {
         writeln!(&mut source, "tail line {index}").expect("String writes are infallible");
     }
     let final_line_start = source.len();
@@ -280,7 +282,8 @@ fn paragraph_near_twenty_thousand_block_eof_has_prefix_independent_query_work() 
     );
     assert!(
         fence.receipt().storage_pages_visited() >= 4,
-        "the witness must cross event pages and exercise backward owner recovery"
+        "the witness must cross event pages and exercise backward owner recovery; visited {}",
+        fence.receipt().storage_pages_visited(),
     );
     assert!(fence.receipt().storage_pages_visited() <= 12);
     assert!(fence.receipt().events_scanned() <= 2048);

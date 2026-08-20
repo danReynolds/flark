@@ -8,6 +8,32 @@ void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
   test(
+    'malformed host UTF-16 is rejected before an edit mutates the document',
+    () async {
+      final document = await FlarkCoreDocument.open(
+        'alpha\n',
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      final malformed = String.fromCharCode(0xd800);
+
+      await expectLater(
+        document.applyEditUtf16(0, 0, malformed),
+        throwsA(
+          isA<FlarkCoreNativeException>()
+              .having((error) => error.status, 'status', 0x020b)
+              .having((error) => error.detail, 'invalid UTF-16 offset', 0),
+        ),
+      );
+      expect(document.revision, 1);
+      expect(await document.readSource(), 'alpha\n');
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'native history tokens support multi-level undo and redo',
     () async {
       const source = 'alpha beta 🌍\n';
@@ -189,6 +215,186 @@ void main() {
   );
 
   test(
+    'nonzero multibyte viewport rows use global UTF-16 coordinates',
+    () async {
+      const initial = 'Head.\n\nTrailing.\n';
+      final document = await FlarkCoreDocument.open(
+        initial,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final inserted = StringBuffer();
+      for (var chunk = 0; chunk < 5; chunk += 1) {
+        final paragraphs = List<String>.generate(
+          9,
+          (index) => '${'😀' * 100} $chunk-$index',
+        ).join('\n\n');
+        final structuredTail = chunk == 4
+            ? 'Active.\n\n'
+                  'alpha123\n\n'
+                  '> **bold** and `code`\n'
+                  '> tail\n\n'
+                  '- [x] task with *emphasis*\n\n'
+                  '| α | β |\n'
+                  '| :--- | ---: |\n'
+                  '| *x* | [y](https://example.test) |\n'
+            : '';
+        final addition = '$paragraphs\n\n$structuredTail';
+        await document.applyEditUtf16(
+          5 + inserted.length,
+          5 + inserted.length,
+          addition,
+        );
+        inserted.write(addition);
+      }
+      await document.pumpUntilReady();
+
+      final source = 'Head.${inserted.toString()}\n\nTrailing.\n';
+      final activeUtf16 = source.indexOf('Active.');
+      final sourceBytes = utf8.encode(source);
+      final activeByte = utf8.encode(source.substring(0, activeUtf16)).length;
+      FlarkSourceRange utf16RangeForBytes(FlarkSourceRange bytes) =>
+          FlarkSourceRange(
+            utf8.decode(sourceBytes.sublist(0, bytes.start)).length,
+            utf8.decode(sourceBytes.sublist(0, bytes.end)).length,
+          );
+      void expectGlobalRange(
+        FlarkSourceRange bytes,
+        FlarkSourceRange utf16,
+        String label,
+      ) {
+        final expected = utf16RangeForBytes(bytes);
+        expect(
+          (utf16.start, utf16.end),
+          (expected.start, expected.end),
+          reason: '$label must use document-global UTF-16 coordinates',
+        );
+      }
+
+      const unsnappedEnd = 16384;
+      expect(
+        sourceBytes[unsnappedEnd] & 0xc0,
+        0x80,
+        reason: 'fixture byte cap must split a multibyte scalar',
+      );
+      var alignedEnd = unsnappedEnd;
+      while (sourceBytes[alignedEnd] & 0xc0 == 0x80) {
+        alignedEnd -= 1;
+      }
+      final boundedViewport = await document.queryViewport(
+        endByte: unsnappedEnd,
+        maxRows: 32,
+      );
+      expect(
+        (
+          boundedViewport.requestedBytes.start,
+          boundedViewport.requestedBytes.end,
+        ),
+        (0, alignedEnd),
+      );
+      expectGlobalRange(
+        boundedViewport.coveredBytes,
+        boundedViewport.coveredUtf16,
+        'scalar-aligned covered range',
+      );
+
+      final viewport = await document.queryViewport(
+        startByte: activeByte,
+        maxRows: 32,
+      );
+      expect(viewport.isCertified, isTrue);
+      expect(viewport.coveredUtf16.start, activeUtf16);
+      expectGlobalRange(
+        viewport.coveredBytes,
+        viewport.coveredUtf16,
+        'covered range',
+      );
+
+      var sawInlineFact = false;
+      var sawLiteralSafeEnvelope = false;
+      var sawListPrefix = false;
+      var sawQuotePrefix = false;
+      var sawProjectionSegment = false;
+      var sawTableCell = false;
+      for (final row in viewport.rows) {
+        expectGlobalRange(row.sourceBytes, row.sourceUtf16, 'row source');
+        if (row.editableBytes case final editableBytes?) {
+          expectGlobalRange(
+            editableBytes,
+            row.editableUtf16!,
+            'row editable range',
+          );
+        } else {
+          expect(row.editableUtf16, isNull);
+        }
+        if (row.listItem case final listItem?) {
+          expectGlobalRange(
+            listItem.prefixBytes,
+            listItem.prefixUtf16,
+            'list prefix',
+          );
+          sawListPrefix = true;
+        }
+        if (row.blockQuote case final blockQuote?) {
+          expectGlobalRange(
+            blockQuote.prefixBytes,
+            blockQuote.prefixUtf16,
+            'blockquote prefix',
+          );
+          sawQuotePrefix = true;
+        }
+        for (final fact in row.inlineFacts ?? const <FlarkInlineFact>[]) {
+          expectGlobalRange(fact.sourceBytes, fact.sourceUtf16, 'inline fact');
+          expectGlobalRange(
+            fact.contentBytes,
+            fact.contentUtf16,
+            'inline fact content',
+          );
+          sawInlineFact = true;
+        }
+        for (final envelope in row.literalSafeEnvelopes) {
+          expectGlobalRange(
+            envelope.sourceBytes,
+            envelope.sourceUtf16,
+            'literal-safe envelope',
+          );
+          sawLiteralSafeEnvelope = true;
+        }
+        for (final segment
+            in row.projectionSegments ?? const <FlarkProjectionSegment>[]) {
+          expectGlobalRange(
+            segment.sourceBytes,
+            segment.sourceUtf16,
+            'projection segment',
+          );
+          sawProjectionSegment = true;
+        }
+        for (final tableRow
+            in row.table?.rows ?? const <List<FlarkTableCellPresentation>>[]) {
+          for (final cell in tableRow) {
+            expectGlobalRange(cell.sourceBytes, cell.sourceUtf16, 'table cell');
+            expectGlobalRange(
+              cell.contentBytes,
+              cell.contentUtf16,
+              'table cell content',
+            );
+            sawTableCell = true;
+          }
+        }
+      }
+      expect(sawInlineFact, isTrue);
+      expect(sawLiteralSafeEnvelope, isTrue);
+      expect(sawListPrefix, isTrue);
+      expect(sawQuotePrefix, isTrue);
+      expect(sawProjectionSegment, isTrue);
+      expect(sawTableCell, isTrue);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'projected multiline quote segments survive the native worker boundary',
     () async {
       const source = '> first\n> second\n';
@@ -306,10 +512,6 @@ void main() {
       final viewport = await document.queryViewport();
       expect(viewport.coveredUtf16.start, 0);
       expect(viewport.coveredUtf16.end, source.length);
-      expect(
-        viewport.rows.first.continuityPolicy,
-        FlarkViewportRowContinuityPolicy.plainTextEdit,
-      );
       final items = viewport.rows
           .map((row) => row.listItem)
           .whereType<FlarkListItemPresentation>()
@@ -419,13 +621,29 @@ void main() {
         ),
         ['em🌍', 'strong', 'code', 'link', 'https://a.test'],
       );
-      expect(facts.map((fact) => fact.continuityPolicy), [
-        FlarkInlineContinuityPolicy.plainTextContent,
-        FlarkInlineContinuityPolicy.plainTextContent,
-        FlarkInlineContinuityPolicy.plainTextContent,
-        FlarkInlineContinuityPolicy.plainTextContent,
-        FlarkInlineContinuityPolicy.none,
-      ]);
+      expect(
+        row.literalSafeEnvelopes.map((envelope) => envelope.editClass.name),
+        ['asciiWordInsertion', 'asciiWordInsertion', 'asciiWordInsertion'],
+      );
+      expect(
+        row.literalSafeEnvelopes.map(
+          (envelope) => source.substring(
+            envelope.sourceUtf16.start,
+            envelope.sourceUtf16.end,
+          ),
+        ),
+        ['strong', 'code', 'link'],
+      );
+      final emojiOffset = source.indexOf('🌍');
+      expect(
+        row.literalSafeEnvelopes.any(
+          (envelope) =>
+              envelope.sourceUtf16.start <= emojiOffset &&
+              emojiOffset <= envelope.sourceUtf16.end,
+        ),
+        isFalse,
+        reason: 'non-ASCII content must remain outside every word envelope',
+      );
 
       await document.applyEditUtf16(0, source.length, '*x &amp; y*\n');
       await document.pumpUntilReady();

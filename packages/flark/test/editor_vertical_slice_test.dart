@@ -133,6 +133,128 @@ void main() {
   );
 
   testWidgets(
+    'pending exact rows suppress stale heading and task semantics',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final headingController = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '# Heading\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(headingController.continueParsing);
+      final heading = headingController.rows.single;
+      await tester.runAsync(() async {
+        headingController.activateRow(heading, heading.sourceUtf16.start + 2);
+        await headingController.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(controller: headingController),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final headingBefore = headingController.inputValue;
+      final headingCaret = headingBefore.selection.extentOffset;
+      headingController.updateEditingValue(
+        TextEditingValue(
+          text: headingBefore.text.replaceRange(
+            headingCaret,
+            headingCaret,
+            'x',
+          ),
+          selection: TextSelection.collapsed(offset: headingCaret + 1),
+          composing: TextRange(start: headingCaret, end: headingCaret + 1),
+        ),
+      );
+      await _pumpUntilTransactions(tester, headingController);
+      final pendingHeading = headingController.surfaceRow(
+        headingController.rows.single,
+      );
+      expect(pendingHeading.kind, 0);
+      expect(pendingHeading.headingLevel, isNull);
+      final pendingHeadingFinder = find.semantics.byValue(pendingHeading.text);
+      expect(pendingHeadingFinder, findsOne);
+      expect(
+        pendingHeadingFinder.evaluate().single,
+        isSemantics(value: pendingHeading.text, isHeader: false),
+      );
+
+      headingController.commitActiveComposition();
+      await _pumpUntilTransactions(tester, headingController);
+      await tester.runAsync(headingController.continueParsing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(headingController.close);
+
+      final taskController = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '- [ ] todo\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(taskController.continueParsing);
+      final task = taskController.rows.single;
+      await tester.runAsync(() async {
+        taskController.activateRow(task, task.sourceUtf16.start + 2);
+        await taskController.resolveCanonicalSelection();
+      });
+      final debugHandle = FlarkEditorDebugHandle();
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: taskController,
+              debugHandle: debugHandle,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        debugHandle.geometryForTaskCheckboxOrdinal(task.ordinal),
+        isNotNull,
+      );
+
+      final taskBefore = taskController.inputValue;
+      final taskCaret = taskBefore.selection.extentOffset;
+      taskController.updateEditingValue(
+        TextEditingValue(
+          text: taskBefore.text.replaceRange(taskCaret, taskCaret, 'x'),
+          selection: TextSelection.collapsed(offset: taskCaret + 1),
+          composing: TextRange(start: taskCaret, end: taskCaret + 1),
+        ),
+      );
+      await _pumpUntilTransactions(tester, taskController);
+      final pendingTask = taskController.surfaceRow(taskController.rows.single);
+      expect(pendingTask.kind, 0);
+      expect(debugHandle.geometryForTaskCheckboxOrdinal(task.ordinal), isNull);
+      final pendingTaskFinder = find.semantics.byValue(pendingTask.text);
+      expect(pendingTaskFinder, findsOne);
+      expect(
+        pendingTaskFinder.evaluate().single,
+        isSemantics(
+          value: pendingTask.text,
+          hasCheckedState: false,
+          hasTapAction: false,
+        ),
+      );
+
+      taskController.commitActiveComposition();
+      await _pumpUntilTransactions(tester, taskController);
+      await tester.runAsync(taskController.continueParsing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(taskController.close);
+      semantics.dispose();
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'editable row semantics map selections and cursor moves through projection',
     (tester) async {
       const source = '**alpha beta**\n';
@@ -268,6 +390,43 @@ void main() {
   );
 
   testWidgets(
+    'pending exact list rows do not claim Tab from stale list facts',
+    (tester) async {
+      const initial = '- parent\n- child\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(initial, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final child = controller.rows.last;
+      await tester.runAsync(() async {
+        controller.activateRow(child, child.editableUtf16!.end);
+        await controller.resolveCanonicalSelection();
+      });
+
+      final before = controller.inputValue;
+      final caret = before.selection.extentOffset;
+      controller.updateEditingValue(
+        TextEditingValue(
+          text: before.text.replaceRange(caret, caret, 'x'),
+          selection: TextSelection.collapsed(offset: caret + 1),
+          composing: TextRange(start: caret, end: caret + 1),
+        ),
+      );
+      await _pumpUntilTransactions(tester, controller);
+
+      expect(controller.surfaceRow(controller.rows.last).kind, 0);
+      expect(controller.handleListIndent(outdent: false), isFalse);
+      expect(controller.visibleSource, '- parent\n- childx\n');
+
+      controller.commitActiveComposition();
+      await _pumpUntilTransactions(tester, controller);
+      await tester.runAsync(controller.continueParsing);
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'Tab and Shift-Tab traverse parser-authored table cells',
     (tester) async {
       const source = '| a | b |\n| --- | --- |\n| c | d |\n';
@@ -329,6 +488,70 @@ void main() {
       expect(controller.visibleSource, source);
       expect(controller.lastError, isNull);
 
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'pending exact table rows do not expose stale cell navigation',
+    (tester) async {
+      const source = '| a | b |\n| --- | --- |\n| c | d |\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.singleWhere((row) => row.table != null);
+      final firstCell = row.table!.rows.last.first;
+      await tester.runAsync(() async {
+        controller.activateRow(row, firstCell.contentUtf16.start);
+        await controller.resolveCanonicalSelection();
+      });
+      final events = <String>[];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              autofocus: true,
+              debugInputEventObserver: events.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final before = controller.inputValue;
+      final caret = before.selection.extentOffset;
+      controller.updateEditingValue(
+        TextEditingValue(
+          text: before.text.replaceRange(caret, caret, 'x'),
+          selection: TextSelection.collapsed(offset: caret + 1),
+          composing: TextRange(start: caret, end: caret + 1),
+        ),
+      );
+      await _pumpUntilTransactions(tester, controller);
+      await tester.pump();
+
+      expect(controller.surfaceRow(controller.rows.single).kind, 0);
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      final pendingCaret = controller.globalCaretOffset;
+      expect(surface.isTableCellPosition(pendingCaret), isFalse);
+      expect(surface.adjacentTableCellHit(pendingCaret, forward: true), isNull);
+
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+      state.performSelector('insertTab:');
+      await tester.pump();
+      expect(controller.globalCaretOffset, pendingCaret);
+      expect(events, isNot(contains('shortcut:next-table-cell')));
+
+      controller.commitActiveComposition();
+      await _pumpUntilTransactions(tester, controller);
+      await tester.runAsync(controller.continueParsing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
     },

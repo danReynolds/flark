@@ -1,35 +1,19 @@
-# Flark Documentation
+# Flark documentation
 
-Start here for package-level docs:
+Flark v4 has one active product path:
 
-- [Getting Started](getting_started.md): build an editor, preview Markdown, and
-  share state between surfaces.
-- [Cookbook](cookbook.md): copy-pasteable recipes for toolbars, forms, save
-  state, link editing, document switching, and custom previews.
-- [API Surface](api_surface.md): which import and type to use for common app,
-  core, and advanced integration work.
-- [Parser and Platforms](parser_and_platforms.md): native, web, Comrak, and
-  custom parser behavior.
-- [Development and Verification](development.md): local test, docs, example,
-  native, and release gates.
+- [`flark_core`](../packages/flark_core/README.md) owns the headless Dart API
+  over the Rust source and parser authority.
+- [`flark`](../packages/flark/README.md) owns the Flutter editor and read-only
+  rendering surfaces and re-exports the supported Core API.
 
-Current planning docs:
+Start with [Getting started](getting_started.md), then use the
+[API surface](api_surface.md), [Cookbook](cookbook.md), and
+[Parser and platforms](parser_and_platforms.md) guides. Contributors should
+also read [Development and verification](development.md) and
+[Benchmarks](benchmarks.md).
 
-- [Flark v3 Definitive Architecture Summary](architecture/v3/architecture_summary.md):
-  implementation baseline, Dart-first package boundary, runtime ownership,
-  and production gates.
-- [Flark v3 Production Implementation Plan](architecture/v3/implementation_plan.md):
-  active milestone sequence, acceptance gates, and current implementation
-  state.
-- [RFC 023: Incremental Live Markdown Engine](architecture/rfc/rfc_023_incremental_live_markdown_engine.md):
-  full large-document engine rationale, behavioral inheritance gates,
-  alternatives, and evidence chain.
-- [DX and Ergonomics Peer Audit](architecture/flark/dx_ergonomics_peer_audit_2026-06-05.md):
-  where Flark stands against Flutter editor peers and what app-facing DX work
-  should come next.
-- [DX Confidence Peer Loop](architecture/flark/dx_confidence_peer_loop_2026-06-07.md):
-  current seven-plus-loop peer comparison and confidence conclusion.
-
-The rest of this directory is the design and release archive. Those documents
-are useful when changing Flark internals, but app integrations should not need
-them for routine usage.
+The normative architecture lives under [`architecture/v4/`](architecture/v4/)
+and in [RFC 027](architecture/rfc/rfc_027_continuously_rendered_markdown.md).
+Superseded v2/v3 guides are preserved under [`legacy/docs/`](../legacy/docs/)
+and do not define the active product or its release evidence.

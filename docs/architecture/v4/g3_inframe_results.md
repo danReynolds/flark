@@ -1,10 +1,17 @@
 # G3 — in-frame synchronous pump: first results
 
+> **Historical pre-cutover evidence (2026-08-05).** These partial results and
+> the command below describe the retired root package. The harness sources are
+> preserved at
+> [`g3_headless_probe.dart`](../../../legacy/root_package/example/lib/g3_headless_probe.dart)
+> and
+> [`g3_inframe_engine.dart`](../../../legacy/root_package/example/lib/g3_inframe_engine.dart);
+> they are not active v4 gates.
+
 **Status:** partial. 1 KB complete; 100 KB and 1 MB did not finish inside a
 10-minute run. 2026-08-05.
 
-Harness: `example/lib/g3_headless_probe.dart` + `g3_inframe_engine.dart`.
-Command:
+Historical command as recorded (not an active command):
 
 ```
 dart run lib/g3_headless_probe.dart --lib <abs path>/libflark_comrak_bridge.dylib

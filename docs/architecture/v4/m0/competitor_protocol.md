@@ -77,7 +77,7 @@ obsolete `updateStyle` override in the pub cache, but no patch artifact or
 patched-tree hash survives.
 
 The local result table is
-[`docs/benchmarks.md`, lines 197-206](../../../benchmarks.md). The JSON inventory
+[`legacy/docs/v2_v3/public/benchmarks.md`, lines 197-206](../../../../legacy/docs/v2_v3/public/benchmarks.md). The JSON inventory
 pins SHA-256 values for that table, both pubspecs, both `.gitignore` files, and
 all four harnesses; the contract test rejects unnoticed drift.
 
@@ -89,7 +89,7 @@ are transcribed in microseconds in the JSON.
 ### Small block-count edit pump
 
 These values come from
-[`docs/benchmarks.md`, lines 58-63](../../../benchmarks.md).
+[`legacy/docs/v2_v3/public/benchmarks.md`, lines 58-63](../../../../legacy/docs/v2_v3/public/benchmarks.md).
 
 | Peer | 10 blocks | 20 blocks | 40 blocks | 80 blocks |
 | --- | --- | --- | --- | --- |

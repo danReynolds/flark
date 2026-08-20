@@ -51,7 +51,7 @@ void main() {
     expect(transition?.clearPriorGap, isFalse);
   });
 
-  test('paragraph merge preserves mapped styling without Flutter', () {
+  test('paragraph merge fails closed around predecessor inline styling', () {
     final left = _row(
       ordinal: 4,
       sourceStart: 0,
@@ -102,15 +102,138 @@ void main() {
       preceding: left,
     );
 
-    final surface = transition?.surface;
-    expect(surface?.removedRowOrdinal, 5);
-    expect(surface?.sourceUtf16.start, 0);
-    expect(surface?.sourceUtf16.end, 18);
-    expect(surface?.presentation.text, 'left boldright');
-    expect(surface?.presentation.runs.last.sourceUtf16Start, 13);
-    expect(surface?.presentation.runs[1].styles, {
-      FlarkCorePresentationInlineStyle.strong,
-    });
+    expect(transition?.clearPriorGap, isTrue);
+    expect(transition?.surfaces, isEmpty);
+  });
+
+  test('paragraph merge fails closed around hidden unstyled inline syntax', () {
+    final image = _row(
+      ordinal: 4,
+      sourceStart: 0,
+      sourceEnd: 12,
+      text: 'foo',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'foo',
+          sourceUtf16Start: 2,
+          sourceUtf16End: 5,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final right = _row(
+      ordinal: 5,
+      sourceStart: 12,
+      sourceEnd: 17,
+      text: 'right',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'right',
+          sourceUtf16Start: 12,
+          sourceUtf16End: 17,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.mergeParagraph,
+        baseStart: 11,
+        baseEnd: 12,
+        replacement: '',
+      ),
+      activeOrdinal: 5,
+      active: right,
+      preceding: image,
+    );
+
+    expect(transition?.clearPriorGap, isTrue);
+    expect(transition?.surfaces, isEmpty);
+  });
+
+  test('block-prefix gap cannot conceal an unstyled image projection', () {
+    final quoteWithImage = _row(
+      ordinal: 8,
+      sourceStart: 0,
+      sourceEnd: 22,
+      globalStart: 2,
+      text: 'first\nfoo',
+      leadingText: '│ ',
+      blockQuoteDepth: 1,
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'first\n',
+          sourceUtf16Start: 2,
+          sourceUtf16End: 8,
+          sourceExact: true,
+          styles: {},
+        ),
+        FlarkCorePresentationRun(
+          text: 'foo',
+          sourceUtf16Start: 12,
+          sourceUtf16End: 15,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.continueBlockQuote,
+        baseStart: 13,
+        baseEnd: 13,
+        replacement: '\n> ',
+      ),
+      activeOrdinal: 8,
+      active: quoteWithImage,
+    );
+
+    expect(transition?.surface, isNull);
+    expect(transition?.gap?.rowOrdinal, 8);
+  });
+
+  test('paragraph merge fails closed for an empty projected image', () {
+    final emptyImage = _row(
+      ordinal: 4,
+      sourceStart: 0,
+      sourceEnd: 7,
+      text: '',
+      runs: const [],
+    );
+    final right = _row(
+      ordinal: 5,
+      sourceStart: 7,
+      sourceEnd: 12,
+      text: 'right',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'right',
+          sourceUtf16Start: 7,
+          sourceUtf16End: 12,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.mergeParagraph,
+        baseStart: 6,
+        baseEnd: 7,
+        replacement: '',
+      ),
+      activeOrdinal: 5,
+      active: right,
+      preceding: emptyImage,
+    );
+
+    expect(transition?.clearPriorGap, isTrue);
+    expect(transition?.surfaces, isEmpty);
   });
 
   test('list lift removes presentation prefix and maps content runs', () {
@@ -118,6 +241,7 @@ void main() {
       ordinal: 2,
       sourceStart: 0,
       sourceEnd: 10,
+      globalStart: 2,
       text: 'item',
       leadingText: '- ',
       kind: 12,
@@ -258,7 +382,7 @@ void main() {
     expect(transition?.surface?.presentation.sourceUtf16.start, 2);
   });
 
-  test('projected quote Return hides the new certified prefix', () {
+  test('projected quote Return fails closed to a neutral gap', () {
     final quote = _row(
       ordinal: 8,
       sourceStart: 0,
@@ -296,20 +420,12 @@ void main() {
       active: quote,
     );
 
-    final presentation = transition?.surface?.presentation;
-    expect(transition?.gap, isNull);
-    expect(presentation?.leadingText, '│ ');
-    expect(presentation?.text, 'first\nsec\nond');
-    expect(presentation?.sourceUtf16.end, 20);
-    expect(
-      presentation?.runs.map(
-        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
-      ),
-      [('first\n', 2, 8), ('sec', 10, 13), ('\n', 13, 14), ('ond', 16, 19)],
-    );
+    expect(transition?.surface, isNull);
+    expect(transition?.gap?.rowOrdinal, 8);
+    expect(transition?.gap?.rowEndUtf16, 14);
   });
 
-  test('projected quote lift publishes ordered quote and plain surfaces', () {
+  test('projected quote lift fails closed around hidden prefix gaps', () {
     final quote = _row(
       ordinal: 8,
       sourceStart: 0,
@@ -347,26 +463,10 @@ void main() {
       active: quote,
     );
 
-    expect(transition?.surface, isNull);
-    expect(transition?.surfaces, hasLength(2));
-    final quoted = transition!.surfaces.first.presentation;
-    final plain = transition.surfaces.last.presentation;
-    expect(quoted.leadingText, '│ ');
-    expect(quoted.text, 'first\n');
-    expect((quoted.sourceUtf16.start, quoted.sourceUtf16.end), (0, 8));
-    expect(plain.leadingText, isEmpty);
-    expect(plain.blockQuoteDepth, isNull);
-    expect(plain.text, '\nsecond');
-    expect((plain.sourceUtf16.start, plain.sourceUtf16.end), (8, 16));
-    expect(
-      plain.runs.map(
-        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
-      ),
-      [('\n', 8, 9), ('second', 9, 15)],
-    );
+    expect(transition, isNull);
   });
 
-  test('indented code Return hides the new parser-owned prefix', () {
+  test('indented code Return fails closed around hidden prefix gaps', () {
     final code = _row(
       ordinal: 9,
       sourceStart: 0,
@@ -408,73 +508,55 @@ void main() {
       active: code,
     );
 
-    final presentation = transition?.surface?.presentation;
-    expect(transition?.gap, isNull);
-    expect(presentation?.text, 'one\ntw\no\n');
-    expect(presentation?.sourceUtf16.end, 21);
-    expect(
-      presentation?.runs.map(
-        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
-      ),
-      [('one\n', 4, 8), ('tw', 12, 14), ('\n', 14, 15), ('o\n', 19, 21)],
-    );
+    expect(transition?.surface, isNull);
+    expect(transition?.gap?.rowOrdinal, 9);
+    expect(transition?.gap?.rowEndUtf16, 15);
   });
 
-  test(
-    'indented code Backspace joins visible lines without exposing prefix',
-    () {
-      final code = _row(
-        ordinal: 9,
-        sourceStart: 0,
-        sourceEnd: 16,
-        globalStart: 4,
-        text: 'one\ntwo\n',
-        codeBlock: const FlarkCodeBlockPresentation(
-          style: FlarkCodeBlockStyle.indented,
-          minimumClosingLength: 0,
-          fenceOffset: 0,
-          closed: false,
+  test('indented code Backspace fails closed around hidden prefix gaps', () {
+    final code = _row(
+      ordinal: 9,
+      sourceStart: 0,
+      sourceEnd: 16,
+      globalStart: 4,
+      text: 'one\ntwo\n',
+      codeBlock: const FlarkCodeBlockPresentation(
+        style: FlarkCodeBlockStyle.indented,
+        minimumClosingLength: 0,
+        fenceOffset: 0,
+        closed: false,
+      ),
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'one\n',
+          sourceUtf16Start: 4,
+          sourceUtf16End: 8,
+          sourceExact: true,
+          styles: {},
         ),
-        runs: const [
-          FlarkCorePresentationRun(
-            text: 'one\n',
-            sourceUtf16Start: 4,
-            sourceUtf16End: 8,
-            sourceExact: true,
-            styles: {},
-          ),
-          FlarkCorePresentationRun(
-            text: 'two\n',
-            sourceUtf16Start: 12,
-            sourceUtf16End: 16,
-            sourceExact: true,
-            styles: {},
-          ),
-        ],
-      );
+        FlarkCorePresentationRun(
+          text: 'two\n',
+          sourceUtf16Start: 12,
+          sourceUtf16End: 16,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
 
-      final transition = frontend.adopt(
-        receipt: _receipt(
-          transition: FlarkCoreEditPresentationTransitionV1.joinIndentedCode,
-          baseStart: 7,
-          baseEnd: 12,
-          replacement: '',
-        ),
-        activeOrdinal: 9,
-        active: code,
-      );
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.joinIndentedCode,
+        baseStart: 7,
+        baseEnd: 12,
+        replacement: '',
+      ),
+      activeOrdinal: 9,
+      active: code,
+    );
 
-      final presentation = transition?.surface?.presentation;
-      expect(presentation?.text, 'onetwo\n');
-      expect(presentation?.sourceUtf16.end, 11);
-      expect(
-        presentation?.runs.map(
-          (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
-        ),
-        [('one', 4, 7), ('two\n', 7, 11)],
-      );
-    },
-  );
+    expect(transition, isNull);
+  });
 
   test('thematic break deletion removes the certified semantic atom', () {
     final atom = _row(
@@ -502,11 +584,12 @@ void main() {
     expect(transition?.clearPriorGap, isTrue);
   });
 
-  test('nested quote outdent changes only the targeted physical line', () {
+  test('nested quote outdent fails closed around hidden prefix gaps', () {
     final quote = _row(
       ordinal: 20,
       sourceStart: 0,
       sourceEnd: 21,
+      globalStart: 4,
       text: 'first\nsecond',
       leadingText: '│ │ ',
       blockQuoteDepth: 2,
@@ -539,75 +622,7 @@ void main() {
       active: quote,
     );
 
-    expect(transition?.surfaces, hasLength(2));
-    expect(transition?.surfaces.first.presentation.blockQuoteDepth, 2);
-    expect(transition?.surfaces.first.presentation.text, 'first\n');
-    expect(transition?.surfaces.last.presentation.blockQuoteDepth, 1);
-    expect(transition?.surfaces.last.presentation.text, '\nsecond');
-    expect(transition?.surfaces.last.presentation.globalUtf16Start, 10);
-    expect(
-      (
-        transition?.surfaces.last.sourceUtf16.start,
-        transition?.surfaces.last.sourceUtf16.end,
-      ),
-      (10, 20),
-    );
-  });
-
-  test('literal successor maps one temporary surface without losing peers', () {
-    final transition = frontend.adopt(
-      receipt: _receipt(
-        transition: FlarkCoreEditPresentationTransitionV1.liftBlockQuote,
-        baseStart: 8,
-        baseEnd: 10,
-        replacement: '\n',
-      ),
-      activeOrdinal: 8,
-      active: _row(
-        ordinal: 8,
-        sourceStart: 0,
-        sourceEnd: 17,
-        globalStart: 2,
-        text: 'first\nsecond',
-        leadingText: '│ ',
-        blockQuoteDepth: 1,
-        runs: const [
-          FlarkCorePresentationRun(
-            text: 'first\n',
-            sourceUtf16Start: 2,
-            sourceUtf16End: 8,
-            sourceExact: true,
-            styles: {},
-          ),
-          FlarkCorePresentationRun(
-            text: 'second',
-            sourceUtf16Start: 10,
-            sourceUtf16End: 16,
-            sourceExact: true,
-            styles: {},
-          ),
-        ],
-      ),
-    );
-
-    final mapped = mapCommittedPresentationSurfacesThroughLiteralSpliceV1(
-      surfaces: transition!.surfaces,
-      startUtf16: 9,
-      endUtf16: 9,
-      replacement: 'X',
-    );
-
-    expect(mapped, hasLength(2));
-    expect(mapped!.first.presentation.text, 'first\n');
-    expect(mapped.last.presentation.text, '\nXsecond');
-    expect(mapped.first.sourceUtf16.end, 8);
-    expect(mapped.last.sourceUtf16.end, 17);
-    expect(
-      mapped.last.presentation.runs.map(
-        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
-      ),
-      [('\n', 8, 9), ('X', 9, 10), ('second', 10, 16)],
-    );
+    expect(transition, isNull);
   });
 }
 

@@ -45,7 +45,7 @@ Every visible source-owned range is in exactly one state:
 | `certified_projected` | Current-revision certified semantic facts | Rendered runs with parser-owned markers hidden or replaced |
 | `certified_literal` | Current-revision proof that source is literal or editor source-material | Exact source with intentional literal styling |
 | `pending_exact` | Current source, no current semantic proof | Neutral exact source for the authenticated pending range |
-| `composition_exact` | Current platform composing range | Exact composing text and composing decoration; certified surroundings remain projected |
+| `composition_exact` | Current source transaction plus the platform composing value/range | Exact active-row source while composition is pending; unaffected certified rows remain projected |
 | `source_gap_exact` | Exact source is available but a projection query cannot cover it | Neutral exact source within the bounded gap |
 | `fault_exact` | Session retains readable source after a typed semantic fault | Exact source plus surfaced fault state; no semantic facts from the faulted range |
 
@@ -230,28 +230,52 @@ keystrokes the grammar can prove harmless, and it forces `flark_core` to
 classify Markdown-sensitive characters itself, which the one-grammar rule
 forbids. Both are contract defects, not implementation defects.
 
-Under the amendment the runtime publishes, per certified row, the exact source
-ranges in which a literal edit of a declared character class provably cannot
-change that row's published facts. The surface's decision is a containment
-test: an edit inside an envelope for its class retains the presentation with
-every published range transformed through the edit; an edit outside every
-envelope presents a local exact-source island around the affected range.
-Retained presentation is proven, not assumed, so option 1 above remains the
-only authority — the proof is simply computed before the edit rather than
-after it. The typed continuity policy, the transaction-bound receipt, and all
-host-side character classification are removed.
+Under the amendment the runtime publishes, per certified row, exact source
+ranges for typed literal edits that provably cannot change that row's published
+facts. The landed vocabulary is intentionally smaller than the general design:
+
+- a non-empty ASCII letter/digit insertion inside an eligible fact only when
+  that fact's complete content slice is one flat non-empty ASCII word, with no
+  punctuation, whitespace, nested syntax, or code normalization; and
+- one U+0020 insertion at an eligible outer inline closing boundary that is
+  also the editable row end.
+
+Both are insertion-only and one-shot. Deletion, replacement, non-ASCII and
+table-specific classes, broader literal classes, and chaining remain pending
+and fail closed to a local exact-source island. An edit inside a matching
+envelope retains presentation with its ranges transformed through the edit;
+anything else waits for recertification. Retained presentation is proven, not
+assumed. The old typed row/inline policy and host Markdown classification are
+removed from the active decision path; the transaction receipt remains only as
+the one-shot binding between a parser envelope and the exact edit.
+
+ABI 4.26 appends envelope records only for the capability-gated
+`SEMANTIC_PROJECTED_LITERAL_SAFE` query kind. The earlier `SEMANTIC` and
+`SEMANTIC_PROJECTED` query kinds keep their pre-envelope payload vocabulary;
+the stateless ABI nevertheless requires an exact 4.26 negotiation.
 
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as
-current.
+current. A structural edit receipt proves its source splice and block partition,
+not result-revision inline facts: affected temporary rows therefore paint exact
+source, and a successor edit clears that structural surface instead of mapping
+old styles or hidden delimiters through another splice.
 
 ## 9. Composition and platform input
 
 ### LP2-COMPOSITION-BEGIN-001
 
 The input connection retains the exact source window. Beginning composition
-creates a `composition_exact` island at the current source range without
-revealing unrelated markers.
+creates a `composition_exact` island for the active source row. The complete
+row is exact because the current ABI carries no result-revision proof that a
+composition delta cannot change its other inline facts. Markers in that row
+may therefore be visible while composition is pending; unrelated certified
+rows remain projected.
+
+A narrower composing-range island, with other facts in the active row retained,
+is pending parser-authored result-revision/dependency authority. It must not be
+reconstructed from predecessor facts plus a source splice and remains a T3
+input-truth item in [RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md).
 
 ### LP2-COMPOSITION-UPDATE-001
 

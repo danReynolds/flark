@@ -1,5 +1,8 @@
 # Flark Editor: How It Works
 
+> Historical v2/v3 implementation note. It does not describe the active v4
+> package or its verification gates. Start at [`docs/README.md`](../../README.md).
+
 **Status date**: 2026-05-02
 **Package**: `flark`
 **Runtime backend**: native `comrak` (macOS/iOS/Android)
@@ -118,20 +121,20 @@ Primary package gate:
 flutter test
 ```
 
-Fast maintenance gate:
+The replacement active gate is:
 
 ```bash
-./scripts/verify_package_confidence.sh
+bash scripts/verify_v4.sh
 ```
 
-Native packaging gate:
+The replacement release-readiness gate is:
 
 ```bash
-./scripts/verify_native_editor_ci.sh
+bash scripts/verify_v4_release.sh
 ```
 
-Conformance/parity and release-readiness details:
+Historical v2/v3 conformance/parity and release-readiness records:
 
-- `docs/production_readiness/public_api_inventory_2026-05-01.md`
-- `docs/production_readiness/native_packaging_2026-05-01.md`
-- `docs/production_readiness/execution_log.md`
+- `legacy/docs/v2_v3/production_readiness/public_api_inventory_2026-05-01.md`
+- `legacy/docs/v2_v3/production_readiness/native_packaging_2026-05-01.md`
+- `legacy/docs/v2_v3/production_readiness/execution_log.md`

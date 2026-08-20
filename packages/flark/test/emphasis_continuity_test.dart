@@ -48,6 +48,11 @@ void main() {
     return null;
   }
 
+  FlarkSurfaceRow activeSurface(FlarkEditorController controller) => controller
+      .rows
+      .map(controller.surfaceRow)
+      .firstWhere((candidate) => candidate.active);
+
   void typeAt(FlarkEditorController controller, String text) {
     final before = controller.inputValue;
     final offset = before.selection.extentOffset;
@@ -77,11 +82,40 @@ void main() {
         await settle(controller);
       }
       expect(activeProjection(controller), isNot(contains('*')));
+      final authorityRow = controller.rows.first;
+      expect(
+        authorityRow.literalSafeEnvelopes.map(
+          (envelope) => (
+            envelope.editClass.name,
+            envelope.sourceUtf16.start,
+            envelope.sourceUtf16.end,
+          ),
+        ),
+        contains((
+          'singleAsciiSpaceInsertion',
+          controller.globalCaretOffset,
+          controller.globalCaretOffset,
+        )),
+      );
 
       // The next keystroke is ordinary plain text immediately after the
       // construct. The frame it produces must not reveal the delimiters.
+      final boundary = controller.globalCaretOffset;
       typeAt(controller, ' ');
-      final immediate = activeProjection(controller);
+      final immediateSurface = activeSurface(controller);
+      final immediate = immediateSurface.text;
+      final immediateSelection = immediateSurface.selection!;
+
+      expect(controller.globalCaretOffset, boundary + 1);
+      expect(controller.inputValue.text, contains('*test* '));
+      expect(
+        immediateSurface.sourceOffsetForTextOffset(
+          immediateSelection.extentOffset,
+          affinity: immediateSelection.affinity,
+        ),
+        boundary + 1,
+        reason: 'painted caret must resolve to the current source insertion',
+      );
       await settle(controller);
 
       expect(
@@ -98,14 +132,89 @@ void main() {
       );
       expect(activeProjection(controller), isNot(contains('*')));
     },
-    // ACCEPTANCE TEST for RFC 027 section 4.4.1 (literal-safe envelopes).
-    // Fails today at the `immediate` assertion: the superseded contract
-    // refuses any edit whose caret touches an inline fact's source range,
-    // boundary-inclusive, so a space after a closing delimiter is refused
-    // and the row reveals its raw source. Under envelopes the parser proves
-    // that position harmless and the presentation is retained. Unskip when
-    // envelopes land.
-    skip: 'awaiting RFC 027 4.4.1 literal-safe envelopes',
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'space after an opening delimiter has exact immediate source and caret',
+    () async {
+      final controller = await open('*test*\n');
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      final openingBoundary = row.inlineFacts!.single.contentUtf16.start;
+      controller.activateRow(row, openingBoundary);
+
+      typeAt(controller, ' ');
+      final immediate = activeSurface(controller);
+      final selection = immediate.selection!;
+
+      expect(immediate.text, contains('* test*'));
+      expect(immediate.runs, hasLength(1));
+      expect(immediate.runs.single.sourceExact, isTrue);
+      expect(controller.inputValue.text, contains('* test*'));
+      expect(controller.globalCaretOffset, openingBoundary + 1);
+      expect(
+        immediate.sourceOffsetForTextOffset(
+          selection.extentOffset,
+          affinity: selection.affinity,
+        ),
+        openingBoundary + 1,
+      );
+
+      await settle(controller);
+      expect(await controller.readSource(), '* test*\n');
+      expect(controller.globalCaretOffset, openingBoundary + 1);
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'nested delimiter boundary fails closed to exact immediate source',
+    () async {
+      const source = '*a _b_ c*\n';
+      final controller = await open(source);
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      final nestedOpening = source.indexOf('_');
+
+      expect(
+        row.literalSafeEnvelopes
+            .where(
+              (envelope) =>
+                  envelope.editClass ==
+                  FlarkLiteralEditClass.asciiWordInsertion,
+            )
+            .any(
+              (envelope) =>
+                  envelope.sourceUtf16.start <= nestedOpening &&
+                  nestedOpening <= envelope.sourceUtf16.end,
+            ),
+        isFalse,
+        reason: 'an outer fact cannot certify across nested inline syntax',
+      );
+
+      controller.activateRow(row, nestedOpening);
+      typeAt(controller, 'x');
+      final immediate = activeSurface(controller);
+      final selection = immediate.selection!;
+
+      expect(immediate.text, contains('*a x_b_ c*'));
+      expect(immediate.runs, hasLength(1));
+      expect(immediate.runs.single.sourceExact, isTrue);
+      expect(controller.inputValue.text, contains('*a x_b_ c*'));
+      expect(controller.globalCaretOffset, nestedOpening + 1);
+      expect(
+        immediate.sourceOffsetForTextOffset(
+          selection.extentOffset,
+          affinity: selection.affinity,
+        ),
+        nestedOpening + 1,
+      );
+
+      await settle(controller);
+      expect(await controller.readSource(), '*a x_b_ c*\n');
+      expect(controller.globalCaretOffset, nestedOpening + 1);
+    },
     timeout: const Timeout(Duration(minutes: 2)),
   );
 }

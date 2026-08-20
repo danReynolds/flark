@@ -1,23 +1,27 @@
-import 'package:flark_core/flark_core.dart';
+import 'package:flark_core/src/models.dart';
+import 'package:flark_core/src/projection_continuity.dart';
 import 'package:test/test.dart';
 
 void main() {
-  const fact = FlarkInlineFact(
-    kind: FlarkInlineFactKind.strong,
-    flags: 1 << 7,
-    sourceBytes: FlarkSourceRange(0, 8),
-    sourceUtf16: FlarkSourceRange(0, 8),
-    contentBytes: FlarkSourceRange(2, 6),
-    contentUtf16: FlarkSourceRange(2, 6),
+  const word = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.asciiWordInsertion,
+    sourceBytes: FlarkSourceRange(2, 6),
+    sourceUtf16: FlarkSourceRange(2, 6),
+  );
+  const trailingSpace = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.singleAsciiSpaceInsertion,
+    sourceBytes: FlarkSourceRange(8, 8),
+    sourceUtf16: FlarkSourceRange(8, 8),
   );
 
-  test('parser policy binds continuity to one exact transaction', () {
-    final receipt = authorizeInlineProjectionContinuity(
+  test('parser word envelope binds one exact contained insertion', () {
+    final receipt = authorizeRowProjectionContinuity(
       revision: 4,
-      facts: const [fact],
+      envelopes: const [word],
+      authorizedContentUtf16: const FlarkSourceRange(0, 8),
       startUtf16: 4,
       endUtf16: 4,
-      replacement: 'er',
+      replacement: 'er2',
     );
 
     expect(receipt, isNotNull);
@@ -25,231 +29,99 @@ void main() {
     expect(receipt.resultRevision, 5);
     expect(receipt.editStartUtf16, 4);
     expect(receipt.editEndUtf16, 4);
-    expect(receipt.replacement, 'er');
-    expect(receipt.authorizedContentUtf16.start, 2);
-    expect(receipt.authorizedContentUtf16.end, 8);
-
-    final chained = receipt.continueWith(
-      startUtf16: 5,
-      endUtf16: 5,
-      replacement: 'x',
-    );
-    expect(chained, isNotNull);
-    expect(chained!.baseRevision, 5);
-    expect(chained.resultRevision, 6);
-    expect(chained.authorizedContentUtf16.start, 2);
-    expect(chained.authorizedContentUtf16.end, 9);
+    expect(receipt.authorizedContentUtf16, isA<FlarkSourceRange>());
+    expect(receipt.authorizedContentUtf16.start, 0);
+    expect(receipt.authorizedContentUtf16.end, 11);
   });
 
-  test('markers and syntax-shaped text fail closed', () {
-    expect(
-      authorizeInlineProjectionContinuity(
-        revision: 1,
-        facts: const [fact],
-        startUtf16: 1,
-        endUtf16: 1,
-        replacement: 'x',
-      ),
-      isNull,
+  test('edit-class and range mismatches fail closed', () {
+    for (final mismatch in [
+      (start: 1, end: 1, replacement: 'x'),
+      (start: 4, end: 5, replacement: 'x'),
+      (start: 4, end: 4, replacement: ' '),
+      (start: 4, end: 4, replacement: '*'),
+    ]) {
+      expect(
+        authorizeRowProjectionContinuity(
+          revision: 1,
+          envelopes: const [word],
+          authorizedContentUtf16: const FlarkSourceRange(0, 8),
+          startUtf16: mismatch.start,
+          endUtf16: mismatch.end,
+          replacement: mismatch.replacement,
+        ),
+        isNull,
+      );
+    }
+  });
+
+  test('authorized content must contain the edit and every envelope', () {
+    const escapedAfter = FlarkLiteralSafeEnvelope(
+      editClass: FlarkLiteralEditClass.asciiWordInsertion,
+      sourceBytes: FlarkSourceRange(9, 10),
+      sourceUtf16: FlarkSourceRange(9, 10),
     );
+
+    for (final authorized in [
+      const FlarkSourceRange(0, 5),
+      const FlarkSourceRange(3, 8),
+      const FlarkSourceRange(6, 8),
+    ]) {
+      expect(
+        authorizeRowProjectionContinuity(
+          revision: 1,
+          envelopes: const [word],
+          authorizedContentUtf16: authorized,
+          startUtf16: 4,
+          endUtf16: 4,
+          replacement: 'x',
+        ),
+        isNull,
+      );
+    }
+
     expect(
-      authorizeInlineProjectionContinuity(
+      authorizeRowProjectionContinuity(
         revision: 1,
-        facts: const [fact],
+        envelopes: const [word, escapedAfter],
+        authorizedContentUtf16: const FlarkSourceRange(0, 8),
         startUtf16: 4,
         endUtf16: 4,
-        replacement: '*',
-      ),
-      isNull,
-    );
-    expect(
-      authorizeInlineProjectionContinuity(
-        revision: 1,
-        facts: const [fact],
-        startUtf16: 2,
-        endUtf16: 2,
         replacement: 'x',
       ),
-      isNotNull,
+      isNull,
+      reason: 'one malformed parser envelope invalidates the whole proof set',
     );
   });
 
-  test('parser-authored row policy retains conservative plain text edits', () {
+  test('single-space boundary envelope authorizes only its exact position', () {
     final receipt = authorizeRowProjectionContinuity(
       revision: 7,
-      policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
-      editableUtf16: const FlarkSourceRange(2, 9),
-      editableText: 'content',
-      inlineFacts: const [],
-      startUtf16: 7,
-      endUtf16: 7,
-      replacement: 'x',
+      envelopes: const [trailingSpace],
+      authorizedContentUtf16: const FlarkSourceRange(0, 8),
+      startUtf16: 8,
+      endUtf16: 8,
+      replacement: ' ',
     );
-
     expect(receipt, isNotNull);
-    expect(receipt!.authorizedContentUtf16.start, 2);
-    expect(receipt.authorizedContentUtf16.end, 10);
-    expect(
-      receipt.continueWith(startUtf16: 8, endUtf16: 8, replacement: 'y'),
-      isNotNull,
-    );
-    expect(
-      receipt.continueWith(startUtf16: 7, endUtf16: 8, replacement: ''),
-      isNotNull,
-    );
-    expect(
-      receipt.continueWith(startUtf16: 2, endUtf16: 3, replacement: ''),
-      isNull,
-    );
-    expect(
-      authorizeRowProjectionContinuity(
-        revision: 7,
-        policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
-        editableUtf16: const FlarkSourceRange(2, 9),
-        editableText: 'content',
-        inlineFacts: const [],
-        startUtf16: 7,
-        endUtf16: 7,
-        replacement: '*',
-      ),
-      isNull,
-    );
-    expect(
-      authorizeRowProjectionContinuity(
-        revision: 7,
-        policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
-        editableUtf16: const FlarkSourceRange(2, 9),
-        editableText: 'content',
-        inlineFacts: const [],
-        startUtf16: 2,
-        endUtf16: 2,
-        replacement: '# ',
-      ),
-      isNull,
-    );
-  });
+    expect(receipt!.authorizedContentUtf16.end, 9);
 
-  test('row continuity never overrides an inline fact policy', () {
-    expect(
-      authorizeRowProjectionContinuity(
-        revision: 7,
-        policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
-        editableUtf16: const FlarkSourceRange(0, 12),
-        editableText: '**bold** aft',
-        inlineFacts: const [fact],
-        startUtf16: 4,
-        endUtf16: 4,
-        replacement: 'x',
-      ),
-      isNull,
-    );
-  });
-
-  test('table continuity is confined to one real parser-authored cell', () {
-    const first = FlarkTableCellPresentation(
-      alignment: FlarkTableAlignment.left,
-      header: true,
-      autocompleted: false,
-      sourceBytes: FlarkSourceRange(0, 8),
-      sourceUtf16: FlarkSourceRange(0, 8),
-      contentBytes: FlarkSourceRange(2, 7),
-      contentUtf16: FlarkSourceRange(2, 7),
-    );
-    const second = FlarkTableCellPresentation(
-      alignment: FlarkTableAlignment.right,
-      header: true,
-      autocompleted: false,
-      sourceBytes: FlarkSourceRange(8, 14),
-      sourceUtf16: FlarkSourceRange(8, 14),
-      contentBytes: FlarkSourceRange(10, 13),
-      contentUtf16: FlarkSourceRange(10, 13),
-    );
-    const table = FlarkTablePresentation(
-      rows: [
-        [first, second],
-      ],
-    );
-
-    final receipt = authorizeTableCellProjectionContinuity(
-      revision: 9,
-      table: table,
-      tableUtf16: const FlarkSourceRange(0, 15),
-      tableText: '| alpha | xy |\n',
-      inlineFacts: const [],
-      startUtf16: 4,
-      endUtf16: 4,
-      replacement: 'z',
-    );
-
-    expect(receipt, isNotNull);
-    expect(receipt!.authorizedContentUtf16.start, 2);
-    expect(receipt.authorizedContentUtf16.end, 8);
-    expect(
-      receipt.continueWith(startUtf16: 5, endUtf16: 5, replacement: 'q'),
-      isNotNull,
-    );
-    expect(
-      receipt.continueWith(startUtf16: 5, endUtf16: 5, replacement: '|'),
-      isNull,
-    );
-    expect(
-      authorizeTableCellProjectionContinuity(
-        revision: 9,
-        table: table,
-        tableUtf16: const FlarkSourceRange(0, 15),
-        tableText: '| alpha | xy |\n',
-        inlineFacts: const [],
-        startUtf16: 7,
-        endUtf16: 10,
-        replacement: '',
-      ),
-      isNull,
-    );
-    expect(
-      authorizeTableCellProjectionContinuity(
-        revision: 9,
-        table: table,
-        tableUtf16: const FlarkSourceRange(0, 15),
-        tableText: '| alpha | xy |\n',
-        inlineFacts: const [],
-        startUtf16: 4,
-        endUtf16: 4,
-        replacement: '|',
-      ),
-      isNull,
-    );
-
-    const cellFact = FlarkInlineFact(
-      kind: FlarkInlineFactKind.strong,
-      flags: 1 << 7,
-      sourceBytes: FlarkSourceRange(3, 6),
-      sourceUtf16: FlarkSourceRange(3, 6),
-      contentBytes: FlarkSourceRange(4, 5),
-      contentUtf16: FlarkSourceRange(4, 5),
-    );
-    final inline = authorizeInlineProjectionContinuity(
-      revision: 9,
-      facts: const [cellFact],
-      startUtf16: 4,
-      endUtf16: 4,
-      replacement: 'z',
-      table: table,
-    );
-    expect(inline, isNotNull);
-    expect(
-      inline!.continueWith(startUtf16: 5, endUtf16: 5, replacement: '|'),
-      isNull,
-    );
-    expect(
-      authorizeInlineProjectionContinuity(
-        revision: 9,
-        facts: const [cellFact],
-        startUtf16: 4,
-        endUtf16: 4,
-        replacement: '|',
-        table: table,
-      ),
-      isNull,
-    );
+    for (final mismatch in [
+      (start: 7, replacement: ' '),
+      (start: 8, replacement: '  '),
+      (start: 8, replacement: 'x'),
+    ]) {
+      expect(
+        authorizeRowProjectionContinuity(
+          revision: 7,
+          envelopes: const [trailingSpace],
+          authorizedContentUtf16: const FlarkSourceRange(0, 8),
+          startUtf16: mismatch.start,
+          endUtf16: mismatch.start,
+          replacement: mismatch.replacement,
+        ),
+        isNull,
+      );
+    }
   });
 }

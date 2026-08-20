@@ -1,6 +1,8 @@
 # M0 — certification probe: the engine is safe, and too coarse
 
-**2026-08-06.** Probe: `example/lib/m0_certification_probe.dart`.
+> **Historical M0 evidence (2026-08-06).** This records a retired pre-cutover
+> probe, not an active v4 command or release receipt. The source is preserved at
+> [`legacy/root_package/example/lib/m0_certification_probe.dart`](../../../legacy/root_package/example/lib/m0_certification_probe.dart).
 
 RFC 024 §4.4 requires semantic formatting only where certified for the *current*
 revision. The counterexample that forced the rule was `*hello*` → delete the

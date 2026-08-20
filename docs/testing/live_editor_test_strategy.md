@@ -162,4 +162,4 @@ or require broad fixture migration. Complexity is itself a regression.
 
 References: [RFC 028](../architecture/rfc/rfc_028_source_authoritative_edit_transactions.md),
 [v4 build plan](../architecture/v4/build_plan.md), and
-[physical IME matrix runbook](ime_device_matrix_runbook.md).
+[historical v2/v3 physical IME matrix runbook](../../legacy/docs/v2_v3/testing/ime_device_matrix_runbook.md).

@@ -1,11 +1,12 @@
 # Peer editor performance comparison
 
-Isolated harnesses (separate packages, NOT part of `flark`) that run the **same
-per-edit measurement** as Flark's own
-`test/v2/performance/flark_live_rendered_rebuild_benchmark_test.dart` against
-peer Flutter editors, to calibrate Flark's numbers against the ecosystem.
-The large-document harnesses also compare 100KB/1MB model build, edit apply, and
-post-edit viewport pump costs.
+Isolated harnesses (separate packages, NOT part of `flark`) that calibrate
+Flark's measurements against peer Flutter editors. The debug comparison below
+used the now-archived v2
+[`flark_live_rendered_rebuild_benchmark_test.dart`](../../legacy/flark_flutter/test/v2/performance/flark_live_rendered_rebuild_benchmark_test.dart);
+it is historical calibration, not an active v4 gate. The large-document
+harnesses also compare 100KB/1MB model build, edit apply, and post-edit viewport
+pump costs.
 
 - `benchmark/peer/` — flutter_quill
 - `benchmark/peer_supereditor/` — super_editor (git; fresh caches may need a
@@ -168,12 +169,13 @@ flutter test test/super_editor_benchmark_test.dart
 flutter test test/super_editor_large_document_benchmark_test.dart
 ```
 
-Flark large-document editor sweep:
+The Flark test used for the historical table is preserved at
+[`legacy/flark_flutter/test/v2/performance/flark_large_document_editor_benchmark_test.dart`](../../legacy/flark_flutter/test/v2/performance/flark_large_document_editor_benchmark_test.dart).
+It is not an active or supported command. Run the current v4 frame-receipt
+sweep from the repository root instead:
 
 ```bash
-flutter test test/v2/performance/flark_large_document_editor_benchmark_test.dart \
-  --tags benchmark \
-  --reporter compact
+bash scripts/profile_v4_sweep.sh /tmp/flark-v4-sweep.jsonl
 ```
 
 If a fresh git cache fails on `TextInputStyle` / `updateStyle`, apply the

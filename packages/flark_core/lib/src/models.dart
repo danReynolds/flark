@@ -18,7 +18,7 @@ enum FlarkViewportRowEditCapability {
   unavailable,
 }
 
-enum FlarkViewportRowContinuityPolicy { none, plainTextEdit }
+enum FlarkLiteralEditClass { asciiWordInsertion, singleAsciiSpaceInsertion }
 
 enum FlarkInlineFactKind {
   emphasis,
@@ -36,8 +36,6 @@ enum FlarkInlineFactKind {
   referenceImage,
   tableCell,
 }
-
-enum FlarkInlineContinuityPolicy { none, plainTextContent }
 
 enum FlarkSemanticTargetKind { link, image }
 
@@ -122,8 +120,6 @@ final class FlarkSemanticTarget {
     title: message['title'] as String?,
   );
 }
-
-const _inlineFactContinuityPlainText = 1 << 7;
 
 enum FlarkTableAlignment { none, left, center, right }
 
@@ -370,6 +366,39 @@ final class FlarkSourceRange {
       FlarkSourceRange(message['start']! as int, message['end']! as int);
 }
 
+/// Parser-authored positional proof for one declared literal edit class.
+///
+/// The host does not infer Markdown safety from source text. It only checks
+/// that an exact edit matches [editClass] and is contained by both ranges.
+final class FlarkLiteralSafeEnvelope {
+  const FlarkLiteralSafeEnvelope({
+    required this.editClass,
+    required this.sourceBytes,
+    required this.sourceUtf16,
+  });
+
+  final FlarkLiteralEditClass editClass;
+  final FlarkSourceRange sourceBytes;
+  final FlarkSourceRange sourceUtf16;
+
+  Map<String, Object?> toMessage() => {
+    'editClass': editClass.index,
+    'sourceBytes': sourceBytes.toMessage(),
+    'sourceUtf16': sourceUtf16.toMessage(),
+  };
+
+  static FlarkLiteralSafeEnvelope fromMessage(Map<Object?, Object?> message) =>
+      FlarkLiteralSafeEnvelope(
+        editClass: FlarkLiteralEditClass.values[message['editClass']! as int],
+        sourceBytes: FlarkSourceRange.fromMessage(
+          message['sourceBytes']! as Map<Object?, Object?>,
+        ),
+        sourceUtf16: FlarkSourceRange.fromMessage(
+          message['sourceUtf16']! as Map<Object?, Object?>,
+        ),
+      );
+}
+
 /// One parser-authored inline semantic in exact document coordinates.
 ///
 /// [sourceBytes] and [sourceUtf16] include Markdown markers. [contentBytes]
@@ -391,11 +420,6 @@ final class FlarkInlineFact {
   final FlarkSourceRange sourceUtf16;
   final FlarkSourceRange contentBytes;
   final FlarkSourceRange contentUtf16;
-
-  FlarkInlineContinuityPolicy get continuityPolicy =>
-      flags & _inlineFactContinuityPlainText != 0
-      ? FlarkInlineContinuityPolicy.plainTextContent
-      : FlarkInlineContinuityPolicy.none;
 
   /// Parser-cooked visible text replacing [sourceUtf16], when present.
   final String? replacement;
@@ -497,7 +521,6 @@ final class FlarkViewportRow {
     required this.editableBytes,
     required this.editableUtf16,
     required this.editCapability,
-    this.continuityPolicy = FlarkViewportRowContinuityPolicy.none,
     required this.headingLevel,
     required this.headingStyle,
     required this.listItem,
@@ -507,6 +530,7 @@ final class FlarkViewportRow {
     this.table,
     required this.pathDepth,
     this.inlineFacts,
+    this.literalSafeEnvelopes = const [],
     this.projectionSegments,
   });
 
@@ -517,7 +541,6 @@ final class FlarkViewportRow {
   final FlarkSourceRange? editableBytes;
   final FlarkSourceRange? editableUtf16;
   final FlarkViewportRowEditCapability editCapability;
-  final FlarkViewportRowContinuityPolicy continuityPolicy;
   final int? headingLevel;
   final FlarkHeadingStyle? headingStyle;
   final FlarkListItemPresentation? listItem;
@@ -531,6 +554,10 @@ final class FlarkViewportRow {
   /// required. An empty list authoritatively means no inline semantics.
   final List<FlarkInlineFact>? inlineFacts;
 
+  /// Parser-authored edit-class/range proofs for retaining presentation
+  /// through one exact edit while recertification is pending.
+  final List<FlarkLiteralSafeEnvelope> literalSafeEnvelopes;
+
   /// Exact ordered identity cuts for a [FlarkViewportRowEditCapability.projectedReserved]
   /// row. Gaps between cuts are parser-certified hidden container material.
   final List<FlarkProjectionSegment>? projectionSegments;
@@ -543,7 +570,6 @@ final class FlarkViewportRow {
     'editableBytes': editableBytes?.toMessage(),
     'editableUtf16': editableUtf16?.toMessage(),
     'editCapability': editCapability.index,
-    'continuityPolicy': continuityPolicy.index,
     'headingLevel': headingLevel,
     'headingStyle': headingStyle?.index,
     'listItem': listItem?.toMessage(),
@@ -554,6 +580,9 @@ final class FlarkViewportRow {
     'pathDepth': pathDepth,
     'inlineFacts': inlineFacts
         ?.map((fact) => fact.toMessage())
+        .toList(growable: false),
+    'literalSafeEnvelopes': literalSafeEnvelopes
+        .map((envelope) => envelope.toMessage())
         .toList(growable: false),
     'projectionSegments': projectionSegments
         ?.map((segment) => segment.toMessage())
@@ -581,8 +610,6 @@ final class FlarkViewportRow {
     },
     editCapability: FlarkViewportRowEditCapability
         .values[message['editCapability']! as int],
-    continuityPolicy: FlarkViewportRowContinuityPolicy
-        .values[(message['continuityPolicy'] as int?) ?? 0],
     headingLevel: message['headingLevel'] as int?,
     headingStyle: switch (message['headingStyle']) {
       final int index => FlarkHeadingStyle.values[index],
@@ -621,6 +648,17 @@ final class FlarkViewportRow {
             )
             .toList(growable: false),
       _ => null,
+    },
+    literalSafeEnvelopes: switch (message['literalSafeEnvelopes']) {
+      final List<Object?> envelopes =>
+        envelopes
+            .map(
+              (envelope) => FlarkLiteralSafeEnvelope.fromMessage(
+                envelope! as Map<Object?, Object?>,
+              ),
+            )
+            .toList(growable: false),
+      _ => const [],
     },
     projectionSegments: switch (message['projectionSegments']) {
       final List<Object?> segments =>

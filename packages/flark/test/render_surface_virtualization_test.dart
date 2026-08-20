@@ -271,7 +271,7 @@ void main() {
   );
 
   testWidgets(
-    'mixed quote and plain transition lays out both temporary surfaces',
+    'mixed quote and plain transition lays out one exact pending surface',
     (tester) async {
       final controller = (await tester.runAsync(
         () => FlarkEditorController.open(
@@ -280,7 +280,6 @@ void main() {
         ),
       ))!;
       await tester.runAsync(controller.continueParsing);
-      addTearDown(controller.close);
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -317,9 +316,17 @@ void main() {
       final presentations = surface.debugPaintedPlan
           .where((entry) => entry.ordinal == row.ordinal)
           .toList(growable: false);
-      expect(presentations, hasLength(2));
-      expect(presentations.map((entry) => entry.text), ['first\n', '\nsecond']);
-      expect(presentations.last.active, isTrue);
+      expect(controller.semanticsCurrent, isFalse);
+      expect(controller.surfaceRowsFor(row), hasLength(1));
+      final pending = controller.surfaceRowsFor(row).single;
+      expect(pending.kind, 0);
+      expect(pending.leadingText, '> ');
+      expect(pending.text, 'first\n\nsecond\n');
+      expect(pending.runs, hasLength(1));
+      expect(pending.runs.single.sourceExact, isTrue);
+      expect(presentations, hasLength(1));
+      expect(presentations.single.text, 'first\n\nsecond\n');
+      expect(presentations.single.active, isTrue);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);

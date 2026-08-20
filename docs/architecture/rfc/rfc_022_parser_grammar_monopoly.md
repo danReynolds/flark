@@ -1,11 +1,18 @@
 # RFC 022: Parser grammar monopoly — the target contract
 
-**Status:** ACCEPTED 2026-07-12. Launch is deferred until Phases 0–2 land (3–4
+> **Historical predecessor contract.** Its one-grammar principle carries into
+> [RFC 026](rfc_026_flark_v4_product_architecture.md) and
+> [RFC 027](rfc_027_continuously_rendered_markdown.md), but the package topology,
+> phases, paths, and status below are superseded. The
+> [v4 build plan](../v4/build_plan.md) is the current execution contract.
+
+**Historical status:** ACCEPTED 2026-07-12. Launch is deferred until Phases 0–2 land (3–4
 optional-but-planned). Phase 0 shipped with this RFC.
 **Author:** architecture review follow-through (see PRs #27, #29)
 **Related:** `docs/architecture/v2/parser_protocol_2026-05-02.md`,
 `docs/architecture/v2/inline_delimiter_validity_2026-07-10.md`,
-`doc/architecture/live_edit_intent_pipeline.md`, RFC 017, RFC 021.
+`legacy/docs/v2_v3/doc/architecture/live_edit_intent_pipeline.md`, RFC 017,
+RFC 021.
 
 ## 1. Summary
 

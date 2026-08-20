@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
   "contractId": "flark-v4-runtime-abi-v1",
-  "status": "m0-interface-only",
+  "status": "implemented-direct-v4-boundary",
   "abi": {
     "major": 4,
-    "minor": 25,
+    "minor": 26,
+    "minorRule": "NEGOTIATE requires the exact current minor; any major or minor mismatch returns UNSUPPORTED_ABI_VERSION because the runtime retains no per-client negotiation state",
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",
@@ -47,7 +48,8 @@
     {"name": "SEMANTIC_ACTIONS_V1", "bit": 4194304},
     {"name": "STAGED_SOURCE_TRANSACTIONS_V1", "bit": 8388608},
     {"name": "LIST_INDENTATION_V1", "bit": 16777216},
-    {"name": "SEMANTIC_TARGETS_V1", "bit": 33554432}
+    {"name": "SEMANTIC_TARGETS_V1", "bit": 33554432},
+    {"name": "LITERAL_SAFE_ENVELOPES_V1", "bit": 67108864}
   ],
   "operations": [
     {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},
@@ -179,7 +181,8 @@
     {"name": "SEMANTIC", "code": 2},
     {"name": "SOURCE_AND_SEMANTIC", "code": 3},
     {"name": "SEMANTIC_PROJECTED", "code": 4},
-    {"name": "SEMANTIC_TARGET", "code": 5}
+    {"name": "SEMANTIC_TARGET", "code": 5},
+    {"name": "SEMANTIC_PROJECTED_LITERAL_SAFE", "code": 6}
   ],
   "resultRecordKinds": [
     {"name": "SOURCE_BYTES", "code": 1},
@@ -289,7 +292,7 @@
   ],
   "inputFlagRules": {
     "abiMinor": 0,
-    "rule": "Every request flags field, SessionConfig.flags, reserved_u32 field, and reserved array element must be zero. Any nonzero value is INVALID_ARGUMENT. A later minor may assign a flag only behind a negotiated capability and may not reinterpret v4.0 zero behavior."
+    "rule": "Every request flags field, SessionConfig.flags, reserved_u32 field, and reserved array element must be zero. Any nonzero value is INVALID_ARGUMENT. A future exact minor may assign a flag only behind a negotiated capability and may not reinterpret v4.0 zero behavior."
   },
   "admissionRules": [
     {"operation": "CREATE_BEGIN", "input": "optional first input chunk", "hardCapBytes": 65536, "overCapStatus": "INVALID_ARGUMENT"},
@@ -302,6 +305,7 @@
     "abiEncoder": "flark_abi::ResultPageHeader::from_runtime",
     "sourceRead": "Requested range is at most MAX_SOURCE_CHUNK_BYTES. RESULT_PAGE_HEADER uses SOURCE_BYTES, NOT_APPLICABLE, snapshot zero, continuation zero, and payload bytes exactly equal covered-range bytes. The caller advances explicit ranges; SOURCE_READ never creates a continuation.",
     "initialViewport": "QUERY_VIEWPORT requires continuation zero. Snapshot zero selects the latest revision snapshot atomically; every returned viewport page names the resulting nonzero pinned snapshot.",
+    "viewportRangeHints": "For query kinds 1, 2, 3, 4, and 6, requested start, requested end, and page start are bounded byte-window hints. The ABI floors them to UTF-8 scalar boundaries once, publishes that effective requested range, and preserves it through continuations. Query kind 5 semantic-target ranges remain exact and strict.",
     "continuation": "CONTINUATION_NEXT and CONTINUATION_RELEASE must echo the exact nonzero revision, snapshot, and continuation from the prior page authority.",
     "pending": "A SEMANTIC query that is not certified returns NOT_CERTIFIED plus a SOURCE_BYTES PENDING_NEUTRAL page. SOURCE_AND_SEMANTIC returns ordered certification-range records followed by exact current source bytes; the page is PENDING_NEUTRAL, MIXED_CURRENT, or CURRENT_CERTIFIED."
   },
@@ -346,14 +350,21 @@
       "DIRECT_LINK": 10,
       "DIRECT_IMAGE": 11,
       "REFERENCE_LINK": 12,
-      "REFERENCE_IMAGE": 13
+      "REFERENCE_IMAGE": 13,
+      "TABLE_CELL": 14,
+      "LITERAL_SAFE_ENVELOPE": 15
     },
-    "rule": "SEMANTIC_FACTS payloads contain item_count fixed row records followed by 80-byte semantic records grouped in row order. A row with bit 3 set owns exactly inline_fact_count following records; zero is an authoritative empty set. A row without bit 3 must have count zero and render exact source for inline presentation. Every source and visible-content range is absolute, current-revision, and supplied in both UTF-8 bytes and UTF-16 code units. Replacement records carry one required and one optional Unicode scalar; those words are zero for every other kind. ABI 4.7 table-cell kind 14 uses flags bits 0..1 for alignment, bit 2 for header cells, bit 3 for the first cell of a row, and bit 4 for an autocompleted empty cell. No row publishes a partial semantic set."
+    "rule": "SEMANTIC_FACTS payloads contain item_count fixed row records followed by 80-byte semantic records grouped in row order. A row with bit 3 set owns exactly inline_fact_count following records; zero is an authoritative empty set. A row without bit 3 must have count zero and render exact source for inline presentation. Every source and visible-content range is absolute, current-revision, and supplied in both UTF-8 bytes and UTF-16 code units. Replacement records carry one required and one optional Unicode scalar; those words are zero for every other kind. ABI 4.7 table-cell kind 14 uses flags bits 0..1 for alignment, bit 2 for header cells, bit 3 for the first cell of a row, and bit 4 for an autocompleted empty cell. ABI 4.26 kind 15 carries a literal-safe envelope in source ranges, one declared edit class in flags, and zero content/replacement fields. No row publishes a partial semantic set."
   },
-  "viewportRowContinuity": {
-    "abiMinor": 8,
-    "plainTextInsertionBit": 16,
-    "rule": "Viewport row flag bit 4 is parser-authored authority for retaining the row presentation during a nonempty conservative plain-text insertion wholly inside its contiguous editable UTF-16 range. The flag does not authorize deletion, replacement, syntax-shaped input, table or thematic-break presentation, or an insertion touching an inline fact. The host binds it to one exact transaction and revision."
+  "viewportLiteralSafeEnvelopes": {
+    "abiMinor": 26,
+    "recordKind": 15,
+    "editClasses": {
+      "ASCII_WORD_INSERTION": 1,
+      "SINGLE_ASCII_SPACE_INSERTION": 2
+    },
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "rule": "Only the capability-gated SEMANTIC_PROJECTED_LITERAL_SAFE query appends these records; SEMANTIC and SEMANTIC_PROJECTED retain their pre-envelope payload vocabulary, while a 4.25 negotiation is rejected because the ABI is stateless. ASCII_WORD_INSERTION is emitted only when one eligible fact's complete nonempty content slice is a flat ASCII letter/digit word with identity byte-to-UTF-16 length and, for Code, zero normalization flags. The host performs only edit-class matching and range containment, binds a match to one transaction and revision, and waits for fresh parser authority before another edit."
   },
   "snapshotLifetime": {
     "ownership": "NON_OWNING_EPOCH",

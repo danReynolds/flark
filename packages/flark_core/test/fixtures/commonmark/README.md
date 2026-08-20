@@ -27,7 +27,7 @@ Deviation register:
   - `reason`,
   - `targetMilestone`.
 
-## V3 coverage ledger
+## Historical v3 coverage ledger
 
 `v3_coverage_ledger.json` accounts for every CommonMark 0.31.2 fixture without
 turning corpus inventory into a conformance score. Its statuses distinguish:
@@ -41,8 +41,9 @@ The final category includes both likely-working and incomplete grammar. It is
 not a pass. The ledger deliberately does not credit fragment-only, synthetic,
 or legacy-v2 coverage to v3.
 
-Run its inventory, classification, and evidence drift guard with:
+The JSON file remains historical source material after the direct v4 cutover.
+Run the active v4 normative GFM and CommonMark compatibility ledgers with:
 
 ```sh
-dart test test/v3/conformance/flark_v3_commonmark_coverage_ledger_test.dart
+bash scripts/verify_v4_markdown_conformance.sh
 ```

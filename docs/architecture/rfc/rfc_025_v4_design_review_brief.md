@@ -464,7 +464,9 @@ Build plan: `docs/architecture/v4/build_plan.md`.
 intact, no error surfaced); over-window lines beginning with a marker character
 fault; lazy continuation into an open list item faults.
 
-**Evidence:** all measurements above are reproducible from harnesses in the
-repo — `example/lib/g2_jank_harness.dart`, `g2_dense_bisect.dart`,
-`g3_headless_probe.dart`, `example/lib/g4/`. Raw logs in
-`docs/architecture/v4/`.
+**Evidence:** the historical measurements above came from the archived
+[`g2_jank_harness.dart`](../../../legacy/root_package/example/lib/g2_jank_harness.dart),
+[`g2_dense_bisect.dart`](../../../legacy/root_package/example/lib/g2_dense_bisect.dart),
+[`g3_headless_probe.dart`](../../../legacy/root_package/example/lib/g3_headless_probe.dart),
+and [`g4/`](../../../legacy/root_package/example/lib/g4/) harnesses. Raw logs
+remain in `docs/architecture/v4/`.

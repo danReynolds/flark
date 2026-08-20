@@ -305,7 +305,7 @@ Frame-identity translation is the named B2 completion item; the
 editing-authority cutover (and with it the full deletion of the
 post-seal build) is gated on B2 plus the two findings above.
 
-### Experiment B revision-locality receipt (2026-08-17): ALL GATES PASS
+### Experiment B revision-locality receipt (2026-08-17): partial
 
 The compact index now updates through bounded convergence instead of BOF
 rebuilds. The build follows the measurement-determined design exactly: a
@@ -321,7 +321,7 @@ receipts proved is state equality through the durable codec. On
 convergence the journal splices: prefix and suffix entries reuse their
 payload records as stored under the remap.
 
-The nine-cell falsification differential (1 and 10 MiB at BOF, middle,
+The nine-cell development differential (1 and 10 MiB at BOF, middle,
 and EOF; same-length replacements and a one-byte insertion; one
 definition-bearing 2 MiB cell), independently re-run and reproduced:
 
@@ -348,10 +348,13 @@ production stride rule); non-position deltas are caller-declared and
 verified by convergence — a wrong declaration can only suppress
 convergence into a bounded, still-correct full replay, proven by the
 structural-edit test; frame-identity translation under a nonzero frame
-delta fails closed as declared future work. With this receipt the
-architecture's final unproven claim — revision locality — is closed;
-what remains for the compact path is integration (post-seal authority
-cutover deleting the full-Green tail) and qualification.
+delta fails closed as declared future work. This closes the ordinary 1 and
+10 MiB prototype cells only. RFC 029's frozen gate remains open: peer-next and
+4x detector tiers have not run, reference-winner foreground work still performs
+the named whole-document rebuild instead of proving locality with reference-use
+count, and B2 frame-identity translation remains incomplete. Integration and
+the post-seal authority cutover cannot treat this partial receipt as their
+unlock.
 
 ### Dart-layer streamed open receipt (2026-08-17)
 
@@ -422,22 +425,26 @@ source is correct feedback rather than a defect.
 
 [RFC 027 section 4.4.1](../rfc/rfc_027_continuously_rendered_markdown.md)
 carries the amendment and `live_projection_v2` carries the normative change.
-Implementation removes the row continuity policy and its ABI field, the inline
-and table continuity receipts, and all host-side character classification. The
-transform inside the positive branch is pure range arithmetic over ranges the
-parser already publishes — row, inline-fact source/content, projection
-segments, in both dimensions — and because the source/display mapping is
-derived from those same structures, caret geometry stays coherent without new
-machinery. Verified before selection: no new engine support is required.
+The landed minimum removes the old row-policy ABI field, inline-fact policy
+flags, and host-side character classification from the active decision path.
+It publishes only ASCII letter/digit insertion envelopes when an eligible
+inline fact's complete content slice is one flat non-empty ASCII word, plus a
+one-shot U+0020 envelope at an eligible outer closing boundary at row end.
+Punctuation, whitespace, nesting, latent syntax, and code normalization fail
+closed. The old inline/table authorization functions are removed. Deletion,
+replacement, non-ASCII, table-specific and broader classes, chained edits, and
+their exhaustive differential evidence remain pending.
 
 The soundness obligation replaces a measured frame count with a structural
 guarantee — for every position in a published envelope, an edit of the
-declared class must leave published facts unchanged, differentially tested
-across the conformance corpus. The T2 receipt's "0 raw projected frames" could
+declared class must leave published facts unchanged. Focused tests cover the
+landed minimum; a corpus-wide differential is still required before the class
+vocabulary expands. The T2 receipt's "0 raw projected frames" could
 not have caught this: its workload types alphanumerics strictly inside an
 already-certified strong run, the single shape the old permission retained.
 The pinned regression in `packages/flark/test/emphasis_continuity_test.dart`
-is the acceptance test and flips from skipped to passing when envelopes land.
+is the product acceptance test for the trailing-space class; it does not prove
+the pending edit classes or broader corpus coverage.
 
 ### Flutter streamed-open paint receipt (2026-08-18)
 
@@ -989,13 +996,17 @@ page state mutates adjacent to the swap, and the refresh path releases its
 fresh continuation when an edit supersedes it mid-flight. Five consecutive
 solo runs of the paging regression and the complete v4 gate pass.
 
-`scripts/verify_v4.sh` is now the local gate of record: it builds `flark-abi`,
+`scripts/verify_v4.sh` is the local gate of record: it builds `flark-abi`,
 exports `FLARK_V4_LIBRARY_PATH`, and runs the Rust, Dart analyze/test, and
 Flutter analyze/test v4 suites with no pipeline masking an exit code. Without
 that variable the Dart and Flutter suites skip silently, which is how a red
-suite could previously read as green. Continuous-integration wiring for v4 is
-explicitly deferred by decision while core development remains local-first;
-the script is the gate.
+suite could previously read as green. Active-package release and archive gates
+now live under `scripts/verify_v4_*.sh`; the checked-in platform-smoke script
+and compatibility entry points also target the v4 packages. Workflows invoke
+distinct default-feature integration, `opening-session` feature, and full
+release lanes. This wiring is structural evidence only until it passes on a
+committed SHA; in this worktree the local script remains the only executed gate
+of record.
 
 Two sequencing amendments are recorded. First, the bounded input-window/IME
 contract implementation must land together with the ABI surface it depends on
@@ -1009,7 +1020,7 @@ admission-versus-installation distinction above becomes a typed `flark_core`
 concern in the same move. Second, macOS foreground performance certification
 follows that milestone; the remaining order is unchanged.
 
-The first tranche of that milestone is implemented: all twenty-nine header
+The first tranche of that milestone is implemented: all thirty-one header
 operations now exist. Anchors are source-stable byte positions with
 creation-time affinity, validated to scalar boundaries in either coordinate
 kind and transformed eagerly inside every committed small, bulk, and replay
@@ -1442,9 +1453,11 @@ post-dogfood optimization target for receipt-backed history presentation.
 
 Android and iOS source/build checks may run on this Mac, but interaction and
 performance claims still require physical devices. Windows is outside the
-current program scope. The product identity cutover is complete: active code
-lives only in `packages/flark_core` and `packages/flark`; superseded v2/v3
-sources are inert under `legacy/` and are excluded from active gates.
+current program scope. The source-layout identity cutover has landed: active
+code lives only in `packages/flark_core` and `packages/flark`, while superseded
+v2/v3 sources are inert under `legacy/`. Checked-in CI, release, archive, and
+platform entry points now target those packages; operational cutover remains
+unclosed until those gates pass on a committed SHA.
 
 ### Android qualification development update (2026-08-15)
 
@@ -1975,7 +1988,8 @@ flark (Flutter)
                  -> flark-parser + flark-engine
 ```
 
-The direct package cutover from the broader legacy bridge is complete:
+The direct package source-layout cutover from the broader legacy bridge has
+landed; verification and automation closeout remain incomplete:
 
 | Current | Destination | Treatment |
 | --- | --- | --- |
@@ -1985,10 +1999,14 @@ The direct package cutover from the broader legacy bridge is complete:
 | Dart `flark` | Dart `flark_core` | Rename mechanically after baseline |
 | Flutter `flark_flutter` | Flutter `flark` | Rename mechanically after Dart |
 
-After the M0 baseline, the package identities change first because all three
-candidate pub.dev names returned not-found on 2026-08-08 and the project has no
-hosted compatibility promise to preserve. Runtime work, each package rename,
-legacy deletion, and directory moves remain separate reviewable checkpoints.
+The intended sequence was to close M0 and then change the package identities
+mechanically because all three candidate pub.dev names returned not-found on
+2026-08-08 and the project had no hosted compatibility promise to preserve. The
+user instead selected a direct cutover, and source moves, runtime work, generated
+artifacts, and qualification landed together in `a210a12`. That decision is
+recorded rather than rewritten as the original staged proof: committed-SHA CI,
+archive consumers, capability/rollback classification, and publication gates
+remain separate closeout evidence.
 
 ### Starting receipts that must remain honest
 
@@ -2140,7 +2158,9 @@ display mode.
 
 ### M0 — Freeze the decision, contracts, and baseline
 
-**Status:** active.
+**Status:** incomplete. The direct source-layout cutover proceeded before this
+milestone's baseline and evidence exits closed; the unchecked items below remain
+real reconciliation work rather than retroactive checkmarks.
 
 Purpose: make the selected architecture falsifiable before replacing the
 boundary.
@@ -2205,7 +2225,11 @@ Exit evidence:
 **Review checkpoint:** approve the runtime/ABI and input-window contracts before
 the M1 identity change and M2 implementation grow around them.
 
-### M1 — Establish the final package identities (complete)
+### M1 — Establish the final package identities
+
+**Status:** package directories and logical identities landed; verification
+closeout is pending. “Landed” does not mean the original mechanical-only
+sequence or committed-SHA exit gates were satisfied.
 
 Purpose: make subsequent implementation land in the product structure the user
 will actually consume. This milestone changes names and ownership declarations,
@@ -2217,25 +2241,37 @@ not runtime behavior.
 - [x] Expose the supported API through
   `package:flark_core/flark_core.dart`.
 - [x] Move the Rust workspace and build hook under the package that owns them.
-- [x] Update active imports, tests, scripts, fixtures, metadata, and docs.
+- [x] Reconcile checked-in active workflows, release/archive/platform scripts,
+  and repository README/CLAUDE paths with the new physical paths.
+- [ ] Reconcile remaining active fixture and metadata pointers; historical
+  evidence paths must resolve to their archived `legacy/` locations.
+- [ ] Record successful committed-SHA CI and external archive-consumer receipts.
 - [x] Assert that `flark_core` has no Flutter SDK dependency or Flutter import.
 
 M1A exits when analysis/tests and a clean external package-native consumer pass
-using only the `flark_core` identity. That evidence is green.
+using only the `flark_core` identity on the committed candidate SHA. Local
+package analysis and the static extracted-archive consumer are green; runtime
+archive-consumer and committed-SHA CI receipts remain closeout work, so M1A is
+not yet closed.
 
 #### M1B — Flutter product package
 
 - [x] Establish `packages/flark` as the only active Flutter product package.
 - [x] Expose the supported API through `package:flark/flark.dart` with an
   explicit `flark_core` dependency.
-- [x] Update active Flutter imports, tests, example applications, scripts,
-  metadata, and docs.
+- [x] Reconcile checked-in active Flutter workflows, example entry points, and
+  release/platform scripts with `packages/flark`.
+- [ ] Reconcile remaining active Flutter fixture and metadata pointers.
+- [ ] Record successful committed-SHA Flutter CI/build and external
+  archive-consumer receipts.
 - [x] Assert that production Flutter code reaches engine APIs through
   `flark_core`.
 
 M1B exits when Flutter analyze/test/build and a clean macOS product consumer
-build/launch with only a direct `flark` dependency. That package-native
-consumer evidence is green; final committed-SHA gates remain the closeout step.
+build/launch with only a direct `flark` dependency pass on the committed
+candidate SHA. Local static extracted-archive consumer evidence is useful, but
+runtime archive-consumer and committed-SHA Flutter CI/build gates remain open,
+so M1B is not yet closed.
 
 Constraints:
 
@@ -2473,7 +2509,9 @@ Full conformance means semantic behavior against the pinned profile, not
 - [ ] Finish selection, multi-block replacement, clipboard, undo/redo, command
   routing, and source-anchored history.
 - [ ] Harden composition, autocorrect, dead keys, dictation events, and input
-  window resynchronization where macOS can exercise them.
+  window resynchronization where macOS can exercise them. The sound landed
+  minimum makes the active row exact during composition; a narrower island
+  requires parser-authored result-revision/dependency authority.
 - [ ] Cover grapheme deletion, emoji/ZWJ, combining marks, bidi, affinity,
   long lines, text scaling, and font fallback.
 - [ ] Add link/media actions, tables/task interactions, continuously rendered
