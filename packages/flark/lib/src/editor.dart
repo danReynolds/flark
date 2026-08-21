@@ -1221,6 +1221,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
   @override
   void showAutocorrectionPromptRect(int start, int end) {}
 
+  // Newer Flutter SDKs add this optional TextInputClient callback. Keep the
+  // annotation there while allowing the 3.41 qualification lane.
+  // ignore: override_on_non_overriding_member
   @override
   bool onFocusReceived() {
     _focusNode.requestFocus();
