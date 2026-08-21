@@ -372,6 +372,25 @@ final class LiveEditorTransitionProbe {
     _platformValue = controller.inputValue;
   }
 
+  Future<void> selectRange(int baseUtf16, int extentUtf16) async {
+    final start = baseUtf16 < extentUtf16 ? baseUtf16 : extentUtf16;
+    final end = baseUtf16 < extentUtf16 ? extentUtf16 : baseUtf16;
+    final row = controller.rows.firstWhere(
+      (candidate) {
+        final editable = candidate.editableUtf16;
+        return editable != null &&
+            editable.start <= start &&
+            end <= editable.end;
+      },
+      orElse: () => throw StateError(
+        'selection $baseUtf16..$extentUtf16 is not in one editable row',
+      ),
+    );
+    controller.activateRow(row, baseUtf16, selectionExtent: extentUtf16);
+    _platformValue = controller.inputValue;
+    await controller.debugWaitForMutationSettled();
+  }
+
   Future<PublicationSample> presentationSettled() async {
     await controller.debugWaitForPresentationSettled();
     _platformValue = controller.inputValue;
@@ -491,6 +510,11 @@ final class MountedTransitionRecorder {
 
   Future<void> moveCaret(int globalUtf16Offset) async {
     await tester.runAsync(() async => probe.moveCaret(globalUtf16Offset));
+    await tester.pump();
+  }
+
+  Future<void> selectRange(int baseUtf16, int extentUtf16) async {
+    await tester.runAsync(() => probe.selectRange(baseUtf16, extentUtf16));
     await tester.pump();
   }
 

@@ -452,13 +452,20 @@ Query kind 6, inline-record kind 15, and edit-class codes 1 and 2 are unchanged;
 the stateless boundary instead requires exact minor 4.27 plus the new bit-27
 capability.
 
-This closure is a stopgap for the demonstrated plain-heading typing burst, not
-completion of continuously rendered editing. When an edit has no surviving
-proof, the current controller safely paints the whole active row as exact
-source. That can reveal unrelated markers and therefore remains a product gap
-against RFC 027's no-marker-flash target. The next required tranche is
-parser-authored minimal dependency islands for unsupported edits; tests and
-release notes must not describe the existing whole-row fallback as local.
+ABI 4.28 adds `PROJECTION_EDIT_CELLS_V1`, record kind 16, and exact-minor 4.28.
+The first broad cell keeps a canonical ATX shell while arbitrary non-newline
+plain content edits paint only the complete editable cell exactly. The first
+local cell admits one parser-proved space at a flat Strong opener/content
+boundary, paints only that Strong closure exactly, and retains independent
+outside facts. Mounted paint evidence pins the latter: `# ` and unrelated
+`_right_` never reappear, and every frame carries the accepted source generation
+and exact caret identity.
+
+The edit-cell seam is still bounded, not completion of continuously rendered
+editing. When no cell or envelope matches, the controller safely paints the
+whole active row as exact source. That can reveal unrelated markers and remains
+a product gap against RFC 027's no-marker-flash target. General parser-authored
+dependency components and exact composition islands remain required.
 
 The soundness obligation replaces a measured frame count with a structural
 guarantee — for every admitted position in a published envelope, an edit of the

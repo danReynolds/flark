@@ -26,7 +26,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 27;
+pub const ABI_MINOR: u16 = 28;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -370,8 +370,18 @@ pub const INLINE_FACT_TABLE_CELL: u32 = 14;
 /// stream. The source ranges carry the envelope and `flags` carries one
 /// `LITERAL_EDIT_CLASS_*` value; content/replacement fields are zero.
 pub const INLINE_FACT_LITERAL_SAFE_ENVELOPE: u32 = 15;
+/// A parser-authored bounded projection edit cell. Source fields carry the
+/// affected closure and content fields carry the admission trigger.
+pub const INLINE_FACT_PROJECTION_EDIT_CELL: u32 = 16;
 pub const LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION: u32 = 1;
 pub const LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION: u32 = 2;
+pub const PROJECTION_EDIT_CELL_MATCHER_MASK: u32 = 0x00ff;
+pub const PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE: u32 = 0x0001;
+pub const PROJECTION_EDIT_CELL_MATCH_INSERT_SINGLE_ASCII_SPACE_AT_POINT: u32 = 0x0003;
+pub const PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL: u32 = 0x0100;
+pub const PROJECTION_EDIT_CELL_RETAIN_OUTSIDE: u32 = 0x0200;
+pub const PROJECTION_EDIT_CELL_PRESENT_EXACT: u32 = 0x0400;
+pub const PROJECTION_EDIT_CELL_CHAIN_RESULT: u32 = 0x0800;
 pub const INLINE_FACT_TABLE_ALIGNMENT_MASK: u32 = 0x03;
 pub const INLINE_FACT_TABLE_HEADER: u32 = 1 << 2;
 pub const INLINE_FACT_TABLE_ROW_START: u32 = 1 << 3;

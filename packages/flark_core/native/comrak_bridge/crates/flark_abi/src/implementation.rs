@@ -12,15 +12,15 @@ use flark_runtime::{
     DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
-    DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentProjectionSegment,
-    DocumentSemanticTargetKind, DocumentSemanticTargetSyntax, DocumentSessionError,
-    DocumentSessionPhase, DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
-    HistoryDisposition, HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome,
-    ProgressState, ProgressToken, QueryKind, ResultPageReceipt, ResultRecordKind, Revision,
-    SessionHandle, SessionInspectionReceipt, SessionState, SnapshotId,
-    SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES,
-    MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES,
-    MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
+    DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentProjectionEditCell,
+    DocumentProjectionSegment, DocumentSemanticTargetKind, DocumentSemanticTargetSyntax,
+    DocumentSessionError, DocumentSessionPhase, DocumentViewportRowEditCapability,
+    DocumentViewportRowPresentation, HistoryDisposition, HistoryToken, OperationCode,
+    OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, QueryKind,
+    ResultPageReceipt, ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt,
+    SessionState, SnapshotId, SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle,
+    MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES,
+    MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
 };
 
 use crate::{
@@ -50,10 +50,11 @@ use crate::{
     EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL,
     INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
     INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
-    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_LITERAL_SAFE_ENVELOPE, INLINE_FACT_REFERENCE_IMAGE,
-    INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH,
-    INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
-    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
+    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_LITERAL_SAFE_ENVELOPE,
+    INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
+    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
+    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
+    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
     VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
@@ -98,7 +99,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 24)
     | (1 << 25)
     | (1 << 26)
-    | (1 << 27);
+    | (1 << 27)
+    | (1 << 28);
 
 struct Registry {
     next_handle: u64,
@@ -4947,15 +4949,26 @@ fn query_page(
                     } else {
                         0
                     };
+                let projection_edit_cell_count =
+                    if query_kind == QueryKind::SemanticProjectedLiteralSafe as u32 {
+                        row.projection_edit_cells.len()
+                    } else {
+                        0
+                    };
                 let (inline_authoritative, inline_fact_count) = match &row.inline_facts {
                     Some(facts)
-                        if facts.len() + literal_safe_envelope_count
+                        if facts.len()
+                            + literal_safe_envelope_count
+                            + projection_edit_cell_count
                             <= VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize
-                            && (facts.len() + literal_safe_envelope_count)
+                            && (facts.len()
+                                + literal_safe_envelope_count
+                                + projection_edit_cell_count)
                                 * size_of::<InlineFactRecord>()
                                 <= remaining_payload_bytes =>
                     {
-                        let semantic_record_count = facts.len() + literal_safe_envelope_count;
+                        let semantic_record_count =
+                            facts.len() + literal_safe_envelope_count + projection_edit_cell_count;
                         remaining_payload_bytes -=
                             semantic_record_count * size_of::<InlineFactRecord>();
                         inline_facts.extend(facts.iter().map(inline_fact_record));
@@ -4964,6 +4977,13 @@ fn query_page(
                                 row.literal_safe_envelopes
                                     .iter()
                                     .map(literal_safe_envelope_record),
+                            );
+                        }
+                        if projection_edit_cell_count != 0 {
+                            inline_facts.extend(
+                                row.projection_edit_cells
+                                    .iter()
+                                    .map(projection_edit_cell_record),
                             );
                         }
                         (
@@ -5489,6 +5509,22 @@ fn literal_safe_envelope_record(envelope: &DocumentLiteralSafeEnvelope) -> Inlin
         source_end_byte: envelope.source_range.end,
         source_start_utf16: envelope.source_utf16_range.start,
         source_end_utf16: envelope.source_utf16_range.end,
+        ..InlineFactRecord::default()
+    }
+}
+
+fn projection_edit_cell_record(cell: &DocumentProjectionEditCell) -> InlineFactRecord {
+    InlineFactRecord {
+        kind: INLINE_FACT_PROJECTION_EDIT_CELL,
+        flags: cell.flags,
+        source_start_byte: cell.source_range.start,
+        source_end_byte: cell.source_range.end,
+        source_start_utf16: cell.source_utf16_range.start,
+        source_end_utf16: cell.source_utf16_range.end,
+        content_start_byte: cell.trigger_range.start,
+        content_end_byte: cell.trigger_range.end,
+        content_start_utf16: cell.trigger_utf16_range.start,
+        content_end_utf16: cell.trigger_utf16_range.end,
         ..InlineFactRecord::default()
     }
 }

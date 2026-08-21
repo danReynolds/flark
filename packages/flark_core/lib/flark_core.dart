@@ -42,6 +42,8 @@ export 'src/models.dart'
         FlarkListItemPresentation,
         FlarkListMarkerStyle,
         FlarkProjectionSegment,
+        FlarkProjectionEditCell,
+        FlarkProjectionEditMatcher,
         FlarkSemanticTarget,
         FlarkSemanticTargetKind,
         FlarkSemanticTargetSyntax,
@@ -53,7 +55,11 @@ export 'src/models.dart'
         FlarkViewportRow,
         FlarkViewportRowEditCapability;
 export 'src/projection_continuity.dart'
-    show FlarkProjectionContinuityReceipt, authorizeRowProjectionContinuity;
+    show
+        FlarkProjectionContinuityReceipt,
+        FlarkProjectionEditCellReceipt,
+        authorizeProjectionEditCell,
+        authorizeRowProjectionContinuity;
 export 'src/presentation.dart'
     show
         FlarkCoreCommittedPresentationGapV1,

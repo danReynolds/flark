@@ -16,12 +16,19 @@ pub use document::{
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentInlineReplacement, DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
     DocumentLiteralSafeEnvelope, DocumentLiveViewport, DocumentLiveViewportSpan,
-    DocumentProjectionSegment, DocumentPumpReceipt, DocumentQueryReceipt, DocumentSemanticTarget,
-    DocumentSemanticTargetKind, DocumentSemanticTargetSyntax, DocumentSession,
-    DocumentSessionError, DocumentSessionPhase, DocumentViewport, DocumentViewportRow,
-    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
-    DOCUMENT_TABLE_CELL_ALIGNMENT_MASK, DOCUMENT_TABLE_CELL_AUTOCOMPLETED,
-    DOCUMENT_TABLE_CELL_HEADER, DOCUMENT_TABLE_CELL_ROW_START,
+    DocumentProjectionEditCell, DocumentProjectionSegment, DocumentPumpReceipt,
+    DocumentQueryReceipt, DocumentSemanticTarget, DocumentSemanticTargetKind,
+    DocumentSemanticTargetSyntax, DocumentSession, DocumentSessionError, DocumentSessionPhase,
+    DocumentViewport, DocumentViewportRow, DocumentViewportRowEditCapability,
+    DocumentViewportRowPresentation, DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT,
+    DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK, DOCUMENT_PROJECTION_EDIT_CELL_MATCHER_MASK,
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_SINGLE_ASCII_SPACE_AT_POINT,
+    DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS, DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT,
+    DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL, DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE,
+    DOCUMENT_PROJECTION_EDIT_CELL_RETENTION_MASK,
+    DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS, DOCUMENT_TABLE_CELL_ALIGNMENT_MASK,
+    DOCUMENT_TABLE_CELL_AUTOCOMPLETED, DOCUMENT_TABLE_CELL_HEADER, DOCUMENT_TABLE_CELL_ROW_START,
 };
 pub use edit_intent::{
     DocumentCommittedSpliceV1, DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1,
@@ -556,6 +563,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("SEMANTIC_TARGETS_V1", 1 << 25),
     ("LITERAL_SAFE_ENVELOPES_V1", 1 << 26),
     ("LITERAL_SAFE_ENVELOPE_CLOSURE_V1", 1 << 27),
+    ("PROJECTION_EDIT_CELLS_V1", 1 << 28),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;

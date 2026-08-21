@@ -124,6 +124,137 @@ void main() {
   }
 
   testWidgets(
+    'empty heading keeps its projected shell for the first Unicode insertion',
+    (tester) async {
+      final probe = (await tester.runAsync(
+        () =>
+            LiveEditorTransitionProbe.open('# ¦\n', libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+
+      try {
+        final paintStart = mounted.paints.length;
+        final expectedSourceGeneration = probe.controller.sourceGeneration + 1;
+        await mounted.typeText('🌍');
+        await mounted.pumpImmediate();
+
+        final editPaints = mounted.paints.skip(paintStart).toList();
+        expect(editPaints, isNotEmpty);
+        for (final paint in editPaints) {
+          final activeRows = paint.rows
+              .where((row) => row.active)
+              .toList(growable: false);
+          expect(activeRows, isNotEmpty);
+          expect(activeRows.every((row) => !row.neutral), isTrue);
+          expect(activeRows.every((row) => row.text == '🌍'), isTrue);
+          expect(paint.sourceGeneration, expectedSourceGeneration);
+          expect(paint.presentation, isNot(contains('# ')));
+          expect(paint.caretRect, isNotNull);
+          expect(paint.caretSourceUtf16, paint.canonicalSelectionExtentUtf16);
+        }
+
+        await mounted.pumpPresentationSettled();
+        await tester.runAsync(() => probe.expectSourceAndCaret('# 🌍¦\n'));
+        await tester.runAsync(probe.expectHealthy);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
+    'plain heading deletion keeps its projected shell in every paint',
+    (tester) async {
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(
+          '# Tes¦t\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+
+      try {
+        final paintStart = mounted.paints.length;
+        final expectedSourceGeneration = probe.controller.sourceGeneration + 1;
+        await mounted.pressBackspace();
+        await mounted.pumpImmediate();
+
+        final editPaints = mounted.paints.skip(paintStart).toList();
+        expect(editPaints, isNotEmpty);
+        for (final paint in editPaints) {
+          final activeRows = paint.rows
+              .where((row) => row.active)
+              .toList(growable: false);
+          expect(activeRows, isNotEmpty);
+          expect(activeRows.every((row) => !row.neutral), isTrue);
+          expect(activeRows.every((row) => row.text == 'Tet'), isTrue);
+          expect(paint.sourceGeneration, expectedSourceGeneration);
+          expect(paint.presentation, isNot(contains('# ')));
+          expect(paint.caretRect, isNotNull);
+          expect(paint.caretSourceUtf16, paint.canonicalSelectionExtentUtf16);
+        }
+
+        await mounted.pumpPresentationSettled();
+        await tester.runAsync(() => probe.expectSourceAndCaret('# Te¦t\n'));
+        await tester.runAsync(probe.expectHealthy);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
+    'plain heading replacement keeps its projected shell in every paint',
+    (tester) async {
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(
+          '# T¦est\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+
+      try {
+        await mounted.selectRange(3, 5);
+        final paintStart = mounted.paints.length;
+        final expectedSourceGeneration = probe.controller.sourceGeneration + 1;
+        await mounted.typeText('🌍');
+        await mounted.pumpImmediate();
+
+        final editPaints = mounted.paints.skip(paintStart).toList();
+        expect(editPaints, isNotEmpty);
+        for (final paint in editPaints) {
+          final activeRows = paint.rows
+              .where((row) => row.active)
+              .toList(growable: false);
+          expect(activeRows, isNotEmpty);
+          expect(activeRows.every((row) => !row.neutral), isTrue);
+          expect(activeRows.every((row) => row.text == 'T🌍t'), isTrue);
+          expect(paint.sourceGeneration, expectedSourceGeneration);
+          expect(paint.presentation, isNot(contains('# ')));
+          expect(paint.caretRect, isNotNull);
+          expect(paint.caretSourceUtf16, paint.canonicalSelectionExtentUtf16);
+        }
+
+        await mounted.pumpPresentationSettled();
+        await tester.runAsync(() => probe.expectSourceAndCaret('# T🌍¦t\n'));
+        await tester.runAsync(probe.expectHealthy);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
     'pending heading continuity never follows a cross-row selection',
     (tester) async {
       final probe = (await tester.runAsync(

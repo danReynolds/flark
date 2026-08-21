@@ -45,7 +45,7 @@ Every visible source-owned range is in exactly one state:
 | `certified_projected` | Current-revision certified semantic facts | Rendered runs with parser-owned markers hidden or replaced |
 | `certified_literal` | Current-revision proof that source is literal or editor source-material | Exact source with intentional literal styling |
 | `pending_exact` | Current source, no current semantic proof | Neutral exact source for the authenticated pending range |
-| `composition_exact` | Current source transaction plus the platform composing value/range | Exact active-row source while composition is pending; unaffected certified rows remain projected |
+| `composition_exact` | Current source transaction plus the platform composing value/range | Exact active-row source while composition is pending, except for a matching parser-authored edit cell's retained shell/outside runs; unaffected certified rows remain projected |
 | `source_gap_exact` | Exact source is available but a projection query cannot cover it | Neutral exact source within the bounded gap |
 | `fault_exact` | Session retains readable source after a typed semantic fault | Exact source plus surfaced fault state; no semantic facts from the faulted range |
 
@@ -254,14 +254,21 @@ space authority ends before an existing trailing-space run, and no terminal
 zero-width proof is published when the row already ends in U+0020. The host
 does not inspect source or recreate a consumed proof.
 
-Deletion, replacement, non-ASCII and table-specific classes, and broader
-literal classes remain pending. The current 4.27 controller fails those edits
-closed by painting the whole active row as exact source until recertification.
-That is authority-safe but does not satisfy this contract's local-island or
-no-marker-flash product target: unrelated markers in the row can become visible.
-Parser-authored minimal dependency islands are the next required tranche; the
-heading closure is a bounded stopgap, not completion of the continuously
-rendered editor.
+ABI 4.28 adds parser-authored projection edit cells. A complete canonical ATX
+content cell admits arbitrary non-newline insertion, deletion, replacement, and
+non-ASCII input while retaining the heading shell and painting only its content
+exactly. A narrower one-shot cell for a conservatively isolated flat Strong
+fact admits one U+0020 at its opening content boundary: only that Strong source
+closure becomes exact while independent inline facts remain projected. Core
+matches the declared trigger, performs range transforms, and never infers the
+dependency closure from Markdown source.
+
+Table-specific classes, structural transitions, general delimiter dependency
+graphs, and broader rows remain pending. Those paths still paint the whole
+active row as exact source until recertification. That is authority-safe but
+does not satisfy this contract's local-island or no-marker-flash target. The
+4.28 cells are the first bounded island seam, not completion of the
+continuously rendered editor.
 
 An insertion chain retains presentation only while every successor matches the
 carried parser proof set and every transform succeeds; anything else uses that
@@ -272,9 +279,9 @@ active decision path.
 ABI 4.26 appends envelope records only for the capability-gated
 `SEMANTIC_PROJECTED_LITERAL_SAFE` query kind. The earlier `SEMANTIC` and
 `SEMANTIC_PROJECTED` query kinds keep their pre-envelope payload vocabulary.
-ABI 4.27 retains that query and record vocabulary, adds the closure capability,
-and requires an exact 4.27 negotiation; a 4.26 request is rejected rather than
-receiving the expanded proof semantics.
+ABI 4.28 retains query kind 6, adds record kind 16 and the edit-cell capability,
+and requires an exact 4.28 negotiation; earlier minors are rejected rather than
+receiving a larger record vocabulary.
 
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as
@@ -288,16 +295,20 @@ old styles or hidden delimiters through another splice.
 ### LP2-COMPOSITION-BEGIN-001
 
 The input connection retains the exact source window. Beginning composition
-creates a `composition_exact` island for the active source row. The complete
-row is exact because the current ABI carries no result-revision proof that a
-composition delta cannot change its other inline facts. Markers in that row
-may therefore be visible while composition is pending; unrelated certified
-rows remain projected.
+creates a `composition_exact` island for the active source row. When an ABI
+4.28 edit cell matches the composition delta, its declared block shell and
+independent outside runs may remain projected while the affected cell is exact.
+Without that parser-authored proof the complete row is exact because the
+runtime has no result-revision proof that the composition delta leaves its
+other inline facts unchanged. Markers in that row may therefore be visible
+while composition is pending; unrelated certified rows remain projected.
 
-A narrower composing-range island, with other facts in the active row retained,
-is pending parser-authored result-revision/dependency authority. It must not be
-reconstructed from predecessor facts plus a source splice and remains a T3
-input-truth item in [RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md).
+A generally available composing-range island, with other facts in the active
+row retained, is still pending parser-authored result-revision/dependency
+authority. The bounded 4.28 cells do not authorize any range or edit they did
+not declare. Authority must not be reconstructed from predecessor facts plus a
+source splice and remains a T3 input-truth item in
+[RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md).
 
 ### LP2-COMPOSITION-UPDATE-001
 

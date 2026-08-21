@@ -28,6 +28,28 @@ void main() {
     sourceBytes: FlarkSourceRange(9, 9),
     sourceUtf16: FlarkSourceRange(9, 9),
   );
+  const plainHeadingCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.anyNoCrLfSplice,
+    affectedBytes: FlarkSourceRange(2, 12),
+    affectedUtf16: FlarkSourceRange(2, 12),
+    triggerBytes: FlarkSourceRange(2, 12),
+    triggerUtf16: FlarkSourceRange(2, 12),
+    retainBlockShell: true,
+    retainOutsideClosure: false,
+    presentClosureExact: true,
+    chainResultCell: true,
+  );
+  const strongOpeningSpaceCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint,
+    affectedBytes: FlarkSourceRange(2, 10),
+    affectedUtf16: FlarkSourceRange(2, 10),
+    triggerBytes: FlarkSourceRange(4, 4),
+    triggerUtf16: FlarkSourceRange(4, 4),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: false,
+  );
 
   test('parser word envelope binds one exact contained insertion', () {
     final receipt = authorizeRowProjectionContinuity(
@@ -462,5 +484,124 @@ void main() {
         isNull,
       );
     }
+  });
+
+  test('complete ATX edit cell chains arbitrary non-newline splices', () {
+    final first = authorizeProjectionEditCell(
+      revision: 20,
+      cells: const [plainHeadingCell],
+      authorizedContentUtf16: const FlarkSourceRange(2, 12),
+      startUtf16: 6,
+      endUtf16: 8,
+      replacement: '😀x',
+    );
+    expect(first, isNotNull);
+    expect(
+      (first!.baseAffectedUtf16.start, first.baseAffectedUtf16.end),
+      (2, 12),
+    );
+    expect((first.affectedUtf16.start, first.affectedUtf16.end), (2, 13));
+    expect(first.resultRevision, 21);
+
+    final second = first.continueWith(
+      startUtf16: 3,
+      endUtf16: 4,
+      replacement: '',
+    );
+    expect(second, isNotNull);
+    expect(second!.baseRevision, 21);
+    expect(second.resultRevision, 22);
+    expect(
+      (second.baseAffectedUtf16.start, second.baseAffectedUtf16.end),
+      (2, 13),
+    );
+    expect((second.affectedUtf16.start, second.affectedUtf16.end), (2, 12));
+  });
+
+  test('complete edit cell rejects noops, line breaks, and crossings', () {
+    for (final edit in [
+      (start: 4, end: 4, replacement: ''),
+      (start: 4, end: 4, replacement: '\n'),
+      (start: 4, end: 4, replacement: '\r'),
+      (start: 1, end: 1, replacement: 'x'),
+      (start: 11, end: 13, replacement: 'x'),
+    ]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 20,
+          cells: const [plainHeadingCell],
+          authorizedContentUtf16: const FlarkSourceRange(2, 12),
+          startUtf16: edit.start,
+          endUtf16: edit.end,
+          replacement: edit.replacement,
+        ),
+        isNull,
+      );
+    }
+  });
+
+  test('local dependency cell admits one exact space and is consumed', () {
+    final receipt = authorizeProjectionEditCell(
+      revision: 30,
+      cells: const [strongOpeningSpaceCell],
+      authorizedContentUtf16: const FlarkSourceRange(2, 25),
+      startUtf16: 4,
+      endUtf16: 4,
+      replacement: ' ',
+    );
+    expect(receipt, isNotNull);
+    expect(
+      (receipt!.baseAffectedUtf16.start, receipt.baseAffectedUtf16.end),
+      (2, 10),
+    );
+    expect((receipt.affectedUtf16.start, receipt.affectedUtf16.end), (2, 11));
+    expect(receipt.retainOutsideClosure, isTrue);
+    expect(
+      receipt.continueWith(startUtf16: 5, endUtf16: 5, replacement: ' '),
+      isNull,
+    );
+
+    for (final edit in [
+      (start: 3, replacement: ' '),
+      (start: 4, replacement: 'x'),
+      (start: 4, replacement: '  '),
+    ]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 30,
+          cells: const [strongOpeningSpaceCell],
+          authorizedContentUtf16: const FlarkSourceRange(2, 25),
+          startUtf16: edit.start,
+          endUtf16: edit.start,
+          replacement: edit.replacement,
+        ),
+        isNull,
+      );
+    }
+  });
+
+  test('ambiguous and escaped projection cells fail closed', () {
+    expect(
+      authorizeProjectionEditCell(
+        revision: 30,
+        cells: const [strongOpeningSpaceCell, strongOpeningSpaceCell],
+        authorizedContentUtf16: const FlarkSourceRange(2, 25),
+        startUtf16: 4,
+        endUtf16: 4,
+        replacement: ' ',
+      ),
+      isNull,
+    );
+    expect(
+      authorizeProjectionEditCell(
+        revision: 30,
+        cells: const [strongOpeningSpaceCell],
+        authorizedContentUtf16: const FlarkSourceRange(5, 25),
+        startUtf16: 4,
+        endUtf16: 4,
+        replacement: ' ',
+      ),
+      isNull,
+    );
   });
 }

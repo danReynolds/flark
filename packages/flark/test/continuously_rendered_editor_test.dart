@@ -865,7 +865,7 @@ void main() {
   );
 
   test(
-    'plain heading backspace fails closed locally and preserves its sibling',
+    'plain heading backspace keeps its parser-authored shell and sibling',
     () async {
       const source = '# Heading\n\nPlain paragraph.\n\n## Sibling\n';
       final controller = await FlarkEditorController.open(
@@ -897,10 +897,13 @@ void main() {
       expect(observed, isNotEmpty);
       expect(observed.every((state) => state.lastKind == 12), isTrue);
       expect(
-        observed.any(
-          (state) => state.firstKind == 0 && state.firstText == '# Headin\n',
+        observed.every(
+          (state) => state.firstKind == 12 && state.firstText == 'Headin',
         ),
         isTrue,
+        reason:
+            'the complete ATX edit cell keeps the block shell while its '
+            'current content is exact',
       );
       final recertified = controller.surfaceRow(controller.rows.first);
       expect(recertified.kind, 12);

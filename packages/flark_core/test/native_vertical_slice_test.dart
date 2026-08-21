@@ -215,7 +215,7 @@ void main() {
   );
 
   test(
-    'nonempty heading edit envelopes cross the Dart worker boundary',
+    'plain heading projection edit cell crosses the Dart worker boundary',
     () async {
       const source = '# Test is here\n';
       final document = await FlarkCoreDocument.open(
@@ -227,22 +227,73 @@ void main() {
 
       final row = (await document.queryViewport()).rows.single;
       expect(row.kind, 12);
+      expect(row.literalSafeEnvelopes, isEmpty);
       expect(
-        row.literalSafeEnvelopes.map(
-          (envelope) => (
-            envelope.editClass,
-            envelope.sourceBytes.start,
-            envelope.sourceBytes.end,
-            envelope.sourceUtf16.start,
-            envelope.sourceUtf16.end,
+        row.projectionEditCells.map(
+          (cell) => (
+            cell.matcher,
+            cell.affectedBytes.start,
+            cell.affectedBytes.end,
+            cell.affectedUtf16.start,
+            cell.affectedUtf16.end,
+            cell.triggerUtf16.start,
+            cell.triggerUtf16.end,
+            cell.retainBlockShell,
+            cell.retainOutsideClosure,
+            cell.presentClosureExact,
+            cell.chainResultCell,
           ),
         ),
         [
-          (FlarkLiteralEditClass.asciiWordInsertion, 2, 14, 2, 14),
-          (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 2, 14, 2, 14),
-          (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 14, 14, 14, 14),
+          (
+            FlarkProjectionEditMatcher.anyNoCrLfSplice,
+            2,
+            14,
+            2,
+            14,
+            2,
+            14,
+            true,
+            false,
+            true,
+            true,
+          ),
         ],
       );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
+    'mixed heading dependency cell crosses the Dart worker boundary',
+    () async {
+      const source = '# **left** middle _right_\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      expect(row.inlineFacts?.map((fact) => fact.kind), [
+        FlarkInlineFactKind.strong,
+        FlarkInlineFactKind.emphasis,
+      ]);
+      expect(row.projectionEditCells, hasLength(1));
+      final cell = row.projectionEditCells.single;
+      expect(
+        cell.matcher,
+        FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint,
+      );
+      expect((cell.affectedUtf16.start, cell.affectedUtf16.end), (2, 10));
+      expect((cell.triggerUtf16.start, cell.triggerUtf16.end), (4, 4));
+      expect(cell.retainBlockShell, isTrue);
+      expect(cell.retainOutsideClosure, isTrue);
+      expect(cell.presentClosureExact, isTrue);
+      expect(cell.chainResultCell, isFalse);
     },
     skip: libraryPath == null
         ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'

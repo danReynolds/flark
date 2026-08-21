@@ -20,6 +20,15 @@ enum FlarkViewportRowEditCapability {
 
 enum FlarkLiteralEditClass { asciiWordInsertion, singleAsciiSpaceInsertion }
 
+/// Parser-authored matcher for one bounded projection edit cell.
+enum FlarkProjectionEditMatcher {
+  /// Any non-noop insertion, deletion, or replacement without CR/LF.
+  anyNoCrLfSplice,
+
+  /// Exactly one U+0020 insertion at a zero-width parser-authored trigger.
+  insertSingleAsciiSpaceAtPoint,
+}
+
 enum FlarkInlineFactKind {
   emphasis,
   strong,
@@ -512,6 +521,66 @@ final class FlarkProjectionSegment {
       );
 }
 
+/// One parser-authored edit cell whose affected source closure may be painted
+/// exactly while the certified block shell and, when declared, source outside
+/// that closure remain projected.
+final class FlarkProjectionEditCell {
+  const FlarkProjectionEditCell({
+    required this.matcher,
+    required this.affectedBytes,
+    required this.affectedUtf16,
+    required this.triggerBytes,
+    required this.triggerUtf16,
+    required this.retainBlockShell,
+    required this.retainOutsideClosure,
+    required this.presentClosureExact,
+    required this.chainResultCell,
+  });
+
+  final FlarkProjectionEditMatcher matcher;
+  final FlarkSourceRange affectedBytes;
+  final FlarkSourceRange affectedUtf16;
+  final FlarkSourceRange triggerBytes;
+  final FlarkSourceRange triggerUtf16;
+  final bool retainBlockShell;
+  final bool retainOutsideClosure;
+  final bool presentClosureExact;
+  final bool chainResultCell;
+
+  Map<String, Object?> toMessage() => {
+    'matcher': matcher.index,
+    'affectedBytes': affectedBytes.toMessage(),
+    'affectedUtf16': affectedUtf16.toMessage(),
+    'triggerBytes': triggerBytes.toMessage(),
+    'triggerUtf16': triggerUtf16.toMessage(),
+    'retainBlockShell': retainBlockShell,
+    'retainOutsideClosure': retainOutsideClosure,
+    'presentClosureExact': presentClosureExact,
+    'chainResultCell': chainResultCell,
+  };
+
+  static FlarkProjectionEditCell fromMessage(Map<Object?, Object?> message) =>
+      FlarkProjectionEditCell(
+        matcher: FlarkProjectionEditMatcher.values[message['matcher']! as int],
+        affectedBytes: FlarkSourceRange.fromMessage(
+          message['affectedBytes']! as Map<Object?, Object?>,
+        ),
+        affectedUtf16: FlarkSourceRange.fromMessage(
+          message['affectedUtf16']! as Map<Object?, Object?>,
+        ),
+        triggerBytes: FlarkSourceRange.fromMessage(
+          message['triggerBytes']! as Map<Object?, Object?>,
+        ),
+        triggerUtf16: FlarkSourceRange.fromMessage(
+          message['triggerUtf16']! as Map<Object?, Object?>,
+        ),
+        retainBlockShell: message['retainBlockShell']! as bool,
+        retainOutsideClosure: message['retainOutsideClosure']! as bool,
+        presentClosureExact: message['presentClosureExact']! as bool,
+        chainResultCell: message['chainResultCell']! as bool,
+      );
+}
+
 final class FlarkViewportRow {
   const FlarkViewportRow({
     required this.ordinal,
@@ -531,6 +600,7 @@ final class FlarkViewportRow {
     required this.pathDepth,
     this.inlineFacts,
     this.literalSafeEnvelopes = const [],
+    this.projectionEditCells = const [],
     this.projectionSegments,
   });
 
@@ -558,6 +628,9 @@ final class FlarkViewportRow {
   /// through one exact edit while recertification is pending.
   final List<FlarkLiteralSafeEnvelope> literalSafeEnvelopes;
 
+  /// Parser-authored affected-source closures for bounded optimistic edits.
+  final List<FlarkProjectionEditCell> projectionEditCells;
+
   /// Exact ordered identity cuts for a [FlarkViewportRowEditCapability.projectedReserved]
   /// row. Gaps between cuts are parser-certified hidden container material.
   final List<FlarkProjectionSegment>? projectionSegments;
@@ -583,6 +656,9 @@ final class FlarkViewportRow {
         .toList(growable: false),
     'literalSafeEnvelopes': literalSafeEnvelopes
         .map((envelope) => envelope.toMessage())
+        .toList(growable: false),
+    'projectionEditCells': projectionEditCells
+        .map((cell) => cell.toMessage())
         .toList(growable: false),
     'projectionSegments': projectionSegments
         ?.map((segment) => segment.toMessage())
@@ -655,6 +731,17 @@ final class FlarkViewportRow {
             .map(
               (envelope) => FlarkLiteralSafeEnvelope.fromMessage(
                 envelope! as Map<Object?, Object?>,
+              ),
+            )
+            .toList(growable: false),
+      _ => const [],
+    },
+    projectionEditCells: switch (message['projectionEditCells']) {
+      final List<Object?> cells =>
+        cells
+            .map(
+              (cell) => FlarkProjectionEditCell.fromMessage(
+                cell! as Map<Object?, Object?>,
               ),
             )
             .toList(growable: false),

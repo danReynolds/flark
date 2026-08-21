@@ -29,7 +29,7 @@ Literal syntax is visible when it is itself the current authoring content:
 
 Fallback is local. An uncertain construct may become an exact-source island;
 focus alone may not turn a certified row, block, or document into raw source.
-ABI 4.27 does not yet complete that target: unsupported typing currently paints
+ABI 4.28 does not yet complete that target: unsupported typing currently paints
 the whole active row as exact source. That fallback is authority-safe, but its
 unrelated marker flash is a known product gap pending parser-authored minimal
 dependency islands.
@@ -259,7 +259,7 @@ envelope*. The host's entire decision becomes a containment test:
   through the edit;
 - an edit outside every envelope must eventually present a minimal exact-source
   island around the affected dependency range until recertification. The
-  current 4.27 implementation conservatively presents the whole active row,
+  current 4.28 implementation conservatively presents the whole active row,
   which is safe but remains a no-marker-flash product gap.
 
 This is one decision procedure with two defined outcomes, both governed by
@@ -306,6 +306,27 @@ This closes the demonstrated plain-heading burst only. It does not authorize
 the unsupported edit classes or replace the required parser-authored minimal
 dependency-island tranche.
 
+**ABI 4.28 projection edit cells (2026-08-21).** Capability
+`PROJECTION_EDIT_CELLS_V1` adds kind-16 records whose source range is the
+parser-authored affected closure and whose content range is the edit trigger.
+The host may retain only the declared block shell and independent runs outside
+that closure; it replaces the closure with one exact current-source run and
+does no Markdown classification.
+
+The first complete cell covers canonical top-level single-line ATX content
+with authoritative empty inline facts. It accepts any non-noop splice without
+CR/LF, including deletion, replacement, and non-ASCII text, and chains only by
+transforming that complete cell. The first local cell covers one conservatively
+isolated flat Strong fact: one U+0020 at its opener/content boundary makes only
+that fact's source closure exact, retains independent outside inline facts, and
+is consumed immediately. A fresh complete result-revision inline publication
+supersedes either temporary presentation.
+
+This is the first bounded minimal-island implementation, not a general inline
+dependency graph. Unsupported delimiter families, tables, structural edits,
+composition islands, and ambiguous closures still fail closed to the current
+whole-row exact path and remain a product gap against the north star.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits
@@ -320,9 +341,9 @@ ABI 4.26 exposes the new records only through the capability-gated
 `SEMANTIC_PROJECTED` retain their pre-envelope record vocabulary. Because the
 ABI has no per-client negotiation state, 4.26 rejects a 4.25 negotiation rather
 than claiming it can preserve every legacy row flag while serving new clients.
-ABI 4.27 retains query kind 6, record kind 15, and edit-class codes 1 and 2,
-adds the closure capability, and rejects a 4.26 negotiation rather than serving
-expanded proof semantics under the old exact minor.
+ABI 4.28 retains query kind 6, adds record kind 16 and capability bit 28, and
+rejects every earlier minor rather than serving the larger record vocabulary
+under an older exact negotiation.
 
 **Transform.** Retained presentation and its surviving proof set are
 transformed by pure range arithmetic
@@ -366,24 +387,27 @@ classes. A frame receipt remains a quality measurement; it is no longer the
 evidence for the continuity claim.
 
 **Unchanged.** Genuinely uncertified regions — during load, over-cap
-constructs, composition — keep the exact-source fallback mechanism; envelopes
-govern certified content awaiting recertification, a different domain. The
-current fallback may cover the whole active row, while minimal dependency
-islands remain required for the product target. Structural-edit capability
-remains gated on current certification, and retained presentation never grants
-edit authority.
+constructs, composition without a matching parser-authored edit cell — keep the
+exact-source fallback mechanism; envelopes and cells govern certified content
+awaiting recertification, a different domain. The current fallback may cover
+the whole active row, while broader minimal dependency islands remain required
+for the product target. Structural-edit capability remains gated on current
+certification, and retained presentation never grants edit authority.
 
 ### 4.5 Composition islands
 
 An active platform composing value is exact current source and remains stable
-until the platform commits or cancels it. The landed minimum treats its active
-row as the exact composition island: the current ABI has no result-revision
-proof that an arbitrary composition delta leaves other inline facts in that row
+until the platform commits or cancels it. A matching ABI 4.28 edit cell may
+retain only its declared block shell and independent outside runs while the
+affected cell stays exact. Otherwise the landed minimum treats the active row
+as the exact composition island: the current ABI has no result-revision proof
+that an arbitrary composition delta leaves other inline facts in that row
 unchanged. Markers in the active row may therefore be visible while composition
 is pending; unrelated certified rows remain projected.
 
-Narrowing the island to the composing range is pending parser-authored
-result-revision/dependency authority. The surface may retain a surrounding
+General narrowing to the composing range is pending parser-authored
+result-revision/dependency authority; the bounded edit-cell cases do not imply
+authority for other rows or edit shapes. The surface may retain a surrounding
 style only when a current runtime result or a transaction-bound receipt
 explicitly authorizes it; predecessor facts plus a source splice are not such
 authority. This narrower island remains part of T3 input truth below.

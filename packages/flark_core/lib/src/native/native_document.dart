@@ -89,8 +89,17 @@ const _inlineFactReferenceLink = 12;
 const _inlineFactReferenceImage = 13;
 const _inlineFactTableCell = 14;
 const _inlineFactLiteralSafeEnvelope = 15;
+const _inlineFactProjectionEditCell = 16;
 const _literalEditClassAsciiWordInsertion = 1;
 const _literalEditClassSingleAsciiSpaceInsertion = 2;
+const _projectionEditMatcherMask = 0xff;
+const _projectionEditMatcherAnyNoCrLfSplice = 1;
+const _projectionEditMatcherInsertSingleAsciiSpaceAtPoint = 3;
+const _projectionEditRetainBlockShell = 0x100;
+const _projectionEditRetainOutsideClosure = 0x200;
+const _projectionEditPresentClosureExact = 0x400;
+const _projectionEditChainResultCell = 0x800;
+const _knownProjectionEditCellFlags = 0xfff;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
@@ -100,9 +109,8 @@ const _inlineFactTableRowStart = 0x8;
 const _inlineFactTableAutocompleted = 0x10;
 const _knownInlineFactTableFlags = 0x1f;
 // The ABI semantic record stream carries the parser's inline facts followed by
-// its literal-safe envelopes. A row can contain at most 512 facts, one word
-// envelope per eligible fact, and one trailing-space boundary envelope.
-const _maxSemanticRecordsPerRow = 1025;
+// its literal-safe envelopes and projection edit cells.
+const _maxSemanticRecordsPerRow = 2048;
 const _maxProjectionSegmentsPerRow = 256;
 const _absentPresentationPrefix = 0xffffffffffffffff;
 const _maxChunkBytes = 64 * 1024;
@@ -169,13 +177,13 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 27;
+const _abiMinor = 28;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x0fffffff;
+const _requiredCapabilityBits = 0x1fffffff;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
 ///
@@ -2506,12 +2514,23 @@ final class FlarkNativeDocument {
       final inlineIsAuthoritative = record.flags & _inlineAuthoritative != 0;
       final decodedFacts = inlineIsAuthoritative ? <FlarkInlineFact>[] : null;
       final literalSafeEnvelopes = <FlarkLiteralSafeEnvelope>[];
+      final projectionEditCells = <FlarkProjectionEditCell>[];
       if (inlineIsAuthoritative) {
         for (var index = 0; index < inlineFactCount; index += 1) {
           final semantic = (inlineRecords + nextInlineFact + index).ref;
           if (semantic.kind == _inlineFactLiteralSafeEnvelope) {
             literalSafeEnvelopes.add(
               _decodeLiteralSafeEnvelope(
+                semantic,
+                sourceBytes: sourceBytes,
+                sourceUtf16: sourceUtf16,
+                editableBytes: editableBytes,
+                editableUtf16: editableUtf16,
+              ),
+            );
+          } else if (semantic.kind == _inlineFactProjectionEditCell) {
+            projectionEditCells.add(
+              _decodeProjectionEditCell(
                 semantic,
                 sourceBytes: sourceBytes,
                 sourceUtf16: sourceUtf16,
@@ -2531,6 +2550,13 @@ final class FlarkNativeDocument {
             );
           }
         }
+      }
+      if (!_validProjectionEditCellPartition(projectionEditCells)) {
+        throw const FlarkNativeException(
+          'decode_viewport',
+          _notCertified,
+          _inlineFactProjectionEditCell,
+        );
       }
       nextInlineFact += inlineFactCount;
       final projectionSegments =
@@ -2601,6 +2627,7 @@ final class FlarkNativeDocument {
         pathDepth: record.pathDepth,
         inlineFacts: inlineFacts,
         literalSafeEnvelopes: List.unmodifiable(literalSafeEnvelopes),
+        projectionEditCells: List.unmodifiable(projectionEditCells),
         projectionSegments: projectionSegments,
       );
     }, growable: false);
@@ -2713,6 +2740,137 @@ final class FlarkNativeDocument {
       sourceBytes: FlarkSourceRange(byteStart, byteEnd),
       sourceUtf16: FlarkSourceRange(utf16Start, utf16End),
     );
+  }
+
+  static FlarkProjectionEditCell _decodeProjectionEditCell(
+    FlarkV4InlineFactRecord record, {
+    required FlarkSourceRange sourceBytes,
+    required FlarkSourceRange sourceUtf16,
+    required FlarkSourceRange? editableBytes,
+    required FlarkSourceRange? editableUtf16,
+  }) {
+    final matcher = switch (record.flags & _projectionEditMatcherMask) {
+      _projectionEditMatcherAnyNoCrLfSplice =>
+        FlarkProjectionEditMatcher.anyNoCrLfSplice,
+      _projectionEditMatcherInsertSingleAsciiSpaceAtPoint =>
+        FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint,
+      _ => throw FlarkNativeException(
+        'decode_viewport',
+        _notCertified,
+        record.flags,
+      ),
+    };
+    final affectedBytes = FlarkSourceRange(
+      record.sourceStartByte,
+      record.sourceEndByte,
+    );
+    final affectedUtf16 = FlarkSourceRange(
+      record.sourceStartUtf16,
+      record.sourceEndUtf16,
+    );
+    final triggerBytes = FlarkSourceRange(
+      record.contentStartByte,
+      record.contentEndByte,
+    );
+    final triggerUtf16 = FlarkSourceRange(
+      record.contentStartUtf16,
+      record.contentEndUtf16,
+    );
+    final retainBlockShell =
+        record.flags & _projectionEditRetainBlockShell != 0;
+    final retainOutsideClosure =
+        record.flags & _projectionEditRetainOutsideClosure != 0;
+    final presentClosureExact =
+        record.flags & _projectionEditPresentClosureExact != 0;
+    final chainResultCell = record.flags & _projectionEditChainResultCell != 0;
+    final expectedFlags = switch (matcher) {
+      FlarkProjectionEditMatcher.anyNoCrLfSplice =>
+        _projectionEditMatcherAnyNoCrLfSplice |
+            _projectionEditRetainBlockShell |
+            _projectionEditPresentClosureExact |
+            _projectionEditChainResultCell,
+      FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint =>
+        _projectionEditMatcherInsertSingleAsciiSpaceAtPoint |
+            _projectionEditRetainBlockShell |
+            _projectionEditRetainOutsideClosure |
+            _projectionEditPresentClosureExact,
+    };
+    final plainShape =
+        affectedBytes.start == triggerBytes.start &&
+        affectedBytes.end == triggerBytes.end &&
+        affectedUtf16.start == triggerUtf16.start &&
+        affectedUtf16.end == triggerUtf16.end;
+    final pointShape =
+        affectedBytes.length > 0 &&
+        affectedUtf16.length > 0 &&
+        triggerBytes.length == 0 &&
+        triggerUtf16.length == 0;
+    if (editableBytes == null ||
+        editableUtf16 == null ||
+        record.flags & ~_knownProjectionEditCellFlags != 0 ||
+        record.flags != expectedFlags ||
+        affectedBytes.start < sourceBytes.start ||
+        affectedBytes.end > sourceBytes.end ||
+        affectedUtf16.start < sourceUtf16.start ||
+        affectedUtf16.end > sourceUtf16.end ||
+        affectedBytes.start < editableBytes.start ||
+        affectedBytes.end > editableBytes.end ||
+        affectedUtf16.start < editableUtf16.start ||
+        affectedUtf16.end > editableUtf16.end ||
+        triggerBytes.start < affectedBytes.start ||
+        triggerBytes.end > affectedBytes.end ||
+        triggerUtf16.start < affectedUtf16.start ||
+        triggerUtf16.end > affectedUtf16.end ||
+        (affectedBytes.length == 0) != (affectedUtf16.length == 0) ||
+        (triggerBytes.length == 0) != (triggerUtf16.length == 0) ||
+        (matcher == FlarkProjectionEditMatcher.anyNoCrLfSplice &&
+            !plainShape) ||
+        (matcher == FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint &&
+            !pointShape) ||
+        record.replacementFirst != 0 ||
+        record.replacementSecond != 0) {
+      throw FlarkNativeException('decode_viewport', _notCertified, record.kind);
+    }
+    return FlarkProjectionEditCell(
+      matcher: matcher,
+      affectedBytes: affectedBytes,
+      affectedUtf16: affectedUtf16,
+      triggerBytes: triggerBytes,
+      triggerUtf16: triggerUtf16,
+      retainBlockShell: retainBlockShell,
+      retainOutsideClosure: retainOutsideClosure,
+      presentClosureExact: presentClosureExact,
+      chainResultCell: chainResultCell,
+    );
+  }
+
+  static bool _validProjectionEditCellPartition(
+    List<FlarkProjectionEditCell> cells,
+  ) {
+    final ordered = cells.toList(growable: false)
+      ..sort((left, right) {
+        final byStart = left.affectedBytes.start.compareTo(
+          right.affectedBytes.start,
+        );
+        return byStart != 0
+            ? byStart
+            : left.affectedBytes.end.compareTo(right.affectedBytes.end);
+      });
+    for (var index = 1; index < ordered.length; index += 1) {
+      final previous = ordered[index - 1];
+      final current = ordered[index];
+      final same =
+          previous.affectedBytes.start == current.affectedBytes.start &&
+          previous.affectedBytes.end == current.affectedBytes.end &&
+          previous.affectedUtf16.start == current.affectedUtf16.start &&
+          previous.affectedUtf16.end == current.affectedUtf16.end;
+      if (!same &&
+          (current.affectedBytes.start < previous.affectedBytes.end ||
+              current.affectedUtf16.start < previous.affectedUtf16.end)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   static FlarkInlineFact _decodeInlineFact(

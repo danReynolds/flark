@@ -1,8 +1,10 @@
 use flark_runtime::{
     DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
     DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
-    DocumentLiveViewportSpan, DocumentSession, DocumentSessionPhase,
+    DocumentLiveViewportSpan, DocumentProjectionEditCell, DocumentSession, DocumentSessionPhase,
     DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
+    DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
 };
 
 fn pump_ready(document: &mut DocumentSession) -> usize {
@@ -898,7 +900,183 @@ fn viewport_carries_complete_parser_authored_inline_geometry_or_fails_closed() {
 }
 
 #[test]
-fn plain_atx_heading_continuity_envelopes_fail_closed_around_hazards() {
+fn canonical_plain_atx_heading_publishes_one_bounded_projection_edit_cell() {
+    assert_eq!(DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS, 0x0d01);
+    let source = "# Café—road\n";
+    let mut document = DocumentSession::begin(source).expect("begin Unicode ATX heading");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("Unicode ATX heading viewport");
+    let row = &viewport.rows[0];
+    assert_eq!(
+        row.projection_edit_cells,
+        vec![DocumentProjectionEditCell {
+            source_range: 2..14,
+            source_utf16_range: 2..11,
+            trigger_range: 2..14,
+            trigger_utf16_range: 2..11,
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
+        }]
+    );
+    assert!(
+        row.literal_safe_envelopes.is_empty(),
+        "the edit cell replaces the old whole-heading literal envelopes"
+    );
+    document.close().expect("close Unicode ATX heading");
+
+    for empty_source in ["# ", "# \n", "###### \r\n"] {
+        let mut empty = DocumentSession::begin(empty_source).expect("begin empty ATX heading");
+        pump_ready(&mut empty);
+        let viewport = empty
+            .query_viewport(1, 0..empty_source.len(), 8)
+            .expect("empty ATX heading viewport");
+        let row = &viewport.rows[0];
+        let [cell] = row.projection_edit_cells.as_slice() else {
+            panic!("empty canonical heading edit cell: {empty_source:?} {row:#?}");
+        };
+        assert!(cell.source_range.is_empty());
+        assert!(cell.source_utf16_range.is_empty());
+        assert_eq!(cell.source_range, row.editable_range.clone().unwrap());
+        assert_eq!(
+            cell.source_utf16_range,
+            row.editable_utf16_range.clone().unwrap()
+        );
+        empty.close().expect("close empty ATX heading");
+    }
+
+    let later_source = "Paragraph\n# Heading\n";
+    let mut later = DocumentSession::begin(later_source).expect("begin later top-level heading");
+    pump_ready(&mut later);
+    let viewport = later
+        .query_viewport(1, 0..later_source.len(), 8)
+        .expect("later top-level heading viewport");
+    assert!(
+        viewport
+            .rows
+            .iter()
+            .any(|row| !row.projection_edit_cells.is_empty()),
+        "a prior physical line must not prevent a top-level cell"
+    );
+    later.close().expect("close later top-level heading");
+}
+
+#[test]
+fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
+    assert_eq!(
+        DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
+        0x0703
+    );
+    let source = "# **left** middle _right_\n";
+    let mut document = DocumentSession::begin(source).expect("begin mixed-inline ATX heading");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("mixed-inline ATX heading viewport");
+    let row = &viewport.rows[0];
+    assert_eq!(
+        row.projection_edit_cells,
+        vec![DocumentProjectionEditCell {
+            source_range: 2..10,
+            source_utf16_range: 2..10,
+            trigger_range: 4..4,
+            trigger_utf16_range: 4..4,
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
+        }]
+    );
+    let facts = row
+        .inline_facts
+        .as_ref()
+        .expect("authoritative mixed-inline facts");
+    assert_eq!(
+        facts.iter().map(|fact| fact.kind).collect::<Vec<_>>(),
+        vec![
+            DocumentInlineFactKind::Strong,
+            DocumentInlineFactKind::Emphasis,
+        ]
+    );
+    let before_outside = facts[1].clone();
+    assert_eq!(before_outside.source_range, 18..25);
+    assert_eq!(before_outside.content_range, 19..24);
+    assert!(
+        row.literal_safe_envelopes
+            .iter()
+            .any(|envelope| envelope.source_range == (19..24)),
+        "the one-shot cell must coexist with unrelated literal continuity"
+    );
+
+    document
+        .apply_edit(1, 4..4, " ")
+        .expect("insert one opening space");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(2, 0..source.len() + 1, 8)
+        .expect("post-edit mixed-inline ATX heading viewport");
+    let row = &viewport.rows[0];
+    assert_eq!(
+        row.presentation,
+        DocumentViewportRowPresentation::Heading {
+            level: 1,
+            style: DocumentHeadingStyle::Atx,
+        }
+    );
+    let after_outside = row
+        .inline_facts
+        .as_ref()
+        .expect("post-edit authoritative inline facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Emphasis)
+        .expect("outside emphasis remains rendered");
+    assert_eq!(after_outside.kind, before_outside.kind);
+    assert_eq!(after_outside.flags, before_outside.flags);
+    assert_eq!(after_outside.replacement, before_outside.replacement);
+    assert_eq!(
+        after_outside.source_range,
+        before_outside.source_range.start + 1..before_outside.source_range.end + 1
+    );
+    assert_eq!(
+        after_outside.source_utf16_range,
+        before_outside.source_utf16_range.start + 1..before_outside.source_utf16_range.end + 1
+    );
+    assert_eq!(
+        after_outside.content_range,
+        before_outside.content_range.start + 1..before_outside.content_range.end + 1
+    );
+    assert_eq!(
+        after_outside.content_utf16_range,
+        before_outside.content_utf16_range.start + 1..before_outside.content_utf16_range.end + 1
+    );
+    document.close().expect("close mixed-inline ATX heading");
+}
+
+#[test]
+fn flat_strong_opening_space_cell_rejects_ambiguous_dependencies_and_shapes() {
+    for source in [
+        "# **left** *middle* _right_\n",
+        "# ***left*** _right_\n",
+        "# __left__ _right_\n",
+        "# **left right** _right_\n",
+        "# **léft** _right_\n",
+    ] {
+        let mut document = DocumentSession::begin(source).expect("begin rejected Strong shape");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("rejected Strong shape viewport");
+        assert!(
+            viewport
+                .rows
+                .iter()
+                .all(|row| row.projection_edit_cells.is_empty()),
+            "ambiguous dependencies and noncanonical shapes fail closed: {source:?} {:#?}",
+            viewport.rows,
+        );
+        document.close().expect("close rejected Strong shape");
+    }
+}
+
+#[test]
+fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
     let source = "# Test is here\n";
     let mut eligible = DocumentSession::begin(source).expect("begin eligible ATX heading");
     pump_ready(&mut eligible);
@@ -922,25 +1100,16 @@ fn plain_atx_heading_continuity_envelopes_fail_closed_around_hazards() {
     assert_eq!(row.editable_range, Some(2..14));
     assert_eq!(row.editable_utf16_range, Some(2..14));
     assert_eq!(
-        row.literal_safe_envelopes,
-        vec![
-            flark_runtime::DocumentLiteralSafeEnvelope {
-                edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
-                source_range: 2..14,
-                source_utf16_range: 2..14,
-            },
-            flark_runtime::DocumentLiteralSafeEnvelope {
-                edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
-                source_range: 2..14,
-                source_utf16_range: 2..14,
-            },
-            flark_runtime::DocumentLiteralSafeEnvelope {
-                edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
-                source_range: 14..14,
-                source_utf16_range: 14..14,
-            },
-        ]
+        row.projection_edit_cells,
+        vec![DocumentProjectionEditCell {
+            source_range: 2..14,
+            source_utf16_range: 2..14,
+            trigger_range: 2..14,
+            trigger_utf16_range: 2..14,
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
+        }]
     );
+    assert!(row.literal_safe_envelopes.is_empty());
     eligible.close().expect("close eligible ATX heading");
 
     let punctuation_source = "# Test-is here\n";
@@ -962,10 +1131,8 @@ fn plain_atx_heading_continuity_envelopes_fail_closed_around_hazards() {
         .inline_facts
         .as_ref()
         .is_some_and(|facts| facts.is_empty()));
-    assert!(
-        row.literal_safe_envelopes.is_empty(),
-        "plain punctuation must not receive whole-heading continuity"
-    );
+    assert_eq!(row.projection_edit_cells.len(), 1);
+    assert!(row.literal_safe_envelopes.is_empty());
     punctuation.close().expect("close punctuated ATX heading");
 
     for whitespace_source in ["#  Test is here\n", "# Test is here \n"] {
@@ -976,13 +1143,28 @@ fn plain_atx_heading_continuity_envelopes_fail_closed_around_hazards() {
             .query_viewport(1, 0..whitespace_source.len(), 8)
             .expect("whitespace-boundary ATX heading viewport");
         assert!(
-            viewport.rows[0].literal_safe_envelopes.is_empty(),
+            viewport.rows[0].projection_edit_cells.is_empty(),
             "leading/trailing whitespace normalization must fail closed: {whitespace_source:?}"
         );
         whitespace
             .close()
             .expect("close whitespace-boundary ATX heading");
     }
+
+    let bom_source = "\u{feff}# Heading\n";
+    let mut bom = DocumentSession::begin(bom_source).expect("begin BOF BOM heading");
+    pump_ready(&mut bom);
+    let viewport = bom
+        .query_viewport(1, 0..bom_source.len(), 8)
+        .expect("BOF BOM heading viewport");
+    assert!(
+        viewport
+            .rows
+            .iter()
+            .all(|row| row.projection_edit_cells.is_empty()),
+        "the first contract requires an exact canonical ATX prefix"
+    );
+    bom.close().expect("close BOF BOM heading");
 
     let inline_source = "# Test *is* here\n";
     let mut inline = DocumentSession::begin(inline_source).expect("begin inline ATX heading");
@@ -1003,6 +1185,10 @@ fn plain_atx_heading_continuity_envelopes_fail_closed_around_hazards() {
             .as_ref()
             .is_some_and(|facts| !facts.is_empty()),
         "the inline hazard must be parser-authored"
+    );
+    assert!(
+        row.projection_edit_cells.is_empty(),
+        "the first edit-cell contract cannot retain inline facts"
     );
     assert_eq!(
         row.literal_safe_envelopes,
@@ -1034,10 +1220,43 @@ fn plain_atx_heading_continuity_envelopes_fail_closed_around_hazards() {
         .as_ref()
         .is_some_and(|facts| facts.is_empty()));
     assert!(
-        row.literal_safe_envelopes.is_empty(),
-        "plain Setext content must not receive ATX continuity"
+        row.projection_edit_cells.is_empty(),
+        "plain Setext content must not receive an ATX edit cell"
     );
     setext.close().expect("close Setext heading");
+
+    for nested_source in ["> # Nested\n", "> # \n", "- # Nested\n", "- # \n"] {
+        let mut nested = DocumentSession::begin(nested_source).expect("begin nested ATX heading");
+        pump_ready(&mut nested);
+        let viewport = nested
+            .query_viewport(1, 0..nested_source.len(), 8)
+            .expect("nested ATX heading viewport");
+        assert!(
+            viewport
+                .rows
+                .iter()
+                .all(|row| row.projection_edit_cells.is_empty()),
+            "the first edit-cell contract is top-level only: {nested_source:?} {:#?}",
+            viewport.rows,
+        );
+        nested.close().expect("close nested ATX heading");
+    }
+
+    let oversized_source = format!("# {}\n", "a".repeat(4 * 1024));
+    let mut oversized =
+        DocumentSession::begin(&oversized_source).expect("begin oversized ATX heading");
+    pump_ready(&mut oversized);
+    let viewport = oversized
+        .query_viewport(1, 0..oversized_source.len(), 8)
+        .expect("oversized ATX heading viewport");
+    assert!(
+        viewport
+            .rows
+            .iter()
+            .all(|row| row.projection_edit_cells.is_empty()),
+        "rows beyond the simple-line bound must fail closed"
+    );
+    oversized.close().expect("close oversized ATX heading");
 }
 
 #[test]

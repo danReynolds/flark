@@ -112,6 +112,45 @@ pub struct DocumentLiteralSafeEnvelope {
     pub source_utf16_range: Range<u64>,
 }
 
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE: u32 = 0x0001;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_SINGLE_ASCII_SPACE_AT_POINT: u32 = 0x0003;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCHER_MASK: u32 = 0x00ff;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL: u32 = 0x0100;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE: u32 = 0x0200;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT: u32 = 0x0400;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT: u32 = 0x0800;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_RETENTION_MASK: u32 = 0x0f00;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK: u32 = 0x0fff;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT
+        | DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_SINGLE_ASCII_SPACE_AT_POINT
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT;
+
+/// Parser-authored pre-edit geometry for one bounded projection edit cell.
+///
+/// The first contract admits arbitrary non-newline edits within one complete
+/// ATX heading content range. The host may retain only the parser-certified
+/// block shell, presents the transformed cell as exact source, and may chain
+/// the transformed range while current-revision parsing catches up.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentProjectionEditCell {
+    /// The pre-edit dependency closure that becomes exact while parsing is
+    /// pending. This maps to kind 16's source geometry at the ABI boundary.
+    pub source_range: Range<u64>,
+    pub source_utf16_range: Range<u64>,
+    /// The pre-edit admission range. This maps to kind 16's content geometry
+    /// at the ABI boundary and may be narrower than the dependency closure.
+    pub trigger_range: Range<u64>,
+    pub trigger_utf16_range: Range<u64>,
+    pub flags: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DocumentHeadingStyle {
     Atx,
@@ -305,6 +344,9 @@ pub struct DocumentViewportRow {
     /// Exact parser-authored ranges for typed literal edits that may retain
     /// this row's presentation until current-revision certification arrives.
     pub literal_safe_envelopes: Vec<DocumentLiteralSafeEnvelope>,
+    /// Bounded parser-authored cells whose declared presentation policies may
+    /// bridge a pending parser revision. An empty list fails closed.
+    pub projection_edit_cells: Vec<DocumentProjectionEditCell>,
     /// Present only for `ProjectedReserved` rows. Every segment is exact
     /// source; gaps are parser-certified hidden container material.
     pub projection_segments: Option<Vec<DocumentProjectionSegment>>,
@@ -4288,7 +4330,27 @@ fn document_viewport_row_with_inline_facts(
                 })
                 .collect::<Vec<_>>()
         });
-    let literal_safe_envelopes = if matches!(
+    let projection_edit_cells = if projection_segments.is_none() {
+        document_projection_edit_cells(
+            runtime,
+            row,
+            presentation,
+            &source_range,
+            &source_utf16_range,
+            inline_facts.as_deref(),
+            editable_range.as_ref(),
+            editable_utf16_range.as_ref(),
+            edit_capability,
+        )?
+    } else {
+        Vec::new()
+    };
+    let replaces_whole_heading_envelopes = projection_edit_cells
+        .iter()
+        .any(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS);
+    let literal_safe_envelopes = if replaces_whole_heading_envelopes {
+        Vec::new()
+    } else if matches!(
         edit_capability,
         DocumentViewportRowEditCapability::Contiguous
             | DocumentViewportRowEditCapability::ProjectedReserved
@@ -4318,9 +4380,220 @@ fn document_viewport_row_with_inline_facts(
         presentation,
         inline_facts,
         literal_safe_envelopes,
+        projection_edit_cells,
         projection_segments,
         path_depth: u32::try_from(row.path().len()).unwrap_or(u32::MAX),
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn document_projection_edit_cells(
+    runtime: &DocumentRuntime,
+    row: &M11RecursiveGreenRenderableRow,
+    presentation: DocumentViewportRowPresentation,
+    row_source_range: &Range<u64>,
+    row_source_utf16_range: &Range<u64>,
+    facts: Option<&[DocumentInlineFact]>,
+    editable_range: Option<&Range<u64>>,
+    editable_utf16_range: Option<&Range<u64>>,
+    edit_capability: DocumentViewportRowEditCapability,
+) -> Result<Vec<DocumentProjectionEditCell>, DocumentSessionError> {
+    let (Some(editable), Some(editable_utf16), Some(facts)) =
+        (editable_range, editable_utf16_range, facts)
+    else {
+        return Ok(Vec::new());
+    };
+    let level = match presentation {
+        DocumentViewportRowPresentation::Heading {
+            level,
+            style: DocumentHeadingStyle::Atx,
+        } => level,
+        _ => return Ok(Vec::new()),
+    };
+    if edit_capability != DocumentViewportRowEditCapability::Contiguous
+        || !(1..=2).contains(&row.path().len())
+        || !document_row_starts_at_physical_line_start(runtime, row_source_range.start)
+        || editable.start > editable.end
+        || editable_utf16.start > editable_utf16.end
+        || editable.start < row_source_range.start
+        || editable.end > row_source_range.end
+        || editable_utf16.start < row_source_utf16_range.start
+        || editable_utf16.end > row_source_utf16_range.end
+    {
+        return Ok(Vec::new());
+    }
+
+    let Some(row_byte_len) = row_source_range.end.checked_sub(row_source_range.start) else {
+        return Ok(Vec::new());
+    };
+    let Some(row_utf16_len) = row_source_utf16_range
+        .end
+        .checked_sub(row_source_utf16_range.start)
+    else {
+        return Ok(Vec::new());
+    };
+    if row_byte_len > M11_SIMPLE_EDIT_LINE_MAX_BYTES as u64 {
+        return Ok(Vec::new());
+    }
+    let row_source = read_utf8_source_range(runtime, row_source_range)?;
+    if row_source.len() as u64 != row_byte_len
+        || row_source.encode_utf16().count() as u64 != row_utf16_len
+    {
+        return Ok(Vec::new());
+    }
+
+    let prefix_end = usize::try_from(editable.start - row_source_range.start)
+        .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+    let content_end = usize::try_from(editable.end - row_source_range.start)
+        .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+    let Some(prefix) = row_source.get(..prefix_end) else {
+        return Ok(Vec::new());
+    };
+    let Some(content) = row_source.get(prefix_end..content_end) else {
+        return Ok(Vec::new());
+    };
+    let Some(suffix) = row_source.get(content_end..) else {
+        return Ok(Vec::new());
+    };
+    let canonical_prefix = format!("{} ", "#".repeat(usize::from(level)));
+    let byte_geometry_matches = content.len() as u64 == editable.end - editable.start;
+    let utf16_geometry_matches = prefix.encode_utf16().count() as u64
+        == editable_utf16.start - row_source_utf16_range.start
+        && content.encode_utf16().count() as u64 == editable_utf16.end - editable_utf16.start
+        && suffix.encode_utf16().count() as u64 == row_source_utf16_range.end - editable_utf16.end;
+    if prefix != canonical_prefix
+        || !matches!(suffix, "" | "\n" | "\r\n")
+        || content.bytes().any(|byte| matches!(byte, b'\r' | b'\n'))
+        || !byte_geometry_matches
+        || !utf16_geometry_matches
+    {
+        return Ok(Vec::new());
+    }
+
+    if facts.is_empty() {
+        return Ok(vec![DocumentProjectionEditCell {
+            source_range: editable.clone(),
+            source_utf16_range: editable_utf16.clone(),
+            trigger_range: editable.clone(),
+            trigger_utf16_range: editable_utf16.clone(),
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
+        }]);
+    }
+
+    Ok(document_flat_strong_opening_space_edit_cells(
+        content,
+        editable,
+        editable_utf16,
+        facts,
+    ))
+}
+
+fn document_flat_strong_opening_space_edit_cells(
+    editable_source: &str,
+    editable: &Range<u64>,
+    editable_utf16: &Range<u64>,
+    facts: &[DocumentInlineFact],
+) -> Vec<DocumentProjectionEditCell> {
+    let mut cells = Vec::new();
+    for (candidate_index, candidate) in facts.iter().enumerate() {
+        if candidate.kind != DocumentInlineFactKind::Strong
+            || candidate.flags != 0
+            || candidate.replacement.is_some()
+            || candidate.source_range.start < editable.start
+            || candidate.source_range.end > editable.end
+            || candidate.source_utf16_range.start < editable_utf16.start
+            || candidate.source_utf16_range.end > editable_utf16.end
+            || candidate.source_range.start > candidate.source_range.end
+            || candidate.source_utf16_range.start > candidate.source_utf16_range.end
+        {
+            continue;
+        }
+        let Some(expected_content_start) = candidate.source_range.start.checked_add(2) else {
+            continue;
+        };
+        let Some(expected_content_end) = candidate.source_range.end.checked_sub(2) else {
+            continue;
+        };
+        let Some(expected_content_utf16_start) = candidate.source_utf16_range.start.checked_add(2)
+        else {
+            continue;
+        };
+        let Some(expected_content_utf16_end) = candidate.source_utf16_range.end.checked_sub(2)
+        else {
+            continue;
+        };
+        if candidate.content_range != (expected_content_start..expected_content_end)
+            || candidate.content_utf16_range
+                != (expected_content_utf16_start..expected_content_utf16_end)
+        {
+            continue;
+        }
+
+        let Ok(relative_start) = usize::try_from(candidate.source_range.start - editable.start)
+        else {
+            continue;
+        };
+        let Ok(relative_end) = usize::try_from(candidate.source_range.end - editable.start) else {
+            continue;
+        };
+        let Some(candidate_source) = editable_source.get(relative_start..relative_end) else {
+            continue;
+        };
+        let Some(word) = candidate_source
+            .strip_prefix("**")
+            .and_then(|source| source.strip_suffix("**"))
+        else {
+            continue;
+        };
+        if word.is_empty() || !word.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+            continue;
+        }
+        let outside_contains_asterisk = editable_source
+            .get(..relative_start)
+            .into_iter()
+            .chain(editable_source.get(relative_end..))
+            .flat_map(str::bytes)
+            .any(|byte| byte == b'*');
+        if outside_contains_asterisk {
+            continue;
+        }
+        let overlaps_or_nests = facts.iter().enumerate().any(|(index, fact)| {
+            index != candidate_index
+                && fact.source_range.start < candidate.source_range.end
+                && candidate.source_range.start < fact.source_range.end
+        });
+        if overlaps_or_nests {
+            continue;
+        }
+
+        cells.push(DocumentProjectionEditCell {
+            source_range: candidate.source_range.clone(),
+            source_utf16_range: candidate.source_utf16_range.clone(),
+            trigger_range: candidate.content_range.start..candidate.content_range.start,
+            trigger_utf16_range: candidate.content_utf16_range.start
+                ..candidate.content_utf16_range.start,
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
+        });
+    }
+    cells
+}
+
+fn document_row_starts_at_physical_line_start(runtime: &DocumentRuntime, start: u64) -> bool {
+    if start == 0 {
+        return true;
+    }
+    let Ok(start) = usize::try_from(start) else {
+        return false;
+    };
+    let mut previous = [0_u8; 1];
+    if runtime
+        .read_current_source_window(start - 1..start, &mut previous)
+        .ok()
+        != Some(previous.len())
+    {
+        return false;
+    }
+    previous[0] == b'\n'
 }
 
 fn certified_empty_atx_heading_editable(
@@ -4786,8 +5059,8 @@ fn document_literal_safe_envelopes(
         let content_byte_len = editable.end - editable.start;
         let content_utf16_len = editable_utf16.end - editable_utf16.start;
         let canonical_prefix = format!("{} ", "#".repeat(usize::from(level)));
-        let canonical_edges = prefix == canonical_prefix
-            && matches!(suffix.as_str(), "" | "\n" | "\r\n");
+        let canonical_edges =
+            prefix == canonical_prefix && matches!(suffix.as_str(), "" | "\n" | "\r\n");
         let edge_word_bounded = content
             .as_bytes()
             .first()

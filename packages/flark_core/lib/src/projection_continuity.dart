@@ -1,5 +1,203 @@
 import 'models.dart';
 
+/// Result-revision authority for one parser-authored projection edit cell.
+final class FlarkProjectionEditCellReceipt {
+  FlarkProjectionEditCellReceipt._({
+    required this.baseRevision,
+    required this.resultRevision,
+    required this.baseAffectedUtf16,
+    required this.affectedUtf16,
+    required this.triggerUtf16,
+    required this.matcher,
+    required this.retainBlockShell,
+    required this.retainOutsideClosure,
+    required this.presentClosureExact,
+    required this.chainResultCell,
+    required this.editStartUtf16,
+    required this.editEndUtf16,
+    required this.replacement,
+  });
+
+  final int baseRevision;
+  final int resultRevision;
+  final FlarkSourceRange baseAffectedUtf16;
+  final FlarkSourceRange affectedUtf16;
+  final FlarkSourceRange triggerUtf16;
+  final FlarkProjectionEditMatcher matcher;
+  final bool retainBlockShell;
+  final bool retainOutsideClosure;
+  final bool presentClosureExact;
+  final bool chainResultCell;
+  final int editStartUtf16;
+  final int editEndUtf16;
+  final String replacement;
+
+  /// Advances only a parser-declared chainable cell. One-shot local dependency
+  /// cells deliberately return null until a fresh parser publication arrives.
+  FlarkProjectionEditCellReceipt? continueWith({
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+  }) {
+    if (!chainResultCell) return null;
+    return _authorizeCurrentProjectionEditCell(
+      revision: resultRevision,
+      cell: _CurrentProjectionEditCell(
+        matcher: matcher,
+        affectedUtf16: affectedUtf16,
+        triggerUtf16: triggerUtf16,
+        retainBlockShell: retainBlockShell,
+        retainOutsideClosure: retainOutsideClosure,
+        presentClosureExact: presentClosureExact,
+        chainResultCell: chainResultCell,
+      ),
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+      replacement: replacement,
+    );
+  }
+}
+
+final class _CurrentProjectionEditCell {
+  const _CurrentProjectionEditCell({
+    required this.matcher,
+    required this.affectedUtf16,
+    required this.triggerUtf16,
+    required this.retainBlockShell,
+    required this.retainOutsideClosure,
+    required this.presentClosureExact,
+    required this.chainResultCell,
+  });
+
+  final FlarkProjectionEditMatcher matcher;
+  final FlarkSourceRange affectedUtf16;
+  final FlarkSourceRange triggerUtf16;
+  final bool retainBlockShell;
+  final bool retainOutsideClosure;
+  final bool presentClosureExact;
+  final bool chainResultCell;
+}
+
+/// Matches one exact source splice against parser-authored affected geometry.
+FlarkProjectionEditCellReceipt? authorizeProjectionEditCell({
+  required int revision,
+  required List<FlarkProjectionEditCell> cells,
+  required FlarkSourceRange authorizedContentUtf16,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) {
+  if (revision <= 0 ||
+      authorizedContentUtf16.start > authorizedContentUtf16.end ||
+      cells.any(
+        (cell) =>
+            cell.affectedUtf16.start > cell.affectedUtf16.end ||
+            cell.triggerUtf16.start > cell.triggerUtf16.end ||
+            cell.affectedUtf16.start < authorizedContentUtf16.start ||
+            cell.affectedUtf16.end > authorizedContentUtf16.end ||
+            cell.triggerUtf16.start < cell.affectedUtf16.start ||
+            cell.triggerUtf16.end > cell.affectedUtf16.end,
+      )) {
+    return null;
+  }
+  final matches = cells
+      .map(
+        (cell) => _CurrentProjectionEditCell(
+          matcher: cell.matcher,
+          affectedUtf16: cell.affectedUtf16,
+          triggerUtf16: cell.triggerUtf16,
+          retainBlockShell: cell.retainBlockShell,
+          retainOutsideClosure: cell.retainOutsideClosure,
+          presentClosureExact: cell.presentClosureExact,
+          chainResultCell: cell.chainResultCell,
+        ),
+      )
+      .where(
+        (cell) =>
+            _projectionEditCellMatches(cell, startUtf16, endUtf16, replacement),
+      )
+      .toList(growable: false);
+  if (matches.length != 1) return null;
+  return _authorizeCurrentProjectionEditCell(
+    revision: revision,
+    cell: matches.single,
+    startUtf16: startUtf16,
+    endUtf16: endUtf16,
+    replacement: replacement,
+  );
+}
+
+FlarkProjectionEditCellReceipt? _authorizeCurrentProjectionEditCell({
+  required int revision,
+  required _CurrentProjectionEditCell cell,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) {
+  if (!_projectionEditCellMatches(cell, startUtf16, endUtf16, replacement)) {
+    return null;
+  }
+  final delta = replacement.length - (endUtf16 - startUtf16);
+  final resultAffected = FlarkSourceRange(
+    cell.affectedUtf16.start,
+    cell.affectedUtf16.end + delta,
+  );
+  final resultTrigger =
+      cell.matcher == FlarkProjectionEditMatcher.anyNoCrLfSplice
+      ? FlarkSourceRange(cell.triggerUtf16.start, cell.triggerUtf16.end + delta)
+      : _transformInsertionRange(
+          cell.triggerUtf16,
+          startUtf16,
+          replacement.length,
+          growsWithInsertion: false,
+        );
+  return FlarkProjectionEditCellReceipt._(
+    baseRevision: revision,
+    resultRevision: revision + 1,
+    baseAffectedUtf16: cell.affectedUtf16,
+    affectedUtf16: resultAffected,
+    triggerUtf16: resultTrigger,
+    matcher: cell.matcher,
+    retainBlockShell: cell.retainBlockShell,
+    retainOutsideClosure: cell.retainOutsideClosure,
+    presentClosureExact: cell.presentClosureExact,
+    chainResultCell: cell.chainResultCell,
+    editStartUtf16: startUtf16,
+    editEndUtf16: endUtf16,
+    replacement: replacement,
+  );
+}
+
+bool _projectionEditCellMatches(
+  _CurrentProjectionEditCell cell,
+  int startUtf16,
+  int endUtf16,
+  String replacement,
+) {
+  if (!cell.retainBlockShell ||
+      !cell.presentClosureExact ||
+      startUtf16 > endUtf16 ||
+      startUtf16 < cell.triggerUtf16.start ||
+      endUtf16 > cell.triggerUtf16.end ||
+      startUtf16 < cell.affectedUtf16.start ||
+      endUtf16 > cell.affectedUtf16.end) {
+    return false;
+  }
+  return switch (cell.matcher) {
+    FlarkProjectionEditMatcher.anyNoCrLfSplice =>
+      (startUtf16 != endUtf16 || replacement.isNotEmpty) &&
+          !replacement.contains('\n') &&
+          !replacement.contains('\r'),
+    FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint =>
+      !cell.chainResultCell &&
+          cell.retainOutsideClosure &&
+          cell.triggerUtf16.length == 0 &&
+          startUtf16 == endUtf16 &&
+          startUtf16 == cell.triggerUtf16.start &&
+          replacement == ' ',
+  };
+}
+
 /// One parser-authored literal-safe envelope bound to an exact source
 /// transaction and its result revision.
 ///

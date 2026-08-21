@@ -226,12 +226,51 @@ final class _ViewportQueryPage {
   final _ViewportPageAnchor anchor;
 }
 
+sealed class _ProjectionContinuityAuthority {
+  const _ProjectionContinuityAuthority();
+
+  int get resultRevision;
+  FlarkSourceRange get affectedUtf16;
+}
+
+final class _LiteralProjectionContinuityAuthority
+    extends _ProjectionContinuityAuthority {
+  const _LiteralProjectionContinuityAuthority(this.receipt);
+
+  final FlarkProjectionContinuityReceipt receipt;
+
+  @override
+  int get resultRevision => receipt.resultRevision;
+
+  @override
+  FlarkSourceRange get affectedUtf16 => receipt.authorizedContentUtf16;
+}
+
+final class _EditCellProjectionContinuityAuthority
+    extends _ProjectionContinuityAuthority {
+  const _EditCellProjectionContinuityAuthority(this.receipt);
+
+  final FlarkProjectionEditCellReceipt receipt;
+
+  @override
+  int get resultRevision => receipt.resultRevision;
+
+  @override
+  FlarkSourceRange get affectedUtf16 => receipt.affectedUtf16;
+}
+
 final class _ProjectionContinuitySurface {
-  const _ProjectionContinuitySurface.authorized({
+  _ProjectionContinuitySurface.literal({
     required this.rowOrdinal,
-    required this.receipt,
+    required FlarkProjectionContinuityReceipt receipt,
     required this.presentation,
-  });
+  }) : authority = _LiteralProjectionContinuityAuthority(receipt);
+
+  _ProjectionContinuitySurface.editCell({
+    required this.rowOrdinal,
+    required FlarkProjectionEditCellReceipt receipt,
+    required this.presentation,
+  }) : authority = _EditCellProjectionContinuityAuthority(receipt);
 
   /// The certified row that authored this projection proof.
   ///
@@ -239,11 +278,12 @@ final class _ProjectionContinuitySurface {
   /// never follow the caret into another row merely because that row's source
   /// range happens to contain the new selection extent.
   final int rowOrdinal;
-  final FlarkProjectionContinuityReceipt receipt;
+  final _ProjectionContinuityAuthority authority;
   final FlarkSurfaceRow presentation;
 
-  int get resultRevision => receipt.resultRevision;
-  FlarkSourceRange get contentUtf16 => receipt.authorizedContentUtf16;
+  int get resultRevision => authority.resultRevision;
+  FlarkSourceRange get contentUtf16 => authority.affectedUtf16;
+  bool get isEditCell => authority is _EditCellProjectionContinuityAuthority;
 }
 
 final class _EditorSelectionSnapshot {
@@ -618,6 +658,18 @@ final class FlarkEditorController extends ChangeNotifier {
   int get sourceByteLength => _document.sourceByteLength;
   int get sourceUtf16Length => _document.sourceUtf16Length;
   int get pendingEdits => _pendingEdits;
+
+  /// Test-only visibility into whether an optimistic parser proof is still
+  /// driving the active presentation.
+  @visibleForTesting
+  bool get debugProjectionContinuityActive => _projectionContinuity != null;
+
+  /// Test-only visibility into the ordinary 32 ms parse debounce. Edit-cell
+  /// islands deliberately bypass this timer so their exact island is replaced
+  /// by fresh parser authority as soon as the native edit commits.
+  @visibleForTesting
+  bool get debugDelayedParseScheduled => _parseTimer?.isActive ?? false;
+
   Object? get lastError => _lastError;
   int get globalSelectionBase => _globalSelectionBase;
   int get globalSelectionExtent => _globalSelectionExtent;
@@ -4385,27 +4437,53 @@ final class FlarkEditorController extends ChangeNotifier {
   void _prepareProjectionContinuity(int start, int end, String replacement) {
     final current = _projectionContinuity;
     if (current != null) {
-      final receipt = current.receipt.continueWith(
-        startUtf16: start,
-        endUtf16: end,
-        replacement: replacement,
-      );
-      if (receipt != null) {
-        final presentation = _spliceContinuityPresentation(
-          current.presentation,
-          receipt.authorizedContentUtf16,
-          start,
-          end,
-          replacement,
-        );
-        if (presentation != null) {
-          _projectionContinuity = _ProjectionContinuitySurface.authorized(
-            rowOrdinal: current.rowOrdinal,
-            receipt: receipt,
-            presentation: presentation,
+      switch (current.authority) {
+        case _LiteralProjectionContinuityAuthority(:final receipt):
+          final successor = receipt.continueWith(
+            startUtf16: start,
+            endUtf16: end,
+            replacement: replacement,
           );
-          return;
-        }
+          if (successor != null) {
+            final presentation = _spliceContinuityPresentation(
+              current.presentation,
+              successor.authorizedContentUtf16,
+              start,
+              end,
+              replacement,
+            );
+            if (presentation != null) {
+              _projectionContinuity = _ProjectionContinuitySurface.literal(
+                rowOrdinal: current.rowOrdinal,
+                receipt: successor,
+                presentation: presentation,
+              );
+              return;
+            }
+          }
+        case _EditCellProjectionContinuityAuthority(:final receipt):
+          final successor = receipt.continueWith(
+            startUtf16: start,
+            endUtf16: end,
+            replacement: replacement,
+          );
+          if (successor != null) {
+            final presentation = _spliceProjectionEditCellPresentation(
+              current.presentation,
+              successor,
+              start,
+              end,
+              replacement,
+            );
+            if (presentation != null) {
+              _projectionContinuity = _ProjectionContinuitySurface.editCell(
+                rowOrdinal: current.rowOrdinal,
+                receipt: successor,
+                presentation: presentation,
+              );
+              return;
+            }
+          }
       }
       _projectionContinuity = null;
       return;
@@ -4424,7 +4502,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final editable = _mapViewportRange(
       row.editableUtf16 ?? _activationRange(row),
     );
-    final receipt = authorizeRowProjectionContinuity(
+    final literalReceipt = authorizeRowProjectionContinuity(
       revision: revision,
       envelopes: row.literalSafeEnvelopes,
       authorizedContentUtf16: editable,
@@ -4433,25 +4511,49 @@ final class FlarkEditorController extends ChangeNotifier {
       replacement: replacement,
     );
     final base = surfaceRow(row, includeEditingState: false);
-    if (receipt == null) {
-      _projectionContinuity = null;
-      return;
+    if (literalReceipt != null) {
+      final presentation = _spliceContinuityPresentation(
+        base,
+        literalReceipt.authorizedContentUtf16,
+        start,
+        end,
+        replacement,
+      );
+      if (presentation != null) {
+        _projectionContinuity = _ProjectionContinuitySurface.literal(
+          rowOrdinal: row.ordinal,
+          receipt: literalReceipt,
+          presentation: presentation,
+        );
+        return;
+      }
     }
-    final presentation = _spliceContinuityPresentation(
-      base,
-      receipt.authorizedContentUtf16,
-      start,
-      end,
-      replacement,
+    final editCellReceipt = authorizeProjectionEditCell(
+      revision: revision,
+      cells: row.projectionEditCells,
+      authorizedContentUtf16: editable,
+      startUtf16: start,
+      endUtf16: end,
+      replacement: replacement,
     );
-    if (presentation == null) {
-      return;
+    if (editCellReceipt != null) {
+      final presentation = _spliceProjectionEditCellPresentation(
+        base,
+        editCellReceipt,
+        start,
+        end,
+        replacement,
+      );
+      if (presentation != null) {
+        _projectionContinuity = _ProjectionContinuitySurface.editCell(
+          rowOrdinal: row.ordinal,
+          receipt: editCellReceipt,
+          presentation: presentation,
+        );
+        return;
+      }
     }
-    _projectionContinuity = _ProjectionContinuitySurface.authorized(
-      rowOrdinal: row.ordinal,
-      receipt: receipt,
-      presentation: presentation,
-    );
+    _projectionContinuity = null;
   }
 
   FlarkSurfaceRow? _spliceContinuityPresentation(
@@ -4586,6 +4688,85 @@ final class FlarkEditorController extends ChangeNotifier {
     );
   }
 
+  FlarkSurfaceRow? _spliceProjectionEditCellPresentation(
+    FlarkSurfaceRow presentation,
+    FlarkProjectionEditCellReceipt receipt,
+    int start,
+    int end,
+    String replacement,
+  ) {
+    if (!receipt.retainBlockShell || !receipt.presentClosureExact) return null;
+    final base = receipt.baseAffectedUtf16;
+    final result = receipt.affectedUtf16;
+    final baseText = _sliceVisibleUtf16(base.start, base.end);
+    final localStart = start - base.start;
+    final localEnd = end - base.start;
+    if (localStart < 0 || localStart > localEnd || localEnd > baseText.length) {
+      return null;
+    }
+    final resultText = baseText.replaceRange(localStart, localEnd, replacement);
+    if (resultText.length != result.length) return null;
+    final delta = result.length - base.length;
+    final before = <FlarkSurfaceTextRun>[];
+    final after = <FlarkSurfaceTextRun>[];
+    for (final run in presentation.runs) {
+      if (base.length == 0 &&
+          run.sourceUtf16Start == base.start &&
+          run.sourceUtf16End == base.end) {
+        continue;
+      }
+      if (run.sourceUtf16End <= base.start) {
+        before.add(run);
+        continue;
+      }
+      if (run.sourceUtf16Start >= base.end) {
+        after.add(
+          FlarkSurfaceTextRun(
+            text: run.text,
+            sourceUtf16Start: run.sourceUtf16Start + delta,
+            sourceUtf16End: run.sourceUtf16End + delta,
+            sourceExact: run.sourceExact,
+            styles: run.styles,
+          ),
+        );
+        continue;
+      }
+      if (run.sourceUtf16Start < base.start || run.sourceUtf16End > base.end) {
+        // A parser-authored closure must never bisect a retained run.
+        return null;
+      }
+    }
+    if (!receipt.retainOutsideClosure &&
+        (before.isNotEmpty || after.isNotEmpty)) {
+      return null;
+    }
+    final runs = List<FlarkSurfaceTextRun>.unmodifiable([
+      ...before,
+      FlarkSurfaceTextRun(
+        text: resultText,
+        sourceUtf16Start: result.start,
+        sourceUtf16End: result.end,
+        sourceExact: true,
+        styles: const {},
+      ),
+      ...after,
+    ]);
+    return FlarkSurfaceRow(
+      leadingText: presentation.leadingText,
+      text: runs.map((run) => run.text).join(),
+      globalUtf16Start: presentation.globalUtf16Start,
+      kind: presentation.kind,
+      headingLevel: presentation.headingLevel,
+      blockQuoteDepth: presentation.blockQuoteDepth,
+      codeBlock: presentation.codeBlock,
+      thematicBreak: presentation.thematicBreak,
+      ordinal: presentation.ordinal,
+      active: false,
+      selection: null,
+      runs: runs,
+    );
+  }
+
   Future<void> _completeQueuedEdit(
     Future<void> operation,
     int generation,
@@ -4598,7 +4779,11 @@ final class FlarkEditorController extends ChangeNotifier {
           expectedEditGeneration: generation,
           ensureActiveInputVisible: true,
         );
-        if (generation == _editGeneration) _scheduleParsingAfterInput();
+        if (generation == _editGeneration) {
+          _scheduleParsingAfterInput(
+            immediate: _projectionContinuity?.isEditCell ?? false,
+          );
+        }
       }
       _pendingEdits = math.max(0, _pendingEdits - 1);
       notifyListeners();
@@ -4774,13 +4959,18 @@ final class FlarkEditorController extends ChangeNotifier {
     return operation;
   }
 
-  void _scheduleParsingAfterInput() {
+  void _scheduleParsingAfterInput({bool immediate = false}) {
     if (_closed ||
         _session.compositionActive ||
         _status == FlarkEditorStatus.faulted) {
       return;
     }
     _parseTimer?.cancel();
+    if (immediate) {
+      _parseTimer = null;
+      unawaited(continueParsing());
+      return;
+    }
     _parseTimer = Timer(_parseIdleDelay, () {
       _parseTimer = null;
       unawaited(continueParsing());
@@ -5445,6 +5635,12 @@ final class FlarkEditorController extends ChangeNotifier {
       }
       final inlineFacts = row.inlineFacts;
       if (inlineFacts == null) return false;
+      if (continuity.isEditCell) {
+        // A result-revision complete inline publication always supersedes an
+        // exact edit-cell island. The parser, not the predecessor partition,
+        // owns the new inline vocabulary.
+        return true;
+      }
       if (inlineFacts.isNotEmpty) return true;
       // An authoritative empty fact set is allowed to remove styling only
       // when the literal edit actually touched the run that owned it. When

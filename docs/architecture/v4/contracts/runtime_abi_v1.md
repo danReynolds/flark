@@ -34,7 +34,7 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 27. `NEGOTIATE` is the only operation
+The direct ABI is major 4, minor 28. `NEGOTIATE` is the only operation
 permitted without a session. The host supplies its requested version and all
 required capability bits. The runtime returns its supported version, supported
 bits, and actual hard caps in `FlarkV4AbiInfo`.
@@ -327,9 +327,29 @@ transform. The original ABI 4.26 authority remains one-shot; the stateless
 runtime rejects a 4.26 negotiation rather than silently serving 4.27 closure
 semantics.
 
+ABI 4.28 adds capability `PROJECTION_EDIT_CELLS_V1` and semantic-record kind
+16 on the existing query-kind-6 stream. A kind-16 record carries its affected
+dependency closure in the source ranges and its edit trigger in the content
+ranges. Flags name the matcher and the only presentation that may survive:
+the block shell, the already-certified runs outside the closure when declared,
+an exact transformed closure, and optional result-cell chaining. Replacement
+words remain zero. Closures in one row must be disjoint or exactly equal;
+partial overlaps are invalid.
+
+The first broad cell is the complete editable content of a canonical top-level
+single-line ATX heading with authoritative empty inline facts. It accepts any
+non-noop splice without CR/LF, paints that whole cell exactly, retains the ATX
+shell, and may chain the transformed cell. The first local dependency cell is
+one-shot: for a conservatively isolated flat `**ASCIIword**` Strong fact, one
+U+0020 insertion at the parser-authored opener/content boundary paints only the
+Strong source closure exactly while retaining the heading shell and independent
+outside facts. Any mismatch, ambiguity, row change, failed range transform, or
+second edit after a one-shot cell fails closed. A fresh result-revision row with
+complete inline facts always supersedes the temporary cell presentation.
+
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
-inline grammar and a maximum 8 KiB leaf, 512 facts per row, and bounded parser
+inline grammar and a maximum 4 KiB simple-edit line, 512 facts per row, and bounded parser
 transitions. This establishes functional authority, not final query-time
 performance: retained/cached inline publication and demand scheduling remain a
 separate optimization gate.

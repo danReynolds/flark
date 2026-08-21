@@ -133,7 +133,7 @@ void main() {
   );
 
   testWidgets(
-    'pending exact rows suppress stale heading and task semantics',
+    'pending edit cells retain proven heading semantics while exact task rows suppress stale actions',
     (tester) async {
       final semantics = tester.ensureSemantics();
       final headingController = (await tester.runAsync(
@@ -175,13 +175,13 @@ void main() {
       final pendingHeading = headingController.surfaceRow(
         headingController.rows.single,
       );
-      expect(pendingHeading.kind, 0);
-      expect(pendingHeading.headingLevel, isNull);
+      expect(pendingHeading.kind, 12);
+      expect(pendingHeading.headingLevel, 1);
       final pendingHeadingFinder = find.semantics.byValue(pendingHeading.text);
       expect(pendingHeadingFinder, findsOne);
       expect(
         pendingHeadingFinder.evaluate().single,
-        isSemantics(value: pendingHeading.text, isHeader: false),
+        isSemantics(value: pendingHeading.text, isHeader: true),
       );
 
       headingController.commitActiveComposition();
