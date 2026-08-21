@@ -1223,8 +1223,8 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   // Newer Flutter SDKs add this optional TextInputClient callback. Keep the
   // annotation there while allowing the 3.41 qualification lane.
-  // ignore: override_on_non_overriding_member
   @override
+  // ignore: override_on_non_overriding_member
   bool onFocusReceived() {
     _focusNode.requestFocus();
     return true;
