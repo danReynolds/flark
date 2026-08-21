@@ -48,7 +48,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-for command in "$DART_BIN" "$FLUTTER_BIN" tar rg awk; do
+for command in "$DART_BIN" "$FLUTTER_BIN" tar grep awk; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Missing required command: $command" >&2
     exit 1
@@ -91,7 +91,7 @@ run_logged() {
 assert_archive_entry() {
   local listing="$1"
   local entry="$2"
-  if ! rg -Fxq "$entry" "$listing"; then
+  if ! grep -F -x -q -- "$entry" "$listing"; then
     echo "Publish archive is missing required entry: $entry" >&2
     exit 1
   fi
@@ -101,7 +101,7 @@ assert_archive_excludes() {
   local listing="$1"
   local pattern="$2"
   local description="$3"
-  if rg -n "$pattern" "$listing"; then
+  if grep -E -n -- "$pattern" "$listing"; then
     echo "Publish archive contains forbidden $description." >&2
     exit 1
   fi
@@ -109,7 +109,7 @@ assert_archive_excludes() {
 
 assert_no_checkout_reference() {
   local target="$1"
-  if rg -a -l -F "$REPO_ROOT" "$target"; then
+  if grep -r -a -l -F -- "$REPO_ROOT" "$target"; then
     echo "External consumer output references the source checkout: $target" >&2
     exit 1
   fi
@@ -169,7 +169,7 @@ done
 tar -xzf "$CORE_ARCHIVE" -C "$PACKAGE_DIR/flark_core"
 tar -xzf "$FLUTTER_ARCHIVE" -C "$PACKAGE_DIR/flark"
 
-if find "$PACKAGE_DIR" -type l -print -quit | rg -q .; then
+if find "$PACKAGE_DIR" -type l -print -quit | grep -q .; then
   echo "Publish archives must not contain symbolic links." >&2
   exit 1
 fi
