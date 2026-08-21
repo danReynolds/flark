@@ -25,8 +25,21 @@ enum FlarkProjectionEditMatcher {
   /// Any non-noop insertion, deletion, or replacement without CR/LF.
   anyNoCrLfSplice,
 
+  /// A parser-bounded ASCII word splice. Word edits may reach the declared
+  /// trigger boundary; one U+0020 insertion requires strict interior guards.
+  asciiLiteralSpliceInLiteral,
+
+  /// One UTF-16/ASCII source unit deletion from a parser-authored plain
+  /// literal segment. This proof is deliberately one-shot.
+  deleteOneAsciiUnitInLiteral,
+
   /// Exactly one U+0020 insertion at a zero-width parser-authored trigger.
   insertSingleAsciiSpaceAtPoint,
+
+  /// ASCII word or safe ASCII prose-punctuation characters, separated by
+  /// single spaces, appended at a parser-authored physical-line end. The carried
+  /// proof never admits two consecutive terminal spaces.
+  appendAsciiLiteralAtLineEnd,
 }
 
 enum FlarkInlineFactKind {
@@ -535,6 +548,7 @@ final class FlarkProjectionEditCell {
     required this.retainOutsideClosure,
     required this.presentClosureExact,
     required this.chainResultCell,
+    this.terminalSpaceAvailable = false,
   });
 
   final FlarkProjectionEditMatcher matcher;
@@ -546,6 +560,7 @@ final class FlarkProjectionEditCell {
   final bool retainOutsideClosure;
   final bool presentClosureExact;
   final bool chainResultCell;
+  final bool terminalSpaceAvailable;
 
   Map<String, Object?> toMessage() => {
     'matcher': matcher.index,
@@ -557,6 +572,7 @@ final class FlarkProjectionEditCell {
     'retainOutsideClosure': retainOutsideClosure,
     'presentClosureExact': presentClosureExact,
     'chainResultCell': chainResultCell,
+    'terminalSpaceAvailable': terminalSpaceAvailable,
   };
 
   static FlarkProjectionEditCell fromMessage(Map<Object?, Object?> message) =>
@@ -578,6 +594,8 @@ final class FlarkProjectionEditCell {
         retainOutsideClosure: message['retainOutsideClosure']! as bool,
         presentClosureExact: message['presentClosureExact']! as bool,
         chainResultCell: message['chainResultCell']! as bool,
+        terminalSpaceAvailable:
+            message['terminalSpaceAvailable'] as bool? ?? false,
       );
 }
 

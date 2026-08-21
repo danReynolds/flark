@@ -461,6 +461,30 @@ outside facts. Mounted paint evidence pins the latter: `# ` and unrelated
 `_right_` never reappear, and every frame carries the accepted source generation
 and exact caret identity.
 
+ABI 4.29 adds `PROJECTION_EDIT_CELLS_V2` rather than widening the pushed 4.28
+matcher vocabulary in place. The next bounded cell uses kind 16 for
+parser-authored plain
+literal segments in top-level paragraphs, simple list/quote content, and plain
+table cells. ASCII word insertion/replacement and spaces strictly inside the
+trimmed trigger chain, while a separately proven one-unit Backspace is consumed after one
+edit; the block shell and independent styled facts stay rendered. A mounted north-star
+matrix now imports the exact product-tour dogfood document and checks it plus styled-gap, in-fact,
+after-fact, list, quote, and table shapes at both zero and human cadence. Every
+accepted rune must cause an actual paint with the current source generation,
+canonical source and display caret, expected rendered text, and resolved paint
+styles. A separate lane admits several edits before one frame. The
+same mounted lane proves dogfood Backspace and selection replacement at both
+cadences. Composition remains a separate authority-safe lane rather than a
+claim of complete no-marker-flash coverage.
+
+A zero-width terminal matcher covers the real dogfood append after `locally.`.
+Its affected closure is only the parser-authored final physical-line plain gap,
+so the earlier Strong run remains rendered. It admits ASCII words and bounded
+ASCII prose punctuation separated by single spaces only on Plain lines beginning with an ASCII letter after ordinary
+paragraph padding, republishes blocked-space state after exactly one trailing
+U+0020, suppresses two spaces or other terminal whitespace, and cannot carry a
+second terminal space that would create a hard line break.
+
 The edit-cell seam is still bounded, not completion of continuously rendered
 editing. When no cell or envelope matches, the controller safely paints the
 whole active row as exact source. That can reveal unrelated markers and remains

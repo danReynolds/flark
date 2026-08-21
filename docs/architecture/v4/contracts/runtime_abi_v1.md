@@ -34,7 +34,7 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 28. `NEGOTIATE` is the only operation
+The direct ABI is major 4, minor 29. `NEGOTIATE` is the only operation
 permitted without a session. The host supplies its requested version and all
 required capability bits. The runtime returns its supported version, supported
 bits, and actual hard caps in `FlarkV4AbiInfo`.
@@ -339,20 +339,47 @@ partial overlaps are invalid.
 The first broad cell is the complete editable content of a canonical top-level
 single-line ATX heading with authoritative empty inline facts. It accepts any
 non-noop splice without CR/LF, paints that whole cell exactly, retains the ATX
-shell, and may chain the transformed cell. The first local dependency cell is
-one-shot: for a conservatively isolated flat `**ASCIIword**` Strong fact, one
-U+0020 insertion at the parser-authored opener/content boundary paints only the
-Strong source closure exactly while retaining the heading shell and independent
-outside facts. Any mismatch, ambiguity, row change, failed range transform, or
-second edit after a one-shot cell fails closed. A fresh result-revision row with
-complete inline facts always supersedes the temporary cell presentation.
+shell, and may chain the transformed cell. ABI 4.29 capability
+`PROJECTION_EDIT_CELLS_V2` adds matcher codes 2, 4, and 5 rather than widening the
+pushed 4.28 V1 contract in place. A chainable literal cell admits
+nonempty ASCII-alphanumeric insertion/replacement or one U+0020 insertion
+strictly inside its trimmed trigger. Its affected closure may include harmless
+boundary spaces so equal-closure matchers form one partition, but those spaces
+are not edit authority. The trigger excludes every neighboring inline-dependency
+boundary (a physical row boundary may be included), its transformed literal
+closure is exact, and certified outside facts remain projected. A separate
+one-shot matcher admits exactly one empty-replacement ASCII/UTF-16-unit deletion
+only when the parser proves every admitted position leaves an alphanumeric unit
+in the cell. The first local
+dependency cell is one-shot: for a conservatively isolated flat
+`**ASCIIword**` Strong fact, one U+0020 insertion at the parser-authored
+opener/content boundary paints only the Strong source closure exactly while
+retaining the heading shell and independent outside facts. Any mismatch,
+ambiguity, row change, failed range transform, or second edit after a one-shot
+cell fails closed. A fresh result-revision row with complete inline facts always
+supersedes the temporary cell presentation. A terminal append cell may cover
+the final physical-line plain gap, including punctuation, with a zero-width
+trigger at its end. It admits collapsed ASCII-alphanumeric appends, the bounded
+ASCII prose punctuation `"',.:;?`, and one space after certified non-whitespace
+terminal prose on a current Plain physical line whose first non-space character
+is an ASCII letter; block-opener-shaped lines receive no terminal cell. That
+space disables further space authority until another alphanumeric or admitted
+punctuation append. A fresh parse ending in exactly one U+0020 republishes the
+cell with `TERMINAL_SPACE_BLOCKED`; two spaces or any other terminal whitespace
+suppress it. The carried proof therefore cannot create a hard line break.
+Matcher codes are 1
+`ANY_NO_CRLF_SPLICE`, 2 `ASCII_LITERAL_SPLICE_IN_LITERAL`, 3
+`INSERT_SINGLE_ASCII_SPACE_AT_POINT`, and 4
+`DELETE_ONE_ASCII_UNIT_IN_LITERAL`, and 5
+`APPEND_ASCII_LITERAL_AT_LINE_END`.
 
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
-inline grammar and a maximum 4 KiB simple-edit line, 512 facts per row, and bounded parser
-transitions. This establishes functional authority, not final query-time
-performance: retained/cached inline publication and demand scheduling remain a
-separate optimization gate.
+inline grammar and a maximum 4 KiB parser-row source, 512 facts per row, and
+bounded parser transitions. Multi-physical-line paragraphs are split into
+line-local literal cells; no cell contains a line ending. This establishes
+functional authority, not final query-time performance: retained/cached inline
+publication and demand scheduling remain a separate optimization gate.
 
 ABI 4.4 adds typed block-structure presentation without changing the 128-byte
 row layout. A parser-authored BlockQuote Paragraph uses bit 16, nesting depth

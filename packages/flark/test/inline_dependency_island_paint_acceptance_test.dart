@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flark/flark.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/live_editor_transition_probe.dart';
@@ -7,142 +9,175 @@ import 'support/live_editor_transition_probe.dart';
 void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
-  testWidgets(
-    'invalidating strong keeps the heading shell and unrelated emphasis projected',
-    (tester) async {
-      const initial = '# **¦left** middle _right_';
-      const expected = '# ** ¦left** middle _right_';
-      const pendingPresentation = '** left** middle right';
-      final expectedCaret = MarkedSource.parse(expected).caret;
-      final expectedSource = MarkedSource.parse(expected).source;
+  for (final cadence in const [
+    (name: 'zero-cadence', delay: Duration.zero),
+    (name: 'human-cadence', delay: Duration(milliseconds: 80)),
+  ]) {
+    testWidgets(
+      '${cadence.name} invalidating strong keeps only its island exact',
+      (tester) async {
+        const initial = '# **¦left** middle _right_';
+        const expected = '# ** ¦left** middle _right_';
+        const pendingPresentation = '** left** middle right';
+        final expectedCaret = MarkedSource.parse(expected).caret;
+        final expectedSource = MarkedSource.parse(expected).source;
 
+        final probe = (await tester.runAsync(
+          () => LiveEditorTransitionProbe.open(
+            initial,
+            libraryPath: libraryPath!,
+          ),
+        ))!;
+        final mounted = await MountedTransitionRecorder.mount(tester, probe);
+
+        try {
+          final expectedSourceGeneration =
+              probe.controller.sourceGeneration + 1;
+          await mounted.typeText(' ');
+          await mounted.pumpImmediate();
+          expect(
+            probe.controller.debugProjectionContinuityActive,
+            isTrue,
+            reason:
+                'the immediate edit frame must use the parser-authored cell',
+          );
+          var remaining = cadence.delay.inMilliseconds;
+          while (remaining > 0) {
+            final slice = remaining < 8 ? remaining : 8;
+            await tester.runAsync(
+              () => Future<void>.delayed(Duration(milliseconds: slice)),
+            );
+            await mounted.pumpImmediate();
+            remaining -= slice;
+          }
+
+          expect(
+            mounted.paints,
+            isNotEmpty,
+            reason: 'the construct-invalidating space must produce a paint',
+          );
+          final immediatePaintCount = mounted.paints.length;
+          for (final paint in mounted.paints) {
+            _expectIslandPaint(
+              paint,
+              expectedSource: expectedSource,
+              expectedSourceGeneration: expectedSourceGeneration,
+              expectedCaret: expectedCaret,
+              expectedPresentation: pendingPresentation,
+            );
+          }
+
+          // Do not call the debug presentation barrier here: it invokes
+          // continueParsing itself and could conceal a regression in the
+          // production edit-cell scheduler. Pump at a sub-vsync cadence while
+          // native refresh and parser convergence notify the widget tree.
+          var observedPaints = mounted.paints.length;
+          var sawCommittedEdit = false;
+          for (var tick = 0; tick < 250; tick += 1) {
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 8)),
+            );
+            await mounted.pumpImmediate();
+            if (probe.controller.pendingEdits == 0) {
+              sawCommittedEdit = true;
+              expect(
+                probe.controller.debugDelayedParseScheduled,
+                isFalse,
+                reason:
+                    'edit-cell recertification must start immediately instead '
+                    'of entering the ordinary 32 ms debounce',
+              );
+            }
+            for (final paint in mounted.paints.skip(observedPaints)) {
+              _expectIslandPaint(
+                paint,
+                expectedSource: expectedSource,
+                expectedSourceGeneration: expectedSourceGeneration,
+                expectedCaret: expectedCaret,
+                expectedPresentation: pendingPresentation,
+              );
+            }
+            observedPaints = mounted.paints.length;
+            if (sawCommittedEdit && probe.controller.semanticsCurrent) break;
+          }
+          expect(sawCommittedEdit, isTrue);
+          expect(
+            probe.controller.semanticsCurrent,
+            isTrue,
+            reason:
+                'production scheduling must recertify without a test-triggered '
+                'continueParsing call',
+          );
+          expect(
+            probe.controller.debugProjectionContinuityActive,
+            isFalse,
+            reason:
+                'fresh complete inline facts must supersede the one-shot island',
+          );
+          await tester.runAsync(() => probe.expectSourceAndCaret(expected));
+
+          for (final paint in mounted.paints) {
+            _expectIslandPaint(
+              paint,
+              expectedSource: expectedSource,
+              expectedSourceGeneration: expectedSourceGeneration,
+              expectedCaret: expectedCaret,
+              expectedPresentation: pendingPresentation,
+            );
+          }
+          expect(
+            mounted.paints.length,
+            greaterThanOrEqualTo(immediatePaintCount),
+          );
+          await tester.runAsync(probe.expectHealthy);
+          await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+        } finally {
+          await mounted.close();
+          await tester.runAsync(probe.close);
+        }
+      },
+      skip: libraryPath == null,
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+  }
+
+  testWidgets(
+    'paint observer control captures an unsupported exact pending frame',
+    (tester) async {
+      const initial = 'Before **bo¦ld** after.\n';
+      const expected = 'Before **bo*¦ld** after.\n';
+      final marked = MarkedSource.parse(expected);
       final probe = (await tester.runAsync(
         () =>
             LiveEditorTransitionProbe.open(initial, libraryPath: libraryPath!),
       ))!;
       final mounted = await MountedTransitionRecorder.mount(tester, probe);
-
       try {
-        final expectedSourceGeneration = probe.controller.sourceGeneration + 1;
-        await mounted.typeText(' ');
+        final expectedGeneration = probe.controller.sourceGeneration + 1;
+        final paintStart = mounted.paints.length;
+        await mounted.typeText('*');
         await mounted.pumpImmediate();
-
+        final pending = mounted.paints.skip(paintStart).where((paint) {
+          final active = paint.rows.where((row) => row.active).toList();
+          return paint.sourceGeneration == expectedGeneration &&
+              paint.visibleSource == marked.source &&
+              paint.canonicalSelectionExtentUtf16 == marked.caret &&
+              paint.caretSourceUtf16 == marked.caret &&
+              active.length == 1 &&
+              active.single.neutral &&
+              active.single.kind == 0 &&
+              active.single.text == marked.source;
+        });
         expect(
-          mounted.paints,
+          pending,
           isNotEmpty,
-          reason: 'the construct-invalidating space must produce a paint',
-        );
-        final immediatePaintCount = mounted.paints.length;
-        expect(probe.controller.debugProjectionContinuityActive, isTrue);
-        for (final paint in mounted.paints) {
-          expect(
-            paint.sourceGeneration,
-            expectedSourceGeneration,
-            reason:
-                'each paint must belong to the source generation that inserted '
-                'the construct-invalidating space',
-          );
-          expect(paint.visibleUtf16Start, 0);
-          expect(paint.visibleUtf16Length, expectedSource.length);
-          expect(
-            paint.canonicalSelectionExtentUtf16,
-            expectedCaret,
-            reason: 'each paint must carry the exact post-edit source caret',
-          );
-          expect(
-            paint.caretSourceUtf16,
-            expectedCaret,
-            reason: 'each visible caret must own that same source position',
-          );
-          expect(
-            paint.presentation,
-            pendingPresentation,
-            reason:
-                'only the invalidated ** left** dependency island may become '
-                'exact while the ATX shell and _right_ stay projected',
-          );
-        }
-
-        // Do not call the debug presentation barrier here: it invokes
-        // continueParsing itself and could conceal a regression in the
-        // production edit-cell scheduler. Pump at a sub-vsync cadence while
-        // native refresh and parser convergence notify the widget tree.
-        var observedPaints = mounted.paints.length;
-        var sawCommittedEdit = false;
-        for (var tick = 0; tick < 250; tick += 1) {
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 8)),
-          );
-          await mounted.pumpImmediate();
-          if (probe.controller.pendingEdits == 0) {
-            sawCommittedEdit = true;
-            expect(
-              probe.controller.debugDelayedParseScheduled,
-              isFalse,
-              reason:
-                  'edit-cell recertification must start immediately instead '
-                  'of entering the ordinary 32 ms debounce',
-            );
-          }
-          for (final paint in mounted.paints.skip(observedPaints)) {
-            expect(paint.sourceGeneration, expectedSourceGeneration);
-            expect(paint.visibleUtf16Start, 0);
-            expect(paint.visibleUtf16Length, expectedSource.length);
-            expect(paint.canonicalSelectionExtentUtf16, expectedCaret);
-            expect(paint.caretSourceUtf16, expectedCaret);
-            expect(paint.presentation, isNot(contains('# ')));
-            expect(paint.presentation, isNot(contains('_right_')));
-            expect(paint.presentation, endsWith(' middle right'));
-          }
-          observedPaints = mounted.paints.length;
-          if (sawCommittedEdit && probe.controller.semanticsCurrent) break;
-        }
-        expect(sawCommittedEdit, isTrue);
-        expect(
-          probe.controller.semanticsCurrent,
-          isTrue,
           reason:
-              'production scheduling must recertify without a test-triggered '
-              'continueParsing call',
+              'the evidence lane must observe a real unsupported pending '
+              'paint instead of coalescing directly to the settled frame',
         );
-        expect(
-          probe.controller.debugProjectionContinuityActive,
-          isFalse,
-          reason:
-              'fresh complete inline facts must supersede the one-shot island',
-        );
+        await mounted.pumpPresentationSettled();
         await tester.runAsync(() => probe.expectSourceAndCaret(expected));
-
-        for (final paint in mounted.paints) {
-          expect(paint.sourceGeneration, expectedSourceGeneration);
-          expect(paint.visibleUtf16Start, 0);
-          expect(paint.visibleUtf16Length, expectedSource.length);
-          expect(paint.canonicalSelectionExtentUtf16, expectedCaret);
-          expect(paint.caretSourceUtf16, expectedCaret);
-          expect(
-            paint.presentation,
-            isNot(contains('# ')),
-            reason: 'the ATX source marker must never reappear',
-          );
-          expect(
-            paint.presentation,
-            isNot(contains('_right_')),
-            reason: 'the unrelated emphasis projection must never drop',
-          );
-          expect(
-            paint.presentation,
-            endsWith(' middle right'),
-            reason:
-                'the exact fallback may cover only the invalidated left '
-                'dependency island',
-          );
-        }
-        expect(
-          mounted.paints.length,
-          greaterThanOrEqualTo(immediatePaintCount),
-        );
         await tester.runAsync(probe.expectHealthy);
-        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
       } finally {
         await mounted.close();
         await tester.runAsync(probe.close);
@@ -150,5 +185,65 @@ void main() {
     },
     skip: libraryPath == null,
     timeout: const Timeout(Duration(minutes: 2)),
+  );
+}
+
+void _expectIslandPaint(
+  FlarkSurfacePaintObservation paint, {
+  required String expectedSource,
+  required int expectedSourceGeneration,
+  required int expectedCaret,
+  required String expectedPresentation,
+}) {
+  expect(paint.sourceGeneration, expectedSourceGeneration);
+  expect(paint.visibleUtf16Start, 0);
+  expect(paint.visibleUtf16Length, expectedSource.length);
+  expect(paint.visibleSource, expectedSource);
+  expect(paint.canonicalSelectionBaseUtf16, expectedCaret);
+  expect(paint.canonicalSelectionExtentUtf16, expectedCaret);
+  expect(paint.caretSourceUtf16, expectedCaret);
+  expect(paint.caretDisplayUtf16, 3);
+  expect(paint.presentation, expectedPresentation);
+  final active = paint.rows.singleWhere((row) => row.active);
+  expect(active.neutral, isFalse);
+  expect(active.kind, 12);
+  expect(active.headingLevel, 1);
+  final exactIslandRuns = active.runs.where((run) {
+    return run.sourceExact &&
+        run.sourceUtf16Start < 11 &&
+        run.sourceUtf16End > 2;
+  }).toList();
+  final exactIslandText = exactIslandRuns.map((run) {
+    final overlapStart = run.sourceUtf16Start < 2 ? 2 : run.sourceUtf16Start;
+    final overlapEnd = run.sourceUtf16End > 11 ? 11 : run.sourceUtf16End;
+    return run.text.substring(
+      overlapStart - run.sourceUtf16Start,
+      overlapEnd - run.sourceUtf16Start,
+    );
+  }).join();
+  expect(
+    exactIslandText,
+    '** left**',
+    reason: 'the invalidated Strong closure must paint exact and unstyled',
+  );
+  expect(
+    exactIslandRuns.every(
+      (run) =>
+          run.styles.isEmpty && run.resolvedStyle == active.resolvedBlockStyle,
+    ),
+    isTrue,
+    reason:
+        'the exact closure may keep the Heading block style but no stale '
+        'inline style',
+  );
+  expect(
+    active.runs.any(
+      (run) =>
+          run.text == 'right' &&
+          run.styles.contains(FlarkSurfaceInlineStyle.emphasis) &&
+          run.resolvedStyle.fontStyle == FontStyle.italic,
+    ),
+    isTrue,
+    reason: 'the independent Emphasis fact must stay actually italic',
   );
 }

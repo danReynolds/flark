@@ -301,6 +301,124 @@ void main() {
   );
 
   test(
+    'dogfood paragraph literal cells cross the Dart worker boundary',
+    () async {
+      const source =
+          'This is the real **Rust → Dart → Flutter** editor path.\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      expect(row.inlineFacts?.map((fact) => fact.kind), [
+        FlarkInlineFactKind.strong,
+      ]);
+      expect(row.projectionEditCells, hasLength(2));
+      final cell = row.projectionEditCells.first;
+      expect(
+        cell.matcher,
+        FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+      );
+      expect((cell.affectedBytes.start, cell.affectedBytes.end), (0, 17));
+      expect((cell.affectedUtf16.start, cell.affectedUtf16.end), (0, 17));
+      expect((cell.triggerBytes.start, cell.triggerBytes.end), (0, 16));
+      expect((cell.triggerUtf16.start, cell.triggerUtf16.end), (0, 16));
+      expect(cell.retainBlockShell, isTrue);
+      expect(cell.retainOutsideClosure, isTrue);
+      expect(cell.presentClosureExact, isTrue);
+      expect(cell.chainResultCell, isTrue);
+      final deletion = row.projectionEditCells[1];
+      expect(
+        deletion.matcher,
+        FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral,
+      );
+      expect(
+        (deletion.affectedUtf16.start, deletion.affectedUtf16.end),
+        (cell.affectedUtf16.start, cell.affectedUtf16.end),
+      );
+      expect(
+        (deletion.triggerUtf16.start, deletion.triggerUtf16.end),
+        (cell.triggerUtf16.start, cell.triggerUtf16.end),
+      );
+      expect(deletion.chainResultCell, isFalse);
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
+    'multiline dogfood terminal append cell crosses the Dart worker boundary',
+    () async {
+      const source =
+          'This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,\n'
+          'not a static Markdown preview. Certified Markdown stays rendered while focused;\n'
+          'only incomplete or temporarily pending syntax becomes exact source locally.\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      final terminal = row.projectionEditCells.singleWhere(
+        (cell) =>
+            cell.matcher ==
+            FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+      );
+      expect(
+        (terminal.affectedBytes.start, terminal.affectedBytes.end),
+        (163, 238),
+      );
+      expect(
+        (terminal.affectedUtf16.start, terminal.affectedUtf16.end),
+        (159, 234),
+      );
+      expect(
+        (terminal.triggerBytes.start, terminal.triggerBytes.end),
+        (238, 238),
+      );
+      expect(
+        (terminal.triggerUtf16.start, terminal.triggerUtf16.end),
+        (234, 234),
+      );
+      expect(terminal.terminalSpaceAvailable, isTrue);
+
+      const spacedSource =
+          'This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,\n'
+          'not a static Markdown preview. Certified Markdown stays rendered while focused;\n'
+          'only incomplete or temporarily pending syntax becomes exact source locally. \n';
+      final spaced = await FlarkCoreDocument.open(
+        spacedSource,
+        libraryPath: libraryPath,
+      );
+      addTearDown(spaced.dispose);
+      await spaced.pumpUntilReady();
+      final blocked = (await spaced.queryViewport())
+          .rows
+          .single
+          .projectionEditCells
+          .singleWhere(
+            (cell) =>
+                cell.matcher ==
+                FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+          );
+      expect(blocked.terminalSpaceAvailable, isFalse);
+      expect(
+        (blocked.triggerUtf16.start, blocked.triggerUtf16.end),
+        (235, 235),
+      );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'nonzero multibyte viewport rows use global UTF-16 coordinates',
     () async {
       const initial = 'Head.\n\nTrailing.\n';

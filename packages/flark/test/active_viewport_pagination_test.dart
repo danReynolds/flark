@@ -77,7 +77,8 @@ void main() {
       expect(controller.revision, revisionBefore + 1);
       expect(controller.rows, hasLength(1));
       expect(controller.semanticsCurrent, isFalse);
-      expect(controller.surfaceRow(controller.rows.single).kind, 0);
+      expect(controller.debugProjectionContinuityActive, isTrue);
+      expect(controller.surfaceRow(controller.rows.single).kind, 5);
       expect(controller.surfaceRow(controller.rows.single).text, contains('x'));
       expect(
         controller.viewport!.coveredUtf16.start,

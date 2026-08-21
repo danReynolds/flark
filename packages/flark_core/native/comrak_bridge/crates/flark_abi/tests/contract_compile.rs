@@ -647,6 +647,43 @@ fn close_initial_admission_snapshot_and_flag_policies_are_frozen() {
 }
 
 #[test]
+fn projection_edit_cell_vocabulary_is_bound_to_the_current_exact_minor() {
+    let manifest = manifest();
+    let cells = &manifest["viewportProjectionEditCells"];
+    assert_eq!(cells["abiMinor"].as_u64(), Some(u64::from(ABI_MINOR)));
+    assert_eq!(
+        cells["capability"].as_str(),
+        Some("PROJECTION_EDIT_CELLS_V2")
+    );
+    assert_eq!(cells["matchers"]["ANY_NO_CRLF_SPLICE"].as_u64(), Some(1));
+    assert_eq!(
+        cells["matchers"]["ASCII_LITERAL_SPLICE_IN_LITERAL"].as_u64(),
+        Some(2)
+    );
+    assert_eq!(
+        cells["matchers"]["INSERT_SINGLE_ASCII_SPACE_AT_POINT"].as_u64(),
+        Some(3)
+    );
+    assert_eq!(
+        cells["matchers"]["DELETE_ONE_ASCII_UNIT_IN_LITERAL"].as_u64(),
+        Some(4)
+    );
+    assert_eq!(
+        cells["matchers"]["APPEND_ASCII_LITERAL_AT_LINE_END"].as_u64(),
+        Some(5)
+    );
+    assert_eq!(
+        cells["stateFlags"]["TERMINAL_SPACE_BLOCKED"].as_u64(),
+        Some(4096)
+    );
+    assert!(HEADER.contains("FLARK_V4_CAPABILITY_PROJECTION_EDIT_CELLS_V2"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_APPEND_ASCII_LITERAL_AT_LINE_END"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED"));
+}
+
+#[test]
 fn c11_compiler_accepts_the_public_header() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let include_dir = manifest_dir.join("../../include");

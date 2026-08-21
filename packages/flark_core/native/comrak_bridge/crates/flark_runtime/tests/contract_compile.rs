@@ -80,7 +80,7 @@ impl RuntimeContract for ContractIsIntentionallyUnimplemented {
 fn code_tables_are_unique_and_exhaustive_snapshots() {
     assert_eq!(OPERATION_CODES.len(), 31);
     assert_eq!(STATUS_CODES.len(), 48);
-    assert_eq!(CAPABILITY_BITS.len(), 29);
+    assert_eq!(CAPABILITY_BITS.len(), 30);
     assert_unique_u32(OPERATION_CODES);
     assert_unique_u32(STATUS_CODES);
     assert_unique_u32(PROGRESS_STATES);
@@ -95,8 +95,12 @@ fn code_tables_are_unique_and_exhaustive_snapshots() {
         Some(&("STAGED_SOURCE_TRANSACTION_V1", 30))
     );
     assert_eq!(
-        CAPABILITY_BITS.last(),
+        CAPABILITY_BITS.get(28),
         Some(&("PROJECTION_EDIT_CELLS_V1", 1 << 28))
+    );
+    assert_eq!(
+        CAPABILITY_BITS.last(),
+        Some(&("PROJECTION_EDIT_CELLS_V2", 1 << 29))
     );
     assert_eq!(StatusCode::Ok as u32, 0);
     assert_eq!(StatusCode::ProgressStalled as u32, 0x0400);

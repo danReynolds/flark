@@ -94,12 +94,16 @@ const _literalEditClassAsciiWordInsertion = 1;
 const _literalEditClassSingleAsciiSpaceInsertion = 2;
 const _projectionEditMatcherMask = 0xff;
 const _projectionEditMatcherAnyNoCrLfSplice = 1;
+const _projectionEditMatcherAsciiLiteralSpliceInLiteral = 2;
 const _projectionEditMatcherInsertSingleAsciiSpaceAtPoint = 3;
+const _projectionEditMatcherDeleteOneAsciiUnitInLiteral = 4;
+const _projectionEditMatcherAppendAsciiLiteralAtLineEnd = 5;
 const _projectionEditRetainBlockShell = 0x100;
 const _projectionEditRetainOutsideClosure = 0x200;
 const _projectionEditPresentClosureExact = 0x400;
 const _projectionEditChainResultCell = 0x800;
-const _knownProjectionEditCellFlags = 0xfff;
+const _projectionEditTerminalSpaceBlocked = 0x1000;
+const _knownProjectionEditCellFlags = 0x1fff;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
@@ -177,13 +181,13 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 28;
+const _abiMinor = 29;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x1fffffff;
+const _requiredCapabilityBits = 0x3fffffff;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
 ///
@@ -2752,8 +2756,14 @@ final class FlarkNativeDocument {
     final matcher = switch (record.flags & _projectionEditMatcherMask) {
       _projectionEditMatcherAnyNoCrLfSplice =>
         FlarkProjectionEditMatcher.anyNoCrLfSplice,
+      _projectionEditMatcherAsciiLiteralSpliceInLiteral =>
+        FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
       _projectionEditMatcherInsertSingleAsciiSpaceAtPoint =>
         FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint,
+      _projectionEditMatcherDeleteOneAsciiUnitInLiteral =>
+        FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral,
+      _projectionEditMatcherAppendAsciiLiteralAtLineEnd =>
+        FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
       _ => throw FlarkNativeException(
         'decode_viewport',
         _notCertified,
@@ -2789,11 +2799,29 @@ final class FlarkNativeDocument {
             _projectionEditRetainBlockShell |
             _projectionEditPresentClosureExact |
             _projectionEditChainResultCell,
+      FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral =>
+        _projectionEditMatcherAsciiLiteralSpliceInLiteral |
+            _projectionEditRetainBlockShell |
+            _projectionEditRetainOutsideClosure |
+            _projectionEditPresentClosureExact |
+            _projectionEditChainResultCell,
+      FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral =>
+        _projectionEditMatcherDeleteOneAsciiUnitInLiteral |
+            _projectionEditRetainBlockShell |
+            _projectionEditRetainOutsideClosure |
+            _projectionEditPresentClosureExact,
       FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint =>
         _projectionEditMatcherInsertSingleAsciiSpaceAtPoint |
             _projectionEditRetainBlockShell |
             _projectionEditRetainOutsideClosure |
             _projectionEditPresentClosureExact,
+      FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd =>
+        _projectionEditMatcherAppendAsciiLiteralAtLineEnd |
+            _projectionEditRetainBlockShell |
+            _projectionEditRetainOutsideClosure |
+            _projectionEditPresentClosureExact |
+            _projectionEditChainResultCell |
+            (record.flags & _projectionEditTerminalSpaceBlocked),
     };
     final plainShape =
         affectedBytes.start == triggerBytes.start &&
@@ -2805,6 +2833,13 @@ final class FlarkNativeDocument {
         affectedUtf16.length > 0 &&
         triggerBytes.length == 0 &&
         triggerUtf16.length == 0;
+    final literalWordShape =
+        affectedBytes.length > 0 &&
+        affectedUtf16.length > 0 &&
+        triggerBytes.start >= affectedBytes.start &&
+        triggerBytes.end <= affectedBytes.end &&
+        triggerUtf16.start >= affectedUtf16.start &&
+        triggerUtf16.end <= affectedUtf16.end;
     if (editableBytes == null ||
         editableUtf16 == null ||
         record.flags & ~_knownProjectionEditCellFlags != 0 ||
@@ -2825,8 +2860,16 @@ final class FlarkNativeDocument {
         (triggerBytes.length == 0) != (triggerUtf16.length == 0) ||
         (matcher == FlarkProjectionEditMatcher.anyNoCrLfSplice &&
             !plainShape) ||
+        (matcher == FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral &&
+            !literalWordShape) ||
+        (matcher == FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral &&
+            !literalWordShape) ||
         (matcher == FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint &&
             !pointShape) ||
+        (matcher == FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
+            (!pointShape ||
+                triggerBytes.start != affectedBytes.end ||
+                triggerUtf16.start != affectedUtf16.end)) ||
         record.replacementFirst != 0 ||
         record.replacementSecond != 0) {
       throw FlarkNativeException('decode_viewport', _notCertified, record.kind);
@@ -2841,6 +2884,9 @@ final class FlarkNativeDocument {
       retainOutsideClosure: retainOutsideClosure,
       presentClosureExact: presentClosureExact,
       chainResultCell: chainResultCell,
+      terminalSpaceAvailable:
+          matcher == FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
+          record.flags & _projectionEditTerminalSpaceBlocked == 0,
     );
   }
 

@@ -109,6 +109,13 @@ final class DogfoodNativeCanaryReceiptWriter {
   final List<int> _surfaceFrameHashes = [];
   final List<int> _surfaceVisualStateHashes = [];
   final List<bool> _surfaceCaretIdentities = [];
+  final List<int> _surfaceSourceGenerations = [];
+  final List<int> _surfaceSelectionBases = [];
+  final List<int> _surfaceSelectionExtents = [];
+  final List<int?> _surfaceCaretSources = [];
+  final List<int?> _surfaceCaretDisplays = [];
+  final List<String> _surfaceVisibleSources = [];
+  final List<List<String>> _surfaceStyledTexts = [];
   final List<String> _inputEvents = [];
   FlarkEditorController? _controller;
   Timer? _timer;
@@ -131,6 +138,13 @@ final class DogfoodNativeCanaryReceiptWriter {
     _surfaceFrameHashes.clear();
     _surfaceVisualStateHashes.clear();
     _surfaceCaretIdentities.clear();
+    _surfaceSourceGenerations.clear();
+    _surfaceSelectionBases.clear();
+    _surfaceSelectionExtents.clear();
+    _surfaceCaretSources.clear();
+    _surfaceCaretDisplays.clear();
+    _surfaceVisibleSources.clear();
+    _surfaceStyledTexts.clear();
     _inputEvents.clear();
     _settledPresentation = '<empty>';
     _commandError = null;
@@ -186,20 +200,75 @@ final class DogfoodNativeCanaryReceiptWriter {
     if (_surfaceFrames.isEmpty ||
         _surfaceFrames.last != surface ||
         _surfaceFrameHashes.last != observation.renderPlanHash ||
-        _surfaceVisualStateHashes.last != observation.visualStateHash) {
+        _surfaceVisualStateHashes.last != observation.visualStateHash ||
+        _surfaceSourceGenerations.last != observation.sourceGeneration ||
+        _surfaceSelectionBases.last !=
+            observation.canonicalSelectionBaseUtf16 ||
+        _surfaceSelectionExtents.last !=
+            observation.canonicalSelectionExtentUtf16 ||
+        _surfaceCaretSources.last != observation.caretSourceUtf16 ||
+        _surfaceCaretDisplays.last != observation.caretDisplayUtf16 ||
+        _surfaceVisibleSources.last != observation.visibleSource) {
       if (_surfaceFrames.length == 128) {
         _surfaceFrames.removeAt(0);
         _surfaceFrameHashes.removeAt(0);
         _surfaceVisualStateHashes.removeAt(0);
         _surfaceCaretIdentities.removeAt(0);
+        _surfaceSourceGenerations.removeAt(0);
+        _surfaceSelectionBases.removeAt(0);
+        _surfaceSelectionExtents.removeAt(0);
+        _surfaceCaretSources.removeAt(0);
+        _surfaceCaretDisplays.removeAt(0);
+        _surfaceVisibleSources.removeAt(0);
+        _surfaceStyledTexts.removeAt(0);
       }
       _surfaceFrames.add(surface);
       _surfaceFrameHashes.add(observation.renderPlanHash);
       _surfaceVisualStateHashes.add(observation.visualStateHash);
+      final hasVisibleActiveRow = observation.rows.any((row) => row.active);
       _surfaceCaretIdentities.add(
-        observation.caretSourceUtf16 == null ||
-            observation.caretSourceUtf16 ==
-                observation.canonicalSelectionExtentUtf16,
+        (!hasVisibleActiveRow &&
+                observation.caretSourceUtf16 == null &&
+                observation.caretDisplayUtf16 == null) ||
+            (observation.caretSourceUtf16 != null &&
+                observation.caretDisplayUtf16 != null &&
+                observation.caretSourceUtf16 ==
+                    observation.canonicalSelectionExtentUtf16),
+      );
+      _surfaceSourceGenerations.add(observation.sourceGeneration);
+      _surfaceSelectionBases.add(observation.canonicalSelectionBaseUtf16);
+      _surfaceSelectionExtents.add(observation.canonicalSelectionExtentUtf16);
+      _surfaceCaretSources.add(observation.caretSourceUtf16);
+      _surfaceCaretDisplays.add(observation.caretDisplayUtf16);
+      _surfaceVisibleSources.add(observation.visibleSource);
+      _surfaceStyledTexts.add(
+        observation.rows
+            .expand((row) => row.runs)
+            .expand(
+              (run) => run.styles
+                  .where((style) {
+                    return switch (style) {
+                      FlarkSurfaceInlineStyle.strong =>
+                        run.resolvedStyle.fontWeight == FontWeight.w700,
+                      FlarkSurfaceInlineStyle.emphasis =>
+                        run.resolvedStyle.fontStyle == FontStyle.italic,
+                      FlarkSurfaceInlineStyle.code =>
+                        run.resolvedStyle.fontFamily == 'Menlo',
+                      FlarkSurfaceInlineStyle.strikethrough =>
+                        run.resolvedStyle.decoration?.contains(
+                              TextDecoration.lineThrough,
+                            ) ==
+                            true,
+                      FlarkSurfaceInlineStyle.link =>
+                        run.resolvedStyle.decoration?.contains(
+                              TextDecoration.underline,
+                            ) ==
+                            true,
+                    };
+                  })
+                  .map((style) => '${style.name}:${run.text}'),
+            )
+            .toList(growable: false),
       );
     }
     final controller = _controller;
@@ -285,12 +354,13 @@ final class DogfoodNativeCanaryReceiptWriter {
     final geometry = _sourcePointGeometry;
     final taskGeometry = _taskActionGeometry;
     final receipt = <String, Object?>{
-      'schemaVersion': 2,
+      'schemaVersion': 4,
       'canaryId': _canaryId,
       'commandSequence': _commandSequence,
       'commandError': _commandError?.toString(),
       'status': controller.status.name,
       'revision': controller.revision,
+      'sourceGeneration': controller.sourceGeneration,
       'source': source,
       'sourceUtf16Length': controller.sourceUtf16Length,
       'selectionBaseUtf16': selection?.base ?? controller.globalCaretOffset,
@@ -309,6 +379,21 @@ final class DogfoodNativeCanaryReceiptWriter {
       'surfaceCaretIdentities': List<bool>.unmodifiable(
         _surfaceCaretIdentities,
       ),
+      'surfaceSourceGenerations': List<int>.unmodifiable(
+        _surfaceSourceGenerations,
+      ),
+      'surfaceSelectionBases': List<int>.unmodifiable(_surfaceSelectionBases),
+      'surfaceSelectionExtents': List<int>.unmodifiable(
+        _surfaceSelectionExtents,
+      ),
+      'surfaceCaretSources': List<int?>.unmodifiable(_surfaceCaretSources),
+      'surfaceCaretDisplays': List<int?>.unmodifiable(_surfaceCaretDisplays),
+      'surfaceVisibleSources': List<String>.unmodifiable(
+        _surfaceVisibleSources,
+      ),
+      'surfaceStyledTexts': _surfaceStyledTexts
+          .map(List<String>.unmodifiable)
+          .toList(growable: false),
       'scrollOffset': _lastScrollOffset,
       'inputEvents': List<String>.unmodifiable(_inputEvents),
       if (geometry != null)

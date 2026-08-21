@@ -50,6 +50,40 @@ void main() {
     presentClosureExact: true,
     chainResultCell: false,
   );
+  const literalWordCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+    affectedBytes: FlarkSourceRange(0, 17),
+    affectedUtf16: FlarkSourceRange(0, 17),
+    triggerBytes: FlarkSourceRange(0, 16),
+    triggerUtf16: FlarkSourceRange(0, 16),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: true,
+  );
+  const literalDeleteCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral,
+    affectedBytes: FlarkSourceRange(0, 17),
+    affectedUtf16: FlarkSourceRange(0, 17),
+    triggerBytes: FlarkSourceRange(0, 16),
+    triggerUtf16: FlarkSourceRange(0, 16),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: false,
+  );
+  const terminalLiteralAppendCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+    affectedBytes: FlarkSourceRange(42, 55),
+    affectedUtf16: FlarkSourceRange(42, 55),
+    triggerBytes: FlarkSourceRange(55, 55),
+    triggerUtf16: FlarkSourceRange(55, 55),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: true,
+    terminalSpaceAvailable: true,
+  );
 
   test('parser word envelope binds one exact contained insertion', () {
     final receipt = authorizeRowProjectionContinuity(
@@ -576,6 +610,222 @@ void main() {
           replacement: edit.replacement,
         ),
         isNull,
+      );
+    }
+  });
+
+  test(
+    'literal word cell chains ASCII insertion and replacement beside outside facts',
+    () {
+      final first = authorizeProjectionEditCell(
+        revision: 40,
+        cells: const [literalWordCell],
+        authorizedContentUtf16: const FlarkSourceRange(0, 55),
+        startUtf16: 0,
+        endUtf16: 0,
+        replacement: 'k',
+      );
+      expect(first, isNotNull);
+      expect((first!.affectedUtf16.start, first.affectedUtf16.end), (0, 18));
+      expect((first.triggerUtf16.start, first.triggerUtf16.end), (0, 17));
+      expect(first.retainOutsideClosure, isTrue);
+
+      final second = first.continueWith(
+        startUtf16: 1,
+        endUtf16: 1,
+        replacement: 'eep',
+      );
+      expect(second, isNotNull);
+      expect((second!.affectedUtf16.start, second.affectedUtf16.end), (0, 21));
+      expect((second.triggerUtf16.start, second.triggerUtf16.end), (0, 20));
+      expect(second.resultRevision, 42);
+
+      final spaced = second.continueWith(
+        startUtf16: 4,
+        endUtf16: 4,
+        replacement: ' ',
+      );
+      expect(spaced, isNotNull);
+      expect((spaced!.triggerUtf16.start, spaced.triggerUtf16.end), (0, 21));
+
+      final replacement = spaced.continueWith(
+        startUtf16: 5,
+        endUtf16: 9,
+        replacement: 'word',
+      );
+      expect(replacement, isNotNull);
+      expect(
+        (replacement!.triggerUtf16.start, replacement.triggerUtf16.end),
+        (0, 21),
+      );
+    },
+  );
+
+  test('literal word cell rejects syntax, deletion, and boundary edits', () {
+    for (final edit in [
+      (start: 0, end: 0, replacement: ' '),
+      (start: 17, end: 17, replacement: ' '),
+      (start: 0, end: 0, replacement: '*'),
+      (start: 0, end: 0, replacement: 'é'),
+      (start: 0, end: 1, replacement: ''),
+      (start: 17, end: 17, replacement: 'x'),
+    ]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 40,
+          cells: const [literalWordCell],
+          authorizedContentUtf16: const FlarkSourceRange(0, 55),
+          startUtf16: edit.start,
+          endUtf16: edit.end,
+          replacement: edit.replacement,
+        ),
+        isNull,
+        reason: '$edit',
+      );
+    }
+  });
+
+  test('literal space insertion stays strictly inside its trimmed trigger', () {
+    const padded = FlarkProjectionEditCell(
+      matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+      affectedBytes: FlarkSourceRange(0, 6),
+      affectedUtf16: FlarkSourceRange(0, 6),
+      triggerBytes: FlarkSourceRange(1, 5),
+      triggerUtf16: FlarkSourceRange(1, 5),
+      retainBlockShell: true,
+      retainOutsideClosure: true,
+      presentClosureExact: true,
+      chainResultCell: true,
+    );
+    expect(
+      authorizeProjectionEditCell(
+        revision: 45,
+        cells: const [padded],
+        authorizedContentUtf16: const FlarkSourceRange(0, 6),
+        startUtf16: 3,
+        endUtf16: 3,
+        replacement: ' ',
+      ),
+      isNotNull,
+    );
+    for (final boundary in [1, 5]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 45,
+          cells: const [padded],
+          authorizedContentUtf16: const FlarkSourceRange(0, 6),
+          startUtf16: boundary,
+          endUtf16: boundary,
+          replacement: ' ',
+        ),
+        isNull,
+        reason: 'space at trimmed trigger boundary $boundary',
+      );
+    }
+  });
+
+  test('literal one-unit deletion is admitted once and cannot chain', () {
+    final receipt = authorizeProjectionEditCell(
+      revision: 50,
+      cells: const [literalDeleteCell],
+      authorizedContentUtf16: const FlarkSourceRange(0, 55),
+      startUtf16: 3,
+      endUtf16: 4,
+      replacement: '',
+    );
+    expect(receipt, isNotNull);
+    expect((receipt!.affectedUtf16.start, receipt.affectedUtf16.end), (0, 16));
+    expect(receipt.resultRevision, 51);
+    expect(
+      receipt.continueWith(startUtf16: 2, endUtf16: 3, replacement: ''),
+      isNull,
+    );
+    for (final edit in [
+      (start: 3, end: 3, replacement: ''),
+      (start: 3, end: 5, replacement: ''),
+      (start: 3, end: 4, replacement: 'x'),
+    ]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 50,
+          cells: const [literalDeleteCell],
+          authorizedContentUtf16: const FlarkSourceRange(0, 55),
+          startUtf16: edit.start,
+          endUtf16: edit.end,
+          replacement: edit.replacement,
+        ),
+        isNull,
+        reason: '$edit',
+      );
+    }
+  });
+
+  test('terminal literal append chains words but never two spaces', () {
+    final spaced = authorizeProjectionEditCell(
+      revision: 60,
+      cells: const [terminalLiteralAppendCell],
+      authorizedContentUtf16: const FlarkSourceRange(0, 55),
+      startUtf16: 55,
+      endUtf16: 55,
+      replacement: ' ',
+    );
+    expect(spaced, isNotNull);
+    expect((spaced!.affectedUtf16.start, spaced.affectedUtf16.end), (42, 56));
+    expect(spaced.terminalSpaceAvailable, isFalse);
+    expect(
+      spaced.continueWith(startUtf16: 56, endUtf16: 56, replacement: ' '),
+      isNull,
+      reason: 'a carried terminal proof must not create a hard line break',
+    );
+
+    final wordStart = spaced.continueWith(
+      startUtf16: 56,
+      endUtf16: 56,
+      replacement: 'T',
+    );
+    expect(wordStart, isNotNull);
+    expect(wordStart!.terminalSpaceAvailable, isTrue);
+    final word = wordStart.continueWith(
+      startUtf16: 57,
+      endUtf16: 57,
+      replacement: 'esting',
+    );
+    expect(word, isNotNull);
+    expect((word!.affectedUtf16.start, word.affectedUtf16.end), (42, 63));
+    final punctuation = word.continueWith(
+      startUtf16: 63,
+      endUtf16: 63,
+      replacement: '.',
+    );
+    expect(punctuation, isNotNull);
+    expect(punctuation!.terminalSpaceAvailable, isTrue);
+    final nextSpace = punctuation.continueWith(
+      startUtf16: 64,
+      endUtf16: 64,
+      replacement: ' ',
+    );
+    expect(nextSpace, isNotNull);
+    expect(nextSpace!.terminalSpaceAvailable, isFalse);
+
+    for (final edit in [
+      (start: 54, end: 54, replacement: 'x'),
+      (start: 55, end: 55, replacement: '*'),
+      (start: 55, end: 55, replacement: '['),
+      (start: 55, end: 55, replacement: '&'),
+      (start: 55, end: 55, replacement: 'é'),
+      (start: 54, end: 55, replacement: ''),
+    ]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 60,
+          cells: const [terminalLiteralAppendCell],
+          authorizedContentUtf16: const FlarkSourceRange(0, 55),
+          startUtf16: edit.start,
+          endUtf16: edit.end,
+          replacement: edit.replacement,
+        ),
+        isNull,
+        reason: '$edit',
       );
     }
   });

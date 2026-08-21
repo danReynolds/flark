@@ -289,9 +289,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       PointerDeviceKind.invertedStylus => true,
       _ => false,
     };
-    if (touchLike &&
-        _focusNode.hasFocus &&
-        (_connection?.attached ?? false)) {
+    if (touchLike && _focusNode.hasFocus && (_connection?.attached ?? false)) {
       // Android can hide the IME without closing Flutter's input connection.
       // Treat a fresh touch activation as an explicit request to bring it
       // back, even before the gesture resolves to a caret position.
@@ -573,6 +571,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   bool _handleTab({required bool reverse}) {
+    if (widget.controller.pendingTableNavigationLocked) {
+      widget.debugInputEventObserver?.call('shortcut:pending-table-cell');
+      return true;
+    }
     if (widget.controller.handleListIndent(outdent: reverse)) {
       widget.debugInputEventObserver?.call(
         reverse ? 'shortcut:outdent-list' : 'shortcut:indent-list',

@@ -113,17 +113,38 @@ pub struct DocumentLiteralSafeEnvelope {
 }
 
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE: u32 = 0x0001;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL: u32 = 0x0002;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_SINGLE_ASCII_SPACE_AT_POINT: u32 = 0x0003;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL: u32 = 0x0004;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_APPEND_ASCII_LITERAL_AT_LINE_END: u32 = 0x0005;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCHER_MASK: u32 = 0x00ff;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL: u32 = 0x0100;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE: u32 = 0x0200;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT: u32 = 0x0400;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT: u32 = 0x0800;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETENTION_MASK: u32 = 0x0f00;
-pub const DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK: u32 = 0x0fff;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED: u32 = 0x1000;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK: u32 = 0x1fff;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS: u32 =
     DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT
+        | DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT
+        | DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_APPEND_ASCII_LITERAL_AT_LINE_END
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
         | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT
         | DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS: u32 =
@@ -4403,16 +4424,27 @@ fn document_projection_edit_cells(
     else {
         return Ok(Vec::new());
     };
-    let level = match presentation {
-        DocumentViewportRowPresentation::Heading {
-            level,
-            style: DocumentHeadingStyle::Atx,
-        } => level,
-        _ => return Ok(Vec::new()),
+    let physical_line_start = match presentation {
+        DocumentViewportRowPresentation::ListItem {
+            prefix_start_byte, ..
+        }
+        | DocumentViewportRowPresentation::BlockQuote {
+            prefix_start_byte, ..
+        } => prefix_start_byte,
+        _ => row_source_range.start,
+    };
+    let canonical_path_depth = match presentation {
+        DocumentViewportRowPresentation::ListItem {
+            nesting_depth: 1, ..
+        } => row.path().len() == 4,
+        DocumentViewportRowPresentation::BlockQuote {
+            nesting_depth: 1, ..
+        } => row.path().len() == 3,
+        _ => (1..=2).contains(&row.path().len()),
     };
     if edit_capability != DocumentViewportRowEditCapability::Contiguous
-        || !(1..=2).contains(&row.path().len())
-        || !document_row_starts_at_physical_line_start(runtime, row_source_range.start)
+        || !canonical_path_depth
+        || !document_row_starts_at_physical_line_start(runtime, physical_line_start)
         || editable.start > editable.end
         || editable_utf16.start > editable_utf16.end
         || editable.start < row_source_range.start
@@ -4442,18 +4474,94 @@ fn document_projection_edit_cells(
         return Ok(Vec::new());
     }
 
-    let prefix_end = usize::try_from(editable.start - row_source_range.start)
+    let editable_start = usize::try_from(editable.start - row_source_range.start)
         .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
-    let content_end = usize::try_from(editable.end - row_source_range.start)
+    let editable_end = usize::try_from(editable.end - row_source_range.start)
         .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
-    let Some(prefix) = row_source.get(..prefix_end) else {
+    let Some(prefix) = row_source.get(..editable_start) else {
         return Ok(Vec::new());
     };
-    let Some(content) = row_source.get(prefix_end..content_end) else {
+    let Some(content) = row_source.get(editable_start..editable_end) else {
         return Ok(Vec::new());
     };
-    let Some(suffix) = row_source.get(content_end..) else {
+    let Some(suffix) = row_source.get(editable_end..) else {
         return Ok(Vec::new());
+    };
+    if presentation == DocumentViewportRowPresentation::Table {
+        return Ok(document_table_literal_word_edit_cells(
+            &row_source,
+            row_source_range,
+            editable,
+            editable_utf16,
+            facts,
+        ));
+    }
+    let literal_segment_shell = match presentation {
+        DocumentViewportRowPresentation::Plain => prefix.is_empty(),
+        DocumentViewportRowPresentation::ListItem {
+            prefix_start_byte,
+            prefix_end_byte,
+            prefix_start_utf16,
+            prefix_end_utf16,
+            nesting_depth,
+            container_count,
+            simple_continuation,
+            ..
+        } => {
+            prefix.is_empty()
+                && nesting_depth == 1
+                && container_count == 0
+                && simple_continuation
+                && prefix_start_byte == physical_line_start
+                && prefix_end_byte == row_source_range.start
+                && prefix_start_utf16 <= prefix_end_utf16
+                && prefix_end_utf16 == row_source_utf16_range.start
+        }
+        DocumentViewportRowPresentation::BlockQuote {
+            prefix_start_byte,
+            prefix_end_byte,
+            prefix_start_utf16,
+            prefix_end_utf16,
+            nesting_depth,
+            container_count,
+            simple_continuation,
+            ..
+        } => {
+            prefix.is_empty()
+                && nesting_depth == 1
+                && container_count == 1
+                && simple_continuation
+                && prefix_start_byte == physical_line_start
+                && prefix_end_byte == row_source_range.start
+                && prefix_start_utf16 <= prefix_end_utf16
+                && prefix_end_utf16 == row_source_utf16_range.start
+        }
+        _ => false,
+    };
+    if literal_segment_shell {
+        if !matches!(suffix, "" | "\n" | "\r\n") {
+            return Ok(Vec::new());
+        }
+        if presentation != DocumentViewportRowPresentation::Plain
+            && content.bytes().any(|byte| matches!(byte, b'\r' | b'\n'))
+        {
+            return Ok(Vec::new());
+        }
+        return Ok(document_plain_literal_word_edit_cells(
+            content,
+            editable,
+            editable_utf16,
+            facts,
+            presentation == DocumentViewportRowPresentation::Plain,
+        ));
+    }
+
+    let level = match presentation {
+        DocumentViewportRowPresentation::Heading {
+            level,
+            style: DocumentHeadingStyle::Atx,
+        } => level,
+        _ => return Ok(Vec::new()),
     };
     let canonical_prefix = format!("{} ", "#".repeat(usize::from(level)));
     let byte_geometry_matches = content.len() as u64 == editable.end - editable.start;
@@ -4486,6 +4594,403 @@ fn document_projection_edit_cells(
         editable_utf16,
         facts,
     ))
+}
+
+fn document_table_literal_word_edit_cells(
+    row_source: &str,
+    row_source_range: &Range<u64>,
+    editable: &Range<u64>,
+    editable_utf16: &Range<u64>,
+    facts: &[DocumentInlineFact],
+) -> Vec<DocumentProjectionEditCell> {
+    facts
+        .iter()
+        .filter(|cell| cell.kind == DocumentInlineFactKind::TableCell)
+        .filter_map(|cell| {
+            if cell.content_range.start >= cell.content_range.end
+                || cell.content_utf16_range.start >= cell.content_utf16_range.end
+                || cell.source_range.start > cell.content_range.start
+                || cell.content_range.end > cell.source_range.end
+                || cell.source_utf16_range.start > cell.content_utf16_range.start
+                || cell.content_utf16_range.end > cell.source_utf16_range.end
+                || cell.content_range.start < editable.start
+                || cell.content_range.end > editable.end
+                || cell.content_utf16_range.start < editable_utf16.start
+                || cell.content_utf16_range.end > editable_utf16.end
+            {
+                return None;
+            }
+            let intersects_other_fact = facts.iter().any(|fact| {
+                fact.kind != DocumentInlineFactKind::TableCell
+                    && fact.source_range.start < cell.content_range.end
+                    && cell.content_range.start < fact.source_range.end
+            });
+            if intersects_other_fact {
+                return None;
+            }
+            let relative_start =
+                usize::try_from(cell.content_range.start - row_source_range.start).ok()?;
+            let relative_end =
+                usize::try_from(cell.content_range.end - row_source_range.start).ok()?;
+            let source = row_source.get(relative_start..relative_end)?;
+            if source.is_empty()
+                || !source
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+                || !source.bytes().any(|byte| byte.is_ascii_alphanumeric())
+                || source.len() as u64 != cell.content_range.end - cell.content_range.start
+                || source.encode_utf16().count() as u64
+                    != cell.content_utf16_range.end - cell.content_utf16_range.start
+            {
+                return None;
+            }
+            Some(document_literal_word_edit_cells(
+                cell.content_range.clone(),
+                cell.content_utf16_range.clone(),
+                cell.content_range.clone(),
+                cell.content_utf16_range.clone(),
+                source.bytes().filter(u8::is_ascii_alphanumeric).count(),
+                true,
+            ))
+        })
+        .flatten()
+        .collect()
+}
+
+fn document_literal_word_edit_cells(
+    source_range: Range<u64>,
+    source_utf16_range: Range<u64>,
+    trigger_range: Range<u64>,
+    trigger_utf16_range: Range<u64>,
+    ascii_alphanumeric_count: usize,
+    allow_one_unit_delete: bool,
+) -> Vec<DocumentProjectionEditCell> {
+    let mut cells = vec![DocumentProjectionEditCell {
+        source_range: source_range.clone(),
+        source_utf16_range: source_utf16_range.clone(),
+        trigger_range: trigger_range.clone(),
+        trigger_utf16_range: trigger_utf16_range.clone(),
+        flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+    }];
+    // A one-unit deletion is safe only when every admitted deletion leaves at
+    // least one alphanumeric source unit in the cell. It remains one-shot so
+    // the host never infers that this count survived another deletion.
+    if allow_one_unit_delete && ascii_alphanumeric_count >= 2 {
+        cells.push(DocumentProjectionEditCell {
+            source_range,
+            source_utf16_range,
+            trigger_range,
+            trigger_utf16_range,
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+        });
+    }
+    cells
+}
+
+fn document_plain_literal_word_edit_cells(
+    editable_source: &str,
+    editable: &Range<u64>,
+    editable_utf16: &Range<u64>,
+    facts: &[DocumentInlineFact],
+    allow_terminal_append: bool,
+) -> Vec<DocumentProjectionEditCell> {
+    let mut occupied = facts
+        .iter()
+        .filter_map(|fact| {
+            (fact.source_range.start >= editable.start
+                && fact.source_range.end <= editable.end
+                && fact.source_range.start <= fact.source_range.end
+                && fact.source_utf16_range.start >= editable_utf16.start
+                && fact.source_utf16_range.end <= editable_utf16.end
+                && fact.source_utf16_range.start <= fact.source_utf16_range.end)
+                .then(|| (fact.source_range.clone(), fact.source_utf16_range.clone()))
+        })
+        .collect::<Vec<_>>();
+    if occupied.len() != facts.len() {
+        return Vec::new();
+    }
+    occupied.sort_by_key(|(bytes, utf16)| (bytes.start, bytes.end, utf16.start, utf16.end));
+
+    let mut merged = Vec::<(Range<u64>, Range<u64>)>::new();
+    for (bytes, utf16) in occupied {
+        if let Some((last_bytes, last_utf16)) = merged.last_mut() {
+            if bytes.start < last_bytes.end {
+                last_bytes.end = last_bytes.end.max(bytes.end);
+                last_utf16.end = last_utf16.end.max(utf16.end);
+                continue;
+            }
+        }
+        merged.push((bytes, utf16));
+    }
+
+    let mut gaps = Vec::new();
+    let mut byte_cursor = editable.start;
+    let mut utf16_cursor = editable_utf16.start;
+    for (bytes, utf16) in &merged {
+        if byte_cursor < bytes.start && utf16_cursor < utf16.start {
+            gaps.push((
+                byte_cursor..bytes.start,
+                utf16_cursor..utf16.start,
+                byte_cursor == editable.start,
+                false,
+            ));
+        }
+        byte_cursor = byte_cursor.max(bytes.end);
+        utf16_cursor = utf16_cursor.max(utf16.end);
+    }
+    if byte_cursor < editable.end && utf16_cursor < editable_utf16.end {
+        gaps.push((
+            byte_cursor..editable.end,
+            utf16_cursor..editable_utf16.end,
+            byte_cursor == editable.start,
+            true,
+        ));
+    }
+    if merged.is_empty() && editable.start == editable.end {
+        return Vec::new();
+    }
+
+    let mut cells = gaps
+        .iter()
+        .flat_map(|(bytes, utf16, starts_row, ends_row)| {
+            document_ascii_line_literal_cells(
+                editable_source,
+                editable,
+                bytes,
+                utf16,
+                *starts_row,
+                *ends_row,
+            )
+        })
+        .collect::<Vec<_>>();
+    if allow_terminal_append {
+        if let Some((bytes, utf16, _, true)) = gaps.last() {
+            if let Some(cell) =
+                document_terminal_literal_append_cell(editable_source, editable, bytes, utf16)
+            {
+                cells.push(cell);
+            }
+        }
+    }
+    cells
+}
+
+fn document_terminal_literal_append_cell(
+    editable_source: &str,
+    editable: &Range<u64>,
+    gap_bytes: &Range<u64>,
+    gap_utf16: &Range<u64>,
+) -> Option<DocumentProjectionEditCell> {
+    if gap_bytes.end != editable.end || gap_bytes.start >= gap_bytes.end {
+        return None;
+    }
+    let relative_start = usize::try_from(gap_bytes.start - editable.start).ok()?;
+    let relative_end = usize::try_from(gap_bytes.end - editable.start).ok()?;
+    let gap_source = editable_source.get(relative_start..relative_end)?;
+    if gap_source.is_empty() {
+        return None;
+    }
+    let trailing_spaces = gap_source
+        .bytes()
+        .rev()
+        .take_while(|byte| *byte == b' ')
+        .count();
+    if trailing_spaces > 1
+        || (trailing_spaces == 0
+            && gap_source
+                .as_bytes()
+                .last()
+                .is_some_and(u8::is_ascii_whitespace))
+    {
+        return None;
+    }
+    let line_start = gap_source
+        .char_indices()
+        .rev()
+        .find_map(|(index, character)| matches!(character, '\r' | '\n').then_some(index + 1))
+        .unwrap_or(0);
+    let line_source = gap_source.get(line_start..)?;
+    if line_source.is_empty() {
+        return None;
+    }
+    // Appending U+0020 can itself complete a block opener (`- `, `1. `,
+    // `# `, ...). Keep this first terminal tranche on ordinary prose lines:
+    // the parser-certified current row is Plain and the physical line begins,
+    // after at most ordinary paragraph padding, with an ASCII letter. This is
+    // deliberately narrower than reproducing block grammar in the host.
+    let physical_line_end = relative_end;
+    let physical_line_start = editable_source
+        .get(..physical_line_end)?
+        .char_indices()
+        .rev()
+        .find_map(|(index, character)| matches!(character, '\r' | '\n').then_some(index + 1))
+        .unwrap_or(0);
+    let physical_line = editable_source.get(physical_line_start..physical_line_end)?;
+    if gap_bytes
+        .start
+        .checked_add(u64::try_from(line_start).ok()?)?
+        != editable
+            .start
+            .checked_add(u64::try_from(physical_line_start).ok()?)?
+    {
+        // A fact earlier on this physical line can absorb a terminal suffix
+        // after the edit (for example, GFM bare-autolink punctuation). The
+        // first terminal tranche retains outside facts, so it may authorize
+        // only a final line whose complete source belongs to this plain gap.
+        return None;
+    }
+    let leading_spaces = physical_line
+        .bytes()
+        .take_while(|byte| *byte == b' ')
+        .count();
+    if leading_spaces > 3
+        || !physical_line
+            .as_bytes()
+            .get(leading_spaces)
+            .is_some_and(u8::is_ascii_alphabetic)
+    {
+        return None;
+    }
+    let line_utf16_start = gap_utf16.start
+        + u64::try_from(gap_source.get(..line_start)?.encode_utf16().count()).ok()?;
+    let source_range = gap_bytes.start + u64::try_from(line_start).ok()?..gap_bytes.end;
+    let source_utf16_range = line_utf16_start..gap_utf16.end;
+    Some(DocumentProjectionEditCell {
+        source_range,
+        source_utf16_range,
+        trigger_range: gap_bytes.end..gap_bytes.end,
+        trigger_utf16_range: gap_utf16.end..gap_utf16.end,
+        flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+            | if trailing_spaces == 1 {
+                DOCUMENT_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED
+            } else {
+                0
+            },
+    })
+}
+
+fn document_ascii_line_literal_cells(
+    editable_source: &str,
+    editable: &Range<u64>,
+    bytes: &Range<u64>,
+    utf16: &Range<u64>,
+    starts_row: bool,
+    ends_row: bool,
+) -> Vec<DocumentProjectionEditCell> {
+    let Ok(relative_start) = usize::try_from(bytes.start - editable.start) else {
+        return Vec::new();
+    };
+    let Ok(relative_end) = usize::try_from(bytes.end - editable.start) else {
+        return Vec::new();
+    };
+    let Some(gap_source) = editable_source.get(relative_start..relative_end) else {
+        return Vec::new();
+    };
+    let Some(byte_len) = bytes.end.checked_sub(bytes.start) else {
+        return Vec::new();
+    };
+    let Some(utf16_len) = utf16.end.checked_sub(utf16.start) else {
+        return Vec::new();
+    };
+    if gap_source.len() as u64 != byte_len || gap_source.encode_utf16().count() as u64 != utf16_len
+    {
+        return Vec::new();
+    }
+    let mut cells = Vec::new();
+    let mut segment_start = 0;
+    let gap_bytes = gap_source.as_bytes();
+    while segment_start <= gap_bytes.len() {
+        let segment_end = gap_bytes[segment_start..]
+            .iter()
+            .position(|byte| matches!(byte, b'\r' | b'\n'))
+            .map_or(gap_bytes.len(), |offset| segment_start + offset);
+        let raw_source = &gap_source[segment_start..segment_end];
+        let leading_spaces = raw_source.bytes().take_while(|byte| *byte == b' ').count();
+        let trailing_spaces = raw_source
+            .bytes()
+            .rev()
+            .take_while(|byte| *byte == b' ')
+            .count();
+        let literal_start = segment_start + leading_spaces;
+        let literal_end = segment_end.saturating_sub(trailing_spaces);
+        let source = gap_source
+            .get(literal_start..literal_end)
+            .unwrap_or_default();
+        if !source.is_empty()
+            && source
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+            && source.bytes().any(|byte| byte.is_ascii_alphanumeric())
+        {
+            let raw_utf16_prefix = gap_source[..segment_start].encode_utf16().count() as u64;
+            let raw_utf16_len = raw_source.encode_utf16().count() as u64;
+            let literal_utf16_prefix = gap_source[..literal_start].encode_utf16().count() as u64;
+            let literal_utf16_len = source.encode_utf16().count() as u64;
+            // The affected closure includes harmless surrounding U+0020 so
+            // every matcher for the final physical-line gap shares the same
+            // parser-authored partition. The trigger remains the trimmed
+            // literal, so neither leading indentation nor a trailing hard-
+            // break boundary is admitted by the generic matcher.
+            let segment_bytes =
+                bytes.start + segment_start as u64..bytes.start + segment_end as u64;
+            let segment_utf16 =
+                utf16.start + raw_utf16_prefix..utf16.start + raw_utf16_prefix + raw_utf16_len;
+            let trigger_bytes =
+                bytes.start + literal_start as u64..bytes.start + literal_end as u64;
+            let trigger_utf16 = utf16.start + literal_utf16_prefix
+                ..utf16.start + literal_utf16_prefix + literal_utf16_len;
+            let starts_physical_line = (segment_start == 0 && starts_row) || segment_start > 0;
+            let ends_physical_line =
+                (segment_end == gap_bytes.len() && ends_row) || segment_end < gap_bytes.len();
+            let byte_trigger_start = if starts_physical_line || leading_spaces > 0 {
+                trigger_bytes.start
+            } else {
+                trigger_bytes.start + 1
+            };
+            let ends_editable = ends_row && segment_end == gap_bytes.len();
+            let byte_trigger_end = if ends_editable {
+                trigger_bytes.end.saturating_sub(1)
+            } else if ends_physical_line || trailing_spaces > 0 {
+                trigger_bytes.end
+            } else {
+                trigger_bytes.end.saturating_sub(1)
+            };
+            let trigger_start = if starts_physical_line || leading_spaces > 0 {
+                trigger_utf16.start
+            } else {
+                trigger_utf16.start + 1
+            };
+            let trigger_end = if ends_editable {
+                trigger_utf16.end.saturating_sub(1)
+            } else if ends_physical_line || trailing_spaces > 0 {
+                trigger_utf16.end
+            } else {
+                trigger_utf16.end.saturating_sub(1)
+            };
+            if byte_trigger_start <= byte_trigger_end && trigger_start <= trigger_end {
+                cells.extend(document_literal_word_edit_cells(
+                    segment_bytes,
+                    segment_utf16,
+                    byte_trigger_start..byte_trigger_end,
+                    trigger_start..trigger_end,
+                    source.bytes().filter(u8::is_ascii_alphanumeric).count(),
+                    !(starts_physical_line && leading_spaces > 0)
+                        && !(ends_physical_line && trailing_spaces > 0),
+                ));
+            }
+        }
+        if segment_end == gap_bytes.len() {
+            break;
+        }
+        segment_start = segment_end + 1;
+        if gap_bytes[segment_end] == b'\r'
+            && segment_start < gap_bytes.len()
+            && gap_bytes[segment_start] == b'\n'
+        {
+            segment_start += 1;
+        }
+    }
+    cells
 }
 
 fn document_flat_strong_opening_space_edit_cells(

@@ -263,12 +263,40 @@ closure becomes exact while independent inline facts remain projected. Core
 matches the declared trigger, performs range transforms, and never infers the
 dependency closure from Markdown source.
 
-Table-specific classes, structural transitions, general delimiter dependency
-graphs, and broader rows remain pending. Those paths still paint the whole
-active row as exact source until recertification. That is authority-safe but
-does not satisfy this contract's local-island or no-marker-flash target. The
-4.28 cells are the first bounded island seam, not completion of the
-continuously rendered editor.
+ABI 4.29 capability `PROJECTION_EDIT_CELLS_V2` declares a chainable
+ASCII-literal splice cell over
+parser-authored plain literal segments. The initial emitter covers top-level
+paragraphs, simple list and block-quote content, and plain table-cell content.
+It excludes neighboring dependency boundaries, punctuation, entities,
+non-ASCII input, empty or punctuation-bearing replacements, leading/terminal
+space insertion, multi-unit
+deletion, and structural edits. Nonempty ASCII-word replacement chains; a
+U+0020 insertion chains only strictly inside the trimmed trigger, without
+turning a retained leading/trailing space into indentation or a trailing hard
+break. A separate one-unit deletion proof is consumed after one Backspace and is emitted
+only when every admitted deletion leaves the cell nonblank. A terminal append
+cell covers the parser-authored plain gap on the final physical line and admits
+ASCII words plus bounded ASCII prose punctuation separated by single spaces at
+its zero-width end trigger. A fresh
+row ending in one U+0020 republishes blocked-space state, while two spaces or
+other terminal whitespace suppress the cell. The physical line must begin,
+after ordinary paragraph padding, with an ASCII letter; `-`, `1.`, `#`, and
+other block-opener-shaped lines receive no terminal proof. Its carried state never admits
+two consecutive terminal spaces. The affected
+closure becomes one exact unstyled run—which is visually identical to the plain
+rendered literal—while the row shell and all independent outside styles remain
+projected. ASCII composing updates use the same declared replacement matcher.
+Runtime differential tests compare admitted ranges, shell boundary cases, and
+representative carried successors with a fresh final-source parse, requiring
+the complete row/fact publication to match.
+
+General delimiter dependency graphs, non-ASCII composition islands, interior
+punctuation replacements, multi-line or nested structural shells, and broader edit classes remain
+pending. Those paths still paint the whole active row as exact source until
+recertification. That is authority-safe but does not satisfy this contract's
+local-island or no-marker-flash target. The 4.28/4.29 cells are the bounded
+authority used by the current product-tour typing matrix; unsupported edits are
+kept explicit rather than hidden behind host Markdown inference.
 
 An insertion chain retains presentation only while every successor matches the
 carried parser proof set and every transform succeeds; anything else uses that
@@ -279,9 +307,10 @@ active decision path.
 ABI 4.26 appends envelope records only for the capability-gated
 `SEMANTIC_PROJECTED_LITERAL_SAFE` query kind. The earlier `SEMANTIC` and
 `SEMANTIC_PROJECTED` query kinds keep their pre-envelope payload vocabulary.
-ABI 4.28 retains query kind 6, adds record kind 16 and the edit-cell capability,
-and requires an exact 4.28 negotiation; earlier minors are rejected rather than
-receiving a larger record vocabulary.
+ABI 4.28 retained query kind 6 and added record kind 16 plus the V1 capability.
+ABI 4.29 adds V2 matcher semantics under bit 29 and requires exact 4.29
+negotiation; earlier minors are rejected rather than receiving a widened
+record vocabulary.
 
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as
@@ -296,7 +325,7 @@ old styles or hidden delimiters through another splice.
 
 The input connection retains the exact source window. Beginning composition
 creates a `composition_exact` island for the active source row. When an ABI
-4.28 edit cell matches the composition delta, its declared block shell and
+4.29 edit cell matches the composition delta, its declared block shell and
 independent outside runs may remain projected while the affected cell is exact.
 Without that parser-authored proof the complete row is exact because the
 runtime has no result-revision proof that the composition delta leaves its
@@ -305,7 +334,7 @@ while composition is pending; unrelated certified rows remain projected.
 
 A generally available composing-range island, with other facts in the active
 row retained, is still pending parser-authored result-revision/dependency
-authority. The bounded 4.28 cells do not authorize any range or edit they did
+authority. The bounded 4.29 cells do not authorize any range or edit they did
 not declare. Authority must not be reconstructed from predecessor facts plus a
 source splice and remains a T3 input-truth item in
 [RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md).

@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+// The native qualification lane must exercise the app's real default source.
+// ignore: avoid_relative_lib_imports
+import '../example/lib/dogfood_documents.dart';
 import 'support/macos_native_canary_driver.dart';
 
 void main() {
@@ -27,9 +30,15 @@ void main() {
       final syntax = await driver.settle();
       _expectHealthy(syntax, driver);
       expect(syntax.source, '**sentinel**\n\nplain*\n');
+      expect(syntax.paintedPresentations, isNotEmpty);
       expect(
         syntax.paintedPresentations,
         everyElement(isNot(contains('**sentinel**'))),
+      );
+      expect(
+        syntax.paintedStyledTexts,
+        everyElement(contains('strong:sentinel')),
+        reason: driver.debugLastReceipt,
       );
 
       const deadKeySource = 'caf\n';
@@ -84,14 +93,9 @@ void main() {
       expect(scrolled.selectionBaseUtf16, 2);
       expect(scrolled.selectionExtentUtf16, 2);
 
-      const wrappedSource = '''# Flark dogfood
-
-This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,
-not a static Markdown preview. Certified Markdown stays rendered while focused;
-only incomplete or temporarily pending syntax becomes exact source locally.
-
-# Start here
-''';
+      final wrappedSource = buildDogfoodDocument(
+        DogfoodDocumentPreset.productTour,
+      );
       await driver.reset(id: 'wrapped-caret-stability', source: wrappedSource);
       await driver.activateAtUtf16(
         wrappedSource.indexOf('This'),
@@ -104,7 +108,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       final prepared = await driver.settle();
       final wrappedCaret =
           prepared.source.indexOf('locally.') + 'locally.'.length;
-      await driver.activateAtUtf16(
+      final wrappedStart = await driver.activateAtUtf16(
         wrappedCaret,
         windowWidth: 1569,
         windowHeight: 906,
@@ -122,6 +126,63 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       );
       expect(wrapped.selectionBaseUtf16, wrappedCaret + successor.length);
       expect(wrapped.selectionExtentUtf16, wrappedCaret + successor.length);
+      expect(wrapped.paintedSourceGenerations, isNotEmpty);
+      final renderedInsertion =
+          prepared.settledPresentation.indexOf('locally.') + 'locally.'.length;
+      for (var index = 0; index < successor.length; index += 1) {
+        final generation = wrappedStart.sourceGeneration + index + 1;
+        final expectedPresentation = prepared.settledPresentation.replaceRange(
+          renderedInsertion,
+          renderedInsertion,
+          successor.substring(0, index + 1),
+        );
+        final frames = <int>[
+          for (
+            var frame = 0;
+            frame < wrapped.paintedSourceGenerations.length;
+            frame += 1
+          )
+            if (wrapped.paintedSourceGenerations[frame] == generation) frame,
+        ];
+        expect(
+          frames,
+          isNotEmpty,
+          reason: 'generation $generation not painted',
+        );
+        for (final frame in frames) {
+          expect(
+            wrapped.paintedPresentations[frame],
+            expectedPresentation,
+            reason: 'generation $generation painted the wrong presentation',
+          );
+          expect(
+            wrapped.paintedSelectionBases[frame],
+            wrappedCaret + index + 1,
+          );
+          expect(
+            wrapped.paintedSelectionExtents[frame],
+            wrappedCaret + index + 1,
+          );
+          expect(wrapped.paintedCaretSources[frame], wrappedCaret + index + 1);
+          expect(wrapped.paintedCaretDisplays[frame], isNotNull);
+          expect(
+            wrapped.paintedVisibleSources[frame],
+            prepared.source.replaceRange(
+              wrappedCaret,
+              wrappedCaret,
+              successor.substring(0, index + 1),
+            ),
+          );
+        }
+      }
+      expect(
+        wrapped.paintedPresentations,
+        everyElement(isNot(contains('**Rust → Dart → Flutter**'))),
+      );
+      expect(
+        wrapped.paintedStyledTexts,
+        everyElement(contains('strong:Rust → Dart → Flutter')),
+      );
     },
     skip: enabled
         ? false
@@ -138,8 +199,48 @@ void _expectHealthy(
   expect(snapshot.resyncCount, 0, reason: driver.debugLastReceipt);
   expect(snapshot.lastResyncReason, 'none', reason: driver.debugLastReceipt);
   expect(
+    snapshot.paintedPresentations,
+    isNotEmpty,
+    reason: 'native qualification requires at least one actual paint',
+  );
+  expect(
     snapshot.paintedCaretIdentities,
     everyElement(isTrue),
+    reason: driver.debugLastReceipt,
+  );
+  expect(
+    snapshot.paintedSourceGenerations.length,
+    snapshot.paintedPresentations.length,
+    reason: driver.debugLastReceipt,
+  );
+  expect(
+    snapshot.paintedSelectionBases.length,
+    snapshot.paintedPresentations.length,
+    reason: driver.debugLastReceipt,
+  );
+  expect(
+    snapshot.paintedSelectionExtents.length,
+    snapshot.paintedPresentations.length,
+    reason: driver.debugLastReceipt,
+  );
+  expect(
+    snapshot.paintedCaretSources.length,
+    snapshot.paintedPresentations.length,
+    reason: driver.debugLastReceipt,
+  );
+  expect(
+    snapshot.paintedCaretDisplays.length,
+    snapshot.paintedPresentations.length,
+    reason: driver.debugLastReceipt,
+  );
+  expect(
+    snapshot.paintedVisibleSources.length,
+    snapshot.paintedPresentations.length,
+    reason: driver.debugLastReceipt,
+  );
+  expect(
+    snapshot.paintedStyledTexts.length,
+    snapshot.paintedPresentations.length,
     reason: driver.debugLastReceipt,
   );
 }

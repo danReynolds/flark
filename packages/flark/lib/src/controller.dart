@@ -664,6 +664,19 @@ final class FlarkEditorController extends ChangeNotifier {
   @visibleForTesting
   bool get debugProjectionContinuityActive => _projectionContinuity != null;
 
+  /// Whether Tab currently belongs to a table whose certified cell ranges are
+  /// being transformed by an optimistic projection edit. The retained visual
+  /// shell is not structural-navigation authority, so callers must consume
+  /// Tab without navigating until a fresh table publication arrives.
+  bool get pendingTableNavigationLocked {
+    final continuity = _projectionContinuity;
+    if (continuity == null) return false;
+    for (final row in _cachedRows) {
+      if (row.ordinal == continuity.rowOrdinal) return row.table != null;
+    }
+    return false;
+  }
+
   /// Test-only visibility into the ordinary 32 ms parse debounce. Edit-cell
   /// islands deliberately bypass this timer so their exact island is replaced
   /// by fresh parser authority as soon as the native edit commits.
@@ -1174,14 +1187,21 @@ final class FlarkEditorController extends ChangeNotifier {
       );
     }
     final mapped = _mappedExactRowRange(row);
+    final continuity = _projectionContinuity;
+    final currentMapped = continuity?.rowOrdinal == row.ordinal
+        ? FlarkSourceRange(
+            math.min(mapped.start, continuity!.contentUtf16.start),
+            math.max(mapped.end, continuity.contentUtf16.end),
+          )
+        : mapped;
     final split = _committedParagraphSplit;
     if (split == null ||
         split.rowOrdinal != row.ordinal ||
-        split.rowEndUtf16 < mapped.start ||
-        split.rowEndUtf16 > mapped.end) {
-      return mapped;
+        split.rowEndUtf16 < currentMapped.start ||
+        split.rowEndUtf16 > currentMapped.end) {
+      return currentMapped;
     }
-    return FlarkSourceRange(mapped.start, split.rowEndUtf16);
+    return FlarkSourceRange(currentMapped.start, split.rowEndUtf16);
   }
 
   FlarkSurfaceRow neutralSurfaceRow({
@@ -2891,7 +2911,11 @@ final class FlarkEditorController extends ChangeNotifier {
     final wasCrossRowSelection = _crossRowSelection;
     final globalStart = inputStart + mutation.start;
     final globalEnd = inputStart + mutation.end;
-    final preferredOrdinal = _surfaceOrdinalAt(globalStart);
+    final preferredOrdinal = _preferredMutationOrdinal(
+      globalStart,
+      globalEnd,
+      mutation.replacement,
+    );
     final compositionHistoryGroup = _compositionGroupForMutation(composing);
 
     // Preserve an exact origin while this still carries the pre-edit input
@@ -3387,6 +3411,14 @@ final class FlarkEditorController extends ChangeNotifier {
         return row.ordinal;
       }
     }
+    // Half-open row ownership selects a following row at shared boundaries.
+    // When no following cached row exists, the exact end of the last visible
+    // row still owns a collapsed caret (notably source EOF and page tails).
+    for (final row in _cachedRows.reversed) {
+      if (surfaceSourceRange(row).end == globalUtf16Offset) {
+        return row.ordinal;
+      }
+    }
     if (_visibleSource.isEmpty) return -1;
     final local = (globalUtf16Offset - _visibleUtf16Start).clamp(
       0,
@@ -3865,7 +3897,7 @@ final class FlarkEditorController extends ChangeNotifier {
   /// Toggles a parser-certified GFM task checkbox without moving selection or
   /// asking Flutter to synthesize Markdown. The row contributes only a
   /// bounded target position; Rust returns the committed one-byte splice.
-  Future<bool> toggleTaskChecked(FlarkViewportRow row) {
+  FlarkViewportRow? _toggleableTaskRow(FlarkViewportRow row) {
     if (_closed ||
         _status == FlarkEditorStatus.faulted ||
         _session.compositionActive ||
@@ -3874,7 +3906,7 @@ final class FlarkEditorController extends ChangeNotifier {
         _committedParagraphSplit != null ||
         _committedStructuralSurfaces.isNotEmpty ||
         (!_semanticViewportCurrent && _committedTaskChecks.isEmpty)) {
-      return Future<bool>.value(false);
+      return null;
     }
     FlarkViewportRow? current;
     for (final candidate in _cachedRows) {
@@ -3886,8 +3918,21 @@ final class FlarkEditorController extends ChangeNotifier {
     final item = current?.listItem;
     final editable = current?.editableUtf16;
     if (current == null || item?.taskChecked == null || editable == null) {
-      return Future<bool>.value(false);
+      return null;
     }
+    return current;
+  }
+
+  /// Whether the currently published parser result authorizes the task
+  /// action. A retained edit-cell surface is presentation evidence only: it
+  /// must never make an otherwise stale structural action discoverable.
+  bool canToggleTaskChecked(FlarkViewportRow row) =>
+      _toggleableTaskRow(row) != null;
+
+  Future<bool> toggleTaskChecked(FlarkViewportRow row) {
+    final current = _toggleableTaskRow(row);
+    if (current == null) return Future<bool>.value(false);
+    final editable = current.editableUtf16!;
     final target = _mapViewportRange(editable).start;
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
@@ -4502,32 +4547,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final editable = _mapViewportRange(
       row.editableUtf16 ?? _activationRange(row),
     );
-    final literalReceipt = authorizeRowProjectionContinuity(
-      revision: revision,
-      envelopes: row.literalSafeEnvelopes,
-      authorizedContentUtf16: editable,
-      startUtf16: start,
-      endUtf16: end,
-      replacement: replacement,
-    );
     final base = surfaceRow(row, includeEditingState: false);
-    if (literalReceipt != null) {
-      final presentation = _spliceContinuityPresentation(
-        base,
-        literalReceipt.authorizedContentUtf16,
-        start,
-        end,
-        replacement,
-      );
-      if (presentation != null) {
-        _projectionContinuity = _ProjectionContinuitySurface.literal(
-          rowOrdinal: row.ordinal,
-          receipt: literalReceipt,
-          presentation: presentation,
-        );
-        return;
-      }
-    }
     final editCellReceipt = authorizeProjectionEditCell(
       revision: revision,
       cells: row.projectionEditCells,
@@ -4548,6 +4568,31 @@ final class FlarkEditorController extends ChangeNotifier {
         _projectionContinuity = _ProjectionContinuitySurface.editCell(
           rowOrdinal: row.ordinal,
           receipt: editCellReceipt,
+          presentation: presentation,
+        );
+        return;
+      }
+    }
+    final literalReceipt = authorizeRowProjectionContinuity(
+      revision: revision,
+      envelopes: row.literalSafeEnvelopes,
+      authorizedContentUtf16: editable,
+      startUtf16: start,
+      endUtf16: end,
+      replacement: replacement,
+    );
+    if (literalReceipt != null) {
+      final presentation = _spliceContinuityPresentation(
+        base,
+        literalReceipt.authorizedContentUtf16,
+        start,
+        end,
+        replacement,
+      );
+      if (presentation != null) {
+        _projectionContinuity = _ProjectionContinuitySurface.literal(
+          rowOrdinal: row.ordinal,
+          receipt: literalReceipt,
           presentation: presentation,
         );
         return;
@@ -4732,8 +4777,38 @@ final class FlarkEditorController extends ChangeNotifier {
         continue;
       }
       if (run.sourceUtf16Start < base.start || run.sourceUtf16End > base.end) {
-        // A parser-authored closure must never bisect a retained run.
-        return null;
+        // Projection-cell boundaries may fall inside one parser-certified
+        // plain source run. Splitting an exact unstyled identity run is pure
+        // source geometry; a styled or projected run still requires the
+        // parser to publish a wider dependency closure.
+        if (!run.sourceExact || run.styles.isNotEmpty) return null;
+        if (run.sourceUtf16Start < base.start) {
+          final prefix = _sliceVisibleUtf16(run.sourceUtf16Start, base.start);
+          if (prefix.length != base.start - run.sourceUtf16Start) return null;
+          before.add(
+            FlarkSurfaceTextRun(
+              text: prefix,
+              sourceUtf16Start: run.sourceUtf16Start,
+              sourceUtf16End: base.start,
+              sourceExact: true,
+              styles: const {},
+            ),
+          );
+        }
+        if (run.sourceUtf16End > base.end) {
+          final suffix = _sliceVisibleUtf16(base.end, run.sourceUtf16End);
+          if (suffix.length != run.sourceUtf16End - base.end) return null;
+          after.add(
+            FlarkSurfaceTextRun(
+              text: suffix,
+              sourceUtf16Start: result.end,
+              sourceUtf16End: run.sourceUtf16End + delta,
+              sourceExact: true,
+              styles: const {},
+            ),
+          );
+        }
+        continue;
       }
     }
     if (!receipt.retainOutsideClosure &&
@@ -6045,6 +6120,64 @@ final class FlarkEditorController extends ChangeNotifier {
       if (candidate.ordinal == activeOrdinal) return candidate;
     }
     return null;
+  }
+
+  int? _preferredMutationOrdinal(
+    int startUtf16,
+    int endUtf16,
+    String replacement,
+  ) {
+    final direct = _surfaceOrdinalAt(startUtf16);
+    if (_cachedRows.any((row) => row.ordinal == direct)) return direct;
+
+    final continuity = _projectionContinuity;
+    if (continuity != null) {
+      final authorizedSuccessor = switch (continuity.authority) {
+        _LiteralProjectionContinuityAuthority(:final receipt) =>
+          receipt.continueWith(
+            startUtf16: startUtf16,
+            endUtf16: endUtf16,
+            replacement: replacement,
+          ),
+        _EditCellProjectionContinuityAuthority(:final receipt) =>
+          receipt.continueWith(
+            startUtf16: startUtf16,
+            endUtf16: endUtf16,
+            replacement: replacement,
+          ),
+      };
+      if (authorizedSuccessor != null) return continuity.rowOrdinal;
+    }
+
+    // The normal surface lookup owns the final cached row's exact end, but a
+    // carried publication can temporarily extend beyond the predecessor row.
+    // Preserve that row only when its parser publication explicitly authorizes
+    // this exact boundary edit. This is authority routing, not Markdown logic.
+    final row = _activeCachedRow();
+    if (row == null) return direct;
+    final activation = _mapViewportRange(_activationRange(row));
+    if (!_rowSemanticsCurrent(activation)) return direct;
+    final editable = _mapViewportRange(
+      row.editableUtf16 ?? _activationRange(row),
+    );
+    final editCell = authorizeProjectionEditCell(
+      revision: revision,
+      cells: row.projectionEditCells,
+      authorizedContentUtf16: editable,
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+      replacement: replacement,
+    );
+    if (editCell != null) return row.ordinal;
+    final literal = authorizeRowProjectionContinuity(
+      revision: revision,
+      envelopes: row.literalSafeEnvelopes,
+      authorizedContentUtf16: editable,
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+      replacement: replacement,
+    );
+    return literal == null ? direct : row.ordinal;
   }
 
   FlarkSourceRange _activationRange(FlarkViewportRow row) {

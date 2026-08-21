@@ -14,8 +14,16 @@ final class MacosNativeCanarySnapshot {
     required this.settledPresentation,
     required this.paintedPresentations,
     required this.revision,
+    required this.sourceGeneration,
     required this.scrollOffset,
     required this.paintedCaretIdentities,
+    required this.paintedSourceGenerations,
+    required this.paintedSelectionBases,
+    required this.paintedSelectionExtents,
+    required this.paintedCaretSources,
+    required this.paintedCaretDisplays,
+    required this.paintedVisibleSources,
+    required this.paintedStyledTexts,
   });
 
   final String source;
@@ -28,8 +36,16 @@ final class MacosNativeCanarySnapshot {
   final String settledPresentation;
   final List<String> paintedPresentations;
   final int revision;
+  final int sourceGeneration;
   final double scrollOffset;
   final List<bool> paintedCaretIdentities;
+  final List<int> paintedSourceGenerations;
+  final List<int> paintedSelectionBases;
+  final List<int> paintedSelectionExtents;
+  final List<int?> paintedCaretSources;
+  final List<int?> paintedCaretDisplays;
+  final List<String> paintedVisibleSources;
+  final List<List<String>> paintedStyledTexts;
 }
 
 /// Thin actuator for the few macOS facts that headless Flutter cannot prove:
@@ -84,7 +100,7 @@ final class MacosNativeCanaryDriver {
     );
   }
 
-  Future<void> activateAtUtf16(
+  Future<MacosNativeCanarySnapshot> activateAtUtf16(
     int offset, {
     int windowWidth = 800,
     int windowHeight = 632,
@@ -96,9 +112,10 @@ final class MacosNativeCanaryDriver {
       'windowWidth': windowWidth,
       'windowHeight': windowHeight,
     });
-    _snapshot(response);
+    final snapshot = _snapshot(response);
     final json = _lastRawSnapshot!;
     _paintObservationStart = (json['surfaceFrames']! as List).length;
+    return snapshot;
   }
 
   void beginPaintObservation() => _paintObservationStart = 0;
@@ -229,11 +246,50 @@ final class MacosNativeCanaryDriver {
         ),
       ),
       revision: json['revision']! as int,
+      sourceGeneration: json['sourceGeneration']! as int,
       scrollOffset: (json['scrollOffset']! as num).toDouble(),
       paintedCaretIdentities: List<bool>.unmodifiable(
         (json['surfaceCaretIdentities']! as List).cast<bool>().skip(
           _paintObservationStart,
         ),
+      ),
+      paintedSourceGenerations: List<int>.unmodifiable(
+        (json['surfaceSourceGenerations']! as List).cast<int>().skip(
+          _paintObservationStart,
+        ),
+      ),
+      paintedSelectionBases: List<int>.unmodifiable(
+        (json['surfaceSelectionBases']! as List).cast<int>().skip(
+          _paintObservationStart,
+        ),
+      ),
+      paintedSelectionExtents: List<int>.unmodifiable(
+        (json['surfaceSelectionExtents']! as List).cast<int>().skip(
+          _paintObservationStart,
+        ),
+      ),
+      paintedCaretSources: List<int?>.unmodifiable(
+        (json['surfaceCaretSources']! as List).cast<int?>().skip(
+          _paintObservationStart,
+        ),
+      ),
+      paintedCaretDisplays: List<int?>.unmodifiable(
+        (json['surfaceCaretDisplays']! as List).cast<int?>().skip(
+          _paintObservationStart,
+        ),
+      ),
+      paintedVisibleSources: List<String>.unmodifiable(
+        (json['surfaceVisibleSources']! as List).cast<String>().skip(
+          _paintObservationStart,
+        ),
+      ),
+      paintedStyledTexts: List<List<String>>.unmodifiable(
+        (json['surfaceStyledTexts']! as List)
+            .skip(_paintObservationStart)
+            .map(
+              (styles) =>
+                  List<String>.unmodifiable((styles as List).cast<String>()),
+            ),
       ),
     );
   }

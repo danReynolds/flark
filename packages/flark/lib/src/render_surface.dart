@@ -42,7 +42,14 @@ final class FlarkSurfacePaintObservation {
     required this.selectionRects,
     required this.caretRect,
     required this.caretSourceUtf16,
+    required this.caretDisplayUtf16,
+    required this.visibleSource,
+    required this.canonicalSelectionBaseUtf16,
     required this.canonicalSelectionExtentUtf16,
+    required this.canonicalSelectionAffinity,
+    required this.canonicalSelectionIsDirectional,
+    required this.composingSourceUtf16Start,
+    required this.composingSourceUtf16End,
   });
 
   final int revision;
@@ -66,7 +73,14 @@ final class FlarkSurfacePaintObservation {
   /// The authoritative source offset represented by [caretRect]. This makes
   /// caret ownership testable without inferring it from coincident geometry.
   final int? caretSourceUtf16;
+  final int? caretDisplayUtf16;
+  final String visibleSource;
+  final int canonicalSelectionBaseUtf16;
   final int canonicalSelectionExtentUtf16;
+  final TextAffinity canonicalSelectionAffinity;
+  final bool canonicalSelectionIsDirectional;
+  final int? composingSourceUtf16Start;
+  final int? composingSourceUtf16End;
 }
 
 /// Bounded geometry for one fragment visited by an actual surface paint.
@@ -74,18 +88,59 @@ final class FlarkSurfacePaintRowObservation {
   const FlarkSurfacePaintRowObservation({
     required this.ordinal,
     required this.neutral,
+    required this.kind,
+    required this.headingLevel,
+    required this.blockQuoteDepth,
+    required this.leadingText,
     required this.sourceUtf16Start,
+    required this.fragmentStart,
+    required this.fragmentEnd,
     required this.text,
+    required this.runs,
+    required this.resolvedBlockStyle,
     required this.active,
     required this.rect,
   });
 
   final int ordinal;
+
+  /// Whether this paint used the exact-source fallback (`kind == 0`).
   final bool neutral;
+  final int kind;
+  final int? headingLevel;
+  final int? blockQuoteDepth;
+  final String leadingText;
   final int sourceUtf16Start;
+  final int fragmentStart;
+  final int fragmentEnd;
   final String text;
+  final List<FlarkSurfacePaintRunObservation> runs;
+  final TextStyle resolvedBlockStyle;
   final bool active;
   final Rect rect;
+}
+
+/// The exact source mapping and inline styles visited for one painted row run.
+///
+/// Text-only paint receipts cannot distinguish a correctly projected Strong
+/// run from a marker-free but accidentally unstyled fallback. Keeping this
+/// bounded run plan makes the rendered-result north star directly testable.
+final class FlarkSurfacePaintRunObservation {
+  const FlarkSurfacePaintRunObservation({
+    required this.text,
+    required this.sourceUtf16Start,
+    required this.sourceUtf16End,
+    required this.sourceExact,
+    required this.styles,
+    required this.resolvedStyle,
+  });
+
+  final String text;
+  final int sourceUtf16Start;
+  final int sourceUtf16End;
+  final bool sourceExact;
+  final Set<FlarkSurfaceInlineStyle> styles;
+  final TextStyle resolvedStyle;
 }
 
 enum FlarkSurfaceAction { toggleTaskChecked }
@@ -916,30 +971,7 @@ final class RenderFlarkSurface extends RenderBox {
   }) {
     final start = fragmentStart ?? 0;
     final end = fragmentEnd ?? presentation.text.length;
-    var style = switch (presentation.kind) {
-      12 => _textStyle.copyWith(
-        fontSize:
-            (_textStyle.fontSize ?? 16) *
-            switch (presentation.headingLevel) {
-              1 => 1.65,
-              2 => 1.45,
-              3 => 1.30,
-              4 => 1.18,
-              5 => 1.08,
-              _ => 1.0,
-            },
-        fontWeight:
-            presentation.headingLevel != null && presentation.headingLevel! <= 3
-            ? FontWeight.w700
-            : FontWeight.w600,
-        height: 1.25,
-      ),
-      6 || 7 => _textStyle.copyWith(fontFamily: 'Menlo', height: 1.45),
-      _ => _textStyle,
-    };
-    if (presentation.blockQuoteDepth != null) {
-      style = style.copyWith(fontStyle: FontStyle.italic, height: 1.4);
-    }
+    final style = _blockTextStyle(presentation);
     final children = <InlineSpan>[];
     final visualEmptyLine =
         presentation.kind == 0 &&
@@ -996,6 +1028,34 @@ final class RenderFlarkSurface extends RenderBox {
     }
     return TextPainter(text: span, textDirection: _textDirection)
       ..layout(maxWidth: maxWidth);
+  }
+
+  TextStyle _blockTextStyle(FlarkSurfaceRow presentation) {
+    var style = switch (presentation.kind) {
+      12 => _textStyle.copyWith(
+        fontSize:
+            (_textStyle.fontSize ?? 16) *
+            switch (presentation.headingLevel) {
+              1 => 1.65,
+              2 => 1.45,
+              3 => 1.30,
+              4 => 1.18,
+              5 => 1.08,
+              _ => 1.0,
+            },
+        fontWeight:
+            presentation.headingLevel != null && presentation.headingLevel! <= 3
+            ? FontWeight.w700
+            : FontWeight.w600,
+        height: 1.25,
+      ),
+      6 || 7 => _textStyle.copyWith(fontFamily: 'Menlo', height: 1.45),
+      _ => _textStyle,
+    };
+    if (presentation.blockQuoteDepth != null) {
+      style = style.copyWith(fontStyle: FontStyle.italic, height: 1.4);
+    }
+    return style;
   }
 
   TextStyle _inlineStyle(TextStyle base, Set<FlarkSurfaceInlineStyle> styles) {
@@ -1359,6 +1419,7 @@ final class RenderFlarkSurface extends RenderBox {
 
   ({_PaintedRow row, List<FlarkTableCellPresentation> cells, int index})?
   _tableCellPosition(int offset) {
+    if (_controller.pendingTableNavigationLocked) return null;
     final row = _logicalRowForSourceUtf16(offset);
     if (row == null || row.presentation.kind == 0) return null;
     final table = row.row?.table;
@@ -1507,7 +1568,8 @@ final class RenderFlarkSurface extends RenderBox {
     if (row.presentation.kind == 0 ||
         row.fragmentStart != 0 ||
         row.leadingLength == 0 ||
-        row.row?.listItem?.taskChecked == null) {
+        row.row?.listItem?.taskChecked == null ||
+        !_controller.canToggleTaskChecked(row.row!)) {
       return null;
     }
     final leading = row.presentation.leadingText;
@@ -1729,16 +1791,19 @@ final class RenderFlarkSurface extends RenderBox {
         rowConfig.label = _semanticLabel(row);
       }
       if (row.presentation.headingLevel != null) rowConfig.isHeader = true;
-      final task = row.presentation.kind == 0
+      final taskRow = row.row;
+      final task =
+          row.presentation.kind == 0 ||
+              taskRow == null ||
+              !_controller.canToggleTaskChecked(taskRow)
           ? null
-          : row.row?.listItem?.taskChecked;
+          : taskRow.listItem?.taskChecked;
       if (task != null) {
         final checked = row.presentation.leadingText.contains('☑');
         rowConfig.isChecked = checked;
-        final taskRow = row.row;
-        if (_includeEditingState && taskRow != null) {
+        if (_includeEditingState) {
           rowConfig.onTap = () =>
-              unawaited(_controller.toggleTaskChecked(taskRow));
+              unawaited(_controller.toggleTaskChecked(taskRow!));
           rowConfig.hint = checked
               ? 'Mark task incomplete'
               : 'Mark task complete';
@@ -1774,38 +1839,52 @@ final class RenderFlarkSurface extends RenderBox {
   @override
   void paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
-    final observedRows = <String>[];
-    final observedKeys = <Object>{};
-    final observedGeometry = <FlarkSurfacePaintRowObservation>[];
-    final observedSelectionRects = <Rect>[];
+    final paintObserver = debugPaintObserver;
+    final observedRows = paintObserver == null ? null : <String>[];
+    final observedKeys = paintObserver == null ? null : <Object>{};
+    final observedGeometry = paintObserver == null
+        ? null
+        : <FlarkSurfacePaintRowObservation>[];
+    final observedSelectionRects = paintObserver == null ? null : <Rect>[];
     Rect? observedCaretRect;
     int? observedCaretSourceUtf16;
+    int? observedCaretDisplayUtf16;
     canvas.save();
     canvas.clipRect(offset & size);
     for (final row in _paintedRows) {
       final paintedTop = row.top - _scrollOffset;
       if (paintedTop + row.height < 0 || paintedTop > size.height) continue;
-      final observationKey = row.row != null
-          ? (
-              'row',
-              row.row!.ordinal,
-              row.presentation.globalUtf16Start,
-              row.presentation.blockQuoteDepth,
-            )
-          : ('neutral', row.ordinal, row.neutralUtf16Start, row.neutralText);
-      if (observedKeys.add(observationKey)) {
-        observedRows.add(
-          '${row.presentation.leadingText}${row.presentation.text}',
-        );
+      if (observedKeys != null) {
+        final observationKey = row.row != null
+            ? (
+                'row',
+                row.row!.ordinal,
+                row.presentation.globalUtf16Start,
+                row.presentation.blockQuoteDepth,
+              )
+            : ('neutral', row.ordinal, row.neutralUtf16Start, row.neutralText);
+        if (observedKeys.add(observationKey)) {
+          observedRows!.add(
+            '${row.presentation.leadingText}${row.presentation.text}',
+          );
+        }
       }
       final origin = offset + Offset(_padding.left, paintedTop);
-      observedGeometry.add(
+      observedGeometry?.add(
         FlarkSurfacePaintRowObservation(
           ordinal: row.ordinal,
-          neutral: row.row == null,
+          neutral: row.presentation.kind == 0,
+          kind: row.presentation.kind,
+          headingLevel: row.presentation.headingLevel,
+          blockQuoteDepth: row.presentation.blockQuoteDepth,
+          leadingText: row.presentation.leadingText,
           sourceUtf16Start:
               row.neutralUtf16Start ?? row.presentation.globalUtf16Start,
+          fragmentStart: row.fragmentStart,
+          fragmentEnd: row.fragmentEnd,
           text: row.presentation.text,
+          runs: List.unmodifiable(_paintedRunObservations(row)),
+          resolvedBlockStyle: _blockTextStyle(row.presentation),
           active: row.presentation.active,
           rect: Rect.fromLTWH(
             origin.dx,
@@ -1855,7 +1934,7 @@ final class RenderFlarkSurface extends RenderBox {
             paintedSelection,
           )) {
             final rect = box.toRect().shift(origin);
-            observedSelectionRects.add(rect);
+            observedSelectionRects?.add(rect);
             canvas.drawRect(rect, paint);
           }
         }
@@ -1881,30 +1960,43 @@ final class RenderFlarkSurface extends RenderBox {
             1.5,
             row.painter.preferredLineHeight,
           );
-          observedCaretRect = rect;
-          // A projected display position can represent a range of hidden
-          // source offsets (for example source offsets 0..2 all paint before
-          // the first visible character of an ATX heading). Preserve the
-          // authoritative source identity when the painted display position
-          // is exactly its projection; only reverse-map when the painted
-          // caret is genuinely somewhere else.
-          final canonicalSource = _controller.globalSelectionExtent;
-          final canonicalDisplay = row.presentation.textOffsetForSourceOffset(
-            canonicalSource,
-            affinity: selection.affinity,
-          );
-          observedCaretSourceUtf16 = canonicalDisplay == extent
-              ? canonicalSource
-              : row.presentation.sourceOffsetForTextOffset(
-                  extent,
-                  affinity: selection.affinity,
-                );
+          if (paintObserver != null) {
+            observedCaretRect = rect;
+            observedCaretDisplayUtf16 =
+                extent - row.fragmentStart + row.leadingLength;
+            // A projected display position can represent a range of hidden
+            // source offsets (for example source offsets 0..2 all paint before
+            // the first visible character of an ATX heading). Preserve the
+            // authoritative source identity when the painted display position
+            // is exactly its projection; only reverse-map when the painted
+            // caret is genuinely somewhere else.
+            final canonicalSource = _controller.globalSelectionExtent;
+            final canonicalDisplay = row.presentation.textOffsetForSourceOffset(
+              canonicalSource,
+              affinity: selection.affinity,
+            );
+            observedCaretSourceUtf16 = canonicalDisplay == extent
+                ? canonicalSource
+                : row.presentation.sourceOffsetForTextOffset(
+                    extent,
+                    affinity: selection.affinity,
+                  );
+          }
           canvas.drawRect(rect, Paint()..color = _caretColor);
         }
       }
     }
     canvas.restore();
-    debugPaintObserver?.call(
+    if (paintObserver == null) return;
+    final inputValue = _controller.inputValue;
+    final composing = inputValue.composing;
+    final composingStart = composing.isValid && !composing.isCollapsed
+        ? _controller.inputWindowShadow.globalUtf16Start + composing.start
+        : null;
+    final composingEnd = composing.isValid && !composing.isCollapsed
+        ? _controller.inputWindowShadow.globalUtf16Start + composing.end
+        : null;
+    paintObserver(
       FlarkSurfacePaintObservation(
         revision: _controller.revision,
         sourceGeneration: _controller.sourceGeneration,
@@ -1912,17 +2004,60 @@ final class RenderFlarkSurface extends RenderBox {
         visibleUtf16Start: _controller.visibleUtf16Start,
         visibleUtf16Length: _controller.visibleSource.length,
         scrollOffset: _scrollOffset,
-        presentation: observedRows.isEmpty
+        presentation: observedRows!.isEmpty
             ? '<empty>'
             : observedRows.join('\n'),
         renderPlanHash: debugRenderPlanHash,
         visualStateHash: debugVisualStateHash,
-        rows: List.unmodifiable(observedGeometry),
-        selectionRects: List.unmodifiable(observedSelectionRects),
+        rows: List.unmodifiable(observedGeometry!),
+        selectionRects: List.unmodifiable(observedSelectionRects!),
         caretRect: observedCaretRect,
         caretSourceUtf16: observedCaretSourceUtf16,
+        caretDisplayUtf16: observedCaretDisplayUtf16,
+        visibleSource: _controller.visibleSource,
+        canonicalSelectionBaseUtf16: _controller.globalSelectionBase,
         canonicalSelectionExtentUtf16: _controller.globalSelectionExtent,
+        canonicalSelectionAffinity: inputValue.selection.affinity,
+        canonicalSelectionIsDirectional: inputValue.selection.isDirectional,
+        composingSourceUtf16Start: composingStart,
+        composingSourceUtf16End: composingEnd,
       ),
     );
+  }
+
+  Iterable<FlarkSurfacePaintRunObservation> _paintedRunObservations(
+    _PaintedRow row,
+  ) sync* {
+    final blockStyle = _blockTextStyle(row.presentation);
+    var cursor = 0;
+    for (final run in row.presentation.runs) {
+      final runEnd = cursor + run.text.length;
+      final sliceStart = math.max(row.fragmentStart, cursor);
+      final sliceEnd = math.min(row.fragmentEnd, runEnd);
+      if (sliceEnd > sliceStart) {
+        final sourceStart = run.sourceExact
+            ? run.sourceUtf16Start + sliceStart - cursor
+            : row.presentation.sourceOffsetForTextOffset(
+                sliceStart,
+                affinity: TextAffinity.downstream,
+              );
+        final sourceEnd = run.sourceExact
+            ? run.sourceUtf16Start + sliceEnd - cursor
+            : row.presentation.sourceOffsetForTextOffset(
+                sliceEnd,
+                affinity: TextAffinity.upstream,
+              );
+        yield FlarkSurfacePaintRunObservation(
+          text: run.text.substring(sliceStart - cursor, sliceEnd - cursor),
+          sourceUtf16Start: sourceStart,
+          sourceUtf16End: sourceEnd,
+          sourceExact: run.sourceExact,
+          styles: run.styles,
+          resolvedStyle: _inlineStyle(blockStyle, run.styles),
+        );
+      }
+      cursor = runEnd;
+      if (cursor >= row.fragmentEnd) break;
+    }
   }
 }

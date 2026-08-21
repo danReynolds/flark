@@ -18,7 +18,10 @@ export 'src/editor.dart'
     show FlarkEditor, FlarkEditorDebugGeometry, FlarkEditorDebugHandle;
 export 'src/markdown_view.dart' show FlarkMarkdownView;
 export 'src/render_surface.dart'
-    show FlarkSurfacePaintObservation, FlarkSurfacePaintRowObservation;
+    show
+        FlarkSurfacePaintObservation,
+        FlarkSurfacePaintRowObservation,
+        FlarkSurfacePaintRunObservation;
 export 'src/input_window.dart'
     show
         FlarkInputResyncReason,

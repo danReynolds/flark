@@ -29,7 +29,7 @@ Literal syntax is visible when it is itself the current authoring content:
 
 Fallback is local. An uncertain construct may become an exact-source island;
 focus alone may not turn a certified row, block, or document into raw source.
-ABI 4.28 does not yet complete that target: unsupported typing currently paints
+ABI 4.29 does not yet complete that target: unsupported typing currently paints
 the whole active row as exact source. That fallback is authority-safe, but its
 unrelated marker flash is a known product gap pending parser-authored minimal
 dependency islands.
@@ -259,7 +259,7 @@ envelope*. The host's entire decision becomes a containment test:
   through the edit;
 - an edit outside every envelope must eventually present a minimal exact-source
   island around the affected dependency range until recertification. The
-  current 4.28 implementation conservatively presents the whole active row,
+  current 4.29 implementation conservatively presents the whole active row,
   which is safe but remains a no-marker-flash product gap.
 
 This is one decision procedure with two defined outcomes, both governed by
@@ -322,10 +322,36 @@ that fact's source closure exact, retains independent outside inline facts, and
 is consumed immediately. A fresh complete result-revision inline publication
 supersedes either temporary presentation.
 
+**ABI 4.29 literal-cell extension (2026-08-21).** Capability
+`PROJECTION_EDIT_CELLS_V2` extends kind 16 with matcher codes 2, 4, and 5. The
+chainable literal cell covers parser-authored ASCII word/space source
+segments in top-level paragraphs, simple list and block-quote content, and
+plain table cells. Its trigger excludes dependency boundaries. ASCII word
+insertion/replacement, or a space strictly inside the trimmed trigger,
+therefore paints the changed literal exactly while
+retaining the row shell and independent styled facts; a separate one-shot
+proof admits one safe Backspace. Rust compares admitted edits and representative
+carried successors with a fresh final-source parse, including paragraph,
+list, quote, table, and ATX shell shapes. This is the path exercised by the
+real dogfood paragraph—including typing, selection replacement, and
+Backspace—rather than a test-only heading fixture.
+
+Matcher 5 covers the final physical-line plain gap, including the punctuation
+in the reported `locally.` dogfood path, and owns only a zero-width append
+trigger. It chains ASCII-alphanumeric text, bounded ASCII prose punctuation,
+and single separator spaces while a
+host-carried state bit prevents two terminal spaces. A fresh row ending in one
+space republishes that blocked state; two spaces or other terminal whitespace
+receive no such cell. The current Plain physical line must begin with an ASCII
+letter after ordinary paragraph padding, so appending a space cannot complete
+a list, heading, or quote opener. The exact closure therefore cannot create a hard line
+break while earlier Strong content remains rendered.
+
 This is the first bounded minimal-island implementation, not a general inline
-dependency graph. Unsupported delimiter families, tables, structural edits,
-composition islands, and ambiguous closures still fail closed to the current
-whole-row exact path and remain a product gap against the north star.
+dependency graph. Unsupported delimiter families, structural edits,
+non-ASCII/punctuation composition islands, nested or multi-line shells, and ambiguous
+closures still fail closed to the current whole-row exact path and remain a
+product gap against the north star.
 
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
@@ -341,9 +367,10 @@ ABI 4.26 exposes the new records only through the capability-gated
 `SEMANTIC_PROJECTED` retain their pre-envelope record vocabulary. Because the
 ABI has no per-client negotiation state, 4.26 rejects a 4.25 negotiation rather
 than claiming it can preserve every legacy row flag while serving new clients.
-ABI 4.28 retains query kind 6, adds record kind 16 and capability bit 28, and
-rejects every earlier minor rather than serving the larger record vocabulary
-under an older exact negotiation.
+ABI 4.28 retained query kind 6 and added record kind 16 plus capability bit 28.
+ABI 4.29 adds capability bit 29 for matcher codes 2, 4, and 5. Exact-minor
+negotiation rejects every earlier minor rather than serving widened matcher
+semantics under an older contract.
 
 **Transform.** Retained presentation and its surviving proof set are
 transformed by pure range arithmetic
@@ -397,7 +424,7 @@ certification, and retained presentation never grants edit authority.
 ### 4.5 Composition islands
 
 An active platform composing value is exact current source and remains stable
-until the platform commits or cancels it. A matching ABI 4.28 edit cell may
+until the platform commits or cancels it. A matching ABI 4.29 edit cell may
 retain only its declared block shell and independent outside runs while the
 affected cell stays exact. Otherwise the landed minimum treats the active row
 as the exact composition island: the current ABI has no result-revision proof

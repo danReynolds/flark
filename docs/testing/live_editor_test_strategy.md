@@ -6,9 +6,9 @@
 
 ## Decision
 
-Flark uses ordinary tests plus one small temporal probe. It does not use a
-serialized scenario language, universal driver interface, or duplicated
-headless/mounted corpus.
+Flark uses ordinary tests plus a small temporal probe and one compact,
+data-driven north-star paint matrix. It does not use a serialized scenario
+language, universal driver interface, or duplicated headless/mounted corpus.
 
 The rule is simple: put every assertion at the lowest layer that can observe
 the failure, and add a higher-layer test only when it contributes new evidence.
@@ -59,10 +59,66 @@ and bounded state. Tests then add the smallest user-visible invariant, such as
 The mounted recorder observes `FlarkSurfacePaintObservation` from the production
 render object. Its receipt includes revision, visible source range, rendered
 rows, row geometry, selection rectangles, caret rectangle, scroll offset, and
-content/visual hashes. Each painted caret also reports the source offset it
-represents; the recorder automatically requires that offset to equal the
-controller's canonical extent in the same frame. Controller publication is not
-accepted as proof that a frame painted.
+content/visual hashes. Each row also reports its actual painted runs, source
+ranges, exact/projected identity, and resolved inline styles. Each painted caret
+reports the source offset it represents; the recorder automatically requires
+that offset to equal the controller's canonical extent in the same frame.
+Controller publication, marker-free text without the expected style, and a
+correct final state are not accepted as proof that a correct frame painted.
+
+## North-star paint matrix
+
+The north star is a jankless live editor whose every actual frame shows the
+best current rendered result users want while exact source, selection, and
+platform input remain authoritative. A pending edit may expose exact source
+only inside the smallest parser-authored affected island. It must not expose
+unrelated markers, erase unrelated styling, demote the row shell, move the
+caret, or wait for final recertification before becoming visually correct.
+
+`north_star_paint_matrix_test.dart` is the compact mounted acceptance lane for
+that promise. Its cases are real product shapes rather than synthetic parser
+tokens: the dogfood paragraph at both its prefix and the reported append after
+`locally.`, literal gaps between styled facts, edits inside
+and after styled facts, list and quote shells, and table cells. The dogfood row
+also covers Backspace and selection replacement. Every case
+runs both zero-cadence bursts and human-cadence input. For every accepted edit
+it must observe at least one production paint and require, on every such paint:
+
+- the exact accepted source generation and canonical selection;
+- a visible caret rectangle whose source identity equals that selection;
+- the expected rendered active-row text and non-neutral block shell;
+- the expected retained style runs, not merely marker-free characters;
+- no unrelated source delimiter or structural marker; and
+- terminal convergence with a clean rebuild and no fault or resync.
+
+The per-edit paint checks run before the explicit presentation-settled barrier,
+so a test cannot pass solely because `continueParsing` repairs a wrong
+intermediate frame. Human cadence advances in short pump slices so native
+refresh and idle-parser notifications become observable instead of being
+coalesced into one final frame. A zero-cadence case proves burst chaining; a
+human-cadence case proves the ordinary production scheduling path.
+
+The mounted island lane also contains an intentional unsupported-edit control:
+it requires one real kind-0/source-exact pending paint before settlement. That
+control is not accepted product behavior. It proves the observer and pumping
+method would actually see the transient frame that the north-star cases forbid,
+rather than passing because Flutter coalesced directly to recertification.
+
+Parser/runtime differential tests own semantic breadth. The canonical literal
+cell exhausts admitted ranges and representative replacement values; the
+heading, list, quote, table, multiline-product, and dependency-island fixtures
+exercise their declared boundary shapes. Every applied case is compared with a
+fresh parse of the edited source, including the full row shell and complete
+outside-fact set rather than one selected fact. The mounted matrix owns
+representative cross-layer failure mechanisms; it does not duplicate the
+CommonMark corpus through Flutter.
+
+The terminal-append differential chains the exact dogfood word/space sequence
+against a clean parse. A fresh single trailing space must republish blocked
+space state; consecutive terminal spaces, non-space terminal whitespace, and
+leading physical-line padding remain outside carried authority. This prevents
+a hard-break or indentation transition from being mistaken for literal
+continuity.
 
 ## What stays an ordinary test
 
@@ -134,7 +190,10 @@ transient frame.
 
 - transition-probe support: target <= 450 lines; redesign at 600;
 - fixed controller transitions: <= 15 focused tests;
-- mounted transition tests: <= 8;
+- north-star mounted matrix: <= 24 distinct transitions across <= 4
+  parameterized test bodies; every transition must own a distinct product
+  surface or failure mechanism;
+- other mounted transition tests: <= 8 focused geometry/semantics cases;
 - native canaries: <= 6 per platform;
 - goldens: <= 8 stable contracts;
 - focused transition process: <= 6 seconds warm on the benchmark Mac;
@@ -159,6 +218,10 @@ When a bug is found:
 
 Delete helpers that become generic test languages, duplicate assertion logic,
 or require broad fixture migration. Complexity is itself a regression.
+
+A dogfood-visible raw-marker flash, lost style, caret jump, stale action, or
+wrong block shell always qualifies for the mounted matrix or another mounted
+regression. It must not be closed with a controller-only or final-state test.
 
 References: [RFC 028](../architecture/rfc/rfc_028_source_authoritative_edit_transactions.md),
 [v4 build plan](../architecture/v4/build_plan.md), and

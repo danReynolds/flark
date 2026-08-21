@@ -12,11 +12,14 @@ use flark_abi::{
     ABI_MINOR, INLINE_FACT_EMPHASIS, INLINE_FACT_LITERAL_SAFE_ENVELOPE,
     INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_TABLE_CELL,
     LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
-    PROJECTION_EDIT_CELL_CHAIN_RESULT, PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
+    PROJECTION_EDIT_CELL_CHAIN_RESULT, PROJECTION_EDIT_CELL_MATCHER_MASK,
+    PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
+    PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL,
+    PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL,
     PROJECTION_EDIT_CELL_PRESENT_EXACT, PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL,
-    VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
-    VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
-    VIEWPORT_ROW_TABLE_PRESENTATION,
+    PROJECTION_EDIT_CELL_RETAIN_OUTSIDE, VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
+    VIEWPORT_ROW_FLAG_PROJECTED_RESERVED, VIEWPORT_ROW_INLINE_FACT_COUNT_MASK,
+    VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT, VIEWPORT_ROW_TABLE_PRESENTATION,
 };
 use flark_runtime::{HistoryDisposition, StatusCode};
 
@@ -37,8 +40,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     let preceding_minor = NegotiateRequest {
         struct_size: size_of::<NegotiateRequest>() as u32,
         requested_major: ABI_MAJOR,
-        requested_minor: 27,
-        required_capability_bits: (1_u64 << 28) - 1,
+        requested_minor: 28,
+        required_capability_bits: (1_u64 << 29) - 1,
     };
     let mut info = AbiInfo::default();
     let mut outcome = Outcome::default();
@@ -48,8 +51,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         "the stateless ABI must reject a preceding minor it cannot tailor"
     );
     let subsequent_minor = NegotiateRequest {
-        requested_minor: 29,
-        required_capability_bits: (1_u64 << 29) - 1,
+        requested_minor: 30,
+        required_capability_bits: (1_u64 << 30) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -59,7 +62,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 29) - 1,
+        required_capability_bits: (1_u64 << 30) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -67,7 +70,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::Ok as u32
     );
     assert_eq!(info.abi_minor, ABI_MINOR);
-    assert_eq!(info.capability_bits, (1_u64 << 29) - 1);
+    assert_eq!(info.capability_bits, (1_u64 << 30) - 1);
 
     let source_text = concat!(
         "# *Flark*\n\n",
@@ -433,21 +436,56 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     };
     assert_ne!(table.semantic_variant & VIEWPORT_ROW_TABLE_PRESENTATION, 0);
     assert_ne!(table.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, 0);
-    assert_eq!(
-        table.inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK,
-        4
-    );
+    let table_fact_count = table.inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK;
+    assert_eq!(table_fact_count, 10);
     let table_facts = unsafe {
         std::slice::from_raw_parts(
             page.as_ptr()
                 .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>())
                 .cast::<InlineFactRecord>(),
-            4,
+            table_fact_count as usize,
         )
     };
-    assert!(table_facts
+    let semantic_cells = table_facts
         .iter()
-        .all(|fact| fact.kind == INLINE_FACT_TABLE_CELL));
+        .filter(|fact| fact.kind == INLINE_FACT_TABLE_CELL)
+        .collect::<Vec<_>>();
+    assert_eq!(semantic_cells.len(), 4);
+    let edit_cells = table_facts
+        .iter()
+        .filter(|fact| fact.kind == INLINE_FACT_PROJECTION_EDIT_CELL)
+        .collect::<Vec<_>>();
+    assert_eq!(edit_cells.len(), 6);
+    assert_eq!(
+        edit_cells
+            .iter()
+            .filter(|fact| {
+                fact.flags & PROJECTION_EDIT_CELL_MATCHER_MASK
+                    == PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL
+            })
+            .count(),
+        4
+    );
+    assert_eq!(
+        edit_cells
+            .iter()
+            .filter(|fact| {
+                fact.flags & PROJECTION_EDIT_CELL_MATCHER_MASK
+                    == PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL
+            })
+            .count(),
+        2
+    );
+    for fact in edit_cells {
+        assert_ne!(fact.flags & PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL, 0);
+        assert_ne!(fact.flags & PROJECTION_EDIT_CELL_RETAIN_OUTSIDE, 0);
+        assert_ne!(fact.flags & PROJECTION_EDIT_CELL_PRESENT_EXACT, 0);
+        assert!(fact.source_start_byte < fact.source_end_byte);
+        assert!(fact.content_start_byte >= fact.source_start_byte);
+        assert!(fact.content_end_byte <= fact.source_end_byte);
+        assert_eq!(fact.replacement_first, 0);
+        assert_eq!(fact.replacement_second, 0);
+    }
 
     let target_start = source
         .windows(b"[target]".len())

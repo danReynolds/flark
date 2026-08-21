@@ -3,8 +3,12 @@ use flark_runtime::{
     DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
     DocumentLiveViewportSpan, DocumentProjectionEditCell, DocumentSession, DocumentSessionPhase,
     DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
+    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED,
 };
 
 fn pump_ready(document: &mut DocumentSession) -> usize {
@@ -23,6 +27,39 @@ fn expected_utf16_range(source: &str, bytes: &std::ops::Range<u64>) -> std::ops:
     let end = usize::try_from(bytes.end).expect("source-range end fits usize");
     u64::try_from(source[..start].encode_utf16().count()).expect("UTF-16 start fits u64")
         ..u64::try_from(source[..end].encode_utf16().count()).expect("UTF-16 end fits u64")
+}
+
+fn assert_current_rows_match_clean(document: &mut DocumentSession, revision: u64, source: &str) {
+    let incremental = document
+        .query_viewport(revision, 0..source.len(), 64)
+        .expect("incremental differential viewport");
+    let mut clean = DocumentSession::begin(source).expect("begin clean differential oracle");
+    pump_ready(&mut clean);
+    let clean_viewport = clean
+        .query_viewport(1, 0..source.len(), 64)
+        .expect("clean differential viewport");
+    assert_eq!(
+        incremental.rows, clean_viewport.rows,
+        "incremental rows must exactly match a fresh parse for {source:?}"
+    );
+    clean.close().expect("close clean differential oracle");
+}
+
+fn assert_single_edit_matches_clean(
+    source: &str,
+    range: std::ops::Range<usize>,
+    replacement: &str,
+) {
+    let mut document = DocumentSession::begin(source).expect("begin single-edit differential");
+    pump_ready(&mut document);
+    document
+        .apply_edit(1, range.clone(), replacement)
+        .expect("apply single-edit differential");
+    let mut edited_source = source.to_owned();
+    edited_source.replace_range(range, replacement);
+    pump_ready(&mut document);
+    assert_current_rows_match_clean(&mut document, 2, &edited_source);
+    document.close().expect("close single-edit differential");
 }
 
 #[test]
@@ -1009,6 +1046,8 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
         .apply_edit(1, 4..4, " ")
         .expect("insert one opening space");
     pump_ready(&mut document);
+    let edited_source = source.replacen("**left**", "** left**", 1);
+    assert_current_rows_match_clean(&mut document, 2, &edited_source);
     let viewport = document
         .query_viewport(2, 0..source.len() + 1, 8)
         .expect("post-edit mixed-inline ATX heading viewport");
@@ -1047,6 +1086,751 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
         before_outside.content_utf16_range.start + 1..before_outside.content_utf16_range.end + 1
     );
     document.close().expect("close mixed-inline ATX heading");
+}
+
+#[test]
+fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
+    assert_eq!(DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS, 0x0f02);
+    assert_eq!(DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS, 0x0f05);
+    assert_eq!(
+        DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+        0x0704
+    );
+    let source = "This is the real **Rust → Dart → Flutter** editor path.\n";
+    let mut document = DocumentSession::begin(source).expect("begin dogfood paragraph");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("dogfood paragraph viewport");
+    let row = &viewport.rows[0];
+    let facts = row
+        .inline_facts
+        .as_ref()
+        .expect("authoritative paragraph inline facts");
+    let strong = facts
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+        .expect("Strong fact");
+    assert_eq!(strong.source_range, 17..46);
+    assert_eq!(strong.source_utf16_range, 17..42);
+    assert_eq!(row.editable_range, Some(0..59));
+    assert_eq!(row.editable_utf16_range, Some(0..55));
+    assert_eq!(
+        row.projection_edit_cells,
+        vec![
+            DocumentProjectionEditCell {
+                source_range: 0..17,
+                source_utf16_range: 0..17,
+                trigger_range: 0..16,
+                trigger_utf16_range: 0..16,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+            },
+            DocumentProjectionEditCell {
+                source_range: 0..17,
+                source_utf16_range: 0..17,
+                trigger_range: 0..16,
+                trigger_utf16_range: 0..16,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+            },
+        ],
+        "the plain prefix is admitted while the same-line post-fact tail stays fail-closed"
+    );
+    document.close().expect("close dogfood paragraph");
+}
+
+#[test]
+fn multiline_product_paragraph_publishes_only_physical_line_literal_cells() {
+    let source = "This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,\n\
+not a static Markdown preview. Certified Markdown stays rendered while focused;\n\
+only incomplete or temporarily pending syntax becomes exact source locally.\n";
+    let mut document = DocumentSession::begin(source).expect("begin product paragraph");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("product paragraph viewport");
+    let row = &viewport.rows[0];
+    assert_eq!(row.presentation, DocumentViewportRowPresentation::Plain);
+    assert_eq!(row.editable_range, Some(0..source.len() as u64 - 1));
+    assert_eq!(
+        row.projection_edit_cells,
+        vec![
+            DocumentProjectionEditCell {
+                source_range: 0..17,
+                source_utf16_range: 0..17,
+                trigger_range: 0..16,
+                trigger_utf16_range: 0..16,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+            },
+            DocumentProjectionEditCell {
+                source_range: 0..17,
+                source_utf16_range: 0..17,
+                trigger_range: 0..16,
+                trigger_utf16_range: 0..16,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+            },
+            DocumentProjectionEditCell {
+                source_range: 163..238,
+                source_utf16_range: 159..234,
+                trigger_range: 238..238,
+                trigger_utf16_range: 234..234,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
+            },
+        ],
+        "only one physical-line terminal gap may back the append cell",
+    );
+    document.close().expect("close product paragraph");
+
+    assert_single_edit_matches_clean(source, 0..0, "keep what");
+}
+
+#[test]
+fn terminal_literal_append_cell_preserves_outside_facts_and_hard_break_safety() {
+    let source = "This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,\n\
+not a static Markdown preview. Certified Markdown stays rendered while focused;\n\
+only incomplete or temporarily pending syntax becomes exact source locally.\n";
+    let mut document = DocumentSession::begin(source).expect("begin terminal append paragraph");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("terminal append viewport");
+    let row = &viewport.rows[0];
+    let terminal = row
+        .projection_edit_cells
+        .iter()
+        .find(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS)
+        .expect("terminal append cell");
+    assert_eq!(terminal.source_range, 163..238);
+    assert_eq!(terminal.source_utf16_range, 159..234);
+    assert_eq!(terminal.trigger_range, 238..238);
+    assert_eq!(terminal.trigger_utf16_range, 234..234);
+    let strong = row
+        .inline_facts
+        .as_ref()
+        .expect("authoritative inline facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+        .expect("outside Strong fact")
+        .clone();
+
+    let mut edited_source = source.to_owned();
+    let mut byte_end = source.len() - 1;
+    for (revision, replacement) in [
+        " ", "Testing", " ", "is", " ", "somewhat", " ", "useful", " ", "but", " ", "like", ".",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        document
+            .apply_edit(revision as u64 + 1, byte_end..byte_end, replacement)
+            .expect("apply terminal literal append");
+        edited_source.insert_str(byte_end, replacement);
+        byte_end += replacement.len();
+        pump_ready(&mut document);
+        assert_current_rows_match_clean(&mut document, revision as u64 + 2, &edited_source);
+        let viewport = document
+            .query_viewport(revision as u64 + 2, 0..edited_source.len(), 8)
+            .expect("terminal append result viewport");
+        let after = viewport.rows[0]
+            .inline_facts
+            .as_ref()
+            .expect("result facts")
+            .iter()
+            .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+            .expect("outside Strong remains rendered");
+        assert_eq!(after, &strong);
+        let terminal = viewport.rows[0]
+            .projection_edit_cells
+            .iter()
+            .find(|cell| {
+                cell.flags & DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                    == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+            })
+            .expect("fresh terminal append state");
+        assert_eq!(
+            terminal.flags & DOCUMENT_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED != 0,
+            replacement == " ",
+            "replacement={replacement:?}"
+        );
+    }
+    document.close().expect("close terminal append paragraph");
+
+    let mut punctuation_document =
+        DocumentSession::begin(source).expect("begin terminal punctuation chain");
+    pump_ready(&mut punctuation_document);
+    let mut punctuation_source = source.to_owned();
+    let mut punctuation_end = source.len() - 1;
+    for (revision, replacement) in ["\"", "'", ",", ".", ":", ";", "?"].into_iter().enumerate() {
+        punctuation_document
+            .apply_edit(
+                revision as u64 + 1,
+                punctuation_end..punctuation_end,
+                replacement,
+            )
+            .expect("apply bounded terminal prose punctuation");
+        punctuation_source.insert_str(punctuation_end, replacement);
+        punctuation_end += replacement.len();
+        pump_ready(&mut punctuation_document);
+        assert_current_rows_match_clean(
+            &mut punctuation_document,
+            revision as u64 + 2,
+            &punctuation_source,
+        );
+        let viewport = punctuation_document
+            .query_viewport(revision as u64 + 2, 0..punctuation_source.len(), 8)
+            .expect("terminal punctuation result viewport");
+        let after = viewport.rows[0]
+            .inline_facts
+            .as_ref()
+            .expect("terminal punctuation facts")
+            .iter()
+            .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+            .expect("outside Strong survives terminal punctuation");
+        assert_eq!(after, &strong, "replacement={replacement:?}");
+    }
+    punctuation_document
+        .close()
+        .expect("close terminal punctuation chain");
+
+    let no_final_newline = "Before **bold**\nplain terminal.";
+    let mut document =
+        DocumentSession::begin(no_final_newline).expect("begin no-final-newline paragraph");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..no_final_newline.len(), 8)
+        .expect("no-final-newline viewport");
+    let eof = u64::try_from(no_final_newline.len()).expect("EOF fits u64");
+    assert!(
+        viewport.rows[0].projection_edit_cells.iter().any(|cell| {
+            cell.flags & DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                && cell.trigger_range == (eof..eof)
+        }),
+        "plain terminal authority must include source EOF: {viewport:#?}"
+    );
+    document.close().expect("close no-final-newline paragraph");
+    assert_single_edit_matches_clean(
+        no_final_newline,
+        no_final_newline.len()..no_final_newline.len(),
+        " Testing.",
+    );
+
+    for structural in ["- first\n", "> first\n"] {
+        let mut document = DocumentSession::begin(structural).expect("begin structural row");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..structural.len(), 8)
+            .expect("structural viewport");
+        assert!(
+            viewport.rows.iter().all(|row| {
+                row.projection_edit_cells.iter().all(|cell| {
+                    cell.flags & DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                        != DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                })
+            }),
+            "matcher 5 is a Plain-only ABI authority: {structural:?} {viewport:#?}"
+        );
+        document.close().expect("close structural row");
+    }
+
+    for (padded, expected_range) in [
+        ("word \nnext **bold**\n", Some(0..5)),
+        (" word\nnext **bold**\n", None),
+    ] {
+        let mut document = DocumentSession::begin(padded).expect("begin padded paragraph");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..padded.len(), 8)
+            .expect("padded paragraph viewport");
+        let first = &viewport.rows[0];
+        let first_line_end = u64::try_from(padded.find('\n').expect("physical line end"))
+            .expect("line end fits u64");
+        let first_line_cells = first
+            .projection_edit_cells
+            .iter()
+            .filter(|cell| cell.source_range.start < first_line_end)
+            .collect::<Vec<_>>();
+        match expected_range {
+            Some(expected_range) => {
+                assert_eq!(first_line_cells.len(), 1, "{padded:?} {first:#?}");
+                assert_eq!(first_line_cells[0].source_range, expected_range);
+                assert_eq!(
+                    first_line_cells[0].flags,
+                    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                );
+            }
+            None => assert!(first_line_cells.is_empty(), "{padded:?} {first:#?}"),
+        }
+        document.close().expect("close padded paragraph");
+    }
+
+    for block_opener in ["-\n", "1.\n", "#\n"] {
+        let mut document = DocumentSession::begin(block_opener).expect("begin block opener");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..block_opener.len(), 8)
+            .expect("block-opener viewport");
+        assert!(
+            viewport.rows.iter().all(|row| {
+                row.projection_edit_cells.iter().all(|cell| {
+                    cell.flags & DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                        != DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                })
+            }),
+            "terminal space must not complete a block opener: {block_opener:?} {viewport:#?}"
+        );
+        document.close().expect("close block opener");
+        let append = block_opener.len() - 1;
+        assert_single_edit_matches_clean(block_opener, append..append, " ");
+    }
+
+    let absorbing_autolink_tail = "Visit www.commonmark.org/a.b.\n";
+    let mut document =
+        DocumentSession::begin(absorbing_autolink_tail).expect("begin absorbing autolink tail");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..absorbing_autolink_tail.len(), 8)
+        .expect("absorbing autolink viewport");
+    assert!(
+        viewport.rows[0].projection_edit_cells.iter().all(|cell| {
+            cell.flags & DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+                != DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+        }),
+        "a same-line outside fact can absorb the terminal tail: {viewport:#?}"
+    );
+    document.close().expect("close absorbing autolink tail");
+    let append = absorbing_autolink_tail.len() - 1;
+    assert_single_edit_matches_clean(absorbing_autolink_tail, append..append, "x");
+}
+
+#[test]
+fn every_literal_splice_and_delete_preserves_outside_facts_differentially() {
+    let source = "This is the real **Rust → Dart → Flutter** editor path.\n";
+    let mut base = DocumentSession::begin(source).expect("begin base dogfood paragraph");
+    pump_ready(&mut base);
+    let viewport = base
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("base dogfood paragraph viewport");
+    let row = &viewport.rows[0];
+    let cells = row.projection_edit_cells.clone();
+    let before = row
+        .inline_facts
+        .as_ref()
+        .expect("base facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+        .expect("base Strong fact")
+        .clone();
+    base.close().expect("close base dogfood paragraph");
+
+    for cell in cells
+        .iter()
+        .filter(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS)
+    {
+        for start in cell.trigger_range.start..=cell.trigger_range.end {
+            for end in start..=cell.trigger_range.end {
+                for replacement in ["a", "Z", "0", "word"] {
+                    let mut edited = DocumentSession::begin(source).expect("begin differential");
+                    pump_ready(&mut edited);
+                    let start_usize = usize::try_from(start).expect("start fits usize");
+                    let end_usize = usize::try_from(end).expect("end fits usize");
+                    edited
+                        .apply_edit(1, start_usize..end_usize, replacement)
+                        .expect("apply admitted ASCII word splice");
+                    pump_ready(&mut edited);
+                    let mut edited_source = source.to_owned();
+                    edited_source.replace_range(start_usize..end_usize, replacement);
+                    assert_current_rows_match_clean(&mut edited, 2, &edited_source);
+                    let removed = usize::try_from(end - start).expect("removed length");
+                    let result_len = source.len() + replacement.len() - removed;
+                    let viewport = edited
+                        .query_viewport(2, 0..result_len, 8)
+                        .expect("edited differential viewport");
+                    let after = viewport.rows[0]
+                        .inline_facts
+                        .as_ref()
+                        .expect("edited facts")
+                        .iter()
+                        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+                        .expect("edited Strong fact");
+                    let signed_delta = replacement.len() as i64 - (end - start) as i64;
+                    let delta = if end <= before.source_range.start {
+                        signed_delta
+                    } else {
+                        0
+                    };
+                    assert_eq!(after.kind, before.kind);
+                    assert_eq!(after.flags, before.flags);
+                    assert_eq!(after.replacement, before.replacement);
+                    assert_eq!(
+                        after.source_range,
+                        (before.source_range.start as i64 + delta) as u64
+                            ..(before.source_range.end as i64 + delta) as u64,
+                        "range={start}..{end} replacement={replacement:?}"
+                    );
+                    assert_eq!(
+                        after.source_utf16_range,
+                        (before.source_utf16_range.start as i64 + delta) as u64
+                            ..(before.source_utf16_range.end as i64 + delta) as u64,
+                        "range={start}..{end} replacement={replacement:?}"
+                    );
+                    assert_eq!(
+                        after.content_range,
+                        (before.content_range.start as i64 + delta) as u64
+                            ..(before.content_range.end as i64 + delta) as u64,
+                        "range={start}..{end} replacement={replacement:?}"
+                    );
+                    assert_eq!(
+                        after.content_utf16_range,
+                        (before.content_utf16_range.start as i64 + delta) as u64
+                            ..(before.content_utf16_range.end as i64 + delta) as u64,
+                        "range={start}..{end} replacement={replacement:?}"
+                    );
+                    edited.close().expect("close differential");
+                }
+            }
+        }
+    }
+
+    for cell in cells
+        .iter()
+        .filter(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS)
+    {
+        let first = cell.trigger_range.start.max(cell.source_range.start + 1);
+        let last = cell.trigger_range.end.min(cell.source_range.end - 1);
+        for position in first..=last {
+            let mut edited = DocumentSession::begin(source).expect("begin space differential");
+            pump_ready(&mut edited);
+            let position_usize = usize::try_from(position).expect("space position fits usize");
+            edited
+                .apply_edit(1, position_usize..position_usize, " ")
+                .expect("apply admitted interior space");
+            pump_ready(&mut edited);
+            let mut edited_source = source.to_owned();
+            edited_source.insert(position_usize, ' ');
+            assert_current_rows_match_clean(&mut edited, 2, &edited_source);
+            let viewport = edited
+                .query_viewport(2, 0..source.len() + 1, 8)
+                .expect("spaced differential viewport");
+            let after = viewport.rows[0]
+                .inline_facts
+                .as_ref()
+                .expect("spaced facts")
+                .iter()
+                .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+                .expect("spaced Strong fact");
+            assert_eq!(after.kind, before.kind);
+            assert_eq!(after.flags, before.flags);
+            assert_eq!(after.replacement, before.replacement);
+            assert_eq!(
+                after.source_range,
+                before.source_range.start + 1..before.source_range.end + 1,
+                "position={position}"
+            );
+            assert_eq!(
+                after.content_range,
+                before.content_range.start + 1..before.content_range.end + 1,
+                "position={position}"
+            );
+            edited.close().expect("close space differential");
+        }
+    }
+
+    for cell in cells
+        .iter()
+        .filter(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS)
+    {
+        for start in cell.trigger_range.start..cell.trigger_range.end {
+            let mut edited = DocumentSession::begin(source).expect("begin delete differential");
+            pump_ready(&mut edited);
+            let start_usize = usize::try_from(start).expect("delete start fits usize");
+            edited
+                .apply_edit(1, start_usize..start_usize + 1, "")
+                .expect("apply admitted one-unit deletion");
+            pump_ready(&mut edited);
+            let mut edited_source = source.to_owned();
+            edited_source.replace_range(start_usize..start_usize + 1, "");
+            assert_current_rows_match_clean(&mut edited, 2, &edited_source);
+            let viewport = edited
+                .query_viewport(2, 0..source.len() - 1, 8)
+                .expect("deleted differential viewport");
+            let after = viewport.rows[0]
+                .inline_facts
+                .as_ref()
+                .expect("deleted facts")
+                .iter()
+                .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+                .expect("deleted Strong fact");
+            assert_eq!(after.kind, before.kind);
+            assert_eq!(after.flags, before.flags);
+            assert_eq!(after.replacement, before.replacement);
+            assert_eq!(
+                after.source_range,
+                before.source_range.start - 1..before.source_range.end - 1
+            );
+            assert_eq!(
+                after.source_utf16_range,
+                before.source_utf16_range.start - 1..before.source_utf16_range.end - 1
+            );
+            assert_eq!(
+                after.content_range,
+                before.content_range.start - 1..before.content_range.end - 1
+            );
+            assert_eq!(
+                after.content_utf16_range,
+                before.content_utf16_range.start - 1..before.content_utf16_range.end - 1
+            );
+            edited.close().expect("close delete differential");
+        }
+    }
+}
+
+#[test]
+fn carried_edit_cell_successors_match_a_clean_final_parse() {
+    let mut literal_source = "This is the real **Rust → Dart → Flutter** editor path.\n".to_owned();
+    let mut literal = DocumentSession::begin(&literal_source).expect("begin literal chain");
+    pump_ready(&mut literal);
+    let edits = [(4_usize..4_usize, "word"), (4..4, " "), (0..4, "That")];
+    for (index, (range, replacement)) in edits.into_iter().enumerate() {
+        literal
+            .apply_edit(index as u64 + 1, range.clone(), replacement)
+            .expect("apply carried literal edit");
+        literal_source.replace_range(range, replacement);
+        pump_ready(&mut literal);
+        assert_current_rows_match_clean(&mut literal, index as u64 + 2, &literal_source);
+    }
+    literal.close().expect("close literal chain");
+
+    let mut heading_source = "# Heading\n".to_owned();
+    let mut heading = DocumentSession::begin(&heading_source).expect("begin heading chain");
+    pump_ready(&mut heading);
+    let edits = [(2_usize..9_usize, "Café"), (2..2, "Live "), (7..8, "")];
+    for (index, (range, replacement)) in edits.into_iter().enumerate() {
+        heading
+            .apply_edit(index as u64 + 1, range.clone(), replacement)
+            .expect("apply carried heading edit");
+        heading_source.replace_range(range, replacement);
+        pump_ready(&mut heading);
+        assert_current_rows_match_clean(&mut heading, index as u64 + 2, &heading_source);
+    }
+    heading.close().expect("close heading chain");
+}
+
+#[test]
+fn simple_list_and_quote_shells_publish_literal_word_cells() {
+    for source in ["- first **bold**\n", "> first **bold**\n"] {
+        let mut document = DocumentSession::begin(source).expect("begin simple block shell");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("simple block-shell viewport");
+        let row = &viewport.rows[0];
+        assert!(matches!(
+            row.presentation,
+            DocumentViewportRowPresentation::ListItem {
+                nesting_depth: 1,
+                simple_continuation: true,
+                ..
+            } | DocumentViewportRowPresentation::BlockQuote {
+                nesting_depth: 1,
+                simple_continuation: true,
+                ..
+            }
+        ));
+        assert_eq!(
+            row.projection_edit_cells,
+            vec![
+                DocumentProjectionEditCell {
+                    source_range: 2..8,
+                    source_utf16_range: 2..8,
+                    trigger_range: 2..7,
+                    trigger_utf16_range: 2..7,
+                    flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+                },
+                DocumentProjectionEditCell {
+                    source_range: 2..8,
+                    source_utf16_range: 2..8,
+                    trigger_range: 2..7,
+                    trigger_utf16_range: 2..7,
+                    flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+                },
+            ],
+            "{source:?} {row:#?}"
+        );
+        let before = row
+            .inline_facts
+            .as_ref()
+            .expect("shell facts")
+            .iter()
+            .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+            .expect("shell Strong fact")
+            .clone();
+        document
+            .apply_edit(1, 2..2, "x")
+            .expect("edit shell literal segment");
+        pump_ready(&mut document);
+        let mut edited_source = source.to_owned();
+        edited_source.insert(2, 'x');
+        assert_current_rows_match_clean(&mut document, 2, &edited_source);
+        let viewport = document
+            .query_viewport(2, 0..source.len() + 1, 8)
+            .expect("edited shell viewport");
+        let after = viewport.rows[0]
+            .inline_facts
+            .as_ref()
+            .expect("edited shell facts")
+            .iter()
+            .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+            .expect("edited shell Strong fact");
+        assert_eq!(
+            after.source_range,
+            before.source_range.start + 1..before.source_range.end + 1
+        );
+        assert_eq!(
+            after.source_utf16_range,
+            before.source_utf16_range.start + 1..before.source_utf16_range.end + 1
+        );
+        document.close().expect("close simple block shell");
+    }
+}
+
+#[test]
+fn list_quote_and_table_cell_edit_boundaries_match_clean_parses() {
+    for source in ["- first **bold**\n", "> first **bold**\n"] {
+        for (range, replacement) in [
+            (2_usize..2_usize, "x"),
+            (4..6, "word"),
+            (3..4, ""),
+            (4..4, " "),
+        ] {
+            assert_single_edit_matches_clean(source, range, replacement);
+        }
+    }
+    let table = "| foo | **bold** |\n| --- | --- |\n";
+    for (range, replacement) in [
+        (2_usize..2_usize, "x"),
+        (3..5, "word"),
+        (4..5, ""),
+        (3..3, " "),
+    ] {
+        assert_single_edit_matches_clean(table, range, replacement);
+    }
+}
+
+#[test]
+fn plain_table_cell_publishes_a_literal_word_edit_cell() {
+    let source = "| foo | **bold** |\n| --- | --- |\n";
+    let mut document = DocumentSession::begin(source).expect("begin simple table");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("simple table viewport");
+    let row = viewport
+        .rows
+        .iter()
+        .find(|row| row.presentation == DocumentViewportRowPresentation::Table)
+        .expect("table row");
+    assert_eq!(
+        row.projection_edit_cells,
+        vec![
+            DocumentProjectionEditCell {
+                source_range: 2..5,
+                source_utf16_range: 2..5,
+                trigger_range: 2..5,
+                trigger_utf16_range: 2..5,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+            },
+            DocumentProjectionEditCell {
+                source_range: 2..5,
+                source_utf16_range: 2..5,
+                trigger_range: 2..5,
+                trigger_utf16_range: 2..5,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+            },
+        ]
+    );
+    let before = row
+        .inline_facts
+        .as_ref()
+        .expect("table facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+        .expect("outside table Strong fact")
+        .clone();
+    document
+        .apply_edit(1, 3..3, "x")
+        .expect("edit plain table cell");
+    pump_ready(&mut document);
+    let mut edited_source = source.to_owned();
+    edited_source.insert(3, 'x');
+    assert_current_rows_match_clean(&mut document, 2, &edited_source);
+    let viewport = document
+        .query_viewport(2, 0..source.len() + 1, 8)
+        .expect("edited table viewport");
+    let row = viewport
+        .rows
+        .iter()
+        .find(|row| row.presentation == DocumentViewportRowPresentation::Table)
+        .expect("edited table row");
+    let after = row
+        .inline_facts
+        .as_ref()
+        .expect("edited table facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+        .expect("shifted outside table Strong fact");
+    assert_eq!(
+        after.source_range,
+        before.source_range.start + 1..before.source_range.end + 1
+    );
+    assert_eq!(
+        after.source_utf16_range,
+        before.source_utf16_range.start + 1..before.source_utf16_range.end + 1
+    );
+    document.close().expect("close simple table");
+}
+
+#[test]
+fn literal_word_cells_fail_closed_for_lexical_and_dependency_boundaries() {
+    for source in [
+        "&am; **bold** tail\n",
+        "plain-text **bold** tail\n",
+        "Café **bold** tail\n",
+        "**bold** _right_\n",
+    ] {
+        let mut document = DocumentSession::begin(source).expect("begin rejected literal gap");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("rejected literal gap viewport");
+        let cells = &viewport.rows[0].projection_edit_cells;
+        assert!(
+            cells.iter().all(|cell| {
+                let start = usize::try_from(cell.source_range.start).expect("cell start");
+                let end = usize::try_from(cell.source_range.end).expect("cell end");
+                source[start..end]
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+            }),
+            "only punctuation-free ASCII literal gaps may be admitted: {source:?} {cells:#?}"
+        );
+        for cell in cells {
+            if cell.source_range.end < viewport.rows[0].editable_range.as_ref().unwrap().end {
+                assert!(
+                    cell.trigger_range.end < cell.source_range.end,
+                    "a following dependency boundary must remain excluded: {source:?} {cell:#?}"
+                );
+            }
+            if cell.source_range.start > viewport.rows[0].editable_range.as_ref().unwrap().start {
+                let prior = usize::try_from(cell.source_range.start - 1).expect("prior source");
+                assert!(
+                    source.as_bytes()[prior].is_ascii_whitespace()
+                        || cell.trigger_range.start > cell.source_range.start,
+                    "a preceding dependency boundary must remain excluded: {source:?} {cell:#?}"
+                );
+            }
+        }
+        document.close().expect("close rejected literal gap");
+    }
 }
 
 #[test]

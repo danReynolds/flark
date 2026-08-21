@@ -133,7 +133,7 @@ void main() {
   );
 
   testWidgets(
-    'pending edit cells retain proven heading semantics while exact task rows suppress stale actions',
+    'pending edit cells retain visual shells without stale task actions',
     (tester) async {
       final semantics = tester.ensureSemantics();
       final headingController = (await tester.runAsync(
@@ -222,26 +222,36 @@ void main() {
 
       final taskBefore = taskController.inputValue;
       final taskCaret = taskBefore.selection.extentOffset;
+      final taskGlobalCaret = taskController.globalCaretOffset;
+      final pendingTaskInput = taskBefore.text.replaceRange(
+        taskCaret,
+        taskCaret,
+        'x',
+      );
+      final expectedPendingTaskSource = taskController.visibleSource
+          .replaceRange(taskGlobalCaret, taskGlobalCaret, 'x');
       taskController.updateEditingValue(
         TextEditingValue(
-          text: taskBefore.text.replaceRange(taskCaret, taskCaret, 'x'),
+          text: pendingTaskInput,
           selection: TextSelection.collapsed(offset: taskCaret + 1),
           composing: TextRange(start: taskCaret, end: taskCaret + 1),
         ),
       );
       await _pumpUntilTransactions(tester, taskController);
       final pendingTask = taskController.surfaceRow(taskController.rows.single);
-      expect(pendingTask.kind, 0);
+      expect(pendingTask.kind, isNot(0));
       expect(debugHandle.geometryForTaskCheckboxOrdinal(task.ordinal), isNull);
+      expect(taskController.canToggleTaskChecked(task), isFalse);
+      expect(
+        await tester.runAsync(() => taskController.toggleTaskChecked(task)),
+        isFalse,
+      );
+      expect(taskController.visibleSource, expectedPendingTaskSource);
       final pendingTaskFinder = find.semantics.byValue(pendingTask.text);
       expect(pendingTaskFinder, findsOne);
       expect(
         pendingTaskFinder.evaluate().single,
-        isSemantics(
-          value: pendingTask.text,
-          hasCheckedState: false,
-          hasTapAction: false,
-        ),
+        isSemantics(value: pendingTask.text),
       );
 
       taskController.commitActiveComposition();
@@ -390,7 +400,7 @@ void main() {
   );
 
   testWidgets(
-    'pending exact list rows do not claim Tab from stale list facts',
+    'pending list continuity owns Tab without granting structural edit authority',
     (tester) async {
       const initial = '- parent\n- child\n';
       final controller = (await tester.runAsync(
@@ -399,9 +409,23 @@ void main() {
       await tester.runAsync(controller.continueParsing);
       final child = controller.rows.last;
       await tester.runAsync(() async {
-        controller.activateRow(child, child.editableUtf16!.end);
+        controller.activateRow(child, child.editableUtf16!.end - 1);
         await controller.resolveCanonicalSelection();
       });
+      final events = <String>[];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              autofocus: true,
+              debugInputEventObserver: events.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
 
       final before = controller.inputValue;
       final caret = before.selection.extentOffset;
@@ -414,13 +438,19 @@ void main() {
       );
       await _pumpUntilTransactions(tester, controller);
 
-      expect(controller.surfaceRow(controller.rows.last).kind, 0);
-      expect(controller.handleListIndent(outdent: false), isFalse);
-      expect(controller.visibleSource, '- parent\n- childx\n');
+      expect(controller.surfaceRow(controller.rows.last).kind, isNot(0));
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+      final selectionBeforeTab = controller.globalCaretOffset;
+      state.performSelector('insertTab:');
+      await tester.pump();
+      expect(events, contains('shortcut:indent-list'));
+      expect(controller.globalCaretOffset, selectionBeforeTab);
+      expect(controller.visibleSource, '- parent\n- chilxd\n');
 
       controller.commitActiveComposition();
       await _pumpUntilTransactions(tester, controller);
       await tester.runAsync(controller.continueParsing);
+      await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
     },
     skip: libraryPath == null,
@@ -495,7 +525,7 @@ void main() {
   );
 
   testWidgets(
-    'pending exact table rows do not expose stale cell navigation',
+    'pending table cells suppress stale navigation until recertified',
     (tester) async {
       const source = '| a | b |\n| --- | --- |\n| c | d |\n';
       final controller = (await tester.runAsync(
@@ -527,15 +557,15 @@ void main() {
       final caret = before.selection.extentOffset;
       controller.updateEditingValue(
         TextEditingValue(
-          text: before.text.replaceRange(caret, caret, 'x'),
-          selection: TextSelection.collapsed(offset: caret + 1),
-          composing: TextRange(start: caret, end: caret + 1),
+          text: before.text.replaceRange(caret, caret, 'xyz'),
+          selection: TextSelection.collapsed(offset: caret + 3),
+          composing: TextRange.empty,
         ),
       );
-      await _pumpUntilTransactions(tester, controller);
       await tester.pump();
 
-      expect(controller.surfaceRow(controller.rows.single).kind, 0);
+      expect(controller.surfaceRow(controller.rows.single).kind, isNot(0));
+      expect(controller.debugProjectionContinuityActive, isTrue);
       final surface = tester.renderObject<RenderFlarkSurface>(
         find.byType(FlarkRenderSurfaceWidget),
       );
@@ -544,12 +574,10 @@ void main() {
       expect(surface.adjacentTableCellHit(pendingCaret, forward: true), isNull);
 
       final dynamic state = tester.state(find.byType(FlarkEditor));
-      state.performSelector('insertTab:');
-      await tester.pump();
+      await _performSelectorAndWait(tester, controller, state, 'insertTab:');
       expect(controller.globalCaretOffset, pendingCaret);
-      expect(events, isNot(contains('shortcut:next-table-cell')));
+      expect(events, contains('shortcut:pending-table-cell'));
 
-      controller.commitActiveComposition();
       await _pumpUntilTransactions(tester, controller);
       await tester.runAsync(controller.continueParsing);
       await tester.pumpWidget(const SizedBox.shrink());
