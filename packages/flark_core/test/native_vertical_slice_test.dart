@@ -215,6 +215,41 @@ void main() {
   );
 
   test(
+    'nonempty heading edit envelopes cross the Dart worker boundary',
+    () async {
+      const source = '# Test is here\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      expect(row.kind, 12);
+      expect(
+        row.literalSafeEnvelopes.map(
+          (envelope) => (
+            envelope.editClass,
+            envelope.sourceBytes.start,
+            envelope.sourceBytes.end,
+            envelope.sourceUtf16.start,
+            envelope.sourceUtf16.end,
+          ),
+        ),
+        [
+          (FlarkLiteralEditClass.asciiWordInsertion, 2, 14, 2, 14),
+          (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 2, 14, 2, 14),
+          (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 14, 14, 14, 14),
+        ],
+      );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'nonzero multibyte viewport rows use global UTF-16 coordinates',
     () async {
       const initial = 'Head.\n\nTrailing.\n';

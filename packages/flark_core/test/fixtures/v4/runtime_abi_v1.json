@@ -4,7 +4,7 @@
   "status": "implemented-direct-v4-boundary",
   "abi": {
     "major": 4,
-    "minor": 26,
+    "minor": 27,
     "minorRule": "NEGOTIATE requires the exact current minor; any major or minor mismatch returns UNSUPPORTED_ABI_VERSION because the runtime retains no per-client negotiation state",
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
@@ -49,7 +49,8 @@
     {"name": "STAGED_SOURCE_TRANSACTIONS_V1", "bit": 8388608},
     {"name": "LIST_INDENTATION_V1", "bit": 16777216},
     {"name": "SEMANTIC_TARGETS_V1", "bit": 33554432},
-    {"name": "LITERAL_SAFE_ENVELOPES_V1", "bit": 67108864}
+    {"name": "LITERAL_SAFE_ENVELOPES_V1", "bit": 67108864},
+    {"name": "LITERAL_SAFE_ENVELOPE_CLOSURE_V1", "bit": 134217728}
   ],
   "operations": [
     {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},
@@ -364,7 +365,13 @@
       "SINGLE_ASCII_SPACE_INSERTION": 2
     },
     "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
-    "rule": "Only the capability-gated SEMANTIC_PROJECTED_LITERAL_SAFE query appends these records; SEMANTIC and SEMANTIC_PROJECTED retain their pre-envelope payload vocabulary, while a 4.25 negotiation is rejected because the ABI is stateless. ASCII_WORD_INSERTION is emitted only when one eligible fact's complete nonempty content slice is a flat ASCII letter/digit word with identity byte-to-UTF-16 length and, for Code, zero normalization flags. The host performs only edit-class matching and range containment, binds a match to one transaction and revision, and waits for fresh parser authority before another edit."
+    "rule": "Only the capability-gated SEMANTIC_PROJECTED_LITERAL_SAFE query appends these records; SEMANTIC and SEMANTIC_PROJECTED retain their pre-envelope payload vocabulary, while a 4.25 negotiation is rejected because the ABI is stateless. In ABI 4.26, ASCII_WORD_INSERTION is emitted only when one eligible fact's complete nonempty content slice is a flat ASCII letter/digit word with identity byte-to-UTF-16 length and, for Code, zero normalization flags; SINGLE_ASCII_SPACE_INSERTION is a zero-width row-end proof. The host binds a match to one transaction and revision and waits for fresh parser authority before another edit unless the ABI 4.27 closure capability applies."
+  },
+  "viewportLiteralSafeEnvelopeClosure": {
+    "abiMinor": 27,
+    "capability": "LITERAL_SAFE_ENVELOPE_CLOSURE_V1",
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "rule": "ABI 4.27 retains query kind 6, inline-record kind 15, and edit-class codes 1 and 2. The current reusable word/space bundle is emitted only for a canonical single-line ATX heading with an authoritative empty inline-fact set, identity byte-to-UTF-16 geometry, and ASCII letter/digit-or-space content bounded by ASCII letters/digits. A nonempty SINGLE_ASCII_SPACE_INSERTION envelope authorizes one U+0020 only at positions start < p < end; a zero-width instance authorizes its exact position and is consumed by the matching edit. Reusable space authority must end before an existing trailing-space run, and a terminal zero-width proof must not be published when the row already ends in U+0020. A matched nonempty envelope grows through its declared edit, and nonempty envelopes with exactly equal byte and UTF-16 geometry form one parser-authored closure bundle that grows together. Unmatched envelopes strictly crossed by a foreign-class insertion are dropped; ranges wholly before the insertion stay, ranges at or after it shift, and no host source or Markdown classification may recreate authority. Any unmatched edit or failed transform waits for fresh parser authority."
   },
   "snapshotLifetime": {
     "ownership": "NON_OWNING_EPOCH",

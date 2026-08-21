@@ -228,10 +228,17 @@ final class _ViewportQueryPage {
 
 final class _ProjectionContinuitySurface {
   const _ProjectionContinuitySurface.authorized({
+    required this.rowOrdinal,
     required this.receipt,
     required this.presentation,
   });
 
+  /// The certified row that authored this projection proof.
+  ///
+  /// Selection can move while a native edit is still pending. The proof must
+  /// never follow the caret into another row merely because that row's source
+  /// range happens to contain the new selection extent.
+  final int rowOrdinal;
   final FlarkProjectionContinuityReceipt receipt;
   final FlarkSurfaceRow presentation;
 
@@ -600,6 +607,14 @@ final class FlarkEditorController extends ChangeNotifier {
   bool get semanticsCurrent => _semanticViewportCurrent;
   TextEditingValue get inputValue => _inputValue;
   int get revision => _document.revision;
+
+  /// Monotonic logical source generation used to bind painted diagnostics to
+  /// the exact optimistic edit state they display.
+  ///
+  /// Native [revision] may legitimately lag while an accepted edit is still
+  /// queued. This generation advances synchronously with that accepted edit,
+  /// so a paint observer can reject stale or coalesced presentation frames.
+  int get sourceGeneration => _editGeneration;
   int get sourceByteLength => _document.sourceByteLength;
   int get sourceUtf16Length => _document.sourceUtf16Length;
   int get pendingEdits => _pendingEdits;
@@ -977,6 +992,9 @@ final class FlarkEditorController extends ChangeNotifier {
     final continuityOwnsRow =
         includeEditingState &&
         continuity != null &&
+        !_crossRowSelection &&
+        continuity.rowOrdinal == row.ordinal &&
+        _activeOrdinal == row.ordinal &&
         semanticRange.start <= _globalSelectionExtent &&
         _globalSelectionExtent <= semanticRange.end;
     final caretOwnsRow =
@@ -1554,6 +1572,12 @@ final class FlarkEditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
+    // A parser-authored projection proof belongs to the row that published
+    // it. Once selection ownership leaves that active input window, fail the
+    // provisional surface closed instead of allowing it to follow the caret
+    // into another row while recertification is pending.
+    _projectionContinuity = null;
 
     final visibleEnd = _visibleUtf16Start + _visibleSource.length;
     final start = math.min(_globalSelectionBase, globalUtf16Offset);
@@ -4361,8 +4385,28 @@ final class FlarkEditorController extends ChangeNotifier {
   void _prepareProjectionContinuity(int start, int end, String replacement) {
     final current = _projectionContinuity;
     if (current != null) {
-      // Envelopes prove one exact transaction. A second input before fresh
-      // certification fails closed to exact current source.
+      final receipt = current.receipt.continueWith(
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
+      );
+      if (receipt != null) {
+        final presentation = _spliceContinuityPresentation(
+          current.presentation,
+          receipt.authorizedContentUtf16,
+          start,
+          end,
+          replacement,
+        );
+        if (presentation != null) {
+          _projectionContinuity = _ProjectionContinuitySurface.authorized(
+            rowOrdinal: current.rowOrdinal,
+            receipt: receipt,
+            presentation: presentation,
+          );
+          return;
+        }
+      }
       _projectionContinuity = null;
       return;
     }
@@ -4404,6 +4448,7 @@ final class FlarkEditorController extends ChangeNotifier {
       return;
     }
     _projectionContinuity = _ProjectionContinuitySurface.authorized(
+      rowOrdinal: row.ordinal,
       receipt: receipt,
       presentation: presentation,
     );

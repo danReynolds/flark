@@ -232,27 +232,49 @@ forbids. Both are contract defects, not implementation defects.
 
 Under the amendment the runtime publishes, per certified row, exact source
 ranges for typed literal edits that provably cannot change that row's published
-facts. The landed vocabulary is intentionally smaller than the general design:
+facts. The vocabulary remains intentionally smaller than the general design:
 
 - a non-empty ASCII letter/digit insertion inside an eligible fact only when
   that fact's complete content slice is one flat non-empty ASCII word, with no
   punctuation, whitespace, nested syntax, or code normalization; and
-- one U+0020 insertion at an eligible outer inline closing boundary that is
-  also the editable row end.
+- one U+0020 insertion at a parser-proved position. A non-empty space envelope
+  admits positions strictly inside its range; a separate zero-width envelope may
+  admit the exact editable-row endpoint once.
 
-Both are insertion-only and one-shot. Deletion, replacement, non-ASCII and
-table-specific classes, broader literal classes, and chaining remain pending
-and fail closed to a local exact-source island. An edit inside a matching
-envelope retains presentation with its ranges transformed through the edit;
-anything else waits for recertification. Retained presentation is proven, not
-assumed. The old typed row/inline policy and host Markdown classification are
-removed from the active decision path; the transaction receipt remains only as
-the one-shot binding between a parser envelope and the exact edit.
+ABI 4.26 introduced both classes as one-shot authorities. ABI 4.27 adds the
+`LITERAL_SAFE_ENVELOPE_CLOSURE_V1` proof: matched non-empty envelopes grow, and
+non-empty envelopes with exactly equal byte and UTF-16 geometry form one
+parser-authored bundle that grows together. The current reusable bundle is
+limited to canonical single-line ATX content with authoritative empty inline
+facts, identity coordinates, and ASCII word/space content bounded by word
+bytes. A matched zero-width envelope is consumed. Unmatched envelopes strictly
+crossed by a foreign-class insertion are
+dropped; ranges before the edit stay and ranges at or after it shift. Reusable
+space authority ends before an existing trailing-space run, and no terminal
+zero-width proof is published when the row already ends in U+0020. The host
+does not inspect source or recreate a consumed proof.
+
+Deletion, replacement, non-ASCII and table-specific classes, and broader
+literal classes remain pending. The current 4.27 controller fails those edits
+closed by painting the whole active row as exact source until recertification.
+That is authority-safe but does not satisfy this contract's local-island or
+no-marker-flash product target: unrelated markers in the row can become visible.
+Parser-authored minimal dependency islands are the next required tranche; the
+heading closure is a bounded stopgap, not completion of the continuously
+rendered editor.
+
+An insertion chain retains presentation only while every successor matches the
+carried parser proof set and every transform succeeds; anything else uses that
+whole-row fallback. Retained presentation is proven, not assumed. The old typed
+row/inline policy and host Markdown classification remain removed from the
+active decision path.
 
 ABI 4.26 appends envelope records only for the capability-gated
 `SEMANTIC_PROJECTED_LITERAL_SAFE` query kind. The earlier `SEMANTIC` and
-`SEMANTIC_PROJECTED` query kinds keep their pre-envelope payload vocabulary;
-the stateless ABI nevertheless requires an exact 4.26 negotiation.
+`SEMANTIC_PROJECTED` query kinds keep their pre-envelope payload vocabulary.
+ABI 4.27 retains that query and record vocabulary, adds the closure capability,
+and requires an exact 4.27 negotiation; a 4.26 request is rejected rather than
+receiving the expanded proof semantics.
 
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as

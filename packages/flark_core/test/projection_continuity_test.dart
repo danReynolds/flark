@@ -13,6 +13,21 @@ void main() {
     sourceBytes: FlarkSourceRange(8, 8),
     sourceUtf16: FlarkSourceRange(8, 8),
   );
+  const headingWord = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.asciiWordInsertion,
+    sourceBytes: FlarkSourceRange(2, 9),
+    sourceUtf16: FlarkSourceRange(2, 9),
+  );
+  const headingSpace = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.singleAsciiSpaceInsertion,
+    sourceBytes: FlarkSourceRange(2, 9),
+    sourceUtf16: FlarkSourceRange(2, 9),
+  );
+  const headingTerminalSpace = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.singleAsciiSpaceInsertion,
+    sourceBytes: FlarkSourceRange(9, 9),
+    sourceUtf16: FlarkSourceRange(9, 9),
+  );
 
   test('parser word envelope binds one exact contained insertion', () {
     final receipt = authorizeRowProjectionContinuity(
@@ -32,6 +47,325 @@ void main() {
     expect(receipt.authorizedContentUtf16, isA<FlarkSourceRange>());
     expect(receipt.authorizedContentUtf16.start, 0);
     expect(receipt.authorizedContentUtf16.end, 11);
+    expect(
+      receipt.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.sourceBytes.start,
+          envelope.sourceBytes.end,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [(2, 9, 2, 9)],
+    );
+  });
+
+  test('same-range edit classes chain before the terminal position', () {
+    final atStart = authorizeRowProjectionContinuity(
+      revision: 11,
+      envelopes: const [headingWord, headingSpace, headingTerminalSpace],
+      authorizedContentUtf16: const FlarkSourceRange(2, 9),
+      startUtf16: 2,
+      endUtf16: 2,
+      replacement: 'A',
+    );
+    expect(atStart, isNotNull);
+    expect(
+      atStart!.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceBytes.start,
+          envelope.sourceBytes.end,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [
+        (FlarkLiteralEditClass.asciiWordInsertion, 2, 10, 2, 10),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 2, 10, 2, 10),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 10, 10, 10, 10),
+      ],
+      reason: 'same-range parser proofs form one transform bundle',
+    );
+
+    final internalSpace = atStart.continueWith(
+      startUtf16: 3,
+      endUtf16: 3,
+      replacement: ' ',
+    );
+    expect(internalSpace, isNotNull);
+    expect(internalSpace!.baseRevision, 12);
+    expect(internalSpace.resultRevision, 13);
+    expect(
+      internalSpace.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceBytes.start,
+          envelope.sourceBytes.end,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [
+        (FlarkLiteralEditClass.asciiWordInsertion, 2, 11, 2, 11),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 2, 11, 2, 11),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 11, 11, 11, 11),
+      ],
+    );
+
+    final wordAfterSpace = internalSpace.continueWith(
+      startUtf16: 4,
+      endUtf16: 4,
+      replacement: 'Z9',
+    );
+    expect(wordAfterSpace, isNotNull);
+    expect(
+      wordAfterSpace!.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.sourceBytes.start,
+          envelope.sourceBytes.end,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [(2, 13, 2, 13), (2, 13, 2, 13), (13, 13, 13, 13)],
+    );
+  });
+
+  test('a nonempty space envelope rejects its start boundary', () {
+    expect(
+      authorizeRowProjectionContinuity(
+        revision: 14,
+        envelopes: const [headingWord, headingSpace, headingTerminalSpace],
+        authorizedContentUtf16: const FlarkSourceRange(2, 9),
+        startUtf16: 2,
+        endUtf16: 2,
+        replacement: ' ',
+      ),
+      isNull,
+      reason: 'leading space normalization is not an identity projection proof',
+    );
+  });
+
+  test('internal spaces can repeat while the terminal remains one-shot', () {
+    final firstInternal = authorizeRowProjectionContinuity(
+      revision: 15,
+      envelopes: const [headingWord, headingSpace, headingTerminalSpace],
+      authorizedContentUtf16: const FlarkSourceRange(2, 9),
+      startUtf16: 8,
+      endUtf16: 8,
+      replacement: ' ',
+    );
+    expect(firstInternal, isNotNull);
+
+    final secondInternal = firstInternal!.continueWith(
+      startUtf16: 9,
+      endUtf16: 9,
+      replacement: ' ',
+    );
+    expect(secondInternal, isNotNull);
+    expect(
+      secondInternal!.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [
+        (FlarkLiteralEditClass.asciiWordInsertion, 2, 11),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 2, 11),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 11, 11),
+      ],
+    );
+
+    final terminal = secondInternal.continueWith(
+      startUtf16: 11,
+      endUtf16: 11,
+      replacement: ' ',
+    );
+    expect(terminal, isNotNull);
+    expect(
+      terminal!.literalSafeEnvelopes.map((envelope) => envelope.editClass),
+      [
+        FlarkLiteralEditClass.asciiWordInsertion,
+        FlarkLiteralEditClass.singleAsciiSpaceInsertion,
+      ],
+    );
+    expect(
+      terminal.continueWith(startUtf16: 12, endUtf16: 12, replacement: ' '),
+      isNull,
+      reason: 'the consumed terminal proof cannot authorize a second space',
+    );
+  });
+
+  test('a direct terminal space consumes only the zero-width proof', () {
+    final terminal = authorizeRowProjectionContinuity(
+      revision: 18,
+      envelopes: const [headingWord, headingSpace, headingTerminalSpace],
+      authorizedContentUtf16: const FlarkSourceRange(2, 9),
+      startUtf16: 9,
+      endUtf16: 9,
+      replacement: ' ',
+    );
+
+    expect(terminal, isNotNull);
+    expect(
+      terminal!.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [
+        (FlarkLiteralEditClass.asciiWordInsertion, 2, 9),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 2, 9),
+      ],
+      reason: 'the nonempty space proof is open at its terminal position',
+    );
+    expect(
+      terminal.continueWith(startUtf16: 10, endUtf16: 10, replacement: ' '),
+      isNull,
+    );
+  });
+
+  test('word at envelope end moves the one-shot terminal proof', () {
+    final wordAtEnd = authorizeRowProjectionContinuity(
+      revision: 22,
+      envelopes: const [headingWord, headingSpace, headingTerminalSpace],
+      authorizedContentUtf16: const FlarkSourceRange(2, 9),
+      startUtf16: 9,
+      endUtf16: 9,
+      replacement: 'x2',
+    );
+
+    expect(wordAtEnd, isNotNull);
+    expect(
+      wordAtEnd!.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [
+        (FlarkLiteralEditClass.asciiWordInsertion, 2, 11),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 2, 11),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 11, 11),
+      ],
+    );
+
+    final terminal = wordAtEnd.continueWith(
+      startUtf16: 11,
+      endUtf16: 11,
+      replacement: ' ',
+    );
+    expect(terminal, isNotNull);
+    expect(terminal!.literalSafeEnvelopes, hasLength(2));
+    expect(
+      terminal.continueWith(startUtf16: 12, endUtf16: 12, replacement: ' '),
+      isNull,
+    );
+  });
+
+  test('word edits shift a trailing boundary until one space consumes it', () {
+    final firstWord = authorizeRowProjectionContinuity(
+      revision: 20,
+      envelopes: const [word, trailingSpace],
+      authorizedContentUtf16: const FlarkSourceRange(0, 8),
+      startUtf16: 6,
+      endUtf16: 6,
+      replacement: 'x',
+    );
+    expect(firstWord, isNotNull);
+    expect(
+      firstWord!.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceBytes.start,
+          envelope.sourceBytes.end,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [
+        (FlarkLiteralEditClass.asciiWordInsertion, 2, 7, 2, 7),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 9, 9, 9, 9),
+      ],
+    );
+
+    final secondWord = firstWord.continueWith(
+      startUtf16: 7,
+      endUtf16: 7,
+      replacement: 'Y2',
+    );
+    expect(secondWord, isNotNull);
+    expect(
+      secondWord!.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [
+        (FlarkLiteralEditClass.asciiWordInsertion, 2, 9),
+        (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 11, 11),
+      ],
+    );
+
+    final boundary = secondWord.continueWith(
+      startUtf16: 11,
+      endUtf16: 11,
+      replacement: ' ',
+    );
+    expect(boundary, isNotNull);
+    expect(
+      boundary!.literalSafeEnvelopes.map((envelope) => envelope.editClass),
+      [FlarkLiteralEditClass.asciiWordInsertion],
+      reason: 'the matched zero-width boundary is consumed',
+    );
+    expect(
+      boundary.continueWith(startUtf16: 12, endUtf16: 12, replacement: ' '),
+      isNull,
+      reason: 'a second trailing space requires fresh parser authority',
+    );
+  });
+
+  test('foreign-class containing envelopes are not carried forward', () {
+    const innerWord = FlarkLiteralSafeEnvelope(
+      editClass: FlarkLiteralEditClass.asciiWordInsertion,
+      sourceBytes: FlarkSourceRange(4, 6),
+      sourceUtf16: FlarkSourceRange(4, 6),
+    );
+    const widerSpace = FlarkLiteralSafeEnvelope(
+      editClass: FlarkLiteralEditClass.singleAsciiSpaceInsertion,
+      sourceBytes: FlarkSourceRange(2, 8),
+      sourceUtf16: FlarkSourceRange(2, 8),
+    );
+
+    final receipt = authorizeRowProjectionContinuity(
+      revision: 30,
+      envelopes: const [innerWord, widerSpace],
+      authorizedContentUtf16: const FlarkSourceRange(0, 10),
+      startUtf16: 5,
+      endUtf16: 5,
+      replacement: 'x',
+    );
+
+    expect(receipt, isNotNull);
+    expect(
+      receipt!.literalSafeEnvelopes.map((envelope) => envelope.editClass),
+      [FlarkLiteralEditClass.asciiWordInsertion],
+      reason:
+          'a class-specific proof cannot survive a foreign insertion merely '
+          'because its range contains that insertion',
+    );
+    expect(
+      receipt.continueWith(startUtf16: 7, endUtf16: 7, replacement: ' '),
+      isNull,
+    );
   });
 
   test('edit-class and range mismatches fail closed', () {
@@ -105,6 +439,11 @@ void main() {
     );
     expect(receipt, isNotNull);
     expect(receipt!.authorizedContentUtf16.end, 9);
+    expect(receipt.literalSafeEnvelopes, isEmpty);
+    expect(
+      receipt.continueWith(startUtf16: 9, endUtf16: 9, replacement: ' '),
+      isNull,
+    );
 
     for (final mismatch in [
       (start: 7, replacement: ' '),

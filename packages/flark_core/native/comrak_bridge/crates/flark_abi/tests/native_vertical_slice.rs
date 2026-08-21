@@ -34,8 +34,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     let preceding_minor = NegotiateRequest {
         struct_size: size_of::<NegotiateRequest>() as u32,
         requested_major: ABI_MAJOR,
-        requested_minor: 25,
-        required_capability_bits: (1_u64 << 26) - 1,
+        requested_minor: 26,
+        required_capability_bits: (1_u64 << 27) - 1,
     };
     let mut info = AbiInfo::default();
     let mut outcome = Outcome::default();
@@ -44,15 +44,27 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::UnsupportedAbiVersion as u32,
         "the stateless ABI must reject a preceding minor it cannot tailor"
     );
+    let subsequent_minor = NegotiateRequest {
+        requested_minor: 28,
+        required_capability_bits: (1_u64 << 28) - 1,
+        ..preceding_minor
+    };
+    assert_eq!(
+        flark_v4_negotiate(&subsequent_minor, &mut info, &mut outcome),
+        StatusCode::UnsupportedAbiVersion as u32,
+        "the stateless ABI must reject a future minor it does not implement"
+    );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 27) - 1,
+        required_capability_bits: (1_u64 << 28) - 1,
         ..preceding_minor
     };
     assert_eq!(
         flark_v4_negotiate(&negotiate, &mut info, &mut outcome),
         StatusCode::Ok as u32
     );
+    assert_eq!(info.abi_minor, ABI_MINOR);
+    assert_eq!(info.capability_bits, (1_u64 << 28) - 1);
 
     let source_text = concat!(
         "# *Flark*\n\n",

@@ -29,6 +29,10 @@ Literal syntax is visible when it is itself the current authoring content:
 
 Fallback is local. An uncertain construct may become an exact-source island;
 focus alone may not turn a certified row, block, or document into raw source.
+ABI 4.27 does not yet complete that target: unsupported typing currently paints
+the whole active row as exact source. That fallback is authority-safe, but its
+unrelated marker flash is a known product gap pending parser-authored minimal
+dependency islands.
 
 `flark` also exposes a dedicated `FlarkMarkdownView` for read-only rendering.
 The view and editor consume one internal projection and layout contract. They
@@ -253,8 +257,10 @@ envelope*. The host's entire decision becomes a containment test:
 - an edit contained in an envelope for its class retains the row's
   presentation, with every parser-published range in that row transformed
   through the edit;
-- an edit outside every envelope presents a local exact-source island around
-  the affected range until recertification.
+- an edit outside every envelope must eventually present a minimal exact-source
+  island around the affected dependency range until recertification. The
+  current 4.27 implementation conservatively presents the whole active row,
+  which is safe but remains a no-marker-flash product gap.
 
 This is one decision procedure with two defined outcomes, both governed by
 parser-published data. There is no timeout, no second mechanism, and no path
@@ -262,7 +268,7 @@ in which the host guesses. Presentation retained through an envelope is
 *proven* correct for the new revision: the parser computed the proof in
 advance and the host applied it, so section 4.4's invariant holds unchanged.
 
-**Landed minimum (2026-08-20).** The first implementation deliberately exposes
+**ABI 4.26 minimum (2026-08-20).** The first implementation deliberately exposes
 only two insertion classes. `asciiWordInsertion` covers one non-empty insertion
 made entirely of ASCII letters or digits inside an eligible inline fact whose
 complete, non-empty content slice is itself one flat ASCII letter/digit word
@@ -274,21 +280,52 @@ is also the row end. The latter envelope is zero-width and one-shot: after that
 space, fresh parser authority is required because a second space can form a
 hard line break. Thematic-break and table rows publish neither class.
 
+**ABI 4.27 closure amendment (2026-08-21).** Capability
+`LITERAL_SAFE_ENVELOPE_CLOSURE_V1` lets the parser publish a non-empty
+`singleAsciiSpaceInsertion` range and lets Core carry a successful proof set
+through successor insertions. The current reusable bundle is limited to a
+canonical single-line ATX heading with authoritative empty inline facts,
+identity coordinates, and ASCII word/space content bounded by word bytes. A
+non-empty space envelope admits positions `start < p < end`, never either
+endpoint. A separate zero-width envelope may
+authorize the exact editable-row endpoint once and is consumed by that edit.
+Reusable space authority ends before an existing trailing-space run, and the
+parser publishes no terminal zero-width proof when the row already ends in
+U+0020. These rules keep a second trailing space, and therefore a possible hard
+line break, outside carried authority.
+
+A matched non-empty envelope grows through its declared edit. Non-empty
+envelopes with exactly equal byte and UTF-16 geometry are one parser-authored
+closure bundle and grow together. An unmatched envelope strictly crossed by a
+foreign-class insertion is dropped; a range before the edit stays, and a range
+at or after it shifts. A matched zero-width envelope is consumed. Any mismatch
+or failed transform drops continuity and waits for fresh parser authority. Core
+does not inspect source, classify Markdown, or reconstruct proof.
+
+This closes the demonstrated plain-heading burst only. It does not authorize
+the unsupported edit classes or replace the required parser-authored minimal
+dependency-island tranche.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits
 outside the two landed insertion classes fail closed to exact source. Deletion,
-replacement, non-ASCII insertion, table-specific classes, broader literal
-classes, and chained edits remain pending; they are not covered uniformly or
-inferred from an empty replacement.
+replacement, non-ASCII insertion, table-specific classes, and broader literal
+classes remain pending; they are not covered uniformly or inferred from an
+empty replacement. Chaining is authorized only by the ABI 4.27 closure rules
+above and only while a transformed parser proof survives each successor.
 
 ABI 4.26 exposes the new records only through the capability-gated
 `SEMANTIC_PROJECTED_LITERAL_SAFE` query kind. `SEMANTIC` and
 `SEMANTIC_PROJECTED` retain their pre-envelope record vocabulary. Because the
 ABI has no per-client negotiation state, 4.26 rejects a 4.25 negotiation rather
 than claiming it can preserve every legacy row flag while serving new clients.
+ABI 4.27 retains query kind 6, record kind 15, and edit-class codes 1 and 2,
+adds the closure capability, and rejects a 4.26 negotiation rather than serving
+expanded proof semantics under the old exact minor.
 
-**Transform.** Retained presentation is transformed by pure range arithmetic
+**Transform.** Retained presentation and its surviving proof set are
+transformed by pure range arithmetic
 over the ranges the parser already publishes: the row's source and editable
 ranges, each inline fact's source and content ranges, and each projection
 segment. Both byte and UTF-16 dimensions transform independently from the
@@ -296,14 +333,18 @@ edit's own two deltas. Ranges after the edit shift; ranges strictly
 containing it grow; ranges ending exactly at its start shift rather than
 grow. Because the source/display mapping is derived from those same
 structures, transforming them keeps caret and selection geometry coherent
-without a separate mechanism. The transform never inspects source text.
+without a separate mechanism. The transform never inspects source text. The
+closure-specific proof transforms are the exhaustive ABI 4.27 rules above;
+ordinary presentation-range containment does not authorize a foreign-class
+envelope.
 
 **Removed from the active decision path.** The row continuity policy and its
 ABI field, inline-fact policy flags, and host-side Markdown-sensitive character
 classification no longer authorize presentation retention. The old inline and
-table authorization entry points are removed; the transaction receipt now binds
-one parser envelope to one exact insertion and cannot chain. No Markdown
-decision remains in `flark_core` or `flark`.
+table authorization entry points are removed. Under ABI 4.26 a transaction
+receipt binds one parser envelope to one exact insertion. Under ABI 4.27 it may
+carry only the parser proof set that survives the declared closure transform.
+No Markdown decision remains in `flark_core` or `flark`.
 
 Structural receipts remain authoritative for their exact source splice and
 temporary block partition only. They never preserve predecessor inline styles,
@@ -313,20 +354,24 @@ arrive, and an immediate ordinary successor clears the structural surface;
 only a fresh literal-safe envelope can authorize inline projection retention.
 
 **Soundness obligation.** An envelope is a claim the parser must be able to
-prove exhaustively: for every position in a published envelope, applying an
-edit of the declared class must leave the row's published facts unchanged.
-This is differentially testable across the conformance corpus and replaces a
-measured frame count with a structural guarantee. The landed tests cover the
-two minimum classes and their fail-closed boundaries; an exhaustive corpus-wide
-differential remains required before adding more classes. A frame receipt
-remains a quality measurement; it is no longer the evidence for the continuity
-claim.
+prove exhaustively: for every admitted position in a published envelope,
+applying an edit of the declared class must leave the row's published facts
+unchanged. For ABI 4.27 that obligation also covers every carried successor and
+every same-geometry closure bundle. This is differentially testable across the
+conformance corpus and replaces a measured frame count with a structural
+guarantee. The landed tests cover the two minimum classes, carried interior
+word/space insertion, consumed terminal authority, and fail-closed boundaries;
+an exhaustive corpus-wide differential remains required before adding more
+classes. A frame receipt remains a quality measurement; it is no longer the
+evidence for the continuity claim.
 
 **Unchanged.** Genuinely uncertified regions — during load, over-cap
-constructs, composition — keep the existing pending exact-source island
-mechanism; envelopes govern certified content awaiting recertification, a
-different domain. Structural-edit capability remains gated on current
-certification, and a retained presentation never grants edit authority.
+constructs, composition — keep the exact-source fallback mechanism; envelopes
+govern certified content awaiting recertification, a different domain. The
+current fallback may cover the whole active row, while minimal dependency
+islands remain required for the product target. Structural-edit capability
+remains gated on current certification, and retained presentation never grants
+edit authority.
 
 ### 4.5 Composition islands
 

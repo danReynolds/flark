@@ -68,6 +68,80 @@ void main() {
   }
 
   test(
+    'flat word envelope carries projection through an immediate burst',
+    () async {
+      const source = 'Before **bold** after.\n';
+      final controller = await open(source);
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      controller.activateRow(row, source.indexOf('bold') + 2);
+
+      for (final inserted in ['x', 'Y', '2']) {
+        typeAt(controller, inserted);
+        final immediate = activeSurface(controller);
+        expect(immediate.kind, 5);
+        expect(immediate.text, isNot(contains('**')));
+        expect(
+          immediate.runs.any(
+            (run) =>
+                run.styles.contains(FlarkSurfaceInlineStyle.strong) &&
+                run.text.contains(inserted),
+          ),
+          isTrue,
+          reason: 'each successor must splice the authorized presentation',
+        );
+      }
+
+      expect(controller.visibleSource, 'Before **boxY2ld** after.\n');
+      await settle(controller);
+      final recertified = activeSurface(controller);
+      expect(recertified.kind, 5);
+      expect(recertified.text, 'Before boxY2ld after.');
+      expect(
+        recertified.runs.any(
+          (run) =>
+              run.text == 'boxY2ld' &&
+              run.styles.contains(FlarkSurfaceInlineStyle.strong),
+        ),
+        isTrue,
+      );
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'trailing zero-width envelope is consumed by its first space',
+    () async {
+      const source = '*test*\n';
+      final controller = await open(source);
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      final boundary = row.literalSafeEnvelopes.singleWhere(
+        (envelope) =>
+            envelope.editClass ==
+                FlarkLiteralEditClass.singleAsciiSpaceInsertion &&
+            envelope.sourceUtf16.length == 0,
+      );
+      controller.activateRow(row, boundary.sourceUtf16.start);
+
+      typeAt(controller, ' ');
+      final first = activeSurface(controller);
+      expect(first.kind, 5);
+      expect(first.text, 'test ');
+      expect(first.text, isNot(contains('*')));
+
+      typeAt(controller, ' ');
+      final second = activeSurface(controller);
+      expect(second.kind, 0);
+      expect(second.text, '*test*  \n');
+      expect(second.runs, hasLength(1));
+      expect(second.runs.single.sourceExact, isTrue);
+      expect(controller.visibleSource, '*test*  \n');
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
     'a space after a freshly typed emphasis run never reveals raw markers',
     () async {
       final controller = await open('Plain paragraph line.\n');

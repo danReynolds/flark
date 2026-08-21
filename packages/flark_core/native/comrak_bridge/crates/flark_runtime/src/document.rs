@@ -4298,6 +4298,8 @@ fn document_viewport_row_with_inline_facts(
     ) {
         document_literal_safe_envelopes(
             runtime,
+            presentation,
+            &source_range,
             inline_facts.as_deref(),
             editable_range.as_ref(),
             editable_utf16_range.as_ref(),
@@ -4747,6 +4749,8 @@ fn map_document_inline_facts(
 
 fn document_literal_safe_envelopes(
     runtime: &DocumentRuntime,
+    presentation: DocumentViewportRowPresentation,
+    row_source_range: &Range<u64>,
     facts: Option<&[DocumentInlineFact]>,
     editable_range: Option<&Range<u64>>,
     editable_utf16_range: Option<&Range<u64>>,
@@ -4758,6 +4762,65 @@ fn document_literal_safe_envelopes(
     };
     if editable.is_empty() || editable_utf16.is_empty() {
         return Ok(Vec::new());
+    }
+
+    // The ATX marker is outside this editable slice. Once the parser has also
+    // authored the complete absence of inline facts, a slice bounded by word
+    // bytes and containing only word bytes and ordinary spaces has no latent
+    // block or inline delimiter. ABI 4.27 interprets the non-empty space
+    // envelope as strict-interior authority; the separate zero-width endpoint
+    // authorizes one trailing space and is consumed by Core. Requiring word
+    // bytes at both edges avoids carrying an identity-projection proof across
+    // Markdown's leading/trailing whitespace normalization.
+    let atx_level = match presentation {
+        DocumentViewportRowPresentation::Heading {
+            level,
+            style: DocumentHeadingStyle::Atx,
+        } => Some(level),
+        _ => None,
+    };
+    if let Some(level) = atx_level.filter(|_| facts.is_empty()) {
+        let content = read_utf8_source_range(runtime, editable)?;
+        let prefix = read_utf8_source_range(runtime, &(row_source_range.start..editable.start))?;
+        let suffix = read_utf8_source_range(runtime, &(editable.end..row_source_range.end))?;
+        let content_byte_len = editable.end - editable.start;
+        let content_utf16_len = editable_utf16.end - editable_utf16.start;
+        let canonical_prefix = format!("{} ", "#".repeat(usize::from(level)));
+        let canonical_edges = prefix == canonical_prefix
+            && matches!(suffix.as_str(), "" | "\n" | "\r\n");
+        let edge_word_bounded = content
+            .as_bytes()
+            .first()
+            .zip(content.as_bytes().last())
+            .is_some_and(|(first, last)| {
+                first.is_ascii_alphanumeric() && last.is_ascii_alphanumeric()
+            });
+        if content.len() as u64 == content_byte_len
+            && content_byte_len == content_utf16_len
+            && canonical_edges
+            && edge_word_bounded
+            && content
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+        {
+            return Ok(vec![
+                DocumentLiteralSafeEnvelope {
+                    edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+                    source_range: editable.clone(),
+                    source_utf16_range: editable_utf16.clone(),
+                },
+                DocumentLiteralSafeEnvelope {
+                    edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
+                    source_range: editable.clone(),
+                    source_utf16_range: editable_utf16.clone(),
+                },
+                DocumentLiteralSafeEnvelope {
+                    edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
+                    source_range: editable.end..editable.end,
+                    source_utf16_range: editable_utf16.end..editable_utf16.end,
+                },
+            ]);
+        }
     }
 
     let eligible = |fact: &&DocumentInlineFact| {

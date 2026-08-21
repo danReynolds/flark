@@ -425,21 +425,47 @@ source is correct feedback rather than a defect.
 
 [RFC 027 section 4.4.1](../rfc/rfc_027_continuously_rendered_markdown.md)
 carries the amendment and `live_projection_v2` carries the normative change.
-The landed minimum removes the old row-policy ABI field, inline-fact policy
+The ABI 4.26 minimum removes the old row-policy ABI field, inline-fact policy
 flags, and host-side character classification from the active decision path.
 It publishes only ASCII letter/digit insertion envelopes when an eligible
 inline fact's complete content slice is one flat non-empty ASCII word, plus a
 one-shot U+0020 envelope at an eligible outer closing boundary at row end.
 Punctuation, whitespace, nesting, latent syntax, and code normalization fail
 closed. The old inline/table authorization functions are removed. Deletion,
-replacement, non-ASCII, table-specific and broader classes, chained edits, and
-their exhaustive differential evidence remain pending.
+replacement, non-ASCII, table-specific and broader classes, and their exhaustive
+differential evidence remain pending.
+
+ABI 4.27 adds `LITERAL_SAFE_ENVELOPE_CLOSURE_V1`. Plain parser-proved ranges may
+carry ASCII word/space insertion across immediate successors: matched non-empty
+envelopes and exact byte-and-UTF16 same-geometry bundles grow, unmatched
+foreign-class envelopes strictly crossed by the insertion drop, before/after
+ranges stay/shift, and matched zero-width envelopes are consumed. A non-empty
+space envelope admits positions strictly inside its range. Reusable space
+authority stops before an existing trailing-space run, and a separate terminal
+zero-width proof is published only when one terminal space is safe. This keeps
+the second trailing space that can form a hard line break outside the proof.
+The current emitter restricts this reusable bundle to canonical single-line ATX
+content with authoritative empty inline facts, identity coordinates, and ASCII
+word/space content bounded by word bytes.
+
+Query kind 6, inline-record kind 15, and edit-class codes 1 and 2 are unchanged;
+the stateless boundary instead requires exact minor 4.27 plus the new bit-27
+capability.
+
+This closure is a stopgap for the demonstrated plain-heading typing burst, not
+completion of continuously rendered editing. When an edit has no surviving
+proof, the current controller safely paints the whole active row as exact
+source. That can reveal unrelated markers and therefore remains a product gap
+against RFC 027's no-marker-flash target. The next required tranche is
+parser-authored minimal dependency islands for unsupported edits; tests and
+release notes must not describe the existing whole-row fallback as local.
 
 The soundness obligation replaces a measured frame count with a structural
-guarantee — for every position in a published envelope, an edit of the
-declared class must leave published facts unchanged. Focused tests cover the
-landed minimum; a corpus-wide differential is still required before the class
-vocabulary expands. The T2 receipt's "0 raw projected frames" could
+guarantee — for every admitted position in a published envelope, an edit of the
+declared class must leave published facts unchanged, including every carried
+successor and closure bundle. Focused tests cover the landed minimum and the
+bounded 4.27 closure; a corpus-wide differential is still required before the
+class vocabulary expands. The T2 receipt's "0 raw projected frames" could
 not have caught this: its workload types alphanumerics strictly inside an
 already-certified strong run, the single shape the old permission retained.
 The pinned regression in `packages/flark/test/emphasis_continuity_test.dart`
@@ -609,8 +635,9 @@ accepted product behavior.
 surface:
 
 - valid current Markdown remains rendered while focused and edited;
-- incomplete, composing, pending, source-only, and faulted ranges use local
-  exact-source islands instead of a whole active-row reveal;
+- incomplete, composing, pending, source-only, and faulted ranges ultimately
+  require local exact-source islands. The current conservative whole-active-row
+  fallback is safe but remains an explicit product gap;
 - source/display positions use typed legal caret stops plus affinity;
 - desktop scroll gestures never mutate selection, and mobile gesture behavior
   is one shared Flutter policy with platform adapters only for real deltas;

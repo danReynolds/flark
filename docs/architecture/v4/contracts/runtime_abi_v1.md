@@ -34,7 +34,7 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 26. `NEGOTIATE` is the only operation
+The direct ABI is major 4, minor 27. `NEGOTIATE` is the only operation
 permitted without a session. The host supplies its requested version and all
 required capability bits. The runtime returns its supported version, supported
 bits, and actual hard caps in `FlarkV4AbiInfo`.
@@ -301,6 +301,31 @@ it can tailor every legacy flag and record. The landed word class is limited to
 a complete non-empty content slice containing
 only ASCII letters/digits (and zero code-normalization flags); the one-space
 class is a zero-width row-end proof. Both are one-shot authorities.
+
+ABI 4.27 adds capability `LITERAL_SAFE_ENVELOPE_CLOSURE_V1` without assigning a
+new query kind, record kind, edit-class code, or record layout. The capability
+extends the existing envelope vocabulary with parser-authored closure proofs.
+The current reusable word/space bundle is limited to a canonical single-line
+ATX heading with an authoritative empty inline-fact set, identity byte-to-UTF-16
+geometry, and ASCII letter/digit-or-space content bounded at both edges by
+ASCII letters/digits.
+A non-empty `SINGLE_ASCII_SPACE_INSERTION` envelope authorizes one U+0020 only
+at insertion positions `start < p < end`; a zero-width instance authorizes its
+exact position and is consumed. Reusable space authority ends before any
+existing trailing-space run, and a terminal zero-width proof is absent when the
+row already ends in U+0020, so two trailing spaces cannot be carried into a hard
+line break.
+
+After a matching edit, a non-empty envelope grows in both coordinate systems.
+Non-empty envelopes with exactly equal byte and UTF-16 geometry are one
+parser-authored closure bundle and grow together. An unmatched envelope
+strictly crossed by a foreign-class insertion is dropped; a range wholly before
+the insertion stays, and a range at or after it shifts. Core may apply only
+these transforms and edit-class matching. It may not inspect source, classify
+Markdown, reconstruct a consumed envelope, or carry a proof after any failed
+transform. The original ABI 4.26 authority remains one-shot; the stateless
+runtime rejects a 4.26 negotiation rather than silently serving 4.27 closure
+semantics.
 
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust

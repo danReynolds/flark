@@ -800,7 +800,7 @@ void main() {
   );
 
   test(
-    'plain heading typing fails closed locally and preserves its sibling',
+    'plain heading safe burst stays projected and preserves its sibling',
     () async {
       const source = '# Heading\n\nPlain paragraph.\n\n## Sibling\n';
       final controller = await FlarkEditorController.open(
@@ -811,7 +811,7 @@ void main() {
       await controller.continueParsing();
 
       final heading = controller.rows.first;
-      final caret = source.indexOf('Heading') + 'Heading'.length;
+      final caret = source.indexOf('Heading') + 'Head'.length;
       controller.activateRow(heading, caret);
       final observed = <({int firstKind, int lastKind, String firstText})>[];
       void capture() {
@@ -828,33 +828,38 @@ void main() {
 
       controller.addListener(capture);
       addTearDown(() => controller.removeListener(capture));
-      final before = controller.inputValue;
-      controller.applyDeltas([
-        TextEditingDeltaInsertion(
-          oldText: before.text,
-          textInserted: 'x',
-          insertionOffset: before.selection.extentOffset,
-          selection: TextSelection.collapsed(
-            offset: before.selection.extentOffset + 1,
+      for (final inserted in ['x', ' ', 'y', ' ', 'Z2']) {
+        final before = controller.inputValue;
+        controller.applyDeltas([
+          TextEditingDeltaInsertion(
+            oldText: before.text,
+            textInserted: inserted,
+            insertionOffset: before.selection.extentOffset,
+            selection: TextSelection.collapsed(
+              offset: before.selection.extentOffset + inserted.length,
+            ),
+            composing: TextRange.empty,
           ),
-          composing: TextRange.empty,
-        ),
-      ]);
+        ]);
+        capture();
+      }
 
-      capture();
       await _settle(controller);
       expect(observed, isNotEmpty);
       expect(observed.every((state) => state.lastKind == 12), isTrue);
       expect(
-        observed.any(
-          (state) => state.firstKind == 0 && state.firstText == '# Headingx\n',
+        observed.every(
+          (state) => state.firstKind == 12 && !state.firstText.startsWith('# '),
         ),
         isTrue,
+        reason:
+            'every immediate frame must retain parser-authorized heading '
+            'presentation during an alternating word/space burst: $observed',
       );
       final recertified = controller.surfaceRow(controller.rows.first);
       expect(recertified.kind, 12);
-      expect(recertified.text, 'Headingx');
-      expect(controller.visibleSource, startsWith('# Headingx'));
+      expect(recertified.text, 'Headx y Z2ing');
+      expect(controller.visibleSource, startsWith('# Headx y Z2ing'));
     },
     skip: libraryPath == null,
   );

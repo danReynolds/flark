@@ -97,7 +97,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 23)
     | (1 << 24)
     | (1 << 25)
-    | (1 << 26);
+    | (1 << 26)
+    | (1 << 27);
 
 struct Registry {
     next_handle: u64,

@@ -30,6 +30,7 @@ const _layoutOverscanPx = 400.0;
 final class FlarkSurfacePaintObservation {
   const FlarkSurfacePaintObservation({
     required this.revision,
+    required this.sourceGeneration,
     required this.viewportPageIndex,
     required this.visibleUtf16Start,
     required this.visibleUtf16Length,
@@ -45,6 +46,12 @@ final class FlarkSurfacePaintObservation {
   });
 
   final int revision;
+
+  /// Controller source generation represented by this exact paint.
+  ///
+  /// Unlike [revision], this advances synchronously for an optimistic edit
+  /// before the native actor acknowledges its corresponding source revision.
+  final int sourceGeneration;
   final int viewportPageIndex;
   final int visibleUtf16Start;
   final int visibleUtf16Length;
@@ -1900,6 +1907,7 @@ final class RenderFlarkSurface extends RenderBox {
     debugPaintObserver?.call(
       FlarkSurfacePaintObservation(
         revision: _controller.revision,
+        sourceGeneration: _controller.sourceGeneration,
         viewportPageIndex: _controller.viewportPageIndex,
         visibleUtf16Start: _controller.visibleUtf16Start,
         visibleUtf16Length: _controller.visibleSource.length,

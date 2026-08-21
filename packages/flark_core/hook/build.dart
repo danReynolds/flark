@@ -366,7 +366,7 @@ final class _RustBuildPlan {
       return _RustBuildPlan(
         triple: triple,
         // A .dylib (not the static archive) — Flutter's native-assets pipeline
-        // wraps it into flark_comrak_bridge.framework, sets the @rpath install
+        // wraps it into flark_abi.framework, sets the @rpath install
         // name, and codesigns it into the app bundle.
         libraryFileName: 'lib$_libraryBaseName.dylib',
         environment: {

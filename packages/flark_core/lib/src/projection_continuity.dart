@@ -7,14 +7,15 @@ import 'models.dart';
 /// matching edit class safe at the published position; Core performs only
 /// edit-class matching and range containment.
 final class FlarkProjectionContinuityReceipt {
-  const FlarkProjectionContinuityReceipt._({
+  FlarkProjectionContinuityReceipt._({
     required this.baseRevision,
     required this.resultRevision,
     required this.authorizedContentUtf16,
     required this.editStartUtf16,
     required this.editEndUtf16,
     required this.replacement,
-  });
+    required List<FlarkLiteralSafeEnvelope> literalSafeEnvelopes,
+  }) : literalSafeEnvelopes = List.unmodifiable(literalSafeEnvelopes);
 
   final int baseRevision;
   final int resultRevision;
@@ -22,6 +23,33 @@ final class FlarkProjectionContinuityReceipt {
   final int editStartUtf16;
   final int editEndUtf16;
   final String replacement;
+
+  /// Parser-authored envelopes transformed into [resultRevision]
+  /// coordinates. A successor can retain presentation only by matching this
+  /// carried proof set; Core never reclassifies Markdown itself.
+  final List<FlarkLiteralSafeEnvelope> literalSafeEnvelopes;
+
+  /// Binds one successor insertion to the still-live parser proof set.
+  ///
+  /// Non-empty envelopes are closed over their declared insertion class and
+  /// grow with a matching edit; non-empty parser proofs with identical byte
+  /// and UTF-16 geometry grow as one bundle. A non-empty space envelope is
+  /// open at both boundaries; only a parser-published zero-width proof can
+  /// authorize either exact point, and the matched point is consumed. Thus a
+  /// single trailing space cannot authorize a second edit without fresh
+  /// parser certification.
+  FlarkProjectionContinuityReceipt? continueWith({
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+  }) => authorizeRowProjectionContinuity(
+    revision: resultRevision,
+    envelopes: literalSafeEnvelopes,
+    authorizedContentUtf16: authorizedContentUtf16,
+    startUtf16: startUtf16,
+    endUtf16: endUtf16,
+    replacement: replacement,
+  );
 }
 
 /// Binds one exact edit to a parser-published literal-safe envelope.
@@ -44,13 +72,77 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
       )) {
     return null;
   }
-  final matching = envelopes.where(
-    (envelope) =>
-        envelope.sourceUtf16.start <= startUtf16 &&
-        startUtf16 <= envelope.sourceUtf16.end &&
-        _matchesEditClass(envelope.editClass, replacement),
-  );
-  if (matching.isEmpty) return null;
+  final matchingIndexes = <int>[];
+  int? startByte;
+  for (var index = 0; index < envelopes.length; index += 1) {
+    final envelope = envelopes[index];
+    if (envelope.sourceUtf16.start > startUtf16 ||
+        startUtf16 > envelope.sourceUtf16.end ||
+        !_matchesEnvelope(envelope, startUtf16, replacement)) {
+      continue;
+    }
+    final candidateStartByte = _bytePositionForUtf16Insertion(
+      envelope,
+      startUtf16,
+    );
+    if (candidateStartByte == null ||
+        (startByte != null && startByte != candidateStartByte)) {
+      return null;
+    }
+    startByte = candidateStartByte;
+    matchingIndexes.add(index);
+  }
+  if (matchingIndexes.isEmpty || startByte == null) return null;
+
+  // Every admitted replacement class is ASCII-only, so its byte and UTF-16
+  // deltas are identical. The edit's byte position comes from the matching
+  // parser envelope rather than from host source inspection.
+  final delta = replacement.length;
+  final matchingSet = matchingIndexes.toSet();
+  final transformedEnvelopes = <FlarkLiteralSafeEnvelope>[];
+  for (var index = 0; index < envelopes.length; index += 1) {
+    final envelope = envelopes[index];
+    final matched = matchingSet.contains(index);
+    if (matched && envelope.sourceUtf16.length == 0) {
+      continue;
+    }
+    final sharesMatchedNonemptyGeometry =
+        envelope.sourceUtf16.length > 0 &&
+        matchingIndexes.any(
+          (matchingIndex) =>
+              _sameEnvelopeGeometry(envelope, envelopes[matchingIndex]),
+        );
+    final foreignInsertionCrossesEnvelope =
+        !matched &&
+        !sharesMatchedNonemptyGeometry &&
+        ((envelope.sourceBytes.start < startByte &&
+                startByte < envelope.sourceBytes.end) ||
+            (envelope.sourceUtf16.start < startUtf16 &&
+                startUtf16 < envelope.sourceUtf16.end));
+    if (foreignInsertionCrossesEnvelope) {
+      // Positional containment does not prove that a different edit class
+      // preserves this envelope's vocabulary. Only an exact same-geometry
+      // parser bundle is closed over the matched insertion.
+      continue;
+    }
+    transformedEnvelopes.add(
+      FlarkLiteralSafeEnvelope(
+        editClass: envelope.editClass,
+        sourceBytes: _transformInsertionRange(
+          envelope.sourceBytes,
+          startByte,
+          delta,
+          growsWithInsertion: matched || sharesMatchedNonemptyGeometry,
+        ),
+        sourceUtf16: _transformInsertionRange(
+          envelope.sourceUtf16,
+          startUtf16,
+          delta,
+          growsWithInsertion: matched || sharesMatchedNonemptyGeometry,
+        ),
+      ),
+    );
+  }
   return FlarkProjectionContinuityReceipt._(
     baseRevision: revision,
     resultRevision: revision + 1,
@@ -61,7 +153,59 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,
     replacement: replacement,
+    literalSafeEnvelopes: transformedEnvelopes,
   );
+}
+
+bool _matchesEnvelope(
+  FlarkLiteralSafeEnvelope envelope,
+  int startUtf16,
+  String replacement,
+) {
+  if (!_matchesEditClass(envelope.editClass, replacement)) return false;
+  return envelope.editClass !=
+          FlarkLiteralEditClass.singleAsciiSpaceInsertion ||
+      envelope.sourceUtf16.length == 0 ||
+      (envelope.sourceUtf16.start < startUtf16 &&
+          startUtf16 < envelope.sourceUtf16.end);
+}
+
+int? _bytePositionForUtf16Insertion(
+  FlarkLiteralSafeEnvelope envelope,
+  int startUtf16,
+) {
+  final utf16 = envelope.sourceUtf16;
+  final bytes = envelope.sourceBytes;
+  if (utf16.length == 0) {
+    return bytes.length == 0 ? bytes.start : null;
+  }
+  if (bytes.length != utf16.length) return null;
+  return bytes.start + (startUtf16 - utf16.start);
+}
+
+bool _sameEnvelopeGeometry(
+  FlarkLiteralSafeEnvelope left,
+  FlarkLiteralSafeEnvelope right,
+) =>
+    left.sourceBytes.start == right.sourceBytes.start &&
+    left.sourceBytes.end == right.sourceBytes.end &&
+    left.sourceUtf16.start == right.sourceUtf16.start &&
+    left.sourceUtf16.end == right.sourceUtf16.end;
+
+FlarkSourceRange _transformInsertionRange(
+  FlarkSourceRange range,
+  int start,
+  int delta, {
+  required bool growsWithInsertion,
+}) {
+  if (growsWithInsertion && range.length > 0) {
+    return FlarkSourceRange(range.start, range.end + delta);
+  }
+  if (range.start >= start) {
+    return FlarkSourceRange(range.start + delta, range.end + delta);
+  }
+  if (range.end <= start) return range;
+  return FlarkSourceRange(range.start, range.end + delta);
 }
 
 bool _matchesEditClass(FlarkLiteralEditClass editClass, String replacement) =>

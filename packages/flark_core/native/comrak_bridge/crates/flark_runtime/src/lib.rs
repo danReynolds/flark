@@ -555,6 +555,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("LIST_INDENTATION_V1", 1 << 24),
     ("SEMANTIC_TARGETS_V1", 1 << 25),
     ("LITERAL_SAFE_ENVELOPES_V1", 1 << 26),
+    ("LITERAL_SAFE_ENVELOPE_CLOSURE_V1", 1 << 27),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;

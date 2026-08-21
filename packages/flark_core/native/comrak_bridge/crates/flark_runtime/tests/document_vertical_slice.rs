@@ -898,6 +898,149 @@ fn viewport_carries_complete_parser_authored_inline_geometry_or_fails_closed() {
 }
 
 #[test]
+fn plain_atx_heading_continuity_envelopes_fail_closed_around_hazards() {
+    let source = "# Test is here\n";
+    let mut eligible = DocumentSession::begin(source).expect("begin eligible ATX heading");
+    pump_ready(&mut eligible);
+    let viewport = eligible
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("eligible ATX heading viewport");
+    let row = &viewport.rows[0];
+    assert_eq!(
+        row.presentation,
+        DocumentViewportRowPresentation::Heading {
+            level: 1,
+            style: DocumentHeadingStyle::Atx,
+        }
+    );
+    assert!(
+        row.inline_facts
+            .as_ref()
+            .is_some_and(|facts| facts.is_empty()),
+        "the parser must authoritatively prove the heading has no inline facts"
+    );
+    assert_eq!(row.editable_range, Some(2..14));
+    assert_eq!(row.editable_utf16_range, Some(2..14));
+    assert_eq!(
+        row.literal_safe_envelopes,
+        vec![
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+                source_range: 2..14,
+                source_utf16_range: 2..14,
+            },
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
+                source_range: 2..14,
+                source_utf16_range: 2..14,
+            },
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
+                source_range: 14..14,
+                source_utf16_range: 14..14,
+            },
+        ]
+    );
+    eligible.close().expect("close eligible ATX heading");
+
+    let punctuation_source = "# Test-is here\n";
+    let mut punctuation =
+        DocumentSession::begin(punctuation_source).expect("begin punctuated ATX heading");
+    pump_ready(&mut punctuation);
+    let viewport = punctuation
+        .query_viewport(1, 0..punctuation_source.len(), 8)
+        .expect("punctuated ATX heading viewport");
+    let row = &viewport.rows[0];
+    assert!(matches!(
+        row.presentation,
+        DocumentViewportRowPresentation::Heading {
+            style: DocumentHeadingStyle::Atx,
+            ..
+        }
+    ));
+    assert!(row
+        .inline_facts
+        .as_ref()
+        .is_some_and(|facts| facts.is_empty()));
+    assert!(
+        row.literal_safe_envelopes.is_empty(),
+        "plain punctuation must not receive whole-heading continuity"
+    );
+    punctuation.close().expect("close punctuated ATX heading");
+
+    for whitespace_source in ["#  Test is here\n", "# Test is here \n"] {
+        let mut whitespace = DocumentSession::begin(whitespace_source)
+            .expect("begin whitespace-boundary ATX heading");
+        pump_ready(&mut whitespace);
+        let viewport = whitespace
+            .query_viewport(1, 0..whitespace_source.len(), 8)
+            .expect("whitespace-boundary ATX heading viewport");
+        assert!(
+            viewport.rows[0].literal_safe_envelopes.is_empty(),
+            "leading/trailing whitespace normalization must fail closed: {whitespace_source:?}"
+        );
+        whitespace
+            .close()
+            .expect("close whitespace-boundary ATX heading");
+    }
+
+    let inline_source = "# Test *is* here\n";
+    let mut inline = DocumentSession::begin(inline_source).expect("begin inline ATX heading");
+    pump_ready(&mut inline);
+    let viewport = inline
+        .query_viewport(1, 0..inline_source.len(), 8)
+        .expect("inline ATX heading viewport");
+    let row = &viewport.rows[0];
+    assert!(matches!(
+        row.presentation,
+        DocumentViewportRowPresentation::Heading {
+            style: DocumentHeadingStyle::Atx,
+            ..
+        }
+    ));
+    assert!(
+        row.inline_facts
+            .as_ref()
+            .is_some_and(|facts| !facts.is_empty()),
+        "the inline hazard must be parser-authored"
+    );
+    assert_eq!(
+        row.literal_safe_envelopes,
+        vec![flark_runtime::DocumentLiteralSafeEnvelope {
+            edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+            source_range: 8..10,
+            source_utf16_range: 8..10,
+        }],
+        "inline facts may retain narrow authority, never whole-heading authority"
+    );
+    inline.close().expect("close inline ATX heading");
+
+    let setext_source = "Test is here\n============\n";
+    let mut setext = DocumentSession::begin(setext_source).expect("begin Setext heading");
+    pump_ready(&mut setext);
+    let viewport = setext
+        .query_viewport(1, 0..setext_source.len(), 8)
+        .expect("Setext heading viewport");
+    let row = &viewport.rows[0];
+    assert!(matches!(
+        row.presentation,
+        DocumentViewportRowPresentation::Heading {
+            style: DocumentHeadingStyle::Setext,
+            ..
+        }
+    ));
+    assert!(row
+        .inline_facts
+        .as_ref()
+        .is_some_and(|facts| facts.is_empty()));
+    assert!(
+        row.literal_safe_envelopes.is_empty(),
+        "plain Setext content must not receive ATX continuity"
+    );
+    setext.close().expect("close Setext heading");
+}
+
+#[test]
 fn live_viewport_mixes_only_authenticated_rows_with_pending_source() {
     let source = (0..240)
         .map(|index| format!("Paragraph {index:03} has stable source for restart coverage.\n\n"))

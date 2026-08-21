@@ -169,13 +169,13 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 26;
+const _abiMinor = 27;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x7ffffff;
+const _requiredCapabilityBits = 0x0fffffff;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
 ///
@@ -2684,7 +2684,8 @@ final class FlarkNativeDocument {
     final validShape = switch (editClass) {
       FlarkLiteralEditClass.asciiWordInsertion =>
         byteStart < byteEnd && utf16Start < utf16End,
-      FlarkLiteralEditClass.singleAsciiSpaceInsertion => empty,
+      FlarkLiteralEditClass.singleAsciiSpaceInsertion =>
+        empty || (byteStart < byteEnd && utf16Start < utf16End),
     };
     if (editableBytes == null ||
         editableUtf16 == null ||
