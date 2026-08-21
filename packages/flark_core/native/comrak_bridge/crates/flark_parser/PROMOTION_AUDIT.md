@@ -30,9 +30,13 @@ generated scanner:
 - list marker: upstream `parse_list_marker`, lines 2767-2882, SHA-256
   `25ea7a12c9bb73b50116acd4437c50e5dff78a8a21d2fafaf0075a95bc9e852b`.
 
-`tests/promotion_audit.rs` locks both upstream functions and the corresponding
-local helper bodies by line range and SHA-256. Any donor or mirror drift fails
-closed and requires an explicit intake review.
+`tests/promotion_audit.rs` locks both tracked upstream functions and the
+corresponding local helper bodies by line range and SHA-256. Any donor or mirror
+drift fails closed and requires an explicit intake review. The disposable
+research lab is intentionally not part of a clean checkout: its historical
+module/function receipt remains structurally checked in the normal gate, while
+the source replay is an explicitly ignored local-lab test rather than a CI test
+that can pass only because one developer retains ignored files.
 
 The facade also exposes exact source cuts for a direct inline link/image tail.
 It delegates destination and title recognition to Comrak's existing
@@ -89,11 +93,12 @@ an independent Markdown grammar:
   `reference_definitions`/`reference_definition`; and
 - label normalization still calls the pinned facade directly.
 
-`tests/promotion_audit.rs` locks those donor modules/functions by line range and
-SHA-256. `segmented_lexical` then runs deterministic differential tests against
-the pinned facade over 20,000 physical lines and 10,000 logical reference
-prefixes. Upgrade drift therefore fails as either a source receipt or semantic
-differential, rather than silently creating a second parser.
+`tests/promotion_audit.rs` locks those tracked donor modules/functions by line
+range and SHA-256. `segmented_lexical` then runs deterministic differential
+tests against the pinned facade over 20,000 physical lines and 10,000 logical
+reference prefixes. Upgrade drift therefore fails as either an active donor
+source receipt or semantic differential, rather than silently creating a
+second parser.
 
 The exact-controller integration suite additionally proves 10 MiB special
 lines, destinations, and titles under bounded retention and per-poll fuel, plus
@@ -121,10 +126,11 @@ to fuelled reclamation.
 Value semantics are pinned to Comrak 0.54's `clean_url`, `clean_title`,
 backslash `unescape`, and exact generated entity table. Production calls the
 facade only to decode one complete entity candidate. The promotion gate locks
-those donor functions/modules and the 726-line research service receipt by
-SHA-256, then differentially checks all 2,000+ semicolon entities, 10,000
-random accepted values, Unicode and invalid-entity edges against the atomic
-Comrak oracle.
+those tracked donor functions/modules and structurally validates the 726-line
+research-service provenance receipt. A local lab that retains the ignored
+archive can replay that receipt explicitly. The active gate then
+differentially checks all 2,000+ semicolon entities, 10,000 random accepted
+values, Unicode and invalid-entity edges against the atomic Comrak oracle.
 
 The storage gate proves atomic and streamed multi-page facts have identical
 canonical role metadata and queryable values. The parser publication gate

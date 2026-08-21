@@ -322,20 +322,50 @@ fn verify_function(root: &Path, snapshot: FunctionSnapshot) {
 }
 
 #[test]
-fn recorded_compile_boundary_matches_the_archived_research_sources() {
-    let root = package_root();
-    for snapshot in RESEARCH_CONTROLLER_CLOSURE
+fn recorded_compile_boundary_receipt_is_self_consistent() {
+    let archived_modules = RESEARCH_CONTROLLER_CLOSURE
         .iter()
         .chain(GENERATED_ATX_CLOSURE)
         .chain(REFERENCE_LABEL_CLOSURE)
         .chain(REFERENCE_VALUE_SERVICE_CLOSURE)
-        .chain(CUSTOM_COMRAK_CALLABLE_CLOSURE)
-        .copied()
-    {
-        verify_module(&root, snapshot);
+        .chain(CUSTOM_COMRAK_CALLABLE_CLOSURE);
+    for snapshot in archived_modules {
+        assert!(
+            snapshot.path.starts_with("tool/parser_research/"),
+            "archived receipt escaped the research namespace: {}",
+            snapshot.path,
+        );
+        assert!(
+            snapshot.lines > 0,
+            "empty module receipt: {}",
+            snapshot.path
+        );
+        assert_eq!(
+            snapshot.sha256.len(),
+            64,
+            "invalid SHA-256 receipt: {}",
+            snapshot.path,
+        );
+        assert!(
+            snapshot.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "non-hex SHA-256 receipt: {}",
+            snapshot.path,
+        );
     }
-    for snapshot in SOURCE_SEAM_FUNCTIONS.iter().copied() {
-        verify_function(&root, snapshot);
+    for snapshot in SOURCE_SEAM_FUNCTIONS {
+        assert!(snapshot.start_line > 0);
+        assert!(snapshot.start_line <= snapshot.end_line);
+        assert_eq!(snapshot.sha256.len(), 64);
+        assert!(snapshot.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert!(
+            RESEARCH_CONTROLLER_CLOSURE
+                .iter()
+                .any(|module| module.path == snapshot.path && module.lines >= snapshot.end_line),
+            "function receipt is outside its module receipt: {}:{}-{}",
+            snapshot.path,
+            snapshot.start_line,
+            snapshot.end_line,
+        );
     }
 
     assert_eq!(
@@ -373,6 +403,25 @@ fn recorded_compile_boundary_matches_the_archived_research_sources() {
             .sum::<usize>(),
         24_972,
     );
+}
+
+#[test]
+#[ignore = "requires the intentionally untracked parser-research archive"]
+fn archived_research_sources_match_the_recorded_compile_boundary() {
+    let root = package_root();
+    for snapshot in RESEARCH_CONTROLLER_CLOSURE
+        .iter()
+        .chain(GENERATED_ATX_CLOSURE)
+        .chain(REFERENCE_LABEL_CLOSURE)
+        .chain(REFERENCE_VALUE_SERVICE_CLOSURE)
+        .chain(CUSTOM_COMRAK_CALLABLE_CLOSURE)
+        .copied()
+    {
+        verify_module(&root, snapshot);
+    }
+    for snapshot in SOURCE_SEAM_FUNCTIONS.iter().copied() {
+        verify_function(&root, snapshot);
+    }
 }
 
 #[test]
