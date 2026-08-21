@@ -15,7 +15,6 @@ trap 'exit 143' TERM
 #
 # Usage:
 #   ./scripts/verify_platform_smoke.sh --platform macos
-#   ./scripts/verify_platform_smoke.sh --platform linux
 #   ./scripts/verify_platform_smoke.sh --platform ios
 #   ./scripts/verify_platform_smoke.sh --platform android          # build-only unless --device given
 #   ./scripts/verify_platform_smoke.sh --platform android --device <emulator-id>
@@ -82,10 +81,6 @@ case "$platform" in
   macos)
     run flutter build macos --debug
     echo "==> macOS build proof only; packaged-app launch evidence remains separate."
-    ;;
-  linux)
-    run flutter build linux --debug
-    echo "==> Linux build proof only; packaged-app launch evidence remains separate."
     ;;
   ios)
     # Device arm64, no signing identity needed for a build smoke.

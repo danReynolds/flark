@@ -4,20 +4,19 @@ Flark v4 has one grammar and source authority: the Rust workspace bundled in
 `flark_core`. Dart and Flutter communicate with it through the fixed v4 C ABI.
 There is no Dart fallback parser and no active Web backend.
 
-## Supported native targets
+## Active product targets
 
-The package build hook supports:
+The v4 product is built for:
 
 | OS | Architectures |
 | --- | --- |
 | macOS | arm64, x64 |
-| Linux | arm64, x64 |
 | Android | arm, arm64, x64 |
 | iOS device | arm64 |
 | iOS simulator | arm64, x64 |
 
-`flutter build web` is intentionally unsupported for the v4 product until a
-Web authority and its qualification evidence exist.
+Linux and Web are intentionally not active v4 product targets. A native hook
+or archive probe compiling on another host does not establish product support.
 
 ## Build prerequisites
 
@@ -34,7 +33,6 @@ builds use the installed target and can remain offline.
 
 ```sh
 bash scripts/verify_platform_smoke.sh --platform macos
-bash scripts/verify_platform_smoke.sh --platform linux
 bash scripts/verify_platform_smoke.sh --platform ios
 bash scripts/verify_platform_smoke.sh --platform android
 ```

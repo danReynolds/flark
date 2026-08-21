@@ -1,9 +1,9 @@
 # Getting started
 
-Flark v4 is a native Flutter editor. It currently supports macOS, Linux,
-Android, and iOS; Web is not an active target. Rust builds automatically as a
-bundled native asset, so development machines and package consumers need a
-stable Rust toolchain with `cargo` or `rustup` on `PATH`.
+Flark v4 is a native Flutter editor. Its active product targets are macOS,
+Android, and iOS; Linux and Web are not active targets. Rust builds
+automatically as a bundled native asset, so development machines and package
+consumers need a stable Rust toolchain with `cargo` or `rustup` on `PATH`.
 
 ## Run the example
 

@@ -115,30 +115,6 @@ jobs:
       - name: iOS build smoke (device arm64, no signing)
         run: bash ./scripts/verify_platform_smoke.sh --platform ios
 
-  linux-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - name: Install Linux desktop build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev
-      - name: Enable Linux desktop
-        run: flutter config --enable-linux-desktop
-      - name: Linux build smoke
-        run: bash ./scripts/verify_platform_smoke.sh --platform linux
-
   android-smoke:
     runs-on: ubuntu-latest
     steps:
