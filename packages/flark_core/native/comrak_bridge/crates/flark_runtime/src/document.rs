@@ -23,16 +23,18 @@ use flark_parser::{
         M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
         M11RecursiveGreenRowPresentation,
     },
-    classify_m11_simple_edit_line, project_m11_gfm_inline, project_m11_gfm_table, M11GfmInlineNode,
-    M11GfmInlineOptions, M11GfmTableAlignment, M11InlineEditComponent,
+    classify_m11_simple_edit_line, derive_m11_simple_block_prefix_plans,
+    derive_m11_simple_block_transitions, project_m11_gfm_inline, project_m11_gfm_table,
+    M11GfmInlineNode, M11GfmInlineOptions, M11GfmTableAlignment, M11InlineEditComponent,
     M11InlineEditComponentMatcher, M11InlineProjectionJob, M11InlineProjectionJobError,
     M11InlineProjectionJobPollStatus, M11ParserBinding, M11PersistentRecursiveGreenAdoption,
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
     M11PersistentRecursiveGreenSessionError, M11RecursiveGreenInlineLeafPreparation,
-    M11SimpleEditLineKind, M11SimpleEditListMarker, M11_INLINE_EDIT_COMPONENTS_MAX,
-    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_SIMPLE_EDIT_LINE_MAX_BYTES,
+    M11SimpleBlockTransitionPresentation, M11SimpleEditLineKind, M11SimpleEditListMarker,
+    M11_INLINE_EDIT_COMPONENTS_MAX, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    M11_SIMPLE_EDIT_LINE_MAX_BYTES,
 };
 
 #[cfg(feature = "opening-session")]
@@ -135,6 +137,8 @@ pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_SINGLE_ASCII_SPACE_AT_POINT
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL: u32 = 0x0004;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_APPEND_ASCII_LITERAL_AT_LINE_END: u32 = 0x0005;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_EXACT_SCALAR_AT_POINT: u32 = 0x0006;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_EXACT_SPLICE_REPLACE_BLOCK_SHELL: u32 = 0x0007;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_SIMPLE_BLOCK_PREFIX_PLAN: u32 = 0x0008;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCHER_MASK: u32 = 0x00ff;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL: u32 = 0x0100;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE: u32 = 0x0200;
@@ -142,7 +146,8 @@ pub const DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT: u32 = 0x0400;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT: u32 = 0x0800;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETENTION_MASK: u32 = 0x0f00;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED: u32 = 0x1000;
-pub const DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK: u32 = 0x1fff;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_REPLACE_BLOCK_SHELL: u32 = 0x2000;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK: u32 = 0x3fff;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS: u32 =
     DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
@@ -175,6 +180,25 @@ pub const DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS: u32 =
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
         | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_EXACT_SPLICE_REPLACE_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT
+        | DOCUMENT_PROJECTION_EDIT_CELL_REPLACE_BLOCK_SHELL;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_PREFIX_PLAN_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_SIMPLE_BLOCK_PREFIX_PLAN
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT
+        | DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT
+        | DOCUMENT_PROJECTION_EDIT_CELL_REPLACE_BLOCK_SHELL;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentProjectionResultBlockShell {
+    Plain { prefix_utf16_len: u8 },
+    AtxHeading { level: u8, prefix_utf16_len: u8 },
+    BlockQuote { depth: u8, prefix_utf16_len: u8 },
+    ListItem { prefix_utf16_len: u8 },
+}
 
 /// Parser-authored pre-edit geometry for one bounded projection edit cell.
 ///
@@ -195,6 +219,7 @@ pub struct DocumentProjectionEditCell {
     pub flags: u32,
     pub replacement_first: u32,
     pub replacement_second: u32,
+    pub result_block_shell: Option<DocumentProjectionResultBlockShell>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2479,6 +2504,7 @@ impl DocumentSession {
                 prefix,
                 content,
                 empty,
+                ..
             } => {
                 let prefix_bytes = line_start + prefix.start..line_start + prefix.end;
                 let prefix_utf16 = lease.utf16_offset_for_byte(prefix_bytes.start).ok()?
@@ -4740,17 +4766,18 @@ fn document_projection_edit_cells(
     editable_utf16_range: Option<&Range<u64>>,
     edit_capability: DocumentViewportRowEditCapability,
 ) -> Result<Vec<DocumentProjectionEditCell>, DocumentSessionError> {
-    let (Some(editable), Some(editable_utf16)) = (editable_range, editable_utf16_range) else {
-        return Ok(Vec::new());
-    };
-    let physical_line_start = match presentation {
+    let (physical_line_start, physical_line_utf16_start) = match presentation {
         DocumentViewportRowPresentation::ListItem {
-            prefix_start_byte, ..
+            prefix_start_byte,
+            prefix_start_utf16,
+            ..
         }
         | DocumentViewportRowPresentation::BlockQuote {
-            prefix_start_byte, ..
-        } => prefix_start_byte,
-        _ => row_source_range.start,
+            prefix_start_byte,
+            prefix_start_utf16,
+            ..
+        } => (prefix_start_byte, prefix_start_utf16),
+        _ => (row_source_range.start, row_source_utf16_range.start),
     };
     let canonical_path_depth = match presentation {
         DocumentViewportRowPresentation::ListItem {
@@ -4760,6 +4787,45 @@ fn document_projection_edit_cells(
             nesting_depth: 1, ..
         } => row.path().len() == 3,
         _ => (1..=2).contains(&row.path().len()),
+    };
+    let block_transition_cells = if edit_capability == DocumentViewportRowEditCapability::Contiguous
+        && canonical_path_depth
+        && document_row_starts_at_physical_line_start(runtime, physical_line_start)
+        && physical_line_start <= row_source_range.start
+        && physical_line_utf16_start <= row_source_utf16_range.start
+    {
+        let physical_range = physical_line_start..row_source_range.end;
+        let physical_utf16_range = physical_line_utf16_start..row_source_utf16_range.end;
+        let Some(physical_byte_len) = physical_range.end.checked_sub(physical_range.start) else {
+            return Ok(Vec::new());
+        };
+        let Some(physical_utf16_len) = physical_utf16_range
+            .end
+            .checked_sub(physical_utf16_range.start)
+        else {
+            return Ok(Vec::new());
+        };
+        if physical_byte_len > M11_SIMPLE_EDIT_LINE_MAX_BYTES as u64 {
+            Vec::new()
+        } else {
+            let physical_source = read_utf8_source_range(runtime, &physical_range)?;
+            if physical_source.len() as u64 != physical_byte_len
+                || physical_source.encode_utf16().count() as u64 != physical_utf16_len
+            {
+                return Ok(Vec::new());
+            }
+            document_simple_block_transition_cells(
+                &physical_source,
+                &physical_range,
+                &physical_utf16_range,
+            )?
+        }
+    } else {
+        Vec::new()
+    };
+
+    let (Some(editable), Some(editable_utf16)) = (editable_range, editable_utf16_range) else {
+        return Ok(block_transition_cells);
     };
     if edit_capability != DocumentViewportRowEditCapability::Contiguous
         || !canonical_path_depth
@@ -4771,11 +4837,11 @@ fn document_projection_edit_cells(
         || editable_utf16.start < row_source_utf16_range.start
         || editable_utf16.end > row_source_utf16_range.end
     {
-        return Ok(Vec::new());
+        return Ok(block_transition_cells);
     }
 
     let Some(row_byte_len) = row_source_range.end.checked_sub(row_source_range.start) else {
-        return Ok(Vec::new());
+        return Ok(block_transition_cells);
     };
     let Some(row_utf16_len) = row_source_utf16_range
         .end
@@ -4819,7 +4885,7 @@ fn document_projection_edit_cells(
         ));
     }
     let Some(facts) = facts else {
-        return Ok(Vec::new());
+        return Ok(block_transition_cells);
     };
     if presentation == DocumentViewportRowPresentation::Table {
         return Ok(document_table_literal_word_edit_cells(
@@ -4894,6 +4960,7 @@ fn document_projection_edit_cells(
             editable_utf16,
             facts,
         ));
+        cells.extend(block_transition_cells);
         return Ok(cells);
     }
 
@@ -4920,7 +4987,7 @@ fn document_projection_edit_cells(
     }
 
     if facts.is_empty() {
-        return Ok(vec![DocumentProjectionEditCell {
+        let mut cells = vec![DocumentProjectionEditCell {
             source_range: editable.clone(),
             source_utf16_range: editable_utf16.clone(),
             trigger_range: editable.clone(),
@@ -4928,15 +4995,186 @@ fn document_projection_edit_cells(
             flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
             replacement_first: 0,
             replacement_second: 0,
-        }]);
+            result_block_shell: None,
+        }];
+        cells.extend(block_transition_cells);
+        return Ok(cells);
     }
 
-    Ok(document_flat_strong_opening_space_edit_cells(
-        content,
-        editable,
-        editable_utf16,
-        facts,
-    ))
+    let mut cells =
+        document_flat_strong_opening_space_edit_cells(content, editable, editable_utf16, facts);
+    cells.extend(block_transition_cells);
+    Ok(cells)
+}
+
+fn document_simple_block_transition_cells(
+    row_source: &str,
+    row_source_range: &Range<u64>,
+    row_source_utf16_range: &Range<u64>,
+) -> Result<Vec<DocumentProjectionEditCell>, DocumentSessionError> {
+    let transitions =
+        derive_m11_simple_block_transitions(row_source.as_bytes(), row_source_range.start == 0);
+    let mut cells = Vec::with_capacity(transitions.len());
+    for transition in transitions {
+        let affected = transition.affected();
+        let affected_start = row_source_range
+            .start
+            .checked_add(
+                u64::try_from(affected.start)
+                    .map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+            )
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let affected_end = row_source_range
+            .start
+            .checked_add(
+                u64::try_from(affected.end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+            )
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let trigger = transition.trigger();
+        let trigger_start_byte = row_source_range
+            .start
+            .checked_add(
+                u64::try_from(trigger.start).map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+            )
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let trigger_end_byte = row_source_range
+            .start
+            .checked_add(
+                u64::try_from(trigger.end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+            )
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let affected_utf16_start = row_source
+            .get(..affected.start)
+            .map(|value| value.encode_utf16().count())
+            .and_then(|value| u64::try_from(value).ok())
+            .and_then(|value| row_source_utf16_range.start.checked_add(value));
+        let affected_utf16_end = row_source
+            .get(..affected.end)
+            .map(|value| value.encode_utf16().count())
+            .and_then(|value| u64::try_from(value).ok())
+            .and_then(|value| row_source_utf16_range.start.checked_add(value));
+        let trigger_start_utf16 = row_source
+            .get(..trigger.start)
+            .map(|value| value.encode_utf16().count())
+            .and_then(|value| u64::try_from(value).ok())
+            .and_then(|value| row_source_utf16_range.start.checked_add(value));
+        let trigger_end_utf16 = row_source
+            .get(..trigger.end)
+            .map(|value| value.encode_utf16().count())
+            .and_then(|value| u64::try_from(value).ok())
+            .and_then(|value| row_source_utf16_range.start.checked_add(value));
+        let (
+            Some(affected_utf16_start),
+            Some(affected_utf16_end),
+            Some(trigger_start_utf16),
+            Some(trigger_end_utf16),
+        ) = (
+            affected_utf16_start,
+            affected_utf16_end,
+            trigger_start_utf16,
+            trigger_end_utf16,
+        )
+        else {
+            return Err(DocumentSessionError::Faulted);
+        };
+        let result_block_shell = match transition.presentation() {
+            M11SimpleBlockTransitionPresentation::Plain => {
+                DocumentProjectionResultBlockShell::Plain {
+                    prefix_utf16_len: transition.result_prefix_utf16_len(),
+                }
+            }
+            M11SimpleBlockTransitionPresentation::AtxHeading { level } => {
+                DocumentProjectionResultBlockShell::AtxHeading {
+                    level,
+                    prefix_utf16_len: transition.result_prefix_utf16_len(),
+                }
+            }
+            M11SimpleBlockTransitionPresentation::BlockQuote { depth } => {
+                DocumentProjectionResultBlockShell::BlockQuote {
+                    depth,
+                    prefix_utf16_len: transition.result_prefix_utf16_len(),
+                }
+            }
+            M11SimpleBlockTransitionPresentation::ListItem { .. } => {
+                DocumentProjectionResultBlockShell::ListItem {
+                    prefix_utf16_len: transition.result_prefix_utf16_len(),
+                }
+            }
+        };
+        cells.push(DocumentProjectionEditCell {
+            source_range: affected_start..affected_end,
+            source_utf16_range: affected_utf16_start..affected_utf16_end,
+            trigger_range: trigger_start_byte..trigger_end_byte,
+            trigger_utf16_range: trigger_start_utf16..trigger_end_utf16,
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS,
+            replacement_first: transition.replacement().map_or(0, u32::from),
+            replacement_second: 0,
+            result_block_shell: Some(result_block_shell),
+        });
+    }
+    for plan in
+        derive_m11_simple_block_prefix_plans(row_source.as_bytes(), row_source_range.start == 0)
+    {
+        let prefix = plan.prefix();
+        if prefix.is_empty() || prefix.len() > 3 || !prefix.is_ascii() {
+            continue;
+        }
+        let mut packed_plan = u32::from(plan.activation_prefix_utf16_len()) << 24;
+        for (index, byte) in prefix.iter().copied().enumerate() {
+            packed_plan |= u32::from(byte) << (index * 8);
+        }
+        let affected = plan.affected();
+        let affected_start = row_source_range
+            .start
+            .checked_add(
+                u64::try_from(affected.start)
+                    .map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+            )
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let affected_end = row_source_range
+            .start
+            .checked_add(
+                u64::try_from(affected.end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+            )
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let affected_utf16_end = row_source
+            .get(..affected.end)
+            .map(|value| value.encode_utf16().count())
+            .and_then(|value| u64::try_from(value).ok())
+            .and_then(|value| row_source_utf16_range.start.checked_add(value))
+            .ok_or(DocumentSessionError::Faulted)?;
+        let result_block_shell = match plan.presentation() {
+            M11SimpleBlockTransitionPresentation::Plain => continue,
+            M11SimpleBlockTransitionPresentation::AtxHeading { level } => {
+                DocumentProjectionResultBlockShell::AtxHeading {
+                    level,
+                    prefix_utf16_len: plan.result_prefix_utf16_len(),
+                }
+            }
+            M11SimpleBlockTransitionPresentation::BlockQuote { depth } => {
+                DocumentProjectionResultBlockShell::BlockQuote {
+                    depth,
+                    prefix_utf16_len: plan.result_prefix_utf16_len(),
+                }
+            }
+            M11SimpleBlockTransitionPresentation::ListItem { .. } => {
+                DocumentProjectionResultBlockShell::ListItem {
+                    prefix_utf16_len: plan.result_prefix_utf16_len(),
+                }
+            }
+        };
+        cells.push(DocumentProjectionEditCell {
+            source_range: affected_start..affected_end,
+            source_utf16_range: row_source_utf16_range.start..affected_utf16_end,
+            trigger_range: affected_start..affected_start,
+            trigger_utf16_range: row_source_utf16_range.start..row_source_utf16_range.start,
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_PREFIX_PLAN_FLAGS,
+            replacement_first: packed_plan,
+            replacement_second: 0,
+            result_block_shell: Some(result_block_shell),
+        });
+    }
+    Ok(cells)
 }
 
 /// Maps the parser-certified body of a closed fenced code block into bounded
@@ -5004,6 +5242,7 @@ fn document_fenced_code_literal_word_edit_cells(
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             });
         }
 
@@ -5096,6 +5335,7 @@ fn document_literal_word_edit_cells(
         flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
         replacement_first: 0,
         replacement_second: 0,
+        result_block_shell: None,
     }];
     // A one-unit deletion is safe only when every admitted deletion leaves at
     // least one alphanumeric source unit in the cell. It remains one-shot so
@@ -5109,6 +5349,7 @@ fn document_literal_word_edit_cells(
             flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
             replacement_first: 0,
             replacement_second: 0,
+            result_block_shell: None,
         });
     }
     cells
@@ -5295,6 +5536,7 @@ fn document_terminal_literal_append_cell(
             },
         replacement_first: 0,
         replacement_second: 0,
+        result_block_shell: None,
     })
 }
 
@@ -5509,6 +5751,7 @@ fn document_flat_strong_opening_space_edit_cells(
             flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
             replacement_first: 0,
             replacement_second: 0,
+            result_block_shell: None,
         });
     }
     cells
@@ -5917,6 +6160,7 @@ fn map_parser_projection_edit_cells(
             flags,
             replacement_first,
             replacement_second,
+            result_block_shell: None,
         });
     }
     Ok(mapped)

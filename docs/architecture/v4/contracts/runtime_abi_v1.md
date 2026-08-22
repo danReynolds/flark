@@ -34,7 +34,7 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 32. `NEGOTIATE` is the only ordinary operation
+The direct ABI is major 4, minor 33. `NEGOTIATE` is the only ordinary operation
 permitted without a session. ABI 4.32 also permits the explicitly flagged
 process-global `SESSION_INSPECT` form without a session so post-close lifecycle
 evidence cannot depend on a consumed handle. The host supplies its requested
@@ -427,7 +427,7 @@ continuation, anchor, and history counts, while `reserved[0]` reports live
 sessions and `reserved[1..2]` remain zero. This is bounded lifecycle evidence,
 not document authority, and does not expose parser or allocator internals.
 
-The final pre-D0 ABI 4.32 freeze also adds capability
+ABI 4.32 also adds capability
 `PROJECTION_EDIT_CELLS_V3` without changing the kind-16 record layout. Matcher
 code 6, `INSERT_EXACT_SCALAR_AT_POINT`, uses `replacement_first` as one valid
 Unicode scalar parameter and requires `replacement_second == 0`; every older
@@ -468,6 +468,43 @@ and a maximal ASCII prose run as its interior trigger; unchanged interior
 guards isolate every retained outside fact. Older hosts reject this
 additional safe shape, while a 4.32 host requires the V3 capability before it
 can observe the record.
+
+The final pre-D0 ABI 4.33 freeze adds capability
+`PROJECTION_EDIT_CELLS_V4` without changing record kind 16 or query kind 6.
+Matcher code 7, `EXACT_SPLICE_REPLACE_BLOCK_SHELL`, declares one exact
+parser-authored insertion or deletion over a bounded physical-line closure.
+Its source ranges carry that complete closure and its content ranges carry the
+exact zero-width insertion point or nonempty deletion range.
+`replacement_first` is the required inserted Unicode scalar, or zero for a
+deletion. `replacement_second` packs a typed clean-result shell: bits 0–3 are
+Plain, ATX heading, BlockQuote, or ListItem; bits 4–11 are the result prefix's
+UTF-16 length; and bits 12–31 carry the heading level or quote depth when
+applicable. Flags require `RETAIN_OUTSIDE`, `PRESENT_EXACT`, and
+`REPLACE_BLOCK_SHELL`; retaining the predecessor shell and chaining are
+forbidden.
+
+Matcher code 8, `SIMPLE_BLOCK_PREFIX_PLAN`, covers the corresponding rapid
+prefix sequence before a fresh parser publication can interleave. Its content
+range is the zero-width physical-line start. `replacement_first` packs up to
+three nonzero ASCII plan bytes little-endian in bits 0–23 and the parser-proved
+1-based activation prefix length in bits 24–31; `replacement_second` carries
+the same typed final shell. It requires `CHAIN_RESULT` in addition to the V4
+replacement flags. Core advances only an exact nonempty prefix of the remaining
+plan at the carried point. Before activation it presents Plain exact content;
+from activation onward it presents the declared target shell using the consumed
+prefix length. A unique specialized plan match takes precedence over a generic
+literal cell for the same edit; multiple matching plans fail closed.
+
+The first emitter reruns the bounded donor-backed physical-line classifier on
+the exact counterfactual edit and publishes only a changed supported shell.
+It covers top-level Plain, canonical ATX heading, depth-1 BlockQuote, and simple
+depth-1 ListItem construction/removal. Core compares the declared splice and
+range mechanically, then materializes the typed shell through the same pending
+presentation lifecycle used by every other dependency authority. It neither
+recognizes a Markdown opener nor widens the parser result. Fresh certified rows
+supersede this authority over the prefix-inclusive physical range. The exact
+splice form is one-shot; the prefix-plan form expires when the finite sequence
+is complete or any different edit arrives.
 
 Exact ABI 4.32 also maps maximal ASCII-word triggers inside each physical line
 of a parser-certified closed fenced-code body. The affected closure is that

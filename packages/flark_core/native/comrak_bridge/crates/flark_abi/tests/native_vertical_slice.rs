@@ -16,10 +16,13 @@ use flark_abi::{
     PROJECTION_EDIT_CELL_MATCHER_MASK, PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
     PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL,
     PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL,
-    PROJECTION_EDIT_CELL_PRESENT_EXACT, PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL,
-    PROJECTION_EDIT_CELL_RETAIN_OUTSIDE, VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
-    VIEWPORT_ROW_FLAG_PROJECTED_RESERVED, VIEWPORT_ROW_INLINE_FACT_COUNT_MASK,
-    VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT, VIEWPORT_ROW_TABLE_PRESENTATION,
+    PROJECTION_EDIT_CELL_MATCH_EXACT_SPLICE_REPLACE_BLOCK_SHELL,
+    PROJECTION_EDIT_CELL_MATCH_SIMPLE_BLOCK_PREFIX_PLAN, PROJECTION_EDIT_CELL_PRESENT_EXACT,
+    PROJECTION_EDIT_CELL_RESULT_SHELL_ATX_HEADING, PROJECTION_EDIT_CELL_RESULT_SHELL_KIND_MASK,
+    PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL, PROJECTION_EDIT_CELL_RETAIN_OUTSIDE,
+    VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
+    VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
+    VIEWPORT_ROW_TABLE_PRESENTATION,
 };
 use flark_runtime::{HistoryDisposition, StatusCode};
 
@@ -32,6 +35,21 @@ fn budget(work: u64) -> WorkBudget {
     }
 }
 
+fn read_inline_facts(page: &[u8], count: u32) -> Vec<InlineFactRecord> {
+    (0..count as usize)
+        .map(|index| unsafe {
+            page.as_ptr()
+                .add(
+                    size_of::<ResultPageHeader>()
+                        + size_of::<ViewportRowRecord>()
+                        + index * size_of::<InlineFactRecord>(),
+                )
+                .cast::<InlineFactRecord>()
+                .read_unaligned()
+        })
+        .collect()
+}
+
 #[test]
 fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(size_of::<ViewportRowRecord>(), 128);
@@ -40,8 +58,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     let preceding_minor = NegotiateRequest {
         struct_size: size_of::<NegotiateRequest>() as u32,
         requested_major: ABI_MAJOR,
-        requested_minor: 31,
-        required_capability_bits: (1_u64 << 32) - 1,
+        requested_minor: 32,
+        required_capability_bits: (1_u64 << 34) - 1,
     };
     let mut info = AbiInfo::default();
     let mut outcome = Outcome::default();
@@ -51,8 +69,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         "the stateless ABI must reject a preceding minor it cannot tailor"
     );
     let subsequent_minor = NegotiateRequest {
-        requested_minor: 33,
-        required_capability_bits: (1_u64 << 34) - 1,
+        requested_minor: 34,
+        required_capability_bits: (1_u64 << 35) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -62,7 +80,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 34) - 1,
+        required_capability_bits: (1_u64 << 35) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -70,7 +88,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::Ok as u32
     );
     assert_eq!(info.abi_minor, ABI_MINOR);
-    assert_eq!(info.capability_bits, (1_u64 << 34) - 1);
+    assert_eq!(info.capability_bits, (1_u64 << 35) - 1);
 
     let base_source = concat!(
         "# *Flark*\n\n",
@@ -211,40 +229,31 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(first.kind, 12, "ATX heading kind");
     assert_eq!(first.semantic_variant, 1, "parser-authored H1 variant");
     assert_ne!(first.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, 0);
-    assert_eq!(first.inline_fact_count, 3);
-    assert_eq!(header.payload_bytes, 128 + 3 * 80);
-    let inline = unsafe {
-        page.as_ptr()
-            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>())
-            .cast::<InlineFactRecord>()
-            .read_unaligned()
-    };
+    assert!(first.inline_fact_count >= 3);
+    assert_eq!(header.payload_bytes, 128 + first.inline_fact_count * 80);
+    let inline_facts = read_inline_facts(&page, first.inline_fact_count);
+    let inline = &inline_facts[0];
     assert_eq!(inline.kind, INLINE_FACT_EMPHASIS);
     assert_eq!(inline.source_start_byte, 2);
     assert_eq!(inline.source_end_byte, 9);
     assert_eq!(inline.content_start_byte, 3);
     assert_eq!(inline.content_end_byte, 8);
-    let word_envelope = unsafe {
-        page.as_ptr()
-            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>() + 80)
-            .cast::<InlineFactRecord>()
-            .read_unaligned()
-    };
+    let word_envelope = &inline_facts[1];
     assert_eq!(word_envelope.kind, INLINE_FACT_LITERAL_SAFE_ENVELOPE);
     assert_eq!(word_envelope.flags, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION);
     assert_eq!(word_envelope.source_start_utf16, 3);
     assert_eq!(word_envelope.source_end_utf16, 8);
-    let space_envelope = unsafe {
-        page.as_ptr()
-            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>() + 160)
-            .cast::<InlineFactRecord>()
-            .read_unaligned()
-    };
+    let space_envelope = &inline_facts[2];
     assert_eq!(space_envelope.kind, INLINE_FACT_LITERAL_SAFE_ENVELOPE);
     assert_eq!(
         space_envelope.flags,
         LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION
     );
+    assert!(inline_facts.iter().any(|fact| {
+        fact.kind == INLINE_FACT_PROJECTION_EDIT_CELL
+            && fact.flags & PROJECTION_EDIT_CELL_MATCHER_MASK
+                == PROJECTION_EDIT_CELL_MATCH_EXACT_SPLICE_REPLACE_BLOCK_SHELL
+    }));
 
     let plain_heading_start = source_text.find("# Plain heading").unwrap() as u64;
     let plain_heading_end = plain_heading_start + "# Plain heading\n".len() as u64;
@@ -270,14 +279,20 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
             .cast::<ViewportRowRecord>()
             .read_unaligned()
     };
-    assert_eq!(plain_header.payload_bytes, 128 + 80);
-    assert_eq!(plain_row.inline_fact_count, 1);
-    let plain_cell = unsafe {
-        page.as_ptr()
-            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>())
-            .cast::<InlineFactRecord>()
-            .read_unaligned()
-    };
+    assert!(plain_row.inline_fact_count >= 1);
+    assert_eq!(
+        plain_header.payload_bytes,
+        128 + plain_row.inline_fact_count * 80
+    );
+    let plain_facts = read_inline_facts(&page, plain_row.inline_fact_count);
+    let plain_cell = plain_facts
+        .iter()
+        .find(|fact| {
+            fact.kind == INLINE_FACT_PROJECTION_EDIT_CELL
+                && fact.flags & PROJECTION_EDIT_CELL_MATCHER_MASK
+                    == PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE
+        })
+        .expect("plain heading content cell");
     assert_eq!(plain_cell.kind, INLINE_FACT_PROJECTION_EDIT_CELL);
     assert_eq!(
         plain_cell.flags,
@@ -285,6 +300,45 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
             | PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
             | PROJECTION_EDIT_CELL_PRESENT_EXACT
             | PROJECTION_EDIT_CELL_CHAIN_RESULT
+    );
+
+    let paragraph_start = source_text.find("A quick paragraph.").unwrap() as u64;
+    let paragraph_end = paragraph_start + "A quick paragraph.\n".len() as u64;
+    let paragraph_query = QueryRequest {
+        range: SourceRange {
+            start_byte: paragraph_start,
+            end_byte: paragraph_end,
+        },
+        ..query
+    };
+    page.fill(0);
+    status = flark_v4_query_viewport(
+        &paragraph_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert_eq!(status, StatusCode::Ok as u32);
+    let paragraph_row = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>())
+            .cast::<ViewportRowRecord>()
+            .read_unaligned()
+    };
+    let paragraph_facts = read_inline_facts(&page, paragraph_row.inline_fact_count);
+    let heading_plan = paragraph_facts
+        .iter()
+        .find(|fact| {
+            fact.kind == INLINE_FACT_PROJECTION_EDIT_CELL
+                && fact.flags & PROJECTION_EDIT_CELL_MATCHER_MASK
+                    == PROJECTION_EDIT_CELL_MATCH_SIMPLE_BLOCK_PREFIX_PLAN
+                && fact.replacement_first
+                    == ((2_u32 << 24) | u32::from(b'#') | (u32::from(b' ') << 8))
+        })
+        .expect("plain paragraph heading prefix plan");
+    assert_eq!(
+        heading_plan.replacement_second & PROJECTION_EDIT_CELL_RESULT_SHELL_KIND_MASK,
+        PROJECTION_EDIT_CELL_RESULT_SHELL_ATX_HEADING
     );
     assert_eq!(plain_cell.source_start_byte, plain_heading_start + 2);
     assert_eq!(plain_cell.source_end_byte, plain_heading_end - 1);
@@ -333,13 +387,13 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         );
         if index == 0 {
             assert_eq!(
-                semantic_record_count, 129,
-                "the first dense row should retain its Strong fact and all 128 optional envelopes",
+                semantic_record_count, 130,
+                "the first dense row should retain its Strong fact, all 128 optional envelopes, and one bounded prefix-plan record",
             );
         }
         if index == 6 {
             assert!(
-                semantic_record_count < 129,
+                semantic_record_count < 130,
                 "the final dense row must prove optional records were truncated instead of evicting its Strong fact",
             );
         }

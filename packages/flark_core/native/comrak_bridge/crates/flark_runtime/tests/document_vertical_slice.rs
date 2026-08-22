@@ -2,8 +2,11 @@ use flark_runtime::{
     DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
     DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker,
     DocumentLiteralEditClass, DocumentLiveViewportSpan, DocumentProjectionEditCell,
-    DocumentSession, DocumentSessionPhase, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS,
+    DocumentProjectionResultBlockShell, DocumentSession, DocumentSessionPhase, DocumentViewportRow,
+    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
+    DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_PREFIX_PLAN_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
@@ -28,6 +31,282 @@ fn expected_utf16_range(source: &str, bytes: &std::ops::Range<u64>) -> std::ops:
     let end = usize::try_from(bytes.end).expect("source-range end fits usize");
     u64::try_from(source[..start].encode_utf16().count()).expect("UTF-16 start fits u64")
         ..u64::try_from(source[..end].encode_utf16().count()).expect("UTF-16 end fits u64")
+}
+
+fn ordinary_projection_edit_cells(row: &DocumentViewportRow) -> Vec<DocumentProjectionEditCell> {
+    row.projection_edit_cells
+        .iter()
+        .filter(|cell| {
+            cell.flags != DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS
+                && cell.flags != DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_PREFIX_PLAN_FLAGS
+        })
+        .cloned()
+        .collect()
+}
+
+#[test]
+fn simple_rows_publish_parser_authored_result_block_shell_transitions() {
+    let cases = [
+        (
+            "#change\n",
+            1..1,
+            DocumentProjectionResultBlockShell::AtxHeading {
+                level: 1,
+                prefix_utf16_len: 2,
+            },
+            ' ',
+        ),
+        (
+            "-change\n",
+            1..1,
+            DocumentProjectionResultBlockShell::ListItem {
+                prefix_utf16_len: 2,
+            },
+            ' ',
+        ),
+        (
+            "1.change\n",
+            2..2,
+            DocumentProjectionResultBlockShell::ListItem {
+                prefix_utf16_len: 3,
+            },
+            ' ',
+        ),
+        (
+            "change\n",
+            0..0,
+            DocumentProjectionResultBlockShell::BlockQuote {
+                depth: 1,
+                prefix_utf16_len: 1,
+            },
+            '>',
+        ),
+        (
+            ">change\n",
+            1..1,
+            DocumentProjectionResultBlockShell::BlockQuote {
+                depth: 1,
+                prefix_utf16_len: 2,
+            },
+            ' ',
+        ),
+    ];
+    for (source, trigger, shell, replacement) in cases {
+        let mut document = DocumentSession::begin(source).expect("begin plain transition row");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("plain transition viewport");
+        let row = &viewport.rows[0];
+        let cell = row
+            .projection_edit_cells
+            .iter()
+            .find(|cell| {
+                cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS
+                    && cell.trigger_range == trigger
+                    && cell.result_block_shell == Some(shell)
+            })
+            .unwrap_or_else(|| panic!("missing result-shell transition: {source:?} {row:#?}"));
+        assert_eq!(cell.source_range, 0..source.len() as u64 - 1);
+        assert_eq!(cell.source_utf16_range, 0..source.len() as u64 - 1);
+        assert_eq!(cell.replacement_first, u32::from(replacement));
+        document.close().expect("close plain transition row");
+        assert_block_transition_matches_clean(
+            source,
+            trigger.start as usize..trigger.end as usize,
+            &replacement.to_string(),
+            shell,
+        );
+        assert_single_edit_matches_clean(
+            source,
+            trigger.start as usize..trigger.end as usize,
+            &replacement.to_string(),
+        );
+    }
+
+    let removals = [
+        (
+            "# change\n",
+            1..2,
+            DocumentProjectionResultBlockShell::Plain {
+                prefix_utf16_len: 0,
+            },
+        ),
+        (
+            "> change\n",
+            1..2,
+            DocumentProjectionResultBlockShell::BlockQuote {
+                depth: 1,
+                prefix_utf16_len: 1,
+            },
+        ),
+        (
+            "> change\n",
+            0..1,
+            DocumentProjectionResultBlockShell::Plain {
+                prefix_utf16_len: 0,
+            },
+        ),
+        (
+            "- change\n",
+            1..2,
+            DocumentProjectionResultBlockShell::Plain {
+                prefix_utf16_len: 0,
+            },
+        ),
+        (
+            "1. change\n",
+            2..3,
+            DocumentProjectionResultBlockShell::Plain {
+                prefix_utf16_len: 0,
+            },
+        ),
+    ];
+    for (source, trigger, shell) in removals {
+        let mut document = DocumentSession::begin(source).expect("begin block removal row");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("block removal viewport");
+        let row = &viewport.rows[0];
+        let cell = row
+            .projection_edit_cells
+            .iter()
+            .find(|cell| {
+                cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS
+                    && cell.trigger_range == trigger
+                    && cell.result_block_shell == Some(shell)
+            })
+            .unwrap_or_else(|| panic!("missing result-shell removal: {source:?} {row:#?}"));
+        assert_eq!(cell.source_range, 0..source.len() as u64 - 1);
+        assert_eq!(cell.source_utf16_range, 0..source.len() as u64 - 1);
+        assert_eq!(cell.replacement_first, 0);
+        document.close().expect("close block removal row");
+        assert_block_transition_matches_clean(
+            source,
+            trigger.start as usize..trigger.end as usize,
+            "",
+            shell,
+        );
+        assert_single_edit_matches_clean(source, trigger.start as usize..trigger.end as usize, "");
+    }
+
+    let plans = [
+        (
+            "# ",
+            2_u8,
+            DocumentProjectionResultBlockShell::AtxHeading {
+                level: 1,
+                prefix_utf16_len: 2,
+            },
+        ),
+        (
+            "> ",
+            1_u8,
+            DocumentProjectionResultBlockShell::BlockQuote {
+                depth: 1,
+                prefix_utf16_len: 2,
+            },
+        ),
+        (
+            "- ",
+            2_u8,
+            DocumentProjectionResultBlockShell::ListItem {
+                prefix_utf16_len: 2,
+            },
+        ),
+        (
+            "1. ",
+            3_u8,
+            DocumentProjectionResultBlockShell::ListItem {
+                prefix_utf16_len: 3,
+            },
+        ),
+    ];
+    let source = "change\n";
+    let mut base = DocumentSession::begin(source).expect("begin prefix-plan row");
+    pump_ready(&mut base);
+    let viewport = base
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("prefix-plan viewport");
+    let row = &viewport.rows[0];
+    for (prefix, activation, shell) in plans {
+        let packed = (u32::from(activation) << 24)
+            | prefix
+                .bytes()
+                .enumerate()
+                .fold(0_u32, |value, (index, byte)| {
+                    value | (u32::from(byte) << (index * 8))
+                });
+        let cell = row
+            .projection_edit_cells
+            .iter()
+            .find(|cell| {
+                cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_PREFIX_PLAN_FLAGS
+                    && cell.trigger_range == (0..0)
+                    && cell.replacement_first == packed
+                    && cell.result_block_shell == Some(shell)
+            })
+            .unwrap_or_else(|| panic!("missing prefix plan {prefix:?}: {row:#?}"));
+        assert_eq!(cell.source_range, 0..source.len() as u64 - 1);
+
+        let mut incremental = DocumentSession::begin(source).expect("begin prefix-plan chain");
+        pump_ready(&mut incremental);
+        let mut edited = source.to_owned();
+        for (index, character) in prefix.char_indices() {
+            incremental
+                .apply_edit(index as u64 + 1, index..index, &character.to_string())
+                .expect("apply prefix-plan character");
+            edited.insert(index, character);
+            pump_ready(&mut incremental);
+            assert_current_rows_match_clean(&mut incremental, index as u64 + 2, &edited);
+        }
+        incremental.close().expect("close prefix-plan chain");
+    }
+    base.close().expect("close prefix-plan row");
+}
+
+fn assert_block_transition_matches_clean(
+    source: &str,
+    range: std::ops::Range<usize>,
+    replacement: &str,
+    expected: DocumentProjectionResultBlockShell,
+) {
+    let mut edited = source.to_owned();
+    edited.replace_range(range, replacement);
+    let mut clean = DocumentSession::begin(&edited).expect("begin clean block-shell oracle");
+    pump_ready(&mut clean);
+    let viewport = clean
+        .query_viewport(1, 0..edited.len(), 8)
+        .expect("clean block-shell viewport");
+    let actual = &viewport.rows[0].presentation;
+    match expected {
+        DocumentProjectionResultBlockShell::Plain { .. } => {
+            assert_eq!(*actual, DocumentViewportRowPresentation::Plain)
+        }
+        DocumentProjectionResultBlockShell::AtxHeading { level, .. } => assert_eq!(
+            *actual,
+            DocumentViewportRowPresentation::Heading {
+                level,
+                style: DocumentHeadingStyle::Atx,
+            }
+        ),
+        DocumentProjectionResultBlockShell::BlockQuote { depth, .. } => assert!(matches!(
+            actual,
+            DocumentViewportRowPresentation::BlockQuote {
+                nesting_depth,
+                ..
+            } if *nesting_depth == depth
+        )),
+        DocumentProjectionResultBlockShell::ListItem { .. } => assert!(matches!(
+            actual,
+            DocumentViewportRowPresentation::ListItem {
+                nesting_depth: 1,
+                ..
+            }
+        )),
+    }
+    clean.close().expect("close clean block-shell oracle");
 }
 
 fn assert_current_rows_match_clean(document: &mut DocumentSession, revision: u64, source: &str) {
@@ -1008,7 +1287,7 @@ fn canonical_plain_atx_heading_publishes_one_bounded_projection_edit_cell() {
         .expect("Unicode ATX heading viewport");
     let row = &viewport.rows[0];
     assert_eq!(
-        row.projection_edit_cells,
+        ordinary_projection_edit_cells(row),
         vec![DocumentProjectionEditCell {
             source_range: 2..14,
             source_utf16_range: 2..11,
@@ -1017,6 +1296,7 @@ fn canonical_plain_atx_heading_publishes_one_bounded_projection_edit_cell() {
             flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
             replacement_first: 0,
             replacement_second: 0,
+            result_block_shell: None,
         }]
     );
     assert!(
@@ -1032,7 +1312,8 @@ fn canonical_plain_atx_heading_publishes_one_bounded_projection_edit_cell() {
             .query_viewport(1, 0..empty_source.len(), 8)
             .expect("empty ATX heading viewport");
         let row = &viewport.rows[0];
-        let [cell] = row.projection_edit_cells.as_slice() else {
+        let ordinary = ordinary_projection_edit_cells(row);
+        let [cell] = ordinary.as_slice() else {
             panic!("empty canonical heading edit cell: {empty_source:?} {row:#?}");
         };
         assert!(cell.source_range.is_empty());
@@ -1055,7 +1336,7 @@ fn canonical_plain_atx_heading_publishes_one_bounded_projection_edit_cell() {
         viewport
             .rows
             .iter()
-            .any(|row| !row.projection_edit_cells.is_empty()),
+            .any(|row| !ordinary_projection_edit_cells(row).is_empty()),
         "a prior physical line must not prevent a top-level cell"
     );
     later.close().expect("close later top-level heading");
@@ -1075,7 +1356,7 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
         .expect("mixed-inline ATX heading viewport");
     let row = &viewport.rows[0];
     assert_eq!(
-        row.projection_edit_cells,
+        ordinary_projection_edit_cells(row),
         vec![DocumentProjectionEditCell {
             source_range: 2..10,
             source_utf16_range: 2..10,
@@ -1084,6 +1365,7 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
             flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
             replacement_first: 0,
             replacement_second: 0,
+            result_block_shell: None,
         }]
     );
     let facts = row
@@ -1555,6 +1837,7 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             },
             DocumentProjectionEditCell {
                 source_range: 0..17,
@@ -1564,6 +1847,7 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             },
         ],
         "the legacy plain-prefix cells keep their exact geometry"
@@ -1622,6 +1906,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             },
             DocumentProjectionEditCell {
                 source_range: 0..17,
@@ -1631,6 +1916,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             },
             DocumentProjectionEditCell {
                 source_range: 163..238,
@@ -1640,6 +1926,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             },
         ],
         "the legacy prefix and terminal cells keep their exact geometry",
@@ -2114,7 +2401,7 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
             }
         ));
         assert_eq!(
-            row.projection_edit_cells,
+            ordinary_projection_edit_cells(row),
             vec![
                 DocumentProjectionEditCell {
                     source_range: 2..8,
@@ -2124,6 +2411,7 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
                     flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
                     replacement_first: 0,
                     replacement_second: 0,
+                    result_block_shell: None,
                 },
                 DocumentProjectionEditCell {
                     source_range: 2..8,
@@ -2133,6 +2421,7 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
                     flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
                     replacement_first: 0,
                     replacement_second: 0,
+                    result_block_shell: None,
                 },
                 DocumentProjectionEditCell {
                     source_range: 8..16,
@@ -2142,6 +2431,7 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
                     flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
                     replacement_first: 0,
                     replacement_second: 0,
+                    result_block_shell: None,
                 },
             ],
             "{source:?} {row:#?}"
@@ -2230,6 +2520,7 @@ fn plain_table_cell_publishes_a_literal_word_edit_cell() {
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             },
             DocumentProjectionEditCell {
                 source_range: 2..5,
@@ -2239,6 +2530,7 @@ fn plain_table_cell_publishes_a_literal_word_edit_cell() {
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
                 replacement_first: 0,
                 replacement_second: 0,
+                result_block_shell: None,
             },
         ]
     );
@@ -2370,7 +2662,7 @@ fn flat_strong_opening_space_cell_rejects_ambiguous_dependencies_and_shapes() {
             viewport
                 .rows
                 .iter()
-                .all(|row| row.projection_edit_cells.is_empty()),
+                .all(|row| ordinary_projection_edit_cells(row).is_empty()),
             "ambiguous dependencies and noncanonical shapes fail closed: {source:?} {:#?}",
             viewport.rows,
         );
@@ -2403,7 +2695,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
     assert_eq!(row.editable_range, Some(2..14));
     assert_eq!(row.editable_utf16_range, Some(2..14));
     assert_eq!(
-        row.projection_edit_cells,
+        ordinary_projection_edit_cells(row),
         vec![DocumentProjectionEditCell {
             source_range: 2..14,
             source_utf16_range: 2..14,
@@ -2412,6 +2704,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
             flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
             replacement_first: 0,
             replacement_second: 0,
+            result_block_shell: None,
         }]
     );
     assert!(row.literal_safe_envelopes.is_empty());
@@ -2436,7 +2729,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
         .inline_facts
         .as_ref()
         .is_some_and(|facts| facts.is_empty()));
-    assert_eq!(row.projection_edit_cells.len(), 1);
+    assert_eq!(ordinary_projection_edit_cells(row).len(), 1);
     assert!(row.literal_safe_envelopes.is_empty());
     punctuation.close().expect("close punctuated ATX heading");
 
@@ -2448,7 +2741,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
             .query_viewport(1, 0..whitespace_source.len(), 8)
             .expect("whitespace-boundary ATX heading viewport");
         assert!(
-            viewport.rows[0].projection_edit_cells.is_empty(),
+            ordinary_projection_edit_cells(&viewport.rows[0]).is_empty(),
             "leading/trailing whitespace normalization must fail closed: {whitespace_source:?}"
         );
         whitespace
@@ -2466,7 +2759,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
         viewport
             .rows
             .iter()
-            .all(|row| row.projection_edit_cells.is_empty()),
+            .all(|row| ordinary_projection_edit_cells(row).is_empty()),
         "the first contract requires an exact canonical ATX prefix"
     );
     bom.close().expect("close BOF BOM heading");
@@ -2492,7 +2785,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
         "the inline hazard must be parser-authored"
     );
     assert!(
-        row.projection_edit_cells.is_empty(),
+        ordinary_projection_edit_cells(row).is_empty(),
         "the first edit-cell contract cannot retain inline facts"
     );
     assert_eq!(
@@ -2525,7 +2818,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
         .as_ref()
         .is_some_and(|facts| facts.is_empty()));
     assert!(
-        row.projection_edit_cells.is_empty(),
+        ordinary_projection_edit_cells(row).is_empty(),
         "plain Setext content must not receive an ATX edit cell"
     );
     setext.close().expect("close Setext heading");
@@ -2540,7 +2833,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
             viewport
                 .rows
                 .iter()
-                .all(|row| row.projection_edit_cells.is_empty()),
+                .all(|row| ordinary_projection_edit_cells(row).is_empty()),
             "the first edit-cell contract is top-level only: {nested_source:?} {:#?}",
             viewport.rows,
         );
@@ -2558,7 +2851,7 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
         viewport
             .rows
             .iter()
-            .all(|row| row.projection_edit_cells.is_empty()),
+            .all(|row| ordinary_projection_edit_cells(row).is_empty()),
         "rows beyond the simple-line bound must fail closed"
     );
     oversized.close().expect("close oversized ATX heading");

@@ -13,14 +13,15 @@ use flark_runtime::{
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
     DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentProjectionEditCell,
-    DocumentProjectionSegment, DocumentSemanticTargetKind, DocumentSemanticTargetSyntax,
-    DocumentSessionError, DocumentSessionPhase, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, GlobalLiveStateInspectionReceipt, HistoryDisposition,
-    HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome, ProgressState,
-    ProgressToken, QueryKind, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle,
-    SessionInspectionReceipt, SessionState, SnapshotId, SourceRange as RuntimeSourceRange,
-    StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS,
-    MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
+    DocumentProjectionResultBlockShell, DocumentProjectionSegment, DocumentSemanticTargetKind,
+    DocumentSemanticTargetSyntax, DocumentSessionError, DocumentSessionPhase,
+    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
+    GlobalLiveStateInspectionReceipt, HistoryDisposition, HistoryToken, OperationCode,
+    OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, QueryKind,
+    ResultPageReceipt, ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt,
+    SessionState, SnapshotId, SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle,
+    MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES,
+    MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
 };
 
 use crate::{
@@ -55,7 +56,10 @@ use crate::{
     INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
     INSPECT_FLAG_GLOBAL_LIVE_STATE, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
     LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION,
-    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
+    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, PROJECTION_EDIT_CELL_RESULT_SHELL_ATX_HEADING,
+    PROJECTION_EDIT_CELL_RESULT_SHELL_BLOCK_QUOTE, PROJECTION_EDIT_CELL_RESULT_SHELL_LIST_ITEM,
+    PROJECTION_EDIT_CELL_RESULT_SHELL_PARAMETER_SHIFT, PROJECTION_EDIT_CELL_RESULT_SHELL_PLAIN,
+    PROJECTION_EDIT_CELL_RESULT_SHELL_PREFIX_SHIFT, SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
     VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
@@ -106,7 +110,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 30)
     | (1 << 31)
     | (1 << 32)
-    | (1 << 33);
+    | (1 << 33)
+    | (1 << 34);
 
 struct Registry {
     next_handle: u64,
@@ -5617,6 +5622,32 @@ fn literal_safe_envelope_record(envelope: &DocumentLiteralSafeEnvelope) -> Inlin
 }
 
 fn projection_edit_cell_record(cell: &DocumentProjectionEditCell) -> InlineFactRecord {
+    let result_shell = cell.result_block_shell.map(|shell| match shell {
+        DocumentProjectionResultBlockShell::Plain { prefix_utf16_len } => {
+            PROJECTION_EDIT_CELL_RESULT_SHELL_PLAIN
+                | (u32::from(prefix_utf16_len) << PROJECTION_EDIT_CELL_RESULT_SHELL_PREFIX_SHIFT)
+        }
+        DocumentProjectionResultBlockShell::AtxHeading {
+            level,
+            prefix_utf16_len,
+        } => {
+            PROJECTION_EDIT_CELL_RESULT_SHELL_ATX_HEADING
+                | (u32::from(prefix_utf16_len) << PROJECTION_EDIT_CELL_RESULT_SHELL_PREFIX_SHIFT)
+                | (u32::from(level) << PROJECTION_EDIT_CELL_RESULT_SHELL_PARAMETER_SHIFT)
+        }
+        DocumentProjectionResultBlockShell::BlockQuote {
+            depth,
+            prefix_utf16_len,
+        } => {
+            PROJECTION_EDIT_CELL_RESULT_SHELL_BLOCK_QUOTE
+                | (u32::from(prefix_utf16_len) << PROJECTION_EDIT_CELL_RESULT_SHELL_PREFIX_SHIFT)
+                | (u32::from(depth) << PROJECTION_EDIT_CELL_RESULT_SHELL_PARAMETER_SHIFT)
+        }
+        DocumentProjectionResultBlockShell::ListItem { prefix_utf16_len } => {
+            PROJECTION_EDIT_CELL_RESULT_SHELL_LIST_ITEM
+                | (u32::from(prefix_utf16_len) << PROJECTION_EDIT_CELL_RESULT_SHELL_PREFIX_SHIFT)
+        }
+    });
     InlineFactRecord {
         kind: INLINE_FACT_PROJECTION_EDIT_CELL,
         flags: cell.flags,
@@ -5629,7 +5660,7 @@ fn projection_edit_cell_record(cell: &DocumentProjectionEditCell) -> InlineFactR
         content_start_utf16: cell.trigger_utf16_range.start,
         content_end_utf16: cell.trigger_utf16_range.end,
         replacement_first: cell.replacement_first,
-        replacement_second: cell.replacement_second,
+        replacement_second: result_shell.unwrap_or(cell.replacement_second),
         ..InlineFactRecord::default()
     }
 }

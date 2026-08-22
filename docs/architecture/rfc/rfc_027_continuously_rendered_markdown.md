@@ -399,6 +399,30 @@ multiword paste while unchanged guards protect the outside inline partition;
 it does not authorize punctuation, deletion, line boundaries, or host-side
 Markdown classification.
 
+**ABI 4.33 result-shell transition cell (2026-08-22).** Capability
+`PROJECTION_EDIT_CELLS_V4` keeps kind 16 and query kind 6, and adds matcher codes
+7 and 8, `EXACT_SPLICE_REPLACE_BLOCK_SHELL` and
+`SIMPLE_BLOCK_PREFIX_PLAN`. The parser supplies a complete bounded
+physical-line closure, one exact insertion point or deletion range, and the
+typed clean-result Plain, ATX heading, depth-1 BlockQuote, or simple ListItem
+shell. Core compares the declared splice mechanically; Flutter presents the
+current result content under that shell through the existing pending snapshot.
+The exact-splice proof is one-shot, retains no predecessor shell, and is
+superseded by prefix-inclusive fresh parser certification.
+
+The prefix-plan form additionally supplies a finite ASCII sequence and the
+parser-classified activation point. Core may carry only that exact sequence at
+the declared line-start point, presenting Plain before activation and the typed
+target shell afterward. This closes the same prefixes when several platform
+deltas arrive before one vsync, while keeping the sequence and its Markdown
+meaning entirely parser-owned.
+
+This revision was not added for a new Markdown construct. The D0 actual-paint
+matrix demonstrated that ordinary human-cadence entry of the final space in
+`# `, `> `, `- `, and `1. ` exposed the old Plain row until recertification.
+The generic result-shell field closes that architectural gap without a host
+marker table and is reused for parser-proved removal geometry.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits

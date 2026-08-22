@@ -639,7 +639,7 @@ fn close_initial_admission_snapshot_and_flag_policies_are_frozen() {
         manifest["snapshotLifetime"]["ownership"].as_str(),
         Some("NON_OWNING_EPOCH")
     );
-    assert_eq!(manifest["inputFlagRules"]["abiMinor"].as_u64(), Some(32));
+    assert_eq!(manifest["inputFlagRules"]["abiMinor"].as_u64(), Some(33));
     assert!(manifest["inputFlagRules"]["rule"]
         .as_str()
         .expect("flag rule")
@@ -701,6 +701,31 @@ fn parameterized_projection_edit_cell_vocabulary_is_bound_to_minor_32() {
 }
 
 #[test]
+fn result_block_shell_projection_edit_cell_is_bound_to_minor_33() {
+    let manifest = manifest();
+    let cells = &manifest["viewportProjectionEditCellsV4"];
+    assert_eq!(ABI_MINOR, 33);
+    assert_eq!(cells["abiMinor"].as_u64(), Some(33));
+    assert_eq!(
+        cells["capability"].as_str(),
+        Some("PROJECTION_EDIT_CELLS_V4")
+    );
+    assert_eq!(
+        cells["matchers"]["EXACT_SPLICE_REPLACE_BLOCK_SHELL"].as_u64(),
+        Some(7)
+    );
+    assert_eq!(
+        cells["matchers"]["SIMPLE_BLOCK_PREFIX_PLAN"].as_u64(),
+        Some(8)
+    );
+    assert!(HEADER.contains("FLARK_V4_CAPABILITY_PROJECTION_EDIT_CELLS_V4"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_EXACT_SPLICE_REPLACE_BLOCK_SHELL"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_SIMPLE_BLOCK_PREFIX_PLAN"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_SIMPLE_BLOCK_PLAN_BYTES_MASK"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_REPLACE_BLOCK_SHELL"));
+}
+
+#[test]
 fn literal_safe_envelope_v2_remains_bound_to_minor_30() {
     let manifest = manifest();
     let envelopes = &manifest["viewportLiteralSafeEnvelopesV2"];
@@ -721,7 +746,7 @@ fn literal_safe_envelope_v2_remains_bound_to_minor_30() {
 fn structural_presentation_proof_is_bound_to_minor_31() {
     let manifest = manifest();
     let proof = &manifest["structuralPresentationProofsV1"];
-    assert_eq!(ABI_MINOR, 32);
+    assert_eq!(ABI_MINOR, 33);
     assert_eq!(proof["abiMinor"].as_u64(), Some(31));
     assert_eq!(
         proof["capability"].as_str(),
@@ -739,7 +764,7 @@ fn structural_presentation_proof_is_bound_to_minor_31() {
 fn global_live_state_inspection_is_bound_to_minor_32() {
     let manifest = manifest();
     let inspection = &manifest["globalLiveStateInspectionV1"];
-    assert_eq!(ABI_MINOR, 32);
+    assert_eq!(ABI_MINOR, 33);
     assert_eq!(inspection["abiMinor"].as_u64(), Some(32));
     assert_eq!(
         inspection["capability"].as_str(),

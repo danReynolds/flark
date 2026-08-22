@@ -1881,7 +1881,7 @@ final class RenderFlarkSurface extends RenderBox {
           kind: row.presentation.kind,
           headingLevel: row.presentation.headingLevel,
           blockQuoteDepth: row.presentation.blockQuoteDepth,
-          listItem: row.row?.listItem != null,
+          listItem: row.presentation.listItem || row.row?.listItem != null,
           table: row.row?.table != null,
           leadingText: row.presentation.leadingText,
           sourceUtf16Start:

@@ -100,12 +100,25 @@ const _projectionEditMatcherInsertSingleAsciiSpaceAtPoint = 3;
 const _projectionEditMatcherDeleteOneAsciiUnitInLiteral = 4;
 const _projectionEditMatcherAppendAsciiLiteralAtLineEnd = 5;
 const _projectionEditMatcherInsertExactScalarAtPoint = 6;
+const _projectionEditMatcherExactSpliceReplaceBlockShell = 7;
+const _projectionEditMatcherSimpleBlockPrefixPlan = 8;
+const _projectionEditSimpleBlockPlanBytesMask = 0x00ffffff;
+const _projectionEditSimpleBlockPlanActivationShift = 24;
 const _projectionEditRetainBlockShell = 0x100;
 const _projectionEditRetainOutsideClosure = 0x200;
 const _projectionEditPresentClosureExact = 0x400;
 const _projectionEditChainResultCell = 0x800;
 const _projectionEditTerminalSpaceBlocked = 0x1000;
-const _knownProjectionEditCellFlags = 0x1fff;
+const _projectionEditReplaceBlockShell = 0x2000;
+const _knownProjectionEditCellFlags = 0x3fff;
+const _projectionEditResultShellKindMask = 0x0f;
+const _projectionEditResultShellPrefixShift = 4;
+const _projectionEditResultShellPrefixMask = 0x0ff0;
+const _projectionEditResultShellParameterShift = 12;
+const _projectionEditResultShellPlain = 1;
+const _projectionEditResultShellAtxHeading = 2;
+const _projectionEditResultShellBlockQuote = 3;
+const _projectionEditResultShellListItem = 4;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
@@ -184,13 +197,13 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 32;
+const _abiMinor = 33;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x3ffffffff;
+const _requiredCapabilityBits = 0x7ffffffff;
 const _inspectGlobalLiveState = 1;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
@@ -2602,6 +2615,18 @@ final class FlarkNativeDocument {
       final decodedFacts = inlineIsAuthoritative ? <FlarkInlineFact>[] : null;
       final literalSafeEnvelopes = <FlarkLiteralSafeEnvelope>[];
       final projectionEditCells = <FlarkProjectionEditCell>[];
+      final blockAuthorityBytes = FlarkSourceRange(
+        listItem?.prefixBytes.start ??
+            blockQuote?.prefixBytes.start ??
+            sourceBytes.start,
+        sourceBytes.end,
+      );
+      final blockAuthorityUtf16 = FlarkSourceRange(
+        listItem?.prefixUtf16.start ??
+            blockQuote?.prefixUtf16.start ??
+            sourceUtf16.start,
+        sourceUtf16.end,
+      );
       if (inlineIsAuthoritative) {
         for (var index = 0; index < inlineFactCount; index += 1) {
           final semantic = (inlineRecords + nextInlineFact + index).ref;
@@ -2623,6 +2648,8 @@ final class FlarkNativeDocument {
                 sourceUtf16: sourceUtf16,
                 editableBytes: editableBytes,
                 editableUtf16: editableUtf16,
+                blockAuthorityBytes: blockAuthorityBytes,
+                blockAuthorityUtf16: blockAuthorityUtf16,
               ),
             );
           } else {
@@ -2839,6 +2866,8 @@ final class FlarkNativeDocument {
     required FlarkSourceRange sourceUtf16,
     required FlarkSourceRange? editableBytes,
     required FlarkSourceRange? editableUtf16,
+    required FlarkSourceRange blockAuthorityBytes,
+    required FlarkSourceRange blockAuthorityUtf16,
   }) {
     final matcher = switch (record.flags & _projectionEditMatcherMask) {
       _projectionEditMatcherAnyNoCrLfSplice =>
@@ -2853,6 +2882,10 @@ final class FlarkNativeDocument {
         FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
       _projectionEditMatcherInsertExactScalarAtPoint =>
         FlarkProjectionEditMatcher.insertExactScalarAtPoint,
+      _projectionEditMatcherExactSpliceReplaceBlockShell =>
+        FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell,
+      _projectionEditMatcherSimpleBlockPrefixPlan =>
+        FlarkProjectionEditMatcher.simpleBlockPrefixPlan,
       _ => throw FlarkNativeException(
         'decode_viewport',
         _notCertified,
@@ -2882,6 +2915,20 @@ final class FlarkNativeDocument {
     final presentClosureExact =
         record.flags & _projectionEditPresentClosureExact != 0;
     final chainResultCell = record.flags & _projectionEditChainResultCell != 0;
+    final replacesBlockShell =
+        record.flags & _projectionEditReplaceBlockShell != 0;
+    final replacesShell =
+        matcher == FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell ||
+        matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan;
+    final resultBlockShell = replacesShell
+        ? _decodeProjectionResultBlockShell(record.replacementSecond)
+        : null;
+    final blockPrefixPlan =
+        matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan
+        ? _decodeSimpleBlockPrefixPlan(record.replacementFirst)
+        : null;
+    final authorizedBytes = replacesShell ? blockAuthorityBytes : editableBytes;
+    final authorizedUtf16 = replacesShell ? blockAuthorityUtf16 : editableUtf16;
     final expectedFlags = switch (matcher) {
       FlarkProjectionEditMatcher.anyNoCrLfSplice =>
         _projectionEditMatcherAnyNoCrLfSplice |
@@ -2916,6 +2963,17 @@ final class FlarkNativeDocument {
             _projectionEditRetainBlockShell |
             _projectionEditRetainOutsideClosure |
             _projectionEditPresentClosureExact,
+      FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell =>
+        _projectionEditMatcherExactSpliceReplaceBlockShell |
+            _projectionEditRetainOutsideClosure |
+            _projectionEditPresentClosureExact |
+            _projectionEditReplaceBlockShell,
+      FlarkProjectionEditMatcher.simpleBlockPrefixPlan =>
+        _projectionEditMatcherSimpleBlockPrefixPlan |
+            _projectionEditRetainOutsideClosure |
+            _projectionEditPresentClosureExact |
+            _projectionEditChainResultCell |
+            _projectionEditReplaceBlockShell,
     };
     final plainShape =
         affectedBytes.start == triggerBytes.start &&
@@ -2934,18 +2992,14 @@ final class FlarkNativeDocument {
         triggerBytes.end <= affectedBytes.end &&
         triggerUtf16.start >= affectedUtf16.start &&
         triggerUtf16.end <= affectedUtf16.end;
-    if (editableBytes == null ||
-        editableUtf16 == null ||
+    if (authorizedBytes == null ||
+        authorizedUtf16 == null ||
         record.flags & ~_knownProjectionEditCellFlags != 0 ||
         record.flags != expectedFlags ||
-        affectedBytes.start < sourceBytes.start ||
-        affectedBytes.end > sourceBytes.end ||
-        affectedUtf16.start < sourceUtf16.start ||
-        affectedUtf16.end > sourceUtf16.end ||
-        affectedBytes.start < editableBytes.start ||
-        affectedBytes.end > editableBytes.end ||
-        affectedUtf16.start < editableUtf16.start ||
-        affectedUtf16.end > editableUtf16.end ||
+        affectedBytes.start < authorizedBytes.start ||
+        affectedBytes.end > authorizedBytes.end ||
+        affectedUtf16.start < authorizedUtf16.start ||
+        affectedUtf16.end > authorizedUtf16.end ||
         triggerBytes.start < affectedBytes.start ||
         triggerBytes.end > affectedBytes.end ||
         triggerUtf16.start < affectedUtf16.start ||
@@ -2968,7 +3022,35 @@ final class FlarkNativeDocument {
             (!pointShape ||
                 !_isUnicodeScalar(record.replacementFirst) ||
                 record.replacementSecond != 0)) ||
+        (matcher == FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell &&
+            (resultBlockShell == null ||
+                replacesBlockShell == false ||
+                affectedBytes.start != blockAuthorityBytes.start ||
+                affectedUtf16.start != blockAuthorityUtf16.start ||
+                editableBytes == null ||
+                editableUtf16 == null ||
+                affectedBytes.end < editableBytes.end ||
+                affectedUtf16.end < editableUtf16.end ||
+                (triggerUtf16.length == 0
+                    ? !_isUnicodeScalar(record.replacementFirst)
+                    : record.replacementFirst != 0))) ||
+        (matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan &&
+            (resultBlockShell == null ||
+                blockPrefixPlan == null ||
+                affectedBytes.start != blockAuthorityBytes.start ||
+                affectedUtf16.start != blockAuthorityUtf16.start ||
+                editableBytes == null ||
+                editableUtf16 == null ||
+                affectedBytes.end < editableBytes.end ||
+                affectedUtf16.end < editableUtf16.end ||
+                triggerBytes.start != affectedBytes.start ||
+                triggerUtf16.start != affectedUtf16.start ||
+                triggerBytes.length != 0 ||
+                triggerUtf16.length != 0)) ||
         (matcher != FlarkProjectionEditMatcher.insertExactScalarAtPoint &&
+            matcher !=
+                FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell &&
+            matcher != FlarkProjectionEditMatcher.simpleBlockPrefixPlan &&
             (record.replacementFirst != 0 || record.replacementSecond != 0))) {
       throw FlarkNativeException('decode_viewport', _notCertified, record.kind);
     }
@@ -2986,9 +3068,73 @@ final class FlarkNativeDocument {
           matcher == FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
           record.flags & _projectionEditTerminalSpaceBlocked == 0,
       exactScalar:
-          matcher == FlarkProjectionEditMatcher.insertExactScalarAtPoint
+          matcher == FlarkProjectionEditMatcher.insertExactScalarAtPoint ||
+              (matcher ==
+                      FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell &&
+                  record.replacementFirst != 0)
           ? record.replacementFirst
           : null,
+      resultBlockShell: resultBlockShell,
+      blockPrefixPlan: blockPrefixPlan?.$1,
+      blockPrefixActivationUtf16Length: blockPrefixPlan?.$2,
+    );
+  }
+
+  static (String, int)? _decodeSimpleBlockPrefixPlan(int encoded) {
+    final activation =
+        (encoded >> _projectionEditSimpleBlockPlanActivationShift) & 0xff;
+    final planBytes = encoded & _projectionEditSimpleBlockPlanBytesMask;
+    final bytes = <int>[];
+    var sawTerminator = false;
+    for (var index = 0; index < 3; index += 1) {
+      final byte = (planBytes >> (index * 8)) & 0xff;
+      if (byte == 0) {
+        sawTerminator = true;
+        continue;
+      }
+      if (sawTerminator || byte > 0x7f) return null;
+      bytes.add(byte);
+    }
+    if (bytes.isEmpty || activation < 1 || activation > bytes.length) {
+      return null;
+    }
+    return (String.fromCharCodes(bytes), activation);
+  }
+
+  static FlarkProjectionResultBlockShell? _decodeProjectionResultBlockShell(
+    int encoded,
+  ) {
+    final prefix =
+        (encoded & _projectionEditResultShellPrefixMask) >>
+        _projectionEditResultShellPrefixShift;
+    final parameter = encoded >> _projectionEditResultShellParameterShift;
+    final kind = switch (encoded & _projectionEditResultShellKindMask) {
+      _projectionEditResultShellPlain => FlarkProjectionResultBlockKind.plain,
+      _projectionEditResultShellAtxHeading =>
+        FlarkProjectionResultBlockKind.atxHeading,
+      _projectionEditResultShellBlockQuote =>
+        FlarkProjectionResultBlockKind.blockQuote,
+      _projectionEditResultShellListItem =>
+        FlarkProjectionResultBlockKind.listItem,
+      _ => null,
+    };
+    if (kind == null ||
+        prefix > 0xff ||
+        switch (kind) {
+          FlarkProjectionResultBlockKind.plain => prefix != 0 || parameter != 0,
+          FlarkProjectionResultBlockKind.atxHeading =>
+            prefix == 0 || parameter < 1 || parameter > 6,
+          FlarkProjectionResultBlockKind.blockQuote =>
+            prefix == 0 || parameter < 1 || parameter > 32,
+          FlarkProjectionResultBlockKind.listItem =>
+            prefix == 0 || parameter != 0,
+        }) {
+      return null;
+    }
+    return FlarkProjectionResultBlockShell(
+      kind: kind,
+      prefixUtf16Length: prefix,
+      parameter: parameter,
     );
   }
 
@@ -3012,9 +3158,27 @@ final class FlarkNativeDocument {
           previous.affectedBytes.end == current.affectedBytes.end &&
           previous.affectedUtf16.start == current.affectedUtf16.start &&
           previous.affectedUtf16.end == current.affectedUtf16.end;
-      if (!same &&
-          (current.affectedBytes.start < previous.affectedBytes.end ||
-              current.affectedUtf16.start < previous.affectedUtf16.end)) {
+      final overlaps =
+          current.affectedBytes.start < previous.affectedBytes.end ||
+          current.affectedUtf16.start < previous.affectedUtf16.end;
+      final nested =
+          (previous.affectedBytes.start <= current.affectedBytes.start &&
+              current.affectedBytes.end <= previous.affectedBytes.end &&
+              previous.affectedUtf16.start <= current.affectedUtf16.start &&
+              current.affectedUtf16.end <= previous.affectedUtf16.end) ||
+          (current.affectedBytes.start <= previous.affectedBytes.start &&
+              previous.affectedBytes.end <= current.affectedBytes.end &&
+              current.affectedUtf16.start <= previous.affectedUtf16.start &&
+              previous.affectedUtf16.end <= current.affectedUtf16.end);
+      final parserDeclaredShellNesting =
+          previous.matcher ==
+              FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell ||
+          previous.matcher ==
+              FlarkProjectionEditMatcher.simpleBlockPrefixPlan ||
+          current.matcher ==
+              FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell ||
+          current.matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan;
+      if (!same && overlaps && !(nested && parserDeclaredShellNesting)) {
         return false;
       }
     }

@@ -49,6 +49,45 @@ enum FlarkProjectionEditMatcher {
   /// trigger. Core compares the parameter; it does not assign Markdown
   /// meaning to the scalar. This proof is deliberately one-shot.
   insertExactScalarAtPoint,
+
+  /// One exact parser-declared splice whose result replaces the current block
+  /// shell with the typed [FlarkProjectionResultBlockShell].
+  exactSpliceReplaceBlockShell,
+
+  /// A parser-declared ASCII prefix sequence that constructs one typed simple
+  /// block shell. Core advances only the exact remaining sequence.
+  simpleBlockPrefixPlan,
+}
+
+enum FlarkProjectionResultBlockKind { plain, atxHeading, blockQuote, listItem }
+
+/// Parser-authored result shell for one bounded pre-edit transition.
+final class FlarkProjectionResultBlockShell {
+  const FlarkProjectionResultBlockShell({
+    required this.kind,
+    required this.prefixUtf16Length,
+    this.parameter = 0,
+  });
+
+  final FlarkProjectionResultBlockKind kind;
+  final int prefixUtf16Length;
+
+  /// Heading level or quote depth. Plain/list shells require zero.
+  final int parameter;
+
+  Map<String, Object?> toMessage() => {
+    'kind': kind.index,
+    'prefixUtf16Length': prefixUtf16Length,
+    'parameter': parameter,
+  };
+
+  static FlarkProjectionResultBlockShell fromMessage(
+    Map<Object?, Object?> message,
+  ) => FlarkProjectionResultBlockShell(
+    kind: FlarkProjectionResultBlockKind.values[message['kind']! as int],
+    prefixUtf16Length: message['prefixUtf16Length']! as int,
+    parameter: message['parameter']! as int,
+  );
 }
 
 enum FlarkInlineFactKind {
@@ -559,6 +598,9 @@ final class FlarkProjectionEditCell {
     required this.chainResultCell,
     this.terminalSpaceAvailable = false,
     this.exactScalar,
+    this.resultBlockShell,
+    this.blockPrefixPlan,
+    this.blockPrefixActivationUtf16Length,
   });
 
   final FlarkProjectionEditMatcher matcher;
@@ -572,6 +614,9 @@ final class FlarkProjectionEditCell {
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
   final int? exactScalar;
+  final FlarkProjectionResultBlockShell? resultBlockShell;
+  final String? blockPrefixPlan;
+  final int? blockPrefixActivationUtf16Length;
 
   Map<String, Object?> toMessage() => {
     'matcher': matcher.index,
@@ -585,6 +630,9 @@ final class FlarkProjectionEditCell {
     'chainResultCell': chainResultCell,
     'terminalSpaceAvailable': terminalSpaceAvailable,
     'exactScalar': exactScalar,
+    'resultBlockShell': resultBlockShell?.toMessage(),
+    'blockPrefixPlan': blockPrefixPlan,
+    'blockPrefixActivationUtf16Length': blockPrefixActivationUtf16Length,
   };
 
   static FlarkProjectionEditCell fromMessage(Map<Object?, Object?> message) =>
@@ -609,6 +657,14 @@ final class FlarkProjectionEditCell {
         terminalSpaceAvailable:
             message['terminalSpaceAvailable'] as bool? ?? false,
         exactScalar: message['exactScalar'] as int?,
+        resultBlockShell: switch (message['resultBlockShell']) {
+          final Map<Object?, Object?> value =>
+            FlarkProjectionResultBlockShell.fromMessage(value),
+          _ => null,
+        },
+        blockPrefixPlan: message['blockPrefixPlan'] as String?,
+        blockPrefixActivationUtf16Length:
+            message['blockPrefixActivationUtf16Length'] as int?,
       );
 }
 

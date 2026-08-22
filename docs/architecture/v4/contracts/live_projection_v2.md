@@ -326,6 +326,26 @@ trigger. This supports the Product Tour's real multiword paste while retaining
 the earlier Strong fact; Core compares only the protocol predicate and never
 searches Markdown punctuation or constructs.
 
+ABI 4.33 capability `PROJECTION_EDIT_CELLS_V4` adds matcher codes 7 and 8,
+`EXACT_SPLICE_REPLACE_BLOCK_SHELL` and `SIMPLE_BLOCK_PREFIX_PLAN`, on the same
+kind-16/query-6 transport. The
+parser publishes one exact insertion or deletion over a complete bounded
+physical line together with the clean-result Plain, ATX heading, depth-1 quote,
+or simple list shell and its prefix geometry. Core compares only the exact
+splice; the Flutter adapter exposes current result content exactly under that
+typed shell and retains outside rows. The exact-splice record is one-shot. The
+prefix plan carries a finite parser-declared ASCII sequence and activation
+point, so a no-vsync `# `, `> `, `- `, or `1. ` burst can advance mechanically
+to the same result shell without host marker knowledge; any different successor
+fails closed.
+
+The initial D0 matrix covers human-cadence and true unpumped construction of
+`# `, `> `, `- `, and `1. ` plus structural Backspace removal. Every actual paint must carry the
+exact source generation and caret, preserve an outside Strong sentinel, and
+show the clean result shell. Prefix-inclusive fresh certification retires the
+temporary authority, including the intermediate `>` quote before its optional
+space. The host does not scan markers or infer a block transition.
+
 Exact ABI 4.32 additionally maps the parser-certified body of a closed fenced
 code block into bounded ASCII-word cells. Each affected closure is one physical
 code line without its line ending, and each trigger is one maximal ASCII word.

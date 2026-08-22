@@ -47,6 +47,7 @@ final class FlarkCorePresentationRow {
     required this.blockQuoteDepth,
     required this.codeBlock,
     required this.thematicBreak,
+    this.listItem = false,
     required this.ordinal,
     required this.runs,
   });
@@ -60,6 +61,7 @@ final class FlarkCorePresentationRow {
   final int? blockQuoteDepth;
   final FlarkCodeBlockPresentation? codeBlock;
   final bool thematicBreak;
+  final bool listItem;
   final int ordinal;
   final List<FlarkCorePresentationRun> runs;
 }

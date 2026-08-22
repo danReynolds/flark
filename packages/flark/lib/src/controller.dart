@@ -134,6 +134,7 @@ final class FlarkSurfaceRow {
     required this.blockQuoteDepth,
     required this.codeBlock,
     required this.thematicBreak,
+    this.listItem = false,
     required this.ordinal,
     required this.active,
     required this.selection,
@@ -148,6 +149,7 @@ final class FlarkSurfaceRow {
   final int? blockQuoteDepth;
   final FlarkCodeBlockPresentation? codeBlock;
   final bool thematicBreak;
+  final bool listItem;
   final int ordinal;
   final bool active;
   final TextSelection? selection;
@@ -1388,6 +1390,7 @@ final class FlarkEditorController extends ChangeNotifier {
       blockQuoteDepth: presentation.blockQuoteDepth,
       codeBlock: presentation.codeBlock,
       thematicBreak: presentation.thematicBreak,
+      listItem: presentation.listItem,
       ordinal: ordinal,
       active: true,
       selection: _projectedSelection(runs, presentation.text.length),
@@ -1418,6 +1421,7 @@ final class FlarkEditorController extends ChangeNotifier {
       blockQuoteDepth: presentation.blockQuoteDepth,
       codeBlock: presentation.codeBlock,
       thematicBreak: presentation.thematicBreak,
+      listItem: presentation.listItem,
       ordinal: presentation.ordinal,
       active: false,
       selection: null,
@@ -3433,11 +3437,14 @@ final class FlarkEditorController extends ChangeNotifier {
   );
 
   FlarkSourceRange _mappedExactRowRange(FlarkViewportRow row) {
-    final source = _mapViewportRange(row.sourceUtf16);
+    return _mapViewportRange(_exactRowRange(row));
+  }
+
+  FlarkSourceRange _exactRowRange(FlarkViewportRow row) {
+    final source = row.sourceUtf16;
     final prefix = row.listItem?.prefixUtf16 ?? row.blockQuote?.prefixUtf16;
     if (prefix == null) return source;
-    final mappedPrefix = _mapViewportRange(prefix);
-    return FlarkSourceRange(mappedPrefix.start, source.end);
+    return FlarkSourceRange(prefix.start, source.end);
   }
 
   int? _surfaceOrdinalAt(int globalUtf16Offset) {
@@ -4313,6 +4320,7 @@ final class FlarkEditorController extends ChangeNotifier {
     blockQuoteDepth: row.blockQuoteDepth,
     codeBlock: row.codeBlock,
     thematicBreak: row.thematicBreak,
+    listItem: row.listItem,
     ordinal: row.ordinal,
     runs: List.unmodifiable(
       row.runs.map(
@@ -4674,6 +4682,7 @@ final class FlarkEditorController extends ChangeNotifier {
       cells: row.projectionEditCells,
       envelopes: row.literalSafeEnvelopes,
       authorizedContentUtf16: editable,
+      authorizedBlockUtf16: _mappedExactRowRange(row),
       startUtf16: start,
       endUtf16: end,
       replacement: replacement,
@@ -4807,6 +4816,7 @@ final class FlarkEditorController extends ChangeNotifier {
         blockQuoteDepth: presentation.blockQuoteDepth,
         codeBlock: presentation.codeBlock,
         thematicBreak: presentation.thematicBreak,
+        listItem: presentation.listItem,
         ordinal: presentation.ordinal,
         active: false,
         selection: null,
@@ -4855,6 +4865,7 @@ final class FlarkEditorController extends ChangeNotifier {
       blockQuoteDepth: presentation.blockQuoteDepth,
       codeBlock: presentation.codeBlock,
       thematicBreak: presentation.thematicBreak,
+      listItem: presentation.listItem,
       ordinal: presentation.ordinal,
       active: false,
       selection: null,
@@ -4869,7 +4880,11 @@ final class FlarkEditorController extends ChangeNotifier {
     int end,
     String replacement,
   ) {
-    if (!receipt.retainBlockShell || !receipt.presentClosureExact) return null;
+    final resultShell = receipt.resultBlockShell;
+    if ((!receipt.retainBlockShell && resultShell == null) ||
+        !receipt.presentClosureExact) {
+      return null;
+    }
     final base = receipt.baseAffectedUtf16;
     final result = receipt.affectedUtf16;
     final baseText = _sliceVisibleUtf16(base.start, base.end);
@@ -4944,6 +4959,69 @@ final class FlarkEditorController extends ChangeNotifier {
         (before.isNotEmpty || after.isNotEmpty)) {
       return null;
     }
+    if (resultShell != null) {
+      if (before.isNotEmpty ||
+          after.isNotEmpty ||
+          resultShell.prefixUtf16Length > resultText.length) {
+        return null;
+      }
+      final contentStart = result.start + resultShell.prefixUtf16Length;
+      final content = resultText.substring(resultShell.prefixUtf16Length);
+      final block = switch (resultShell.kind) {
+        FlarkProjectionResultBlockKind.plain => (
+          leading: '',
+          kind: 5,
+          heading: null,
+          quote: null,
+          list: false,
+        ),
+        FlarkProjectionResultBlockKind.atxHeading => (
+          leading: '',
+          kind: 12,
+          heading: resultShell.parameter,
+          quote: null,
+          list: false,
+        ),
+        FlarkProjectionResultBlockKind.blockQuote => (
+          leading: _projectedBlockQuotePrefixDepth(resultShell.parameter),
+          kind: 5,
+          heading: null,
+          quote: resultShell.parameter,
+          list: false,
+        ),
+        FlarkProjectionResultBlockKind.listItem => (
+          leading: resultText.substring(0, resultShell.prefixUtf16Length),
+          kind: 5,
+          heading: null,
+          quote: null,
+          list: true,
+        ),
+      };
+      final resultRuns = List<FlarkSurfaceTextRun>.unmodifiable([
+        FlarkSurfaceTextRun(
+          text: content,
+          sourceUtf16Start: contentStart,
+          sourceUtf16End: result.end,
+          sourceExact: true,
+          styles: const {},
+        ),
+      ]);
+      return FlarkSurfaceRow(
+        leadingText: block.leading,
+        text: content,
+        globalUtf16Start: contentStart,
+        kind: block.kind,
+        headingLevel: block.heading,
+        blockQuoteDepth: block.quote,
+        codeBlock: null,
+        thematicBreak: false,
+        listItem: block.list,
+        ordinal: presentation.ordinal,
+        active: false,
+        selection: null,
+        runs: resultRuns,
+      );
+    }
     final runs = List<FlarkSurfaceTextRun>.unmodifiable([
       ...before,
       FlarkSurfaceTextRun(
@@ -4964,6 +5042,7 @@ final class FlarkEditorController extends ChangeNotifier {
       blockQuoteDepth: presentation.blockQuoteDepth,
       codeBlock: presentation.codeBlock,
       thematicBreak: presentation.thematicBreak,
+      listItem: presentation.listItem,
       ordinal: presentation.ordinal,
       active: false,
       selection: null,
@@ -5931,7 +6010,7 @@ final class FlarkEditorController extends ChangeNotifier {
     if (viewport.revision < continuity.resultRevision) return false;
     final authorized = continuity.affectedUtf16;
     for (final row in viewport.rows) {
-      final source = row.sourceUtf16;
+      final source = _exactRowRange(row);
       if (source.start > authorized.start || authorized.end > source.end) {
         continue;
       }
@@ -6394,6 +6473,7 @@ final class FlarkEditorController extends ChangeNotifier {
       cells: row.projectionEditCells,
       envelopes: row.literalSafeEnvelopes,
       authorizedContentUtf16: editable,
+      authorizedBlockUtf16: _mappedExactRowRange(row),
       startUtf16: startUtf16,
       endUtf16: endUtf16,
       replacement: replacement,

@@ -37,10 +37,15 @@ final class FlarkProjectionEditCellReceipt
     required this.chainResultCell,
     required this.terminalSpaceAvailable,
     required this.exactScalar,
+    required this.resultBlockShell,
+    required FlarkProjectionResultBlockShell? targetBlockShell,
+    required this.blockPrefixPlan,
+    required this.blockPrefixActivationUtf16Length,
+    required this.blockPrefixProgress,
     required this.editStartUtf16,
     required this.editEndUtf16,
     required this.replacement,
-  });
+  }) : _targetBlockShell = targetBlockShell;
 
   final int baseRevision;
   @override
@@ -56,6 +61,11 @@ final class FlarkProjectionEditCellReceipt
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
   final int? exactScalar;
+  final FlarkProjectionResultBlockShell? resultBlockShell;
+  final FlarkProjectionResultBlockShell? _targetBlockShell;
+  final String? blockPrefixPlan;
+  final int? blockPrefixActivationUtf16Length;
+  final int blockPrefixProgress;
   final int editStartUtf16;
   final int editEndUtf16;
   final String replacement;
@@ -84,6 +94,10 @@ final class FlarkProjectionEditCellReceipt
         chainResultCell: chainResultCell,
         terminalSpaceAvailable: terminalSpaceAvailable,
         exactScalar: exactScalar,
+        resultBlockShell: _targetBlockShell,
+        blockPrefixPlan: blockPrefixPlan,
+        blockPrefixActivationUtf16Length: blockPrefixActivationUtf16Length,
+        blockPrefixProgress: blockPrefixProgress,
       ),
       startUtf16: startUtf16,
       endUtf16: endUtf16,
@@ -103,6 +117,10 @@ final class _CurrentProjectionEditCell {
     required this.chainResultCell,
     required this.terminalSpaceAvailable,
     required this.exactScalar,
+    required this.resultBlockShell,
+    required this.blockPrefixPlan,
+    required this.blockPrefixActivationUtf16Length,
+    required this.blockPrefixProgress,
   });
 
   final FlarkProjectionEditMatcher matcher;
@@ -114,6 +132,10 @@ final class _CurrentProjectionEditCell {
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
   final int? exactScalar;
+  final FlarkProjectionResultBlockShell? resultBlockShell;
+  final String? blockPrefixPlan;
+  final int? blockPrefixActivationUtf16Length;
+  final int blockPrefixProgress;
 }
 
 /// Matches one exact source splice against parser-authored affected geometry.
@@ -121,21 +143,29 @@ FlarkProjectionEditCellReceipt? authorizeProjectionEditCell({
   required int revision,
   required List<FlarkProjectionEditCell> cells,
   required FlarkSourceRange authorizedContentUtf16,
+  FlarkSourceRange? authorizedBlockUtf16,
   required int startUtf16,
   required int endUtf16,
   required String replacement,
 }) {
+  final blockAuthority = authorizedBlockUtf16 ?? authorizedContentUtf16;
   if (revision <= 0 ||
       authorizedContentUtf16.start > authorizedContentUtf16.end ||
-      cells.any(
-        (cell) =>
-            cell.affectedUtf16.start > cell.affectedUtf16.end ||
+      blockAuthority.start > blockAuthority.end ||
+      cells.any((cell) {
+        final authority =
+            cell.matcher ==
+                    FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell ||
+                cell.matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan
+            ? blockAuthority
+            : authorizedContentUtf16;
+        return cell.affectedUtf16.start > cell.affectedUtf16.end ||
             cell.triggerUtf16.start > cell.triggerUtf16.end ||
-            cell.affectedUtf16.start < authorizedContentUtf16.start ||
-            cell.affectedUtf16.end > authorizedContentUtf16.end ||
+            cell.affectedUtf16.start < authority.start ||
+            cell.affectedUtf16.end > authority.end ||
             cell.triggerUtf16.start < cell.affectedUtf16.start ||
-            cell.triggerUtf16.end > cell.affectedUtf16.end,
-      )) {
+            cell.triggerUtf16.end > cell.affectedUtf16.end;
+      })) {
     return null;
   }
   final matches = cells
@@ -153,17 +183,37 @@ FlarkProjectionEditCellReceipt? authorizeProjectionEditCell({
                   FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
               cell.terminalSpaceAvailable,
           exactScalar: cell.exactScalar,
+          resultBlockShell: cell.resultBlockShell,
+          blockPrefixPlan: cell.blockPrefixPlan,
+          blockPrefixActivationUtf16Length:
+              cell.blockPrefixActivationUtf16Length,
+          blockPrefixProgress: 0,
         ),
       )
+      .toList(growable: false);
+  final planMatches = matches
       .where(
         (cell) =>
+            cell.matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan &&
             _projectionEditCellMatches(cell, startUtf16, endUtf16, replacement),
       )
       .toList(growable: false);
-  if (matches.length != 1) return null;
+  final admitted = planMatches.isNotEmpty
+      ? planMatches
+      : matches
+            .where(
+              (cell) => _projectionEditCellMatches(
+                cell,
+                startUtf16,
+                endUtf16,
+                replacement,
+              ),
+            )
+            .toList(growable: false);
+  if (admitted.length != 1) return null;
   return _authorizeCurrentProjectionEditCell(
     revision: revision,
-    cell: matches.single,
+    cell: admitted.single,
     startUtf16: startUtf16,
     endUtf16: endUtf16,
     replacement: replacement,
@@ -195,6 +245,10 @@ FlarkProjectionEditCellReceipt? _authorizeCurrentProjectionEditCell({
       resultAffected.end,
       resultAffected.end,
     ),
+    FlarkProjectionEditMatcher.simpleBlockPrefixPlan => FlarkSourceRange(
+      cell.affectedUtf16.start + cell.blockPrefixProgress + replacement.length,
+      cell.affectedUtf16.start + cell.blockPrefixProgress + replacement.length,
+    ),
     _ => _transformInsertionRange(
       cell.triggerUtf16,
       startUtf16,
@@ -202,6 +256,18 @@ FlarkProjectionEditCellReceipt? _authorizeCurrentProjectionEditCell({
       growsWithInsertion: false,
     ),
   };
+  final nextBlockPrefixProgress =
+      cell.matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan
+      ? cell.blockPrefixProgress + replacement.length
+      : 0;
+  final currentResultBlockShell =
+      cell.matcher == FlarkProjectionEditMatcher.simpleBlockPrefixPlan
+      ? _blockPrefixResultShell(
+          target: cell.resultBlockShell!,
+          activation: cell.blockPrefixActivationUtf16Length!,
+          progress: nextBlockPrefixProgress,
+        )
+      : cell.resultBlockShell;
   return FlarkProjectionEditCellReceipt._(
     baseRevision: revision,
     resultRevision: revision + 1,
@@ -218,6 +284,11 @@ FlarkProjectionEditCellReceipt? _authorizeCurrentProjectionEditCell({
             FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
         replacement != ' ',
     exactScalar: cell.exactScalar,
+    resultBlockShell: currentResultBlockShell,
+    targetBlockShell: cell.resultBlockShell,
+    blockPrefixPlan: cell.blockPrefixPlan,
+    blockPrefixActivationUtf16Length: cell.blockPrefixActivationUtf16Length,
+    blockPrefixProgress: nextBlockPrefixProgress,
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,
     replacement: replacement,
@@ -230,7 +301,10 @@ bool _projectionEditCellMatches(
   int endUtf16,
   String replacement,
 ) {
-  if (!cell.retainBlockShell ||
+  final validShellPolicy = cell.resultBlockShell == null
+      ? cell.retainBlockShell
+      : !cell.retainBlockShell;
+  if (!validShellPolicy ||
       !cell.presentClosureExact ||
       startUtf16 > endUtf16 ||
       startUtf16 < cell.triggerUtf16.start ||
@@ -295,7 +369,53 @@ bool _projectionEditCellMatches(
           cell.exactScalar != null &&
           replacement.runes.length == 1 &&
           replacement.runes.single == cell.exactScalar,
+    FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell =>
+      !cell.chainResultCell &&
+          cell.retainOutsideClosure &&
+          cell.resultBlockShell != null &&
+          startUtf16 == cell.triggerUtf16.start &&
+          endUtf16 == cell.triggerUtf16.end &&
+          (cell.exactScalar == null
+              ? replacement.isEmpty && startUtf16 < endUtf16
+              : startUtf16 == endUtf16 &&
+                    replacement.runes.length == 1 &&
+                    replacement.runes.single == cell.exactScalar),
+    FlarkProjectionEditMatcher.simpleBlockPrefixPlan =>
+      cell.chainResultCell &&
+          cell.retainOutsideClosure &&
+          cell.resultBlockShell != null &&
+          cell.blockPrefixPlan != null &&
+          cell.blockPrefixActivationUtf16Length != null &&
+          startUtf16 == endUtf16 &&
+          startUtf16 == cell.affectedUtf16.start + cell.blockPrefixProgress &&
+          replacement.isNotEmpty &&
+          cell.blockPrefixProgress + replacement.length <=
+              cell.blockPrefixPlan!.length &&
+          cell.blockPrefixPlan!.startsWith(
+            replacement,
+            cell.blockPrefixProgress,
+          ),
   };
+}
+
+FlarkProjectionResultBlockShell _blockPrefixResultShell({
+  required FlarkProjectionResultBlockShell target,
+  required int activation,
+  required int progress,
+}) {
+  if (progress < activation) {
+    return const FlarkProjectionResultBlockShell(
+      kind: FlarkProjectionResultBlockKind.plain,
+      prefixUtf16Length: 0,
+    );
+  }
+  return FlarkProjectionResultBlockShell(
+    kind: target.kind,
+    prefixUtf16Length: progress < target.prefixUtf16Length
+        ? progress
+        : target.prefixUtf16Length,
+    parameter: target.parameter,
+  );
 }
 
 bool _isAsciiAlphanumeric(int unit) =>
@@ -380,6 +500,7 @@ FlarkPendingDependencyAuthority? bindPendingDependencyAuthority({
   required List<FlarkProjectionEditCell> cells,
   required List<FlarkLiteralSafeEnvelope> envelopes,
   required FlarkSourceRange authorizedContentUtf16,
+  FlarkSourceRange? authorizedBlockUtf16,
   required int startUtf16,
   required int endUtf16,
   required String replacement,
@@ -388,6 +509,7 @@ FlarkPendingDependencyAuthority? bindPendingDependencyAuthority({
       revision: revision,
       cells: cells,
       authorizedContentUtf16: authorizedContentUtf16,
+      authorizedBlockUtf16: authorizedBlockUtf16,
       startUtf16: startUtf16,
       endUtf16: endUtf16,
       replacement: replacement,

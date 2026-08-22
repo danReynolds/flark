@@ -241,18 +241,14 @@ impl M11CompactReferenceJournal {
         }
         let mut records = Vec::new();
         records.try_reserve_exact(self.records.len()).map_err(|_| {
-            M11ReferenceRendezvousError::InvalidState(
-                "compact prefix record allocation failed",
-            )
+            M11ReferenceRendezvousError::InvalidState("compact prefix record allocation failed")
         })?;
         records.extend_from_slice(&self.records);
         let mut normalized_labels = Vec::new();
         normalized_labels
             .try_reserve_exact(self.normalized_labels.len())
             .map_err(|_| {
-                M11ReferenceRendezvousError::InvalidState(
-                    "compact prefix label allocation failed",
-                )
+                M11ReferenceRendezvousError::InvalidState("compact prefix label allocation failed")
             })?;
         normalized_labels.extend_from_slice(&self.normalized_labels);
         let mut order = Vec::new();
@@ -357,7 +353,9 @@ fn compute_compact_reference_winners(
         M11ReferenceRendezvousError::InvalidState("compact reference order allocation failed")
     })?;
     for ordinal in 0..records.len() {
-        order.push(u32::try_from(ordinal).map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?);
+        order.push(
+            u32::try_from(ordinal).map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?,
+        );
     }
     order.sort_unstable_by(|left, right| {
         let left_record = &records[*left as usize];

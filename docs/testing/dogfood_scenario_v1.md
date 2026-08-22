@@ -29,13 +29,16 @@ does not count as product-tour evidence.
 ### Native feature set and ABI
 
 - Starting ABI: `4.31`.
-- Final frozen D0 ABI after Phase 1: `4.32`.
+- Final frozen D0 ABI after Phase 1: `4.33`.
 - Phase 1 is expected to consolidate host authority state. It may change the
   ABI only when the unified typed contract or global live-state inspector
   cannot be represented by 4.31.
 - Phase 1 records and freezes the final D0 ABI minor. The draft 4.32 contract
-  was reopened before any downstream Phase-2 receipt and refrozen at the same
-  minor with capability `PROJECTION_EDIT_CELLS_V3`; any later ABI change
+  was reopened before any downstream Phase-2 receipt for the general
+  `PROJECTION_EDIT_CELLS_V3` seam. The D0 block-construction actual-paint RED
+  then proved that the existing record could not declare a changed result
+  shell, so architecture review explicitly re-opened the boundary once more
+  and refroze it at 4.33 with `PROJECTION_EDIT_CELLS_V4`. Any later ABI change
   invalidates Phase 1 and all downstream receipts.
 - The D0 app uses the default Cargo feature set.
 - `opening-session` remains an independently tested feature, not a D0 app
@@ -172,10 +175,10 @@ publishes the named shell without source marker relay from `**sentinel**`.
 
 | ID | Exact command sequence | Final shell | Current evidence |
 |---|---|---|---|
-| SYNTAX-06 | insert `# `; then remove it | ATX heading, then Plain | PARTIAL: ordinary marker-transition tests; add actual-paint ledger case |
-| SYNTAX-07 | insert `> `; then remove it | depth-one BlockQuote, then Plain | PARTIAL |
-| SYNTAX-08 | insert `- `; then remove it | bullet ListItem, then Plain | PARTIAL |
-| SYNTAX-09 | insert `1. `; then remove it | ordered ListItem, then Plain | PARTIAL |
+| SYNTAX-06 | insert `# ` per-edit and as one true unpumped burst; then remove it | ATX heading, then Plain | PRESENT: donor-checked prefix plan, runtime clean differential, worker-boundary decode, and actual-paint cases |
+| SYNTAX-07 | insert `> ` per-edit and as one true unpumped burst; then remove it | depth-one BlockQuote, then Plain | PRESENT: same four-layer evidence |
+| SYNTAX-08 | insert `- ` per-edit and as one true unpumped burst; then remove it | bullet ListItem, then Plain | PRESENT: same four-layer evidence |
+| SYNTAX-09 | insert `1. ` per-edit and as one true unpumped burst; then remove it | ordered ListItem, then Plain | PRESENT: same four-layer evidence |
 | SYNTAX-10 | at line start type three backticks followed by `dart`, then Return; after `change this line` type Return followed by three backticks | fenced CodeBlock containing `change this line`, then following Plain sentinel | PARTIAL |
 
 ## Block shells, actions, and structural edits

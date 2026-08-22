@@ -229,21 +229,26 @@ void main() {
       expect(row.kind, 12);
       expect(row.literalSafeEnvelopes, isEmpty);
       expect(
-        row.projectionEditCells.map(
-          (cell) => (
-            cell.matcher,
-            cell.affectedBytes.start,
-            cell.affectedBytes.end,
-            cell.affectedUtf16.start,
-            cell.affectedUtf16.end,
-            cell.triggerUtf16.start,
-            cell.triggerUtf16.end,
-            cell.retainBlockShell,
-            cell.retainOutsideClosure,
-            cell.presentClosureExact,
-            cell.chainResultCell,
-          ),
-        ),
+        row.projectionEditCells
+            .where(
+              (cell) =>
+                  cell.matcher == FlarkProjectionEditMatcher.anyNoCrLfSplice,
+            )
+            .map(
+              (cell) => (
+                cell.matcher,
+                cell.affectedBytes.start,
+                cell.affectedBytes.end,
+                cell.affectedUtf16.start,
+                cell.affectedUtf16.end,
+                cell.triggerUtf16.start,
+                cell.triggerUtf16.end,
+                cell.retainBlockShell,
+                cell.retainOutsideClosure,
+                cell.presentClosureExact,
+                cell.chainResultCell,
+              ),
+            ),
         [
           (
             FlarkProjectionEditMatcher.anyNoCrLfSplice,
@@ -267,6 +272,163 @@ void main() {
   );
 
   test(
+    'parser-authored block result shells cross the Dart worker boundary',
+    () async {
+      final cases =
+          <
+            ({
+              String source,
+              FlarkSourceRange trigger,
+              FlarkProjectionResultBlockKind kind,
+              int prefix,
+              int parameter,
+              int? scalar,
+            })
+          >[
+            (
+              source: '#change\n',
+              trigger: const FlarkSourceRange(1, 1),
+              kind: FlarkProjectionResultBlockKind.atxHeading,
+              prefix: 2,
+              parameter: 1,
+              scalar: 0x20,
+            ),
+            (
+              source: '>change\n',
+              trigger: const FlarkSourceRange(1, 1),
+              kind: FlarkProjectionResultBlockKind.blockQuote,
+              prefix: 2,
+              parameter: 1,
+              scalar: 0x20,
+            ),
+            (
+              source: '-change\n',
+              trigger: const FlarkSourceRange(1, 1),
+              kind: FlarkProjectionResultBlockKind.listItem,
+              prefix: 2,
+              parameter: 0,
+              scalar: 0x20,
+            ),
+            (
+              source: '> change\n',
+              trigger: const FlarkSourceRange(1, 2),
+              kind: FlarkProjectionResultBlockKind.blockQuote,
+              prefix: 1,
+              parameter: 1,
+              scalar: null,
+            ),
+          ];
+      for (final scenario in cases) {
+        final document = await FlarkCoreDocument.open(
+          scenario.source,
+          libraryPath: libraryPath!,
+        );
+        await document.pumpUntilReady();
+        final row = (await document.queryViewport()).rows.single;
+        final cell = row.projectionEditCells.singleWhere(
+          (candidate) =>
+              candidate.matcher ==
+                  FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell &&
+              candidate.triggerUtf16.start == scenario.trigger.start &&
+              candidate.triggerUtf16.end == scenario.trigger.end &&
+              candidate.resultBlockShell?.kind == scenario.kind &&
+              candidate.resultBlockShell?.prefixUtf16Length == scenario.prefix,
+        );
+        expect(cell.affectedUtf16.start, 0, reason: scenario.source);
+        expect(
+          cell.affectedUtf16.end,
+          scenario.source.length - 1,
+          reason: scenario.source,
+        );
+        expect(cell.exactScalar, scenario.scalar, reason: scenario.source);
+        expect(
+          cell.resultBlockShell?.parameter,
+          scenario.parameter,
+          reason: scenario.source,
+        );
+        expect(cell.retainBlockShell, isFalse, reason: scenario.source);
+        expect(cell.retainOutsideClosure, isTrue, reason: scenario.source);
+        expect(cell.presentClosureExact, isTrue, reason: scenario.source);
+        expect(cell.chainResultCell, isFalse, reason: scenario.source);
+        await document.dispose();
+      }
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
+    'parser-authored block prefix plans cross the Dart worker boundary',
+    () async {
+      const source = 'change\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      final plans = row.projectionEditCells
+          .where(
+            (cell) =>
+                cell.matcher ==
+                FlarkProjectionEditMatcher.simpleBlockPrefixPlan,
+          )
+          .toList(growable: false);
+      expect(plans, hasLength(4));
+      for (final expected in const [
+        (
+          plan: '# ',
+          activation: 2,
+          kind: FlarkProjectionResultBlockKind.atxHeading,
+          prefix: 2,
+          parameter: 1,
+        ),
+        (
+          plan: '> ',
+          activation: 1,
+          kind: FlarkProjectionResultBlockKind.blockQuote,
+          prefix: 2,
+          parameter: 1,
+        ),
+        (
+          plan: '- ',
+          activation: 2,
+          kind: FlarkProjectionResultBlockKind.listItem,
+          prefix: 2,
+          parameter: 0,
+        ),
+        (
+          plan: '1. ',
+          activation: 3,
+          kind: FlarkProjectionResultBlockKind.listItem,
+          prefix: 3,
+          parameter: 0,
+        ),
+      ]) {
+        final cell = plans.singleWhere(
+          (candidate) => candidate.blockPrefixPlan == expected.plan,
+        );
+        expect(cell.blockPrefixActivationUtf16Length, expected.activation);
+        expect((cell.affectedUtf16.start, cell.affectedUtf16.end), (0, 6));
+        expect((cell.triggerUtf16.start, cell.triggerUtf16.end), (0, 0));
+        expect(cell.resultBlockShell?.kind, expected.kind);
+        expect(cell.resultBlockShell?.prefixUtf16Length, expected.prefix);
+        expect(cell.resultBlockShell?.parameter, expected.parameter);
+        expect(cell.retainBlockShell, isFalse);
+        expect(cell.retainOutsideClosure, isTrue);
+        expect(cell.presentClosureExact, isTrue);
+        expect(cell.chainResultCell, isTrue);
+      }
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'mixed heading dependency cell crosses the Dart worker boundary',
     () async {
       const source = '# **left** middle _right_\n';
@@ -282,11 +444,10 @@ void main() {
         FlarkInlineFactKind.strong,
         FlarkInlineFactKind.emphasis,
       ]);
-      expect(row.projectionEditCells, hasLength(1));
-      final cell = row.projectionEditCells.first;
-      expect(
-        cell.matcher,
-        FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint,
+      final cell = row.projectionEditCells.singleWhere(
+        (candidate) =>
+            candidate.matcher ==
+            FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint,
       );
       expect((cell.affectedUtf16.start, cell.affectedUtf16.end), (2, 10));
       expect((cell.triggerUtf16.start, cell.triggerUtf16.end), (4, 4));

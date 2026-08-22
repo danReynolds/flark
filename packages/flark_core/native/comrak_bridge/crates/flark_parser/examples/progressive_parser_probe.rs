@@ -5,8 +5,8 @@ use flark_engine::{
     SOURCE_SEED_PAGE_MAX_UTF16,
 };
 use flark_parser::{
-    build_m11_progressive_compact_probe, build_m11_progressive_open_probe,
-    M11CompactViewportProbe, M11ProgressiveOpenFeed,
+    build_m11_progressive_compact_probe, build_m11_progressive_open_probe, M11CompactViewportProbe,
+    M11ProgressiveOpenFeed,
 };
 
 const ADMISSION_GRANT_BYTES: usize = 256 * 1024;
@@ -89,13 +89,10 @@ fn run_open(size_mib: usize) {
     let (source, _) = fixture(size_mib);
     assert!(source.is_ascii(), "byte offsets double as UTF-16 offsets");
     let started = Instant::now();
-    let mut store =
-        OpeningSourceStore::new(SourceRevision::new(1), None).expect("opening store");
-    let mut runtime = DocumentRuntime::from_opening_snapshot(
-        store.snapshot(),
-        DocumentRuntimeConfig::default(),
-    )
-    .expect("opening runtime");
+    let mut store = OpeningSourceStore::new(SourceRevision::new(1), None).expect("opening store");
+    let mut runtime =
+        DocumentRuntime::from_opening_snapshot(store.snapshot(), DocumentRuntimeConfig::default())
+            .expect("opening runtime");
     let admitted = store.version();
     let mut offset = 0;
     let probe = build_m11_progressive_open_probe(&mut runtime, 1, &mut store, admitted, |store| {

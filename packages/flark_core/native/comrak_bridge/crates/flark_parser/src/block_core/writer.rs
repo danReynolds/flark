@@ -29,12 +29,12 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenTerminalFragmentRange, M11RecursiveGreenTerminalFragmentRewrite,
     M11RecursiveGreenTerminalFragmentRewritePoll, M11RecursiveGreenTerminalFragmentRewriteWork,
 };
+#[cfg(feature = "m11-compact-probe")]
+use flark_engine::SourceAppendReceipt;
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
     ExactUnchangedSuffixWitness, SourceEditError, SourceSnapshotLease, SourceVersion,
 };
-#[cfg(feature = "m11-compact-probe")]
-use flark_engine::SourceAppendReceipt;
 
 use super::controller::{
     M11DirectBlockRestartTransactionReplica, M11DirectLeadingReferenceRemainderContinuation,
@@ -3536,9 +3536,12 @@ impl M11BlockWriter {
         let previous_output = probe.fragment.lease.replace(output_source).ok_or(
             M11BlockWriterError::InvalidCommand("progressive output source lease is missing"),
         )?;
-        let previous_geometry = self.geometry_lease.replace(geometry).ok_or(
-            M11BlockWriterError::InvalidCommand("progressive geometry source lease is missing"),
-        )?;
+        let previous_geometry =
+            self.geometry_lease
+                .replace(geometry)
+                .ok_or(M11BlockWriterError::InvalidCommand(
+                    "progressive geometry source lease is missing",
+                ))?;
         if previous_output.version() != receipt.previous()
             || previous_geometry.version() != receipt.previous()
         {

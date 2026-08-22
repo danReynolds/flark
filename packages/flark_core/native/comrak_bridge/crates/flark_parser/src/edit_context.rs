@@ -2,7 +2,7 @@
 //!
 //! This is not a second Markdown parser. It exposes the result of the same
 //! segmented Comrak-donor scan used by the block controller, narrowed to the
-//! top-level plain/list cases that `flark-edit-v1` can prove locally.
+//! bounded top-level cases that `flark-edit-v1` can prove locally.
 
 use std::ops::Range;
 
@@ -41,6 +41,7 @@ pub enum M11SimpleEditLineKind {
         empty: bool,
     },
     AtxHeading {
+        level: u8,
         prefix: Range<usize>,
         content: Range<usize>,
         empty: bool,
@@ -58,6 +59,95 @@ pub struct M11SimpleEditLine {
     pub kind: M11SimpleEditLineKind,
     pub ending: M11LineEnding,
     pub content_end: usize,
+}
+
+/// Parser-authored block presentation produced by one exact bounded edit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum M11SimpleBlockTransitionPresentation {
+    Plain,
+    AtxHeading { level: u8 },
+    BlockQuote { depth: u8 },
+    ListItem { marker: M11SimpleEditListMarker },
+}
+
+/// One pre-edit proof that an exact scalar insertion or deletion changes only
+/// the current physical line's block shell in the declared way.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct M11SimpleBlockTransition {
+    affected: Range<usize>,
+    trigger: Range<usize>,
+    replacement: Option<char>,
+    result_prefix_utf16_len: u8,
+    presentation: M11SimpleBlockTransitionPresentation,
+}
+
+/// One parser-authored, bounded prefix sequence that constructs a supported
+/// simple block shell from a Plain physical line.
+///
+/// The host receives the exact sequence and the point at which the donor
+/// classifier says the result shell becomes active. It does not infer marker
+/// grammar from source text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct M11SimpleBlockPrefixPlan {
+    affected: Range<usize>,
+    prefix: Vec<u8>,
+    activation_prefix_utf16_len: u8,
+    result_prefix_utf16_len: u8,
+    presentation: M11SimpleBlockTransitionPresentation,
+}
+
+impl M11SimpleBlockPrefixPlan {
+    #[must_use]
+    pub fn affected(&self) -> Range<usize> {
+        self.affected.clone()
+    }
+
+    #[must_use]
+    pub fn prefix(&self) -> &[u8] {
+        &self.prefix
+    }
+
+    #[must_use]
+    pub const fn activation_prefix_utf16_len(&self) -> u8 {
+        self.activation_prefix_utf16_len
+    }
+
+    #[must_use]
+    pub const fn result_prefix_utf16_len(&self) -> u8 {
+        self.result_prefix_utf16_len
+    }
+
+    #[must_use]
+    pub const fn presentation(&self) -> M11SimpleBlockTransitionPresentation {
+        self.presentation
+    }
+}
+
+impl M11SimpleBlockTransition {
+    #[must_use]
+    pub fn affected(&self) -> Range<usize> {
+        self.affected.clone()
+    }
+
+    #[must_use]
+    pub fn trigger(&self) -> Range<usize> {
+        self.trigger.clone()
+    }
+
+    #[must_use]
+    pub const fn replacement(&self) -> Option<char> {
+        self.replacement
+    }
+
+    #[must_use]
+    pub const fn result_prefix_utf16_len(&self) -> u8 {
+        self.result_prefix_utf16_len
+    }
+
+    #[must_use]
+    pub const fn presentation(&self) -> M11SimpleBlockTransitionPresentation {
+        self.presentation
+    }
 }
 
 /// Classifies one exact physical line, or a bounded prefix of a longer line.
@@ -182,6 +272,7 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                 .all(|byte| matches!(byte, b' ' | b'\t'));
             return M11SimpleEditLine {
                 kind: M11SimpleEditLineKind::AtxHeading {
+                    level: heading.level,
                     prefix: heading.opening_marker.start..heading.content.start,
                     content: heading.content.start..heading.content.end,
                     empty,
@@ -244,6 +335,227 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
         },
         ending,
         content_end,
+    }
+}
+
+/// Derives exact one-scalar block-shell transitions for a supported simple
+/// physical line.
+///
+/// The bounded donor-backed classifier is run on each possible opener point,
+/// so this function does not maintain a second Markdown marker table. Only a
+/// top-level prefix replacement whose edited line has one supported simple
+/// shell is published. Hosts receive the result classification, never enough
+/// source grammar to infer a different one.
+#[must_use]
+pub fn derive_m11_simple_block_transitions(
+    source: &[u8],
+    strip_bom: bool,
+) -> Vec<M11SimpleBlockTransition> {
+    let base = classify_m11_simple_edit_line(source, strip_bom);
+    let Some((base_presentation, base_prefix_end)) =
+        simple_block_transition_presentation(&base.kind)
+    else {
+        return Vec::new();
+    };
+    if base.content_end == 0 || base.content_end > M11_SIMPLE_EDIT_LINE_MAX_BYTES {
+        return Vec::new();
+    }
+    let Ok(text) = std::str::from_utf8(source) else {
+        return Vec::new();
+    };
+    let search_end = base.content_end.min(14);
+    let mut transitions = Vec::new();
+    let mut candidates = Vec::new();
+    for trigger in 0..=search_end {
+        if !text.is_char_boundary(trigger) {
+            continue;
+        }
+        candidates.push((trigger..trigger, Some(' ')));
+    }
+    if text.is_char_boundary(0) {
+        candidates.push((0..0, Some('>')));
+    }
+    for (trigger, character) in text
+        .char_indices()
+        .take_while(|(start, _)| *start < search_end)
+    {
+        candidates.push((trigger..trigger + character.len_utf8(), None));
+    }
+    for (trigger, replacement) in candidates {
+        let mut edited =
+            Vec::with_capacity(source.len() + usize::from(replacement.is_some()) - trigger.len());
+        edited.extend_from_slice(&source[..trigger.start]);
+        if let Some(replacement) = replacement {
+            let mut encoded = [0_u8; 4];
+            edited.extend_from_slice(replacement.encode_utf8(&mut encoded).as_bytes());
+        }
+        edited.extend_from_slice(&source[trigger.end..]);
+        let result = classify_m11_simple_edit_line(&edited, strip_bom);
+        let delta = isize::try_from(edited.len()).unwrap_or(isize::MAX)
+            - isize::try_from(source.len()).unwrap_or(isize::MIN);
+        if isize::try_from(result.content_end).ok()
+            != isize::try_from(base.content_end)
+                .ok()
+                .and_then(|value| value.checked_add(delta))
+        {
+            continue;
+        }
+        let Some((presentation, prefix_end)) = simple_block_transition_presentation(&result.kind)
+        else {
+            continue;
+        };
+        let changes_shell = presentation != base_presentation
+            && (base_presentation == M11SimpleBlockTransitionPresentation::Plain
+                || presentation == M11SimpleBlockTransitionPresentation::Plain);
+        let changes_optional_quote_space = matches!(
+            (base_presentation, presentation, base_prefix_end, prefix_end),
+            (
+                M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+                M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+                1,
+                2
+            ) | (
+                M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+                M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+                2,
+                1
+            )
+        );
+        if !changes_shell && !changes_optional_quote_space {
+            continue;
+        }
+        let prefix_utf16_len = edited
+            .get(..prefix_end)
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            .map(|value| value.encode_utf16().count());
+        let Some(prefix_utf16_len) = prefix_utf16_len.and_then(|len| u8::try_from(len).ok()) else {
+            continue;
+        };
+        transitions.push(M11SimpleBlockTransition {
+            affected: 0..base.content_end,
+            trigger,
+            replacement,
+            result_prefix_utf16_len: prefix_utf16_len,
+            presentation,
+        });
+    }
+    transitions
+}
+
+/// Derives the finite D0 prefix-construction plans for a supported Plain line.
+///
+/// Candidate sequences are data owned by the parser layer, and every
+/// intermediate and final state is reclassified by the donor-backed block
+/// classifier. Any unexpected or contextual state suppresses the plan.
+#[must_use]
+pub fn derive_m11_simple_block_prefix_plans(
+    source: &[u8],
+    strip_bom: bool,
+) -> Vec<M11SimpleBlockPrefixPlan> {
+    let base = classify_m11_simple_edit_line(source, strip_bom);
+    if base.kind != M11SimpleEditLineKind::Plain
+        || base.content_end == 0
+        || base.content_end > M11_SIMPLE_EDIT_LINE_MAX_BYTES
+    {
+        return Vec::new();
+    }
+
+    const CANDIDATES: [&[u8]; 4] = [b"# ", b"> ", b"- ", b"1. "];
+    let mut plans = Vec::with_capacity(CANDIDATES.len());
+    for prefix in CANDIDATES {
+        let mut edited = Vec::with_capacity(source.len() + prefix.len());
+        edited.extend_from_slice(prefix);
+        edited.extend_from_slice(source);
+        let result = classify_m11_simple_edit_line(&edited, strip_bom);
+        if result.content_end != base.content_end + prefix.len() {
+            continue;
+        }
+        let Some((presentation, result_prefix_end)) =
+            simple_block_transition_presentation(&result.kind)
+        else {
+            continue;
+        };
+        if presentation == M11SimpleBlockTransitionPresentation::Plain
+            || result_prefix_end != prefix.len()
+        {
+            continue;
+        }
+
+        let mut activation = None;
+        let mut valid = true;
+        for step in 1..=prefix.len() {
+            let mut intermediate = Vec::with_capacity(source.len() + step);
+            intermediate.extend_from_slice(&prefix[..step]);
+            intermediate.extend_from_slice(source);
+            let classified = classify_m11_simple_edit_line(&intermediate, strip_bom);
+            if classified.content_end != base.content_end + step {
+                valid = false;
+                break;
+            }
+            let Some((step_presentation, step_prefix_end)) =
+                simple_block_transition_presentation(&classified.kind)
+            else {
+                valid = false;
+                break;
+            };
+            if step_presentation == presentation && step_prefix_end == step {
+                activation.get_or_insert(step);
+            } else if step_presentation != M11SimpleBlockTransitionPresentation::Plain {
+                valid = false;
+                break;
+            }
+        }
+        let Some(activation) = activation.filter(|_| valid) else {
+            continue;
+        };
+        let (Ok(activation_prefix_utf16_len), Ok(result_prefix_utf16_len)) =
+            (u8::try_from(activation), u8::try_from(result_prefix_end))
+        else {
+            continue;
+        };
+        plans.push(M11SimpleBlockPrefixPlan {
+            affected: 0..base.content_end,
+            prefix: prefix.to_vec(),
+            activation_prefix_utf16_len,
+            result_prefix_utf16_len,
+            presentation,
+        });
+    }
+    plans
+}
+
+fn simple_block_transition_presentation(
+    kind: &M11SimpleEditLineKind,
+) -> Option<(M11SimpleBlockTransitionPresentation, usize)> {
+    match kind {
+        M11SimpleEditLineKind::Plain => Some((M11SimpleBlockTransitionPresentation::Plain, 0)),
+        M11SimpleEditLineKind::AtxHeading {
+            level,
+            prefix,
+            content,
+            ..
+        } if prefix.start == 0 && prefix.end == content.start => Some((
+            M11SimpleBlockTransitionPresentation::AtxHeading { level: *level },
+            prefix.end,
+        )),
+        M11SimpleEditLineKind::BlockQuote {
+            prefix, content, ..
+        } if prefix.start == 0 && prefix.end == content.start => Some((
+            M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+            prefix.end,
+        )),
+        M11SimpleEditLineKind::ListItem {
+            marker,
+            prefix,
+            content,
+            marker_offset: 0,
+            task_checked: None,
+            ..
+        } if prefix.start == 0 && prefix.end == content.start => Some((
+            M11SimpleBlockTransitionPresentation::ListItem { marker: *marker },
+            prefix.end,
+        )),
+        _ => None,
     }
 }
 
@@ -316,6 +628,7 @@ mod tests {
         assert_eq!(
             classify_m11_simple_edit_line(b"  ## heading\n", false).kind,
             M11SimpleEditLineKind::AtxHeading {
+                level: 2,
                 prefix: 2..5,
                 content: 5..12,
                 empty: false,
@@ -333,6 +646,127 @@ mod tests {
             classify_m11_simple_edit_line(b"> \n", false).kind,
             M11SimpleEditLineKind::BlockQuote { empty: true, .. }
         ));
+    }
+
+    #[test]
+    fn derives_exact_simple_block_shell_transitions_from_plain_lines() {
+        let cases = [
+            (
+                "#change\n",
+                1,
+                2,
+                M11SimpleBlockTransitionPresentation::AtxHeading { level: 1 },
+            ),
+            (
+                ">change\n",
+                1,
+                2,
+                M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+            ),
+            (
+                "-change\n",
+                1,
+                2,
+                M11SimpleBlockTransitionPresentation::ListItem {
+                    marker: M11SimpleEditListMarker::Bullet(BulletMarker::Hyphen),
+                },
+            ),
+            (
+                "1.change\n",
+                2,
+                3,
+                M11SimpleBlockTransitionPresentation::ListItem {
+                    marker: M11SimpleEditListMarker::Ordered {
+                        value: 1,
+                        delimiter: ListDelimiter::Period,
+                    },
+                },
+            ),
+        ];
+        for (source, trigger, prefix_len, presentation) in cases {
+            let transitions = derive_m11_simple_block_transitions(source.as_bytes(), false);
+            assert!(
+                transitions.contains(&M11SimpleBlockTransition {
+                    affected: 0..source.len() - 1,
+                    trigger: trigger..trigger,
+                    replacement: Some(' '),
+                    result_prefix_utf16_len: prefix_len,
+                    presentation,
+                }),
+                "{source:?}",
+            );
+        }
+        assert!(
+            derive_m11_simple_block_transitions(b"change\n", false).contains(
+                &M11SimpleBlockTransition {
+                    affected: 0..6,
+                    trigger: 0..0,
+                    replacement: Some('>'),
+                    result_prefix_utf16_len: 1,
+                    presentation: M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+                },
+            )
+        );
+    }
+
+    #[test]
+    fn derives_donor_checked_simple_block_prefix_plans() {
+        let plans = derive_m11_simple_block_prefix_plans(b"change\n", false);
+        let expected = [
+            (
+                b"# ".as_slice(),
+                2,
+                2,
+                M11SimpleBlockTransitionPresentation::AtxHeading { level: 1 },
+            ),
+            (
+                b"> ".as_slice(),
+                1,
+                2,
+                M11SimpleBlockTransitionPresentation::BlockQuote { depth: 1 },
+            ),
+            (
+                b"- ".as_slice(),
+                2,
+                2,
+                M11SimpleBlockTransitionPresentation::ListItem {
+                    marker: M11SimpleEditListMarker::Bullet(BulletMarker::Hyphen),
+                },
+            ),
+            (
+                b"1. ".as_slice(),
+                3,
+                3,
+                M11SimpleBlockTransitionPresentation::ListItem {
+                    marker: M11SimpleEditListMarker::Ordered {
+                        value: 1,
+                        delimiter: ListDelimiter::Period,
+                    },
+                },
+            ),
+        ];
+        for (prefix, activation, result_prefix, presentation) in expected {
+            assert!(
+                plans.iter().any(|plan| {
+                    plan.affected == (0..6)
+                        && plan.prefix == prefix
+                        && usize::from(plan.activation_prefix_utf16_len) == activation
+                        && usize::from(plan.result_prefix_utf16_len) == result_prefix
+                        && plan.presentation == presentation
+                }),
+                "missing plan for {prefix:?}: {plans:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn simple_block_transition_proof_fails_closed_outside_plain_bounded_rows() {
+        for source in ["---\n", "```code\n"] {
+            assert!(
+                derive_m11_simple_block_transitions(source.as_bytes(), false).is_empty(),
+                "{source:?}",
+            );
+        }
     }
 
     #[test]

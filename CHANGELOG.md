@@ -5,7 +5,7 @@
 - Cut over to the v4 package split: `flark_core` owns the headless Dart/Rust
   runtime and `flark` owns the Flutter product surface.
 - Added bounded, source-authoritative opening, editing, certification, semantic
-  viewport, history, and lifecycle APIs through ABI 4.32.
+  viewport, history, and lifecycle APIs through ABI 4.33.
 - Added parser-authored literal-safe insertion envelopes, ABI 4.27's bounded
   closure/carry proof for immediate word/space successors, and fail-closed exact
   source rendering whenever result-revision semantics are not proven current.
@@ -48,6 +48,17 @@
   covers the frozen different-marker syntax constructions (`*`, `_`, `~`,
   backtick, `[` and `]`) when the current source contains no matching marker,
   keeping the certified Strong or Emphasis sibling projected.
+- Added ABI 4.33's `PROJECTION_EDIT_CELLS_V4` after the D0 actual-paint block
+  construction matrix found that the final space in `# `, `> `, `- `, and
+  `1. ` still painted the predecessor Plain shell. The parser now publishes
+  one bounded exact splice or finite parser-declared rapid prefix plan plus its
+  typed clean-result block shell; Core compares only that declared sequence,
+  Flutter materializes it through the existing
+  pending-presentation snapshot, and fresh prefix-inclusive certification
+  retires it. Construction and structural Backspace removal keep exact source,
+  caret identity, outside Strong styling, and the clean heading/quote/list
+  result on every observed paint at human cadence and in true unpumped bursts
+  without adding host Markdown rules.
 - Kept closed fenced-code typing rendered on every paint by publishing an
   authoritative empty inline-fact set plus bounded physical-line ASCII-word
   cells; the code shell remains projected while only the changed authored line

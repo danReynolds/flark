@@ -101,6 +101,67 @@ void main() {
     chainResultCell: false,
     exactScalar: 0x5b,
   );
+  const headingConstructionCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell,
+    affectedBytes: FlarkSourceRange(0, 7),
+    affectedUtf16: FlarkSourceRange(0, 7),
+    triggerBytes: FlarkSourceRange(1, 1),
+    triggerUtf16: FlarkSourceRange(1, 1),
+    retainBlockShell: false,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: false,
+    exactScalar: 0x20,
+    resultBlockShell: FlarkProjectionResultBlockShell(
+      kind: FlarkProjectionResultBlockKind.atxHeading,
+      prefixUtf16Length: 2,
+      parameter: 1,
+    ),
+  );
+  const quoteSpaceRemovalCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell,
+    affectedBytes: FlarkSourceRange(0, 8),
+    affectedUtf16: FlarkSourceRange(0, 8),
+    triggerBytes: FlarkSourceRange(1, 2),
+    triggerUtf16: FlarkSourceRange(1, 2),
+    retainBlockShell: false,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: false,
+    resultBlockShell: FlarkProjectionResultBlockShell(
+      kind: FlarkProjectionResultBlockKind.blockQuote,
+      prefixUtf16Length: 1,
+      parameter: 1,
+    ),
+  );
+  const orderedPrefixPlanCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.simpleBlockPrefixPlan,
+    affectedBytes: FlarkSourceRange(0, 6),
+    affectedUtf16: FlarkSourceRange(0, 6),
+    triggerBytes: FlarkSourceRange(0, 0),
+    triggerUtf16: FlarkSourceRange(0, 0),
+    retainBlockShell: false,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: true,
+    resultBlockShell: FlarkProjectionResultBlockShell(
+      kind: FlarkProjectionResultBlockKind.listItem,
+      prefixUtf16Length: 3,
+    ),
+    blockPrefixPlan: '1. ',
+    blockPrefixActivationUtf16Length: 3,
+  );
+  const prefixGenericWordCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+    affectedBytes: FlarkSourceRange(0, 6),
+    affectedUtf16: FlarkSourceRange(0, 6),
+    triggerBytes: FlarkSourceRange(0, 6),
+    triggerUtf16: FlarkSourceRange(0, 6),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: true,
+  );
 
   test('parser word envelope binds one exact contained insertion', () {
     final receipt = authorizeRowProjectionContinuity(
@@ -659,6 +720,123 @@ void main() {
           revision: 33,
           cells: const [exactBracketCell],
           authorizedContentUtf16: const FlarkSourceRange(0, 23),
+          startUtf16: edit.start,
+          endUtf16: edit.end,
+          replacement: edit.replacement,
+        ),
+        isNull,
+        reason: '$edit',
+      );
+    }
+  });
+
+  test('result-shell cell uses parser-authored physical block authority', () {
+    expect(
+      authorizeProjectionEditCell(
+        revision: 34,
+        cells: const [headingConstructionCell],
+        authorizedContentUtf16: const FlarkSourceRange(1, 7),
+        startUtf16: 1,
+        endUtf16: 1,
+        replacement: ' ',
+      ),
+      isNull,
+      reason: 'editable content alone must not authorize source-prefix edits',
+    );
+    final receipt = authorizeProjectionEditCell(
+      revision: 34,
+      cells: const [headingConstructionCell],
+      authorizedContentUtf16: const FlarkSourceRange(1, 7),
+      authorizedBlockUtf16: const FlarkSourceRange(0, 7),
+      startUtf16: 1,
+      endUtf16: 1,
+      replacement: ' ',
+    );
+    expect(receipt, isNotNull);
+    expect(receipt!.resultRevision, 35);
+    expect(receipt.resultBlockShell, headingConstructionCell.resultBlockShell);
+    expect((receipt.affectedUtf16.start, receipt.affectedUtf16.end), (0, 8));
+    expect(
+      receipt.continueWith(startUtf16: 2, endUtf16: 2, replacement: 'x'),
+      isNull,
+      reason: 'a block-shell counterfactual is one-shot',
+    );
+  });
+
+  test('parser block-prefix plan wins overlap and advances exact sequence', () {
+    final one = authorizeProjectionEditCell(
+      revision: 40,
+      cells: const [prefixGenericWordCell, orderedPrefixPlanCell],
+      authorizedContentUtf16: const FlarkSourceRange(0, 6),
+      authorizedBlockUtf16: const FlarkSourceRange(0, 6),
+      startUtf16: 0,
+      endUtf16: 0,
+      replacement: '1',
+    );
+    expect(one, isNotNull);
+    expect(one!.matcher, FlarkProjectionEditMatcher.simpleBlockPrefixPlan);
+    expect(one.blockPrefixProgress, 1);
+    expect(one.resultBlockShell!.kind, FlarkProjectionResultBlockKind.plain);
+
+    final dot = one.continueWith(startUtf16: 1, endUtf16: 1, replacement: '.');
+    expect(dot, isNotNull);
+    expect(dot!.blockPrefixProgress, 2);
+    expect(dot.resultBlockShell!.kind, FlarkProjectionResultBlockKind.plain);
+
+    final space = dot.continueWith(
+      startUtf16: 2,
+      endUtf16: 2,
+      replacement: ' ',
+    );
+    expect(space, isNotNull);
+    expect(space!.blockPrefixProgress, 3);
+    expect(
+      space.resultBlockShell!.kind,
+      FlarkProjectionResultBlockKind.listItem,
+    );
+    expect(space.resultBlockShell!.prefixUtf16Length, 3);
+    expect(
+      space.continueWith(startUtf16: 3, endUtf16: 3, replacement: 'x'),
+      isNull,
+    );
+
+    expect(
+      authorizeProjectionEditCell(
+        revision: 40,
+        cells: const [orderedPrefixPlanCell],
+        authorizedContentUtf16: const FlarkSourceRange(0, 6),
+        authorizedBlockUtf16: const FlarkSourceRange(0, 6),
+        startUtf16: 0,
+        endUtf16: 0,
+        replacement: '.',
+      ),
+      isNull,
+    );
+  });
+
+  test('result-shell deletion must match the exact parser trigger', () {
+    final receipt = authorizeProjectionEditCell(
+      revision: 35,
+      cells: const [quoteSpaceRemovalCell],
+      authorizedContentUtf16: const FlarkSourceRange(2, 8),
+      authorizedBlockUtf16: const FlarkSourceRange(0, 8),
+      startUtf16: 1,
+      endUtf16: 2,
+      replacement: '',
+    );
+    expect(receipt, isNotNull);
+    expect(receipt!.resultBlockShell, quoteSpaceRemovalCell.resultBlockShell);
+    for (final edit in [
+      (start: 0, end: 1, replacement: ''),
+      (start: 1, end: 2, replacement: ' '),
+      (start: 1, end: 1, replacement: ''),
+    ]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 35,
+          cells: const [quoteSpaceRemovalCell],
+          authorizedContentUtf16: const FlarkSourceRange(2, 8),
+          authorizedBlockUtf16: const FlarkSourceRange(0, 8),
           startUtf16: edit.start,
           endUtf16: edit.end,
           replacement: edit.replacement,

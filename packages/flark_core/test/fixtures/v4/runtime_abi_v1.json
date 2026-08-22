@@ -4,7 +4,7 @@
   "status": "implemented-direct-v4-boundary",
   "abi": {
     "major": 4,
-    "minor": 32,
+    "minor": 33,
     "minorRule": "NEGOTIATE requires the exact current minor; any major or minor mismatch returns UNSUPPORTED_ABI_VERSION because the runtime retains no per-client negotiation state",
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
@@ -56,7 +56,8 @@
     {"name": "LITERAL_SAFE_ENVELOPES_V2", "bit": 1073741824},
     {"name": "STRUCTURAL_PRESENTATION_PROOFS_V1", "bit": 2147483648},
     {"name": "GLOBAL_LIVE_STATE_INSPECTION_V1", "bit": 4294967296},
-    {"name": "PROJECTION_EDIT_CELLS_V3", "bit": 8589934592}
+    {"name": "PROJECTION_EDIT_CELLS_V3", "bit": 8589934592},
+    {"name": "PROJECTION_EDIT_CELLS_V4", "bit": 17179869184}
   ],
   "operations": [
     {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},
@@ -298,7 +299,7 @@
     {"operation": "SMALL_EDIT", "recordField": "replacement_bytes_len", "callArgument": "replacement_bytes_len", "rule": "MUST_MATCH_OR_INVALID_ARGUMENT"}
   ],
   "inputFlagRules": {
-    "abiMinor": 32,
+    "abiMinor": 33,
     "rule": "Every request flags field, SessionConfig.flags, reserved_u32 field, and reserved array element is zero unless this contract assigns a value. SESSION_INSPECT flag 1 selects process-global live-state inspection behind GLOBAL_LIVE_STATE_INSPECTION_V1 and requires a zero session reference. Any other nonzero value is INVALID_ARGUMENT."
   },
   "admissionRules": [
@@ -412,6 +413,23 @@
       "INSERT_EXACT_SCALAR_AT_POINT": 6
     },
     "rule": "The parser may parameterize a one-shot exact-scalar insertion cell by storing one valid Unicode scalar in replacement_first and zero in replacement_second. Source ranges carry the complete affected dependency closure and content ranges carry its parser-authored edit trigger. The host admits only the declared edit, retains only the declared block shell and certified outside partition, paints the transformed closure as exact current source, and consumes one-shot authority after that edit. V3 permits INSERT_EXACT_SCALAR_AT_POINT to store one valid Unicode scalar in replacement_first, with one zero-width trigger strictly inside the closure. Initial emitters cover one isolated Strong bracket dependency, the frozen D0 prose punctuation set before one Strong fact, and the frozen different-marker syntax set before one Strong or Emphasis fact. All prefix triggers require ASCII-alphanumeric guards and a fact-free ASCII prefix; syntax records require the inserted marker to be absent, and brackets require exhaustive parser bracket classification. Core compares only the declared scalar. V3 also permits ASCII_LITERAL_SPLICE_IN_LITERAL to admit one nonempty ASCII-alphanumeric/U+0020 replacement containing at least one alphanumeric unit only strictly inside a parser-authored trigger. One emitter uses a complete fact-free physical-line gap as the affected closure and a maximal ASCII prose run as its interior trigger. Another maps maximal ASCII-word triggers inside each physical line of a parser-certified closed fenced-code body; its affected closure is that code line without the line ending, the body has authoritative empty inline facts, and neither fence is edit authority. These emitters never admit punctuation, deletion, or a line boundary. Every matcher except INSERT_EXACT_SCALAR_AT_POINT continues to require both replacement words zero."
+  },
+  "viewportProjectionEditCellsV4": {
+    "abiMinor": 33,
+    "capability": "PROJECTION_EDIT_CELLS_V4",
+    "recordKind": 16,
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "matchers": {
+      "EXACT_SPLICE_REPLACE_BLOCK_SHELL": 7,
+      "SIMPLE_BLOCK_PREFIX_PLAN": 8
+    },
+    "resultShellKinds": {
+      "PLAIN": 1,
+      "ATX_HEADING": 2,
+      "BLOCK_QUOTE": 3,
+      "LIST_ITEM": 4
+    },
+    "rule": "The parser may publish either one bounded exact splice or one bounded ASCII prefix plan whose clean result replaces the current physical-line block shell. Source ranges carry the complete affected physical-line closure. For EXACT_SPLICE_REPLACE_BLOCK_SHELL, content ranges carry the exact insertion point or deletion range and replacement_first is one exact inserted Unicode scalar or zero for deletion. For SIMPLE_BLOCK_PREFIX_PLAN, content is the zero-width line-start trigger; replacement_first packs up to three nonzero ASCII plan bytes little-endian in bits 0..23 and the 1-based activation prefix length in bits 24..31. replacement_second packs the typed target shell kind in bits 0..3, its final hidden prefix UTF-16 length in bits 4..11, and a heading level or quote depth parameter in bits 12..31. Both require RETAIN_OUTSIDE, PRESENT_EXACT, and REPLACE_BLOCK_SHELL; RETAIN_BLOCK_SHELL is forbidden. Exact splice is consumed after one edit. Prefix plan requires CHAIN_RESULT and advances only the exact remaining sequence; before activation it presents Plain, from activation onward it presents the declared target shell using the consumed prefix length. A specialized prefix-plan match takes precedence over a generic same-edit literal cell, and more than one matching prefix plan fails closed. V4 initially covers bounded donor-classified Plain, ATX heading, depth-1 block quote, and simple list transitions; it grants no host Markdown inference."
   },
   "viewportLiteralSafeEnvelopesV2": {
     "abiMinor": 30,

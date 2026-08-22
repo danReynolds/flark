@@ -510,7 +510,7 @@ cells or envelopes, preventing proof-heavy early rows from forcing later rows
 to exact source. Oversized baseline groups retain the ABI's existing complete-
 group fail-closed behavior.
 
-ABI 4.32 is the final frozen D0 minor. It adds one process-global live-state
+ABI 4.33 is the final frozen D0 minor. ABI 4.32 added one process-global live-state
 inspection mode to the existing fixed inspection record so close/lifecycle
 qualification can prove zero sessions, transactions, continuations, anchors,
 and histories after the last session handle has been consumed. Before any
@@ -522,6 +522,16 @@ single-physical-line Plain row with a complete Strong dependency closure and
 zero-width guarded trigger; Core compares only
 the scalar and transforms the supplied ranges. No Dart Markdown rule or
 construct-specific wire record was added.
+
+Before Phase-2 evidence was frozen, the block-construction actual-paint matrix
+then found a distinct missing consequence: an exact edit could change the
+block shell itself. Architecture review re-opened the boundary and refroze it
+at 4.33 with `PROJECTION_EDIT_CELLS_V4`. The existing kind-16 record now carries
+one exact parser-authored splice or finite rapid prefix plan plus a typed
+clean-result shell; Core and the single pending-presentation snapshot apply it
+mechanically. This replaces the observed Plain-shell flash for bounded heading,
+quote, and list construction at human cadence and before one vsync
+without adding a Dart marker rule or a parallel authority state.
 
 The frozen 4.32 structural receipt contract also proves simple-list indent and
 outdent presentation when the Ready parser context and typed resolver certify

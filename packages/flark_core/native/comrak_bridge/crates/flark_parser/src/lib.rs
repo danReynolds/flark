@@ -75,7 +75,9 @@ pub use contract::{
     M11SourceLinePollStatus, M11SourceLineSource, SourceLineIdentity,
 };
 pub use edit_context::{
-    classify_m11_simple_edit_line, M11SimpleEditLine, M11SimpleEditLineKind,
+    classify_m11_simple_edit_line, derive_m11_simple_block_prefix_plans,
+    derive_m11_simple_block_transitions, M11SimpleBlockPrefixPlan, M11SimpleBlockTransition,
+    M11SimpleBlockTransitionPresentation, M11SimpleEditLine, M11SimpleEditLineKind,
     M11SimpleEditListMarker, M11_SIMPLE_EDIT_LINE_MAX_BYTES,
 };
 pub use exact_clean::{

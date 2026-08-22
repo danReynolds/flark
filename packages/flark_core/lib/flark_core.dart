@@ -44,6 +44,8 @@ export 'src/models.dart'
         FlarkProjectionSegment,
         FlarkProjectionEditCell,
         FlarkProjectionEditMatcher,
+        FlarkProjectionResultBlockKind,
+        FlarkProjectionResultBlockShell,
         FlarkSemanticTarget,
         FlarkSemanticTargetKind,
         FlarkSemanticTargetSyntax,
