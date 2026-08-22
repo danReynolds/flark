@@ -240,6 +240,145 @@ void main() {
     skip: libraryPath == null,
     timeout: const Timeout(Duration(minutes: 3)),
   );
+
+  testWidgets(
+    'Dense blocks 1 MiB edits undoes pages and closes without raw headings',
+    (tester) async {
+      final source = buildDogfoodDocument(
+        DogfoodDocumentPreset.denseBlocks1MiB,
+      );
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final paints = <FlarkSurfacePaintObservation>[];
+      await _mount(tester, controller, paints);
+      try {
+        final initialGeneration = controller.sourceGeneration;
+        final anchor = source.indexOf('Short bounded paragraph 000001.');
+        expect(anchor, greaterThanOrEqualTo(0));
+        final insertion = anchor + 'Short bounded'.length;
+        final row = controller.rows.firstWhere(
+          (candidate) =>
+              candidate.editableUtf16 != null &&
+              candidate.editableUtf16!.start <= insertion &&
+              insertion <= candidate.editableUtf16!.end,
+        );
+        await tester.runAsync(() async {
+          controller.activateRow(row, insertion);
+          await controller.resolveCanonicalSelection();
+        });
+        await tester.pump();
+
+        final edited = source.replaceRange(insertion, insertion, 'x');
+        final editPaintStart = paints.length;
+        final before = controller.inputValue;
+        tester.testTextInput.updateEditingValue(
+          before.copyWith(
+            text: before.text.replaceRange(
+              before.selection.start,
+              before.selection.end,
+              'x',
+            ),
+            selection: TextSelection.collapsed(
+              offset: before.selection.start + 1,
+            ),
+          ),
+        );
+        await _pumpUntil(
+          tester,
+          () =>
+              controller.sourceGeneration == initialGeneration + 1 &&
+              controller.pendingEdits == 0,
+        );
+        unawaited(controller.continueParsing());
+        await _pumpUntil(tester, () => controller.semanticsCurrent);
+        await tester.pump();
+        _expectLargePaints(
+          paints
+              .skip(editPaintStart)
+              .where((paint) => paint.sourceGeneration == initialGeneration + 1)
+              .toList(growable: false),
+          edited,
+          generation: initialGeneration + 1,
+          base: insertion + 1,
+          extent: insertion + 1,
+          forbiddenMarkers: const ['### '],
+        );
+
+        final undoPaintStart = paints.length;
+        expect(await tester.runAsync(controller.undo), isTrue);
+        await tester.pump();
+        await _pumpUntil(
+          tester,
+          () =>
+              controller.sourceGeneration == initialGeneration + 2 &&
+              controller.pendingEdits == 0 &&
+              controller.semanticsCurrent,
+        );
+        _expectLargePaints(
+          paints
+              .skip(undoPaintStart)
+              .where((paint) => paint.sourceGeneration == initialGeneration + 2)
+              .toList(growable: false),
+          source,
+          generation: initialGeneration + 2,
+          base: insertion,
+          extent: insertion,
+          forbiddenMarkers: const ['### '],
+        );
+
+        final surface = tester.renderObject<RenderFlarkSurface>(
+          find.byType(FlarkRenderSurfaceWidget),
+        );
+        for (var page = 1; page <= 2; page += 1) {
+          final paintStart = paints.length;
+          surface.scrollBy(1000000);
+          await _pumpUntil(tester, () => controller.viewportPageIndex == page);
+          await tester.pump();
+          final transition = paints.skip(paintStart).toList(growable: false);
+          _expectLargePaints(
+            transition,
+            source,
+            generation: initialGeneration + 2,
+            base: insertion,
+            extent: insertion,
+            forbiddenMarkers: const ['### '],
+          );
+          expect(transition.last.viewportPageIndex, page);
+        }
+        for (var page = 1; page >= 0; page -= 1) {
+          final paintStart = paints.length;
+          surface.scrollBy(-1000000);
+          await _pumpUntil(tester, () => controller.viewportPageIndex == page);
+          await tester.pump();
+          final transition = paints.skip(paintStart).toList(growable: false);
+          _expectLargePaints(
+            transition,
+            source,
+            generation: initialGeneration + 2,
+            base: insertion,
+            extent: insertion,
+            forbiddenMarkers: const ['### '],
+          );
+          expect(transition.last.viewportPageIndex, page);
+        }
+        expect(await tester.runAsync(controller.readSource), source);
+        expect(controller.lastError, isNull);
+        expect(controller.resyncCount, 0);
+      } finally {
+        await _close(tester, controller);
+      }
+      expect(
+        FlarkNativeDocument.inspectGlobalLiveState(
+          libraryPath: libraryPath,
+        ).isEmpty,
+        isTrue,
+      );
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }
 
 Future<void> _mount(
@@ -283,6 +422,7 @@ void _expectLargePaints(
   required int extent,
   int? expectedPage,
   bool requireStrong = false,
+  List<String> forbiddenMarkers = const ['**'],
 }) {
   expect(paints, isNotEmpty);
   var sawStrong = false;
@@ -303,7 +443,9 @@ void _expectLargePaints(
       paint.visibleSource,
       source.substring(paint.visibleUtf16Start, visibleEnd),
     );
-    expect(paint.presentation, isNot(contains('**')));
+    for (final marker in forbiddenMarkers) {
+      expect(paint.presentation, isNot(contains(marker)));
+    }
     for (final row in paint.rows) {
       expect(
         row.sourceUtf16Start,

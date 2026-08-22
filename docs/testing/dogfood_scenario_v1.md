@@ -212,7 +212,7 @@ publishes the named shell without source marker relay from `**sentinel**`.
 | NAV-06 | Prose · 1 MiB; move forward two viewport pages, select/edit locally, move back, undo | current page/source/caret; no torn row/window; backward/forward remains truthful | PRESENT: exact 1 MiB preset mounted page/edit/back/undo journey with every transition paint source-window checked; drove atomic deep history replay refresh |
 | NAV-07 | Prose · 5 MiB; scroll at least two viewports away and back without selection input | scroll changes, selection/source do not; returning caret geometry is current | PRESENT: exact 5 MiB preset mounted two-page scroll-away/back journey with old-edge/new-page paints and unchanged source/selection generations |
 | MODE-01 | Product Tour in Edit, switch to Read, then Edit without source mutation | clean-parse-equivalent text/style/shell; no editing caret in Read; original selection restored or deterministically clamped in Edit | PRESENT: exact Product Tour mode-surface journey with identical painted render manifest, no Read caret, restored Edit caret, and zero source generation change |
-| MODE-02 | capture exact Product Tour source, close app, relaunch default candidate | pristine Product Tour clean parse; no stale session, task overlay, selection, continuation, or resource | GAP: D0 lifecycle harness |
+| MODE-02 | capture exact Product Tour source, close app, relaunch default candidate | pristine Product Tour clean parse; no stale session, task overlay, selection, continuation, or resource | PRESENT: exact 1569x906 workbench launch, edit/undo/task overlay, process-global zero-state close, pristine relaunch, and second zero-state close |
 
 ## Unicode and native macOS input
 

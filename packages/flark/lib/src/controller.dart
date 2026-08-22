@@ -215,11 +215,19 @@ final class _OptimisticViewportEdit {
     required this.start,
     required this.end,
     required this.replacementLength,
+    this.preservesMappedRowFacts = true,
   });
 
   final int start;
   final int end;
   final int replacementLength;
+
+  /// Whether rows outside this exact splice may keep predecessor semantics by
+  /// source-range mapping alone. Parser-authored structural receipts can
+  /// change row ownership beyond their byte splice, so their edits set this
+  /// false and must publish through their explicit transition surface or a
+  /// refreshed viewport.
+  final bool preservesMappedRowFacts;
 
   int get delta => replacementLength - (end - start);
 }
@@ -4184,6 +4192,7 @@ final class FlarkEditorController extends ChangeNotifier {
       receipt.baseUtf16Start,
       receipt.baseUtf16End,
       receipt.replacement,
+      preservesMappedRowFacts: false,
     );
     final chainsTerminalSplit =
         receipt.presentationTransition ==
@@ -5071,12 +5080,17 @@ final class FlarkEditorController extends ChangeNotifier {
             _pendingPresentation.structuralSurfaces.any(
               (state) => state.continuity != null,
             );
-        if (retainsProjectedTransition) {
+        if (retainsProjectedTransition ||
+            _canRetainOptimisticSurfaceAfterCommit()) {
           // The native edit is committed and the parser-authored continuity
-          // surface already pairs exact result source with its projected row.
-          // A pending viewport query is strictly poorer authority and can
-          // truncate a lengthened 16 KiB page, discarding that valid active
-          // row. Keep the atomic publication and converge immediately.
+          // surface, or the bounded optimistic cache, already pairs exact
+          // result source with the best safe presentation. A pending viewport
+          // query is strictly poorer authority: pending pages may carry no
+          // rows and expand a short 32-row cache to the 16 KiB byte cap,
+          // causing unrelated rendered rows to flash as source. Keep the
+          // bounded publication and converge immediately. The touched row
+          // still fails closed locally unless parser-authored continuity owns
+          // it; unchanged rows retain only mapped predecessor facts.
           _scheduleParsingAfterInput(immediate: true);
         } else {
           await _refreshViewport(
@@ -5100,6 +5114,23 @@ final class FlarkEditorController extends ChangeNotifier {
       _status = FlarkEditorStatus.faulted;
       notifyListeners();
     }
+  }
+
+  bool _canRetainOptimisticSurfaceAfterCommit() {
+    if (_cachedRows.isEmpty ||
+        _activeCachedRow() == null ||
+        _optimisticViewportEdits.any((edit) => !edit.preservesMappedRowFacts)) {
+      return false;
+    }
+    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    if (_globalSelectionExtent < _visibleUtf16Start ||
+        _globalSelectionExtent > visibleEnd) {
+      return false;
+    }
+    return _cachedRows.every((row) {
+      final mapped = _mapViewportRange(row.sourceUtf16);
+      return _visibleUtf16Start <= mapped.start && mapped.end <= visibleEnd;
+    });
   }
 
   Future<bool> undo() => _queueHistoryReplay(undoDirection: true);
@@ -6216,8 +6247,9 @@ final class FlarkEditorController extends ChangeNotifier {
   void _applyOptimisticViewportEdit(
     int globalStart,
     int globalEnd,
-    String replacement,
-  ) {
+    String replacement, {
+    bool preservesMappedRowFacts = true,
+  }) {
     _semanticViewportCurrent = false;
     _certificationRevisionCurrent = false;
     _certificationRanges = const [];
@@ -6270,6 +6302,7 @@ final class FlarkEditorController extends ChangeNotifier {
         start: globalStart,
         end: globalEnd,
         replacementLength: replacement.length,
+        preservesMappedRowFacts: preservesMappedRowFacts,
       ),
     );
   }
