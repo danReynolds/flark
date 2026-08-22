@@ -211,7 +211,7 @@ publishes the named shell without source marker relay from `**sentinel**`.
 | NAV-05 | Product Tour long paragraph; resize 1569x906 → 1000x700 → 1569x906 | current source/display caret and grapheme-safe wrapping on every paint | PRESENT: real Product Tour resize actual-paint journey with reversible caret geometry |
 | NAV-06 | Prose · 1 MiB; move forward two viewport pages, select/edit locally, move back, undo | current page/source/caret; no torn row/window; backward/forward remains truthful | PARTIAL: active viewport controller tests exist; mounted large-doc paint row missing |
 | NAV-07 | Prose · 5 MiB; scroll at least two viewports away and back without selection input | scroll changes, selection/source do not; returning caret geometry is current | PARTIAL: native small-doc scroll and virtualization tests exist; large-preset path missing |
-| MODE-01 | Product Tour in Edit, switch to Read, then Edit without source mutation | clean-parse-equivalent text/style/shell; no editing caret in Read; original selection restored or deterministically clamped in Edit | PARTIAL: parity tests exist; exact workbench journey missing |
+| MODE-01 | Product Tour in Edit, switch to Read, then Edit without source mutation | clean-parse-equivalent text/style/shell; no editing caret in Read; original selection restored or deterministically clamped in Edit | PRESENT: exact Product Tour mode-surface journey with identical painted render manifest, no Read caret, restored Edit caret, and zero source generation change |
 | MODE-02 | capture exact Product Tour source, close app, relaunch default candidate | pristine Product Tour clean parse; no stale session, task overlay, selection, continuation, or resource | GAP: D0 lifecycle harness |
 
 ## Unicode and native macOS input

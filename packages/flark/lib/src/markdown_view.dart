@@ -23,6 +23,7 @@ final class FlarkMarkdownView extends StatefulWidget {
     ),
     this.padding = const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
     this.onSemanticTarget,
+    this.debugPaintObserver,
     super.key,
   });
 
@@ -30,6 +31,7 @@ final class FlarkMarkdownView extends StatefulWidget {
   final TextStyle textStyle;
   final EdgeInsets padding;
   final ValueChanged<FlarkSemanticTarget>? onSemanticTarget;
+  final ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
 
   @override
   State<FlarkMarkdownView> createState() => _FlarkMarkdownViewState();
@@ -131,6 +133,7 @@ final class _FlarkMarkdownViewState extends State<FlarkMarkdownView> {
             caretColor: const Color(0x00000000),
             selectionColor: const Color(0x00000000),
             includeEditingState: false,
+            debugPaintObserver: widget.debugPaintObserver,
           ),
         ),
       ),
