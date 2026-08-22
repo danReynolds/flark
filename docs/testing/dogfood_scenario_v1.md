@@ -221,8 +221,8 @@ Japanese/CJK IME, autocorrect, predictive text, and dictation are outside D0.
 | ID | Exact seed and command | Required result | Current evidence |
 |---|---|---|---|
 | UNICODE-01 | Product Tour Unicode line; insert `👩‍💻`, `🧑🏽‍🚀`, and `👨‍👩‍👧‍👦` at named grapheme boundaries | exact source/caret; no split grapheme; surrounding row stays rendered | PRESENT: real Product Tour mounted actual-paint cases; the family sequence also pins scalar-aligned platform differencing beside an existing emoji |
-| UNICODE-02 | replace `café` with `café`, then undo/redo | exact source form and grapheme-safe selection/caret; surrounding rendering stable | PARTIAL |
-| UNICODE-03 | move and extend selection through `English العربية עברית English` | canonical/display geometry stays source-correct; no source mutation | PARTIAL |
+| UNICODE-02 | replace `café` with `café`, then undo/redo | exact source form and grapheme-safe selection/caret; surrounding rendering stable | PRESENT: real Product Tour range replacement, history round trip, every-paint source/form/geometry, and clean-rebuild convergence |
+| UNICODE-03 | move and extend selection through `English العربية עברית English` | canonical/display geometry stays source-correct; no source mutation | PRESENT: real Product Tour bidi caret and range-extension journey across both RTL runs with exact every-paint geometry |
 | UNICODE-04 | native macOS `Option-E`, then `E`, in `caf¦\n` | source `café\n`, caret 4, no fault/resync | PRESENT settled native canary; add per-generation receipt only if the OS exposes an intermediate accepted generation |
 | NATIVE-01 | exact 35-edit sustained Product Tour route declared above | every accepted generation has exact source/presentation/style/caret identity | PRESENT in `macos_native_canary_test.dart`; D0 orchestrator is GAP |
 | NATIVE-02 | native Return/Backspace, pointer select+cut+undo, and wheel scroll sequences named in `macos_native_canary_test.dart` | settled exact source/selection and no fault/resync | PRESENT; exact embedded-artifact orchestration is GAP |

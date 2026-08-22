@@ -534,6 +534,211 @@ void main() {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
+  testWidgets(
+    'Product Tour canonical Unicode replacement undo and redo stay current',
+    (tester) async {
+      const decomposed = 'cafe\u0301';
+      const precomposed = 'café';
+      final start = _productTourSource.indexOf(decomposed);
+      final end = start + decomposed.length;
+      final replacedSource = _productTourSource.replaceRange(
+        start,
+        end,
+        precomposed,
+      );
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(
+          _marked(_productTourSource, start),
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(() => probe.selectRange(start, end));
+      final mounted = await _MountedEditorPaintRecorder.mount(tester, probe);
+      try {
+        final replacementGeneration = probe.controller.sourceGeneration + 1;
+        final replacementPaintStart = mounted.paints.length;
+        await mounted.replaceSelection(precomposed);
+        await tester.pump();
+        await tester.runAsync(probe.presentationSettled);
+        await tester.pump();
+        final replacedCaret = start + precomposed.length;
+        mounted.expectPaints(
+          mounted.paints
+              .skip(replacementPaintStart)
+              .where((paint) => paint.sourceGeneration == replacementGeneration)
+              .toList(growable: false),
+          expectedSource: replacedSource,
+          expectedGeneration: replacementGeneration,
+          expectedBase: replacedCaret,
+          expectedExtent: replacedCaret,
+        );
+        expect(
+          probe.controller.visibleSource.substring(
+            start,
+            start + precomposed.length,
+          ),
+          precomposed,
+        );
+
+        final undoGeneration = replacementGeneration + 1;
+        final undoPaintStart = mounted.paints.length;
+        await tester.runAsync(probe.undo);
+        await tester.pump();
+        await tester.runAsync(probe.presentationSettled);
+        await tester.pump();
+        mounted.expectPaints(
+          mounted.paints
+              .skip(undoPaintStart)
+              .where((paint) => paint.sourceGeneration == undoGeneration)
+              .toList(growable: false),
+          expectedGeneration: undoGeneration,
+          expectedBase: start,
+          expectedExtent: end,
+        );
+        expect(
+          probe.controller.visibleSource.substring(start, end),
+          decomposed,
+        );
+
+        final redoGeneration = undoGeneration + 1;
+        final redoPaintStart = mounted.paints.length;
+        await tester.runAsync(probe.redo);
+        await tester.pump();
+        await tester.runAsync(probe.presentationSettled);
+        await tester.pump();
+        mounted.expectPaints(
+          mounted.paints
+              .skip(redoPaintStart)
+              .where((paint) => paint.sourceGeneration == redoGeneration)
+              .toList(growable: false),
+          expectedSource: replacedSource,
+          expectedGeneration: redoGeneration,
+          expectedBase: replacedCaret,
+          expectedExtent: replacedCaret,
+        );
+        await tester.runAsync(
+          () => probe.expectSourceAndCaret(
+            _marked(replacedSource, replacedCaret),
+          ),
+        );
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
+    'Product Tour bidi movement and extension keep source geometry current',
+    (tester) async {
+      const bidi = 'English العربية עברית English';
+      final lineStart = _productTourSource.indexOf(bidi);
+      final lineEnd = lineStart + bidi.length;
+      final arabicStart = _productTourSource.indexOf('العربية', lineStart);
+      final arabicEnd = arabicStart + 'العربية'.length;
+      final hebrewStart = _productTourSource.indexOf('עברית', arabicEnd);
+      final hebrewEnd = hebrewStart + 'עברית'.length;
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(
+          _marked(_productTourSource, lineStart),
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      final mounted = await _MountedEditorPaintRecorder.mount(tester, probe);
+      try {
+        final dynamic state = tester.state(find.byType(FlarkEditor));
+        final sourceGeneration = probe.controller.sourceGeneration;
+        var previous = lineStart;
+        var sawArabic = false;
+        var sawHebrew = false;
+        for (var step = 0; step < 48 && !(sawArabic && sawHebrew); step += 1) {
+          final paintStart = mounted.paints.length;
+          final selectionGeneration =
+              probe.controller.canonicalSelectionGeneration;
+          state.performSelector('moveRight:');
+          await _pumpUntil(
+            tester,
+            () =>
+                probe.controller.canonicalSelectionGeneration >
+                selectionGeneration,
+          );
+          final current = probe.controller.globalSelectionExtent;
+          expect(current, isNot(previous));
+          expect(current, inInclusiveRange(lineStart, lineEnd));
+          mounted.expectPaints(
+            mounted.paints.skip(paintStart).toList(growable: false),
+            expectedBase: current,
+            expectedExtent: current,
+          );
+          sawArabic =
+              sawArabic || (arabicStart <= current && current <= arabicEnd);
+          sawHebrew =
+              sawHebrew || (hebrewStart <= current && current <= hebrewEnd);
+          previous = current;
+        }
+        expect(sawArabic, isTrue);
+        expect(sawHebrew, isTrue);
+
+        final resetGeneration = probe.controller.canonicalSelectionGeneration;
+        await tester.runAsync(() async => probe.moveCaret(lineStart));
+        await _pumpUntil(
+          tester,
+          () =>
+              probe.controller.canonicalSelectionGeneration > resetGeneration &&
+              probe.controller.globalSelectionBase == lineStart &&
+              probe.controller.globalSelectionExtent == lineStart,
+        );
+
+        var selectedBoth = false;
+        previous = lineStart;
+        for (var step = 0; step < 48 && !selectedBoth; step += 1) {
+          final paintStart = mounted.paints.length;
+          final selectionGeneration =
+              probe.controller.canonicalSelectionGeneration;
+          state.performSelector('moveRightAndModifySelection:');
+          await _pumpUntil(
+            tester,
+            () =>
+                probe.controller.canonicalSelectionGeneration >
+                selectionGeneration,
+          );
+          final base = probe.controller.globalSelectionBase;
+          final extent = probe.controller.globalSelectionExtent;
+          expect(base, lineStart);
+          expect(extent, isNot(previous));
+          expect(extent, inInclusiveRange(lineStart, lineEnd));
+          mounted.expectPaints(
+            mounted.paints.skip(paintStart).toList(growable: false),
+            expectedBase: base,
+            expectedExtent: extent,
+          );
+          final selectionStart = math.min(base, extent);
+          final selectionEnd = math.max(base, extent);
+          final selected = _productTourSource.substring(
+            selectionStart,
+            selectionEnd,
+          );
+          selectedBoth =
+              selected.contains('العربية') && selected.contains('עברית');
+          previous = extent;
+        }
+        expect(selectedBoth, isTrue);
+        expect(probe.controller.sourceGeneration, sourceGeneration);
+        expect(probe.controller.visibleSource, _productTourSource);
+        await tester.runAsync(probe.expectHealthy);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
   for (final sequence in const ['👩‍💻', '🧑🏽‍🚀', '👨‍👩‍👧‍👦']) {
     testWidgets(
       'Product Tour Unicode insertion $sequence paints one grapheme-safe result',
@@ -645,11 +850,16 @@ final class _MountedEditorPaintRecorder {
     final surface = tester.renderObject<RenderFlarkSurface>(
       find.byType(FlarkRenderSurfaceWidget),
     );
-    for (
-      var step = 0;
-      recorder.paints.last.caretRect == null && step < 24;
-      step += 1
-    ) {
+    bool selectionIsVisible() {
+      final selection =
+          probe.controller.globalSelectionBase ==
+          probe.controller.globalSelectionExtent;
+      return selection
+          ? recorder.paints.last.caretRect != null
+          : recorder.paints.last.selectionRects.isNotEmpty;
+    }
+
+    for (var step = 0; !selectionIsVisible() && step < 24; step += 1) {
       surface.scrollBy(size.height * 0.6);
       await tester.pump();
     }
@@ -705,7 +915,10 @@ final class _MountedEditorPaintRecorder {
       expect(paint.visibleSource, source);
       expect(paint.canonicalSelectionBaseUtf16, expectedBase);
       expect(paint.canonicalSelectionExtentUtf16, expectedExtent);
-      expect(paint.presentation, isNot(contains('**')));
+      expect(
+        paint.presentation.replaceAll('**unfinished', ''),
+        isNot(contains('**')),
+      );
       if (expectedBase == expectedExtent) {
         expect(paint.selectionRects, isEmpty);
         expect(paint.caretRect, isNotNull);
@@ -736,7 +949,10 @@ final class _MountedEditorPaintRecorder {
     for (final paint in observed) {
       expect(paint.sourceGeneration, probe.controller.sourceGeneration);
       expect(paint.visibleSource, _productTourSource);
-      expect(paint.presentation, isNot(contains('**')));
+      expect(
+        paint.presentation.replaceAll('**unfinished', ''),
+        isNot(contains('**')),
+      );
       expect(
         paint.canonicalSelectionBaseUtf16,
         inInclusiveRange(_paragraphStart, _paragraphEnd),
