@@ -48,11 +48,11 @@ to this milestone.
 
 ## The frozen D0 envelope
 
-The implementation phase starts by checking in
-`docs/testing/dogfood_scenario_v1.md`, a compact scenario ledger with stable
-IDs, exact fixtures, operations, cadences, and the permitted pending
-presentation for each transition. The tests import the real product-tour
-fixture; copied approximations do not count.
+The implementation phase starts with the checked-in
+[dogfood scenario ledger](docs/testing/dogfood_scenario_v1.md), a compact table
+with stable IDs, exact fixtures, operations, cadences, and the permitted
+pending presentation for each transition. The tests import the real
+product-tour fixture; copied approximations do not count.
 
 The ledger is not a generic scenario language. It is a human-readable coverage
 table whose rows point to ordinary parameterized tests.

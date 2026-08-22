@@ -75,6 +75,12 @@ only inside the smallest parser-authored affected island. It must not expose
 unrelated markers, erase unrelated styling, demote the row shell, move the
 caret, or wait for final recertification before becoming visually correct.
 
+The finite D0 product denominator is the
+[macOS dogfood scenario ledger](dogfood_scenario_v1.md). That ledger decides
+which operations and exact pending outcomes block dogfood handoff; this
+strategy decides which evidence lane can prove each outcome without a false
+green.
+
 `north_star_paint_matrix_test.dart` is the compact mounted acceptance lane for
 that promise. Its cases are real product shapes rather than synthetic parser
 tokens: the dogfood paragraph at both its prefix and the reported append after
