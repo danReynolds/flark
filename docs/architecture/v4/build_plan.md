@@ -523,6 +523,12 @@ zero-width guarded trigger; Core compares only
 the scalar and transforms the supplied ranges. No Dart Markdown rule or
 construct-specific wire record was added.
 
+The frozen 4.32 structural receipt contract also proves simple-list indent and
+outdent presentation when the Ready parser context and typed resolver certify
+one bounded ASCII-space prefix splice and a ListItem result. This uses the
+existing transition codes and unified pending-presentation lifecycle; it adds
+no host Markdown rule or independent authority state.
+
 The generic exact-scalar path also carries the frozen D0 prose punctuation set
 at parser-guarded alphanumeric points in a fact-free prefix before one Strong
 fact. The full prefix is the affected exact closure and the outside Strong fact

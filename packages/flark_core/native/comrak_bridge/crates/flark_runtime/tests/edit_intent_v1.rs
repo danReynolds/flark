@@ -85,6 +85,35 @@ fn structural_presentation_proof_is_parser_bounded_and_fails_closed() {
         .expect("pending split paragraph");
     assert!(!pending_receipt.presentation_proven);
     pending.close().expect("close pending fixture");
+
+    let mut list = DocumentSession::begin("- parent\n- child\n").expect("begin list fixture");
+    pump_ready(&mut list);
+    let indent_receipt = list
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::IndentListItem, 16, false)
+        .expect("indent list item");
+    assert_eq!(
+        indent_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::IndentList
+    );
+    assert!(indent_receipt.presentation_proven);
+    pump_ready(&mut list);
+    let outdent_receipt = list
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::OutdentListItem, 18, false)
+        .expect("outdent list item");
+    assert_eq!(
+        outdent_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList
+    );
+    assert!(outdent_receipt.presentation_proven);
+    list.close().expect("close list fixture");
+
+    let mut pending_list =
+        DocumentSession::begin("- parent\n- child\n").expect("begin pending list fixture");
+    let pending_list_receipt = pending_list
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::IndentListItem, 16, false)
+        .expect("pending list indent");
+    assert!(!pending_list_receipt.presentation_proven);
+    pending_list.close().expect("close pending list fixture");
 }
 
 #[derive(Clone, Copy)]

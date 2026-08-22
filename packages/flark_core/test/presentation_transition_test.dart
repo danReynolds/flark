@@ -454,6 +454,7 @@ void main() {
         baseStart: 0,
         baseEnd: 2,
         replacement: '',
+        presentationProven: true,
       ),
       activeOrdinal: 3,
       active: nested,
@@ -464,6 +465,7 @@ void main() {
     expect(presentation?.sourceUtf16.start, 0);
     expect(presentation?.globalUtf16Start, 2);
     expect(presentation?.runs.single.sourceUtf16Start, 2);
+    expect(transition?.surface?.projectionCurrent, isTrue);
   });
 
   test('list indent adds the receipt-certified visual indentation level', () {
@@ -491,6 +493,7 @@ void main() {
         baseStart: 0,
         baseEnd: 0,
         replacement: '  ',
+        presentationProven: true,
       ),
       activeOrdinal: 3,
       active: item,
@@ -501,6 +504,7 @@ void main() {
     expect(presentation?.sourceUtf16.start, 0);
     expect(presentation?.globalUtf16Start, 4);
     expect(presentation?.runs.single.sourceUtf16Start, 4);
+    expect(transition?.surface?.projectionCurrent, isTrue);
   });
 
   test('deeper list outdent preserves preceding visual indentation', () {
@@ -534,6 +538,7 @@ void main() {
 
     expect(transition?.surface?.presentation.leadingText, '  - ');
     expect(transition?.surface?.presentation.sourceUtf16.start, 2);
+    expect(transition?.surface?.projectionCurrent, isFalse);
   });
 
   test('projected quote Return fails closed to a neutral gap', () {

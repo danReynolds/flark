@@ -1489,12 +1489,10 @@ impl DocumentSession {
         let Some(splice) = resolved.splice.as_ref() else {
             return Ok(false);
         };
-        if !matches!(context.row, DocumentSimpleEditRow::Plain) {
-            return Ok(false);
-        }
         match resolved.presentation_transition {
             DocumentEditPresentationTransitionV1::SplitParagraph
-                if splice.base_byte_range.is_empty()
+                if matches!(context.row, DocumentSimpleEditRow::Plain)
+                    && splice.base_byte_range.is_empty()
                     && splice.base_byte_range.start == context.editable_bytes.end
                     && splice.base_utf16_range.start == context.editable_utf16.end =>
             {
@@ -1505,7 +1503,9 @@ impl DocumentSession {
                         .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\\' | b'\r' | b'\n'))
                     && structural_inline_tokens(&content).is_some())
             }
-            DocumentEditPresentationTransitionV1::MergeParagraph => {
+            DocumentEditPresentationTransitionV1::MergeParagraph
+                if matches!(context.row, DocumentSimpleEditRow::Plain) =>
+            {
                 let Some(merge) = context.paragraph_merge.as_ref() else {
                     return Ok(false);
                 };
@@ -1516,6 +1516,36 @@ impl DocumentSession {
                     return Ok(false);
                 }
                 Ok(structural_inline_partition_is_stable(previous, &current))
+            }
+            DocumentEditPresentationTransitionV1::IndentList
+                if matches!(&context.row, DocumentSimpleEditRow::ListItem { .. })
+                    && resolved.result_context.as_ref().is_some_and(|result| {
+                        matches!(&result.row, DocumentSimpleEditRow::ListItem { .. })
+                    })
+                    && splice.base_byte_range.is_empty()
+                    && splice.base_utf16_range.is_empty()
+                    && (2..=14).contains(&splice.replacement.len())
+                    && splice.replacement.bytes().all(|byte| byte == b' ')
+                    && splice.base_byte_range.start <= context.editable_bytes.start
+                    && splice.base_utf16_range.start <= context.editable_utf16.start =>
+            {
+                Ok(true)
+            }
+            DocumentEditPresentationTransitionV1::OutdentList
+                if matches!(&context.row, DocumentSimpleEditRow::ListItem { .. })
+                    && resolved.result_context.as_ref().is_some_and(|result| {
+                        matches!(&result.row, DocumentSimpleEditRow::ListItem { .. })
+                    })
+                    && splice.replacement.is_empty()
+                    && (2..=14).contains(&splice.base_byte_range.len())
+                    && splice.base_byte_range.len() == splice.base_utf16_range.len()
+                    && splice.base_byte_range.end <= context.editable_bytes.start
+                    && splice.base_utf16_range.end <= context.editable_utf16.start =>
+            {
+                Ok(self
+                    .source_bytes(splice.base_byte_range.clone())?
+                    .iter()
+                    .all(|byte| *byte == b' '))
             }
             _ => Ok(false),
         }

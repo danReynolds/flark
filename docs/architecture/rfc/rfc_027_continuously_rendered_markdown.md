@@ -432,6 +432,13 @@ every structural successor requires a fresh Ready parser proof. Pending,
 oversized, non-ASCII, or hazard-bearing transitions and delimiter crossings
 omit the flag and remain exact-source fail-closed.
 
+The final ABI 4.32 contract extends that same post-commit flag to the existing
+typed simple-list indent and outdent transitions. Rust requires a current Ready
+ListItem context, a ListItem result context, and exactly one bounded ASCII-space
+prefix insertion or deletion. Core then shifts the certified runs through the
+prefix splice and retains the list shell; the receipt does not grant authority
+to a successor input or structural action.
+
 Exact 4.31 also permits the existing ASCII-word envelope to cover maximal
 parser-authored word leaves inside eligible projected facts. Leaves require
 identity coordinates, fact-edge or U+0020 guards, independence from overlapping

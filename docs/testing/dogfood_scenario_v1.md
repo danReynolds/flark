@@ -190,7 +190,7 @@ publishes the named shell without source marker relay from `**sentinel**`.
 | BLOCK-06 | `Before **bold**.¦\n`; Return | S(paragraph split with one active empty successor); predecessor Strong retained | PRESENT |
 | BLOCK-07 | BLOCK-06 Return immediately followed by `x` before pump | S(paragraph split with successor `x`); predecessor Strong retained | PRESENT true-burst row |
 | BLOCK-08 | `Before **bold**.\n\n¦After.\n`; Backspace | S(paragraph merge); Strong retained and caret at join | PRESENT |
-| BLOCK-09 | `- parent\n- child¦\n`; Tab, settle, then Shift-Tab | A(list-indent) then A(list-outdent), exact source and selection | PARTIAL: mounted final-state coverage; actual-paint/action ledger row missing |
+| BLOCK-09 | `- parent\n- child¦\n`; Tab, settle, then Shift-Tab | A(list-indent) then A(list-outdent), exact source and selection | PRESENT mounted action routing plus every current-generation paint |
 | BLOCK-10 | `- parent\n- chil¦d\n`; insert composing `x`, then press Tab before certification | A(none); Tab is consumed without indenting or escaping to focus traversal | PARTIAL: authority tests exist; mounted semantics/action assertion required |
 | BLOCK-11 | `\| a \| b \|\n\| --- \| --- \|\n\| c¦ \| d \|\n`; Tab then Shift-Tab | A(table-navigation); current mapped target cell | PARTIAL: mounted final-state coverage; actual-paint/action ledger row missing |
 | BLOCK-12 | same table and caret as BLOCK-11; insert `xyz`, then press Tab before certification | A(none) until current mapping exists; no focus traversal leak | PRESENT suppression regression; add explicit semantics assertion if absent |

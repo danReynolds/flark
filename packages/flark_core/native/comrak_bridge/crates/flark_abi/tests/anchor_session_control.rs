@@ -488,6 +488,7 @@ fn list_indent_and_outdent_are_receipted_anchor_stable_transactions() {
         indented.presentation_transition,
         EDIT_PRESENTATION_INDENT_LIST
     );
+    assert_ne!(indented.flags & EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN, 0);
     assert_eq!(
         indented.base_byte_range,
         SourceRange {
@@ -505,6 +506,7 @@ fn list_indent_and_outdent_are_receipted_anchor_stable_transactions() {
         read_source(session, 2, initial.len() + 2),
         b"- parent\n  - child\n"
     );
+    pump_to_ready(session, 2);
 
     output.fill(0);
     request.expected_revision = 2;
@@ -536,6 +538,7 @@ fn list_indent_and_outdent_are_receipted_anchor_stable_transactions() {
         outdented.presentation_transition,
         EDIT_PRESENTATION_OUTDENT_LIST
     );
+    assert_ne!(outdented.flags & EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN, 0);
     assert_eq!(
         outdented.base_byte_range,
         SourceRange {

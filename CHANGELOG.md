@@ -28,6 +28,10 @@
   inline partition is unchanged. Rapid Return successors and Backspace merges
   therefore keep the rendered Strong run, exact source, and caret identity;
   every unsupported structural transition still fails closed.
+- Extended the same typed receipt proof in the final ABI 4.32 contract to
+  parser-certified simple list indent/outdent actions. Their exact prefix
+  splice retains the current list shell and mapped inline runs on every paint
+  without granting ordinary input any structural authority.
 - Added ABI 4.32's `GLOBAL_LIVE_STATE_INSPECTION_V1`: after close consumes the
   final session handle, qualification can still prove that the process owns no
   native sessions, transactions, continuations, anchors, or history tokens.

@@ -399,6 +399,13 @@ current Ready `PRESENTATION_PROVEN` receipt. Pending, oversized, non-ASCII,
 escape/entity/link/code/underscore/strike, or delimiter-crossing transitions
 omit the flag.
 
+Exact ABI 4.32 additionally permits `PRESENTATION_PROVEN` on the existing
+`INDENT_LIST` and `OUTDENT_LIST` transition codes when a current Ready
+parser-authored simple ListItem context resolves to a ListItem result through
+one bounded 2..14-byte ASCII-space prefix insertion or deletion. The retained
+row shell and inline runs are shifted through that exact prefix splice. This
+post-commit proof grants no authority to a subsequent text or structural edit.
+
 Exact ABI 4.31 also permits the existing `ASCII_WORD_INSERTION` record to cover
 parser-authored maximal ASCII letter/digit word leaves inside an eligible
 projected fact. Each leaf must be identity-mapped, bounded on both sides by the

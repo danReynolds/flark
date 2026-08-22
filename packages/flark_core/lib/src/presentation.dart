@@ -264,6 +264,7 @@ resolveCommittedPresentationTransitionV1({
           FlarkCoreCommittedPresentationSurfaceV1(
             rowOrdinal: activeRow.ordinal,
             sourceUtf16: source,
+            projectionCurrent: receipt.presentationProven,
             presentation: FlarkCorePresentationRow(
               sourceUtf16: source,
               leadingText: '${receipt.replacement}${activeRow.leadingText}',
@@ -300,6 +301,7 @@ resolveCommittedPresentationTransitionV1({
           FlarkCoreCommittedPresentationSurfaceV1(
             rowOrdinal: activeRow.ordinal,
             sourceUtf16: source,
+            projectionCurrent: receipt.presentationProven,
             presentation: FlarkCorePresentationRow(
               sourceUtf16: source,
               leadingText: activeRow.leadingText.substring(removed),

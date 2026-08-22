@@ -384,6 +384,14 @@ typing in the new empty Plain row, but it cannot authorize another structural
 transition. Every unproved structural receipt paints exact source, and an
 unmatched successor clears the transitional surface.
 
+The final ABI 4.32 contract also admits the already-typed simple-list indent
+and outdent transitions when the current Ready parser context certifies the
+list row and the semantic resolver produces exactly one bounded ASCII-space
+prefix splice plus a ListItem result context. Core may map the certified row's
+runs through that prefix splice and retain the list shell. The proof is only a
+post-commit presentation transition; it does not authorize a later ordinary
+edit or another list action.
+
 ## 9. Composition and platform input
 
 ### LP2-COMPOSITION-BEGIN-001

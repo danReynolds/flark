@@ -422,6 +422,7 @@ void main() {
         await controller.resolveCanonicalSelection();
       });
       final events = <String>[];
+      final paints = <FlarkSurfacePaintObservation>[];
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -430,21 +431,33 @@ void main() {
               controller: controller,
               autofocus: true,
               debugInputEventObserver: events.add,
+              debugPaintObserver: paints.add,
             ),
           ),
         ),
       );
       await tester.pump();
+      paints.clear();
 
+      final indentGeneration = controller.sourceGeneration + 1;
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await _pumpUntilTransactions(tester, controller);
       expect(controller.visibleSource, '- parent\n  - child\n');
       expect(controller.globalCaretOffset, 18);
       expect(events, contains('shortcut:indent-list'));
       expect(controller.lastError, isNull);
+      _expectListActionPaints(
+        paints,
+        expectedSource: '- parent\n  - child\n',
+        expectedGeneration: indentGeneration,
+        expectedCaret: 18,
+        operation: 'indent list',
+      );
 
       await tester.runAsync(controller.continueParsing);
       await tester.pump();
+      paints.clear();
+      final outdentGeneration = controller.sourceGeneration + 1;
       await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
@@ -453,6 +466,13 @@ void main() {
       expect(controller.globalCaretOffset, 16);
       expect(events, contains('shortcut:outdent-list'));
       expect(controller.lastError, isNull);
+      _expectListActionPaints(
+        paints,
+        expectedSource: initial,
+        expectedGeneration: outdentGeneration,
+        expectedCaret: 16,
+        operation: 'outdent list',
+      );
 
       expect(await tester.runAsync(controller.undo), isTrue);
       await tester.pump();
@@ -2060,6 +2080,43 @@ void main() {
     },
     skip: libraryPath == null,
   );
+}
+
+void _expectListActionPaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+  required String operation,
+}) {
+  final current = paints
+      .where((paint) => paint.sourceGeneration == expectedGeneration)
+      .toList(growable: false);
+  expect(
+    current,
+    isNotEmpty,
+    reason: '$operation must produce a current paint',
+  );
+  for (final paint in current) {
+    expect(paint.visibleSource, expectedSource, reason: operation);
+    expect(paint.canonicalSelectionBaseUtf16, expectedCaret, reason: operation);
+    expect(
+      paint.canonicalSelectionExtentUtf16,
+      expectedCaret,
+      reason: operation,
+    );
+    expect(paint.caretRect, isNotNull, reason: operation);
+    expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
+    final active = paint.rows.where((row) => row.active).toList();
+    expect(active, isNotEmpty, reason: operation);
+    expect(active.map((row) => row.ordinal).toSet(), hasLength(1));
+    for (final row in active) {
+      expect(row.neutral, isFalse, reason: operation);
+      expect(row.kind, 5, reason: operation);
+      expect(row.listItem, isTrue, reason: operation);
+      expect(row.text, contains('child'), reason: operation);
+    }
+  }
 }
 
 Future<void> _pumpUntilTransactions(
