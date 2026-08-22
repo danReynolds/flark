@@ -158,15 +158,18 @@ changes still fall back to exact source. Two continuity representations remain
 in the implementation, and the controller/runtime files still carry more
 orchestration and policy than the long-term modular shape should.
 
-Therefore the current state is suitable for focused dogfooding and architecture
-review, not a claim of universal janklessness or release qualification. The
-next architectural milestone is parser-owned dependency-island authority broad
+Therefore the current state is suitable for focused engineering dogfooding and
+architecture review, not the D0 handoff defined in
+[DOGFOOD_MILESTONE.md](DOGFOOD_MILESTONE.md), universal janklessness, or release
+qualification. The next architectural milestone is parser-owned
+dependency-island authority broad
 enough to replace common whole-row fallback, followed by consolidation of the
 parallel continuity paths and extraction of controller/runtime responsibilities
 without moving Markdown policy into Dart or Flutter.
 
 ## Related contracts
 
+- [D0 macOS dogfood-ready milestone](DOGFOOD_MILESTONE.md)
 - [Continuously rendered Markdown RFC](docs/architecture/rfc/rfc_027_continuously_rendered_markdown.md)
 - [Live projection contract](docs/architecture/v4/contracts/live_projection_v2.md)
 - [Source-authoritative edit transactions](docs/architecture/rfc/rfc_028_source_authoritative_edit_transactions.md)
