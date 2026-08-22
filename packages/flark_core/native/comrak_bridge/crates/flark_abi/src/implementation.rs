@@ -15,12 +15,12 @@ use flark_runtime::{
     DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentProjectionEditCell,
     DocumentProjectionSegment, DocumentSemanticTargetKind, DocumentSemanticTargetSyntax,
     DocumentSessionError, DocumentSessionPhase, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, HistoryDisposition, HistoryToken, OperationCode,
-    OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, QueryKind,
-    ResultPageReceipt, ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt,
-    SessionState, SnapshotId, SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle,
-    MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES,
-    MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
+    DocumentViewportRowPresentation, GlobalLiveStateInspectionReceipt, HistoryDisposition,
+    HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome, ProgressState,
+    ProgressToken, QueryKind, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle,
+    SessionInspectionReceipt, SessionState, SnapshotId, SourceRange as RuntimeSourceRange,
+    StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS,
+    MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
 };
 
 use crate::{
@@ -53,7 +53,8 @@ use crate::{
     INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_LITERAL_SAFE_ENVELOPE,
     INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
     INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
-    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION,
+    INSPECT_FLAG_GLOBAL_LIVE_STATE, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
+    LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION,
     LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
@@ -103,7 +104,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 28)
     | (1 << 29)
     | (1 << 30)
-    | (1 << 31);
+    | (1 << 31)
+    | (1 << 32);
 
 struct Registry {
     next_handle: u64,
@@ -4526,10 +4528,41 @@ pub extern "C" fn flark_v4_session_inspect(
 ) -> u32 {
     emit(OperationCode::SessionInspect, outcome, || {
         let request = unsafe { read_record(request, size_of::<InspectRequest>() as u32)? };
-        if request.flags != 0 || request.reserved != [0; 5] || inspection.is_null() {
+        if request.reserved != [0; 5]
+            || inspection.is_null()
+            || (request.flags != 0 && request.flags != INSPECT_FLAG_GLOBAL_LIVE_STATE)
+        {
             return Err(StatusCode::InvalidArgument);
         }
         let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        if request.flags == INSPECT_FLAG_GLOBAL_LIVE_STATE {
+            if request.session.session != 0 || request.session.owner_token != 0 {
+                return Err(StatusCode::InvalidArgument);
+            }
+            let receipt = GlobalLiveStateInspectionReceipt {
+                live_sessions: u64::try_from(registry.sessions.len())
+                    .map_err(|_| StatusCode::InternalFault)?,
+                live_transactions: u32::try_from(registry.transactions.len())
+                    .map_err(|_| StatusCode::InternalFault)?,
+                live_continuations: u32::try_from(registry.continuations.len())
+                    .map_err(|_| StatusCode::InternalFault)?,
+                live_anchors: u32::try_from(registry.anchors.len())
+                    .map_err(|_| StatusCode::InternalFault)?,
+                live_history_tokens: u32::try_from(registry.histories.len())
+                    .map_err(|_| StatusCode::InternalFault)?,
+            };
+            unsafe {
+                ptr::write_unaligned(inspection, SessionInspection::from_global(receipt));
+            }
+            return Ok(RuntimeOutcome {
+                operation: OperationCode::SessionInspect,
+                status: StatusCode::Ok,
+                progress: ProgressState::Complete,
+                required_payload_bytes: 0,
+                written_payload_bytes: 0,
+                result: OperationResult::GlobalLiveStateInspection(receipt),
+            });
+        }
         let entry = owned_session_entry(&mut registry, request.session)?;
         let (state, revision, live_transactions) = match &entry.state {
             StoredSessionState::Creating { .. } => (SessionState::Creating, 0, 1),

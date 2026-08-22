@@ -238,76 +238,6 @@ final class _ViewportQueryPage {
   final _ViewportPageAnchor anchor;
 }
 
-sealed class _ProjectionContinuityAuthority {
-  const _ProjectionContinuityAuthority();
-
-  int get resultRevision;
-  FlarkSourceRange get affectedUtf16;
-}
-
-final class _LiteralProjectionContinuityAuthority
-    extends _ProjectionContinuityAuthority {
-  const _LiteralProjectionContinuityAuthority(this.receipt);
-
-  final FlarkProjectionContinuityReceipt receipt;
-
-  @override
-  int get resultRevision => receipt.resultRevision;
-
-  @override
-  FlarkSourceRange get affectedUtf16 => receipt.authorizedContentUtf16;
-}
-
-final class _EditCellProjectionContinuityAuthority
-    extends _ProjectionContinuityAuthority {
-  const _EditCellProjectionContinuityAuthority(this.receipt);
-
-  final FlarkProjectionEditCellReceipt receipt;
-
-  @override
-  int get resultRevision => receipt.resultRevision;
-
-  @override
-  FlarkSourceRange get affectedUtf16 => receipt.affectedUtf16;
-}
-
-final class _ProjectionContinuitySurface {
-  _ProjectionContinuitySurface.literal({
-    required this.rowOrdinal,
-    required FlarkProjectionContinuityReceipt receipt,
-    required this.presentation,
-  }) : authority = _LiteralProjectionContinuityAuthority(receipt);
-
-  _ProjectionContinuitySurface.editCell({
-    required this.rowOrdinal,
-    required FlarkProjectionEditCellReceipt receipt,
-    required this.presentation,
-  }) : authority = _EditCellProjectionContinuityAuthority(receipt);
-
-  /// The certified row that authored this projection proof.
-  ///
-  /// Selection can move while a native edit is still pending. The proof must
-  /// never follow the caret into another row merely because that row's source
-  /// range happens to contain the new selection extent.
-  final int rowOrdinal;
-  final _ProjectionContinuityAuthority authority;
-  final FlarkSurfaceRow presentation;
-
-  int get resultRevision => authority.resultRevision;
-  FlarkSourceRange get contentUtf16 => authority.affectedUtf16;
-  bool get isEditCell => authority is _EditCellProjectionContinuityAuthority;
-}
-
-final class _CommittedStructuralSurfaceState {
-  const _CommittedStructuralSurfaceState({
-    required this.surface,
-    this.continuity,
-  });
-
-  final FlarkCoreCommittedPresentationSurfaceV1 surface;
-  final FlarkProjectionEditCellReceipt? continuity;
-}
-
 final class _EditorSelectionSnapshot {
   const _EditorSelectionSnapshot(this.selection, this.activeOrdinal);
 
@@ -595,11 +525,8 @@ final class FlarkEditorController extends ChangeNotifier {
   final List<_ViewportPageAnchor> _pageAnchors = [_ViewportPageAnchor.zero];
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
   _ViewportPageAnchor? _optimisticRefreshAnchor;
-  _ProjectionContinuitySurface? _projectionContinuity;
-  FlarkCoreCommittedPresentationGapV1? _committedParagraphSplit;
-  List<_CommittedStructuralSurfaceState> _committedStructuralSurfaces =
-      const [];
-  final Map<int, bool> _committedTaskChecks = <int, bool>{};
+  FlarkPendingPresentationSnapshot _pendingPresentation =
+      const FlarkPendingPresentationSnapshot.empty();
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _publishedSourceGeneration = 0;
@@ -613,6 +540,19 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _crossRowSelection = false;
   bool _historyReplayPending = false;
   bool _oversizedSelection = false;
+
+  void _clearPendingTaskChecks() {
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.taskChecks,
+    });
+  }
+
+  void _setPendingTaskCheck(int rowOrdinal, bool checked) {
+    _pendingPresentation = _pendingPresentation.withTaskCheck(
+      rowOrdinal,
+      checked,
+    );
+  }
 
   static int _connectionEpochCounter = 0;
   FlarkInputWindowState _windowState = FlarkInputWindowState.detached;
@@ -686,14 +626,15 @@ final class FlarkEditorController extends ChangeNotifier {
   /// Test-only visibility into whether an optimistic parser proof is still
   /// driving the active presentation.
   @visibleForTesting
-  bool get debugProjectionContinuityActive => _projectionContinuity != null;
+  bool get debugProjectionContinuityActive =>
+      _pendingPresentation.dependency != null;
 
   /// Whether Tab currently belongs to a table whose certified cell ranges are
   /// being transformed by an optimistic projection edit. The retained visual
   /// shell is not structural-navigation authority, so callers must consume
   /// Tab without navigating until a fresh table publication arrives.
   bool get pendingTableNavigationLocked {
-    final continuity = _projectionContinuity;
+    final continuity = _pendingPresentation.dependency;
     if (continuity == null) return false;
     for (final row in _cachedRows) {
       if (row.ordinal == continuity.rowOrdinal) return row.table != null;
@@ -1077,7 +1018,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final exactLeadingText = mappedPrefix == null
         ? ''
         : _sliceVisibleUtf16(mappedPrefix.start, mappedPrefix.end);
-    final continuity = _projectionContinuity;
+    final continuity = _pendingPresentation.dependency;
     final continuityOwnsRow =
         includeEditingState &&
         continuity != null &&
@@ -1197,7 +1138,7 @@ final class FlarkEditorController extends ChangeNotifier {
 
   List<FlarkCoreCommittedPresentationSurfaceV1> _structuralSurfacesFor(
     int ordinal,
-  ) => _committedStructuralSurfaces
+  ) => _pendingPresentation.structuralSurfaces
       .map((state) => state.surface)
       .where((surface) => surface.rowOrdinal == ordinal)
       .toList(growable: false);
@@ -1212,14 +1153,14 @@ final class FlarkEditorController extends ChangeNotifier {
       );
     }
     final mapped = _mappedExactRowRange(row);
-    final continuity = _projectionContinuity;
+    final continuity = _pendingPresentation.dependency;
     final currentMapped = continuity?.rowOrdinal == row.ordinal
         ? FlarkSourceRange(
-            math.min(mapped.start, continuity!.contentUtf16.start),
-            math.max(mapped.end, continuity.contentUtf16.end),
+            math.min(mapped.start, continuity!.affectedUtf16.start),
+            math.max(mapped.end, continuity.affectedUtf16.end),
           )
         : mapped;
-    final split = _committedParagraphSplit;
+    final split = _pendingPresentation.paragraphGap;
     if (split == null ||
         split.rowOrdinal != row.ordinal ||
         split.rowEndUtf16 < currentMapped.start ||
@@ -1433,10 +1374,11 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   FlarkSurfaceRow _activeContinuitySurface(
-    _ProjectionContinuitySurface continuity,
+    FlarkPendingDependencyPresentation continuity,
     int ordinal,
   ) {
-    final presentation = continuity.presentation;
+    final presentation = _surfacePresentationFromCore(continuity.presentation);
+    final runs = presentation.runs;
     return FlarkSurfaceRow(
       leadingText: presentation.leadingText,
       text: presentation.text,
@@ -1448,11 +1390,38 @@ final class FlarkEditorController extends ChangeNotifier {
       thematicBreak: presentation.thematicBreak,
       ordinal: ordinal,
       active: true,
-      selection: _projectedSelection(
-        presentation.runs,
-        presentation.text.length,
-      ),
-      runs: presentation.runs,
+      selection: _projectedSelection(runs, presentation.text.length),
+      runs: runs,
+    );
+  }
+
+  FlarkSurfaceRow _surfacePresentationFromCore(
+    FlarkCorePresentationRow presentation,
+  ) {
+    final runs = presentation.runs
+        .map(
+          (run) => FlarkSurfaceTextRun(
+            text: run.text,
+            sourceUtf16Start: run.sourceUtf16Start,
+            sourceUtf16End: run.sourceUtf16End,
+            sourceExact: run.sourceExact,
+            styles: Set.unmodifiable(run.styles.map(_surfaceStyleFromCore)),
+          ),
+        )
+        .toList(growable: false);
+    return FlarkSurfaceRow(
+      leadingText: presentation.leadingText,
+      text: presentation.text,
+      globalUtf16Start: presentation.globalUtf16Start,
+      kind: presentation.kind,
+      headingLevel: presentation.headingLevel,
+      blockQuoteDepth: presentation.blockQuoteDepth,
+      codeBlock: presentation.codeBlock,
+      thematicBreak: presentation.thematicBreak,
+      ordinal: presentation.ordinal,
+      active: false,
+      selection: null,
+      runs: runs,
     );
   }
 
@@ -1630,8 +1599,10 @@ final class FlarkEditorController extends ChangeNotifier {
     TextAffinity affinity = TextAffinity.downstream,
   }) {
     _semanticEditV1Active = _supportsSemanticEditV1(row);
-    _committedParagraphSplit = null;
-    _projectionContinuity = null;
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.dependency,
+      FlarkPendingPresentationPart.paragraphGap,
+    });
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     _abandonOversizedSelection();
@@ -1661,7 +1632,9 @@ final class FlarkEditorController extends ChangeNotifier {
     TextAffinity affinity = TextAffinity.downstream,
   }) {
     _semanticEditV1Active = false;
-    _projectionContinuity = null;
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.dependency,
+    });
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     _abandonOversizedSelection();
@@ -1709,7 +1682,9 @@ final class FlarkEditorController extends ChangeNotifier {
     // it. Once selection ownership leaves that active input window, fail the
     // provisional surface closed instead of allowing it to follow the caret
     // into another row while recertification is pending.
-    _projectionContinuity = null;
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.dependency,
+    });
 
     final visibleEnd = _visibleUtf16Start + _visibleSource.length;
     final start = math.min(_globalSelectionBase, globalUtf16Offset);
@@ -2904,7 +2879,7 @@ final class FlarkEditorController extends ChangeNotifier {
   ) {
     if (presentation.runs.isEmpty) return false;
     FlarkCoreCommittedPresentationSurfaceV1? committed;
-    for (final state in _committedStructuralSurfaces) {
+    for (final state in _pendingPresentation.structuralSurfaces) {
       final surface = state.surface;
       if (surface.rowOrdinal == row.ordinal) {
         committed = surface;
@@ -3510,7 +3485,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _visibleSource = _inputValue.text;
     _visibleUtf16Start = _inputGlobalUtf16Start;
     _optimisticViewportEdits.clear();
-    _committedTaskChecks.clear();
+    _clearPendingTaskChecks();
     _status = _idleStatus(current: _document.isReady);
     return true;
   }
@@ -3707,20 +3682,24 @@ final class FlarkEditorController extends ChangeNotifier {
     bool restoreSelectionAfterCommit = false,
   }) {
     _retainOptimisticRefreshAnchor(start, deriveFromInput: false);
-    final split = _committedParagraphSplit;
+    final split = _pendingPresentation.paragraphGap;
     if (split != null &&
         (start < split.rowEndUtf16 || end > _committedGapEnd(split))) {
-      _committedParagraphSplit = null;
+      _pendingPresentation = _pendingPresentation.retire(const {
+        FlarkPendingPresentationPart.paragraphGap,
+      });
     }
-    final structurals = _committedStructuralSurfaces;
+    final structurals = _pendingPresentation.structuralSurfaces;
     if (structurals.isNotEmpty) {
       // Only a parser-proved structural surface may carry a typed edit cell
       // into its result revision. Exactly one matching cell may advance that
       // temporary presentation; every other successor fails closed until a
       // fresh parser publication arrives.
       if (!_advanceCommittedStructuralSurfaces(start, end, replacement)) {
-        _committedStructuralSurfaces = const [];
-        _projectionContinuity = null;
+        _pendingPresentation = _pendingPresentation.retire(const {
+          FlarkPendingPresentationPart.dependency,
+          FlarkPendingPresentationPart.structuralSurfaces,
+        });
       }
     } else {
       _prepareProjectionContinuity(start, end, replacement);
@@ -3811,7 +3790,7 @@ final class FlarkEditorController extends ChangeNotifier {
                     _mapViewportRange(segment.sourceUtf16).start == globalCaret,
               )) ||
           (!_semanticViewportCurrent &&
-              _committedStructuralSurfaces.any((state) {
+              _pendingPresentation.structuralSurfaces.any((state) {
                 final surface = state.surface;
                 final runs = surface.presentation.runs;
                 for (var index = 0; index < runs.length; index += 1) {
@@ -3908,7 +3887,9 @@ final class FlarkEditorController extends ChangeNotifier {
   }) {
     _ensureSemanticInputBarrier();
     _pendingSemanticInput!.fallbackWhenNotApplied = fallbackWhenNotApplied;
-    _projectionContinuity = null;
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.dependency,
+    });
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
     _parseTimer = null;
@@ -3950,9 +3931,9 @@ final class FlarkEditorController extends ChangeNotifier {
     if (!_inputValue.selection.isCollapsed ||
         _session.compositionActive ||
         _pendingSemanticInput != null ||
-        _projectionContinuity != null ||
-        _committedParagraphSplit != null ||
-        _committedStructuralSurfaces.isNotEmpty) {
+        _pendingPresentation.dependency != null ||
+        _pendingPresentation.paragraphGap != null ||
+        _pendingPresentation.structuralSurfaces.isNotEmpty) {
       return true;
     }
     final editable = _mapViewportRange(editableUtf16);
@@ -3975,10 +3956,11 @@ final class FlarkEditorController extends ChangeNotifier {
         _status == FlarkEditorStatus.faulted ||
         _session.compositionActive ||
         _pendingSemanticInput != null ||
-        _projectionContinuity != null ||
-        _committedParagraphSplit != null ||
-        _committedStructuralSurfaces.isNotEmpty ||
-        (!_semanticViewportCurrent && _committedTaskChecks.isEmpty)) {
+        _pendingPresentation.dependency != null ||
+        _pendingPresentation.paragraphGap != null ||
+        _pendingPresentation.structuralSurfaces.isNotEmpty ||
+        (!_semanticViewportCurrent &&
+            _pendingPresentation.taskChecks.isEmpty)) {
       return null;
     }
     FlarkViewportRow? current;
@@ -4073,7 +4055,7 @@ final class FlarkEditorController extends ChangeNotifier {
         receipt.replacement,
       );
       _publishedSourceGeneration = generation;
-      _committedTaskChecks[rowOrdinal] = checked;
+      _setPendingTaskCheck(rowOrdinal, checked);
       // Publish the receipt-backed prefix immediately; parser recertification
       // may take several bounded pumps on a large document.
       notifyListeners();
@@ -4172,7 +4154,9 @@ final class FlarkEditorController extends ChangeNotifier {
       _pendingEdits = math.max(0, _pendingEdits - 1);
       notifyListeners();
     } catch (error) {
-      _projectionContinuity = null;
+      _pendingPresentation = _pendingPresentation.retire(const {
+        FlarkPendingPresentationPart.dependency,
+      });
       _pendingSemanticInput = null;
       _pendingEdits = math.max(0, _pendingEdits - 1);
       _lastError = error;
@@ -4182,15 +4166,16 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void _adoptSemanticReceipt(FlarkCoreEditIntentReceiptV1 receipt) {
-    final priorStructuralSurfaces = _committedStructuralSurfaces;
+    final priorPendingPresentation = _pendingPresentation;
+    final priorStructuralSurfaces = priorPendingPresentation.structuralSurfaces;
     final priorStructuralIndex = _committedStructuralIndexForRange(
       receipt.baseUtf16Start,
       receipt.baseUtf16End,
     );
     final transition = _prepareCommittedPresentationTransition(receipt);
-    if (transition?.clearPriorGap ?? false) {
-      _committedParagraphSplit = null;
-    }
+    final retainedGap = transition?.clearPriorGap ?? false
+        ? null
+        : priorPendingPresentation.paragraphGap;
     // The semantic receipt supplies a result-revision byte/UTF-16 pair even
     // when its structural splice crosses the cached page boundary. Preserve
     // that authoritative origin before the optimistic cache update can clear
@@ -4219,16 +4204,19 @@ final class FlarkEditorController extends ChangeNotifier {
             chainsTerminalSplit &&
             priorStructuralIndex > 0
         ? priorStructuralSurfaces.take(priorStructuralIndex)
-        : const <_CommittedStructuralSurfaceState>[];
-    _committedStructuralSurfaces = List.unmodifiable([
-      ...carriedPrefix,
-      ...(transition?.surfaces ??
-              const <FlarkCoreCommittedPresentationSurfaceV1>[])
-          .map((surface) => _CommittedStructuralSurfaceState(surface: surface)),
-    ]);
+        : const <FlarkPendingStructuralSurface>[];
+    final nextStructuralSurfaces =
+        List<FlarkPendingStructuralSurface>.unmodifiable([
+          ...carriedPrefix,
+          ...(transition?.surfaces ??
+                  const <FlarkCoreCommittedPresentationSurfaceV1>[])
+              .map(
+                (surface) => FlarkPendingStructuralSurface(surface: surface),
+              ),
+        ]);
     final removedRowOrdinals = <int>{
       ...?transition?.removedRowOrdinals,
-      ..._committedStructuralSurfaces
+      ...nextStructuralSurfaces
           .map((state) => state.surface.removedRowOrdinal)
           .whereType<int>(),
     };
@@ -4237,7 +4225,12 @@ final class FlarkEditorController extends ChangeNotifier {
         _cachedRows.where((row) => !removedRowOrdinals.contains(row.ordinal)),
       );
     }
-    _committedParagraphSplit = transition?.gap ?? _committedParagraphSplit;
+    _pendingPresentation = FlarkPendingPresentationSnapshot(
+      dependency: priorPendingPresentation.dependency,
+      paragraphGap: transition?.gap ?? retainedGap,
+      structuralSurfaces: nextStructuralSurfaces,
+      taskChecks: priorPendingPresentation.taskChecks,
+    );
     final caret = receipt.resultSelectionUtf16;
     _globalSelectionBase = caret;
     _globalSelectionExtent = caret;
@@ -4259,7 +4252,7 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     final structural = structuralIndex < 0
         ? null
-        : _committedStructuralSurfaces[structuralIndex].surface;
+        : _pendingPresentation.structuralSurfaces[structuralIndex].surface;
     final activeOrdinal = structural?.rowOrdinal ?? _activeOrdinal;
     final activeIndex = activeOrdinal == null
         ? -1
@@ -4287,17 +4280,17 @@ final class FlarkEditorController extends ChangeNotifier {
               structural.sourceUtf16,
             ),
       precedingRow: coreRowAt(activeIndex - 1),
-      priorGapPending: _committedParagraphSplit != null,
+      priorGapPending: _pendingPresentation.paragraphGap != null,
     );
   }
 
   int _committedStructuralIndexForRange(int start, int end) {
     for (
-      var index = _committedStructuralSurfaces.length - 1;
+      var index = _pendingPresentation.structuralSurfaces.length - 1;
       index >= 0;
       index -= 1
     ) {
-      final surface = _committedStructuralSurfaces[index].surface;
+      final surface = _pendingPresentation.structuralSurfaces[index].surface;
       if (surface.projectionCurrent &&
           surface.sourceUtf16.start <= start &&
           end <= surface.sourceUtf16.end) {
@@ -4625,57 +4618,40 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void _prepareProjectionContinuity(int start, int end, String replacement) {
-    final current = _projectionContinuity;
+    final current = _pendingPresentation.dependency;
     if (current != null) {
-      switch (current.authority) {
-        case _LiteralProjectionContinuityAuthority(:final receipt):
-          final successor = receipt.continueWith(
-            startUtf16: start,
-            endUtf16: end,
-            replacement: replacement,
+      final successor = current.authority.continueWith(
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
+      );
+      if (successor != null) {
+        final presentation = _splicePendingDependencyPresentation(
+          _surfacePresentationFromCore(current.presentation),
+          successor,
+          start,
+          end,
+          replacement,
+        );
+        if (presentation != null) {
+          final delta = replacement.length - (end - start);
+          final priorSource = current.presentation.sourceUtf16;
+          _pendingPresentation = _pendingPresentation.withDependency(
+            FlarkPendingDependencyPresentation(
+              rowOrdinal: current.rowOrdinal,
+              authority: successor,
+              presentation: _corePresentationRow(
+                presentation,
+                FlarkSourceRange(priorSource.start, priorSource.end + delta),
+              ),
+            ),
           );
-          if (successor != null) {
-            final presentation = _spliceContinuityPresentation(
-              current.presentation,
-              successor.authorizedContentUtf16,
-              start,
-              end,
-              replacement,
-            );
-            if (presentation != null) {
-              _projectionContinuity = _ProjectionContinuitySurface.literal(
-                rowOrdinal: current.rowOrdinal,
-                receipt: successor,
-                presentation: presentation,
-              );
-              return;
-            }
-          }
-        case _EditCellProjectionContinuityAuthority(:final receipt):
-          final successor = receipt.continueWith(
-            startUtf16: start,
-            endUtf16: end,
-            replacement: replacement,
-          );
-          if (successor != null) {
-            final presentation = _spliceProjectionEditCellPresentation(
-              current.presentation,
-              successor,
-              start,
-              end,
-              replacement,
-            );
-            if (presentation != null) {
-              _projectionContinuity = _ProjectionContinuitySurface.editCell(
-                rowOrdinal: current.rowOrdinal,
-                receipt: successor,
-                presentation: presentation,
-              );
-              return;
-            }
-          }
+          return;
+        }
       }
-      _projectionContinuity = null;
+      _pendingPresentation = _pendingPresentation.retire(const {
+        FlarkPendingPresentationPart.dependency,
+      });
       return;
     }
     // Cached envelopes predate any optimistic edit. Only a fresh parser
@@ -4693,58 +4669,66 @@ final class FlarkEditorController extends ChangeNotifier {
       row.editableUtf16 ?? _activationRange(row),
     );
     final base = surfaceRow(row, includeEditingState: false);
-    final editCellReceipt = authorizeProjectionEditCell(
+    final authority = bindPendingDependencyAuthority(
       revision: revision,
       cells: row.projectionEditCells,
-      authorizedContentUtf16: editable,
-      startUtf16: start,
-      endUtf16: end,
-      replacement: replacement,
-    );
-    if (editCellReceipt != null) {
-      final presentation = _spliceProjectionEditCellPresentation(
-        base,
-        editCellReceipt,
-        start,
-        end,
-        replacement,
-      );
-      if (presentation != null) {
-        _projectionContinuity = _ProjectionContinuitySurface.editCell(
-          rowOrdinal: row.ordinal,
-          receipt: editCellReceipt,
-          presentation: presentation,
-        );
-        return;
-      }
-    }
-    final literalReceipt = authorizeRowProjectionContinuity(
-      revision: revision,
       envelopes: row.literalSafeEnvelopes,
       authorizedContentUtf16: editable,
       startUtf16: start,
       endUtf16: end,
       replacement: replacement,
     );
-    if (literalReceipt != null) {
-      final presentation = _spliceContinuityPresentation(
+    if (authority != null) {
+      final presentation = _splicePendingDependencyPresentation(
         base,
-        literalReceipt.authorizedContentUtf16,
+        authority,
         start,
         end,
         replacement,
       );
       if (presentation != null) {
-        _projectionContinuity = _ProjectionContinuitySurface.literal(
-          rowOrdinal: row.ordinal,
-          receipt: literalReceipt,
-          presentation: presentation,
+        final source = surfaceSourceRange(row);
+        final delta = replacement.length - (end - start);
+        _pendingPresentation = _pendingPresentation.withDependency(
+          FlarkPendingDependencyPresentation(
+            rowOrdinal: row.ordinal,
+            authority: authority,
+            presentation: _corePresentationRow(
+              presentation,
+              FlarkSourceRange(source.start, source.end + delta),
+            ),
+          ),
         );
         return;
       }
     }
-    _projectionContinuity = null;
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.dependency,
+    });
   }
+
+  FlarkSurfaceRow? _splicePendingDependencyPresentation(
+    FlarkSurfaceRow presentation,
+    FlarkPendingDependencyAuthority authority,
+    int start,
+    int end,
+    String replacement,
+  ) => switch (authority) {
+    FlarkProjectionContinuityReceipt() => _spliceContinuityPresentation(
+      presentation,
+      authority.authorizedContentUtf16,
+      start,
+      end,
+      replacement,
+    ),
+    FlarkProjectionEditCellReceipt() => _spliceProjectionEditCellPresentation(
+      presentation,
+      authority,
+      start,
+      end,
+      replacement,
+    ),
+  };
 
   FlarkSurfaceRow? _spliceContinuityPresentation(
     FlarkSurfaceRow presentation,
@@ -4995,8 +4979,8 @@ final class FlarkEditorController extends ChangeNotifier {
       await operation;
       if (generation == _editGeneration) {
         final retainsProjectedTransition =
-            _projectionContinuity != null ||
-            _committedStructuralSurfaces.any(
+            _pendingPresentation.dependency != null ||
+            _pendingPresentation.structuralSurfaces.any(
               (state) => state.continuity != null,
             );
         if (retainsProjectedTransition) {
@@ -5020,7 +5004,9 @@ final class FlarkEditorController extends ChangeNotifier {
       _pendingEdits = math.max(0, _pendingEdits - 1);
       notifyListeners();
     } catch (error) {
-      _projectionContinuity = null;
+      _pendingPresentation = _pendingPresentation.retire(const {
+        FlarkPendingPresentationPart.dependency,
+      });
       _pendingEdits = math.max(0, _pendingEdits - 1);
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
@@ -5043,9 +5029,11 @@ final class FlarkEditorController extends ChangeNotifier {
       return Future<bool>.value(false);
     }
     _historyReplayPending = true;
-    _projectionContinuity = null;
-    _committedParagraphSplit = null;
-    _committedStructuralSurfaces = const [];
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.dependency,
+      FlarkPendingPresentationPart.paragraphGap,
+      FlarkPendingPresentationPart.structuralSurfaces,
+    });
     _semanticEditV1Active = false;
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
@@ -5065,7 +5053,7 @@ final class FlarkEditorController extends ChangeNotifier {
         }
         final restore = _adapterSnapshot(outcome.restoreSelection);
         _optimisticViewportEdits.clear();
-        _committedTaskChecks.clear();
+        _clearPendingTaskChecks();
         while (!_document.isReady && !_closed) {
           await _document.pump(workUnits: 512);
         }
@@ -5118,24 +5106,32 @@ final class FlarkEditorController extends ChangeNotifier {
             FlarkSurfaceRow presentation,
           })
         >[];
-    for (var index = 0; index < _committedStructuralSurfaces.length; index++) {
-      final state = _committedStructuralSurfaces[index];
+    for (
+      var index = 0;
+      index < _pendingPresentation.structuralSurfaces.length;
+      index++
+    ) {
+      final state = _pendingPresentation.structuralSurfaces[index];
       final surface = state.surface;
       if (!surface.projectionCurrent) continue;
-      final receipt =
+      final authority =
           state.continuity?.continueWith(
             startUtf16: start,
             endUtf16: end,
             replacement: replacement,
           ) ??
-          authorizeProjectionEditCell(
+          bindPendingDependencyAuthority(
             revision: revision,
             cells: surface.projectionEditCells,
+            envelopes: const [],
             authorizedContentUtf16: surface.sourceUtf16,
             startUtf16: start,
             endUtf16: end,
             replacement: replacement,
           );
+      final receipt = authority is FlarkProjectionEditCellReceipt
+          ? authority
+          : null;
       if (receipt == null) continue;
       final base = _committedStructuralSurfaceRow(
         surface,
@@ -5158,10 +5154,10 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     if (candidates.length != 1) return false;
     final matched = candidates.single;
-    final states = [..._committedStructuralSurfaces];
+    final states = [..._pendingPresentation.structuralSurfaces];
     final previous = states[matched.index].surface;
     final source = matched.receipt.affectedUtf16;
-    states[matched.index] = _CommittedStructuralSurfaceState(
+    states[matched.index] = FlarkPendingStructuralSurface(
       continuity: matched.receipt,
       surface: FlarkCoreCommittedPresentationSurfaceV1(
         rowOrdinal: previous.rowOrdinal,
@@ -5171,7 +5167,7 @@ final class FlarkEditorController extends ChangeNotifier {
         presentation: _corePresentationRow(matched.presentation, source),
       ),
     );
-    _committedStructuralSurfaces = List.unmodifiable(states);
+    _pendingPresentation = _pendingPresentation.withStructuralSurfaces(states);
     return true;
   }
 
@@ -5198,9 +5194,11 @@ final class FlarkEditorController extends ChangeNotifier {
       return Future<bool>.value(false);
     }
     _historyReplayPending = true;
-    _projectionContinuity = null;
-    _committedParagraphSplit = null;
-    _committedStructuralSurfaces = const [];
+    _pendingPresentation = _pendingPresentation.retire(const {
+      FlarkPendingPresentationPart.dependency,
+      FlarkPendingPresentationPart.paragraphGap,
+      FlarkPendingPresentationPart.structuralSurfaces,
+    });
     _semanticEditV1Active = false;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -5218,7 +5216,7 @@ final class FlarkEditorController extends ChangeNotifier {
       if (outcome == null) return false;
       final restore = _adapterSnapshot(outcome.restoreSelection);
       _optimisticViewportEdits.clear();
-      _committedTaskChecks.clear();
+      _clearPendingTaskChecks();
       // History replay is one authoritative visual transaction. Do not
       // publish a pending exact-source viewport between the native replay and
       // its parser-certified result; retain the prior frame while bounded
@@ -5858,7 +5856,7 @@ final class FlarkEditorController extends ChangeNotifier {
           _globalSelectionExtent <= viewport.coveredUtf16.end) {
         _optimisticRefreshAnchor = null;
       }
-      _committedTaskChecks.clear();
+      _clearPendingTaskChecks();
     } else if (!retainsExistingSurface &&
         sourceFitsViewport &&
         viewport.coveredUtf16.start <= _globalSelectionExtent &&
@@ -5887,7 +5885,9 @@ final class FlarkEditorController extends ChangeNotifier {
       _firstCertifiedPublication.complete();
     }
     if (_viewportSupersedesProjectionContinuity(viewport)) {
-      _projectionContinuity = null;
+      _pendingPresentation = _pendingPresentation.retire(const {
+        FlarkPendingPresentationPart.dependency,
+      });
     }
     _status = _idleStatus(current: _semanticViewportCurrent);
     if (restoreInputWindow) {
@@ -5915,19 +5915,21 @@ final class FlarkEditorController extends ChangeNotifier {
       _restoreNeutralInputWindow(_globalSelectionExtent);
     }
     if (_semanticViewportCurrent) {
-      _committedParagraphSplit = null;
-      _committedStructuralSurfaces = const [];
+      _pendingPresentation = _pendingPresentation.retire(const {
+        FlarkPendingPresentationPart.paragraphGap,
+        FlarkPendingPresentationPart.structuralSurfaces,
+      });
     }
     notifyListeners();
   }
 
   bool _viewportSupersedesProjectionContinuity(FlarkViewport viewport) {
-    final continuity = _projectionContinuity;
+    final continuity = _pendingPresentation.dependency;
     if (continuity == null || !viewport.isCertified || viewport.rows.isEmpty) {
       return false;
     }
     if (viewport.revision < continuity.resultRevision) return false;
-    final authorized = continuity.contentUtf16;
+    final authorized = continuity.affectedUtf16;
     for (final row in viewport.rows) {
       final source = row.sourceUtf16;
       if (source.start > authorized.start || authorized.end > source.end) {
@@ -5946,7 +5948,7 @@ final class FlarkEditorController extends ChangeNotifier {
       }
       final inlineFacts = row.inlineFacts;
       if (inlineFacts == null) return false;
-      if (continuity.isEditCell) {
+      if (continuity.presentsExactIsland) {
         // A result-revision complete inline publication always supersedes an
         // exact edit-cell island. The parser, not the predecessor partition,
         // owns the new inline vocabulary.
@@ -6366,22 +6368,13 @@ final class FlarkEditorController extends ChangeNotifier {
     final direct = _surfaceOrdinalAt(startUtf16);
     if (_cachedRows.any((row) => row.ordinal == direct)) return direct;
 
-    final continuity = _projectionContinuity;
+    final continuity = _pendingPresentation.dependency;
     if (continuity != null) {
-      final authorizedSuccessor = switch (continuity.authority) {
-        _LiteralProjectionContinuityAuthority(:final receipt) =>
-          receipt.continueWith(
-            startUtf16: startUtf16,
-            endUtf16: endUtf16,
-            replacement: replacement,
-          ),
-        _EditCellProjectionContinuityAuthority(:final receipt) =>
-          receipt.continueWith(
-            startUtf16: startUtf16,
-            endUtf16: endUtf16,
-            replacement: replacement,
-          ),
-      };
+      final authorizedSuccessor = continuity.authority.continueWith(
+        startUtf16: startUtf16,
+        endUtf16: endUtf16,
+        replacement: replacement,
+      );
       if (authorizedSuccessor != null) return continuity.rowOrdinal;
     }
 
@@ -6396,24 +6389,16 @@ final class FlarkEditorController extends ChangeNotifier {
     final editable = _mapViewportRange(
       row.editableUtf16 ?? _activationRange(row),
     );
-    final editCell = authorizeProjectionEditCell(
+    final authority = bindPendingDependencyAuthority(
       revision: revision,
       cells: row.projectionEditCells,
-      authorizedContentUtf16: editable,
-      startUtf16: startUtf16,
-      endUtf16: endUtf16,
-      replacement: replacement,
-    );
-    if (editCell != null) return row.ordinal;
-    final literal = authorizeRowProjectionContinuity(
-      revision: revision,
       envelopes: row.literalSafeEnvelopes,
       authorizedContentUtf16: editable,
       startUtf16: startUtf16,
       endUtf16: endUtf16,
       replacement: replacement,
     );
-    return literal == null ? direct : row.ordinal;
+    return authority == null ? direct : row.ordinal;
   }
 
   FlarkSourceRange _activationRange(FlarkViewportRow row) {
@@ -6428,7 +6413,8 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   String _projectedListPrefix(int rowOrdinal, FlarkListItemPresentation item) {
-    final taskChecked = _committedTaskChecks[rowOrdinal] ?? item.taskChecked;
+    final taskChecked =
+        _pendingPresentation.taskChecks[rowOrdinal] ?? item.taskChecked;
     final marker = switch (taskChecked) {
       null => item.markerText,
       false => '☐',
@@ -6452,9 +6438,7 @@ final class FlarkEditorController extends ChangeNotifier {
     // source edit cannot alter presentation outside its authorized active
     // content. Keep unchanged cached rows semantic as well; demoting the whole
     // viewport for one safe keystroke produces a visible page-wide flash.
-    if (_projectionContinuity != null) return true;
-    if (_committedStructuralSurfaces.isNotEmpty) return true;
-    if (_committedTaskChecks.isNotEmpty) return true;
+    if (_pendingPresentation.hasPresentationAuthority) return true;
     if (!_certificationRevisionCurrent) return false;
     return _certificationRanges.any(
       (range) =>

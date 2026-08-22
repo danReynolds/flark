@@ -26,7 +26,12 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 31;
+pub const ABI_MINOR: u16 = 32;
+
+/// Requests process-global registry counts from `SESSION_INSPECT`. This mode
+/// requires a zero session reference and capability
+/// `GLOBAL_LIVE_STATE_INSPECTION_V1`.
+pub const INSPECT_FLAG_GLOBAL_LIVE_STATE: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -157,6 +162,7 @@ impl Outcome {
                 outcome.revision = inspection.revision.0;
                 outcome.detail_code = inspection.state as u64;
             }
+            flark_runtime::OperationResult::GlobalLiveStateInspection(_) => {}
         }
         Some(outcome)
     }
@@ -827,6 +833,20 @@ impl SessionInspection {
             live_anchors: value.live_anchors,
             live_history_tokens: value.live_history_tokens,
             reserved: [0; 3],
+        }
+    }
+
+    pub fn from_global(value: flark_runtime::GlobalLiveStateInspectionReceipt) -> Self {
+        Self {
+            struct_size: core::mem::size_of::<Self>() as u32,
+            session_state: 0,
+            session: 0,
+            revision: 0,
+            live_transactions: value.live_transactions,
+            live_continuations: value.live_continuations,
+            live_anchors: value.live_anchors,
+            live_history_tokens: value.live_history_tokens,
+            reserved: [value.live_sessions, 0, 0],
         }
     }
 }

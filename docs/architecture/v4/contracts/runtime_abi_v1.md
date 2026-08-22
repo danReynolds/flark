@@ -34,10 +34,12 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 31. `NEGOTIATE` is the only operation
-permitted without a session. The host supplies its requested version and all
-required capability bits. The runtime returns its supported version, supported
-bits, and actual hard caps in `FlarkV4AbiInfo`.
+The direct ABI is major 4, minor 32. `NEGOTIATE` is the only ordinary operation
+permitted without a session. ABI 4.32 also permits the explicitly flagged
+process-global `SESSION_INSPECT` form without a session so post-close lifecycle
+evidence cannot depend on a consumed handle. The host supplies its requested
+version and all required capability bits. The runtime returns its supported
+version, supported bits, and actual hard caps in `FlarkV4AbiInfo`.
 
 A major or minor mismatch returns `UNSUPPORTED_ABI_VERSION`; this stateless ABI
 accepts only its exact current minor because it cannot retain per-client
@@ -51,9 +53,10 @@ reserved fields to zero. Every output sets its actual size. Unknown nonzero
 reserved input is `INVALID_ARGUMENT`.
 
 ABI 4.0 assigns no request flags: every `flags`, `SessionConfig.flags`,
-`reserved_u32`, and reserved-array field must be zero. A later minor may assign
-a flag only behind a negotiated capability and cannot reinterpret 4.0 zero
-behavior.
+`reserved_u32`, and reserved-array field must be zero. ABI 4.32 assigns
+`SESSION_INSPECT.flags = GLOBAL_LIVE_STATE` behind its matching capability;
+all other nonzero flags remain invalid. A later minor may assign a flag only
+behind a negotiated capability and cannot reinterpret 4.0 zero behavior.
 
 `SessionConfig.parser_profile` is mandatory and stable across hosts. Code 1 is
 `COMMONMARK_0_31_2` (`commonmark-0.31.2`) and code 2 is the selected production
@@ -407,6 +410,15 @@ facts and required projection-segment group before admitting edit cells or
 envelopes from the remaining shared 64 KiB payload, so optional continuity
 vocabulary cannot evict a later rendered row. If the baseline groups themselves
 do not fit, the ABI 4.5 complete-group fail-closed rule still applies.
+
+ABI 4.32 capability `GLOBAL_LIVE_STATE_INSPECTION_V1` assigns
+`SESSION_INSPECT.flags = GLOBAL_LIVE_STATE` (`0x1`). This form requires a zero
+session reference and remains callable after close consumes the final handle.
+The fixed `SESSION_INSPECTION` record sets session state, session, and revision
+to zero; its four `live_*` fields report process-global transaction,
+continuation, anchor, and history counts, while `reserved[0]` reports live
+sessions and `reserved[1..2]` remain zero. This is bounded lifecycle evidence,
+not document authority, and does not expose parser or allocator internals.
 
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust

@@ -5,7 +5,7 @@
 - Cut over to the v4 package split: `flark_core` owns the headless Dart/Rust
   runtime and `flark` owns the Flutter product surface.
 - Added bounded, source-authoritative opening, editing, certification, semantic
-  viewport, history, and lifecycle APIs through ABI 4.31.
+  viewport, history, and lifecycle APIs through ABI 4.32.
 - Added parser-authored literal-safe insertion envelopes, ABI 4.27's bounded
   closure/carry proof for immediate word/space successors, and fail-closed exact
   source rendering whenever result-revision semantics are not proven current.
@@ -28,6 +28,9 @@
   inline partition is unchanged. Rapid Return successors and Backspace merges
   therefore keep the rendered Strong run, exact source, and caret identity;
   every unsupported structural transition still fails closed.
+- Added ABI 4.32's `GLOBAL_LIVE_STATE_INSPECTION_V1`: after close consumes the
+  final session handle, qualification can still prove that the process owns no
+  native sessions, transactions, continuations, anchors, or history tokens.
 - Replaced the active release, archive, platform, and documentation entry points
   with v4-only equivalents. Superseded release notes are preserved at
   `legacy/docs/v2_v3/CHANGELOG.md`.

@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(31)
+#define FLARK_V4_ABI_MINOR UINT16_C(32)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -227,6 +227,9 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_CAPABILITY_PROJECTION_EDIT_CELLS_V2 UINT64_C(0x0000000020000000)
 #define FLARK_V4_CAPABILITY_LITERAL_SAFE_ENVELOPES_V2 UINT64_C(0x0000000040000000)
 #define FLARK_V4_CAPABILITY_STRUCTURAL_PRESENTATION_PROOFS_V1 UINT64_C(0x0000000080000000)
+#define FLARK_V4_CAPABILITY_GLOBAL_LIVE_STATE_INSPECTION_V1 UINT64_C(0x0000000100000000)
+
+#define FLARK_V4_INSPECT_GLOBAL_LIVE_STATE UINT32_C(0x00000001)
 
 #define FLARK_V4_SEMANTIC_TARGET_LINK UINT32_C(1)
 #define FLARK_V4_SEMANTIC_TARGET_IMAGE UINT32_C(2)
@@ -858,6 +861,9 @@ typedef struct FlarkV4InspectRequest {
   FlarkV4SessionRef session;
   uint64_t reserved[5];
 } FlarkV4InspectRequest;
+/* With flags zero, session is a required live owned session. With
+ * FLARK_V4_INSPECT_GLOBAL_LIVE_STATE, session and owner are zero and the
+ * output contains process-global registry counts. */
 
 typedef struct FlarkV4SessionInspection {
   uint32_t struct_size;
@@ -870,6 +876,9 @@ typedef struct FlarkV4SessionInspection {
   uint32_t live_history_tokens;
   uint64_t reserved[3];
 } FlarkV4SessionInspection;
+/* Global inspection sets session_state, session, and revision to zero; the
+ * four live_* fields contain process-global counts and reserved[0] contains
+ * the live-session count. Other reserved output fields remain zero. */
 
 #define FLARK_V4_SIZEOF_ABI_INFO UINT32_C(64)
 #define FLARK_V4_SIZEOF_OUTCOME UINT32_C(112)

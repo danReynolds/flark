@@ -56,10 +56,18 @@ export 'src/models.dart'
         FlarkViewportRowEditCapability;
 export 'src/projection_continuity.dart'
     show
+        FlarkPendingDependencyAuthority,
         FlarkProjectionContinuityReceipt,
         FlarkProjectionEditCellReceipt,
+        bindPendingDependencyAuthority,
         authorizeProjectionEditCell,
         authorizeRowProjectionContinuity;
+export 'src/pending_presentation.dart'
+    show
+        FlarkPendingDependencyPresentation,
+        FlarkPendingPresentationSnapshot,
+        FlarkPendingPresentationPart,
+        FlarkPendingStructuralSurface;
 export 'src/presentation.dart'
     show
         FlarkCoreCommittedPresentationGapV1,
@@ -78,6 +86,7 @@ export 'src/native/native_document.dart'
         FlarkNativeEditPresentationTransitionV1,
         FlarkNativeEditReceipt,
         FlarkNativeException,
+        FlarkNativeGlobalLiveStateInspection,
         FlarkNativeHistoryDisposition,
         FlarkNativeSessionInspection,
         FlarkNativeSourceTransactionReceiptV1;

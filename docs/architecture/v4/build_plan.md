@@ -510,6 +510,12 @@ cells or envelopes, preventing proof-heavy early rows from forcing later rows
 to exact source. Oversized baseline groups retain the ABI's existing complete-
 group fail-closed behavior.
 
+ABI 4.32 is the final frozen D0 minor. It adds one process-global live-state
+inspection mode to the existing fixed inspection record so close/lifecycle
+qualification can prove zero sessions, transactions, continuations, anchors,
+and histories after the last session handle has been consumed. It adds no
+document or Markdown authority.
+
 The edit-cell seam is still bounded, not completion of continuously rendered
 editing. When no cell or envelope matches, the controller safely paints the
 whole active row as exact source. That can reveal unrelated markers and remains

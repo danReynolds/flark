@@ -1,7 +1,29 @@
 import 'models.dart';
 
+/// The parser-authored pre-edit proof carried by one pending presentation.
+///
+/// The variants differ only in their declared presentation consequence:
+/// literal envelopes retain a transformed certified projection, while edit
+/// cells expose one exact affected island and retain only certified content
+/// outside it. Frontends may advance this typed proof, but may not infer or
+/// widen its Markdown meaning.
+sealed class FlarkPendingDependencyAuthority {
+  const FlarkPendingDependencyAuthority();
+
+  int get resultRevision;
+  FlarkSourceRange get affectedUtf16;
+  bool get presentsExactIsland;
+
+  FlarkPendingDependencyAuthority? continueWith({
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+  });
+}
+
 /// Result-revision authority for one parser-authored projection edit cell.
-final class FlarkProjectionEditCellReceipt {
+final class FlarkProjectionEditCellReceipt
+    extends FlarkPendingDependencyAuthority {
   FlarkProjectionEditCellReceipt._({
     required this.baseRevision,
     required this.resultRevision,
@@ -20,8 +42,10 @@ final class FlarkProjectionEditCellReceipt {
   });
 
   final int baseRevision;
+  @override
   final int resultRevision;
   final FlarkSourceRange baseAffectedUtf16;
+  @override
   final FlarkSourceRange affectedUtf16;
   final FlarkSourceRange triggerUtf16;
   final FlarkProjectionEditMatcher matcher;
@@ -36,6 +60,10 @@ final class FlarkProjectionEditCellReceipt {
 
   /// Advances only a parser-declared chainable cell. One-shot local dependency
   /// cells deliberately return null until a fresh parser publication arrives.
+  @override
+  bool get presentsExactIsland => true;
+
+  @override
   FlarkProjectionEditCellReceipt? continueWith({
     required int startUtf16,
     required int endUtf16,
@@ -263,7 +291,8 @@ bool _isSafeAsciiProsePunctuation(int unit) => switch (unit) {
 /// This receipt carries no Markdown policy. The parser already proved the
 /// matching edit class safe at the published position; Core performs only
 /// edit-class matching and range containment.
-final class FlarkProjectionContinuityReceipt {
+final class FlarkProjectionContinuityReceipt
+    extends FlarkPendingDependencyAuthority {
   FlarkProjectionContinuityReceipt._({
     required this.baseRevision,
     required this.resultRevision,
@@ -275,6 +304,7 @@ final class FlarkProjectionContinuityReceipt {
   }) : literalSafeEnvelopes = List.unmodifiable(literalSafeEnvelopes);
 
   final int baseRevision;
+  @override
   final int resultRevision;
   final FlarkSourceRange authorizedContentUtf16;
   final int editStartUtf16;
@@ -295,6 +325,13 @@ final class FlarkProjectionContinuityReceipt {
   /// authorize either exact point, and the matched point is consumed. Thus a
   /// single trailing space cannot authorize a second edit without fresh
   /// parser certification.
+  @override
+  FlarkSourceRange get affectedUtf16 => authorizedContentUtf16;
+
+  @override
+  bool get presentsExactIsland => false;
+
+  @override
   FlarkProjectionContinuityReceipt? continueWith({
     required int startUtf16,
     required int endUtf16,
@@ -308,6 +345,38 @@ final class FlarkProjectionContinuityReceipt {
     replacement: replacement,
   );
 }
+
+/// Binds one edit to exactly one of the parser-authored authority vocabularies.
+///
+/// Edit cells are the more specific dependency-island representation and take
+/// precedence over legacy literal envelopes. Keeping that precedence here
+/// prevents each frontend from maintaining a parallel policy branch while the
+/// wire records remain backward-compatible.
+FlarkPendingDependencyAuthority? bindPendingDependencyAuthority({
+  required int revision,
+  required List<FlarkProjectionEditCell> cells,
+  required List<FlarkLiteralSafeEnvelope> envelopes,
+  required FlarkSourceRange authorizedContentUtf16,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) =>
+    authorizeProjectionEditCell(
+      revision: revision,
+      cells: cells,
+      authorizedContentUtf16: authorizedContentUtf16,
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+      replacement: replacement,
+    ) ??
+    authorizeRowProjectionContinuity(
+      revision: revision,
+      envelopes: envelopes,
+      authorizedContentUtf16: authorizedContentUtf16,
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+      replacement: replacement,
+    );
 
 /// Binds one exact edit to a parser-published literal-safe envelope.
 FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({

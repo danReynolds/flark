@@ -29,6 +29,7 @@ does not count as product-tour evidence.
 ### Native feature set and ABI
 
 - Starting ABI: `4.31`.
+- Final frozen D0 ABI after Phase 1: `4.32`.
 - Phase 1 is expected to consolidate host authority state. It may change the
   ABI only when the unified typed contract or global live-state inspector
   cannot be represented by 4.31.

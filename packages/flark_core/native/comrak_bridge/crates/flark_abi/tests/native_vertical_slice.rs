@@ -4,16 +4,16 @@ use flark_abi::{
     flark_v4_close_begin, flark_v4_close_finish, flark_v4_close_pump, flark_v4_continuation_next,
     flark_v4_continuation_release, flark_v4_create_begin, flark_v4_create_commit,
     flark_v4_history_release, flark_v4_history_replay, flark_v4_negotiate, flark_v4_pump,
-    flark_v4_query_viewport, flark_v4_small_edit, flark_v4_source_read, AbiInfo, CloseRequest,
-    ContinuationRequest, CreateRequest, EditDescriptor, HistoryRequest, InlineFactRecord,
-    NegotiateRequest, Outcome, ProjectionSegmentRecord, PumpRequest, QueryRequest,
-    ResultPageHeader, SemanticTargetRecord, SessionConfig, SessionRef, SmallEditRequest,
-    SourceRange, SourceReadRequest, TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR,
-    ABI_MINOR, INLINE_FACT_EMPHASIS, INLINE_FACT_LITERAL_SAFE_ENVELOPE,
-    INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_TABLE_CELL,
-    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
-    PROJECTION_EDIT_CELL_CHAIN_RESULT, PROJECTION_EDIT_CELL_MATCHER_MASK,
-    PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
+    flark_v4_query_viewport, flark_v4_session_inspect, flark_v4_small_edit, flark_v4_source_read,
+    AbiInfo, CloseRequest, ContinuationRequest, CreateRequest, EditDescriptor, HistoryRequest,
+    InlineFactRecord, InspectRequest, NegotiateRequest, Outcome, ProjectionSegmentRecord,
+    PumpRequest, QueryRequest, ResultPageHeader, SemanticTargetRecord, SessionConfig,
+    SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
+    TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR, INLINE_FACT_EMPHASIS,
+    INLINE_FACT_LITERAL_SAFE_ENVELOPE, INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_TABLE_CELL,
+    INSPECT_FLAG_GLOBAL_LIVE_STATE, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
+    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, PROJECTION_EDIT_CELL_CHAIN_RESULT,
+    PROJECTION_EDIT_CELL_MATCHER_MASK, PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
     PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL,
     PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL,
     PROJECTION_EDIT_CELL_PRESENT_EXACT, PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL,
@@ -40,8 +40,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     let preceding_minor = NegotiateRequest {
         struct_size: size_of::<NegotiateRequest>() as u32,
         requested_major: ABI_MAJOR,
-        requested_minor: 30,
-        required_capability_bits: (1_u64 << 31) - 1,
+        requested_minor: 31,
+        required_capability_bits: (1_u64 << 32) - 1,
     };
     let mut info = AbiInfo::default();
     let mut outcome = Outcome::default();
@@ -51,8 +51,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         "the stateless ABI must reject a preceding minor it cannot tailor"
     );
     let subsequent_minor = NegotiateRequest {
-        requested_minor: 32,
-        required_capability_bits: (1_u64 << 32) - 1,
+        requested_minor: 33,
+        required_capability_bits: (1_u64 << 33) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -62,7 +62,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 32) - 1,
+        required_capability_bits: (1_u64 << 33) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -70,7 +70,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::Ok as u32
     );
     assert_eq!(info.abi_minor, ABI_MINOR);
-    assert_eq!(info.capability_bits, (1_u64 << 32) - 1);
+    assert_eq!(info.capability_bits, (1_u64 << 33) - 1);
 
     let base_source = concat!(
         "# *Flark*\n\n",
@@ -805,6 +805,24 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(status, StatusCode::Ok as u32);
     status = flark_v4_close_finish(&close, &mut outcome);
     assert_eq!(status, StatusCode::Ok as u32);
+
+    let global_request = InspectRequest {
+        struct_size: size_of::<InspectRequest>() as u32,
+        flags: INSPECT_FLAG_GLOBAL_LIVE_STATE,
+        session: SessionRef::default(),
+        reserved: [0; 5],
+    };
+    let mut global = SessionInspection::default();
+    status = flark_v4_session_inspect(&global_request, &mut global, &mut outcome);
+    assert_eq!(status, StatusCode::Ok as u32);
+    assert_eq!(global.session_state, 0);
+    assert_eq!(global.session, 0);
+    assert_eq!(global.revision, 0);
+    assert_eq!(global.live_transactions, 0);
+    assert_eq!(global.live_continuations, 0);
+    assert_eq!(global.live_anchors, 0);
+    assert_eq!(global.live_history_tokens, 0);
+    assert_eq!(global.reserved, [0; 3]);
 
     status = flark_v4_source_read(&read, page.as_mut_ptr(), page.len() as u64, &mut outcome);
     assert_eq!(status, StatusCode::InvalidHandle as u32);

@@ -574,6 +574,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("PROJECTION_EDIT_CELLS_V2", 1 << 29),
     ("LITERAL_SAFE_ENVELOPES_V2", 1 << 30),
     ("STRUCTURAL_PRESENTATION_PROOFS_V1", 1 << 31),
+    ("GLOBAL_LIVE_STATE_INSPECTION_V1", 1 << 32),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;
@@ -787,6 +788,18 @@ pub struct SessionInspectionReceipt {
     pub live_history_tokens: u32,
 }
 
+/// Process-global live native resources. This is lifecycle evidence rather
+/// than document authority: it is available without a live session handle so
+/// a host can prove that close consumed every owned registry entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GlobalLiveStateInspectionReceipt {
+    pub live_sessions: u64,
+    pub live_transactions: u32,
+    pub live_continuations: u32,
+    pub live_anchors: u32,
+    pub live_history_tokens: u32,
+}
+
 /// Typed runtime result authority. `flark-abi` maps these variants into the
 /// generic fixed-width C `Outcome` fields according to the manifest's
 /// `outcomeFieldRoles`; runtime implementations never invent raw field roles.
@@ -836,6 +849,7 @@ pub enum OperationResult {
         session: SessionHandle,
     },
     SessionInspection(SessionInspectionReceipt),
+    GlobalLiveStateInspection(GlobalLiveStateInspectionReceipt),
 }
 
 impl OperationResult {
@@ -945,6 +959,9 @@ impl OperationResult {
                     && inspection.session.0 != 0
                     && (matches!(inspection.state, SessionState::Creating)
                         || inspection.revision.0 != Revision::UNCOMMITTED.0)
+            }
+            Self::GlobalLiveStateInspection(_) => {
+                matches!(operation, OperationCode::SessionInspect)
             }
         }
     }
@@ -1176,6 +1193,10 @@ const fn operation_accepts_terminal_success(
             | (
                 OperationCode::SessionInspect,
                 OperationResult::SessionInspection(_)
+            )
+            | (
+                OperationCode::SessionInspect,
+                OperationResult::GlobalLiveStateInspection(_)
             )
     ) && match result {
         OperationResult::Page(_) => {

@@ -639,11 +639,11 @@ fn close_initial_admission_snapshot_and_flag_policies_are_frozen() {
         manifest["snapshotLifetime"]["ownership"].as_str(),
         Some("NON_OWNING_EPOCH")
     );
-    assert_eq!(manifest["inputFlagRules"]["abiMinor"].as_u64(), Some(0));
+    assert_eq!(manifest["inputFlagRules"]["abiMinor"].as_u64(), Some(32));
     assert!(manifest["inputFlagRules"]["rule"]
         .as_str()
         .expect("flag rule")
-        .contains("must be zero"));
+        .contains("SESSION_INSPECT flag 1"));
 }
 
 #[test]
@@ -704,7 +704,7 @@ fn literal_safe_envelope_v2_remains_bound_to_minor_30() {
 fn structural_presentation_proof_is_bound_to_minor_31() {
     let manifest = manifest();
     let proof = &manifest["structuralPresentationProofsV1"];
-    assert_eq!(ABI_MINOR, 31);
+    assert_eq!(ABI_MINOR, 32);
     assert_eq!(proof["abiMinor"].as_u64(), Some(31));
     assert_eq!(
         proof["capability"].as_str(),
@@ -716,6 +716,21 @@ fn structural_presentation_proof_is_bound_to_minor_31() {
     );
     assert!(HEADER.contains("FLARK_V4_CAPABILITY_STRUCTURAL_PRESENTATION_PROOFS_V1"));
     assert!(HEADER.contains("FLARK_V4_EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN"));
+}
+
+#[test]
+fn global_live_state_inspection_is_bound_to_minor_32() {
+    let manifest = manifest();
+    let inspection = &manifest["globalLiveStateInspectionV1"];
+    assert_eq!(ABI_MINOR, 32);
+    assert_eq!(inspection["abiMinor"].as_u64(), Some(32));
+    assert_eq!(
+        inspection["capability"].as_str(),
+        Some("GLOBAL_LIVE_STATE_INSPECTION_V1")
+    );
+    assert_eq!(inspection["requestFlag"].as_u64(), Some(1));
+    assert!(HEADER.contains("FLARK_V4_CAPABILITY_GLOBAL_LIVE_STATE_INSPECTION_V1"));
+    assert!(HEADER.contains("FLARK_V4_INSPECT_GLOBAL_LIVE_STATE"));
 }
 
 #[test]

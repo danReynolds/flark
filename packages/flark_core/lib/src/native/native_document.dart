@@ -183,13 +183,14 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 31;
+const _abiMinor = 32;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0xffffffff;
+const _requiredCapabilityBits = 0x1ffffffff;
+const _inspectGlobalLiveState = 1;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
 ///
@@ -395,6 +396,33 @@ final class FlarkNativeSessionInspection {
   final int liveHistoryTokens;
 }
 
+/// Process-global native resources that remain live in the loaded Flark ABI.
+///
+/// Unlike [FlarkNativeSessionInspection], this evidence remains available
+/// after the last document handle has been consumed by close.
+final class FlarkNativeGlobalLiveStateInspection {
+  const FlarkNativeGlobalLiveStateInspection({
+    required this.liveSessions,
+    required this.liveTransactions,
+    required this.liveContinuations,
+    required this.liveAnchors,
+    required this.liveHistoryTokens,
+  });
+
+  final int liveSessions;
+  final int liveTransactions;
+  final int liveContinuations;
+  final int liveAnchors;
+  final int liveHistoryTokens;
+
+  bool get isEmpty =>
+      liveSessions == 0 &&
+      liveTransactions == 0 &&
+      liveContinuations == 0 &&
+      liveAnchors == 0 &&
+      liveHistoryTokens == 0;
+}
+
 final class _HistoryLengthDelta {
   const _HistoryLengthDelta(this.byteDelta, this.utf16Delta);
 
@@ -423,6 +451,53 @@ final class FlarkNativeDocument {
        _sourceUtf16Length = sourceUtf16Length;
 
   static int _nextOwnerToken = 1;
+
+  /// Inspects process-global native ownership without requiring a live
+  /// document handle. The returned counts are suitable for post-close leak
+  /// assertions in lifecycle and dogfood qualification lanes.
+  static FlarkNativeGlobalLiveStateInspection inspectGlobalLiveState({
+    String? libraryPath,
+  }) {
+    final bindings = libraryPath == null
+        ? FlarkV4Bindings.nativeAsset()
+        : FlarkV4Bindings(DynamicLibrary.open(libraryPath));
+    _negotiate(bindings);
+    final request = calloc<FlarkV4InspectRequest>();
+    final inspection = calloc<FlarkV4SessionInspection>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4InspectRequest>()
+        ..flags = _inspectGlobalLiveState;
+      final status = bindings.sessionInspect(request, inspection, outcome);
+      _requireStatus('global_live_state_inspect', status, outcome.ref, {_ok});
+      final value = inspection.ref;
+      if (value.structSize < sizeOf<FlarkV4SessionInspection>() ||
+          value.sessionState != 0 ||
+          value.session != 0 ||
+          value.revision != 0 ||
+          value.reserved[1] != 0 ||
+          value.reserved[2] != 0) {
+        throw const FlarkNativeException(
+          'global_live_state_inspect',
+          _internalFault,
+          0,
+        );
+      }
+      return FlarkNativeGlobalLiveStateInspection(
+        liveSessions: value.reserved[0],
+        liveTransactions: value.liveTransactions,
+        liveContinuations: value.liveContinuations,
+        liveAnchors: value.liveAnchors,
+        liveHistoryTokens: value.liveHistoryTokens,
+      );
+    } finally {
+      calloc
+        ..free(request)
+        ..free(inspection)
+        ..free(outcome);
+    }
+  }
 
   final FlarkV4Bindings _bindings;
   final int _session;
