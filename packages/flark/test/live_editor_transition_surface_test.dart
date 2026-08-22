@@ -123,7 +123,6 @@ void main() {
         await mounted.pumpPresentationSettled();
         final afterFirst = original.replaceRange(5, 5, '\n\n');
         expect(await tester.runAsync(probe.controller.readSource), afterFirst);
-
         await mounted.pressReturn();
         await mounted.pumpPresentationSettled();
         final afterSecond = afterFirst.replaceRange(7, 7, '\n');

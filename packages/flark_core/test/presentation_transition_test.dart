@@ -106,6 +106,160 @@ void main() {
     expect(transition?.surfaces, isEmpty);
   });
 
+  test('parser-proven paragraph merge retains predecessor inline styling', () {
+    final left = _row(
+      ordinal: 4,
+      sourceStart: 0,
+      sourceEnd: 14,
+      text: 'left bold',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'left ',
+          sourceUtf16Start: 0,
+          sourceUtf16End: 5,
+          sourceExact: true,
+          styles: {},
+        ),
+        FlarkCorePresentationRun(
+          text: 'bold',
+          sourceUtf16Start: 7,
+          sourceUtf16End: 11,
+          sourceExact: true,
+          styles: {FlarkCorePresentationInlineStyle.strong},
+        ),
+      ],
+    );
+    final right = _row(
+      ordinal: 5,
+      sourceStart: 14,
+      sourceEnd: 19,
+      text: 'right',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'right',
+          sourceUtf16Start: 14,
+          sourceUtf16End: 19,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.mergeParagraph,
+        baseStart: 13,
+        baseEnd: 14,
+        replacement: '',
+        presentationProven: true,
+      ),
+      activeOrdinal: 5,
+      active: right,
+      preceding: left,
+    );
+
+    expect(transition?.surfaces, hasLength(1));
+    expect(transition?.surfaces.single.projectionCurrent, isTrue);
+    expect(
+      transition?.surfaces.single.presentation.runs[1].styles,
+      contains(FlarkCorePresentationInlineStyle.strong),
+    );
+  });
+
+  test(
+    'parser-proven terminal split retains the row and authors a successor cell',
+    () {
+      final active = _row(
+        ordinal: 7,
+        sourceStart: 0,
+        sourceEnd: 17,
+        text: 'Before bold.',
+        runs: const [
+          FlarkCorePresentationRun(
+            text: 'Before ',
+            sourceUtf16Start: 0,
+            sourceUtf16End: 7,
+            sourceExact: true,
+            styles: {},
+          ),
+          FlarkCorePresentationRun(
+            text: 'bold',
+            sourceUtf16Start: 9,
+            sourceUtf16End: 13,
+            sourceExact: true,
+            styles: {FlarkCorePresentationInlineStyle.strong},
+          ),
+          FlarkCorePresentationRun(
+            text: '.',
+            sourceUtf16Start: 15,
+            sourceUtf16End: 16,
+            sourceExact: true,
+            styles: {},
+          ),
+        ],
+      );
+      final transition = frontend.adopt(
+        receipt: _receipt(
+          transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+          baseStart: 16,
+          baseEnd: 16,
+          replacement: '\n\n',
+          presentationProven: true,
+        ),
+        activeOrdinal: 7,
+        active: active,
+      );
+
+      expect(transition?.gap, isNull);
+      expect(transition?.surfaces, hasLength(2));
+      expect(transition?.surfaces.first.presentation.text, 'Before bold.');
+      expect(transition?.surfaces.first.projectionCurrent, isTrue);
+      expect(transition?.surfaces.last.presentation.kind, 5);
+      expect(transition?.surfaces.last.projectionEditCells, hasLength(1));
+      expect(
+        transition?.surfaces.last.projectionEditCells.single.matcher,
+        FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+      );
+      final cell = transition!.surfaces.last.projectionEditCells.single;
+      expect(cell.affectedBytes.start, 18);
+      expect(cell.affectedBytes.end, 18);
+      expect(cell.affectedUtf16.start, 18);
+      expect(cell.affectedUtf16.end, 18);
+    },
+  );
+
+  test('a carried successor cannot authorize another structural split', () {
+    final successor = _row(
+      ordinal: 7,
+      sourceStart: 18,
+      sourceEnd: 19,
+      text: 'x',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'x',
+          sourceUtf16Start: 18,
+          sourceUtf16End: 19,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final transition = resolveCommittedPresentationTransitionV1(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+        baseStart: 19,
+        baseEnd: 19,
+        replacement: '\n\n',
+      ),
+      priorActiveOrdinal: 7,
+      activeRow: successor,
+      precedingRow: null,
+      priorGapPending: false,
+    );
+
+    expect(transition?.surfaces, isEmpty);
+    expect(transition?.gap, isNotNull);
+  });
+
   test('paragraph merge fails closed around hidden unstyled inline syntax', () {
     final image = _row(
       ordinal: 4,
@@ -677,6 +831,7 @@ FlarkCoreEditIntentReceiptV1 _receipt({
   required int baseStart,
   required int baseEnd,
   required String replacement,
+  bool presentationProven = false,
 }) {
   final delta = replacement.length - (baseEnd - baseStart);
   return FlarkCoreEditIntentReceiptV1(
@@ -697,6 +852,7 @@ FlarkCoreEditIntentReceiptV1 _receipt({
     resultSourceUtf16Length: 100 + delta,
     historyToken: null,
     parserPending: true,
+    presentationProven: presentationProven,
     logicalEditId: 1,
     requestDigest: 1,
     telemetry: const FlarkCoreEditIntentTelemetryV1(

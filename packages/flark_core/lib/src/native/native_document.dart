@@ -92,6 +92,7 @@ const _inlineFactLiteralSafeEnvelope = 15;
 const _inlineFactProjectionEditCell = 16;
 const _literalEditClassAsciiWordInsertion = 1;
 const _literalEditClassSingleAsciiSpaceInsertion = 2;
+const _literalEditClassSingleAsciiAsteriskInsertion = 3;
 const _projectionEditMatcherMask = 0xff;
 const _projectionEditMatcherAnyNoCrLfSplice = 1;
 const _projectionEditMatcherAsciiLiteralSpliceInLiteral = 2;
@@ -133,6 +134,7 @@ const _editIntentNeedsCurrentSemantics = 4;
 const _editIntentHasCommit = 1;
 const _editIntentParserPending = 2;
 const _editIntentSemanticBytes = 4;
+const _editIntentPresentationProven = 8;
 const _sourceTransactionHasCommit = 1;
 const _sourceTransactionParserPending = 2;
 const _sourceTransactionCallerKnownBytes = 4;
@@ -181,13 +183,13 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 29;
+const _abiMinor = 31;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x3fffffff;
+const _requiredCapabilityBits = 0xffffffff;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
 ///
@@ -295,6 +297,7 @@ final class FlarkNativeEditIntentReceiptV1 {
     required this.resultSourceUtf16Length,
     required this.historyToken,
     required this.parserPending,
+    required this.presentationProven,
     required this.logicalEditId,
     required this.requestDigest,
     required this.presentationTransition,
@@ -317,6 +320,7 @@ final class FlarkNativeEditIntentReceiptV1 {
   final int resultSourceUtf16Length;
   final int? historyToken;
   final bool parserPending;
+  final bool presentationProven;
   final int logicalEditId;
   final int requestDigest;
   final FlarkNativeEditPresentationTransitionV1 presentationTransition;
@@ -1473,6 +1477,8 @@ final class FlarkNativeDocument {
         }
       }
       final parserPending = native.flags & _editIntentParserPending != 0;
+      final presentationProven =
+          native.flags & _editIntentPresentationProven != 0;
       _ready = !parserPending;
       return FlarkNativeEditIntentReceiptV1(
         disposition: disposition,
@@ -1492,6 +1498,7 @@ final class FlarkNativeDocument {
         resultSourceUtf16Length: native.resultSourceUtf16Length,
         historyToken: historyToken,
         parserPending: parserPending,
+        presentationProven: presentationProven,
         logicalEditId: native.logicalEditId,
         requestDigest: native.requestDigest,
         presentationTransition: presentationTransition,
@@ -2701,6 +2708,8 @@ final class FlarkNativeDocument {
         FlarkLiteralEditClass.asciiWordInsertion,
       _literalEditClassSingleAsciiSpaceInsertion =>
         FlarkLiteralEditClass.singleAsciiSpaceInsertion,
+      _literalEditClassSingleAsciiAsteriskInsertion =>
+        FlarkLiteralEditClass.singleAsciiAsteriskInsertion,
       _ => throw FlarkNativeException(
         'decode_viewport',
         _notCertified,
@@ -2717,6 +2726,8 @@ final class FlarkNativeDocument {
         byteStart < byteEnd && utf16Start < utf16End,
       FlarkLiteralEditClass.singleAsciiSpaceInsertion =>
         empty || (byteStart < byteEnd && utf16Start < utf16End),
+      FlarkLiteralEditClass.singleAsciiAsteriskInsertion =>
+        byteStart < byteEnd && utf16Start < utf16End,
     };
     if (editableBytes == null ||
         editableUtf16 == null ||

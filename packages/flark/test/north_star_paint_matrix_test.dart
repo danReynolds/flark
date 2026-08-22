@@ -43,6 +43,7 @@ final _scenarios = <_TypingScenario>[
     staticStyledRuns: [
       (text: 'Rust → Dart → Flutter', style: FlarkSurfaceInlineStyle.strong),
     ],
+    shell: _paragraphShell,
   ),
   _TypingScenario(
     name: 'actual dogfood terminal typing after punctuation',
@@ -63,6 +64,7 @@ final _scenarios = <_TypingScenario>[
     staticStyledRuns: [
       (text: 'Rust → Dart → Flutter', style: FlarkSurfaceInlineStyle.strong),
     ],
+    shell: _paragraphShell,
     unpumpedBurst: true,
   ),
   _TypingScenario(
@@ -74,6 +76,7 @@ final _scenarios = <_TypingScenario>[
     finalMarked: 'Before **bold**\nplain terminal. Testing.¦',
     forbiddenMarkers: ['**'],
     staticStyledRuns: [(text: 'bold', style: FlarkSurfaceInlineStyle.strong)],
+    shell: _paragraphShell,
     unpumpedBurst: true,
   ),
   _TypingScenario(
@@ -88,6 +91,7 @@ final _scenarios = <_TypingScenario>[
       (text: 'left', style: FlarkSurfaceInlineStyle.strong),
       (text: 'right', style: FlarkSurfaceInlineStyle.emphasis),
     ],
+    shell: _paragraphShell,
     unpumpedBurst: true,
   ),
   _TypingScenario(
@@ -100,6 +104,22 @@ final _scenarios = <_TypingScenario>[
     forbiddenMarkers: ['**'],
     dynamicStrongBefore: 'bo',
     dynamicStrongAfter: 'ld',
+    insertedStyles: {FlarkSurfaceInlineStyle.strong},
+    shell: _paragraphShell,
+  ),
+  _TypingScenario(
+    name: 'typing inside the second word leaf of a Strong fact',
+    initial: 'Before **bold te¦xt** after.\n',
+    inserted: 'ke',
+    renderedBefore: 'Before bold te',
+    renderedAfter: 'xt after.',
+    finalMarked: 'Before **bold teke¦xt** after.\n',
+    forbiddenMarkers: ['**'],
+    dynamicStrongBefore: 'bold te',
+    dynamicStrongAfter: 'xt',
+    insertedStyles: {FlarkSurfaceInlineStyle.strong},
+    shell: _paragraphShell,
+    unpumpedBurst: true,
   ),
   _TypingScenario(
     name: 'list item shell beside Strong',
@@ -113,6 +133,7 @@ final _scenarios = <_TypingScenario>[
     // whole-row fallback.
     forbiddenMarkers: ['**'],
     staticStyledRuns: [(text: 'bold', style: FlarkSurfaceInlineStyle.strong)],
+    shell: _listShell,
   ),
   _TypingScenario(
     name: 'block quote shell beside Strong',
@@ -123,6 +144,7 @@ final _scenarios = <_TypingScenario>[
     finalMarked: '> fike¦rst **bold**\n',
     forbiddenMarkers: ['> ', '**'],
     staticStyledRuns: [(text: 'bold', style: FlarkSurfaceInlineStyle.strong)],
+    shell: _quoteShell,
   ),
   _TypingScenario(
     name: 'plain table cell beside a Strong cell',
@@ -133,6 +155,7 @@ final _scenarios = <_TypingScenario>[
     finalMarked: '| fx¦oo | **bold** |\n| --- | --- |\n',
     forbiddenMarkers: ['|', '---', '**'],
     staticStyledRuns: [(text: 'bold', style: FlarkSurfaceInlineStyle.strong)],
+    shell: _tableShell,
   ),
 ];
 
@@ -430,6 +453,258 @@ This was¦ the real **Rust → Dart → Flutter** editor path.
       timeout: const Timeout(Duration(minutes: 2)),
     );
   }
+
+  testWidgets(
+    'standalone structural Return paints one projected successor caret',
+    (tester) async {
+      const initial = 'Before **bold**.¦\n';
+      const expectedSource = 'Before **bold**.\n\n\n';
+      final probe = (await tester.runAsync(
+        () =>
+            LiveEditorTransitionProbe.open(initial, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+      try {
+        final paintStart = mounted.paints.length;
+        final expectedGeneration = probe.controller.sourceGeneration + 1;
+        await mounted.pressReturn();
+        await _pumpUntilGeneration(
+          tester,
+          mounted,
+          expectedGeneration,
+          paintStart,
+        );
+        final paints = mounted.paints
+            .skip(paintStart)
+            .where((paint) => paint.sourceGeneration == expectedGeneration)
+            .toList();
+        _expectStructuralPaints(
+          paints,
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: 'Before **bold**.\n\n'.length,
+          expectedActiveText: '',
+          expectedFullText: 'Before bold.\n',
+          operation: 'standalone Return',
+        );
+        final settleStart = mounted.paints.length;
+        await mounted.pumpPresentationSettled();
+        _expectStructuralPaints(
+          mounted.paints.skip(settleStart).toList(),
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: 'Before **bold**.\n\n'.length,
+          expectedActiveText: '',
+          expectedFullText: 'Before bold.\n\n',
+          operation: 'standalone Return settle',
+          allowEmpty: true,
+        );
+        await tester.runAsync(
+          () => probe.expectSourceAndCaret('Before **bold**.\n\n¦\n'),
+        );
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
+    'structural Return with a rapid successor never exposes predecessor markers',
+    (tester) async {
+      const initial = 'Before **bold**.¦\n';
+      const expectedSource = 'Before **bold**.\n\nx\n';
+      final probe = (await tester.runAsync(
+        () =>
+            LiveEditorTransitionProbe.open(initial, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+      try {
+        final paintStart = mounted.paints.length;
+        final expectedGeneration = probe.controller.sourceGeneration + 2;
+        await mounted.pressReturn();
+        await mounted.typeText('x');
+        await mounted.pumpImmediate();
+        await _pumpUntilGeneration(
+          tester,
+          mounted,
+          expectedGeneration,
+          paintStart,
+        );
+        final paints = mounted.paints
+            .skip(paintStart)
+            .where((paint) => paint.sourceGeneration == expectedGeneration)
+            .toList();
+        _expectStructuralPaints(
+          paints,
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: 'Before **bold**.\n\nx'.length,
+          expectedActiveText: 'x',
+          expectedFullText: 'Before bold.\nx',
+          operation: 'Return successor',
+        );
+        final settleStart = mounted.paints.length;
+        await mounted.pumpPresentationSettled();
+        _expectStructuralPaints(
+          mounted.paints.skip(settleStart).toList(),
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: 'Before **bold**.\n\nx'.length,
+          expectedActiveText: 'x',
+          expectedFullText: 'Before bold.\nx',
+          operation: 'Return successor settle',
+          allowEmpty: true,
+        );
+        await tester.runAsync(
+          () => probe.expectSourceAndCaret('Before **bold**.\n\nx¦\n'),
+        );
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
+    'structural Backspace merge never exposes predecessor markers',
+    (tester) async {
+      const initial = 'Before **bold**.\n\n¦After.\n';
+      const expectedSource = 'Before **bold**.After.\n';
+      final probe = (await tester.runAsync(
+        () =>
+            LiveEditorTransitionProbe.open(initial, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+      try {
+        final paintStart = mounted.paints.length;
+        final expectedGeneration = probe.controller.sourceGeneration + 1;
+        await mounted.pressBackspace();
+        await _pumpUntilGeneration(
+          tester,
+          mounted,
+          expectedGeneration,
+          paintStart,
+        );
+        final paints = mounted.paints
+            .skip(paintStart)
+            .where((paint) => paint.sourceGeneration == expectedGeneration)
+            .toList();
+        _expectStructuralPaints(
+          paints,
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: 'Before **bold**.'.length,
+          expectedActiveText: 'Before bold.After.',
+          expectedFullText: 'Before bold.After.',
+          operation: 'structural Backspace',
+        );
+        final settleStart = mounted.paints.length;
+        await mounted.pumpPresentationSettled();
+        _expectStructuralPaints(
+          mounted.paints.skip(settleStart).toList(),
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: 'Before **bold**.'.length,
+          expectedActiveText: 'Before bold.After.',
+          expectedFullText: 'Before bold.After.',
+          operation: 'structural Backspace settle',
+          allowEmpty: true,
+        );
+        await tester.runAsync(
+          () => probe.expectSourceAndCaret('Before **bold**.¦After.\n'),
+        );
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+}
+
+Future<void> _pumpUntilGeneration(
+  WidgetTester tester,
+  MountedTransitionRecorder mounted,
+  int generation,
+  int paintStart,
+) async {
+  for (var turn = 0; turn < 40; turn += 1) {
+    if (mounted.paints
+        .skip(paintStart)
+        .any((paint) => paint.sourceGeneration == generation)) {
+      return;
+    }
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 8)),
+    );
+    await mounted.pumpImmediate();
+  }
+  fail('source generation $generation never painted');
+}
+
+void _expectStructuralPaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+  required String expectedActiveText,
+  required String expectedFullText,
+  required String operation,
+  bool allowEmpty = false,
+}) {
+  if (!allowEmpty) expect(paints, isNotEmpty, reason: operation);
+  for (final paint in paints) {
+    expect(paint.sourceGeneration, expectedGeneration, reason: operation);
+    expect(paint.visibleSource, expectedSource, reason: operation);
+    expect(paint.canonicalSelectionBaseUtf16, expectedCaret, reason: operation);
+    expect(
+      paint.canonicalSelectionExtentUtf16,
+      expectedCaret,
+      reason: operation,
+    );
+    expect(paint.caretRect, isNotNull, reason: operation);
+    expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
+    expect(paint.presentation, expectedFullText, reason: operation);
+    expect(paint.presentation, isNot(contains('**')), reason: operation);
+    final activeRows = paint.rows.where((row) => row.active).toList();
+    expect(activeRows, hasLength(1), reason: operation);
+    expect(
+      activeRows.single.kind,
+      expectedActiveText.isEmpty ? anyOf(0, 5) : 5,
+      reason:
+          '$operation: an exact empty successor is visually identical to a certified empty paragraph',
+    );
+    expect(
+      activeRows.single.text,
+      expectedActiveText.isEmpty ? anyOf('', '\n') : expectedActiveText,
+      reason:
+          '$operation: an exact line ending and an empty paragraph paint the same blank successor',
+    );
+    expect(
+      paint.rows.any(
+        (row) => row.runs.any(
+          (run) =>
+              run.text.contains('bold') &&
+              run.styles.contains(FlarkSurfaceInlineStyle.strong) &&
+              _resolvedStyleMatches(run, FlarkSurfaceInlineStyle.strong),
+        ),
+      ),
+      isTrue,
+      reason: '$operation: predecessor Strong styling was lost',
+    );
+  }
 }
 
 Future<void> _pumpCadence(
@@ -469,7 +744,11 @@ void _expectDogfoodPaints(
     expect(activeRows, hasLength(1), reason: operation);
     final active = activeRows.single;
     expect(active.neutral, isFalse, reason: operation);
-    expect(active.kind, isNot(0), reason: operation);
+    expect(active.kind, 5, reason: operation);
+    expect(active.headingLevel, isNull, reason: operation);
+    expect(active.blockQuoteDepth, isNull, reason: operation);
+    expect(active.listItem, isFalse, reason: operation);
+    expect(active.table, isFalse, reason: operation);
     expect(active.text, expectedText, reason: operation);
     expect(paint.visibleSource, expectedVisibleSource, reason: operation);
     expect(paint.sourceGeneration, expectedGeneration, reason: operation);
@@ -488,6 +767,23 @@ void _expectDogfoodPaints(
       text: 'Rust → Dart → Flutter',
       style: FlarkSurfaceInlineStyle.strong,
     ), operation);
+    final expectedPlainPrefix = expectedText
+        .split('Rust → Dart → Flutter')
+        .first;
+    final exactPlainText = active.runs
+        .where(
+          (run) =>
+              run.sourceExact &&
+              run.styles.isEmpty &&
+              run.resolvedStyle == active.resolvedBlockStyle,
+        )
+        .map((run) => run.text)
+        .join();
+    expect(
+      exactPlainText,
+      contains(expectedPlainPrefix),
+      reason: '$operation: edited prose inherited an inline style',
+    );
   }
 }
 
@@ -521,7 +817,19 @@ void _expectScenarioPaints(
     );
     for (final active in activeRows) {
       expect(active.neutral, isFalse, reason: operation);
-      expect(active.kind, isNot(0), reason: operation);
+      expect(active.kind, scenario.shell.kind, reason: operation);
+      expect(
+        active.headingLevel,
+        scenario.shell.headingLevel,
+        reason: operation,
+      );
+      expect(
+        active.blockQuoteDepth,
+        scenario.shell.blockQuoteDepth,
+        reason: operation,
+      );
+      expect(active.listItem, scenario.shell.listItem, reason: operation);
+      expect(active.table, scenario.shell.table, reason: operation);
       expect(active.text, expectedText, reason: operation);
     }
     expect(paint.sourceGeneration, expectedGeneration, reason: operation);
@@ -574,6 +882,56 @@ void _expectScenarioPaints(
             '${scenario.dynamicStrongBefore}$insertedSoFar${scenario.dynamicStrongAfter}',
         style: FlarkSurfaceInlineStyle.strong,
       ), scenario.name);
+    }
+    _expectInsertedSourceStyle(
+      activeRows,
+      sourceStart: scenario.initialCaret,
+      sourceEnd: scenario.initialCaret + insertedSoFar.length,
+      styles: scenario.insertedStyles,
+      operation: operation,
+    );
+  }
+}
+
+void _expectInsertedSourceStyle(
+  List<FlarkSurfacePaintRowObservation> rows, {
+  required int sourceStart,
+  required int sourceEnd,
+  required Set<FlarkSurfaceInlineStyle> styles,
+  required String operation,
+}) {
+  final covering = rows
+      .expand((row) => row.runs.map((run) => (row: row, run: run)))
+      .where(
+        (entry) =>
+            entry.run.sourceUtf16Start < sourceEnd &&
+            sourceStart < entry.run.sourceUtf16End,
+      )
+      .toList();
+  expect(covering, isNotEmpty, reason: '$operation: inserted source vanished');
+  expect(
+    covering
+        .map((entry) => entry.run.sourceUtf16Start)
+        .reduce((left, right) => left < right ? left : right),
+    lessThanOrEqualTo(sourceStart),
+    reason: operation,
+  );
+  expect(
+    covering
+        .map((entry) => entry.run.sourceUtf16End)
+        .reduce((left, right) => left > right ? left : right),
+    greaterThanOrEqualTo(sourceEnd),
+    reason: operation,
+  );
+  for (final entry in covering) {
+    expect(entry.run.styles, styles, reason: operation);
+    if (styles.isEmpty) {
+      expect(entry.run.sourceExact, isTrue, reason: operation);
+      expect(
+        entry.run.resolvedStyle,
+        entry.row.resolvedBlockStyle,
+        reason: '$operation: plain edit inherited an inline style',
+      );
     }
   }
 }
@@ -650,9 +1008,11 @@ final class _TypingScenario {
     required this.renderedAfter,
     required this.finalMarked,
     required this.forbiddenMarkers,
+    required this.shell,
     this.staticStyledRuns = const [],
     this.dynamicStrongBefore,
     this.dynamicStrongAfter,
+    this.insertedStyles = const {},
     this.unpumpedBurst = false,
   }) : assert((dynamicStrongBefore == null) == (dynamicStrongAfter == null));
 
@@ -663,13 +1023,54 @@ final class _TypingScenario {
   final String renderedAfter;
   final String finalMarked;
   final List<String> forbiddenMarkers;
+  final _ExpectedShell shell;
   final List<({String text, FlarkSurfaceInlineStyle style})> staticStyledRuns;
   final String? dynamicStrongBefore;
   final String? dynamicStrongAfter;
+  final Set<FlarkSurfaceInlineStyle> insertedStyles;
   final bool unpumpedBurst;
+
+  int get initialCaret => MarkedSource.parse(initial).caret;
 
   String sourceAfter(String inserted) {
     final marked = MarkedSource.parse(initial);
     return marked.source.replaceRange(marked.caret, marked.caret, inserted);
   }
 }
+
+typedef _ExpectedShell = ({
+  int kind,
+  int? headingLevel,
+  int? blockQuoteDepth,
+  bool listItem,
+  bool table,
+});
+
+const _paragraphShell = (
+  kind: 5,
+  headingLevel: null,
+  blockQuoteDepth: null,
+  listItem: false,
+  table: false,
+);
+const _listShell = (
+  kind: 5,
+  headingLevel: null,
+  blockQuoteDepth: null,
+  listItem: true,
+  table: false,
+);
+const _quoteShell = (
+  kind: 5,
+  headingLevel: null,
+  blockQuoteDepth: 1,
+  listItem: false,
+  table: false,
+);
+const _tableShell = (
+  kind: 5,
+  headingLevel: null,
+  blockQuoteDepth: null,
+  listItem: false,
+  table: true,
+);

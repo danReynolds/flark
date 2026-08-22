@@ -76,6 +76,9 @@ pub struct DocumentEditIntentReceiptV1 {
     pub result_source_utf16_length: usize,
     pub parser_pending: bool,
     pub presentation_transition: DocumentEditPresentationTransitionV1,
+    /// The runtime compared the bounded result inline projection with the
+    /// predecessor partition and proved this transitional presentation current.
+    pub presentation_proven: bool,
 }
 
 /// Result of one literal source transaction. The caller already knows the

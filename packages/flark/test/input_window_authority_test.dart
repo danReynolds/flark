@@ -191,7 +191,7 @@ void main() {
   );
 
   test(
-    'repeated Return then typing keeps one truthful window through exact pending frames',
+    'repeated Return then typing keeps one truthful projected window',
     () async {
       final controller = await open(
         'A quick paragraph with **bold text**.\n\nTrailing paragraph.\n',
@@ -199,22 +199,25 @@ void main() {
       addTearDown(controller.close);
       final target = controller.rows.first;
       controller.activateRow(target, target.editableUtf16!.end);
-      final frames = <String>[];
+      final frames = <({int burst, String presentation})>[];
+      var activeBurst = 0;
       void captureFrame() {
-        frames.add(
-          controller.rows
+        frames.add((
+          burst: activeBurst,
+          presentation: controller.rows
               .map((row) {
                 final surface = controller.surfaceRow(row);
                 return '${surface.leadingText}${surface.text}';
               })
               .join('\n'),
-        );
+        ));
       }
 
       controller.addListener(captureFrame);
       addTearDown(() => controller.removeListener(captureFrame));
 
       for (var index = 0; index < 40; index += 1) {
+        activeBurst = index + 1;
         final before = controller.inputValue;
         final offset = before.selection.extentOffset;
         final newline = insertion(before, offset, '\n');
@@ -261,17 +264,19 @@ void main() {
           controller.rows
               .map((row) => controller.surfaceRow(row).text)
               .join('\n'),
-          contains('**'),
-          reason: 'burst ${index + 1} did not fail closed to exact source',
+          isNot(contains('**')),
+          reason: 'burst ${index + 1} exposed predecessor source markers',
         );
       }
       expect(
-        frames.where((frame) => frame.contains('**')),
-        isNotEmpty,
-        reason: 'the affected structural row never failed closed',
+        frames.where((frame) => frame.presentation.contains('**')),
+        isEmpty,
+        reason:
+            'a parser-proved structural burst exposed source markers: '
+            '${frames.where((frame) => frame.presentation.contains('**')).map((frame) => frame.burst).toList()}',
       );
       expect(
-        frames.where((frame) => frame.isEmpty),
+        frames.where((frame) => frame.presentation.isEmpty),
         isEmpty,
         reason: 'the rendered surface disappeared during a structural burst',
       );

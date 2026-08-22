@@ -1121,7 +1121,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
-    'syntax-shaped edits are exact while pending and recertify locally',
+    'parser-proved asterisk insertion stays rendered while pending',
     () async {
       const source = '**bold** after\n';
       final controller = await FlarkEditorController.open(
@@ -1147,11 +1147,13 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       ]);
 
       final pending = controller.surfaceRow(row);
-      expect(pending.kind, 0);
-      expect(pending.text, '**bo*ld** after\n');
-      expect(pending.runs, hasLength(1));
-      expect(pending.runs.single.sourceExact, isTrue);
-      expect(pending.runs.single.styles, isEmpty);
+      expect(pending.kind, 5);
+      expect(pending.text, 'bo*ld after');
+      expect(pending.text, isNot(contains('**')));
+      expect(
+        pending.runs.where((run) => run.text.contains('bo*ld')).single.styles,
+        contains(FlarkSurfaceInlineStyle.strong),
+      );
       await _settle(controller);
       final recertified = controller.surfaceRow(controller.rows.first);
       expect(recertified.kind, 5);

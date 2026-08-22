@@ -28,6 +28,11 @@ void main() {
     sourceBytes: FlarkSourceRange(9, 9),
     sourceUtf16: FlarkSourceRange(9, 9),
   );
+  const strongAsterisk = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.singleAsciiAsteriskInsertion,
+    sourceBytes: FlarkSourceRange(4, 8),
+    sourceUtf16: FlarkSourceRange(4, 8),
+  );
   const plainHeadingCell = FlarkProjectionEditCell(
     matcher: FlarkProjectionEditMatcher.anyNoCrLfSplice,
     affectedBytes: FlarkSourceRange(2, 12),
@@ -610,6 +615,44 @@ void main() {
           replacement: edit.replacement,
         ),
         isNull,
+      );
+    }
+  });
+
+  test('Strong envelope admits one rendered asterisk and is consumed', () {
+    final receipt = authorizeRowProjectionContinuity(
+      revision: 35,
+      envelopes: const [strongAsterisk],
+      authorizedContentUtf16: const FlarkSourceRange(2, 25),
+      startUtf16: 6,
+      endUtf16: 6,
+      replacement: '*',
+    );
+    expect(receipt, isNotNull);
+    expect(receipt!.literalSafeEnvelopes, isEmpty);
+    expect(
+      receipt.continueWith(startUtf16: 7, endUtf16: 7, replacement: '*'),
+      isNull,
+    );
+    for (final edit in [
+      (start: 4, end: 4, replacement: '*'),
+      (start: 8, end: 8, replacement: '*'),
+      (start: 3, end: 3, replacement: '*'),
+      (start: 6, end: 6, replacement: '**'),
+      (start: 6, end: 6, replacement: '_'),
+      (start: 6, end: 7, replacement: '*'),
+    ]) {
+      expect(
+        authorizeRowProjectionContinuity(
+          revision: 35,
+          envelopes: const [strongAsterisk],
+          authorizedContentUtf16: const FlarkSourceRange(2, 25),
+          startUtf16: edit.start,
+          endUtf16: edit.end,
+          replacement: edit.replacement,
+        ),
+        isNull,
+        reason: '$edit',
       );
     }
   });

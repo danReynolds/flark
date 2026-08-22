@@ -81,7 +81,9 @@ tokens: the dogfood paragraph at both its prefix and the reported append after
 `locally.`, literal gaps between styled facts, edits inside
 and after styled facts, list and quote shells, and table cells. The dogfood row
 also covers Backspace and selection replacement. Every case
-runs both zero-cadence bursts and human-cadence input. For every accepted edit
+runs zero-delay per-rune paint checks and human-cadence input; representative
+terminal and mixed-inline cells additionally run as true unpumped bursts. For
+every accepted edit
 it must observe at least one production paint and require, on every such paint:
 
 - the exact accepted source generation and canonical selection;
@@ -95,8 +97,9 @@ The per-edit paint checks run before the explicit presentation-settled barrier,
 so a test cannot pass solely because `continueParsing` repairs a wrong
 intermediate frame. Human cadence advances in short pump slices so native
 refresh and idle-parser notifications become observable instead of being
-coalesced into one final frame. A zero-cadence case proves burst chaining; a
-human-cadence case proves the ordinary production scheduling path.
+coalesced into one final frame. A true unpumped case proves burst chaining;
+zero-delay per-rune cases prove every accepted generation, and a human-cadence
+case proves the ordinary production scheduling path.
 
 The mounted island lane also contains an intentional unsupported-edit control:
 it requires one real kind-0/source-exact pending paint before settlement. That
@@ -119,6 +122,16 @@ space state; consecutive terminal spaces, non-space terminal whitespace, and
 leading physical-line padding remain outside carried authority. This prevents
 a hard-break or indentation transition from being mistaken for literal
 continuity.
+
+Structural continuity is tested at three distinct boundaries. Rust proves the
+receipt flag only for a Ready, bounded Plain split/merge and rejects a
+delimiter-crossing merge plus pending authority. Core tests the resulting
+typed transitional surfaces and successor edit cell. The mounted matrix then
+observes every actual paint for standalone Return, rapid Return-plus-typing,
+and Backspace merge. It requires exact current source/caret, exactly one active
+successor caret after Return, retained Strong style, no delimiter flash, and
+clean-rebuild convergence. A final state or controller publication alone is
+not accepted as evidence for this class of dogfood bug.
 
 ## What stays an ordinary test
 

@@ -29,7 +29,7 @@ Literal syntax is visible when it is itself the current authoring content:
 
 Fallback is local. An uncertain construct may become an exact-source island;
 focus alone may not turn a certified row, block, or document into raw source.
-ABI 4.29 does not yet complete that target: unsupported typing currently paints
+ABI 4.31 does not yet complete that target: unsupported typing currently paints
 the whole active row as exact source. That fallback is authority-safe, but its
 unrelated marker flash is a known product gap pending parser-authored minimal
 dependency islands.
@@ -259,7 +259,7 @@ envelope*. The host's entire decision becomes a containment test:
   through the edit;
 - an edit outside every envelope must eventually present a minimal exact-source
   island around the affected dependency range until recertification. The
-  current 4.29 implementation conservatively presents the whole active row,
+  current 4.30 implementation conservatively presents the whole active row,
   which is safe but remains a no-marker-flash product gap.
 
 This is one decision procedure with two defined outcomes, both governed by
@@ -353,6 +353,15 @@ non-ASCII/punctuation composition islands, nested or multi-line shells, and ambi
 closures still fail closed to the current whole-row exact path and remain a
 product gap against the north star.
 
+**ABI 4.30 Strong-asterisk envelope (2026-08-21).** Capability
+`LITERAL_SAFE_ENVELOPES_V2` adds edit class 3 without widening the V1 classes.
+For one flat Strong fact with no escaping asterisk dependency or overlapping
+fact, the parser publishes its complete content as a one-shot envelope. Exactly
+one collapsed `*` insertion strictly inside that content transforms the current Strong run, so the
+delimiters stay hidden and the style remains rendered. The proof and every
+same-geometry sibling are consumed; they do not authorize a successor or any
+other delimiter shape.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits
@@ -368,9 +377,33 @@ ABI 4.26 exposes the new records only through the capability-gated
 ABI has no per-client negotiation state, 4.26 rejects a 4.25 negotiation rather
 than claiming it can preserve every legacy row flag while serving new clients.
 ABI 4.28 retained query kind 6 and added record kind 16 plus capability bit 28.
-ABI 4.29 adds capability bit 29 for matcher codes 2, 4, and 5. Exact-minor
-negotiation rejects every earlier minor rather than serving widened matcher
-semantics under an older contract.
+ABI 4.29 adds capability bit 29 for matcher codes 2, 4, and 5. ABI 4.30 adds
+capability bit 30 for literal edit class 3. ABI 4.31 adds capability bit 31
+for parser-proved structural presentation continuity. Exact-minor negotiation
+rejects every earlier minor rather than serving widened matcher semantics under
+an older contract.
+
+**ABI 4.31 structural presentation proofs (2026-08-21).** Capability
+`STRUCTURAL_PRESENTATION_PROOFS_V1` adds receipt flag `PRESENTATION_PROVEN`.
+Rust sets it only from a current Ready parser result. V1 covers a bounded Plain
+paragraph Return at its editable end and a bounded Plain paragraph Backspace
+merge whose separately parsed inline partitions equal the merged parse. The
+host may then retain the proved block shell and runs; the new Plain successor
+receives the zero-width chainable ASCII literal cell specified by that typed
+proof. The cell may carry ordinary input but cannot authorize another Return;
+every structural successor requires a fresh Ready parser proof. Pending,
+oversized, non-ASCII, or hazard-bearing transitions and delimiter crossings
+omit the flag and remain exact-source fail-closed.
+
+Exact 4.31 also permits the existing ASCII-word envelope to cover maximal
+parser-authored word leaves inside eligible projected facts. Leaves require
+identity coordinates, fact-edge or U+0020 guards, independence from overlapping
+facts, and zero Code normalization. At most 128 literal-safe envelopes are
+published per row. When the complete page baseline fits, the ABI reserves every
+row's ordinary inline facts and required projection-segment group before
+optional cells or envelopes consume the remaining payload, so the optimization
+cannot displace authoritative presentation on later rows. Oversized baseline
+groups retain the ABI's complete-group fail-closed behavior.
 
 **Transform.** Retained presentation and its surviving proof set are
 transformed by pure range arithmetic
@@ -424,7 +457,7 @@ certification, and retained presentation never grants edit authority.
 ### 4.5 Composition islands
 
 An active platform composing value is exact current source and remains stable
-until the platform commits or cancels it. A matching ABI 4.29 edit cell may
+until the platform commits or cancels it. A matching current-ABI edit cell may
 retain only its declared block shell and independent outside runs while the
 affected cell stays exact. Otherwise the landed minimum treats the active row
 as the exact composition island: the current ABI has no result-revision proof

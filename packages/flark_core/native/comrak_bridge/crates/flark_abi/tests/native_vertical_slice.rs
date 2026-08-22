@@ -40,8 +40,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     let preceding_minor = NegotiateRequest {
         struct_size: size_of::<NegotiateRequest>() as u32,
         requested_major: ABI_MAJOR,
-        requested_minor: 28,
-        required_capability_bits: (1_u64 << 29) - 1,
+        requested_minor: 30,
+        required_capability_bits: (1_u64 << 31) - 1,
     };
     let mut info = AbiInfo::default();
     let mut outcome = Outcome::default();
@@ -51,8 +51,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         "the stateless ABI must reject a preceding minor it cannot tailor"
     );
     let subsequent_minor = NegotiateRequest {
-        requested_minor: 30,
-        required_capability_bits: (1_u64 << 30) - 1,
+        requested_minor: 32,
+        required_capability_bits: (1_u64 << 32) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -62,7 +62,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 30) - 1,
+        required_capability_bits: (1_u64 << 32) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -70,9 +70,9 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::Ok as u32
     );
     assert_eq!(info.abi_minor, ABI_MINOR);
-    assert_eq!(info.capability_bits, (1_u64 << 30) - 1);
+    assert_eq!(info.capability_bits, (1_u64 << 32) - 1);
 
-    let source_text = concat!(
+    let base_source = concat!(
         "# *Flark*\n\n",
         "# Plain heading\n\n",
         "A quick paragraph.\n\n",
@@ -82,6 +82,16 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         "A [target](https://example.com/path \"title\").\n\n",
         "😀 tail.\n",
     );
+    let dense_content = std::iter::repeat("a")
+        .take(200)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let dense_rows = std::iter::repeat_with(|| format!("**{dense_content}**\n\n"))
+        .take(7)
+        .collect::<String>();
+    let tail_quote = "> tail first\n> tail second\n";
+    let dense_start = base_source.len();
+    let source_text = format!("{base_source}{dense_rows}{tail_quote}");
     let source = source_text.as_bytes();
     let owner = 71;
     let create = CreateRequest {
@@ -282,6 +292,73 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(plain_cell.content_end_byte, plain_cell.source_end_byte);
     assert_eq!(space_envelope.source_start_utf16, 9);
     assert_eq!(space_envelope.source_end_utf16, 9);
+
+    let dense_query = QueryRequest {
+        range: SourceRange {
+            start_byte: dense_start as u64,
+            end_byte: source.len() as u64,
+        },
+        budget: WorkBudget {
+            max_result_items: 8,
+            ..budget(64)
+        },
+        ..query
+    };
+    page.fill(0);
+    status = flark_v4_query_viewport(
+        &dense_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert_eq!(status, StatusCode::Ok as u32);
+    let dense_header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    assert_eq!(dense_header.item_count, 8);
+    for index in 0..7 {
+        let row = unsafe {
+            page.as_ptr()
+                .add(size_of::<ResultPageHeader>() + index * size_of::<ViewportRowRecord>())
+                .cast::<ViewportRowRecord>()
+                .read_unaligned()
+        };
+        assert_ne!(
+            row.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
+            0,
+            "optional proof records must not evict row {index}'s Strong fact",
+        );
+        let semantic_record_count = row.inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK;
+        assert!(
+            semantic_record_count >= 1,
+            "row {index} must retain at least its ordinary Strong fact",
+        );
+        if index == 0 {
+            assert_eq!(
+                semantic_record_count, 129,
+                "the first dense row should retain its Strong fact and all 128 optional envelopes",
+            );
+        }
+        if index == 6 {
+            assert!(
+                semantic_record_count < 129,
+                "the final dense row must prove optional records were truncated instead of evicting its Strong fact",
+            );
+        }
+    }
+    let tail_quote_row = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>() + 7 * size_of::<ViewportRowRecord>())
+            .cast::<ViewportRowRecord>()
+            .read_unaligned()
+    };
+    assert_ne!(
+        tail_quote_row.flags & VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
+        0,
+        "optional proof records must not evict a later row's required projection segments",
+    );
+    assert_eq!(
+        tail_quote_row.inline_fact_count >> VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
+        2,
+    );
 
     let emoji_start = source_text.find('😀').expect("emoji byte offset");
     let unsnapped_end = emoji_start + 1;

@@ -23,6 +23,70 @@ fn source(document: &DocumentSession) -> String {
     .expect("UTF-8 source")
 }
 
+#[test]
+fn structural_presentation_proof_is_parser_bounded_and_fails_closed() {
+    let mut split = DocumentSession::begin("Before **bold**.\n").expect("begin split fixture");
+    pump_ready(&mut split);
+    let split_receipt = split
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "Before **bold**.".len(),
+            false,
+        )
+        .expect("split paragraph");
+    assert_eq!(
+        split_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::SplitParagraph
+    );
+    assert!(split_receipt.presentation_proven);
+    split.close().expect("close split fixture");
+
+    let merge_source = "Before **bold**.\n\nAfter.\n";
+    let mut merge = DocumentSession::begin(merge_source).expect("begin merge fixture");
+    pump_ready(&mut merge);
+    let merge_receipt = merge
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::DeleteBackward,
+            "Before **bold**.\n\n".len(),
+            false,
+        )
+        .expect("merge paragraphs");
+    assert_eq!(
+        merge_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::MergeParagraph
+    );
+    assert!(merge_receipt.presentation_proven);
+    merge.close().expect("close merge fixture");
+
+    let crossing_source = "Before *\n\nafter*\n";
+    let mut crossing = DocumentSession::begin(crossing_source).expect("begin crossing fixture");
+    pump_ready(&mut crossing);
+    let crossing_receipt = crossing
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::DeleteBackward,
+            "Before *\n\n".len(),
+            false,
+        )
+        .expect("merge crossing delimiter paragraphs");
+    assert!(!crossing_receipt.presentation_proven);
+    crossing.close().expect("close crossing fixture");
+
+    let mut pending = DocumentSession::begin("Before **bold**.\n").expect("begin pending fixture");
+    let pending_receipt = pending
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "Before **bold**.".len(),
+            false,
+        )
+        .expect("pending split paragraph");
+    assert!(!pending_receipt.presentation_proven);
+    pending.close().expect("close pending fixture");
+}
+
 #[derive(Clone, Copy)]
 struct IntentCase {
     name: &'static str,

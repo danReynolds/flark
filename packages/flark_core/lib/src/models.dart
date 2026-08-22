@@ -18,7 +18,11 @@ enum FlarkViewportRowEditCapability {
   unavailable,
 }
 
-enum FlarkLiteralEditClass { asciiWordInsertion, singleAsciiSpaceInsertion }
+enum FlarkLiteralEditClass {
+  asciiWordInsertion,
+  singleAsciiSpaceInsertion,
+  singleAsciiAsteriskInsertion,
+}
 
 /// Parser-authored matcher for one bounded projection edit cell.
 enum FlarkProjectionEditMatcher {

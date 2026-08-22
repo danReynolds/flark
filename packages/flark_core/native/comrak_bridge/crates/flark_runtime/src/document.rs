@@ -23,9 +23,9 @@ use flark_parser::{
         M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
         M11RecursiveGreenRowPresentation,
     },
-    classify_m11_simple_edit_line, project_m11_gfm_table, M11GfmTableAlignment,
-    M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPollStatus,
-    M11ParserBinding, M11PersistentRecursiveGreenAdoption,
+    classify_m11_simple_edit_line, project_m11_gfm_inline, project_m11_gfm_table, M11GfmInlineNode,
+    M11GfmInlineOptions, M11GfmTableAlignment, M11InlineProjectionJob, M11InlineProjectionJobError,
+    M11InlineProjectionJobPollStatus, M11ParserBinding, M11PersistentRecursiveGreenAdoption,
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
@@ -42,7 +42,7 @@ use flark_parser::{
 use crate::edit_intent::{
     resolve_document_edit_intent_v1, DocumentBlockQuoteOutdent, DocumentEditLineEnding,
     DocumentListIndent, DocumentListOutdent, DocumentParagraphMerge, DocumentSimpleEditContext,
-    DocumentSimpleEditRow, DocumentTaskCheck,
+    DocumentSimpleEditRow, DocumentTaskCheck, ResolvedDocumentEditIntentV1,
 };
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
@@ -54,7 +54,20 @@ const SYNTAX_PROFILE_GFM_V1: u32 = 1;
 const QUERY_OPEN_DEPTH_LIMIT: usize = 256;
 const VIEWPORT_INLINE_LEAF_MAX_BYTES: u64 = 8 * 1024;
 const VIEWPORT_INLINE_FACTS_PER_ROW_MAX: usize = 512;
+// Kind-15 envelopes share the ABI's 64 KiB semantic payload with ordinary
+// facts and edit cells. Keep the parser-authored optimization bounded so a
+// word-dense fact cannot evict the row's authoritative inline fact set.
+const VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX: usize = 128;
 const VIEWPORT_INLINE_TOTAL_TRANSITIONS_MAX: usize = 1_000_000;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum StructuralInlineProofToken {
+    Text(String),
+    Enter(u8, String, String),
+    Exit(u8),
+    SoftBreak,
+    HardBreak,
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum DocumentSessionPhase {
@@ -101,6 +114,9 @@ pub enum DocumentLiteralEditClass {
     /// One U+0020 insertion. This deliberately does not authorize a second
     /// edit before the parser certifies the first one.
     SingleAsciiSpaceInsertion,
+    /// One U+002A insertion inside a parser-proved isolated flat Strong
+    /// content range. The proof is consumed by the matching edit.
+    SingleAsciiAsteriskInsertion,
 }
 
 /// Parser-authored positional proof that one declared literal edit class
@@ -1327,6 +1343,7 @@ impl DocumentSession {
                 result_source_utf16_length: self.source_utf16_len(),
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
+                presentation_proven: false,
             });
         }
 
@@ -1375,6 +1392,7 @@ impl DocumentSession {
                 result_source_utf16_length: self.source_utf16_len(),
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
+                presentation_proven: false,
             });
         };
         let resolved = resolve_document_edit_intent_v1(intent, target_byte, target_utf16, &context);
@@ -1391,6 +1409,7 @@ impl DocumentSession {
                 result_source_utf16_length: self.source_utf16_len(),
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
+                presentation_proven: false,
             });
         };
         let expected_result_selection_utf16 = transformed_collapsed_selection(
@@ -1417,10 +1436,6 @@ impl DocumentSession {
         )
         .ok_or(DocumentSessionError::UnsupportedEditIntentSelection)?;
 
-        // Reuse the context already resolved above. Without this handoff the
-        // generic one-splice commit path performs a redundant current-row
-        // query before applying the exact semantic splice.
-        self.edit_context = Some(context);
         let semantic_bytes = 32usize
             .checked_add(splice.base_byte_range.len())
             .and_then(|bytes| bytes.checked_add(splice.replacement.len()))
@@ -1428,6 +1443,12 @@ impl DocumentSession {
         if semantic_bytes > crate::MAX_SMALL_EDIT_BYTES as usize {
             return Err(DocumentSessionError::EditIntentLimitExceeded);
         }
+        let presentation_proven =
+            parser_is_ready && self.proves_bounded_structural_presentation(&context, &resolved)?;
+        // Reuse the context already resolved above. Without this handoff the
+        // generic one-splice commit path performs a redundant current-row
+        // query before applying the exact semantic splice.
+        self.edit_context = Some(context);
         let inverse = self.source_bytes(splice.base_byte_range.clone())?;
         let edit = self.apply_edit(
             expected_revision,
@@ -1447,7 +1468,48 @@ impl DocumentSession {
             result_source_utf16_length: self.source_utf16_len(),
             parser_pending: edit.parser_pending,
             presentation_transition: resolved.presentation_transition,
+            presentation_proven,
         })
+    }
+
+    fn proves_bounded_structural_presentation(
+        &self,
+        context: &DocumentSimpleEditContext,
+        resolved: &ResolvedDocumentEditIntentV1,
+    ) -> Result<bool, DocumentSessionError> {
+        let Some(splice) = resolved.splice.as_ref() else {
+            return Ok(false);
+        };
+        if !matches!(context.row, DocumentSimpleEditRow::Plain) {
+            return Ok(false);
+        }
+        match resolved.presentation_transition {
+            DocumentEditPresentationTransitionV1::SplitParagraph
+                if splice.base_byte_range.is_empty()
+                    && splice.base_byte_range.start == context.editable_bytes.end
+                    && splice.base_utf16_range.start == context.editable_utf16.end =>
+            {
+                let content = self.source_bytes(context.editable_bytes.clone())?;
+                Ok(structural_inline_source_is_bounded(&content)
+                    && content
+                        .last()
+                        .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\\' | b'\r' | b'\n'))
+                    && structural_inline_tokens(&content).is_some())
+            }
+            DocumentEditPresentationTransitionV1::MergeParagraph => {
+                let Some(merge) = context.paragraph_merge.as_ref() else {
+                    return Ok(false);
+                };
+                let previous = self.source_bytes(merge.previous_source_bytes.clone())?;
+                let current = self.source_bytes(context.editable_bytes.clone())?;
+                let previous = trim_structural_line_endings(&previous);
+                if previous.is_empty() || current.is_empty() {
+                    return Ok(false);
+                }
+                Ok(structural_inline_partition_is_stable(previous, &current))
+            }
+            _ => Ok(false),
+        }
     }
 
     fn capture_ready_edit_context(
@@ -3373,6 +3435,166 @@ fn add_signed(value: usize, delta: isize) -> Option<usize> {
     }
 }
 
+fn trim_structural_line_endings(mut source: &[u8]) -> &[u8] {
+    while source
+        .last()
+        .is_some_and(|byte| matches!(byte, b'\r' | b'\n'))
+    {
+        source = &source[..source.len() - 1];
+    }
+    source
+}
+
+fn structural_inline_source_is_bounded(source: &[u8]) -> bool {
+    !source.is_empty()
+        && source.len() <= M11_SIMPLE_EDIT_LINE_MAX_BYTES
+        && source.iter().all(|byte| {
+            byte.is_ascii()
+                && !matches!(
+                    byte,
+                    b'[' | b']' | b'<' | b'>' | b'\\' | b'&' | b'`' | b'_' | b'~' | b'\r' | b'\n'
+                )
+        })
+}
+
+fn structural_inline_partition_is_stable(left: &[u8], right: &[u8]) -> bool {
+    if left.len().saturating_add(right.len()) > M11_SIMPLE_EDIT_LINE_MAX_BYTES
+        || !structural_inline_source_is_bounded(left)
+        || !structural_inline_source_is_bounded(right)
+    {
+        return false;
+    }
+    let Some(mut partitioned) = structural_inline_tokens(left) else {
+        return false;
+    };
+    let Some(right_tokens) = structural_inline_tokens(right) else {
+        return false;
+    };
+    append_structural_tokens(&mut partitioned, right_tokens);
+    let mut merged = Vec::with_capacity(left.len() + right.len());
+    merged.extend_from_slice(left);
+    merged.extend_from_slice(right);
+    structural_inline_tokens(&merged).is_some_and(|tokens| tokens == partitioned)
+}
+
+fn structural_inline_tokens(source: &[u8]) -> Option<Vec<StructuralInlineProofToken>> {
+    if !structural_inline_source_is_bounded(source) {
+        return None;
+    }
+    let source = std::str::from_utf8(source).ok()?;
+    let nodes = project_m11_gfm_inline(
+        source,
+        M11GfmInlineOptions {
+            strikethrough: true,
+            autolink: true,
+        },
+        &[],
+    )
+    .ok()?;
+    let mut tokens = Vec::new();
+    append_structural_inline_nodes(&mut tokens, &nodes);
+    Some(tokens)
+}
+
+fn append_structural_tokens(
+    target: &mut Vec<StructuralInlineProofToken>,
+    tokens: Vec<StructuralInlineProofToken>,
+) {
+    for token in tokens {
+        push_structural_token(target, token);
+    }
+}
+
+fn push_structural_token(
+    target: &mut Vec<StructuralInlineProofToken>,
+    token: StructuralInlineProofToken,
+) {
+    if let StructuralInlineProofToken::Text(text) = token {
+        if let Some(StructuralInlineProofToken::Text(previous)) = target.last_mut() {
+            previous.push_str(&text);
+        } else {
+            target.push(StructuralInlineProofToken::Text(text));
+        }
+    } else {
+        target.push(token);
+    }
+}
+
+fn append_structural_inline_nodes(
+    target: &mut Vec<StructuralInlineProofToken>,
+    nodes: &[M11GfmInlineNode],
+) {
+    for node in nodes {
+        match node {
+            M11GfmInlineNode::Text(text) => {
+                push_structural_token(target, StructuralInlineProofToken::Text(text.clone()));
+            }
+            M11GfmInlineNode::SoftBreak => {
+                target.push(StructuralInlineProofToken::SoftBreak);
+            }
+            M11GfmInlineNode::LineBreak => {
+                target.push(StructuralInlineProofToken::HardBreak);
+            }
+            M11GfmInlineNode::Transparent(children) => {
+                append_structural_inline_nodes(target, children);
+            }
+            M11GfmInlineNode::Emphasis(children) => {
+                append_structural_container(target, 1, "", "", children);
+            }
+            M11GfmInlineNode::Strong(children) => {
+                append_structural_container(target, 2, "", "", children);
+            }
+            M11GfmInlineNode::Code(text) => {
+                target.push(StructuralInlineProofToken::Enter(
+                    3,
+                    String::new(),
+                    String::new(),
+                ));
+                push_structural_token(target, StructuralInlineProofToken::Text(text.clone()));
+                target.push(StructuralInlineProofToken::Exit(3));
+            }
+            M11GfmInlineNode::Strikethrough(children) => {
+                append_structural_container(target, 4, "", "", children);
+            }
+            M11GfmInlineNode::Link {
+                destination,
+                title,
+                children,
+            } => append_structural_container(target, 5, destination, title, children),
+            M11GfmInlineNode::Image {
+                destination,
+                title,
+                children,
+            } => append_structural_container(target, 6, destination, title, children),
+            M11GfmInlineNode::Html(text) => {
+                target.push(StructuralInlineProofToken::Enter(
+                    7,
+                    String::new(),
+                    String::new(),
+                ));
+                push_structural_token(target, StructuralInlineProofToken::Text(text.clone()));
+                target.push(StructuralInlineProofToken::Exit(7));
+            }
+        }
+    }
+}
+
+fn append_structural_container(
+    target: &mut Vec<StructuralInlineProofToken>,
+    kind: u8,
+    first: &str,
+    second: &str,
+    children: &[M11GfmInlineNode],
+) {
+    target.push(StructuralInlineProofToken::Enter(
+        kind,
+        first.to_owned(),
+        second.to_owned(),
+    ));
+    append_structural_inline_nodes(target, children);
+    target.push(StructuralInlineProofToken::Exit(kind));
+}
+
 fn document_marker_matches_parser(
     document: DocumentListMarker,
     parser: M11SimpleEditListMarker,
@@ -4366,10 +4588,16 @@ fn document_viewport_row_with_inline_facts(
     } else {
         Vec::new()
     };
-    let replaces_whole_heading_envelopes = projection_edit_cells
+    let replaces_whole_heading_envelopes = matches!(
+        presentation,
+        DocumentViewportRowPresentation::Heading {
+            style: DocumentHeadingStyle::Atx,
+            ..
+        }
+    ) && projection_edit_cells
         .iter()
         .any(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS);
-    let literal_safe_envelopes = if replaces_whole_heading_envelopes {
+    let mut literal_safe_envelopes = if replaces_whole_heading_envelopes {
         Vec::new()
     } else if matches!(
         edit_capability,
@@ -4390,6 +4618,30 @@ fn document_viewport_row_with_inline_facts(
     } else {
         Vec::new()
     };
+    for cell in projection_edit_cells
+        .iter()
+        .filter(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS)
+    {
+        if literal_safe_envelopes.len() >= VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX {
+            break;
+        }
+        let (Some(byte_start), Some(byte_end), Some(utf16_start), Some(utf16_end)) = (
+            cell.source_range.start.checked_add(2),
+            cell.source_range.end.checked_sub(2),
+            cell.source_utf16_range.start.checked_add(2),
+            cell.source_utf16_range.end.checked_sub(2),
+        ) else {
+            continue;
+        };
+        if byte_start >= byte_end || utf16_start >= utf16_end {
+            continue;
+        }
+        literal_safe_envelopes.push(DocumentLiteralSafeEnvelope {
+            edit_class: DocumentLiteralEditClass::SingleAsciiAsteriskInsertion,
+            source_range: byte_start..byte_end,
+            source_utf16_range: utf16_start..utf16_end,
+        });
+    }
     Ok(DocumentViewportRow {
         ordinal: row.ordinal(),
         kind: row.kind().get(),
@@ -4547,13 +4799,20 @@ fn document_projection_edit_cells(
         {
             return Ok(Vec::new());
         }
-        return Ok(document_plain_literal_word_edit_cells(
+        let mut cells = document_plain_literal_word_edit_cells(
             content,
             editable,
             editable_utf16,
             facts,
             presentation == DocumentViewportRowPresentation::Plain,
+        );
+        cells.extend(document_flat_strong_opening_space_edit_cells(
+            content,
+            editable,
+            editable_utf16,
+            facts,
         ));
+        return Ok(cells);
     }
 
     let level = match presentation {
@@ -5616,34 +5875,94 @@ fn document_literal_safe_envelopes(
     };
 
     let mut envelopes = Vec::new();
-    for fact in facts.iter().filter(eligible) {
+    'facts: for fact in facts.iter().filter(eligible) {
         if fact.content_range.is_empty() || fact.content_utf16_range.is_empty() {
             continue;
         }
-        // A container fact's content range can include nested delimiters and
-        // other inline syntax. Publishing that whole range would let the host
-        // retain a stale projection when an insertion changes a nested fact's
-        // delimiter flanking. Until the parser exposes literal leaf spans,
-        // certify only a complete content range whose source is one flat
-        // non-empty ASCII word. This deliberately narrow proof still covers
-        // ordinary typing in `*word*`, `**word**`, `` `word` ``, `~~word~~`,
-        // and `[word](destination)` while failing closed around punctuation,
-        // whitespace, and nested syntax.
+        // Publish only maximal ASCII-word leaves whose neighboring source is
+        // the fact boundary or ordinary whitespace and whose bytes do not
+        // intersect another inline fact. This keeps the proof local around
+        // entities, escapes, nested syntax, and Unicode adjacency while also
+        // covering ordinary multiword styled content such as `**bold text**`.
+        // The host still admits ASCII word insertion only; it never infers
+        // Markdown or widens these parser-authored leaf boundaries.
         let content = read_utf8_source_range(runtime, &fact.content_range)?;
         let content_byte_len = fact.content_range.end - fact.content_range.start;
         let content_utf16_len = fact.content_utf16_range.end - fact.content_utf16_range.start;
         if content.len() as u64 != content_byte_len
-            || content_byte_len != content_utf16_len
             || (fact.kind == DocumentInlineFactKind::Code && fact.flags != 0)
-            || !content.bytes().all(|byte| byte.is_ascii_alphanumeric())
         {
             continue;
         }
-        envelopes.push(DocumentLiteralSafeEnvelope {
-            edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
-            source_range: fact.content_range.clone(),
-            source_utf16_range: fact.content_utf16_range.clone(),
-        });
+        let bytes = content.as_bytes();
+        let mut cursor = 0usize;
+        let mut utf16_prefix_bytes = 0usize;
+        let mut utf16_prefix_units = 0u64;
+        while cursor < bytes.len() {
+            if !bytes[cursor].is_ascii_alphanumeric() {
+                cursor += 1;
+                continue;
+            }
+            let start = cursor;
+            while cursor < bytes.len() && bytes[cursor].is_ascii_alphanumeric() {
+                cursor += 1;
+            }
+            let end = cursor;
+            let left_guarded = start == 0 || bytes[start - 1] == b' ';
+            let right_guarded = end == bytes.len() || bytes[end] == b' ';
+            if !left_guarded || !right_guarded {
+                continue;
+            }
+            let start = u64::try_from(start).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+            let end = u64::try_from(end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+            let source_range = fact.content_range.start + start..fact.content_range.start + end;
+            if facts.iter().any(|other| {
+                !std::ptr::eq(other, fact)
+                    && other.source_range.start < source_range.end
+                    && source_range.start < other.source_range.end
+                    && !(other.content_range.start <= source_range.start
+                        && source_range.end <= other.content_range.end)
+            }) {
+                continue;
+            }
+            let start_usize =
+                usize::try_from(start).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+            let end_usize =
+                usize::try_from(end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+            utf16_prefix_units = utf16_prefix_units
+                .checked_add(
+                    u64::try_from(
+                        content[utf16_prefix_bytes..start_usize]
+                            .encode_utf16()
+                            .count(),
+                    )
+                    .map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+                )
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+            utf16_prefix_bytes = start_usize;
+            let utf16_start = fact
+                .content_utf16_range
+                .start
+                .checked_add(utf16_prefix_units)
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+            let utf16_end = utf16_start
+                .checked_add(
+                    u64::try_from(end_usize - start_usize)
+                        .map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+                )
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+            if utf16_end > fact.content_utf16_range.end || content_utf16_len == 0 {
+                continue;
+            }
+            envelopes.push(DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+                source_range,
+                source_utf16_range: utf16_start..utf16_end,
+            });
+            if envelopes.len() >= VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX {
+                break 'facts;
+            }
+        }
     }
 
     // A construct ending at the editable row boundary has no following
@@ -5651,9 +5970,12 @@ fn document_literal_safe_envelopes(
     // envelope is intentionally one-shot: after the insertion, the host waits
     // for fresh parser authority instead of assuming a second trailing space
     // is harmless (two spaces can create a hard line break).
-    if facts.iter().filter(eligible).any(|fact| {
-        fact.source_range.end == editable.end && fact.source_utf16_range.end == editable_utf16.end
-    }) {
+    if envelopes.len() < VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX
+        && facts.iter().filter(eligible).any(|fact| {
+            fact.source_range.end == editable.end
+                && fact.source_utf16_range.end == editable_utf16.end
+        })
+    {
         envelopes.push(DocumentLiteralSafeEnvelope {
             edit_class: DocumentLiteralEditClass::SingleAsciiSpaceInsertion,
             source_range: editable.end..editable.end,

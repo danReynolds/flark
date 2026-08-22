@@ -647,10 +647,10 @@ fn close_initial_admission_snapshot_and_flag_policies_are_frozen() {
 }
 
 #[test]
-fn projection_edit_cell_vocabulary_is_bound_to_the_current_exact_minor() {
+fn projection_edit_cell_vocabulary_remains_bound_to_minor_29() {
     let manifest = manifest();
     let cells = &manifest["viewportProjectionEditCells"];
-    assert_eq!(cells["abiMinor"].as_u64(), Some(u64::from(ABI_MINOR)));
+    assert_eq!(cells["abiMinor"].as_u64(), Some(29));
     assert_eq!(
         cells["capability"].as_str(),
         Some("PROJECTION_EDIT_CELLS_V2")
@@ -681,6 +681,41 @@ fn projection_edit_cell_vocabulary_is_bound_to_the_current_exact_minor() {
     assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL"));
     assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_APPEND_ASCII_LITERAL_AT_LINE_END"));
     assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED"));
+}
+
+#[test]
+fn literal_safe_envelope_v2_remains_bound_to_minor_30() {
+    let manifest = manifest();
+    let envelopes = &manifest["viewportLiteralSafeEnvelopesV2"];
+    assert_eq!(envelopes["abiMinor"].as_u64(), Some(30));
+    assert_eq!(
+        envelopes["capability"].as_str(),
+        Some("LITERAL_SAFE_ENVELOPES_V2")
+    );
+    assert_eq!(
+        envelopes["editClasses"]["SINGLE_ASCII_ASTERISK_INSERTION"].as_u64(),
+        Some(3)
+    );
+    assert!(HEADER.contains("FLARK_V4_CAPABILITY_LITERAL_SAFE_ENVELOPES_V2"));
+    assert!(HEADER.contains("FLARK_V4_LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION"));
+}
+
+#[test]
+fn structural_presentation_proof_is_bound_to_minor_31() {
+    let manifest = manifest();
+    let proof = &manifest["structuralPresentationProofsV1"];
+    assert_eq!(ABI_MINOR, 31);
+    assert_eq!(proof["abiMinor"].as_u64(), Some(31));
+    assert_eq!(
+        proof["capability"].as_str(),
+        Some("STRUCTURAL_PRESENTATION_PROOFS_V1")
+    );
+    assert_eq!(
+        proof["receiptFlag"]["PRESENTATION_PROVEN"].as_u64(),
+        Some(8)
+    );
+    assert!(HEADER.contains("FLARK_V4_CAPABILITY_STRUCTURAL_PRESENTATION_PROOFS_V1"));
+    assert!(HEADER.contains("FLARK_V4_EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN"));
 }
 
 #[test]

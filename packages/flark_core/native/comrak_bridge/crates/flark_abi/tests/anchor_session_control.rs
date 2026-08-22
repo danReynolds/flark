@@ -15,9 +15,10 @@ use flark_abi::{
     SourceTransactionRequestV1, StageRequest, StagedSourceTransactionRequestV1, TransactionRequest,
     WorkBudget, EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INDENT_LIST_ITEM,
     EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_OUTDENT_LIST_ITEM,
-    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
-    EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST,
-    EDIT_PRESENTATION_INDENT_LIST, EDIT_PRESENTATION_OUTDENT_LIST,
+    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN,
+    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_INTENT_TOGGLE_TASK_CHECKED,
+    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_INDENT_LIST,
+    EDIT_PRESENTATION_OUTDENT_LIST, EDIT_PRESENTATION_SPLIT_PARAGRAPH,
     EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
@@ -416,6 +417,39 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
     assert_eq!(
         read_source(session, 4, after_second.len() + 1),
         b"- one\n\n\n- two\nx"
+    );
+    close_session(session);
+}
+
+#[test]
+fn ready_terminal_paragraph_split_carries_parser_presentation_proof() {
+    let source = b"Before **bold**.\n";
+    let session = open_session(source, 458);
+    pump_to_ready(session, 1);
+    let anchor = create_anchor(session, 1, SOURCE_BYTE, 16, DOWNSTREAM);
+    let request = edit_intent_request(session, 1, anchor, 1, 0x51A17);
+    let mut output = vec![0_u8; size_of::<EditIntentReceiptV1>() + 4096];
+    let mut outcome = Outcome::default();
+
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let receipt = unsafe {
+        output
+            .as_ptr()
+            .cast::<EditIntentReceiptV1>()
+            .read_unaligned()
+    };
+    assert_ne!(receipt.flags & EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN, 0);
+    assert_eq!(
+        receipt.presentation_transition,
+        EDIT_PRESENTATION_SPLIT_PARAGRAPH
     );
     close_session(session);
 }

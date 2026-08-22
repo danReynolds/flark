@@ -485,6 +485,31 @@ paragraph padding, republishes blocked-space state after exactly one trailing
 U+0020, suppresses two spaces or other terminal whitespace, and cannot carry a
 second terminal space that would create a hard line break.
 
+ABI 4.30 adds `LITERAL_SAFE_ENVELOPES_V2` for one deliberately narrow delimiter
+case. A flat Strong fact with no escaping asterisk dependency publishes its
+complete content as a one-shot envelope; one `*` inserted strictly inside it transforms that
+projected run without exposing its delimiters or losing its style. The proof
+cannot chain, and unsupported delimiter or structural edits continue to fail
+closed until the parser publishes a bounded dependency plan.
+
+ABI 4.31 adds `STRUCTURAL_PRESENTATION_PROOFS_V1` for the bounded structural
+cases exercised by ordinary dogfood: terminal paragraph Return (including a
+rapid ASCII successor) and paragraph-merge Backspace. The runtime compares the
+parser-normalized inline partition before authorizing retention; the controller
+only applies typed range transforms. Crossing delimiters and every unsupported
+shape remain exact-source fail-closed.
+
+Exact 4.31 also extends the existing ASCII-word envelope to parser-authored
+maximal word leaves inside eligible projected facts, which covers ordinary
+multiword Strong content without making Dart classify Markdown. The runtime
+caps these optional records at 128 per row; hitting the cap drops further
+continuity optimization, never the authoritative inline fact set. When the
+complete page baseline fits, the ABI page encoder reserves all ordinary facts
+and required projection segments before spending its remaining payload on
+cells or envelopes, preventing proof-heavy early rows from forcing later rows
+to exact source. Oversized baseline groups retain the ABI's existing complete-
+group fail-closed behavior.
+
 The edit-cell seam is still bounded, not completion of continuously rendered
 editing. When no cell or envelope matches, the controller safely paints the
 whole active row as exact source. That can reveal unrelated markers and remains

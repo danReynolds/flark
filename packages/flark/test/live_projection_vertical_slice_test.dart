@@ -299,7 +299,7 @@ void main() {
   );
 
   test(
-    'paragraph merge is exact while pending and projects after certification',
+    'parser-proved paragraph merge stays projected through certification',
     () async {
       final controller = await FlarkEditorController.open(
         'Before **bold**.\n\nAfter.\n',
@@ -333,8 +333,8 @@ void main() {
       expect(frames, isNot(contains('<empty>')));
       expect(
         frames.where((frame) => frame.contains('**')),
-        isNotEmpty,
-        reason: 'the affected structural row never failed closed: $frames',
+        isEmpty,
+        reason: 'a parser-proved merge exposed source markers: $frames',
       );
       final recertified = controller.surfaceRow(controller.rows.single);
       expect(recertified.kind, 5);

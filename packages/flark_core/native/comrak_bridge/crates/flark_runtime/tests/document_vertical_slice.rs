@@ -1,9 +1,9 @@
 use flark_runtime::{
     DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
-    DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
-    DocumentLiveViewportSpan, DocumentProjectionEditCell, DocumentSession, DocumentSessionPhase,
-    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
-    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
+    DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker,
+    DocumentLiteralEditClass, DocumentLiveViewportSpan, DocumentProjectionEditCell,
+    DocumentSession, DocumentSessionPhase, DocumentViewportRowEditCapability,
+    DocumentViewportRowPresentation, DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
@@ -60,6 +60,25 @@ fn assert_single_edit_matches_clean(
     pump_ready(&mut document);
     assert_current_rows_match_clean(&mut document, 2, &edited_source);
     document.close().expect("close single-edit differential");
+}
+
+fn shift_inline_fact(mut fact: DocumentInlineFact, delta: i64) -> DocumentInlineFact {
+    fn shift(value: u64, delta: i64) -> u64 {
+        if delta >= 0 {
+            value + delta as u64
+        } else {
+            value - delta.unsigned_abs()
+        }
+    }
+
+    fact.source_range = shift(fact.source_range.start, delta)..shift(fact.source_range.end, delta);
+    fact.source_utf16_range =
+        shift(fact.source_utf16_range.start, delta)..shift(fact.source_utf16_range.end, delta);
+    fact.content_range =
+        shift(fact.content_range.start, delta)..shift(fact.content_range.end, delta);
+    fact.content_utf16_range =
+        shift(fact.content_utf16_range.start, delta)..shift(fact.content_utf16_range.end, delta);
+    fact
 }
 
 #[test]
@@ -1036,10 +1055,11 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
     assert_eq!(before_outside.source_range, 18..25);
     assert_eq!(before_outside.content_range, 19..24);
     assert!(
-        row.literal_safe_envelopes
-            .iter()
-            .any(|envelope| envelope.source_range == (19..24)),
-        "the one-shot cell must coexist with unrelated literal continuity"
+        row.literal_safe_envelopes.iter().any(|envelope| {
+            envelope.edit_class == DocumentLiteralEditClass::SingleAsciiAsteriskInsertion
+                && envelope.source_range == (4..8)
+        }),
+        "the isolated Strong content must publish one-shot asterisk authority"
     );
 
     document
@@ -1089,6 +1109,98 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
 }
 
 #[test]
+fn flat_strong_asterisk_envelope_preserves_the_certified_fact() {
+    let source = "Before **bold** and _right_.\n";
+    let mut document = DocumentSession::begin(source).expect("begin Strong dependency cell");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("Strong dependency viewport");
+    let row = &viewport.rows[0];
+    let envelope = row
+        .literal_safe_envelopes
+        .iter()
+        .find(|envelope| {
+            envelope.edit_class == DocumentLiteralEditClass::SingleAsciiAsteriskInsertion
+        })
+        .expect("parser-authored Strong asterisk envelope");
+    assert_eq!(envelope.source_range, 9..13);
+    assert_eq!(envelope.source_utf16_range, 9..13);
+    let before_emphasis = row
+        .inline_facts
+        .as_ref()
+        .expect("base inline facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Emphasis)
+        .expect("outside Emphasis")
+        .clone();
+
+    document
+        .apply_edit(1, 11..11, "*")
+        .expect("insert one asterisk inside Strong content");
+    pump_ready(&mut document);
+    let edited_source = "Before **bo*ld** and _right_.\n";
+    assert_current_rows_match_clean(&mut document, 2, edited_source);
+    let viewport = document
+        .query_viewport(2, 0..edited_source.len(), 8)
+        .expect("edited Strong dependency viewport");
+    let after_emphasis = viewport.rows[0]
+        .inline_facts
+        .as_ref()
+        .expect("edited inline facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Emphasis)
+        .expect("outside Emphasis remains projected");
+    assert_eq!(after_emphasis.kind, before_emphasis.kind);
+    assert_eq!(after_emphasis.flags, before_emphasis.flags);
+    assert_eq!(after_emphasis.replacement, before_emphasis.replacement);
+    assert_eq!(
+        after_emphasis.source_range,
+        before_emphasis.source_range.start + 1..before_emphasis.source_range.end + 1
+    );
+    assert_eq!(
+        after_emphasis.content_range,
+        before_emphasis.content_range.start + 1..before_emphasis.content_range.end + 1
+    );
+    document.close().expect("close Strong dependency cell");
+}
+
+#[test]
+fn literal_safe_word_envelopes_are_bounded_without_dropping_inline_facts() {
+    let content = std::iter::repeat("a")
+        .take(200)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let source = format!("**{content}**\n");
+    let mut document = DocumentSession::begin(&source).expect("begin word-dense Strong row");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("word-dense Strong viewport");
+    let row = &viewport.rows[0];
+    let facts = row
+        .inline_facts
+        .as_ref()
+        .expect("word-density must not discard authoritative inline facts");
+    assert!(
+        facts
+            .iter()
+            .any(|fact| fact.kind == DocumentInlineFactKind::Strong),
+        "the projected Strong fact remains authoritative"
+    );
+    assert_eq!(
+        row.literal_safe_envelopes.len(),
+        128,
+        "the optimization must stay within its per-row ABI payload budget"
+    );
+    assert!(row
+        .literal_safe_envelopes
+        .iter()
+        .all(|envelope| { envelope.edit_class == DocumentLiteralEditClass::AsciiWordInsertion }));
+    document.close().expect("close word-dense Strong row");
+}
+
+#[test]
 fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
     assert_eq!(DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS, 0x0f02);
     assert_eq!(DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS, 0x0f05);
@@ -1115,6 +1227,16 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
     assert_eq!(strong.source_utf16_range, 17..42);
     assert_eq!(row.editable_range, Some(0..59));
     assert_eq!(row.editable_utf16_range, Some(0..55));
+    assert!(
+        row.literal_safe_envelopes.iter().any(|envelope| {
+            envelope.edit_class == DocumentLiteralEditClass::AsciiWordInsertion
+                && envelope.source_range
+                    == (strong.content_range.start..strong.content_range.start + 4)
+                && envelope.source_utf16_range
+                    == (strong.content_utf16_range.start..strong.content_utf16_range.start + 4)
+        }),
+        "plain prose cells must coexist with parser-authored Strong leaf authority"
+    );
     assert_eq!(
         row.projection_edit_cells,
         vec![
@@ -1404,7 +1526,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
 
 #[test]
 fn every_literal_splice_and_delete_preserves_outside_facts_differentially() {
-    let source = "This is the real **Rust → Dart → Flutter** editor path.\n";
+    let source = "ab **x** cd _y_\n";
     let mut base = DocumentSession::begin(source).expect("begin base dogfood paragraph");
     pump_ready(&mut base);
     let viewport = base
@@ -1412,14 +1534,8 @@ fn every_literal_splice_and_delete_preserves_outside_facts_differentially() {
         .expect("base dogfood paragraph viewport");
     let row = &viewport.rows[0];
     let cells = row.projection_edit_cells.clone();
-    let before = row
-        .inline_facts
-        .as_ref()
-        .expect("base facts")
-        .iter()
-        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
-        .expect("base Strong fact")
-        .clone();
+    let before = row.inline_facts.as_ref().expect("base facts").clone();
+    assert_eq!(before.len(), 2, "the oracle must cover every outside fact");
     base.close().expect("close base dogfood paragraph");
 
     for cell in cells
@@ -1448,42 +1564,23 @@ fn every_literal_splice_and_delete_preserves_outside_facts_differentially() {
                     let after = viewport.rows[0]
                         .inline_facts
                         .as_ref()
-                        .expect("edited facts")
-                        .iter()
-                        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
-                        .expect("edited Strong fact");
+                        .expect("edited facts");
                     let signed_delta = replacement.len() as i64 - (end - start) as i64;
-                    let delta = if end <= before.source_range.start {
-                        signed_delta
-                    } else {
-                        0
-                    };
-                    assert_eq!(after.kind, before.kind);
-                    assert_eq!(after.flags, before.flags);
-                    assert_eq!(after.replacement, before.replacement);
+                    let expected = before
+                        .iter()
+                        .cloned()
+                        .map(|fact| {
+                            let delta = if end <= fact.source_range.start {
+                                signed_delta
+                            } else {
+                                0
+                            };
+                            shift_inline_fact(fact, delta)
+                        })
+                        .collect::<Vec<_>>();
                     assert_eq!(
-                        after.source_range,
-                        (before.source_range.start as i64 + delta) as u64
-                            ..(before.source_range.end as i64 + delta) as u64,
-                        "range={start}..{end} replacement={replacement:?}"
-                    );
-                    assert_eq!(
-                        after.source_utf16_range,
-                        (before.source_utf16_range.start as i64 + delta) as u64
-                            ..(before.source_utf16_range.end as i64 + delta) as u64,
-                        "range={start}..{end} replacement={replacement:?}"
-                    );
-                    assert_eq!(
-                        after.content_range,
-                        (before.content_range.start as i64 + delta) as u64
-                            ..(before.content_range.end as i64 + delta) as u64,
-                        "range={start}..{end} replacement={replacement:?}"
-                    );
-                    assert_eq!(
-                        after.content_utf16_range,
-                        (before.content_utf16_range.start as i64 + delta) as u64
-                            ..(before.content_utf16_range.end as i64 + delta) as u64,
-                        "range={start}..{end} replacement={replacement:?}"
+                        after, &expected,
+                        "the complete outside-fact set changed for range={start}..{end} replacement={replacement:?}"
                     );
                     edited.close().expect("close differential");
                 }
@@ -1514,22 +1611,22 @@ fn every_literal_splice_and_delete_preserves_outside_facts_differentially() {
             let after = viewport.rows[0]
                 .inline_facts
                 .as_ref()
-                .expect("spaced facts")
+                .expect("spaced facts");
+            let expected = before
                 .iter()
-                .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
-                .expect("spaced Strong fact");
-            assert_eq!(after.kind, before.kind);
-            assert_eq!(after.flags, before.flags);
-            assert_eq!(after.replacement, before.replacement);
+                .cloned()
+                .map(|fact| {
+                    let delta = if position <= fact.source_range.start {
+                        1
+                    } else {
+                        0
+                    };
+                    shift_inline_fact(fact, delta)
+                })
+                .collect::<Vec<_>>();
             assert_eq!(
-                after.source_range,
-                before.source_range.start + 1..before.source_range.end + 1,
-                "position={position}"
-            );
-            assert_eq!(
-                after.content_range,
-                before.content_range.start + 1..before.content_range.end + 1,
-                "position={position}"
+                after, &expected,
+                "the complete outside-fact set changed at space position={position}"
             );
             edited.close().expect("close space differential");
         }
@@ -1556,28 +1653,22 @@ fn every_literal_splice_and_delete_preserves_outside_facts_differentially() {
             let after = viewport.rows[0]
                 .inline_facts
                 .as_ref()
-                .expect("deleted facts")
+                .expect("deleted facts");
+            let expected = before
                 .iter()
-                .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
-                .expect("deleted Strong fact");
-            assert_eq!(after.kind, before.kind);
-            assert_eq!(after.flags, before.flags);
-            assert_eq!(after.replacement, before.replacement);
+                .cloned()
+                .map(|fact| {
+                    let delta = if start + 1 <= fact.source_range.start {
+                        -1
+                    } else {
+                        0
+                    };
+                    shift_inline_fact(fact, delta)
+                })
+                .collect::<Vec<_>>();
             assert_eq!(
-                after.source_range,
-                before.source_range.start - 1..before.source_range.end - 1
-            );
-            assert_eq!(
-                after.source_utf16_range,
-                before.source_utf16_range.start - 1..before.source_utf16_range.end - 1
-            );
-            assert_eq!(
-                after.content_range,
-                before.content_range.start - 1..before.content_range.end - 1
-            );
-            assert_eq!(
-                after.content_utf16_range,
-                before.content_utf16_range.start - 1..before.content_utf16_range.end - 1
+                after, &expected,
+                "the complete outside-fact set changed at delete start={start}"
             );
             edited.close().expect("close delete differential");
         }
@@ -1652,6 +1743,13 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
                     trigger_range: 2..7,
                     trigger_utf16_range: 2..7,
                     flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+                },
+                DocumentProjectionEditCell {
+                    source_range: 8..16,
+                    source_utf16_range: 8..16,
+                    trigger_range: 10..10,
+                    trigger_utf16_range: 10..10,
+                    flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
                 },
             ],
             "{source:?} {row:#?}"
@@ -1802,7 +1900,17 @@ fn literal_word_cells_fail_closed_for_lexical_and_dependency_boundaries() {
         let viewport = document
             .query_viewport(1, 0..source.len(), 8)
             .expect("rejected literal gap viewport");
-        let cells = &viewport.rows[0].projection_edit_cells;
+        let cells = viewport.rows[0]
+            .projection_edit_cells
+            .iter()
+            .filter(|cell| {
+                matches!(
+                    cell.flags,
+                    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                        | DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+                )
+            })
+            .collect::<Vec<_>>();
         assert!(
             cells.iter().all(|cell| {
                 let start = usize::try_from(cell.source_range.start).expect("cell start");

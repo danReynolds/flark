@@ -91,6 +91,8 @@ final class FlarkSurfacePaintRowObservation {
     required this.kind,
     required this.headingLevel,
     required this.blockQuoteDepth,
+    required this.listItem,
+    required this.table,
     required this.leadingText,
     required this.sourceUtf16Start,
     required this.fragmentStart,
@@ -109,6 +111,8 @@ final class FlarkSurfacePaintRowObservation {
   final int kind;
   final int? headingLevel;
   final int? blockQuoteDepth;
+  final bool listItem;
+  final bool table;
   final String leadingText;
   final int sourceUtf16Start;
   final int fragmentStart;
@@ -1877,6 +1881,8 @@ final class RenderFlarkSurface extends RenderBox {
           kind: row.presentation.kind,
           headingLevel: row.presentation.headingLevel,
           blockQuoteDepth: row.presentation.blockQuoteDepth,
+          listItem: row.row?.listItem != null,
+          table: row.row?.table != null,
           leadingText: row.presentation.leadingText,
           sourceUtf16Start:
               row.neutralUtf16Start ?? row.presentation.globalUtf16Start,

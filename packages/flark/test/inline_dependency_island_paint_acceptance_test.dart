@@ -142,10 +142,11 @@ void main() {
   }
 
   testWidgets(
-    'paint observer control captures an unsupported exact pending frame',
+    'one safe asterisk inside Strong stays rendered on every paint',
     (tester) async {
-      const initial = 'Before **bo¦ld** after.\n';
-      const expected = 'Before **bo*¦ld** after.\n';
+      const initial = 'Before **bo¦ld** and _right_.\n';
+      const expected = 'Before **bo*¦ld** and _right_.\n';
+      const expectedPresentation = 'Before bo*ld and right.';
       final marked = MarkedSource.parse(expected);
       final probe = (await tester.runAsync(
         () =>
@@ -156,6 +157,78 @@ void main() {
         final expectedGeneration = probe.controller.sourceGeneration + 1;
         final paintStart = mounted.paints.length;
         await mounted.typeText('*');
+        await mounted.pumpImmediate();
+        expect(
+          probe.controller.debugProjectionContinuityActive,
+          isTrue,
+          reason:
+              'the parser-authored Strong insertion proof must own the '
+              'immediate paint',
+        );
+        var observed = paintStart;
+        var sawCommittedEdit = false;
+        for (var tick = 0; tick < 250; tick += 1) {
+          for (final paint in mounted.paints.skip(observed)) {
+            _expectStrongAsteriskPaint(
+              paint,
+              expectedSource: marked.source,
+              expectedGeneration: expectedGeneration,
+              expectedCaret: marked.caret,
+              expectedPresentation: expectedPresentation,
+            );
+          }
+          observed = mounted.paints.length;
+          if (probe.controller.pendingEdits == 0) sawCommittedEdit = true;
+          if (sawCommittedEdit && probe.controller.semanticsCurrent) break;
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 8)),
+          );
+          await mounted.pumpImmediate();
+        }
+        expect(
+          mounted.paints.length,
+          greaterThan(paintStart),
+          reason: 'the accepted edit must produce an actual paint',
+        );
+        expect(sawCommittedEdit, isTrue);
+        expect(probe.controller.semanticsCurrent, isTrue);
+        expect(probe.controller.debugProjectionContinuityActive, isFalse);
+        for (final paint in mounted.paints.skip(paintStart)) {
+          _expectStrongAsteriskPaint(
+            paint,
+            expectedSource: marked.source,
+            expectedGeneration: expectedGeneration,
+            expectedCaret: marked.caret,
+            expectedPresentation: expectedPresentation,
+          );
+        }
+        await tester.runAsync(() => probe.expectSourceAndCaret(expected));
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
+    'paint observer control captures an unsupported exact pending frame',
+    (tester) async {
+      const initial = 'Before **bo¦ld** after.\n';
+      const expected = 'Before **bo[¦ld** after.\n';
+      final marked = MarkedSource.parse(expected);
+      final probe = (await tester.runAsync(
+        () =>
+            LiveEditorTransitionProbe.open(initial, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+      try {
+        final expectedGeneration = probe.controller.sourceGeneration + 1;
+        final paintStart = mounted.paints.length;
+        await mounted.typeText('[');
         await mounted.pumpImmediate();
         final pending = mounted.paints.skip(paintStart).where((paint) {
           final active = paint.rows.where((row) => row.active).toList();
@@ -185,6 +258,62 @@ void main() {
     },
     skip: libraryPath == null,
     timeout: const Timeout(Duration(minutes: 2)),
+  );
+}
+
+void _expectStrongAsteriskPaint(
+  FlarkSurfacePaintObservation paint, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+  required String expectedPresentation,
+}) {
+  expect(paint.sourceGeneration, expectedGeneration);
+  expect(paint.visibleSource, expectedSource);
+  expect(paint.canonicalSelectionBaseUtf16, expectedCaret);
+  expect(paint.canonicalSelectionExtentUtf16, expectedCaret);
+  expect(paint.caretRect, isNotNull);
+  expect(paint.caretSourceUtf16, expectedCaret);
+  expect(paint.caretDisplayUtf16, expectedPresentation.indexOf('*') + 1);
+  expect(paint.presentation, expectedPresentation);
+  expect(paint.presentation, isNot(contains('**')));
+  expect(paint.presentation, isNot(contains('_right_')));
+  final active = paint.rows.singleWhere((row) => row.active);
+  expect(active.neutral, isFalse);
+  expect(active.kind, 5);
+  expect(active.headingLevel, isNull);
+  expect(active.blockQuoteDepth, isNull);
+  expect(active.listItem, isFalse);
+  expect(active.table, isFalse);
+  final renderedStrong = active.runs.where(
+    (run) =>
+        run.sourceExact && run.sourceUtf16Start < 18 && run.sourceUtf16End > 7,
+  );
+  expect(renderedStrong, isNotEmpty);
+  expect(
+    renderedStrong.map((run) => run.text).join(),
+    contains('bo*ld'),
+    reason: 'the safe inserted asterisk must remain inside rendered Strong',
+  );
+  expect(
+    renderedStrong.any(
+      (run) =>
+          run.text.contains('bo*ld') &&
+          run.styles.contains(FlarkSurfaceInlineStyle.strong) &&
+          run.resolvedStyle.fontWeight == FontWeight.w700,
+    ),
+    isTrue,
+    reason: 'the current Strong fact must stay actually bold',
+  );
+  expect(
+    active.runs.any(
+      (run) =>
+          run.text == 'right' &&
+          run.styles.contains(FlarkSurfaceInlineStyle.emphasis) &&
+          run.resolvedStyle.fontStyle == FontStyle.italic,
+    ),
+    isTrue,
+    reason: 'the independent Emphasis fact must remain actually italic',
   );
 }
 

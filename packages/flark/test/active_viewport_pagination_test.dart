@@ -76,8 +76,8 @@ void main() {
 
       expect(controller.revision, revisionBefore + 1);
       expect(controller.rows, hasLength(1));
-      expect(controller.semanticsCurrent, isFalse);
-      expect(controller.debugProjectionContinuityActive, isTrue);
+      expect(controller.semanticsCurrent, isTrue);
+      expect(controller.debugProjectionContinuityActive, isFalse);
       expect(controller.surfaceRow(controller.rows.single).kind, 5);
       expect(controller.surfaceRow(controller.rows.single).text, contains('x'));
       expect(
@@ -95,6 +95,90 @@ void main() {
       expect(controller.rows, hasLength(1));
       expect(controller.surfaceRow(controller.rows.single).text, contains('x'));
       expect(controller.canPageBackward, isTrue);
+      expect(controller.lastError, isNull);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'rapid projected typing retains its row across the 16 KiB byte window',
+    () async {
+      const block = '## Section\n\nA quick paragraph with **bold text**.\n\n';
+      final source = List<String>.filled(400, block).join();
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final row = controller.rows.firstWhere(
+        (candidate) =>
+            candidate.inlineFacts?.any((fact) => fact.kind.name == 'strong') ??
+            false,
+      );
+      final strong = row.inlineFacts!.firstWhere(
+        (fact) => fact.kind.name == 'strong',
+      );
+      controller.activateRow(row, strong.contentUtf16.start + 2);
+      expect(controller.semanticsCurrent, isTrue);
+      expect(controller.surfaceRow(row).active, isTrue);
+      expect(
+        row.literalSafeEnvelopes.isNotEmpty ||
+            row.projectionEditCells.isNotEmpty,
+        isTrue,
+        reason:
+            'literal envelopes=${row.literalSafeEnvelopes.length}, '
+            'edit cells=${row.projectionEditCells.map((cell) => '${cell.matcher.name}:${cell.triggerUtf16.start}-${cell.triggerUtf16.end}').toList()}',
+      );
+      expect(
+        row.literalSafeEnvelopes.any(
+          (envelope) =>
+              envelope.editClass.name == 'asciiWordInsertion' &&
+              envelope.sourceUtf16.start <= strong.contentUtf16.start + 2 &&
+              strong.contentUtf16.start + 2 <= envelope.sourceUtf16.end,
+        ),
+        isTrue,
+        reason:
+            'caret=${strong.contentUtf16.start + 2}; '
+            'envelopes=${row.literalSafeEnvelopes.map((envelope) => '${envelope.editClass.name}:${envelope.sourceUtf16.start}-${envelope.sourceUtf16.end}').toList()}',
+      );
+      final lostGenerations = <String>[];
+      void capture() {
+        final surfaces = controller.rows.map(controller.surfaceRow).toList();
+        final hasActiveProjection = surfaces.any(
+          (surface) => surface.active && !surface.text.contains('**'),
+        );
+        if (!hasActiveProjection) {
+          lostGenerations.add(
+            'generation=${controller.sourceGeneration} '
+            'rows=${controller.rows.length} '
+            'continuity=${controller.debugProjectionContinuityActive} '
+            'semantics=${controller.semanticsCurrent} '
+            'active=${surfaces.where((surface) => surface.active).map((surface) => '${surface.kind}:${surface.text}').toList()}',
+          );
+        }
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      for (var index = 0; index < 140; index += 1) {
+        final before = controller.inputValue;
+        final offset = before.selection.extentOffset;
+        controller.applyDeltas([
+          TextEditingDeltaInsertion(
+            oldText: before.text,
+            textInserted: index.isEven ? 'x' : 'y',
+            insertionOffset: offset,
+            selection: TextSelection.collapsed(offset: offset + 1),
+            composing: TextRange.empty,
+          ),
+        ]);
+        await Future<void>.delayed(Duration.zero);
+      }
+      await _settleReceipts(controller);
+
+      expect(lostGenerations, isEmpty);
       expect(controller.lastError, isNull);
     },
     skip: libraryPath == null,

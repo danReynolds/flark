@@ -37,11 +37,11 @@ use crate::{
     EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INDENT_LIST_ITEM,
     EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_OUTDENT_LIST_ITEM,
     EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
-    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_INTENT_TOGGLE_TASK_CHECKED,
-    EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE, EDIT_PRESENTATION_CONTINUE_INDENTED_CODE,
-    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_DELETE_THEMATIC_BREAK,
-    EDIT_PRESENTATION_EXIT_BLOCK_QUOTE, EDIT_PRESENTATION_EXIT_HEADING,
-    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_INDENT_LIST,
+    EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
+    EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE,
+    EDIT_PRESENTATION_CONTINUE_INDENTED_CODE, EDIT_PRESENTATION_CONTINUE_LIST,
+    EDIT_PRESENTATION_DELETE_THEMATIC_BREAK, EDIT_PRESENTATION_EXIT_BLOCK_QUOTE,
+    EDIT_PRESENTATION_EXIT_HEADING, EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_INDENT_LIST,
     EDIT_PRESENTATION_JOIN_INDENTED_CODE, EDIT_PRESENTATION_LIFT_BLOCK_QUOTE,
     EDIT_PRESENTATION_LIFT_HEADING, EDIT_PRESENTATION_LIFT_INDENTED_CODE,
     EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
@@ -53,8 +53,8 @@ use crate::{
     INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_LITERAL_SAFE_ENVELOPE,
     INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
     INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
-    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
-    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
+    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION,
+    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
     VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
@@ -101,7 +101,9 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 26)
     | (1 << 27)
     | (1 << 28)
-    | (1 << 29);
+    | (1 << 29)
+    | (1 << 30)
+    | (1 << 31);
 
 struct Registry {
     next_handle: u64,
@@ -2463,6 +2465,11 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                     | EDIT_INTENT_RECEIPT_SEMANTIC_BYTES
                     | if receipt.parser_pending {
                         EDIT_INTENT_RECEIPT_PARSER_PENDING
+                    } else {
+                        0
+                    }
+                    | if receipt.presentation_proven {
+                        EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN
                     } else {
                         0
                     },
@@ -4925,32 +4932,65 @@ fn query_page(
                 opening_semantic_page && viewport.rows.len() > encoded_row_count;
             let row_payload_bytes = encoded_row_count * size_of::<ViewportRowRecord>();
             let mut remaining_payload_bytes = payload_capacity.saturating_sub(row_payload_bytes);
+            let mandatory_inline_fact_bytes = viewport
+                .rows
+                .iter()
+                .take(encoded_row_count)
+                .filter_map(|row| row.inline_facts.as_ref())
+                .fold(0usize, |bytes, facts| {
+                    bytes.saturating_add(facts.len() * size_of::<InlineFactRecord>())
+                });
+            let mandatory_projection_segment_bytes = viewport
+                .rows
+                .iter()
+                .take(encoded_row_count)
+                .filter_map(|row| row.projection_segments.as_ref())
+                .filter(|segments| {
+                    matches!(query_kind, 4 | 6)
+                        && segments.len() > 1
+                        && segments.len() <= u16::MAX as usize
+                })
+                .fold(0usize, |bytes, segments| {
+                    bytes.saturating_add(segments.len() * size_of::<ProjectionSegmentRecord>())
+                });
+            let mandatory_presentation_bytes =
+                mandatory_inline_fact_bytes.saturating_add(mandatory_projection_segment_bytes);
+            let preserves_all_baseline_presentation =
+                mandatory_presentation_bytes <= remaining_payload_bytes;
+            let mut reserved_baseline_presentation_bytes = if preserves_all_baseline_presentation {
+                mandatory_presentation_bytes
+            } else {
+                0
+            };
             let mut records = Vec::with_capacity(encoded_row_count);
             let mut inline_facts = Vec::new();
             let mut projection_segments = Vec::new();
             for row in viewport.rows.iter().take(encoded_row_count) {
                 let projection_segment_count = match &row.projection_segments {
                     Some(segments)
-                        if matches!(query_kind, 4 | 6)
+                        if preserves_all_baseline_presentation
+                            && matches!(query_kind, 4 | 6)
                             && segments.len() > 1
                             && segments.len() <= u16::MAX as usize
                             && segments.len() * size_of::<ProjectionSegmentRecord>()
                                 <= remaining_payload_bytes =>
                     {
-                        remaining_payload_bytes -=
-                            segments.len() * size_of::<ProjectionSegmentRecord>();
+                        let segment_bytes = segments.len() * size_of::<ProjectionSegmentRecord>();
+                        remaining_payload_bytes -= segment_bytes;
+                        reserved_baseline_presentation_bytes =
+                            reserved_baseline_presentation_bytes.saturating_sub(segment_bytes);
                         projection_segments.extend(segments.iter().map(projection_segment_record));
                         u32::try_from(segments.len()).map_err(|_| StatusCode::InternalFault)?
                     }
                     _ => 0,
                 };
-                let literal_safe_envelope_count =
+                let available_literal_safe_envelopes =
                     if query_kind == QueryKind::SemanticProjectedLiteralSafe as u32 {
                         row.literal_safe_envelopes.len()
                     } else {
                         0
                     };
-                let projection_edit_cell_count =
+                let available_projection_edit_cells =
                     if query_kind == QueryKind::SemanticProjectedLiteralSafe as u32 {
                         row.projection_edit_cells.len()
                     } else {
@@ -4958,25 +4998,49 @@ fn query_page(
                     };
                 let (inline_authoritative, inline_fact_count) = match &row.inline_facts {
                     Some(facts)
-                        if facts.len()
-                            + literal_safe_envelope_count
-                            + projection_edit_cell_count
-                            <= VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize
-                            && (facts.len()
-                                + literal_safe_envelope_count
-                                + projection_edit_cell_count)
-                                * size_of::<InlineFactRecord>()
+                        if facts.len() <= VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize
+                            && facts.len() * size_of::<InlineFactRecord>()
                                 <= remaining_payload_bytes =>
                     {
+                        let fact_bytes = facts.len() * size_of::<InlineFactRecord>();
+                        remaining_payload_bytes -= fact_bytes;
+                        if preserves_all_baseline_presentation {
+                            reserved_baseline_presentation_bytes =
+                                reserved_baseline_presentation_bytes.saturating_sub(fact_bytes);
+                        }
+                        // Ordinary facts and required projection segments are
+                        // the rendered result. Envelopes and edit cells are
+                        // optional future-edit authority, so they may consume
+                        // only bytes left after reserving every later row's
+                        // baseline presentation. Prefer the broader edit cells,
+                        // then fill any remaining slots with literal envelopes;
+                        // dropping either only fails closed.
+                        let optional_record_capacity = if preserves_all_baseline_presentation {
+                            remaining_payload_bytes
+                                .saturating_sub(reserved_baseline_presentation_bytes)
+                                / size_of::<InlineFactRecord>()
+                        } else {
+                            0
+                        };
+                        let optional_mask_capacity =
+                            VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize - facts.len();
+                        let optional_capacity =
+                            optional_record_capacity.min(optional_mask_capacity);
+                        let projection_edit_cell_count =
+                            available_projection_edit_cells.min(optional_capacity);
+                        let literal_safe_envelope_count = available_literal_safe_envelopes
+                            .min(optional_capacity.saturating_sub(projection_edit_cell_count));
                         let semantic_record_count =
                             facts.len() + literal_safe_envelope_count + projection_edit_cell_count;
-                        remaining_payload_bytes -=
-                            semantic_record_count * size_of::<InlineFactRecord>();
+                        remaining_payload_bytes -= (literal_safe_envelope_count
+                            + projection_edit_cell_count)
+                            * size_of::<InlineFactRecord>();
                         inline_facts.extend(facts.iter().map(inline_fact_record));
                         if literal_safe_envelope_count != 0 {
                             inline_facts.extend(
                                 row.literal_safe_envelopes
                                     .iter()
+                                    .take(literal_safe_envelope_count)
                                     .map(literal_safe_envelope_record),
                             );
                         }
@@ -4984,6 +5048,7 @@ fn query_page(
                             inline_facts.extend(
                                 row.projection_edit_cells
                                     .iter()
+                                    .take(projection_edit_cell_count)
                                     .map(projection_edit_cell_record),
                             );
                         }
@@ -5504,6 +5569,9 @@ fn literal_safe_envelope_record(envelope: &DocumentLiteralSafeEnvelope) -> Inlin
             DocumentLiteralEditClass::AsciiWordInsertion => LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
             DocumentLiteralEditClass::SingleAsciiSpaceInsertion => {
                 LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION
+            }
+            DocumentLiteralEditClass::SingleAsciiAsteriskInsertion => {
+                LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION
             }
         },
         source_start_byte: envelope.source_range.start,

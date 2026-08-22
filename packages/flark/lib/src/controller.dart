@@ -59,10 +59,22 @@ enum FlarkEditorStatus {
 /// unchanged, exactly as an edit against a fully loaded document does.
 final class _AdmissionHost {
   FlarkEditorController? controller;
+  bool _pendingAdmission = false;
 
   void onAdmission() {
     final controller = this.controller;
-    if (controller == null || controller._closed) return;
+    if (controller == null) {
+      _pendingAdmission = true;
+      return;
+    }
+    if (controller._closed) return;
+    controller.notifyListeners();
+  }
+
+  void attach(FlarkEditorController controller) {
+    this.controller = controller;
+    if (!_pendingAdmission || controller._closed) return;
+    _pendingAdmission = false;
     controller.notifyListeners();
   }
 }
@@ -284,6 +296,16 @@ final class _ProjectionContinuitySurface {
   int get resultRevision => authority.resultRevision;
   FlarkSourceRange get contentUtf16 => authority.affectedUtf16;
   bool get isEditCell => authority is _EditCellProjectionContinuityAuthority;
+}
+
+final class _CommittedStructuralSurfaceState {
+  const _CommittedStructuralSurfaceState({
+    required this.surface,
+    this.continuity,
+  });
+
+  final FlarkCoreCommittedPresentationSurfaceV1 surface;
+  final FlarkProjectionEditCellReceipt? continuity;
 }
 
 final class _EditorSelectionSnapshot {
@@ -575,11 +597,13 @@ final class FlarkEditorController extends ChangeNotifier {
   _ViewportPageAnchor? _optimisticRefreshAnchor;
   _ProjectionContinuitySurface? _projectionContinuity;
   FlarkCoreCommittedPresentationGapV1? _committedParagraphSplit;
-  List<FlarkCoreCommittedPresentationSurfaceV1> _committedStructuralSurfaces =
+  List<_CommittedStructuralSurfaceState> _committedStructuralSurfaces =
       const [];
   final Map<int, bool> _committedTaskChecks = <int, bool>{};
   int _pageIndex = 0;
   int _editGeneration = 0;
+  int _publishedSourceGeneration = 0;
+  int _publishedDocumentRevision = 0;
   int _pendingEdits = 0;
   Object? _lastError;
   bool _closed = false;
@@ -648,13 +672,13 @@ final class FlarkEditorController extends ChangeNotifier {
   TextEditingValue get inputValue => _inputValue;
   int get revision => _document.revision;
 
-  /// Monotonic logical source generation used to bind painted diagnostics to
-  /// the exact optimistic edit state they display.
+  /// Monotonic generation of the source currently exposed to the renderer.
   ///
-  /// Native [revision] may legitimately lag while an accepted edit is still
-  /// queued. This generation advances synchronously with that accepted edit,
-  /// so a paint observer can reject stale or coalesced presentation frames.
-  int get sourceGeneration => _editGeneration;
+  /// [_editGeneration] advances when a command is admitted so stale async
+  /// work can be rejected. A semantic command does not expose new source
+  /// until its native receipt arrives, so paint evidence must not use that
+  /// internal generation and label the retained pre-command source as new.
+  int get sourceGeneration => _publishedSourceGeneration;
   int get sourceByteLength => _document.sourceByteLength;
   int get sourceUtf16Length => _document.sourceUtf16Length;
   int get pendingEdits => _pendingEdits;
@@ -928,7 +952,7 @@ final class FlarkEditorController extends ChangeNotifier {
       onOpeningProgress: host.onAdmission,
     );
     final controller = await _openDocument(document);
-    host.controller = controller;
+    host.attach(controller);
     return controller;
   }
 
@@ -1174,6 +1198,7 @@ final class FlarkEditorController extends ChangeNotifier {
   List<FlarkCoreCommittedPresentationSurfaceV1> _structuralSurfacesFor(
     int ordinal,
   ) => _committedStructuralSurfaces
+      .map((state) => state.surface)
       .where((surface) => surface.rowOrdinal == ordinal)
       .toList(growable: false);
 
@@ -1339,11 +1364,46 @@ final class FlarkEditorController extends ChangeNotifier {
     FlarkCoreCommittedPresentationSurfaceV1 structural, {
     required bool includeEditingState,
   }) {
-    // A structural receipt proves the committed source splice and temporary
-    // block partition, but it carries no result-revision inline-fact proof.
-    // Render each temporary partition as exact current source until a fresh
-    // parser publication arrives; reusing the predecessor's hidden delimiters
-    // or styles can retain invalid emphasis/entities across the transition.
+    if (structural.projectionCurrent) {
+      final presentation = structural.presentation;
+      final runs = presentation.runs
+          .map(
+            (run) => FlarkSurfaceTextRun(
+              text: run.text,
+              sourceUtf16Start: run.sourceUtf16Start,
+              sourceUtf16End: run.sourceUtf16End,
+              sourceExact: run.sourceExact,
+              styles: Set.unmodifiable(run.styles.map(_surfaceStyleFromCore)),
+            ),
+          )
+          .toList(growable: false);
+      final active =
+          includeEditingState &&
+          structural.sourceUtf16.start <= _globalSelectionExtent &&
+          _globalSelectionExtent <= structural.sourceUtf16.end;
+      final selected =
+          includeEditingState &&
+          _crossRowSelection &&
+          _selectionIntersects(structural.sourceUtf16);
+      return FlarkSurfaceRow(
+        leadingText: presentation.leadingText,
+        text: presentation.text,
+        globalUtf16Start: presentation.globalUtf16Start,
+        kind: presentation.kind,
+        headingLevel: presentation.headingLevel,
+        blockQuoteDepth: presentation.blockQuoteDepth,
+        codeBlock: presentation.codeBlock,
+        thematicBreak: presentation.thematicBreak,
+        ordinal: structural.rowOrdinal,
+        active: active,
+        selection: active || selected
+            ? _projectedSelection(runs, presentation.text.length)
+            : null,
+        runs: runs,
+      );
+    }
+    // Unsupported structural transitions retain only source/partition
+    // authority. They remain exact until a fresh parser publication arrives.
     final run = _exactSurfaceRun(structural.sourceUtf16);
     final runs = <FlarkSurfaceTextRun>[run];
     final active =
@@ -2844,7 +2904,8 @@ final class FlarkEditorController extends ChangeNotifier {
   ) {
     if (presentation.runs.isEmpty) return false;
     FlarkCoreCommittedPresentationSurfaceV1? committed;
-    for (final surface in _committedStructuralSurfaces) {
+    for (final state in _committedStructuralSurfaces) {
+      final surface = state.surface;
       if (surface.rowOrdinal == row.ordinal) {
         committed = surface;
         break;
@@ -3412,11 +3473,16 @@ final class FlarkEditorController extends ChangeNotifier {
       }
     }
     // Half-open row ownership selects a following row at shared boundaries.
-    // When no following cached row exists, the exact end of the last visible
-    // row still owns a collapsed caret (notably source EOF and page tails).
-    for (final row in _cachedRows.reversed) {
-      if (surfaceSourceRange(row).end == globalUtf16Offset) {
-        return row.ordinal;
+    // Only a true document/page tail gives the last cached row inclusive end
+    // ownership. An internal blank gap must remain neutral rather than
+    // retargeting Return to the preceding semantic row.
+    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    if (globalUtf16Offset == sourceUtf16Length ||
+        globalUtf16Offset == visibleEnd) {
+      for (final row in _cachedRows.reversed) {
+        if (surfaceSourceRange(row).end == globalUtf16Offset) {
+          return row.ordinal;
+        }
       }
     }
     if (_visibleSource.isEmpty) return -1;
@@ -3648,12 +3714,14 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     final structurals = _committedStructuralSurfaces;
     if (structurals.isNotEmpty) {
-      // A structural edit receipt proves only its own committed transition.
-      // It does not authorize a later literal splice through that temporary
-      // presentation, and the cached pre-transition envelopes belong to the
-      // prior revision. Fail closed until the parser publishes fresh rows.
-      _committedStructuralSurfaces = const [];
-      _projectionContinuity = null;
+      // Only a parser-proved structural surface may carry a typed edit cell
+      // into its result revision. Exactly one matching cell may advance that
+      // temporary presentation; every other successor fails closed until a
+      // fresh parser publication arrives.
+      if (!_advanceCommittedStructuralSurfaces(start, end, replacement)) {
+        _committedStructuralSurfaces = const [];
+        _projectionContinuity = null;
+      }
     } else {
       _prepareProjectionContinuity(start, end, replacement);
     }
@@ -3664,6 +3732,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _parseTimer?.cancel();
     _parseTimer = null;
     final generation = ++_editGeneration;
+    _publishedSourceGeneration = generation;
     _pendingEdits += 1;
     _status = FlarkEditorStatus.editing;
     final operation = _editTail.then((_) async {
@@ -3742,7 +3811,8 @@ final class FlarkEditorController extends ChangeNotifier {
                     _mapViewportRange(segment.sourceUtf16).start == globalCaret,
               )) ||
           (!_semanticViewportCurrent &&
-              _committedStructuralSurfaces.any((surface) {
+              _committedStructuralSurfaces.any((state) {
+                final surface = state.surface;
                 final runs = surface.presentation.runs;
                 for (var index = 0; index < runs.length; index += 1) {
                   final run = runs[index];
@@ -3854,7 +3924,10 @@ final class FlarkEditorController extends ChangeNotifier {
     final completion = _completeSemanticEdit(operation, generation);
     _editTail = completion.catchError((Object _, StackTrace _) {});
     unawaited(completion);
-    notifyListeners();
+    // Queue admission changes no source, selection, or presentation. Publishing
+    // here would stamp the retained pre-command frame with the new command
+    // generation before the native receipt commits its source transaction.
+    // The receipt (or failure) publishes the next observable state atomically.
   }
 
   /// Routes Tab/Shift-Tab through the same Rust-authoritative transaction
@@ -3978,6 +4051,15 @@ final class FlarkEditorController extends ChangeNotifier {
         ' ' => false,
         _ => throw StateError('Invalid task-toggle replacement receipt'),
       };
+      if (generation != _editGeneration) {
+        // A later optimistic edit is already the published source. The task
+        // action committed first in the native command queue, but applying
+        // its older coordinate splice or generation to that newer host
+        // publication would tear source identity. The later edit's refresh
+        // observes both commits atomically.
+        _pendingEdits = math.max(0, _pendingEdits - 1);
+        return true;
+      }
       if (!_applyLengthNeutralViewportReplacement(
         receipt.baseUtf16Start,
         receipt.baseUtf16End,
@@ -3990,6 +4072,7 @@ final class FlarkEditorController extends ChangeNotifier {
         receipt.baseUtf16End,
         receipt.replacement,
       );
+      _publishedSourceGeneration = generation;
       _committedTaskChecks[rowOrdinal] = checked;
       // Publish the receipt-backed prefix immediately; parser recertification
       // may take several bounded pumps on a large document.
@@ -4036,6 +4119,7 @@ final class FlarkEditorController extends ChangeNotifier {
       final observedInput = _pendingSemanticInput;
       final adoptionWatch = Stopwatch()..start();
       if (receipt.hasCommit) {
+        _publishedSourceGeneration = generation;
         _adoptSemanticReceipt(receipt);
         _promoteSemanticSuccessors(receipt);
       } else {
@@ -4098,6 +4182,11 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void _adoptSemanticReceipt(FlarkCoreEditIntentReceiptV1 receipt) {
+    final priorStructuralSurfaces = _committedStructuralSurfaces;
+    final priorStructuralIndex = _committedStructuralIndexForRange(
+      receipt.baseUtf16Start,
+      receipt.baseUtf16End,
+    );
     final transition = _prepareCommittedPresentationTransition(receipt);
     if (transition?.clearPriorGap ?? false) {
       _committedParagraphSplit = null;
@@ -4115,11 +4204,32 @@ final class FlarkEditorController extends ChangeNotifier {
       receipt.baseUtf16End,
       receipt.replacement,
     );
-    _committedStructuralSurfaces = transition?.surfaces ?? const [];
+    final chainsTerminalSplit =
+        receipt.presentationTransition ==
+            FlarkCoreEditPresentationTransitionV1.splitParagraph &&
+        receipt.baseUtf16Start == receipt.baseUtf16End &&
+        priorStructuralIndex >= 0 &&
+        receipt.baseUtf16Start ==
+            priorStructuralSurfaces[priorStructuralIndex]
+                .surface
+                .sourceUtf16
+                .end;
+    final carriedPrefix =
+        transition?.surfaces.isNotEmpty == true &&
+            chainsTerminalSplit &&
+            priorStructuralIndex > 0
+        ? priorStructuralSurfaces.take(priorStructuralIndex)
+        : const <_CommittedStructuralSurfaceState>[];
+    _committedStructuralSurfaces = List.unmodifiable([
+      ...carriedPrefix,
+      ...(transition?.surfaces ??
+              const <FlarkCoreCommittedPresentationSurfaceV1>[])
+          .map((surface) => _CommittedStructuralSurfaceState(surface: surface)),
+    ]);
     final removedRowOrdinals = <int>{
       ...?transition?.removedRowOrdinals,
       ..._committedStructuralSurfaces
-          .map((surface) => surface.removedRowOrdinal)
+          .map((state) => state.surface.removedRowOrdinal)
           .whereType<int>(),
     };
     if (removedRowOrdinals.isNotEmpty) {
@@ -4143,7 +4253,14 @@ final class FlarkEditorController extends ChangeNotifier {
   _prepareCommittedPresentationTransition(
     FlarkCoreEditIntentReceiptV1 receipt,
   ) {
-    final activeOrdinal = _activeOrdinal;
+    final structuralIndex = _committedStructuralIndexForRange(
+      receipt.baseUtf16Start,
+      receipt.baseUtf16End,
+    );
+    final structural = structuralIndex < 0
+        ? null
+        : _committedStructuralSurfaces[structuralIndex].surface;
+    final activeOrdinal = structural?.rowOrdinal ?? _activeOrdinal;
     final activeIndex = activeOrdinal == null
         ? -1
         : _cachedRows.indexWhere((row) => row.ordinal == activeOrdinal);
@@ -4160,10 +4277,34 @@ final class FlarkEditorController extends ChangeNotifier {
     return resolveCommittedPresentationTransitionV1(
       receipt: receipt,
       priorActiveOrdinal: activeOrdinal,
-      activeRow: coreRowAt(activeIndex),
+      activeRow: structural == null
+          ? coreRowAt(activeIndex)
+          : _corePresentationRow(
+              _committedStructuralSurfaceRow(
+                structural,
+                includeEditingState: false,
+              ),
+              structural.sourceUtf16,
+            ),
       precedingRow: coreRowAt(activeIndex - 1),
       priorGapPending: _committedParagraphSplit != null,
     );
+  }
+
+  int _committedStructuralIndexForRange(int start, int end) {
+    for (
+      var index = _committedStructuralSurfaces.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      final surface = _committedStructuralSurfaces[index].surface;
+      if (surface.projectionCurrent &&
+          surface.sourceUtf16.start <= start &&
+          end <= surface.sourceUtf16.end) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   FlarkCorePresentationRow _corePresentationRow(
@@ -4196,6 +4337,10 @@ final class FlarkEditorController extends ChangeNotifier {
   static FlarkCorePresentationInlineStyle _coreStyleFromSurface(
     FlarkSurfaceInlineStyle style,
   ) => FlarkCorePresentationInlineStyle.values[style.index];
+
+  static FlarkSurfaceInlineStyle _surfaceStyleFromCore(
+    FlarkCorePresentationInlineStyle style,
+  ) => FlarkSurfaceInlineStyle.values[style.index];
 
   bool _installCommittedSemanticInputWindow(
     FlarkCoreEditIntentReceiptV1 receipt,
@@ -4849,15 +4994,27 @@ final class FlarkEditorController extends ChangeNotifier {
     try {
       await operation;
       if (generation == _editGeneration) {
-        await _refreshViewport(
-          restoreInputWindow: false,
-          expectedEditGeneration: generation,
-          ensureActiveInputVisible: true,
-        );
-        if (generation == _editGeneration) {
-          _scheduleParsingAfterInput(
-            immediate: _projectionContinuity?.isEditCell ?? false,
+        final retainsProjectedTransition =
+            _projectionContinuity != null ||
+            _committedStructuralSurfaces.any(
+              (state) => state.continuity != null,
+            );
+        if (retainsProjectedTransition) {
+          // The native edit is committed and the parser-authored continuity
+          // surface already pairs exact result source with its projected row.
+          // A pending viewport query is strictly poorer authority and can
+          // truncate a lengthened 16 KiB page, discarding that valid active
+          // row. Keep the atomic publication and converge immediately.
+          _scheduleParsingAfterInput(immediate: true);
+        } else {
+          await _refreshViewport(
+            restoreInputWindow: false,
+            expectedEditGeneration: generation,
+            ensureActiveInputVisible: true,
           );
+          if (generation == _editGeneration) {
+            _scheduleParsingAfterInput();
+          }
         }
       }
       _pendingEdits = math.max(0, _pendingEdits - 1);
@@ -4946,6 +5103,76 @@ final class FlarkEditorController extends ChangeNotifier {
           }),
     );
     return operation;
+  }
+
+  bool _advanceCommittedStructuralSurfaces(
+    int start,
+    int end,
+    String replacement,
+  ) {
+    final candidates =
+        <
+          ({
+            int index,
+            FlarkProjectionEditCellReceipt receipt,
+            FlarkSurfaceRow presentation,
+          })
+        >[];
+    for (var index = 0; index < _committedStructuralSurfaces.length; index++) {
+      final state = _committedStructuralSurfaces[index];
+      final surface = state.surface;
+      if (!surface.projectionCurrent) continue;
+      final receipt =
+          state.continuity?.continueWith(
+            startUtf16: start,
+            endUtf16: end,
+            replacement: replacement,
+          ) ??
+          authorizeProjectionEditCell(
+            revision: revision,
+            cells: surface.projectionEditCells,
+            authorizedContentUtf16: surface.sourceUtf16,
+            startUtf16: start,
+            endUtf16: end,
+            replacement: replacement,
+          );
+      if (receipt == null) continue;
+      final base = _committedStructuralSurfaceRow(
+        surface,
+        includeEditingState: false,
+      );
+      final presentation = _spliceProjectionEditCellPresentation(
+        base,
+        receipt,
+        start,
+        end,
+        replacement,
+      );
+      if (presentation != null) {
+        candidates.add((
+          index: index,
+          receipt: receipt,
+          presentation: presentation,
+        ));
+      }
+    }
+    if (candidates.length != 1) return false;
+    final matched = candidates.single;
+    final states = [..._committedStructuralSurfaces];
+    final previous = states[matched.index].surface;
+    final source = matched.receipt.affectedUtf16;
+    states[matched.index] = _CommittedStructuralSurfaceState(
+      continuity: matched.receipt,
+      surface: FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: previous.rowOrdinal,
+        removedRowOrdinal: previous.removedRowOrdinal,
+        sourceUtf16: source,
+        projectionCurrent: true,
+        presentation: _corePresentationRow(matched.presentation, source),
+      ),
+    );
+    _committedStructuralSurfaces = List.unmodifiable(states);
+    return true;
   }
 
   /// Commits the currently accepted composition prefix when the platform text
@@ -5600,6 +5827,15 @@ final class FlarkEditorController extends ChangeNotifier {
         sourceFitsViewport &&
         _rowsFitViewport(viewport) &&
         !retainsExistingSurface;
+    if (!retainsExistingSurface &&
+        viewport.revision != _publishedDocumentRevision) {
+      // History replay and composition cancellation adopt their new source
+      // through this atomic viewport publication rather than an optimistic
+      // local splice. Advance the paint generation in the same synchronous
+      // install that replaces the visible source, never before its query.
+      _publishedDocumentRevision = viewport.revision;
+      _publishedSourceGeneration = _editGeneration;
+    }
     if (installsFreshRows) {
       _cachedRows = viewport.rows;
     } else if (!retainsExistingSurface) {
@@ -5678,7 +5914,7 @@ final class FlarkEditorController extends ChangeNotifier {
         (_activeOrdinal ?? 0) < 0) {
       _restoreNeutralInputWindow(_globalSelectionExtent);
     }
-    if (_semanticViewportCurrent && (_activeOrdinal ?? -1) >= 0) {
+    if (_semanticViewportCurrent) {
       _committedParagraphSplit = null;
       _committedStructuralSurfaces = const [];
     }

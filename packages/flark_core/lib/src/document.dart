@@ -241,6 +241,7 @@ final class FlarkCoreEditIntentReceiptV1 {
     required this.resultSourceUtf16Length,
     required this.historyToken,
     required this.parserPending,
+    required this.presentationProven,
     required this.logicalEditId,
     required this.requestDigest,
     required this.telemetry,
@@ -264,6 +265,7 @@ final class FlarkCoreEditIntentReceiptV1 {
   final int resultSourceUtf16Length;
   final FlarkCoreHistoryToken? historyToken;
   final bool parserPending;
+  final bool presentationProven;
   final int logicalEditId;
   final int requestDigest;
   final FlarkCoreEditIntentTelemetryV1 telemetry;
@@ -292,6 +294,7 @@ final class FlarkCoreEditIntentReceiptV1 {
     resultSourceUtf16Length: resultSourceUtf16Length,
     historyToken: historyToken,
     parserPending: parserPending,
+    presentationProven: presentationProven,
     logicalEditId: logicalEditId,
     requestDigest: requestDigest,
     telemetry: telemetry.withCoreStages(
@@ -950,6 +953,7 @@ final class FlarkCoreDocument {
           ? null
           : FlarkCoreHistoryToken._(token, _historyOwner),
       parserPending: result['parserPending']! as bool,
+      presentationProven: result['presentationProven']! as bool,
       logicalEditId: result['logicalEditId']! as int,
       requestDigest: result['requestDigest']! as int,
       telemetry: FlarkCoreEditIntentTelemetryV1(
@@ -1470,6 +1474,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'resultSourceUtf16Length': receipt.resultSourceUtf16Length,
               'historyToken': receipt.historyToken,
               'parserPending': receipt.parserPending,
+              'presentationProven': receipt.presentationProven,
               'logicalEditId': receipt.logicalEditId,
               'requestDigest': receipt.requestDigest,
               'presentationTransition': receipt.presentationTransition.index,

@@ -34,7 +34,7 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 29. `NEGOTIATE` is the only operation
+The direct ABI is major 4, minor 31. `NEGOTIATE` is the only operation
 permitted without a session. The host supplies its requested version and all
 required capability bits. The runtime returns its supported version, supported
 bits, and actual hard caps in `FlarkV4AbiInfo`.
@@ -372,6 +372,41 @@ Matcher codes are 1
 `INSERT_SINGLE_ASCII_SPACE_AT_POINT`, and 4
 `DELETE_ONE_ASCII_UNIT_IN_LITERAL`, and 5
 `APPEND_ASCII_LITERAL_AT_LINE_END`.
+
+ABI 4.30 capability `LITERAL_SAFE_ENVELOPES_V2` adds edit class 3,
+`SINGLE_ASCII_ASTERISK_INSERTION`, on the existing kind-15 envelope record. It
+authorizes exactly one collapsed `*` insertion strictly inside the complete
+content range of one flat Strong fact; neither content boundary is included.
+The parser emits this one-shot envelope only when
+no other asterisk dependency or overlapping inline fact escapes the Strong
+source. The host transforms the existing projected Strong run, preserving its
+hidden delimiters and style, then consumes every same-geometry envelope so no
+successor can reuse predecessor authority.
+
+ABI 4.31 capability `STRUCTURAL_PRESENTATION_PROOFS_V1` adds edit-intent
+receipt flag `PRESENTATION_PROVEN` (`0x8`). Rust sets it only while resolving a
+semantic edit from a current Ready parser result. V1 admits bounded Plain
+terminal paragraph splits and Plain paragraph merges whose parser-normalized
+inline partitions are unchanged. The flag authorizes the typed transitional
+presentation and, for the newly empty Plain successor of a proved terminal
+split, exactly the zero-width chainable ASCII literal cell defined by this
+minor. That cell may carry ordinary typing, but it cannot authorize another
+structural split; every additional structural transition requires its own
+current Ready `PRESENTATION_PROVEN` receipt. Pending, oversized, non-ASCII,
+escape/entity/link/code/underscore/strike, or delimiter-crossing transitions
+omit the flag.
+
+Exact ABI 4.31 also permits the existing `ASCII_WORD_INSERTION` record to cover
+parser-authored maximal ASCII letter/digit word leaves inside an eligible
+projected fact. Each leaf must be identity-mapped, bounded on both sides by the
+fact edge or U+0020, and independent of every overlapping fact; Code leaves
+still require zero normalization flags. Publication is capped at 128
+literal-safe envelopes per row. When the page's complete baseline presentation
+fits the caller buffer, kind-6 encoding reserves every row's ordinary inline
+facts and required projection-segment group before admitting edit cells or
+envelopes from the remaining shared 64 KiB payload, so optional continuity
+vocabulary cannot evict a later rendered row. If the baseline groups themselves
+do not fit, the ABI 4.5 complete-group fail-closed rule still applies.
 
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust

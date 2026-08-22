@@ -283,7 +283,7 @@ void main() {
         FlarkInlineFactKind.emphasis,
       ]);
       expect(row.projectionEditCells, hasLength(1));
-      final cell = row.projectionEditCells.single;
+      final cell = row.projectionEditCells.first;
       expect(
         cell.matcher,
         FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint,
@@ -294,6 +294,12 @@ void main() {
       expect(cell.retainOutsideClosure, isTrue);
       expect(cell.presentClosureExact, isTrue);
       expect(cell.chainResultCell, isFalse);
+      final asterisk = row.literalSafeEnvelopes.singleWhere(
+        (envelope) =>
+            envelope.editClass ==
+            FlarkLiteralEditClass.singleAsciiAsteriskInsertion,
+      );
+      expect((asterisk.sourceUtf16.start, asterisk.sourceUtf16.end), (4, 8));
     },
     skip: libraryPath == null
         ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'

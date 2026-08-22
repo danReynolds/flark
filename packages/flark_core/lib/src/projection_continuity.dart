@@ -356,11 +356,21 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
   // parser envelope rather than from host source inspection.
   final delta = replacement.length;
   final matchingSet = matchingIndexes.toSet();
+  final oneShotAsterisk = matchingIndexes.any(
+    (index) =>
+        envelopes[index].editClass ==
+        FlarkLiteralEditClass.singleAsciiAsteriskInsertion,
+  );
   final transformedEnvelopes = <FlarkLiteralSafeEnvelope>[];
   for (var index = 0; index < envelopes.length; index += 1) {
     final envelope = envelopes[index];
     final matched = matchingSet.contains(index);
-    if (matched && envelope.sourceUtf16.length == 0) {
+    if ((matched && envelope.sourceUtf16.length == 0) ||
+        (oneShotAsterisk &&
+            matchingIndexes.any(
+              (matchingIndex) =>
+                  _sameEnvelopeGeometry(envelope, envelopes[matchingIndex]),
+            ))) {
       continue;
     }
     final sharesMatchedNonemptyGeometry =
@@ -420,11 +430,16 @@ bool _matchesEnvelope(
   String replacement,
 ) {
   if (!_matchesEditClass(envelope.editClass, replacement)) return false;
-  return envelope.editClass !=
-          FlarkLiteralEditClass.singleAsciiSpaceInsertion ||
+  return switch (envelope.editClass) {
+    FlarkLiteralEditClass.singleAsciiSpaceInsertion =>
       envelope.sourceUtf16.length == 0 ||
-      (envelope.sourceUtf16.start < startUtf16 &&
-          startUtf16 < envelope.sourceUtf16.end);
+          (envelope.sourceUtf16.start < startUtf16 &&
+              startUtf16 < envelope.sourceUtf16.end),
+    FlarkLiteralEditClass.singleAsciiAsteriskInsertion =>
+      envelope.sourceUtf16.start < startUtf16 &&
+          startUtf16 < envelope.sourceUtf16.end,
+    FlarkLiteralEditClass.asciiWordInsertion => true,
+  };
 }
 
 int? _bytePositionForUtf16Insertion(
@@ -476,4 +491,5 @@ bool _matchesEditClass(FlarkLiteralEditClass editClass, String replacement) =>
                   (unit >= 0x61 && unit <= 0x7a),
             ),
       FlarkLiteralEditClass.singleAsciiSpaceInsertion => replacement == ' ',
+      FlarkLiteralEditClass.singleAsciiAsteriskInsertion => replacement == '*',
     };

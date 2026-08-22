@@ -16,13 +16,13 @@ void main() {
   testWidgets(
     'rendered task checkbox toggles without moving the editor selection',
     (tester) async {
-      const initial = '- [ ] todo\n\nSelection stays here.\n';
+      const initial = 'Selection stays here.\n\n- [ ] todo\n';
       final controller = (await tester.runAsync(
         () => FlarkEditorController.open(initial, libraryPath: libraryPath!),
       ))!;
       await tester.runAsync(controller.continueParsing);
-      final task = controller.rows.first;
-      final paragraph = controller.rows.last;
+      final paragraph = controller.rows.first;
+      final task = controller.rows.last;
       await tester.runAsync(() async {
         controller.activateRow(paragraph, paragraph.editableUtf16!.end);
         await controller.resolveCanonicalSelection();
@@ -52,8 +52,8 @@ void main() {
       await gesture.removePointer();
       await _pumpUntilTransactions(tester, controller);
 
-      expect(controller.visibleSource, '- [x] todo\n\nSelection stays here.\n');
-      expect(controller.surfaceRow(controller.rows.first).leadingText, '☑ ');
+      expect(controller.visibleSource, 'Selection stays here.\n\n- [x] todo\n');
+      expect(controller.surfaceRow(controller.rows.last).leadingText, '☑ ');
       expect(controller.globalCaretOffset, caretBefore);
       expect(controller.inputValue.selection, selectionBefore);
       expect(controller.lastError, isNull);
@@ -65,7 +65,7 @@ void main() {
 
       expect(await tester.runAsync(controller.redo), isTrue);
       await tester.pump();
-      expect(controller.visibleSource, '- [x] todo\n\nSelection stays here.\n');
+      expect(controller.visibleSource, 'Selection stays here.\n\n- [x] todo\n');
       expect(controller.globalCaretOffset, caretBefore);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -128,6 +128,76 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
       semantics.dispose();
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'task acknowledgement cannot regress a newer typed source generation',
+    (tester) async {
+      const initial = '- [ ] todo\n\nSelection stays here.\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(initial, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final task = controller.rows.first;
+      final paragraph = controller.rows.last;
+      await tester.runAsync(() async {
+        controller.activateRow(paragraph, paragraph.editableUtf16!.end);
+        await controller.resolveCanonicalSelection();
+      });
+      final sourceCaret = controller.globalCaretOffset;
+      final initialGeneration = controller.sourceGeneration;
+      final observedGenerations = <int>[initialGeneration];
+      void captureGeneration() {
+        observedGenerations.add(controller.sourceGeneration);
+      }
+
+      controller.addListener(captureGeneration);
+      try {
+        final toggle = controller.toggleTaskChecked(task);
+        final before = controller.inputValue;
+        final localCaret = before.selection.extentOffset;
+        controller.applyDeltas([
+          TextEditingDeltaInsertion(
+            oldText: before.text,
+            textInserted: 'x',
+            insertionOffset: localCaret,
+            selection: TextSelection.collapsed(offset: localCaret + 1),
+            composing: TextRange.empty,
+          ),
+        ]);
+        await _pumpUntilTransactions(tester, controller);
+        expect(await tester.runAsync(() => toggle), isTrue);
+        await tester.runAsync(controller.continueParsing);
+
+        final taskMarker = initial.indexOf('[ ]') + 1;
+        final expectedAfterTyping = initial.replaceRange(
+          sourceCaret,
+          sourceCaret,
+          'x',
+        );
+        final shiftedTaskMarker =
+            taskMarker + (sourceCaret <= taskMarker ? 1 : 0);
+        final expected = expectedAfterTyping.replaceRange(
+          shiftedTaskMarker,
+          shiftedTaskMarker + 1,
+          'x',
+        );
+        expect(controller.visibleSource, expected);
+        expect(controller.sourceGeneration, initialGeneration + 2);
+        for (var index = 1; index < observedGenerations.length; index += 1) {
+          expect(
+            observedGenerations[index],
+            greaterThanOrEqualTo(observedGenerations[index - 1]),
+            reason: 'published source generations must be monotonic',
+          );
+        }
+        expect(controller.lastError, isNull);
+      } finally {
+        controller.removeListener(captureGeneration);
+        await tester.runAsync(controller.close);
+      }
     },
     skip: libraryPath == null,
   );

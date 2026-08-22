@@ -5,7 +5,7 @@
 - Cut over to the v4 package split: `flark_core` owns the headless Dart/Rust
   runtime and `flark` owns the Flutter product surface.
 - Added bounded, source-authoritative opening, editing, certification, semantic
-  viewport, history, and lifecycle APIs through ABI 4.29.
+  viewport, history, and lifecycle APIs through ABI 4.31.
 - Added parser-authored literal-safe insertion envelopes, ABI 4.27's bounded
   closure/carry proof for immediate word/space successors, and fail-closed exact
   source rendering whenever result-revision semantics are not proven current.
@@ -19,6 +19,15 @@
   one parser-proved Backspace, and safe terminal word/space/prose-punctuation appends
   after punctuation without exposing earlier Markdown, including the mounted
   product-tour dogfood paragraph.
+- Added ABI 4.30's `LITERAL_SAFE_ENVELOPES_V2`: a parser-authored, one-shot
+  proof for a single `*` insertion inside a conservatively isolated flat Strong
+  span. The Strong delimiters stay hidden, its style remains rendered, and the
+  proof is consumed before any successor edit.
+- Added ABI 4.31's `STRUCTURAL_PRESENTATION_PROOFS_V1`: Ready parser results
+  may certify bounded terminal paragraph splits and paragraph merges whose
+  inline partition is unchanged. Rapid Return successors and Backspace merges
+  therefore keep the rendered Strong run, exact source, and caret identity;
+  every unsupported structural transition still fails closed.
 - Replaced the active release, archive, platform, and documentation entry points
   with v4-only equivalents. Superseded release notes are preserved at
   `legacy/docs/v2_v3/CHANGELOG.md`.

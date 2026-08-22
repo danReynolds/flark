@@ -234,9 +234,10 @@ Under the amendment the runtime publishes, per certified row, exact source
 ranges for typed literal edits that provably cannot change that row's published
 facts. The vocabulary remains intentionally smaller than the general design:
 
-- a non-empty ASCII letter/digit insertion inside an eligible fact only when
-  that fact's complete content slice is one flat non-empty ASCII word, with no
-  punctuation, whitespace, nested syntax, or code normalization; and
+- a non-empty ASCII letter/digit insertion inside a parser-authored maximal
+  word leaf of an eligible fact. The leaf is identity-mapped, bounded by the
+  fact edge or U+0020 on each side, independent of overlapping facts, and has
+  no code normalization; and
 - one U+0020 insertion at a parser-proved position. A non-empty space envelope
   admits positions strictly inside its range; a separate zero-width envelope may
   admit the exact editable-row endpoint once.
@@ -298,6 +299,22 @@ local-island or no-marker-flash target. The 4.28/4.29 cells are the bounded
 authority used by the current product-tour typing matrix; unsupported edits are
 kept explicit rather than hidden behind host Markdown inference.
 
+ABI 4.30 capability `LITERAL_SAFE_ENVELOPES_V2` adds one bounded delimiter
+proof. For a parser-proved flat Strong fact with no escaping `*` dependency or
+overlapping fact, edit class 3 admits exactly one collapsed `*` insertion
+strictly inside the Strong content range. The host transforms the existing projected run, so
+the Strong delimiters stay hidden and its style remains rendered. The envelope
+and every same-geometry sibling are consumed and cannot be carried.
+
+Exact ABI 4.31 bounds this vocabulary at 128 envelopes per row. When a fact has
+multiple word leaves, each admitted leaf is published independently; exceeding
+the bound drops only further optimization records, never the authoritative
+inline fact set. When the complete page baseline fits, the ABI encoder first
+reserves every row's ordinary facts and required projection-segment group, then
+admits cells and envelopes only from the surplus payload; proof density on an
+earlier row cannot make a later rendered row raw. Baseline groups that do not
+fit remain subject to the ABI's complete-group fail-closed rule.
+
 An insertion chain retains presentation only while every successor matches the
 carried parser proof set and every transform succeeds; anything else uses that
 whole-row fallback. Retained presentation is proven, not assumed. The old typed
@@ -309,23 +326,28 @@ ABI 4.26 appends envelope records only for the capability-gated
 `SEMANTIC_PROJECTED` query kinds keep their pre-envelope payload vocabulary.
 ABI 4.28 retained query kind 6 and added record kind 16 plus the V1 capability.
 ABI 4.29 adds V2 matcher semantics under bit 29 and requires exact 4.29
-negotiation; earlier minors are rejected rather than receiving a widened
-record vocabulary.
+negotiation. ABI 4.30 adds literal edit class 3 under bit 30 and requires exact 4.30
+negotiation. ABI 4.31 adds structural presentation proof receipts under bit 31
+and requires exact 4.31 negotiation; earlier minors are rejected rather than
+receiving widened authority.
 
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as
-current. A structural edit receipt proves its source splice and block partition,
-not result-revision inline facts: affected temporary rows therefore paint exact
-source, and a successor edit clears that structural surface instead of mapping
-old styles or hidden delimiters through another splice.
+current. ABI 4.31 permits retained structural presentation only when Rust marks
+the receipt `PRESENTATION_PROVEN` from a current Ready result: the bounded Plain
+split/merge proof establishes an unchanged inline partition, and a successor
+ASCII cell is a typed consequence of that Rust proof. It may carry ordinary
+typing in the new empty Plain row, but it cannot authorize another structural
+transition. Every unproved structural receipt paints exact source, and an
+unmatched successor clears the transitional surface.
 
 ## 9. Composition and platform input
 
 ### LP2-COMPOSITION-BEGIN-001
 
 The input connection retains the exact source window. Beginning composition
-creates a `composition_exact` island for the active source row. When an ABI
-4.29 edit cell matches the composition delta, its declared block shell and
+creates a `composition_exact` island for the active source row. When a current
+ABI edit cell matches the composition delta, its declared block shell and
 independent outside runs may remain projected while the affected cell is exact.
 Without that parser-authored proof the complete row is exact because the
 runtime has no result-revision proof that the composition delta leaves its
@@ -334,7 +356,7 @@ while composition is pending; unrelated certified rows remain projected.
 
 A generally available composing-range island, with other facts in the active
 row retained, is still pending parser-authored result-revision/dependency
-authority. The bounded 4.29 cells do not authorize any range or edit they did
+authority. The bounded edit cells do not authorize any range or edit they did
 not declare. Authority must not be reconstructed from predecessor facts plus a
 source splice and remains a T3 input-truth item in
 [RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md).
