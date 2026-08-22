@@ -1891,25 +1891,14 @@ final class FlarkEditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    final before = _inputValue.text;
-    final after = value.text;
-    var prefix = 0;
-    while (prefix < before.length &&
-        prefix < after.length &&
-        before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
-      prefix += 1;
+    final mutation = _differenceMutation(_inputValue.text, value.text);
+    if (mutation == null) {
+      _adoptPlatformSelectionOnlyValue(value);
+      notifyListeners();
+      return;
     }
-    var oldSuffix = before.length;
-    var newSuffix = after.length;
-    while (oldSuffix > prefix &&
-        newSuffix > prefix &&
-        before.codeUnitAt(oldSuffix - 1) == after.codeUnitAt(newSuffix - 1)) {
-      oldSuffix -= 1;
-      newSuffix -= 1;
-    }
-    final replacement = after.substring(prefix, newSuffix);
     _acceptMutation(
-      _TextMutation(prefix, oldSuffix, replacement),
+      mutation,
       selection: value.selection,
       composing: value.composing,
       fullValue: value.text.length <= _maximumInputCodeUnits ? value : null,
@@ -4604,6 +4593,13 @@ final class FlarkEditorController extends ChangeNotifier {
         before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
       prefix += 1;
     }
+    // A code-unit prefix may stop between a shared high surrogate and two
+    // different low surrogates. Move the splice boundary back so neither the
+    // deleted source nor the replacement can contain an unpaired surrogate.
+    if (_splitsUtf16Scalar(before, prefix) ||
+        _splitsUtf16Scalar(after, prefix)) {
+      prefix -= 1;
+    }
     var oldSuffix = before.length;
     var newSuffix = after.length;
     while (oldSuffix > prefix &&
@@ -4612,8 +4608,21 @@ final class FlarkEditorController extends ChangeNotifier {
       oldSuffix -= 1;
       newSuffix -= 1;
     }
+    // The symmetric case is a suffix that matched a low surrogate but not its
+    // high surrogate. Include the complete scalar in both sides of the splice.
+    if (_splitsUtf16Scalar(before, oldSuffix) ||
+        _splitsUtf16Scalar(after, newSuffix)) {
+      oldSuffix += 1;
+      newSuffix += 1;
+    }
     return _TextMutation(prefix, oldSuffix, after.substring(prefix, newSuffix));
   }
+
+  bool _splitsUtf16Scalar(String source, int offset) =>
+      offset > 0 &&
+      offset < source.length &&
+      _isHighSurrogate(source.codeUnitAt(offset - 1)) &&
+      _isLowSurrogate(source.codeUnitAt(offset));
 
   int _committedGapEnd(FlarkCoreCommittedPresentationGapV1 split) {
     var end = _visibleUtf16Start + _visibleSource.length;

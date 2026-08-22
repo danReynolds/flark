@@ -204,11 +204,11 @@ publishes the named shell without source marker relay from `**sentinel**`.
 
 | ID | Exact journey | Required result | Current evidence |
 |---|---|---|---|
-| NAV-01 | Product Tour first paragraph; Left/Right, Option-Left/Right, Up/Down across two wrapped visual lines | canonical/display caret identity and no source change on every paint | PARTIAL: navigation tests exist; one actual-paint product fixture row missing |
-| NAV-02 | Shift-Right then Shift-Down across a row boundary; collapse selection | exact base/extent geometry; no continuity migration to another row | PARTIAL: selection tests exist; product fixture actual-paint row missing |
+| NAV-01 | Product Tour first paragraph; Left/Right, Option-Left/Right, Up/Down across two wrapped visual lines | canonical/display caret identity and no source change on every paint | PRESENT: real Product Tour mounted selector journey with current paint geometry |
+| NAV-02 | Shift-Right then Shift-Down across a row boundary; collapse selection | exact base/extent geometry; no continuity migration to another row | PRESENT: real Product Tour cross-row selection actual-paint journey |
 | NAV-03 | double-click `Rust`; drag selection across the paragraph; copy, cut, undo | exact source and selection; Strong styling restored after undo | PARTIAL: mounted/native final-state evidence; paint sequence missing |
 | NAV-04 | focus another control, refocus editor, close/reopen platform input connection, type `x` | one accepted `x`, current caret, no rehome or hang | PARTIAL: focused mounted regression exists; add product-fixture paint assertions |
-| NAV-05 | Product Tour long paragraph; resize 1569x906 → 1000x700 → 1569x906 | current source/display caret and grapheme-safe wrapping on every paint | PARTIAL: layout tests exist; moving-surface/actual-paint row missing |
+| NAV-05 | Product Tour long paragraph; resize 1569x906 → 1000x700 → 1569x906 | current source/display caret and grapheme-safe wrapping on every paint | PRESENT: real Product Tour resize actual-paint journey with reversible caret geometry |
 | NAV-06 | Prose · 1 MiB; move forward two viewport pages, select/edit locally, move back, undo | current page/source/caret; no torn row/window; backward/forward remains truthful | PARTIAL: active viewport controller tests exist; mounted large-doc paint row missing |
 | NAV-07 | Prose · 5 MiB; scroll at least two viewports away and back without selection input | scroll changes, selection/source do not; returning caret geometry is current | PARTIAL: native small-doc scroll and virtualization tests exist; large-preset path missing |
 | MODE-01 | Product Tour in Edit, switch to Read, then Edit without source mutation | clean-parse-equivalent text/style/shell; no editing caret in Read; original selection restored or deterministically clamped in Edit | PARTIAL: parity tests exist; exact workbench journey missing |
@@ -220,7 +220,7 @@ Japanese/CJK IME, autocorrect, predictive text, and dictation are outside D0.
 
 | ID | Exact seed and command | Required result | Current evidence |
 |---|---|---|---|
-| UNICODE-01 | Product Tour Unicode line; insert `👩‍💻`, `🧑🏽‍🚀`, and `👨‍👩‍👧‍👦` at named grapheme boundaries | exact source/caret; no split grapheme; surrounding row stays rendered | PARTIAL: grapheme/unit tests exist; product actual-paint row missing |
+| UNICODE-01 | Product Tour Unicode line; insert `👩‍💻`, `🧑🏽‍🚀`, and `👨‍👩‍👧‍👦` at named grapheme boundaries | exact source/caret; no split grapheme; surrounding row stays rendered | PRESENT: real Product Tour mounted actual-paint cases; the family sequence also pins scalar-aligned platform differencing beside an existing emoji |
 | UNICODE-02 | replace `café` with `café`, then undo/redo | exact source form and grapheme-safe selection/caret; surrounding rendering stable | PARTIAL |
 | UNICODE-03 | move and extend selection through `English العربية עברית English` | canonical/display geometry stays source-correct; no source mutation | PARTIAL |
 | UNICODE-04 | native macOS `Option-E`, then `E`, in `caf¦\n` | source `café\n`, caret 4, no fault/resync | PRESENT settled native canary; add per-generation receipt only if the OS exposes an intermediate accepted generation |
