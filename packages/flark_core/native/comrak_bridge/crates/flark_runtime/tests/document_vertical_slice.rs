@@ -1320,11 +1320,12 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
         row.projection_edit_cells
             .iter()
             .filter(|cell| {
-                matches!(
-                    cell.flags,
-                    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
-                        | DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
-                )
+                cell.source_range.start == 0
+                    && matches!(
+                        cell.flags,
+                        DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                            | DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+                    )
             })
             .cloned()
             .collect::<Vec<_>>(),
@@ -1348,7 +1349,20 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
                 replacement_second: 0,
             },
         ],
-        "the plain prefix is admitted while the same-line post-fact tail stays fail-closed"
+        "the legacy plain-prefix cells keep their exact geometry"
+    );
+    let tail = row
+        .projection_edit_cells
+        .iter()
+        .find(|cell| {
+            cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                && cell.source_range == (46..59)
+        })
+        .expect("parser-authored punctuation-bounded tail cell");
+    assert_eq!(tail.trigger_range, 48..57);
+    assert_eq!(
+        &source[tail.source_range.start as usize..tail.source_range.end as usize],
+        " editor path."
     );
     document.close().expect("close dogfood paragraph");
 }
@@ -1366,8 +1380,17 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
     let row = &viewport.rows[0];
     assert_eq!(row.presentation, DocumentViewportRowPresentation::Plain);
     assert_eq!(row.editable_range, Some(0..source.len() as u64 - 1));
+    let legacy_cells = row
+        .projection_edit_cells
+        .iter()
+        .filter(|cell| {
+            cell.source_range == (0..17)
+                || cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     assert_eq!(
-        row.projection_edit_cells,
+        legacy_cells,
         vec![
             DocumentProjectionEditCell {
                 source_range: 0..17,
@@ -1397,8 +1420,50 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
                 replacement_second: 0,
             },
         ],
-        "only one physical-line terminal gap may back the append cell",
+        "the legacy prefix and terminal cells keep their exact geometry",
     );
+
+    let phrase_start = source.find("temporarily pending").expect("paste phrase");
+    let phrase_end = phrase_start + "temporarily pending".len();
+    let prose_cell = row
+        .projection_edit_cells
+        .iter()
+        .find(|cell| {
+            cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                && cell.trigger_range.start < phrase_start as u64
+                && (phrase_end as u64) < cell.trigger_range.end
+        })
+        .expect("parser-authored guarded multiword cell");
+    assert_eq!(
+        &source[prose_cell.source_range.start as usize..prose_cell.source_range.end as usize],
+        "only incomplete or temporarily pending syntax becomes exact source locally."
+    );
+    let before_strong = row
+        .inline_facts
+        .as_ref()
+        .expect("product facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+        .expect("outside Strong fact")
+        .clone();
+
+    document
+        .apply_edit(1, phrase_start..phrase_end, "briefly pending")
+        .expect("apply guarded multiword paste");
+    let edited_source = source.replacen("temporarily pending", "briefly pending", 1);
+    pump_ready(&mut document);
+    assert_current_rows_match_clean(&mut document, 2, &edited_source);
+    let edited = document
+        .query_viewport(2, 0..edited_source.len(), 8)
+        .expect("edited product paragraph viewport");
+    let after_strong = edited.rows[0]
+        .inline_facts
+        .as_ref()
+        .expect("edited product facts")
+        .iter()
+        .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+        .expect("retained Strong fact");
+    assert_eq!(after_strong, &before_strong);
     document.close().expect("close product paragraph");
 
     assert_single_edit_matches_clean(source, 0..0, "keep what");
@@ -2022,13 +2087,28 @@ fn literal_word_cells_fail_closed_for_lexical_and_dependency_boundaries() {
             .collect::<Vec<_>>();
         assert!(
             cells.iter().all(|cell| {
-                let start = usize::try_from(cell.source_range.start).expect("cell start");
-                let end = usize::try_from(cell.source_range.end).expect("cell end");
-                source[start..end]
+                let affected_start =
+                    usize::try_from(cell.source_range.start).expect("affected start");
+                let affected_end =
+                    usize::try_from(cell.source_range.end).expect("affected end");
+                let trigger_start =
+                    usize::try_from(cell.trigger_range.start).expect("trigger start");
+                let trigger_end = usize::try_from(cell.trigger_range.end).expect("trigger end");
+                let affected = &source[affected_start..affected_end];
+                let trigger = &source[trigger_start..trigger_end];
+                let trigger_is_ascii_prose = trigger
                     .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ')
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b' ');
+                let affected_has_punctuation = affected
+                    .bytes()
+                    .any(|byte| !byte.is_ascii_alphanumeric() && byte != b' ');
+                trigger_is_ascii_prose
+                    && (!affected_has_punctuation
+                        || (cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                            && cell.source_range.start < cell.trigger_range.start
+                            && cell.trigger_range.end < cell.source_range.end))
             }),
-            "only punctuation-free ASCII literal gaps may be admitted: {source:?} {cells:#?}"
+            "lexical punctuation may be exact closure but never edit authority: {source:?} {cells:#?}"
         );
         for cell in cells {
             if cell.source_range.end < viewport.rows[0].editable_range.as_ref().unwrap().end {

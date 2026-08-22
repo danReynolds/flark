@@ -374,6 +374,15 @@ Strong source exactly, retains the paragraph shell and outside projection, and
 is consumed after one edit. This is the first use of the generic parser-owned
 component seam, not a host bracket rule or general bracket-graph claim.
 
+The same V3 seam may map a parser-authored complete fact-free physical-line
+gap onto the existing guarded ASCII-literal matcher, with a maximal ASCII
+prose run as its trigger. One nonempty ASCII-alphanumeric/U+0020 replacement
+is admitted only strictly inside the
+declared trigger and must contain an alphanumeric unit. This permits a bounded
+multiword paste while unchanged guards protect the outside inline partition;
+it does not authorize punctuation, deletion, line boundaries, or host-side
+Markdown classification.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits

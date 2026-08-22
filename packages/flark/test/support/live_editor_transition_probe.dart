@@ -287,6 +287,23 @@ final class LiveEditorTransitionProbe {
     );
   }
 
+  Future<ActionTrace> observeAsync(Future<void> Function() action) async {
+    final before = PublicationSample.capture(controller, _sampleSequence++);
+    before.expectMechanicallyValid();
+    final publicationStart = publications.length;
+    await action();
+    final callbackReturn = PublicationSample.capture(
+      controller,
+      _sampleSequence++,
+    );
+    callbackReturn.expectMechanicallyValid();
+    return ActionTrace(
+      before: before,
+      publications: List.unmodifiable(publications.skip(publicationStart)),
+      callbackReturn: callbackReturn,
+    );
+  }
+
   List<ActionTrace> typeText(String text) {
     final traces = <ActionTrace>[];
     for (final rune in text.runes) {
@@ -352,6 +369,62 @@ final class LiveEditorTransitionProbe {
 
   ActionTrace pressBackspace() {
     final trace = observe(controller.deleteBackward);
+    _platformValue = controller.inputValue;
+    return trace;
+  }
+
+  ActionTrace pressDelete() {
+    final trace = observe(controller.deleteForward);
+    _platformValue = controller.inputValue;
+    return trace;
+  }
+
+  ActionTrace replaceSelection(String replacement) {
+    final before = _platformValue;
+    final selection = before.selection;
+    final delta = selection.isCollapsed
+        ? TextEditingDeltaInsertion(
+            oldText: before.text,
+            textInserted: replacement,
+            insertionOffset: selection.start,
+            selection: TextSelection.collapsed(
+              offset: selection.start + replacement.length,
+            ),
+            composing: TextRange.empty,
+          )
+        : TextEditingDeltaReplacement(
+            oldText: before.text,
+            replacementText: replacement,
+            replacedRange: TextRange(
+              start: selection.start,
+              end: selection.end,
+            ),
+            selection: TextSelection.collapsed(
+              offset: selection.start + replacement.length,
+            ),
+            composing: TextRange.empty,
+          );
+    final trace = observe(() => controller.applyDeltas([delta]));
+    _platformValue = delta.apply(before);
+    return trace;
+  }
+
+  Future<ActionTrace> undo() async {
+    final trace = await observeAsync(() async {
+      if (!await controller.undo()) {
+        throw StateError('undo was unavailable');
+      }
+    });
+    _platformValue = controller.inputValue;
+    return trace;
+  }
+
+  Future<ActionTrace> redo() async {
+    final trace = await observeAsync(() async {
+      if (!await controller.redo()) {
+        throw StateError('redo was unavailable');
+      }
+    });
     _platformValue = controller.inputValue;
     return trace;
   }
@@ -507,6 +580,16 @@ final class MountedTransitionRecorder {
 
   Future<ActionTrace> pressBackspace() async =>
       (await tester.runAsync(() async => probe.pressBackspace()))!;
+
+  Future<ActionTrace> pressDelete() async =>
+      (await tester.runAsync(() async => probe.pressDelete()))!;
+
+  Future<ActionTrace> replaceSelection(String replacement) async =>
+      (await tester.runAsync(() async => probe.replaceSelection(replacement)))!;
+
+  Future<ActionTrace> undo() async => (await tester.runAsync(probe.undo))!;
+
+  Future<ActionTrace> redo() async => (await tester.runAsync(probe.redo))!;
 
   Future<void> moveCaret(int globalUtf16Offset) async {
     await tester.runAsync(() async => probe.moveCaret(globalUtf16Offset));

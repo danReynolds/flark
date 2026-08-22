@@ -5763,6 +5763,9 @@ fn map_parser_projection_edit_cells(
             return Err(DocumentSessionError::Faulted);
         }
         let (flags, replacement_first, replacement_second) = match component.matcher() {
+            M11InlineEditComponentMatcher::AsciiProseSplice => {
+                (DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS, 0, 0)
+            }
             M11InlineEditComponentMatcher::InsertExactScalarAtPoint { scalar } => (
                 DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS,
                 u32::from(scalar),

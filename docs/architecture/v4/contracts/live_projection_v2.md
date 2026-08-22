@@ -303,9 +303,18 @@ exhaustive and the leaf has no existing bracket dependency. The transformed
 Strong source is exact, plain source outside it remains projected, and the
 one-shot authority is consumed immediately.
 
+V3 also extends the existing guarded ASCII literal matcher with one strictly
+interior, nonempty ASCII-alphanumeric/U+0020 replacement containing at least
+one alphanumeric unit. The parser emits that authority only for a complete
+fact-free physical-line gap and supplies a maximal interior ASCII prose
+trigger. This supports the Product Tour's real multiword paste while retaining
+the earlier Strong fact; Core compares only the protocol predicate and never
+searches Markdown punctuation or constructs.
+
 General delimiter dependency graphs, non-ASCII composition islands, interior
-punctuation replacements, multi-line or nested structural shells, and broader edit classes remain
-pending. Those paths still paint the whole active row as exact source until
+punctuation replacements, cross-fragment multi-line replacements, nested
+structural shells, and broader edit classes remain pending. Those paths still
+paint the whole active row as exact source until
 recertification. That is authority-safe but does not satisfy this contract's
 local-island or no-marker-flash target. The 4.28/4.29 cells are the bounded
 authority used by the current product-tour typing matrix; unsupported edits are

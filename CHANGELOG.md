@@ -35,7 +35,10 @@
   one-shot exact-scalar edit predicate on the existing projection-cell record.
   The first parser-owned dependency component keeps `[` insertion local to an
   isolated Strong span, retaining the paragraph shell and outside projection
-  without teaching Dart bracket grammar.
+  without teaching Dart bracket grammar. The same parser seam now supplies a
+  guarded fact-free prose component for a strictly interior multiword ASCII
+  paste, preserving the Product Tour's earlier Strong run through paste and
+  history replay.
 - Replaced the active release, archive, platform, and documentation entry points
   with v4-only equivalents. Superseded release notes are preserved at
   `legacy/docs/v2_v3/CHANGELOG.md`.

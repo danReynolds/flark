@@ -368,8 +368,11 @@ void main() {
       expect(row.inlineFacts?.map((fact) => fact.kind), [
         FlarkInlineFactKind.strong,
       ]);
-      expect(row.projectionEditCells, hasLength(2));
-      final cell = row.projectionEditCells.first;
+      final prefixCells = row.projectionEditCells
+          .where((candidate) => candidate.affectedBytes.start == 0)
+          .toList(growable: false);
+      expect(prefixCells, hasLength(2));
+      final cell = prefixCells.first;
       expect(
         cell.matcher,
         FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
@@ -382,7 +385,7 @@ void main() {
       expect(cell.retainOutsideClosure, isTrue);
       expect(cell.presentClosureExact, isTrue);
       expect(cell.chainResultCell, isTrue);
-      final deletion = row.projectionEditCells[1];
+      final deletion = prefixCells[1];
       expect(
         deletion.matcher,
         FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral,
@@ -396,6 +399,29 @@ void main() {
         (cell.triggerUtf16.start, cell.triggerUtf16.end),
       );
       expect(deletion.chainResultCell, isFalse);
+
+      final parserTail = row.projectionEditCells.singleWhere(
+        (candidate) =>
+            candidate.matcher ==
+                FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral &&
+            candidate.affectedBytes.start == 46,
+      );
+      expect(
+        (parserTail.affectedBytes.start, parserTail.affectedBytes.end),
+        (46, 59),
+      );
+      expect(
+        (parserTail.affectedUtf16.start, parserTail.affectedUtf16.end),
+        (42, 55),
+      );
+      expect(
+        (parserTail.triggerBytes.start, parserTail.triggerBytes.end),
+        (48, 57),
+      );
+      expect(
+        (parserTail.triggerUtf16.start, parserTail.triggerUtf16.end),
+        (44, 53),
+      );
     },
     skip: libraryPath == null
         ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'

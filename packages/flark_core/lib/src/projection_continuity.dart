@@ -249,6 +249,13 @@ bool _projectionEditCellMatches(
           cell.retainOutsideClosure &&
           ((replacement.isNotEmpty &&
                   replacement.codeUnits.every(_isAsciiAlphanumeric)) ||
+              (replacement.isNotEmpty &&
+                  replacement.codeUnits.any(_isAsciiAlphanumeric) &&
+                  replacement.codeUnits.every(
+                    (unit) => _isAsciiAlphanumeric(unit) || unit == 0x20,
+                  ) &&
+                  startUtf16 > cell.triggerUtf16.start &&
+                  endUtf16 < cell.triggerUtf16.end) ||
               (replacement == ' ' &&
                   startUtf16 == endUtf16 &&
                   startUtf16 > cell.triggerUtf16.start &&

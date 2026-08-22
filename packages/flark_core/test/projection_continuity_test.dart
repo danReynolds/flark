@@ -754,6 +754,43 @@ void main() {
     },
   );
 
+  test(
+    'literal cell admits a guarded multiword paste only in its interior',
+    () {
+      final receipt = authorizeProjectionEditCell(
+        revision: 40,
+        cells: const [literalWordCell],
+        authorizedContentUtf16: const FlarkSourceRange(0, 55),
+        startUtf16: 4,
+        endUtf16: 12,
+        replacement: 'briefly pending',
+      );
+      expect(receipt, isNotNull);
+      expect(receipt!.resultRevision, 41);
+      expect((receipt.affectedUtf16.start, receipt.affectedUtf16.end), (0, 24));
+
+      for (final edit in [
+        (start: 0, end: 4, replacement: 'briefly pending'),
+        (start: 4, end: 16, replacement: 'briefly pending'),
+        (start: 4, end: 12, replacement: 'briefly.pending'),
+        (start: 4, end: 12, replacement: '   '),
+      ]) {
+        expect(
+          authorizeProjectionEditCell(
+            revision: 40,
+            cells: const [literalWordCell],
+            authorizedContentUtf16: const FlarkSourceRange(0, 55),
+            startUtf16: edit.start,
+            endUtf16: edit.end,
+            replacement: edit.replacement,
+          ),
+          isNull,
+          reason: '$edit',
+        );
+      }
+    },
+  );
+
   test('literal word cell rejects syntax, deletion, and boundary edits', () {
     for (final edit in [
       (start: 0, end: 0, replacement: ' '),

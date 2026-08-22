@@ -435,6 +435,17 @@ row only when the parser's bracket
 classification is exhaustive and the leaf contains no existing bracket
 dependency. This is parser-owned proof data, not a Dart Markdown allowlist.
 
+The same V3 capability also permits matcher code 2's existing guarded literal
+cell to accept one nonempty ASCII-alphanumeric/U+0020 replacement when the edit
+is strictly interior to its parser-authored trigger and contains at least one
+alphanumeric unit. This closes a bounded multiword paste without granting line
+boundaries, punctuation, deletion, or newline authority. The parser's first
+emitter uses a complete fact-free physical-line gap as the affected closure
+and a maximal ASCII prose run as its interior trigger; unchanged interior
+guards isolate every retained outside fact. Older hosts reject this
+additional safe shape, while a 4.32 host requires the V3 capability before it
+can observe the record.
+
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
 inline grammar and a maximum 4 KiB parser-row source, 512 facts per row, and

@@ -44,6 +44,7 @@ final _scenarios = <_TypingScenario>[
       (text: 'Rust → Dart → Flutter', style: FlarkSurfaceInlineStyle.strong),
     ],
     shell: _paragraphShell,
+    unpumpedBurst: true,
   ),
   _TypingScenario(
     name: 'actual dogfood terminal typing after punctuation',
@@ -102,8 +103,9 @@ final _scenarios = <_TypingScenario>[
     renderedAfter: 'ld after.',
     finalMarked: 'Before **boke¦ld** after.\n',
     forbiddenMarkers: ['**'],
-    dynamicStrongBefore: 'bo',
-    dynamicStrongAfter: 'ld',
+    dynamicStyledBefore: 'bo',
+    dynamicStyledAfter: 'ld',
+    dynamicStyle: FlarkSurfaceInlineStyle.strong,
     insertedStyles: {FlarkSurfaceInlineStyle.strong},
     shell: _paragraphShell,
   ),
@@ -115,11 +117,68 @@ final _scenarios = <_TypingScenario>[
     renderedAfter: 'xt after.',
     finalMarked: 'Before **bold teke¦xt** after.\n',
     forbiddenMarkers: ['**'],
-    dynamicStrongBefore: 'bold te',
-    dynamicStrongAfter: 'xt',
+    dynamicStyledBefore: 'bold te',
+    dynamicStyledAfter: 'xt',
+    dynamicStyle: FlarkSurfaceInlineStyle.strong,
     insertedStyles: {FlarkSurfaceInlineStyle.strong},
     shell: _paragraphShell,
     unpumpedBurst: true,
+  ),
+  _TypingScenario(
+    name: 'typing inside a certified Emphasis word',
+    initial: 'Before _ri¦ght_ after.\n',
+    inserted: 'ke',
+    renderedBefore: 'Before ri',
+    renderedAfter: 'ght after.',
+    finalMarked: 'Before _rike¦ght_ after.\n',
+    forbiddenMarkers: ['_right_'],
+    dynamicStyledBefore: 'ri',
+    dynamicStyledAfter: 'ght',
+    dynamicStyle: FlarkSurfaceInlineStyle.emphasis,
+    insertedStyles: {FlarkSurfaceInlineStyle.emphasis},
+    shell: _paragraphShell,
+  ),
+  _TypingScenario(
+    name: 'typing inside a certified Strikethrough word',
+    initial: 'Before ~~ri¦ght~~ after.\n',
+    inserted: 'ke',
+    renderedBefore: 'Before ri',
+    renderedAfter: 'ght after.',
+    finalMarked: 'Before ~~rike¦ght~~ after.\n',
+    forbiddenMarkers: ['~~'],
+    dynamicStyledBefore: 'ri',
+    dynamicStyledAfter: 'ght',
+    dynamicStyle: FlarkSurfaceInlineStyle.strikethrough,
+    insertedStyles: {FlarkSurfaceInlineStyle.strikethrough},
+    shell: _paragraphShell,
+  ),
+  _TypingScenario(
+    name: 'typing inside a certified inline-code word',
+    initial: 'Before `ri¦ght` after.\n',
+    inserted: 'ke',
+    renderedBefore: 'Before ri',
+    renderedAfter: 'ght after.',
+    finalMarked: 'Before `rike¦ght` after.\n',
+    forbiddenMarkers: ['`'],
+    dynamicStyledBefore: 'ri',
+    dynamicStyledAfter: 'ght',
+    dynamicStyle: FlarkSurfaceInlineStyle.code,
+    insertedStyles: {FlarkSurfaceInlineStyle.code},
+    shell: _paragraphShell,
+  ),
+  _TypingScenario(
+    name: 'typing inside a certified direct-link label',
+    initial: 'Before [ri¦ght](https://example.com) after.\n',
+    inserted: 'ke',
+    renderedBefore: 'Before ri',
+    renderedAfter: 'ght after.',
+    finalMarked: 'Before [rike¦ght](https://example.com) after.\n',
+    forbiddenMarkers: ['[', '](', 'https://example.com'],
+    dynamicStyledBefore: 'ri',
+    dynamicStyledAfter: 'ght',
+    dynamicStyle: FlarkSurfaceInlineStyle.link,
+    insertedStyles: {FlarkSurfaceInlineStyle.link},
+    shell: _paragraphShell,
   ),
   _TypingScenario(
     name: 'list item shell beside Strong',
@@ -380,6 +439,69 @@ Thi¦ is the real **Rust → Dart → Flutter** editor path.
     );
 
     testWidgets(
+      '${cadence.name} forward Delete in the dogfood literal keeps the best rendered result',
+      (tester) async {
+        const initial = '''# Flark dogfood
+
+This ¦is the real **Rust → Dart → Flutter** editor path.
+''';
+        final initialCaret = MarkedSource.parse(initial).caret;
+        final probe = (await tester.runAsync(
+          () => LiveEditorTransitionProbe.open(
+            initial,
+            libraryPath: libraryPath!,
+          ),
+        ))!;
+        final mounted = await MountedTransitionRecorder.mount(tester, probe);
+        try {
+          final paintStart = mounted.paints.length;
+          final expectedGeneration = probe.controller.sourceGeneration + 1;
+          await mounted.pressDelete();
+          await mounted.pumpImmediate();
+          await _pumpCadence(tester, mounted, cadence.delay);
+          _expectDogfoodPaints(
+            mounted.paints.skip(paintStart).toList(),
+            expectedText: 'This s the real Rust → Dart → Flutter editor path.',
+            expectedVisibleSource: '''# Flark dogfood
+
+This s the real **Rust → Dart → Flutter** editor path.
+''',
+            expectedGeneration: expectedGeneration,
+            expectedCaret: initialCaret,
+            operation: '${cadence.name} forward Delete',
+          );
+          final settleStart = mounted.paints.length;
+          await mounted.pumpPresentationSettled();
+          _expectDogfoodPaints(
+            mounted.paints.skip(settleStart).toList(),
+            expectedText: 'This s the real Rust → Dart → Flutter editor path.',
+            expectedVisibleSource: '''# Flark dogfood
+
+This s the real **Rust → Dart → Flutter** editor path.
+''',
+            expectedGeneration: expectedGeneration,
+            expectedCaret: initialCaret,
+            operation: '${cadence.name} forward Delete settle',
+            allowEmpty: true,
+          );
+          await tester.runAsync(
+            () => probe.expectSourceAndCaret('''# Flark dogfood
+
+This ¦s the real **Rust → Dart → Flutter** editor path.
+'''),
+          );
+          await tester.runAsync(probe.expectHealthy);
+          await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+        } finally {
+          await mounted.close();
+          await tester.runAsync(probe.close);
+        }
+      },
+      skip: libraryPath == null,
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+
+    testWidgets(
       '${cadence.name} selection replacement in the dogfood literal keeps the best rendered result',
       (tester) async {
         const initial = '''# Flark dogfood
@@ -453,6 +575,109 @@ This was¦ the real **Rust → Dart → Flutter** editor path.
       timeout: const Timeout(Duration(minutes: 2)),
     );
   }
+
+  testWidgets(
+    'paste plus undo and redo preserve the Product Tour rendered row',
+    (tester) async {
+      const replaced = 'temporarily pending';
+      const replacement = 'briefly pending';
+      final selectionStart = _productTourSource.indexOf(replaced);
+      final selectionEnd = selectionStart + replaced.length;
+      final initial = _productTourSource.replaceRange(
+        selectionEnd,
+        selectionEnd,
+        '¦',
+      );
+      final pastedSource = _productTourSource.replaceRange(
+        selectionStart,
+        selectionEnd,
+        replacement,
+      );
+      final originalText = _productTourParagraph.replaceAll('**', '');
+      final pastedText = originalText.replaceFirst(replaced, replacement);
+      final probe = (await tester.runAsync(
+        () =>
+            LiveEditorTransitionProbe.open(initial, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+      try {
+        await mounted.selectRange(selectionStart, selectionEnd);
+        final initialGeneration = probe.controller.sourceGeneration;
+        final pastedCaret = selectionStart + replacement.length;
+
+        final pastePaintStart = mounted.paints.length;
+        await mounted.replaceSelection(replacement);
+        await mounted.pumpImmediate();
+        _expectDogfoodPaints(
+          mounted.paints.skip(pastePaintStart).toList(),
+          expectedText: pastedText,
+          expectedVisibleSource: pastedSource,
+          expectedGeneration: initialGeneration + 1,
+          expectedCaret: pastedCaret,
+          operation: 'single paste transaction',
+        );
+        final pasteSettleStart = mounted.paints.length;
+        await mounted.pumpPresentationSettled();
+        _expectDogfoodPaints(
+          mounted.paints.skip(pasteSettleStart).toList(),
+          expectedText: pastedText,
+          expectedVisibleSource: pastedSource,
+          expectedGeneration: initialGeneration + 1,
+          expectedCaret: pastedCaret,
+          operation: 'single paste transaction settle',
+          allowEmpty: true,
+        );
+
+        final undoPaintStart = mounted.paints.length;
+        await mounted.undo();
+        await mounted.pumpImmediate();
+        _expectDogfoodPaints(
+          mounted.paints.skip(undoPaintStart).toList(),
+          expectedText: originalText,
+          expectedVisibleSource: _productTourSource,
+          expectedGeneration: initialGeneration + 2,
+          expectedCaret: selectionEnd,
+          expectedBase: selectionStart,
+          operation: 'paste undo',
+        );
+
+        final redoPaintStart = mounted.paints.length;
+        await mounted.redo();
+        await mounted.pumpImmediate();
+        _expectDogfoodPaints(
+          mounted.paints.skip(redoPaintStart).toList(),
+          expectedText: pastedText,
+          expectedVisibleSource: pastedSource,
+          expectedGeneration: initialGeneration + 3,
+          expectedCaret: pastedCaret,
+          operation: 'paste redo',
+        );
+        final settleStart = mounted.paints.length;
+        await mounted.pumpPresentationSettled();
+        _expectDogfoodPaints(
+          mounted.paints.skip(settleStart).toList(),
+          expectedText: pastedText,
+          expectedVisibleSource: pastedSource,
+          expectedGeneration: initialGeneration + 3,
+          expectedCaret: pastedCaret,
+          operation: 'paste redo settle',
+          allowEmpty: true,
+        );
+        await tester.runAsync(
+          () => probe.expectSourceAndCaret(
+            pastedSource.replaceRange(pastedCaret, pastedCaret, '¦'),
+          ),
+        );
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 
   testWidgets(
     'standalone structural Return paints one projected successor caret',
@@ -729,6 +954,7 @@ void _expectDogfoodPaints(
   required String expectedVisibleSource,
   required int expectedGeneration,
   required int expectedCaret,
+  int? expectedBase,
   required String operation,
   bool allowEmpty = false,
 }) {
@@ -759,7 +985,11 @@ void _expectDogfoodPaints(
     );
     expect(paint.caretRect, isNotNull, reason: operation);
     expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
-    expect(paint.canonicalSelectionBaseUtf16, expectedCaret, reason: operation);
+    expect(
+      paint.canonicalSelectionBaseUtf16,
+      expectedBase ?? expectedCaret,
+      reason: operation,
+    );
     expect(paint.caretDisplayUtf16, isNotNull, reason: operation);
     expect(paint.presentation, isNot(contains('# ')), reason: operation);
     expect(paint.presentation, isNot(contains('**')), reason: operation);
@@ -876,11 +1106,11 @@ void _expectScenarioPaints(
     for (final expected in scenario.staticStyledRuns) {
       _expectStyledRunAcrossRows(activeRows, expected, scenario.name);
     }
-    if (scenario.dynamicStrongBefore != null) {
+    if (scenario.dynamicStyledBefore != null) {
       _expectStyledRunAcrossRows(activeRows, (
         text:
-            '${scenario.dynamicStrongBefore}$insertedSoFar${scenario.dynamicStrongAfter}',
-        style: FlarkSurfaceInlineStyle.strong,
+            '${scenario.dynamicStyledBefore}$insertedSoFar${scenario.dynamicStyledAfter}',
+        style: scenario.dynamicStyle!,
       ), scenario.name);
     }
     _expectInsertedSourceStyle(
@@ -1010,11 +1240,15 @@ final class _TypingScenario {
     required this.forbiddenMarkers,
     required this.shell,
     this.staticStyledRuns = const [],
-    this.dynamicStrongBefore,
-    this.dynamicStrongAfter,
+    this.dynamicStyledBefore,
+    this.dynamicStyledAfter,
+    this.dynamicStyle,
     this.insertedStyles = const {},
     this.unpumpedBurst = false,
-  }) : assert((dynamicStrongBefore == null) == (dynamicStrongAfter == null));
+  }) : assert(
+         (dynamicStyledBefore == null) == (dynamicStyledAfter == null) &&
+             (dynamicStyledBefore == null) == (dynamicStyle == null),
+       );
 
   final String name;
   final String initial;
@@ -1025,8 +1259,9 @@ final class _TypingScenario {
   final List<String> forbiddenMarkers;
   final _ExpectedShell shell;
   final List<({String text, FlarkSurfaceInlineStyle style})> staticStyledRuns;
-  final String? dynamicStrongBefore;
-  final String? dynamicStrongAfter;
+  final String? dynamicStyledBefore;
+  final String? dynamicStyledAfter;
+  final FlarkSurfaceInlineStyle? dynamicStyle;
   final Set<FlarkSurfaceInlineStyle> insertedStyles;
   final bool unpumpedBurst;
 

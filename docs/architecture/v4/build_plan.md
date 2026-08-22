@@ -523,6 +523,13 @@ zero-width guarded trigger; Core compares only
 the scalar and transforms the supplied ranges. No Dart Markdown rule or
 construct-specific wire record was added.
 
+V3 also lets the same parser component seam supply a complete fact-free
+physical-line gap as the affected closure and a maximal ASCII prose run as the
+trigger for the existing ASCII-literal matcher. Core admits one nonempty
+ASCII-alphanumeric/U+0020 replacement only strictly inside that declared
+trigger, which closes the Product Tour multiword-paste row without widening to
+punctuation or line-boundary edits.
+
 The edit-cell seam is still bounded, not completion of continuously rendered
 editing. When no cell or envelope matches, the controller safely paints the
 whole active row as exact source. That can reveal unrelated markers and remains

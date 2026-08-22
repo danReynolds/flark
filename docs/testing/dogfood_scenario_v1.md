@@ -128,21 +128,21 @@ or native proof is missing. `GAP` means the behavior or proof must be added.
 
 | ID | Exact seed and command | Required result | Cadence | Current evidence |
 |---|---|---|---|---|
-| PROSE-01 | Product Tour, caret immediately before `This`; insert `keep what` | P; Strong `Rust → Dart → Flutter` remains styled; source/caret current | per-edit, 80 ms, true burst | PRESENT: `north_star_paint_matrix_test.dart`, product-tour prefix scenario; burst is GAP |
+| PROSE-01 | Product Tour, caret immediately before `This`; insert `keep what` | P; Strong `Rust → Dart → Flutter` remains styled; source/caret current | per-edit, 80 ms, true burst | PRESENT: product-tour prefix matrix row plus unpumped replay |
 | PROSE-02 | Product Tour, caret immediately after `locally.`; insert ` Testing is somewhat useful but like.` | P; earlier Strong remains styled | per-edit and 80 ms | PRESENT: `north_star_paint_matrix_test.dart`, terminal scenario |
 | PROSE-03 | `Before **bold**\nplain terminal.¦`; insert ` Testing.` | P; distant Strong remains styled; EOF caret owns final row | per-edit and 80 ms | PRESENT: `north_star_paint_matrix_test.dart`, EOF scenario |
 | PROSE-04 | `Alpha¦Beta and **bold**.\n`; independently insert `.`, `,`, `;`, `:`, `!`, `?`, `'`, `"`, `(`, `)`, `–`, `—`; separately insert `-` in `Alpha¦Beta` | P; Strong remains styled | per-edit and 80 ms | GAP: add one parameterized actual-paint family plus parser differentials for every admitted punctuation value |
 | PROSE-05 | Product Tour first paragraph, caret after `is`; Backspace one UTF-16 unit | P; current visible source/caret; Strong remains styled | per-edit and 80 ms | PRESENT: dogfood Backspace matrix row |
-| PROSE-06 | Same anchor before `is`; forward Delete one UTF-16 unit | P; current visible source/caret; Strong remains styled | per-edit and 80 ms | GAP: actual-paint forward-Delete row |
+| PROSE-06 | Same anchor before `is`; forward Delete one UTF-16 unit | P; current visible source/caret; Strong remains styled | per-edit and 80 ms | PRESENT: forward-Delete paint matrix row |
 | PROSE-07 | Product Tour first paragraph, select `is`; replace rune-by-rune with `was` | P; current range/caret identity; Strong remains styled | per-edit and 80 ms | PRESENT: dogfood selection-replacement row |
-| PROSE-08 | Product Tour first paragraph, select `temporarily pending`; paste `briefly pending` | P; current range/caret; Strong remains styled | one paste | GAP: actual-paint paste row |
-| PROSE-09 | PROSE-08 final state; undo, redo | P after each action; exact source/selection lineage | one action each | GAP: actual-paint history row; settled history coverage already exists |
+| PROSE-08 | Product Tour first paragraph, select `temporarily pending`; paste `briefly pending` | P; current range/caret; Strong remains styled | one paste | PRESENT: one-delta actual-paint paste row |
+| PROSE-09 | PROSE-08 final state; undo, redo | P after each action; exact source/selection lineage | one action each | PRESENT: actual-paint history replay row |
 | INLINE-01 | `Before **bo¦ld** after.\n`; insert `ke` | P; inserted text is Strong | per-edit and 80 ms | PRESENT: Strong word scenario |
 | INLINE-02 | `Before **bold te¦xt** after.\n`; insert `ke` | P; complete `bold tekext` source maps to one Strong fact without delimiters | per-edit, 80 ms, true burst | PRESENT: second Strong leaf scenario |
-| INLINE-03 | `Before _ri¦ght_ after.\n`; insert `ke` | P; inserted text is Emphasis | per-edit and 80 ms | GAP |
-| INLINE-04 | `Before ~~ri¦ght~~ after.\n`; insert `ke` | P; inserted text is Strikethrough | per-edit and 80 ms | GAP |
-| INLINE-05 | ``Before `ri¦ght` after.\n``; insert `ke` | P; inserted text retains inline-code style | per-edit and 80 ms | GAP |
-| INLINE-06 | `Before [ri¦ght](https://example.com) after.\n`; insert `ke` | P; label projection/link fact remains current | per-edit and 80 ms | GAP |
+| INLINE-03 | `Before _ri¦ght_ after.\n`; insert `ke` | P; inserted text is Emphasis | per-edit and 80 ms | PRESENT: resolved-style paint matrix row |
+| INLINE-04 | `Before ~~ri¦ght~~ after.\n`; insert `ke` | P; inserted text is Strikethrough | per-edit and 80 ms | PRESENT: resolved-style paint matrix row |
+| INLINE-05 | ``Before `ri¦ght` after.\n``; insert `ke` | P; inserted text retains inline-code style | per-edit and 80 ms | PRESENT: resolved-style paint matrix row |
+| INLINE-06 | `Before [ri¦ght](https://example.com) after.\n`; insert `ke` | P; label projection/link fact remains current | per-edit and 80 ms | PRESENT: resolved-style paint matrix row |
 | INLINE-07 | `**left** mi¦ddle _right_\n`; insert `ke` | P; Strong and Emphasis remain styled | per-edit and 80 ms | PRESENT: independent-facts scenario |
 | INLINE-08 | `# **¦left** middle _right_`; insert one space | I(start of opening `**`, end of closing `**` after edit); Heading shell and outside Emphasis remain rendered | per-edit and 80 ms | PRESENT: `inline_dependency_island_paint_acceptance_test.dart` |
 | INLINE-09 | `Before **bo¦ld** and _right_.\n`; insert `*` | P; inserted literal asterisk is Strong content; outside Emphasis remains styled | per-edit | PRESENT: safe Strong asterisk row |
