@@ -44,6 +44,10 @@
   covers the frozen different-marker syntax constructions (`*`, `_`, `~`,
   backtick, `[` and `]`) when the current source contains no matching marker,
   keeping the certified Strong or Emphasis sibling projected.
+- Kept closed fenced-code typing rendered on every paint by publishing an
+  authoritative empty inline-fact set plus bounded physical-line ASCII-word
+  cells; the code shell remains projected while only the changed authored line
+  becomes exact, and neither fence is part of the admitted edit range.
 - Replaced the active release, archive, platform, and documentation entry points
   with v4-only equivalents. Superseded release notes are preserved at
   `legacy/docs/v2_v3/CHANGELOG.md`.

@@ -326,6 +326,13 @@ trigger. This supports the Product Tour's real multiword paste while retaining
 the earlier Strong fact; Core compares only the protocol predicate and never
 searches Markdown punctuation or constructs.
 
+Exact ABI 4.32 additionally maps the parser-certified body of a closed fenced
+code block into bounded ASCII-word cells. Each affected closure is one physical
+code line without its line ending, and each trigger is one maximal ASCII word.
+The body publishes authoritative empty inline facts; the host keeps the fenced
+code shell and paints only the changed authored line as exact current source.
+Neither fence is edit authority.
+
 General delimiter dependency graphs, non-ASCII composition islands, interior
 punctuation replacements, cross-fragment multi-line replacements, nested
 structural shells, and broader edit classes remain pending. Those paths still

@@ -186,7 +186,7 @@ publishes the named shell without source marker relay from `**sentinel**`.
 | BLOCK-02 | `- fi¦rst **bold**\n`; insert `ke` | P; bullet list shell and Strong retained | PRESENT in north-star matrix |
 | BLOCK-03 | `> fi¦rst **bold**\n`; insert `ke` | P; quote depth 1 and Strong retained | PRESENT in north-star matrix |
 | BLOCK-04 | `\| f¦oo \| **bold** \|\n\| --- \| --- \|\n`; insert `x` | P; table shell/cells and Strong retained | PRESENT in north-star matrix |
-| BLOCK-05 | fenced Dart block whose body is `final value = 'a¦';`; insert `x` | P; code shell retained and authored code stays exact | PARTIAL: code editing tests; add actual-paint row |
+| BLOCK-05 | fenced Dart block whose body is `final value = 'a¦';`; insert `x` | P; code shell retained and authored code stays exact | PRESENT actual-paint row at zero and human cadence |
 | BLOCK-06 | `Before **bold**.¦\n`; Return | S(paragraph split with one active empty successor); predecessor Strong retained | PRESENT |
 | BLOCK-07 | BLOCK-06 Return immediately followed by `x` before pump | S(paragraph split with successor `x`); predecessor Strong retained | PRESENT true-burst row |
 | BLOCK-08 | `Before **bold**.\n\n¦After.\n`; Backspace | S(paragraph merge); Strong retained and caret at join | PRESENT |

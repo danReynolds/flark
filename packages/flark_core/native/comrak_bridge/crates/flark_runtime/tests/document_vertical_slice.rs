@@ -735,6 +735,47 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
 }
 
 #[test]
+fn fenced_code_body_word_cell_retains_the_code_shell_and_matches_clean_parse() {
+    let source = "```dart\nfinal value = 'a';\n```\n";
+    let mut document = DocumentSession::begin(source).expect("begin fenced code cell source");
+    pump_ready(&mut document);
+    let before = document
+        .query_viewport(1, 0..source.len(), 32)
+        .expect("fenced code cell viewport");
+    let row = &before.rows[0];
+    assert!(matches!(
+        row.presentation,
+        DocumentViewportRowPresentation::CodeBlock {
+            style: DocumentCodeBlockStyle::Fenced { closed: true, .. },
+        }
+    ));
+    assert!(row.projection_edit_cells.iter().any(|cell| {
+        cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+            && cell.source_range == (8..26)
+            && cell.source_utf16_range == (8..26)
+            && cell.trigger_range == (23..24)
+            && cell.trigger_utf16_range == (23..24)
+    }));
+
+    document
+        .apply_edit(1, 24..24, "x")
+        .expect("edit fenced code body word");
+    let edited = "```dart\nfinal value = 'ax';\n```\n";
+    pump_ready(&mut document);
+    assert_current_rows_match_clean(&mut document, 2, edited);
+    let after = document
+        .query_viewport(2, 0..edited.len(), 32)
+        .expect("fenced code cell result viewport");
+    assert!(matches!(
+        after.rows[0].presentation,
+        DocumentViewportRowPresentation::CodeBlock {
+            style: DocumentCodeBlockStyle::Fenced { closed: true, .. },
+        }
+    ));
+    document.close().expect("close fenced code cell source");
+}
+
+#[test]
 fn viewport_carries_complete_parser_authored_inline_geometry_or_fails_closed() {
     let source = "*em* **strong** `code` [link](https://example.com) <https://a.test>\n";
     let mut document = DocumentSession::begin(source).expect("begin inline document");

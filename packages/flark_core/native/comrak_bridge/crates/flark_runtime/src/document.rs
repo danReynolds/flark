@@ -31,8 +31,8 @@ use flark_parser::{
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
     M11PersistentRecursiveGreenSessionError, M11RecursiveGreenInlineLeafPreparation,
-    M11SimpleEditLineKind, M11SimpleEditListMarker, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
-    M11_SIMPLE_EDIT_LINE_MAX_BYTES,
+    M11SimpleEditLineKind, M11SimpleEditListMarker, M11_INLINE_EDIT_COMPONENTS_MAX,
+    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_SIMPLE_EDIT_LINE_MAX_BYTES,
 };
 
 #[cfg(feature = "opening-session")]
@@ -4398,7 +4398,7 @@ fn document_viewport_row_with_inline_facts(
     row: &M11RecursiveGreenRenderableRow,
     inline_projection: Option<DocumentInlineProjectionAuthority>,
 ) -> Result<DocumentViewportRow, DocumentSessionError> {
-    let (inline_facts, parser_edit_cells) = inline_projection.map_or_else(
+    let (mut inline_facts, parser_edit_cells) = inline_projection.map_or_else(
         || (None, Vec::new()),
         |projection| {
             (
@@ -4516,6 +4516,20 @@ fn document_viewport_row_with_inline_facts(
             DocumentViewportRowPresentation::ThematicBreak
         }
     };
+    if inline_facts.is_none()
+        && matches!(
+            presentation,
+            DocumentViewportRowPresentation::CodeBlock {
+                style: DocumentCodeBlockStyle::Fenced { closed: true, .. },
+            }
+        )
+    {
+        // A closed fenced-code row is parser-certified to have no Markdown
+        // inline facts. Publish that authoritative empty set so its bounded
+        // body edit cells can cross the ABI with the same fail-closed rules as
+        // ordinary inline authority.
+        inline_facts = Some(Vec::new());
+    }
     let source_range = row.physical_range();
     let source_utf16_range = row.physical_utf16_range();
     let mut editable_range = row.editable_range();
@@ -4696,9 +4710,7 @@ fn document_projection_edit_cells(
     editable_utf16_range: Option<&Range<u64>>,
     edit_capability: DocumentViewportRowEditCapability,
 ) -> Result<Vec<DocumentProjectionEditCell>, DocumentSessionError> {
-    let (Some(editable), Some(editable_utf16), Some(facts)) =
-        (editable_range, editable_utf16_range, facts)
-    else {
+    let (Some(editable), Some(editable_utf16)) = (editable_range, editable_utf16_range) else {
         return Ok(Vec::new());
     };
     let physical_line_start = match presentation {
@@ -4762,6 +4774,21 @@ fn document_projection_edit_cells(
         return Ok(Vec::new());
     };
     let Some(suffix) = row_source.get(editable_end..) else {
+        return Ok(Vec::new());
+    };
+    if matches!(
+        presentation,
+        DocumentViewportRowPresentation::CodeBlock {
+            style: DocumentCodeBlockStyle::Fenced { closed: true, .. },
+        }
+    ) {
+        return Ok(document_fenced_code_literal_word_edit_cells(
+            content,
+            editable,
+            editable_utf16,
+        ));
+    }
+    let Some(facts) = facts else {
         return Ok(Vec::new());
     };
     if presentation == DocumentViewportRowPresentation::Table {
@@ -4880,6 +4907,86 @@ fn document_projection_edit_cells(
         editable_utf16,
         facts,
     ))
+}
+
+/// Maps the parser-certified body of a closed fenced code block into bounded
+/// literal edit cells. Code contents have no inline Markdown projection; an
+/// ASCII word edit therefore retains only the parser-authored code shell and
+/// paints its physical line as exact current source. The trigger never covers
+/// a line ending or fence source, so Core cannot widen this into a structural
+/// code-block edit.
+fn document_fenced_code_literal_word_edit_cells(
+    editable_source: &str,
+    editable: &Range<u64>,
+    editable_utf16: &Range<u64>,
+) -> Vec<DocumentProjectionEditCell> {
+    if editable_source.len() as u64 != editable.end.saturating_sub(editable.start)
+        || editable_source.encode_utf16().count() as u64
+            != editable_utf16.end.saturating_sub(editable_utf16.start)
+    {
+        return Vec::new();
+    }
+
+    let bytes = editable_source.as_bytes();
+    let mut cells = Vec::new();
+    let mut line_start = 0;
+    let mut line_utf16_start = 0_u64;
+    while line_start <= bytes.len() && cells.len() < M11_INLINE_EDIT_COMPONENTS_MAX {
+        let newline = bytes[line_start..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|offset| line_start + offset);
+        let line_break_start = newline.unwrap_or(bytes.len());
+        let line_end = if line_break_start > line_start && bytes[line_break_start - 1] == b'\r' {
+            line_break_start - 1
+        } else {
+            line_break_start
+        };
+        let line_utf16_len = editable_source[line_start..line_end].encode_utf16().count() as u64;
+        let affected_bytes = editable.start + line_start as u64..editable.start + line_end as u64;
+        let affected_utf16 = editable_utf16.start + line_utf16_start
+            ..editable_utf16.start + line_utf16_start + line_utf16_len;
+
+        let mut cursor = line_start;
+        let mut cursor_utf16 = line_utf16_start;
+        while cursor < line_end && cells.len() < M11_INLINE_EDIT_COMPONENTS_MAX {
+            if !bytes[cursor].is_ascii_alphanumeric() {
+                let Some(character) = editable_source[cursor..line_end].chars().next() else {
+                    break;
+                };
+                cursor += character.len_utf8();
+                cursor_utf16 += character.len_utf16() as u64;
+                continue;
+            }
+            let word_start = cursor;
+            let word_utf16_start = cursor_utf16;
+            while cursor < line_end && bytes[cursor].is_ascii_alphanumeric() {
+                cursor += 1;
+                cursor_utf16 += 1;
+            }
+            let word_end = cursor;
+            cells.push(DocumentProjectionEditCell {
+                source_range: affected_bytes.clone(),
+                source_utf16_range: affected_utf16.clone(),
+                trigger_range: editable.start + word_start as u64..editable.start + word_end as u64,
+                trigger_utf16_range: editable_utf16.start + word_utf16_start
+                    ..editable_utf16.start + cursor_utf16,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
+            });
+        }
+
+        let Some(newline) = newline else {
+            break;
+        };
+        let next_line_start = newline + 1;
+        line_utf16_start += editable_source[line_start..next_line_start]
+            .encode_utf16()
+            .count() as u64;
+        line_start = next_line_start;
+    }
+    cells
 }
 
 fn document_table_literal_word_edit_cells(

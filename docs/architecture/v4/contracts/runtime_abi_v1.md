@@ -462,6 +462,13 @@ guards isolate every retained outside fact. Older hosts reject this
 additional safe shape, while a 4.32 host requires the V3 capability before it
 can observe the record.
 
+Exact ABI 4.32 also maps maximal ASCII-word triggers inside each physical line
+of a parser-certified closed fenced-code body. The affected closure is that
+authored code line without its line ending; the body publishes authoritative
+empty inline facts, so the host retains the code shell and paints only the
+changed line as exact current source. Neither fence is part of an admitted
+range, and no new matcher or record shape is introduced.
+
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
 inline grammar and a maximum 4 KiB parser-row source, 512 facts per row, and

@@ -962,6 +962,26 @@ void main() {
         ),
         'code\n',
       );
+      expect(fenced.inlineFacts, isEmpty);
+      expect(
+        fenced.projectionEditCells.any(
+          (cell) =>
+              cell.matcher ==
+                  FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral &&
+              cell.affectedUtf16.start == fenced.editableUtf16!.start &&
+              cell.affectedUtf16.end == fenced.editableUtf16!.end - 1 &&
+              source.substring(
+                    cell.triggerUtf16.start,
+                    cell.triggerUtf16.end,
+                  ) ==
+                  'code' &&
+              cell.retainBlockShell &&
+              cell.retainOutsideClosure &&
+              cell.presentClosureExact &&
+              cell.chainResultCell,
+        ),
+        isTrue,
+      );
 
       final indented = viewport.rows.firstWhere(
         (row) => row.codeBlock?.style == FlarkCodeBlockStyle.indented,

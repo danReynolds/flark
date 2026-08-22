@@ -308,6 +308,16 @@ final _scenarios = <_TypingScenario>[
     staticStyledRuns: [(text: 'bold', style: FlarkSurfaceInlineStyle.strong)],
     shell: _tableShell,
   ),
+  _TypingScenario(
+    name: 'fenced Dart code body',
+    initial: "```dart\nfinal value = 'a¦';\n```\n",
+    inserted: 'x',
+    renderedBefore: "final value = 'a",
+    renderedAfter: "';\n",
+    finalMarked: "```dart\nfinal value = 'ax¦';\n```\n",
+    forbiddenMarkers: ['```'],
+    shell: _fencedCodeShell,
+  ),
 ];
 
 void main() {
@@ -1400,4 +1410,11 @@ const _tableShell = (
   blockQuoteDepth: null,
   listItem: false,
   table: true,
+);
+const _fencedCodeShell = (
+  kind: 7,
+  headingLevel: null,
+  blockQuoteDepth: null,
+  listItem: false,
+  table: false,
 );
