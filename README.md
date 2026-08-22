@@ -12,6 +12,9 @@ Flutter. The repository has two product packages:
 `flark_core` builds and bundles its Rust native asset automatically. Consumers
 do not install a separate library or configure a runtime path.
 
+Read the [Flark North Star](NORTH_STAR.md) before changing editor architecture,
+projection authority, rendering, or live-edit test methodology.
+
 ## Development gates
 
 ```sh
