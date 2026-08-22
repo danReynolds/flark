@@ -11,6 +11,10 @@ use flark_engine::parser_internal::{M11InlineProjectionFact, M11InlineProjection
 pub const M11_INLINE_EDIT_COMPONENTS_MAX: usize = 128;
 pub const M11_INLINE_EDIT_COMPONENT_SOURCE_MAX_BYTES: usize = 4 * 1024;
 
+const M11_GUARDED_PROSE_EXACT_SCALARS: [char; 13] = [
+    '.', ',', ';', ':', '!', '?', '\'', '"', '(', ')', '-', '–', '—',
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum M11InlineEditComponentMatcher {
     /// One non-empty ASCII-alphanumeric/space replacement wholly inside a
@@ -67,6 +71,7 @@ pub(crate) fn derive_inline_edit_components(
     }
 
     let prose_components = derive_ascii_prose_components(source, facts);
+    let prose_exact_components = derive_guarded_prose_exact_scalar_components(source, facts);
     if !exhaustive_bracket_classification
         || source
             .iter()
@@ -74,23 +79,23 @@ pub(crate) fn derive_inline_edit_components(
         || facts.len() != 1
         || facts[0].kind() != M11InlineProjectionKind::Strong
     {
-        return prose_components;
+        return bounded_components(prose_components, prose_exact_components);
     }
 
     let fact = facts[0];
     let affected = fact.relative_range();
     let content = fact.relative_content_range();
     let Ok(affected_start) = usize::try_from(affected.start) else {
-        return prose_components;
+        return bounded_components(prose_components, prose_exact_components);
     };
     let Ok(affected_end) = usize::try_from(affected.end) else {
-        return prose_components;
+        return bounded_components(prose_components, prose_exact_components);
     };
     let Ok(content_start) = usize::try_from(content.start) else {
-        return prose_components;
+        return bounded_components(prose_components, prose_exact_components);
     };
     let Ok(content_end) = usize::try_from(content.end) else {
-        return prose_components;
+        return bounded_components(prose_components, prose_exact_components);
     };
     if affected_start >= affected_end
         || affected_end > source.len()
@@ -107,7 +112,7 @@ pub(crate) fn derive_inline_edit_components(
             continue;
         }
         let Ok(point) = u32::try_from(point) else {
-            return prose_components;
+            return bounded_components(prose_components, prose_exact_components);
         };
         components.push(M11InlineEditComponent {
             affected: affected.clone(),
@@ -123,6 +128,75 @@ pub(crate) fn derive_inline_edit_components(
             .into_iter()
             .take(M11_INLINE_EDIT_COMPONENTS_MAX - components.len()),
     );
+    components.extend(
+        prose_exact_components
+            .into_iter()
+            .take(M11_INLINE_EDIT_COMPONENTS_MAX - components.len()),
+    );
+    components
+}
+
+fn bounded_components(
+    prose_components: Vec<M11InlineEditComponent>,
+    prose_exact_components: Vec<M11InlineEditComponent>,
+) -> Vec<M11InlineEditComponent> {
+    prose_components
+        .into_iter()
+        .chain(prose_exact_components)
+        .take(M11_INLINE_EDIT_COMPONENTS_MAX)
+        .collect()
+}
+
+/// Emits one-shot punctuation authority only at an ASCII-alphanumeric guard
+/// pair inside the fact-free prefix before one authoritative Strong fact. The
+/// complete prefix is painted exact, so punctuation inside it cannot leak
+/// parser dependencies into the retained Strong fact. The scalar vocabulary
+/// is parser-owned protocol data; Core compares only the declared scalar.
+fn derive_guarded_prose_exact_scalar_components(
+    source: &[u8],
+    facts: &[M11InlineProjectionFact],
+) -> Vec<M11InlineEditComponent> {
+    let [fact] = facts else {
+        return Vec::new();
+    };
+    if fact.kind() != M11InlineProjectionKind::Strong {
+        return Vec::new();
+    }
+    let Ok(prefix_end) = usize::try_from(fact.relative_range().start) else {
+        return Vec::new();
+    };
+    if prefix_end < 2 || prefix_end > source.len() {
+        return Vec::new();
+    }
+    let prefix = &source[..prefix_end];
+    if prefix
+        .iter()
+        .any(|byte| !byte.is_ascii_alphanumeric() && *byte != b' ')
+    {
+        return Vec::new();
+    }
+    let Ok(affected_end) = u32::try_from(prefix_end) else {
+        return Vec::new();
+    };
+    let mut components = Vec::new();
+    'points: for point in 1..prefix_end {
+        if !source[point - 1].is_ascii_alphanumeric() || !source[point].is_ascii_alphanumeric() {
+            continue;
+        }
+        let Ok(point) = u32::try_from(point) else {
+            return Vec::new();
+        };
+        for scalar in M11_GUARDED_PROSE_EXACT_SCALARS {
+            components.push(M11InlineEditComponent {
+                affected: 0..affected_end,
+                trigger: point..point,
+                matcher: M11InlineEditComponentMatcher::InsertExactScalarAtPoint { scalar },
+            });
+            if components.len() == M11_INLINE_EDIT_COMPONENTS_MAX {
+                break 'points;
+            }
+        }
+    }
     components
 }
 
@@ -267,7 +341,7 @@ mod tests {
                 .filter(|component| {
                     matches!(
                         component.matcher(),
-                        M11InlineEditComponentMatcher::InsertExactScalarAtPoint { .. }
+                        M11InlineEditComponentMatcher::InsertExactScalarAtPoint { scalar: '[' }
                     )
                 })
                 .collect::<Vec<_>>();
@@ -312,6 +386,27 @@ mod tests {
             component.affected(),
             prose_start as u32..prose_end as u32 + 1
         );
+    }
+
+    #[test]
+    fn guarded_plain_prefix_declares_each_exact_prose_scalar() {
+        let source = b"AlphaBeta and **bold**.";
+        let point = 5;
+        let components = derive_inline_edit_components(source, &[strong(14..22, 16..20)], true);
+        let declared = components
+            .iter()
+            .filter_map(|component| {
+                (component.affected() == (0..14) && component.trigger() == (point..point))
+                    .then(|| match component.matcher() {
+                        M11InlineEditComponentMatcher::InsertExactScalarAtPoint { scalar } => {
+                            Some(scalar)
+                        }
+                        M11InlineEditComponentMatcher::AsciiProseSplice => None,
+                    })
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(declared, M11_GUARDED_PROSE_EXACT_SCALARS);
     }
 
     #[test]
@@ -360,7 +455,7 @@ mod tests {
         ] {
             assert!(components.iter().all(|component| !matches!(
                 component.matcher(),
-                M11InlineEditComponentMatcher::InsertExactScalarAtPoint { .. }
+                M11InlineEditComponentMatcher::InsertExactScalarAtPoint { scalar: '[' }
             )));
         }
     }

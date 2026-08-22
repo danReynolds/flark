@@ -435,6 +435,14 @@ row only when the parser's bracket
 classification is exhaustive and the leaf contains no existing bracket
 dependency. This is parser-owned proof data, not a Dart Markdown allowlist.
 
+The same matcher may parameterize one of the frozen D0 prose punctuation
+scalars (`.`, `,`, `;`, `:`, `!`, `?`, apostrophe, double quote, `(`, `)`,
+hyphen, en dash, or em dash) at an ASCII-alphanumeric guard pair inside a
+fact-free prefix before one authoritative Strong fact. The complete prefix is
+the affected closure; the outside Strong fact remains retained. These records
+are also one-shot, use the same V3 capability, and add no host punctuation
+classification.
+
 The same V3 capability also permits matcher code 2's existing guarded literal
 cell to accept one nonempty ASCII-alphanumeric/U+0020 replacement when the edit
 is strictly interior to its parser-authored trigger and contains at least one

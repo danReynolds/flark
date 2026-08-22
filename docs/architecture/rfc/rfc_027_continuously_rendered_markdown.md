@@ -374,6 +374,14 @@ Strong source exactly, retains the paragraph shell and outside projection, and
 is consumed after one edit. This is the first use of the generic parser-owned
 component seam, not a host bracket rule or general bracket-graph claim.
 
+The same exact-scalar matcher covers the frozen D0 prose punctuation set
+(`.`, `,`, `;`, `:`, `!`, `?`, apostrophe, double quote, `(`, `)`, hyphen,
+en dash, and em dash) only at an ASCII-alphanumeric guard pair inside a
+fact-free prefix before one authoritative Strong fact. The complete prefix is
+the exact affected closure, the outside Strong fact remains projected, and the
+record is consumed after one edit. This adds parser-owned proof breadth without
+changing the ABI vocabulary or teaching Core punctuation semantics.
+
 The same V3 seam may map a parser-authored complete fact-free physical-line
 gap onto the existing guarded ASCII-literal matcher, with a maximal ASCII
 prose run as its trigger. One nonempty ASCII-alphanumeric/U+0020 replacement

@@ -1126,7 +1126,11 @@ fn parser_parameterized_bracket_cell_keeps_the_strong_dependency_local() {
     let exact_cells = row
         .projection_edit_cells
         .iter()
-        .filter(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS)
+        .filter(|cell| {
+            cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS
+                && cell.replacement_first == u32::from('[')
+                && cell.source_range == (7..15)
+        })
         .collect::<Vec<_>>();
     assert_eq!(exact_cells.len(), 3);
     assert_eq!(
@@ -1181,10 +1185,104 @@ fn parser_parameterized_bracket_cell_keeps_the_strong_dependency_local() {
     assert!(unsafe_viewport.rows[0]
         .projection_edit_cells
         .iter()
-        .all(|cell| cell.flags != DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS));
+        .all(|cell| {
+            cell.flags != DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS
+                || cell.replacement_first != u32::from('[')
+        }));
     unsafe_document
         .close()
         .expect("close bracket dependency negative");
+}
+
+#[test]
+fn guarded_plain_prefix_punctuation_cells_preserve_the_outside_strong_fact() {
+    let source = "AlphaBeta and **bold**.\n";
+    let point = 5_usize;
+    let scalars = [
+        '.', ',', ';', ':', '!', '?', '\'', '"', '(', ')', '-', '–', '—',
+    ];
+    let mut document = DocumentSession::begin(source).expect("begin guarded punctuation source");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("guarded punctuation viewport");
+    let row = &viewport.rows[0];
+    let declared = row
+        .projection_edit_cells
+        .iter()
+        .filter_map(|cell| {
+            (cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS
+                && cell.source_range == (0..14)
+                && cell.trigger_range == (point as u64..point as u64))
+                .then_some(char::from_u32(cell.replacement_first))
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(declared, scalars);
+    document.close().expect("close guarded punctuation source");
+
+    for scalar in scalars {
+        let mut document = DocumentSession::begin(source).expect("begin guarded punctuation edit");
+        pump_ready(&mut document);
+        let before = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("guarded punctuation before viewport")
+            .rows[0]
+            .inline_facts
+            .as_ref()
+            .expect("guarded punctuation before facts")
+            .iter()
+            .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+            .expect("guarded punctuation before Strong")
+            .clone();
+        let replacement = scalar.to_string();
+        document
+            .apply_edit(1, point..point, &replacement)
+            .expect("apply guarded punctuation");
+        let mut edited_source = source.to_owned();
+        edited_source.insert(point, scalar);
+        pump_ready(&mut document);
+        assert_current_rows_match_clean(&mut document, 2, &edited_source);
+        let after = document
+            .query_viewport(2, 0..edited_source.len(), 8)
+            .expect("guarded punctuation after viewport")
+            .rows[0]
+            .inline_facts
+            .as_ref()
+            .expect("guarded punctuation after facts")
+            .iter()
+            .find(|fact| fact.kind == DocumentInlineFactKind::Strong)
+            .expect("guarded punctuation after Strong")
+            .clone();
+        let byte_delta = scalar.len_utf8() as u64;
+        let utf16_delta = scalar.len_utf16() as u64;
+        assert_eq!(after.kind, before.kind, "{scalar:?}");
+        assert_eq!(after.flags, before.flags, "{scalar:?}");
+        assert_eq!(after.replacement, before.replacement, "{scalar:?}");
+        assert_eq!(
+            after.source_range,
+            before.source_range.start + byte_delta..before.source_range.end + byte_delta,
+            "{scalar:?}",
+        );
+        assert_eq!(
+            after.content_range,
+            before.content_range.start + byte_delta..before.content_range.end + byte_delta,
+            "{scalar:?}",
+        );
+        assert_eq!(
+            after.source_utf16_range,
+            before.source_utf16_range.start + utf16_delta
+                ..before.source_utf16_range.end + utf16_delta,
+            "{scalar:?}",
+        );
+        assert_eq!(
+            after.content_utf16_range,
+            before.content_utf16_range.start + utf16_delta
+                ..before.content_utf16_range.end + utf16_delta,
+            "{scalar:?}",
+        );
+        document.close().expect("close guarded punctuation edit");
+    }
 }
 
 #[test]
@@ -1384,7 +1482,12 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
         .projection_edit_cells
         .iter()
         .filter(|cell| {
-            cell.source_range == (0..17)
+            (cell.source_range == (0..17)
+                && matches!(
+                    cell.flags,
+                    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                        | DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+                ))
                 || cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
         })
         .cloned()

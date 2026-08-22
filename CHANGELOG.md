@@ -38,7 +38,9 @@
   without teaching Dart bracket grammar. The same parser seam now supplies a
   guarded fact-free prose component for a strictly interior multiword ASCII
   paste, preserving the Product Tour's earlier Strong run through paste and
-  history replay.
+  history replay. The parameterized scalar path now also covers the frozen D0
+  punctuation set at parser-guarded prose points, exacting only the fact-free
+  prefix while retaining its outside Strong fact.
 - Replaced the active release, archive, platform, and documentation entry points
   with v4-only equivalents. Superseded release notes are preserved at
   `legacy/docs/v2_v3/CHANGELOG.md`.

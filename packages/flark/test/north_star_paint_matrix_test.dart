@@ -23,6 +23,21 @@ final _productTourParagraphStart = _productTourSource.indexOf(
 final _productTourParagraphEnd =
     _productTourParagraphStart + _productTourParagraph.length;
 const _dogfoodTerminalSuccessor = ' Testing is somewhat useful but like.';
+const _guardedProsePunctuation = [
+  (name: 'period', scalar: '.'),
+  (name: 'comma', scalar: ','),
+  (name: 'semicolon', scalar: ';'),
+  (name: 'colon', scalar: ':'),
+  (name: 'exclamation', scalar: '!'),
+  (name: 'question mark', scalar: '?'),
+  (name: 'apostrophe', scalar: "'"),
+  (name: 'double quote', scalar: '"'),
+  (name: 'open parenthesis', scalar: '('),
+  (name: 'close parenthesis', scalar: ')'),
+  (name: 'hyphen', scalar: '-'),
+  (name: 'en dash', scalar: '–'),
+  (name: 'em dash', scalar: '—'),
+];
 final _scenarios = <_TypingScenario>[
   _TypingScenario(
     name: 'product-tour paragraph prefix beside Strong',
@@ -95,6 +110,18 @@ final _scenarios = <_TypingScenario>[
     shell: _paragraphShell,
     unpumpedBurst: true,
   ),
+  for (final punctuation in _guardedProsePunctuation)
+    _TypingScenario(
+      name: 'guarded prose ${punctuation.name} beside Strong',
+      initial: 'Alpha¦Beta and **bold**.\n',
+      inserted: punctuation.scalar,
+      renderedBefore: 'Alpha',
+      renderedAfter: 'Beta and bold.',
+      finalMarked: 'Alpha${punctuation.scalar}¦Beta and **bold**.\n',
+      forbiddenMarkers: ['**'],
+      staticStyledRuns: [(text: 'bold', style: FlarkSurfaceInlineStyle.strong)],
+      shell: _paragraphShell,
+    ),
   _TypingScenario(
     name: 'typing inside a certified Strong word',
     initial: 'Before **bo¦ld** after.\n',

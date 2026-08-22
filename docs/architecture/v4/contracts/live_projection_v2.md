@@ -303,6 +303,13 @@ exhaustive and the leaf has no existing bracket dependency. The transformed
 Strong source is exact, plain source outside it remains projected, and the
 one-shot authority is consumed immediately.
 
+The V3 exact-scalar emitter also declares the frozen D0 prose punctuation set
+(`.`, `,`, `;`, `:`, `!`, `?`, apostrophe, double quote, `(`, `)`, hyphen,
+en dash, and em dash) at ASCII-alphanumeric guard pairs inside a fact-free
+prefix before one authoritative Strong fact. The affected closure is that
+complete prefix, so the punctuation result is exact while the outside Strong
+fact remains certified. Each record is consumed after one edit.
+
 V3 also extends the existing guarded ASCII literal matcher with one strictly
 interior, nonempty ASCII-alphanumeric/U+0020 replacement containing at least
 one alphanumeric unit. The parser emits that authority only for a complete

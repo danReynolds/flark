@@ -322,7 +322,10 @@ void main() {
           .where(
             (cell) =>
                 cell.matcher ==
-                FlarkProjectionEditMatcher.insertExactScalarAtPoint,
+                    FlarkProjectionEditMatcher.insertExactScalarAtPoint &&
+                cell.exactScalar == 91 &&
+                cell.affectedUtf16.start == 7 &&
+                cell.affectedUtf16.end == 15,
           )
           .toList(growable: false);
       expect(cells, hasLength(3));
@@ -353,6 +356,60 @@ void main() {
   );
 
   test(
+    'parameterized prose punctuation cells cross the Dart worker boundary',
+    () async {
+      const source = 'AlphaBeta and **bold**.\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      final cells = row.projectionEditCells
+          .where(
+            (cell) =>
+                cell.matcher ==
+                    FlarkProjectionEditMatcher.insertExactScalarAtPoint &&
+                cell.affectedUtf16.start == 0 &&
+                cell.affectedUtf16.end == 14 &&
+                cell.triggerUtf16.start == 5 &&
+                cell.triggerUtf16.end == 5,
+          )
+          .toList(growable: false);
+      expect(cells.map((cell) => cell.exactScalar), [
+        46,
+        44,
+        59,
+        58,
+        33,
+        63,
+        39,
+        34,
+        40,
+        41,
+        45,
+        8211,
+        8212,
+      ]);
+      expect(
+        cells.every(
+          (cell) =>
+              cell.retainBlockShell &&
+              cell.retainOutsideClosure &&
+              cell.presentClosureExact &&
+              !cell.chainResultCell,
+        ),
+        isTrue,
+      );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'dogfood paragraph literal cells cross the Dart worker boundary',
     () async {
       const source =
@@ -369,7 +426,15 @@ void main() {
         FlarkInlineFactKind.strong,
       ]);
       final prefixCells = row.projectionEditCells
-          .where((candidate) => candidate.affectedBytes.start == 0)
+          .where(
+            (candidate) =>
+                candidate.affectedBytes.start == 0 &&
+                (candidate.matcher ==
+                        FlarkProjectionEditMatcher
+                            .asciiLiteralSpliceInLiteral ||
+                    candidate.matcher ==
+                        FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral),
+          )
           .toList(growable: false);
       expect(prefixCells, hasLength(2));
       final cell = prefixCells.first;

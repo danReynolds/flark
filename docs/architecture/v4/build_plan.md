@@ -523,6 +523,12 @@ zero-width guarded trigger; Core compares only
 the scalar and transforms the supplied ranges. No Dart Markdown rule or
 construct-specific wire record was added.
 
+The generic exact-scalar path also carries the frozen D0 prose punctuation set
+at parser-guarded alphanumeric points in a fact-free prefix before one Strong
+fact. The full prefix is the affected exact closure and the outside Strong fact
+remains projected. Records are one-shot and bounded by the existing component
+cap; this is emitter breadth within V3, not another ABI revision.
+
 V3 also lets the same parser component seam supply a complete fact-free
 physical-line gap as the affected closure and a maximal ASCII prose run as the
 trigger for the existing ASCII-literal matcher. Core admits one nonempty
