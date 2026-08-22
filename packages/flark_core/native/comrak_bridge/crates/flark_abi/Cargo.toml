@@ -1,0 +1,27 @@
+[package]
+name = "flark-abi"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+default = []
+declarations = []
+# RFC 029 A3 experiment surface: the creation transaction's opening-query
+# mode. Dormant unless the dylib build opts in.
+opening-session = ["flark-runtime/opening-session"]
+
+[dependencies]
+flark-runtime = { path = "../flark_runtime" }
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[[test]]
+name = "opening_vertical"
+path = "tests/opening_vertical.rs"
+required-features = ["opening-session"]

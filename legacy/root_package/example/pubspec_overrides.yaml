@@ -1,0 +1,5 @@
+dependency_overrides:
+  flark:
+    path: ..
+  flark_flutter:
+    path: ../packages/flark_flutter

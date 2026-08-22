@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 1,
+  "baselineId": "m0-leading-editor-cohort-v1",
+  "inventoryCommit": "47692297661489bcbc2a2af4574a6a422cf68ef7",
+  "sourceArtifactAuthority": "git-object-at-inventory-commit",
+  "status": "historical-seed-and-unexecuted-protocol",
+  "claimEligible": false,
+  "mayResolveCompetitorDerivedSizeTiers": false,
+  "units": {
+    "duration": "microseconds",
+    "newDocumentSize": "UTF-8 bytes",
+    "historicalDocumentSize": "Dart string characters"
+  },
+  "cohortScope": {
+    "selectionStatus": "selected-leading-relevant-embeddable-flutter-editor-sdk-cohort",
+    "leadingMarketClaim": false,
+    "boundaryScope": "embeddable Flutter editor SDKs on the same Flutter and Mac product stack; not a global Markdown-app market ranking",
+    "selectionRationale": [
+      "Flutter Quill represents an established delta-backed embeddable rich-text architecture.",
+      "SuperEditor represents an established document/node-backed embeddable editing architecture.",
+      "Both use the same Flutter platform-input and rendering layers Flark must outperform without adding an unrelated app database, sync engine, or shell."
+    ],
+    "included": ["flutter_quill", "super_editor"],
+    "excludedHistoricalProbe": {
+      "id": "appflowy_editor",
+      "reason": "The preserved Flutter 3.41.9 attempt did not compile, so no local measurement exists."
+    }
+  },
+  "cohortSelectionSnapshot": {
+    "retrievedAtUtc": "2026-08-09T02:06:28Z",
+    "authority": "official pub.dev package pages and /api/packages/<package>/score endpoints",
+    "criterionId": "top-two-eligible-native-flutter-editor-sdks-by-pub-like-count-v1",
+    "criterion": "From the frozen eligible candidate denominator, select the two highest cumulative pub.dev likeCount values. Record 30-day downloads and pub points as context but do not use them to change the selector after observation.",
+    "eligibility": [
+      "embeddable editable multi-block document surface implemented in Flutter rather than a WebView",
+      "document content can be loaded and exported through a package API",
+      "declared or documented support includes macOS, Android, and iOS",
+      "package/project was publicly available at the retrieval timestamp"
+    ],
+    "candidateSearchScope": "pub.dev Flutter packages described and tagged as editor, rich-text-editor, WYSIWYG, or document editor; WebView wrappers, renderer-only packages, full app shells, and pre-1.0 experimental packages with fewer than 10 likes were excluded",
+    "candidates": [
+      {"id": "flutter_quill", "version": "11.5.1", "scoreEndpoint": "https://pub.dev/api/packages/flutter_quill/score", "packagePage": "https://pub.dev/packages/flutter_quill", "likeCount": 2142, "downloadCount30Days": 230102, "grantedPoints": 140, "eligible": true, "selected": true},
+      {"id": "super_editor", "version": "0.2.7", "scoreEndpoint": "https://pub.dev/api/packages/super_editor/score", "packagePage": "https://pub.dev/packages/super_editor", "likeCount": 782, "downloadCount30Days": 7776, "grantedPoints": 60, "eligible": true, "selected": true, "runnerRevisionPolicy": "The benchmark pins the newer project dev revision recorded separately in macFirstProtocol."},
+      {"id": "appflowy_editor", "version": "6.2.0", "scoreEndpoint": "https://pub.dev/api/packages/appflowy_editor/score", "packagePage": "https://pub.dev/packages/appflowy_editor", "likeCount": 518, "downloadCount30Days": 10273, "grantedPoints": 60, "eligible": true, "selected": false, "executionNote": "The preserved Flutter 3.41.9 local attempt did not compile; it remains in the selection denominator rather than disappearing."},
+      {"id": "fleather", "version": "1.27.0", "scoreEndpoint": "https://pub.dev/api/packages/fleather/score", "packagePage": "https://pub.dev/packages/fleather", "likeCount": 191, "downloadCount30Days": 9080, "grantedPoints": 160, "eligible": true, "selected": false}
+    ],
+    "selectedIds": ["flutter_quill", "super_editor"],
+    "leadingClaimScope": "top two by the frozen cumulative-like criterion within the eligible embeddable native-Flutter editor-SDK denominator; no global Markdown-app or performance leadership claim"
+  },
+  "sourceArtifacts": [
+    {
+      "path": "docs/benchmarks.md",
+      "sha256": "a3d228931d3a08cace12fc262a3f4b71b8ec71e2735d05d351b1daf8a68bc2cb",
+      "role": "historical result table",
+      "lineSpans": ["58-63", "166-206"]
+    },
+    {
+      "path": "benchmark/peer/README.md",
+      "sha256": "35ef965eaf16c6e001c976da82b5825248867c1dfe03ded5c935088d64f2626e",
+      "role": "historical method, toolchain, and caveats",
+      "lineSpans": ["1-17", "32-44", "72-145"]
+    },
+    {
+      "path": "benchmark/peer/.gitignore",
+      "sha256": "f68e0f3a576967d7b56d379f8205d2fddd012d20b0da58b67272ca3f17f8097b",
+      "role": "proves historical lockfiles were ignored"
+    },
+    {
+      "path": "benchmark/peer/pubspec.yaml",
+      "sha256": "90bfac95aad1287f8738bd34f4cee5686e3d5064c5d350a52fba1afda4a36ab4",
+      "role": "flutter_quill dependency declaration"
+    },
+    {
+      "path": "benchmark/peer/test/quill_benchmark_test.dart",
+      "sha256": "6443324dd970b6a5edfcf14241e7051fe8a6d19eb38b8959d5ea4496c1077c20",
+      "role": "flutter_quill block-count debug harness"
+    },
+    {
+      "path": "benchmark/peer/test/quill_large_document_benchmark_test.dart",
+      "sha256": "53417e7a320ea9974c579baaf605ca660caa580d7625f0753d5ca89a44446e5d",
+      "role": "flutter_quill large-document debug harness",
+      "lineSpans": ["7-100", "102-159"]
+    },
+    {
+      "path": "benchmark/peer_supereditor/.gitignore",
+      "sha256": "f68e0f3a576967d7b56d379f8205d2fddd012d20b0da58b67272ca3f17f8097b",
+      "role": "proves historical lockfiles were ignored"
+    },
+    {
+      "path": "benchmark/peer_supereditor/pubspec.yaml",
+      "sha256": "a443895d0831ead2cc8852cd1ddcd0a8bfaf8098cbee5afd03481d23955b05ce",
+      "role": "super_editor dependency declaration"
+    },
+    {
+      "path": "benchmark/peer_supereditor/test/super_editor_benchmark_test.dart",
+      "sha256": "b75db4a3353eb62f9bb8dabb72acd0b8714e309f7479e6cccdfcdce4ee43ce7b",
+      "role": "super_editor block-count debug harness"
+    },
+    {
+      "path": "benchmark/peer_supereditor/test/super_editor_large_document_benchmark_test.dart",
+      "sha256": "20e640cda22628929231c339c331698af53f1382950fb96c1303436b320b668e",
+      "role": "super_editor large-document debug harness",
+      "lineSpans": ["7-116", "127-188"]
+    }
+  ],
+  "historicalSeed": {
+    "evidenceClass": "historical-debug-test-vm-seed",
+    "observedDate": "2026-06-05",
+    "claimEligible": false,
+    "environment": {
+      "buildMode": "debug-test-vm",
+      "flutter": "3.41.9",
+      "dart": "3.11.5",
+      "viewportLogicalPixels": {
+        "width": 600,
+        "height": 600
+      },
+      "hardware": null,
+      "macosVersion": null,
+      "displayRefreshHz": null,
+      "repositoryCommit": null,
+      "rawSampleArtifacts": [],
+      "trackedDependencyLockfiles": false
+    },
+    "limitations": [
+      "The preserved numbers are debug flutter_test VM stopwatch timings, not profile-mode application input-to-paint timings.",
+      "The historical machine, macOS version, display refresh rate, repository commit, raw samples, minimums, maximums, and memory traces were not preserved with the result table.",
+      "The large-document labels use decimal target character counts of 100000 and 1000000; they are not exact 100 KiB or 1 MiB UTF-8 fixtures, and the final generated character counts were not preserved in the table.",
+      "The harnesses mutate editor controllers directly and time model work or tester.pump; they do not traverse the platform text-input path.",
+      "The fixtures are generated plain text, so the results do not establish Markdown source fidelity or semantic parity.",
+      "flutter_quill used an untracked lockfile and a caret dependency constraint, so the exact resolved package graph is unavailable.",
+      "super_editor was pinned to a git revision, but the documented Flutter compatibility edit was made in cache without a preserved patch or source-tree hash.",
+      "Median and p95 are preserved; p90, p99, and max are not recoverable from the narrative table."
+    ],
+    "competitors": [
+      {
+        "id": "flutter_quill",
+        "architecture": "single-rich-text-layout",
+        "dependency": {
+          "declaredConstraint": "^11.5.0",
+          "reportedResolvedVersion": "11.5",
+          "sourceRevision": null,
+          "lockfileTracked": false,
+          "locallyPatched": false
+        },
+        "blockEditPumpResults": [
+          {"blockCount": 10, "warmupCount": 5, "sampleCount": 40, "medianMicros": 6820, "p95Micros": 9270},
+          {"blockCount": 20, "warmupCount": 5, "sampleCount": 40, "medianMicros": 8590, "p95Micros": 30480},
+          {"blockCount": 40, "warmupCount": 5, "sampleCount": 40, "medianMicros": 9780, "p95Micros": 28780},
+          {"blockCount": 80, "warmupCount": 5, "sampleCount": 40, "medianMicros": 8530, "p95Micros": 16560}
+        ],
+        "largeDocumentResults": [
+          {"sizeLabel": "100KB", "targetCharacters": 100000, "actualCharacters": null, "exactByteTier": false, "operation": "model-build", "warmupCount": 3, "sampleCount": 12, "medianMicros": 41840, "p95Micros": 58900},
+          {"sizeLabel": "100KB", "targetCharacters": 100000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-apply", "warmupCount": 8, "sampleCount": 40, "medianMicros": 5720, "p95Micros": 15230},
+          {"sizeLabel": "100KB", "targetCharacters": 100000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-pump", "warmupCount": 5, "sampleCount": 20, "medianMicros": 30230, "p95Micros": 81440},
+          {"sizeLabel": "1MB", "targetCharacters": 1000000, "actualCharacters": null, "exactByteTier": false, "operation": "model-build", "warmupCount": 1, "sampleCount": 5, "medianMicros": 3770000, "p95Micros": 5070000},
+          {"sizeLabel": "1MB", "targetCharacters": 1000000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-apply", "warmupCount": 4, "sampleCount": 20, "medianMicros": 1110000, "p95Micros": 2280000},
+          {"sizeLabel": "1MB", "targetCharacters": 1000000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-pump", "warmupCount": 3, "sampleCount": 10, "medianMicros": 211380, "p95Micros": 450180}
+        ]
+      },
+      {
+        "id": "super_editor",
+        "architecture": "block-based-wysiwyg",
+        "dependency": {
+          "declaredConstraint": "git",
+          "reportedResolvedVersion": "0.3.0-dev.51",
+          "sourceRevision": "22853bcc89def2b234017202a3f3cac36d3c088f",
+          "lockfileTracked": false,
+          "locallyPatched": true,
+          "compatibilityPatchArtifact": null
+        },
+        "blockEditPumpResults": [
+          {"blockCount": 10, "warmupCount": 5, "sampleCount": 40, "medianMicros": 7200, "p95Micros": 12310},
+          {"blockCount": 20, "warmupCount": 5, "sampleCount": 40, "medianMicros": 8460, "p95Micros": 15080},
+          {"blockCount": 40, "warmupCount": 5, "sampleCount": 40, "medianMicros": 7350, "p95Micros": 16730},
+          {"blockCount": 80, "warmupCount": 5, "sampleCount": 40, "medianMicros": 7830, "p95Micros": 12060}
+        ],
+        "largeDocumentResults": [
+          {"sizeLabel": "100KB", "targetCharacters": 100000, "actualCharacters": null, "exactByteTier": false, "operation": "model-build", "warmupCount": 3, "sampleCount": 12, "medianMicros": 1580, "p95Micros": 7050},
+          {"sizeLabel": "100KB", "targetCharacters": 100000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-apply", "warmupCount": 8, "sampleCount": 40, "medianMicros": 143, "p95Micros": 356},
+          {"sizeLabel": "100KB", "targetCharacters": 100000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-pump", "warmupCount": 5, "sampleCount": 20, "medianMicros": 26690, "p95Micros": 44820},
+          {"sizeLabel": "1MB", "targetCharacters": 1000000, "actualCharacters": null, "exactByteTier": false, "operation": "model-build", "warmupCount": 1, "sampleCount": 5, "medianMicros": 4410, "p95Micros": 11510},
+          {"sizeLabel": "1MB", "targetCharacters": 1000000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-apply", "warmupCount": 4, "sampleCount": 20, "medianMicros": 1160, "p95Micros": 4070},
+          {"sizeLabel": "1MB", "targetCharacters": 1000000, "actualCharacters": null, "exactByteTier": false, "operation": "edit-pump", "warmupCount": 3, "sampleCount": 10, "medianMicros": 128630, "p95Micros": 134130}
+        ]
+      }
+    ]
+  },
+  "macFirstProtocol": {
+    "protocolId": "m0-mac-competitor-profile-v1",
+    "status": "specified-not-yet-executed",
+    "platform": "macos",
+    "buildMode": "profile",
+    "cohort": ["flutter_quill", "super_editor"],
+    "requiredRunnerEntrypoints": [
+      {
+        "competitorId": "flutter_quill",
+        "cwd": "benchmark/peer",
+        "path": "benchmark/peer/lib/competitor_profile_harness.dart",
+        "existsAtInventory": false
+      },
+      {
+        "competitorId": "super_editor",
+        "cwd": "benchmark/peer_supereditor",
+        "path": "benchmark/peer_supereditor/lib/competitor_profile_harness.dart",
+        "existsAtInventory": false
+      }
+    ],
+    "fixture": {
+      "workloadMatrixPath": "benchmark/v4/workloads_v1.json",
+      "generatorId": "flark-v4-deterministic-markdown-v1",
+      "shapeId": "ordinary-prose",
+      "encoding": "UTF-8",
+      "normalization": "none",
+      "adapterPolicy": "Feed the same exact generated bytes to an unmodified default editor through the thinnest documented import adapter; record any byte or line-ending change on export as a fidelity failure.",
+      "semanticScope": "plain-source fidelity and editor behavior only; no peer Markdown-semantic equivalence is claimed"
+    },
+    "sizeTiers": [
+      {"id": "1mib", "bytes": 1048576},
+      {"id": "5mib", "bytes": 5242880},
+      {"id": "10mib", "bytes": 10485760}
+    ],
+    "workloads": [
+      {
+        "id": "cold-open",
+        "freshProcessPerSample": true,
+        "warmupCount": 0,
+        "samplesPerCompetitorAndSize": 30,
+        "timeoutMicros": 60000000,
+        "start": "profile process launch and fixture selection",
+        "end": "first rasterized, interactive viewport containing exact expected source text"
+      },
+      {
+        "id": "sustained-typing",
+        "freshProcessPerRun": true,
+        "runCount": 3,
+        "warmupEditCount": 20,
+        "samplesPerRun": 200,
+        "cadenceHz": 10,
+        "inputPath": "focused Flutter platform text-input channel; direct controller mutation is forbidden",
+        "payloadCycle": "abcdefghijklmnopqrstuvwxyz0123456789",
+        "end": "the rasterized frame containing each accepted character"
+      },
+      {
+        "id": "local-insert-delete",
+        "freshProcessPerRun": true,
+        "runCount": 3,
+        "warmupPairsPerLocation": 10,
+        "samplePairsPerLocation": 100,
+        "locations": ["start", "middle", "end"],
+        "operations": ["insert-x", "delete-inserted-x"],
+        "end": "the rasterized frame containing the exact post-edit text"
+      },
+      {
+        "id": "paste-32kib",
+        "freshProcessPerRun": true,
+        "runCount": 3,
+        "warmupCount": 2,
+        "samplesPerRun": 20,
+        "payloadBytes": 32768,
+        "locations": ["start", "middle", "end"],
+        "timeoutMicros": 60000000,
+        "end": "the rasterized frame containing the complete exact pasted text"
+      }
+    ],
+    "runControl": {
+      "editorViewportLogicalPixels": {"width": 600, "height": 600},
+      "order": "rotate competitor and size order across three runs using a recorded Latin square",
+      "machine": "one named physical Mac, plugged into power, Low Power Mode off",
+      "isolation": "no concurrent build, test, benchmark, screen recording, or indexing workload; idle five minutes before each run group",
+      "dependencyPinning": "preserve pubspec.lock, flutter pub deps output, package source revisions, and any compatibility patch as hashed receipt artifacts",
+      "artifactPinning": "hash the profile app, fixture, runner source, lockfile, raw timeline, stdout, and exported final source"
+    },
+    "requiredRecordedFields": [
+      "receipt id and UTC timestamps",
+      "repository commit and dirty diff hash",
+      "competitor package version, source revision, lockfile hash, and patch hash",
+      "exact command, cwd, environment, and runner source hash",
+      "machine model, CPU, core count, memory, macOS, power and thermal state",
+      "Flutter and Dart versions and revisions, Xcode version, build artifact hash",
+      "display refresh rate, device pixel ratio, and editor viewport",
+      "fixture generator, target bytes, actual bytes, SHA-256, line endings, and exported-source SHA-256",
+      "warmups, sample count, run count, order, cadence, timeouts, failures, and raw artifact hashes",
+      "p50, p90, p99, and max for open-to-paint and input-to-paint",
+      "build, raster, longest synchronous span, missed frames, backlog, and peak and retained RSS",
+      "crash, hang, timeout, input loss, source-fidelity, and final backlog outcomes"
+    ],
+    "comparableCompletion": {
+      "required": [
+        "all fixture bytes are accepted or any normalization is explicitly reported",
+        "the first exact interactive viewport paints before the declared liveness timeout",
+        "every accepted typed, local-edit, and paste input becomes visible and exportable without loss",
+        "the workload reaches zero input backlog before timeout",
+        "the app does not crash, hang, or exceed available memory"
+      ],
+      "performanceThreshold": null,
+      "note": "Completion determines the separate competitor envelope; observed peer latency is recorded, not adopted as a Flark threshold."
+    },
+    "targetPolicy": {
+      "flarkFixedTenMiBTierBytes": 10485760,
+      "flarkTenMiBTierIsIndependentOfCompetitorBehavior": true,
+      "competitorFailureMayLowerFlarkTenMiBTier": false,
+      "competitorLatencyMayDefineFlarkThresholds": false,
+      "competitorSuccessMayCreateSeparateDerivedStretchTier": true,
+      "competitorBoundaryReceiptId": "m0-leading-editor-cohort-v1",
+      "rule": "Report the largest comparable competitor completion tier separately. Never relabel that boundary as Flark's 10 MiB target and never reduce the fixed 10 MiB tier because a peer fails earlier."
+    }
+  }
+}

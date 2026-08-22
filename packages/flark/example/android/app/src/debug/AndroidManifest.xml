@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The INTERNET permission is required for development. Specifically,
+         the Flutter tool needs it to communicate with the running application
+         to allow setting breakpoints, to provide hot reload, etc.
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application>
+        <!-- Device integration tests must receive real Flutter frames even
+             when the attached qualification phone is unattended and locked.
+             Keep this debug-only; release/profile apps retain normal lock
+             screen behavior. -->
+        <activity
+            android:name=".MainActivity"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+    </application>
+</manifest>

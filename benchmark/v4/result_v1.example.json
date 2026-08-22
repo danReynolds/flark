@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "receiptKind": "schema_example",
+  "resultId": "schema-example-not-a-measurement",
+  "matrixId": "flark-v4-performance-v1",
+  "workloadId": "flark-v4.product.1kib.ordinary-prose.warmed-local-insert",
+  "measurementSurface": "flutter-product",
+  "thresholdProfileId": "tier-a-mac-m0-v1",
+  "tier": "A_MAC",
+  "platform": "macos",
+  "claimEligible": false,
+  "resultStatus": "PASS",
+  "startedAtUtc": "2026-08-08T20:00:00Z",
+  "durationMicros": 30000000,
+  "contract": {
+    "workloadMatrixPath": "benchmark/v4/workloads_v1.json",
+    "workloadMatrixSha256": "a228e22ab4e4f5d4406288d178041a008874d56e88ffd1a86ba5e829f10e803a",
+    "resultSchemaPath": "benchmark/v4/result_v1.schema.json",
+    "resultSchemaSha256": "7ca2fc1aced90910a9e95dfd1e944ab60bf3a4d2c0c526a569245ae988fa7f73"
+  },
+  "provenance": {
+    "repositoryUrl": "https://github.com/example/flark",
+    "commitSha": "0000000000000000000000000000000000000000",
+    "dirty": false,
+    "dirtyDiffSha256": null,
+    "commands": [
+      {
+        "argv": ["flutter", "run", "--profile", "--dart-define=FLARK_WORKLOAD_ID=flark-v4.product.1kib.ordinary-prose.warmed-local-insert"],
+        "cwd": "/absolute/path/to/flark",
+        "environment": {
+          "FLUTTER_ENGINE_SWITCH": "profile"
+        }
+      }
+    ],
+    "fixture": {
+      "generatorId": "flark-v4-deterministic-markdown-v1",
+      "recipeId": "ordinary-prose",
+      "sizeTierId": "1kib",
+      "targetBytes": 1024,
+      "actualBytes": 1024,
+      "sha256": "fac8a708bcd9671539e946695c3c1fdc0592ae3ca2cba1ad9e4f697c737137c6",
+      "sizeResolution": {
+        "kind": "fixed",
+        "resolvedBytes": 1024,
+        "receiptPath": null,
+        "receiptSha256": null,
+        "receiptId": null
+      }
+    },
+    "hardware": {
+      "machineId": "schema-example-machine",
+      "manufacturer": "Example",
+      "model": "Synthetic Mac",
+      "cpu": "Synthetic CPU",
+      "logicalCores": 8,
+      "memoryBytes": 17179869184,
+      "deviceClass": "desktop"
+    },
+    "runtime": {
+      "osName": "macOS",
+      "osVersion": "example",
+      "architecture": "arm64",
+      "physicalDevice": true,
+      "simulator": false,
+      "displayRefreshHz": 60,
+      "displayFramePeriodMicros": 16666.6667
+    },
+    "renderSurface": {
+      "viewportLogicalWidth": 600,
+      "viewportLogicalHeight": 600,
+      "devicePixelRatio": 2,
+      "textScaleFactor": 1,
+      "fontAssetId": "FlarkBenchmarkMono-v1",
+      "fontSizeLogicalPixels": 16,
+      "lineHeight": 1.25,
+      "fontWeight": 400,
+      "letterSpacingLogicalPixels": 0,
+      "minimumVisibleCharacters": 512
+    },
+    "toolchain": {
+      "dart": "example",
+      "flutter": "example",
+      "rustc": "example",
+      "cargo": "example",
+      "xcode": "example",
+      "androidSdk": "not-applicable"
+    },
+    "build": {
+      "mode": "profile",
+      "engineRevision": "0000000000000000000000000000000000000000",
+      "flutterRevision": "0000000000000000000000000000000000000000",
+      "artifactPath": "benchmark/v4/results/schema-example.synthetic-app",
+      "artifactBytes": 1,
+      "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "sampling": {
+      "operationId": "warmed-local-insert",
+      "iterationUnit": "edit",
+      "warmupIterationsPerRun": 20,
+      "sampleIterationsPerRun": 200,
+      "runCount": 3,
+      "cadenceHz": 0,
+      "totalSampleCount": 600,
+      "visibleCharacterCount": 800,
+      "rawArtifacts": [
+        {
+          "kind": "synthetic-trace",
+          "path": "benchmark/v4/results/schema-example.trace.json",
+          "byteLength": 1,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  },
+  "thresholds": {
+    "sourceVisibilityMaxFrames": 1,
+    "caretVisibilityMaxFrames": 1,
+    "selectionVisibilityMaxFrames": 1,
+    "inputBacklogMaxFrames": 1,
+    "engineForegroundP99Micros": 4000,
+    "flutterFrameWorkP99Micros": 8000,
+    "editorAttributedFrameMaxExclusiveMicros": 16000,
+    "synchronousSpanMaxExclusiveMicros": 16000,
+    "editorAttributedDroppedFramesMax": 0,
+    "editorAttributedMissedFrameRateMax": 0,
+    "coldExactViewportPaintMaxExclusiveMicros": 200000,
+    "visibleProjectionCertificationMaxExclusiveMicros": 500000,
+    "convergenceWallMaxExclusiveMicros": 500000,
+    "uncertifiedVisibleCharacterFramesMax": 24000,
+    "peakRssOverBaselineMaxBytes": 67108864,
+    "retainedRssOverBaselineAfterCloseMaxBytes": 16777216,
+    "liveDocumentsAfterCloseMax": 0,
+    "liveTransactionsAfterCloseMax": 0,
+    "liveContinuationsAfterCloseMax": 0,
+    "liveHandlesAfterCloseMax": 0,
+    "minimumOpenEditCloseCycles": 100,
+    "minimumProcessReopenCount": 10,
+    "minimumBackgroundForegroundCycles": 0,
+    "minimumSustainedRunSeconds": 0,
+    "thermalThrottleEventsMax": 0
+  },
+  "metrics": {
+    "latency": {
+      "sourceVisibilityFrames": {"sampleCount": 600, "p50": 1, "p90": 1, "p99": 1, "max": 1},
+      "caretVisibilityFrames": {"sampleCount": 600, "p50": 1, "p90": 1, "p99": 1, "max": 1},
+      "selectionVisibilityFrames": {"sampleCount": 600, "p50": 1, "p90": 1, "p99": 1, "max": 1},
+      "inputBacklogFrames": {"sampleCount": 600, "p50": 0, "p90": 0, "p99": 0, "max": 0},
+      "sourceVisibilityMicros": {"sampleCount": 600, "p50": 4500, "p90": 6500, "p99": 8000, "max": 12000},
+      "caretVisibilityMicros": {"sampleCount": 600, "p50": 4600, "p90": 6600, "p99": 8100, "max": 12100},
+      "selectionVisibilityMicros": {"sampleCount": 600, "p50": 4700, "p90": 6700, "p99": 8200, "max": 12200},
+      "inputToPaintMicros": {"sampleCount": 600, "p50": 5000, "p90": 6800, "p99": 8300, "max": 12500},
+      "coldExactViewportPaintMicros": null,
+      "visibleProjectionCertificationMicros": {"sampleCount": 600, "p50": 180000, "p90": 280000, "p99": 380000, "max": 450000}
+    },
+    "foreground": {
+      "totalMicros": {"sampleCount": 600, "p50": 3500, "p90": 5500, "p99": 7000, "max": 12000},
+      "rustEngineMicros": {"sampleCount": 600, "p50": 1200, "p90": 2200, "p99": 3000, "max": 6000},
+      "ffiMicros": {"sampleCount": 600, "p50": 100, "p90": 180, "p99": 250, "max": 400},
+      "dartMicros": {"sampleCount": 600, "p50": 500, "p90": 900, "p99": 1200, "max": 1800},
+      "flutterBuildMicros": {"sampleCount": 600, "p50": 600, "p90": 1000, "p99": 1400, "max": 2200},
+      "flutterLayoutMicros": {"sampleCount": 600, "p50": 500, "p90": 900, "p99": 1200, "max": 1800},
+      "flutterPaintMicros": {"sampleCount": 600, "p50": 350, "p90": 650, "p99": 900, "max": 1400},
+      "flutterRasterMicros": {"sampleCount": 600, "p50": 800, "p90": 1300, "p99": 1800, "max": 2600},
+      "longestSynchronousSpanMicros": 12000
+    },
+    "frames": {
+      "totalFrames": 600,
+      "missedFrames": 2,
+      "editorAttributedDroppedFrames": 0,
+      "editorAttributedMissedFrameRate": 0,
+      "buildMicros": {"sampleCount": 600, "p50": 1100, "p90": 1800, "p99": 2400, "max": 3500},
+      "rasterMicros": {"sampleCount": 600, "p50": 900, "p90": 1500, "p99": 2100, "max": 3000},
+      "editorWorkMicros": {"sampleCount": 600, "p50": 3800, "p90": 5800, "p99": 7200, "max": 12500},
+      "longestEditorAttributedFrameMicros": 12500
+    },
+    "ffi": {
+      "totalCalls": 800,
+      "totalReturnedBytes": 819200,
+      "callsPerFrame": {"sampleCount": 600, "p50": 2, "p90": 3, "p99": 4, "max": 6},
+      "returnedBytesPerFrame": {"sampleCount": 600, "p50": 1024, "p90": 2048, "p99": 4096, "max": 8192}
+    },
+    "convergence": {
+      "workUnits": {"sampleCount": 600, "p50": 30, "p90": 50, "p99": 70, "max": 90},
+      "pumpCount": {"sampleCount": 600, "p50": 2, "p90": 4, "p99": 6, "max": 8},
+      "wallTimeMicros": {"sampleCount": 600, "p50": 150000, "p90": 280000, "p99": 380000, "max": 450000},
+      "uncertifiedVisibleCharacterFrames": {"sampleCount": 600, "p50": 300, "p90": 800, "p99": 1400, "max": 2000},
+      "terminalState": "complete",
+      "terminalReason": null,
+      "progressTokenAdvanced": true
+    },
+    "memory": {
+      "allocationCount": 100000,
+      "allocatedBytes": 52428800,
+      "baselineRssBytes": 104857600,
+      "peakRssBytes": 157286400,
+      "retainedRssBytesAfterClose": 115343360,
+      "allocatorRssVarianceBytes": 5242880
+    },
+    "lifecycle": {
+      "openEditCloseCycles": 100,
+      "processReopenCount": 10,
+      "backgroundForegroundCycles": 0,
+      "sustainedRunSeconds": 0,
+      "thermalStartState": "not-applicable",
+      "thermalMaxState": "not-applicable",
+      "thermalEndState": "not-applicable",
+      "thermalThrottleEvents": 0,
+      "memoryPressureEvents": 0,
+      "liveDocumentsAfterClose": 0,
+      "liveTransactionsAfterClose": 0,
+      "liveContinuationsAfterClose": 0,
+      "liveHandlesAfterClose": 0
+    }
+  },
+  "evaluation": {
+    "passed": true,
+    "checks": [
+      {"gateId": "source-visibility-frames", "passed": true, "observed": 1, "comparator": "<=", "threshold": 1, "unit": "frames"},
+      {"gateId": "caret-visibility-frames", "passed": true, "observed": 1, "comparator": "<=", "threshold": 1, "unit": "frames"},
+      {"gateId": "selection-visibility-frames", "passed": true, "observed": 1, "comparator": "<=", "threshold": 1, "unit": "frames"},
+      {"gateId": "input-backlog-frames", "passed": true, "observed": 0, "comparator": "<=", "threshold": 1, "unit": "frames"},
+      {"gateId": "engine-p99", "passed": true, "observed": 3000, "comparator": "<=", "threshold": 4000, "unit": "microseconds"},
+      {"gateId": "flutter-frame-work-p99", "passed": true, "observed": 7200, "comparator": "<=", "threshold": 8000, "unit": "microseconds"},
+      {"gateId": "hard-frame-maximum", "passed": true, "observed": 12500, "comparator": "<", "threshold": 16000, "unit": "microseconds"},
+      {"gateId": "hard-sync-maximum", "passed": true, "observed": 12000, "comparator": "<", "threshold": 16000, "unit": "microseconds"},
+      {"gateId": "editor-dropped-frames", "passed": true, "observed": 0, "comparator": "<=", "threshold": 0, "unit": "frames"},
+      {"gateId": "cold-exact-paint", "passed": true, "observed": 150000, "comparator": "<", "threshold": 200000, "unit": "microseconds"},
+      {"gateId": "visible-certification", "passed": true, "observed": 450000, "comparator": "<", "threshold": 500000, "unit": "microseconds"},
+      {"gateId": "live-handles-after-close", "passed": true, "observed": 0, "comparator": "==", "threshold": 0, "unit": "handles"}
+    ]
+  }
+}

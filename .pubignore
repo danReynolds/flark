@@ -9,6 +9,14 @@ pubspec.lock
 native/comrak_bridge/target/
 native/comrak_bridge/dist/
 
+# Architecture probes and the dependent Flutter package are repository
+# workspaces, not part of the published Dart engine archive. Production Rust
+# crates stay below native/comrak_bridge and remain included.
+tool/parser_research/
+tool/archive_consumer/
+packages/
+example/pubspec_overrides.yaml
+
 benchmark/
 docs/
 doc/api/

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 2,
+  "profileId": "flark-gfm-0.29-v2",
+  "normativeSemanticProfile": {
+    "spec": "GitHub Flavored Markdown",
+    "specVersion": "0.29-gfm",
+    "publishedDate": "2019-04-06",
+    "specUrl": "https://github.github.com/gfm/",
+    "precedence": "The official GFM 0.29-gfm examples, including their embedded CommonMark behavior, are the sole semantic product authority.",
+    "importProvenance": "package:markdown 7.3.0 tool fixture",
+    "fixture": "test/fixtures/commonmark/upstream/gfm_tests.json",
+    "fixtureSha256": "ce09eea1c15b61235868465468f6281ec82ab177998e404d9143e1641c4e5b55",
+    "fixtureCaseCount": 670,
+    "expectedExampleRange": [1, 672],
+    "fixtureMissingExamples": [279, 280],
+    "supplement": "test/fixtures/v4/task_list_profile_cases_v1.json",
+    "supplementSha256": "8a735bd2ce45b2cea42a687f6425d0519f8c9b2a62f77d3cb37b9e404c3e9a69",
+    "profileCaseCount": 672,
+    "caseIdFormat": "GFM-{example}",
+    "extensions": [
+      "tables",
+      "task_list_items",
+      "strikethrough",
+      "extended_autolinks",
+      "disallowed_raw_html"
+    ]
+  },
+  "compatibilityProfiles": [
+    {
+      "id": "commonmark-0.31.2-compatibility",
+      "normativeForProduct": false,
+      "specVersion": "0.31.2",
+      "specUrl": "https://spec.commonmark.org/0.31.2/",
+      "fixture": "test/fixtures/commonmark/upstream/common_mark_tests.json",
+      "fixtureSha256": "d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20",
+      "caseCount": 652,
+      "caseIdFormat": "CM-{example}",
+      "expectedExampleRange": [1, 652],
+      "rule": "This newer CommonMark corpus is a diagnostic compatibility ledger only and never changes GFM pass or fail status."
+    }
+  ],
+  "liveProjectionProfile": {
+    "profileId": "flark-live-v2",
+    "manifest": "test/fixtures/v4/live_projection_profile_v2.json",
+    "manifestSha256": "d0a1cc9dde23f0d86a0ea04b9fcfb1affec75731cbc718c367f35ede08d5fdff",
+    "rule": "Live editor projection is independently versioned and never counted as semantic GFM conformance."
+  },
+  "sourcePolicy": {
+    "canonicalEncoding": "UTF-8",
+    "normalization": "preserve_input",
+    "lineEndings": ["LF", "CRLF", "CR"],
+    "invalidUtf8": "reject_before_commit",
+    "unpairedUtf16Surrogate": "reject_before_commit"
+  },
+  "htmlPolicy": {
+    "semanticOracle": "Fixture HTML is a conformance oracle only.",
+    "coreOutput": "Core reports parser semantics and exact source; it does not execute or sanitize HTML.",
+    "productDefault": "Raw HTML remains exact source and non-executable unless a separately reviewed renderer policy is installed."
+  },
+  "deviationPolicy": {
+    "register": "test/fixtures/v4/markdown_deviations_v2.json",
+    "registerSha256": "62edeb483316afbbf81970fec0efaa85553daa3a4817aa6d0729832fe12393a1",
+    "allowedStatuses": ["proposed", "approved", "retired"],
+    "requiredFields": [
+      "ledger",
+      "corpus",
+      "example",
+      "owner",
+      "reason",
+      "targetMilestone",
+      "reviewState"
+    ],
+    "rule": "Only an approved in-denominator register row may be counted as approved_deviation in its named ledger. Proposed and retired rows remain missing or divergent; no deviation is ever counted as exact."
+  }
+}

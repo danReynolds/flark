@@ -1,44 +1,14 @@
-name: flark
-description: A Flutter markdown editor and read-only previewer with native CommonMark/GFM parsing.
-version: 0.1.1
-homepage: https://danreynolds.github.io/flark/
-repository: https://github.com/danReynolds/flark
-issue_tracker: https://github.com/danReynolds/flark/issues
-documentation: https://danreynolds.github.io/flark/
-topics:
-  - markdown
-  - editor
-  - flutter
-  - commonmark
-  - gfm
-screenshots:
-  - description: Flark source editor, live-rendered editor, and preview surfaces.
-    path: screenshots/flark_surfaces.png
+name: flark_workspace
+description: Repository qualification harness for the flark and flark_core packages.
+version: 0.0.0
+publish_to: none
 
 environment:
   sdk: ^3.10.4
 
 dependencies:
-  flutter:
-    sdk: flutter
-  # Extended-grapheme-cluster segmentation for editing (Backspace over flags,
-  # ZWJ emoji, and NFD combining pairs). Pure Dart — safe for the headless core.
-  characters: ^1.4.0
-  ffi: ^2.1.4
-  hooks: ^1.0.3
-  code_assets: ^1.0.0
-  highlight: ^0.7.0
-  html: ^0.15.4
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^6.0.0
-  # Used only by the WASM freshness guard (tool/ + packaging test) to hash the
-  # Rust bridge sources; not part of the shipped runtime.
   crypto: ^3.0.6
 
-flutter:
-  uses-material-design: true
-  assets:
-    - lib/assets/wasm/flark_comrak_bridge.wasm
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.3

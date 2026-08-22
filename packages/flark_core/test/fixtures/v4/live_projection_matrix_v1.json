@@ -1,0 +1,398 @@
+{
+  "schemaVersion": 1,
+  "coordinateSpace": "document UTF-16 at the named revision",
+  "certificationStates": ["certified", "pending", "source_gap"],
+  "terminalOutcomes": ["progress", "quiescent_current", "blocked", "cancelled", "superseded", "faulted", "closed"],
+  "semanticFactRule": "Every semantic fact names its exact nonzero revision, sourceRange, and certification authority; sourceRange must be wholly covered by that authority at certified state. Pending or source-gap authorities expose exact neutral source and no intersecting fact, while unrelated certified authorities may retain current facts.",
+  "currentStatusDefinitions": {
+    "seed_evidence": "An older v2/v3/G4 case informs the contract but is not a v4 pass.",
+    "missing": "No executable v4 product-path receipt exists."
+  },
+  "cases": [
+    {
+      "id": "LP-INCOMPLETE-EMPHASIS-001",
+      "category": "incomplete_syntax",
+      "currentStatus": "seed_evidence",
+      "evidence": "legacy/root_package/example/lib/m0_certification_probe.dart",
+      "initial": {
+        "source": "*hello*\n\nDistant.\n",
+        "revision": 1,
+        "anchors": {"base": 7, "extent": 7, "affinity": "downstream"},
+        "selection": [7, 7],
+        "composition": null,
+        "visibleText": "hello\n\nDistant.\n",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 18]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "emphasis", "sourceRange": [0, 7]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "replace", "range": [6, 7], "text": ""},
+          "expected": {
+            "exactSource": "*hello\n\nDistant.\n",
+            "revision": 2,
+            "anchors": {"base": 6, "extent": 6, "affinity": "downstream"},
+            "selection": [6, 6],
+            "composition": null,
+            "visibleText": "*hello\n\nDistant.\n",
+            "certification": {"editedRange": "pending", "distantRange": "certified"},
+            "certificationRanges": {"editedRange": [[0, 6]], "distantRange": [[8, 16]]},
+            "semanticFacts": [{"revision": 2, "authority": "distantRange", "kind": "paragraph", "sourceRange": [8, 16]}],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-MARKER-REVEAL-001",
+      "category": "marker_reveal_hide",
+      "currentStatus": "seed_evidence",
+      "evidence": "legacy/flark_flutter/test/v3/flutter/flark_v3_inline_editing_presentation_test.dart",
+      "initial": {
+        "source": "before **bold** after",
+        "revision": 1,
+        "anchors": {"base": 0, "extent": 0, "affinity": "downstream"},
+        "selection": [0, 0],
+        "composition": null,
+        "visibleText": "before bold after",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 21]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "strong", "sourceRange": [7, 15]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "move_caret", "sourceOffset": 9},
+          "expected": {
+            "exactSource": "before **bold** after",
+            "revision": 1,
+            "anchors": {"base": 9, "extent": 9, "affinity": "downstream"},
+            "selection": [9, 9],
+            "composition": null,
+            "visibleText": "before **bold** after",
+            "certification": {"document": "certified"},
+            "certificationRanges": {"document": [[0, 21]]},
+            "semanticFacts": [{"revision": 1, "authority": "document", "kind": "strong", "sourceRange": [7, 15]}],
+            "terminalOutcome": "quiescent_current"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-HIDDEN-SELECTION-001",
+      "category": "selection_hidden_markers",
+      "currentStatus": "seed_evidence",
+      "evidence": "legacy/root_package/test/v3/editor/flark_v3_source_projection_test.dart",
+      "initial": {
+        "source": "**bold**",
+        "revision": 1,
+        "anchors": {"base": 2, "extent": 6, "affinity": "downstream"},
+        "selection": [2, 6],
+        "composition": null,
+        "visibleText": "bold",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 8]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "strong", "sourceRange": [0, 8]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "replace_selection", "text": "B"},
+          "expected": {
+            "exactSource": "**B**",
+            "revision": 2,
+            "anchors": {"base": 3, "extent": 3, "affinity": "downstream"},
+            "selection": [3, 3],
+            "composition": null,
+            "visibleText": "**B**",
+            "certification": {"editedRange": "pending"},
+            "certificationRanges": {"editedRange": [[0, 5]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-SPLIT-MERGE-001",
+      "category": "split_merge",
+      "currentStatus": "seed_evidence",
+      "evidence": "legacy/flark_flutter/test/v2/flutter/flark_live_rendered_transition_matrix_test.dart",
+      "initial": {
+        "source": "alpha beta",
+        "revision": 1,
+        "anchors": {"base": 5, "extent": 5, "affinity": "downstream"},
+        "selection": [5, 5],
+        "composition": null,
+        "visibleText": "alpha beta",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 10]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "paragraph", "sourceRange": [0, 10]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "insert", "offset": 5, "text": "\n\n"},
+          "expected": {
+            "exactSource": "alpha\n\n beta",
+            "revision": 2,
+            "anchors": {"base": 7, "extent": 7, "affinity": "downstream"},
+            "selection": [7, 7],
+            "composition": null,
+            "visibleText": "alpha\n\n beta",
+            "certification": {"editedRange": "pending"},
+            "certificationRanges": {"editedRange": [[0, 12]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        },
+        {
+          "action": {"kind": "replace", "range": [5, 7], "text": ""},
+          "expected": {
+            "exactSource": "alpha beta",
+            "revision": 3,
+            "anchors": {"base": 5, "extent": 5, "affinity": "downstream"},
+            "selection": [5, 5],
+            "composition": null,
+            "visibleText": "alpha beta",
+            "certification": {"editedRange": "pending"},
+            "certificationRanges": {"editedRange": [[0, 10]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-PASTE-001",
+      "category": "paste",
+      "currentStatus": "missing",
+      "evidence": "M0-STALL-32K-PASTE",
+      "initial": {
+        "source": "before after",
+        "revision": 1,
+        "anchors": {"base": 6, "extent": 6, "affinity": "downstream"},
+        "selection": [6, 6],
+        "composition": null,
+        "visibleText": "before after",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 12]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "paragraph", "sourceRange": [0, 12]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "staged_paste", "fixture": "M0-STALL-32K-PASTE", "offset": 6},
+          "expected": {
+            "exactSource": "fixture-derived",
+            "revision": 2,
+            "anchors": {"base": 32795, "extent": 32795, "affinity": "downstream"},
+            "selection": [32795, 32795],
+            "composition": null,
+            "visibleText": "exact-source-viewport",
+            "certification": {"editedRange": "pending", "distantRange": "certified"},
+            "certificationRanges": {"editedRange": [[6, 32795]], "distantRange": [[0, 6]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-UNDO-REDO-001",
+      "category": "undo_redo",
+      "currentStatus": "missing",
+      "evidence": "docs/architecture/v4/contracts/runtime_abi_v1.md",
+      "initial": {
+        "source": "abc",
+        "revision": 1,
+        "anchors": {"base": 3, "extent": 3, "affinity": "downstream"},
+        "selection": [3, 3],
+        "composition": null,
+        "visibleText": "abc",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 3]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "paragraph", "sourceRange": [0, 3]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "insert", "offset": 3, "text": "d"},
+          "expected": {
+            "exactSource": "abcd",
+            "revision": 2,
+            "anchors": {"base": 4, "extent": 4, "affinity": "downstream"},
+            "selection": [4, 4],
+            "composition": null,
+            "visibleText": "abcd",
+            "certification": {"editedRange": "pending"},
+            "certificationRanges": {"editedRange": [[0, 4]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        },
+        {
+          "action": {"kind": "undo_token_replay"},
+          "expected": {
+            "exactSource": "abc",
+            "revision": 3,
+            "anchors": {"base": 3, "extent": 3, "affinity": "downstream"},
+            "selection": [3, 3],
+            "composition": null,
+            "visibleText": "abc",
+            "certification": {"editedRange": "pending"},
+            "certificationRanges": {"editedRange": [[0, 3]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        },
+        {
+          "action": {"kind": "redo_token_replay"},
+          "expected": {
+            "exactSource": "abcd",
+            "revision": 4,
+            "anchors": {"base": 4, "extent": 4, "affinity": "downstream"},
+            "selection": [4, 4],
+            "composition": null,
+            "visibleText": "abcd",
+            "certification": {"editedRange": "pending"},
+            "certificationRanges": {"editedRange": [[0, 4]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-COMPOSITION-001",
+      "category": "composition",
+      "currentStatus": "seed_evidence",
+      "evidence": "legacy/flark_flutter/test/v3/flutter/flark_v3_virtualized_ime_composition_acceptance_test.dart",
+      "initial": {
+        "source": "A😀B",
+        "revision": 1,
+        "anchors": {"base": 1, "extent": 1, "affinity": "downstream"},
+        "selection": [1, 1],
+        "composition": null,
+        "visibleText": "A😀B",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 4]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "paragraph", "sourceRange": [0, 4]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "ime_delta", "range": [1, 1], "text": "é", "composing": [1, 3]},
+          "expected": {
+            "exactSource": "Aé😀B",
+            "revision": 2,
+            "anchors": {"base": 3, "extent": 3, "affinity": "downstream"},
+            "selection": [3, 3],
+            "composition": [1, 3],
+            "visibleText": "Aé😀B",
+            "certification": {"compositionRange": "pending", "distantRange": "certified"},
+            "certificationRanges": {"compositionRange": [[1, 3]], "distantRange": [[3, 6]]},
+            "semanticFacts": [],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-REFERENCE-RETARGET-001",
+      "category": "non_local_dependency",
+      "currentStatus": "missing",
+      "evidence": "M0-CERT-REFERENCE-RETARGET",
+      "initial": {
+        "source": "[label]\n\n[label]: /old\n\nDistant.\n",
+        "revision": 1,
+        "anchors": {"base": 22, "extent": 22, "affinity": "downstream"},
+        "selection": [22, 22],
+        "composition": null,
+        "visibleText": "label\n\nDistant.\n",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 33]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "kind": "reference_link", "destination": "/old", "sourceRange": [0, 33]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "replace", "range": [19, 22], "text": "new"},
+          "expected": {
+            "exactSource": "[label]\n\n[label]: /new\n\nDistant.\n",
+            "revision": 2,
+            "anchors": {"base": 22, "extent": 22, "affinity": "downstream"},
+            "selection": [22, 22],
+            "composition": null,
+            "visibleText": "[label]\n\n[label]: /new\n\nDistant.\n",
+            "certification": {"definitionRange": "pending", "dependentReference": "pending", "distantRange": "certified"},
+            "certificationRanges": {"definitionRange": [[9, 22]], "dependentReference": [[0, 7]], "distantRange": [[24, 32]]},
+            "semanticFacts": [{"revision": 2, "authority": "distantRange", "kind": "paragraph", "sourceRange": [24, 32]}],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-PENDING-CERTIFY-001",
+      "category": "pending_to_certified",
+      "currentStatus": "missing",
+      "evidence": "docs/architecture/v4/build_plan.md",
+      "initial": {
+        "source": "*new*",
+        "revision": 1,
+        "anchors": {"base": 4, "extent": 4, "affinity": "downstream"},
+        "selection": [4, 4],
+        "composition": null,
+        "visibleText": "*new*",
+        "certification": {"document": "pending"},
+        "certificationRanges": {"document": [[0, 5]]},
+        "semanticFacts": []
+      },
+      "steps": [
+        {
+          "action": {"kind": "pump", "budget": {"transitions": 64, "outputBytes": 4096}},
+          "expected": {
+            "exactSource": "*new*",
+            "revision": 1,
+            "anchors": {"base": 4, "extent": 4, "affinity": "downstream"},
+            "selection": [4, 4],
+            "composition": null,
+            "visibleText": "new",
+            "certification": {"document": "certified"},
+            "certificationRanges": {"document": [[0, 5]]},
+            "semanticFacts": [{"revision": 1, "authority": "document", "kind": "emphasis", "sourceRange": [0, 5]}],
+            "terminalOutcome": "quiescent_current"
+          }
+        }
+      ]
+    },
+    {
+      "id": "LP-LINE-ENDINGS-001",
+      "category": "line_endings",
+      "currentStatus": "seed_evidence",
+      "evidence": "legacy/root_package/test/v3/source/flark_v3_source_document_test.dart",
+      "initial": {
+        "source": "a\r\nb\rc\n",
+        "revision": 1,
+        "anchors": {"base": 3, "extent": 3, "affinity": "downstream"},
+        "selection": [3, 3],
+        "composition": null,
+        "visibleText": "a\r\nb\rc\n",
+        "certification": {"document": "certified"},
+        "certificationRanges": {"document": [[0, 7]]},
+        "semanticFacts": [{"revision": 1, "authority": "document", "lineEndings": ["CRLF", "CR", "LF"], "sourceRange": [0, 7]}]
+      },
+      "steps": [
+        {
+          "action": {"kind": "insert", "offset": 3, "text": "x"},
+          "expected": {
+            "exactSource": "a\r\nxb\rc\n",
+            "revision": 2,
+            "anchors": {"base": 4, "extent": 4, "affinity": "downstream"},
+            "selection": [4, 4],
+            "composition": null,
+            "visibleText": "a\r\nxb\rc\n",
+            "certification": {"editedRange": "pending", "otherLineEndings": "certified"},
+            "certificationRanges": {"editedRange": [[3, 4]], "otherLineEndings": [[0, 3], [4, 8]]},
+            "semanticFacts": [{"revision": 2, "authority": "otherLineEndings", "lineEndings": ["CR"], "sourceRange": [5, 6]}, {"revision": 2, "authority": "otherLineEndings", "lineEndings": ["LF"], "sourceRange": [7, 8]}],
+            "terminalOutcome": "progress"
+          }
+        }
+      ]
+    }
+  ]
+}

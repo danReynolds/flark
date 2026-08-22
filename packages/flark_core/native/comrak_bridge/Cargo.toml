@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "crates/flark_abi",
+    "crates/flark_engine",
+    "crates/flark_parser",
+    "crates/flark_runtime",
+]
+exclude = ["crates/flark_parser/vendor/comrak"]
+resolver = "2"
+
+[patch.crates-io]
+comrak = { path = "crates/flark_parser/vendor/comrak" }

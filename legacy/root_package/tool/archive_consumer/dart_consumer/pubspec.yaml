@@ -1,0 +1,13 @@
+name: flark_archive_dart_consumer
+description: External Dart-only consumer used by Flark's publish archive gate.
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flark: any
+
+dev_dependencies:
+  lints: ^6.0.0

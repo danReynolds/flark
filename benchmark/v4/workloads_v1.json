@@ -1,0 +1,669 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "flark-v4-performance-v1",
+  "status": "m0-frozen",
+  "units": {
+    "documentSize": "UTF-8 bytes",
+    "duration": "microseconds",
+    "memory": "bytes",
+    "displayCadence": "hertz"
+  },
+  "expandedWorkloadIdFormat": "flark-v4.<target>.<sizeTierId>.<shapeId>.<operationId>",
+  "generatorContract": {
+    "id": "flark-v4-deterministic-markdown-v1",
+    "encoding": "UTF-8",
+    "normalization": "none",
+    "lineEndings": "recipe-owned",
+    "rules": [
+      "All recipe literals are ASCII so exact-byte truncation cannot split UTF-8.",
+      "repeat_ascii_exact repeats prefix/cycle bytes and truncates the final cycle to targetBytes.",
+      "indexed_ascii_exact substitutes a zero-padded decimal index before appending each record and truncates the final record to targetBytes.",
+      "Every runner records actualBytes and SHA-256 and fails if actualBytes differs from the resolved target.",
+      "Derived size tiers are resolved before a run from the named competitor receipt; their resolved byte count is recorded in the result."
+    ]
+  },
+  "renderContract": {
+    "id": "flark-v4-render-denominator-v1",
+    "viewportLogicalWidth": 600,
+    "viewportLogicalHeight": 600,
+    "devicePixelRatio": 2,
+    "textScaleFactor": 1,
+    "fontAssetId": "FlarkBenchmarkMono-v1",
+    "fontSizeLogicalPixels": 16,
+    "lineHeight": 1.25,
+    "fontWeight": 400,
+    "letterSpacingLogicalPixels": 0,
+    "minimumVisibleCharacters": 512
+  },
+  "renderEvidenceContract": {
+    "projectionHashFormula": "sha256(canonical-json(sourceRevision,sourceSha256,visibleStartUtf8,visibleEndUtf8,visibleTextSha256))",
+    "glyphRunHashFormula": "sha256(canonical-json(font-contract,visibleText))",
+    "rasterHashFormula": "sha256(canonical-json(viewport-contract,glyphRunSha256,projectionSha256))"
+  },
+  "rawEvidenceContract": {
+    "id": "flark-v4-raw-evidence-v1",
+    "artifactKind": "flark-v4-raw-evidence-v1",
+    "percentileMethod": "nearest-rank-ceil-p-times-n",
+    "interactionLimitFormula": "min(16000, displayFramePeriodMicros)",
+    "displayPeriodToleranceMicros": 1,
+    "cadenceToleranceMicros": 1,
+    "requiredSampleFields": [
+      "runId",
+      "sampleId",
+      "sampleIndex",
+      "processId",
+      "frameId",
+      "measurementStartVsyncOrdinal",
+      "measurementEndVsyncOrdinal",
+      "scheduledMicros",
+      "acceptedMicros",
+      "sourcePaintMicros",
+      "caretPaintMicros",
+      "selectionPaintMicros",
+      "sourceRevisionBefore",
+      "sourceRevisionAfter",
+      "sourceSha256Before",
+      "sourceSha256After",
+      "distantProjectionSha256Before",
+      "distantProjectionSha256After",
+      "operationProof"
+    ],
+    "requiredFrameFields": [
+      "runId",
+      "frameId",
+      "vsyncOrdinal",
+      "processId",
+      "sampleId",
+      "editorAttributed",
+      "vsyncStartMicros",
+      "buildStartMicros",
+      "buildFinishMicros",
+      "rasterStartMicros",
+      "rasterFinishMicros",
+      "workUnitIds",
+      "pumpIds"
+    ],
+    "claimReplay": [
+      "Every declared artifact path exists and its byte length and SHA-256 match.",
+      "The deterministic fixture is regenerated from the workload shape recipe and exact resolved bytes.",
+      "Every measured and warmup iteration is replayed from the deterministic fixture through its exact operation stages; run-local final state chains into the next iteration.",
+      "Every measurement interval declares a contiguous vsync-ordinal range; the retained frame stream contains every ordinal in every range and every sample links to exactly one proving frame.",
+      "Every aggregate count, percentile, maximum, cadence, full-stream frame, memory, and lifecycle field is recomputed from raw records.",
+      "Cold-open samples use distinct process IDs; other runs contain the exact frozen per-run denominator.",
+      "Raw render proofs bind source revision and bytes to visible source range/content, deterministic glyph-run hash, projection hash, raster hash, and the proving frame.",
+      "Memory and lifecycle rows name retained processes and use monotonic timestamps inside those process intervals, including baseline/peak/close/post-close and reopen ordering.",
+      "Source, caret, selection, and their latest paint all meet the raw timestamp interaction limit."
+    ]
+  },
+  "competitorResolutionContract": {
+    "id": "flark-v4-mac-peer-resolution-v1",
+    "platform": "macos",
+    "receiptPath": "benchmark/v4/competitor_resolution_v1.json",
+    "suiteId": "m0-mac-two-peer-suite-v1",
+    "protocolId": "m0-mac-competitor-profile-v1",
+    "canonicalPlanSha256": "3daf93557b1ac671b4c9a2aaa743276d8d629758999398073bd7da6b2b370d8c",
+    "expectedProcessCount": 234,
+    "expectedRunGroupCount": 3,
+    "requiredPeers": ["flutter_quill", "super_editor"],
+    "tierBytes": [1048576, 5242880, 10485760]
+  },
+  "metricApplicability": {
+    "targetSpecific": {
+      "product": {
+        "measurementSurface": "flutter-product",
+        "renderProofRequired": true,
+        "flutterLatencyAndFrameMetricsRequired": true
+      },
+      "engine": {
+        "measurementSurface": "engine-only",
+        "renderProofRequired": false,
+        "flutterLatencyAndFrameMetricsRequired": false,
+        "applicableMetricFamilies": ["foreground", "ffi", "convergence", "memory", "lifecycle"]
+      }
+    },
+    "alwaysApplicableFamilies": ["foreground", "frames", "ffi", "convergence", "memory", "lifecycle"],
+    "latencyAlwaysApplicable": [
+      "sourceVisibilityFrames",
+      "caretVisibilityFrames",
+      "selectionVisibilityFrames",
+      "inputBacklogFrames",
+      "sourceVisibilityMicros",
+      "caretVisibilityMicros",
+      "selectionVisibilityMicros",
+      "inputToPaintMicros",
+      "visibleProjectionCertificationMicros"
+    ],
+    "latencyOperationSpecific": {
+      "coldExactViewportPaintMicros": ["cold-open"]
+    }
+  },
+  "sizeTiers": [
+    {
+      "id": "1kib",
+      "bytes": 1024,
+      "role": "interactive-floor"
+    },
+    {
+      "id": "25kib",
+      "bytes": 25600,
+      "role": "ordinary-product-document"
+    },
+    {
+      "id": "100kib",
+      "bytes": 102400,
+      "role": "large-ordinary-document"
+    },
+    {
+      "id": "1mib",
+      "bytes": 1048576,
+      "role": "first-scale-waypoint"
+    },
+    {
+      "id": "2mib",
+      "bytes": 2097152,
+      "role": "editor-scale"
+    },
+    {
+      "id": "5mib",
+      "bytes": 5242880,
+      "role": "editor-scale"
+    },
+    {
+      "id": "10mib",
+      "bytes": 10485760,
+      "role": "editor-scale"
+    },
+    {
+      "id": "competitor-boundary",
+      "role": "competitor-derived-editor-envelope",
+      "derivation": {
+        "kind": "largest-comparable-passing-envelope",
+        "resolutionReceiptPath": "benchmark/v4/competitor_resolution_v1.json",
+        "resolutionPlatform": "macos",
+        "requiredSuiteId": "m0-mac-two-peer-suite-v1",
+        "requiredProtocolId": "m0-mac-competitor-profile-v1"
+      }
+    },
+    {
+      "id": "competitor-next-tier",
+      "role": "stretch-editor-envelope",
+      "derivation": {
+        "kind": "next-meaningful-tier-after",
+        "baseSizeTierId": "competitor-boundary",
+        "meaningfulTierBytes": [1048576, 5242880, 10485760, 20971520],
+        "resolutionReceiptPath": "benchmark/v4/competitor_resolution_v1.json",
+        "resolutionPlatform": "macos",
+        "requiredSuiteId": "m0-mac-two-peer-suite-v1",
+        "requiredProtocolId": "m0-mac-competitor-profile-v1"
+      }
+    },
+    {
+      "id": "engine-4x-envelope",
+      "role": "engine-only-hidden-linear-work-detector",
+      "derivation": {
+        "kind": "multiply",
+        "baseSizeTierId": "competitor-boundary",
+        "factor": 4,
+        "resolutionReceiptPath": "benchmark/v4/competitor_resolution_v1.json",
+        "resolutionPlatform": "macos",
+        "requiredSuiteId": "m0-mac-two-peer-suite-v1",
+        "requiredProtocolId": "m0-mac-competitor-profile-v1"
+      }
+    }
+  ],
+  "shapeRecipes": [
+    {
+      "id": "ordinary-prose",
+      "categories": ["ordinary", "paragraphs"],
+      "recipe": {
+        "algorithm": "repeat_ascii_exact",
+        "prefix": "",
+        "cycle": "Ordinary prose opens with a clear sentence and a small **bold** run.\nIt continues with _emphasis_, `code`, and a direct [link](https://example.invalid/).\n\n"
+      }
+    },
+    {
+      "id": "delimiter-dense",
+      "categories": ["markdown-dense", "inline-delimiters"],
+      "recipe": {
+        "algorithm": "repeat_ascii_exact",
+        "prefix": "",
+        "cycle": "***strong-em*** ~~strike~~ `code * literal` [label](https://example.invalid/a_(b)) ![alt](img.png)  \\\nnext\\*line\\_ []() <tag> &amp;\n\n"
+      }
+    },
+    {
+      "id": "giant-paragraph",
+      "categories": ["oversized-block", "soft-lines"],
+      "recipe": {
+        "algorithm": "repeat_ascii_exact",
+        "prefix": "",
+        "cycle": "One paragraph continues across this physical line with words and **markup**.\n",
+        "invariant": "No blank line occurs before targetBytes."
+      }
+    },
+    {
+      "id": "giant-physical-line",
+      "categories": ["oversized-block", "oversized-physical-line"],
+      "recipe": {
+        "algorithm": "repeat_ascii_exact",
+        "prefix": "",
+        "cycle": "one-giant-line-with-words-and-**markup**-"
+      }
+    },
+    {
+      "id": "many-tiny-blocks",
+      "categories": ["many-blocks", "virtualization"],
+      "recipe": {
+        "algorithm": "indexed_ascii_exact",
+        "indexWidth": 8,
+        "record": "p-{index}\n\n"
+      }
+    },
+    {
+      "id": "nested-containers",
+      "categories": ["nested-lists", "block-quotes"],
+      "recipe": {
+        "algorithm": "repeat_ascii_exact",
+        "prefix": "",
+        "cycle": "> - outer item\n>   1. inner item with **bold**\n>      - third level\n>\n> lazy continuation\n\n"
+      }
+    },
+    {
+      "id": "gfm-tables-task-lists",
+      "categories": ["gfm", "tables", "task-lists"],
+      "recipe": {
+        "algorithm": "repeat_ascii_exact",
+        "prefix": "",
+        "cycle": "| Name | Value |\n| --- | ---: |\n| alpha | 1 |\n| beta | 2 |\n\n- [x] complete\n- [ ] pending\n\n"
+      }
+    },
+    {
+      "id": "many-references",
+      "categories": ["references", "non-local-dependency"],
+      "recipe": {
+        "algorithm": "indexed_ascii_exact",
+        "indexWidth": 8,
+        "record": "Use [ref-{index}] here.\n\n[ref-{index}]: https://example.invalid/{index}\n\n"
+      }
+    },
+    {
+      "id": "open-fence-to-eof",
+      "categories": ["unclosed-fence", "eof-container"],
+      "recipe": {
+        "algorithm": "repeat_ascii_exact",
+        "prefix": "~~~markdown\n",
+        "cycle": "literal **marker** and [reference] text remains inside the open fence\n",
+        "invariant": "No closing fence is emitted."
+      }
+    }
+  ],
+  "operationRecipes": [
+    {
+      "id": "cold-open",
+      "stateContract": {
+        "kind": "cold-open",
+        "stages": ["before", "interactive"],
+        "paintedStage": "interactive",
+        "finalStage": "interactive",
+        "sourceMutationCount": 0
+      },
+      "sampling": {
+        "iterationUnit": "fresh-process-open",
+        "warmupIterationsPerRun": 0,
+        "sampleIterationsPerRun": 1,
+        "runCount": 30,
+        "cadenceHz": 0,
+        "totalSampleCount": 30
+      },
+      "steps": [
+        {"action": "launch-profile-artifact"},
+        {"action": "open-generated-source"},
+        {"action": "await-first-exact-editable-viewport"},
+        {"action": "await-visible-current-certification"}
+      ]
+    },
+    {
+      "id": "warmed-local-insert",
+      "stateContract": {
+        "kind": "insert-text",
+        "stages": ["before", "inserted"],
+        "paintedStage": "inserted",
+        "finalStage": "inserted",
+        "positionAlgorithm": "floor-current-utf8-bytes-over-two",
+        "insertedText": "x",
+        "sourceMutationCount": 1
+      },
+      "sampling": {
+        "iterationUnit": "edit",
+        "warmupIterationsPerRun": 20,
+        "sampleIterationsPerRun": 200,
+        "runCount": 3,
+        "cadenceHz": 0,
+        "totalSampleCount": 600
+      },
+      "steps": [
+        {"action": "insert", "position": "middle-source-scalar-boundary", "text": "x"},
+        {"action": "pump-to-visible-current-or-typed-terminal"}
+      ]
+    },
+    {
+      "id": "sustained-typing",
+      "stateContract": {
+        "kind": "insert-text",
+        "stages": ["before", "inserted"],
+        "paintedStage": "inserted",
+        "finalStage": "inserted",
+        "positionAlgorithm": "moving-caret",
+        "initialCaret": "end-of-fixture",
+        "insertedText": "x",
+        "sourceMutationCount": 1
+      },
+      "sampling": {
+        "iterationUnit": "edit",
+        "warmupIterationsPerRun": 20,
+        "sampleIterationsPerRun": 600,
+        "runCount": 3,
+        "cadenceHz": 60,
+        "totalSampleCount": 1800
+      },
+      "steps": [
+        {"action": "insert", "position": "moving-caret", "text": "x"},
+        {"action": "render-one-display-frame"}
+      ]
+    },
+    {
+      "id": "sustained-deletion",
+      "stateContract": {
+        "kind": "delete-backward",
+        "stages": ["before", "deleted"],
+        "paintedStage": "deleted",
+        "finalStage": "deleted",
+        "positionAlgorithm": "moving-caret",
+        "initialCaret": "end-of-fixture",
+        "deletedGraphemeCount": 1,
+        "sourceMutationCount": 1
+      },
+      "sampling": {
+        "iterationUnit": "edit",
+        "warmupIterationsPerRun": 20,
+        "sampleIterationsPerRun": 200,
+        "runCount": 3,
+        "cadenceHz": 60,
+        "totalSampleCount": 600
+      },
+      "steps": [
+        {"action": "backspace-one-grapheme", "position": "moving-caret"},
+        {"action": "render-one-display-frame"}
+      ]
+    },
+    {
+      "id": "streaming-append",
+      "stateContract": {
+        "kind": "append-generated-bytes",
+        "stages": ["before", "appended"],
+        "paintedStage": "appended",
+        "finalStage": "appended",
+        "generatorShapeId": "ordinary-prose",
+        "appendedBytes": 4096,
+        "sourceMutationCount": 1
+      },
+      "sampling": {
+        "iterationUnit": "append",
+        "warmupIterationsPerRun": 4,
+        "sampleIterationsPerRun": 128,
+        "runCount": 3,
+        "cadenceHz": 0,
+        "totalSampleCount": 384
+      },
+      "steps": [
+        {"action": "append", "bytes": 4096, "generatorShapeId": "ordinary-prose"},
+        {"action": "pump-to-visible-current-or-typed-terminal"}
+      ]
+    },
+    {
+      "id": "undo-redo",
+      "stateContract": {
+        "kind": "undo-redo",
+        "stages": ["before", "inserted", "undone", "redone"],
+        "paintedStage": "redone",
+        "finalStage": "redone",
+        "positionAlgorithm": "floor-current-utf8-bytes-over-two",
+        "insertedText": "undo-me",
+        "sourceMutationCount": 3
+      },
+      "sampling": {
+        "iterationUnit": "undo-redo-cycle",
+        "warmupIterationsPerRun": 5,
+        "sampleIterationsPerRun": 100,
+        "runCount": 3,
+        "cadenceHz": 0,
+        "totalSampleCount": 300
+      },
+      "steps": [
+        {"action": "insert", "position": "middle-source-scalar-boundary", "text": "undo-me"},
+        {"action": "undo"},
+        {"action": "redo"},
+        {"action": "pump-to-visible-current-or-typed-terminal"}
+      ]
+    },
+    {
+      "id": "paste-32kib",
+      "stateContract": {
+        "kind": "paste-reset",
+        "stages": ["before", "pasted", "reset"],
+        "paintedStage": "pasted",
+        "finalStage": "reset",
+        "positionAlgorithm": "first-paragraph-boundary-at-or-after-middle-or-eof",
+        "generatorShapeId": "ordinary-prose",
+        "pastedBytes": 32768,
+        "sourceMutationCount": 2
+      },
+      "sampling": {
+        "iterationUnit": "paste",
+        "warmupIterationsPerRun": 2,
+        "sampleIterationsPerRun": 30,
+        "runCount": 3,
+        "cadenceHz": 0,
+        "totalSampleCount": 90
+      },
+      "steps": [
+        {"action": "paste", "position": "middle-paragraph-scalar-boundary", "bytes": 32768, "generatorShapeId": "ordinary-prose"},
+        {"action": "pump-to-visible-current-or-typed-terminal"},
+        {"action": "export-and-verify-exact-post-paste-source"},
+        {"action": "reset-to-exact-pre-sample-source-and-verify-hash"}
+      ]
+    },
+    {
+      "id": "reference-retarget",
+      "stateContract": {
+        "kind": "replace-reference-destination",
+        "stages": ["before", "retargeted"],
+        "paintedStage": "retargeted",
+        "finalStage": "retargeted",
+        "positionAlgorithm": "first-reference-destination",
+        "destinationIndexAlgorithm": "operation-ordinal-modulo-cycle-length",
+        "sourceMutationCount": 1
+      },
+      "sampling": {
+        "iterationUnit": "edit",
+        "warmupIterationsPerRun": 10,
+        "sampleIterationsPerRun": 100,
+        "runCount": 3,
+        "cadenceHz": 0,
+        "totalSampleCount": 300
+      },
+      "destinationCycle": [
+        "https://changed-a.invalid/",
+        "https://changed-b.invalid/"
+      ],
+      "steps": [
+        {"action": "replace-middle-reference-destination", "replacement": "alternate-destination-cycle-by-sample-index"},
+        {"action": "assert-revision-and-source-hash-changed"},
+        {"action": "query-visible-distant-use"},
+        {"action": "assert-distant-projection-hash-changed"},
+        {"action": "pump-to-visible-current-or-typed-terminal"}
+      ]
+    },
+    {
+      "id": "fence-close-reopen",
+      "stateContract": {
+        "kind": "fence-close-reopen",
+        "stages": ["before", "closed", "reopened"],
+        "paintedStage": "reopened",
+        "finalStage": "reopened",
+        "appendedText": "~~~\n",
+        "sourceMutationCount": 2
+      },
+      "sampling": {
+        "iterationUnit": "close-reopen-cycle",
+        "warmupIterationsPerRun": 5,
+        "sampleIterationsPerRun": 100,
+        "runCount": 3,
+        "cadenceHz": 0,
+        "totalSampleCount": 300
+      },
+      "steps": [
+        {"action": "append", "text": "~~~\n"},
+        {"action": "pump-to-visible-current-or-typed-terminal"},
+        {"action": "delete-appended-bytes", "bytes": 4},
+        {"action": "pump-to-visible-current-or-typed-terminal"}
+      ]
+    }
+  ],
+  "matrices": [
+    {
+      "id": "product-complete-v1",
+      "target": "product",
+      "sizeTierIds": ["1kib", "25kib", "100kib", "1mib", "2mib", "5mib", "10mib", "competitor-boundary", "competitor-next-tier"],
+      "workloadTemplates": [
+        {
+          "operationId": "cold-open",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "giant-paragraph", "giant-physical-line", "many-tiny-blocks", "nested-containers", "gfm-tables-task-lists", "many-references", "open-fence-to-eof"]
+        },
+        {
+          "operationId": "warmed-local-insert",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "giant-paragraph", "giant-physical-line", "many-tiny-blocks", "nested-containers", "gfm-tables-task-lists", "many-references", "open-fence-to-eof"]
+        },
+        {
+          "operationId": "sustained-typing",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "giant-paragraph", "giant-physical-line", "nested-containers", "gfm-tables-task-lists"]
+        },
+        {
+          "operationId": "sustained-deletion",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "giant-paragraph", "giant-physical-line", "nested-containers", "gfm-tables-task-lists"]
+        },
+        {
+          "operationId": "streaming-append",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "open-fence-to-eof"]
+        },
+        {
+          "operationId": "undo-redo",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "nested-containers", "gfm-tables-task-lists"]
+        },
+        {
+          "operationId": "paste-32kib",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "giant-paragraph"]
+        },
+        {
+          "operationId": "reference-retarget",
+          "shapeIds": ["many-references"]
+        },
+        {
+          "operationId": "fence-close-reopen",
+          "shapeIds": ["open-fence-to-eof"]
+        }
+      ]
+    },
+    {
+      "id": "engine-hidden-linear-work-v1",
+      "target": "engine",
+      "sizeTierIds": ["engine-4x-envelope"],
+      "workloadTemplates": [
+        {
+          "operationId": "cold-open",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "giant-paragraph", "giant-physical-line", "many-tiny-blocks", "nested-containers", "gfm-tables-task-lists", "many-references", "open-fence-to-eof"]
+        },
+        {
+          "operationId": "warmed-local-insert",
+          "shapeIds": ["ordinary-prose", "delimiter-dense", "giant-paragraph", "giant-physical-line", "many-tiny-blocks", "nested-containers", "gfm-tables-task-lists", "many-references", "open-fence-to-eof"]
+        }
+      ]
+    }
+  ],
+  "thresholdProfiles": [
+    {
+      "id": "tier-a-mac-m0-v1",
+      "tier": "A_MAC",
+      "status": "frozen",
+      "claimRequirements": {
+        "namedHardware": true,
+        "profileModeProductArtifact": true,
+        "actualDisplayRefreshRecorded": true,
+        "competitorEnvelopeResolvedForScaleClaim": true
+      },
+      "gates": {
+        "sourceVisibilityMaxFrames": 1,
+        "caretVisibilityMaxFrames": 1,
+        "selectionVisibilityMaxFrames": 1,
+        "inputBacklogMaxFrames": 1,
+        "engineForegroundP99Micros": 4000,
+        "flutterFrameWorkP99Micros": 8000,
+        "editorAttributedFrameMaxExclusiveMicros": 16000,
+        "synchronousSpanMaxExclusiveMicros": 16000,
+        "editorAttributedDroppedFramesMax": 0,
+        "editorAttributedMissedFrameRateMax": 0,
+        "coldExactViewportPaintMaxExclusiveMicros": 200000,
+        "visibleProjectionCertificationMaxExclusiveMicros": 500000,
+        "convergenceWallMaxExclusiveMicros": 500000,
+        "uncertifiedVisibleCharacterFramesMaxFormula": "visibleCharacterCount * ceil(500000 / displayFramePeriodMicros)",
+        "peakRssOverBaselineMaxFormula": "max(67108864, 8 * fixtureActualBytes)",
+        "retainedRssOverBaselineAfterCloseMaxBytes": 16777216,
+        "liveDocumentsAfterCloseMax": 0,
+        "liveTransactionsAfterCloseMax": 0,
+        "liveContinuationsAfterCloseMax": 0,
+        "liveHandlesAfterCloseMax": 0,
+        "minimumOpenEditCloseCycles": 100,
+        "minimumProcessReopenCount": 10
+      }
+    },
+    {
+      "id": "tier-b-mobile-provisional-m0-v1",
+      "tier": "B_MOBILE",
+      "status": "provisional-frozen",
+      "claimRequirements": {
+        "namedPhysicalDevice": true,
+        "simulatorForbidden": true,
+        "platformSpecificCompetitorEnvelopeResolved": true,
+        "profileModeProductArtifact": true,
+        "actualDisplayRefreshRecorded": true,
+        "rawInputInteractionRecording": true
+      },
+      "gates": {
+        "sourceVisibilityMaxFrames": 1,
+        "caretVisibilityMaxFrames": 1,
+        "selectionVisibilityMaxFrames": 1,
+        "inputBacklogMaxFrames": 1,
+        "engineForegroundP99Micros": 4000,
+        "flutterFrameWorkP99Micros": 8000,
+        "editorAttributedFrameMaxExclusiveMicros": 16000,
+        "synchronousSpanMaxExclusiveMicros": 16000,
+        "editorAttributedDroppedFramesMax": 0,
+        "editorAttributedMissedFrameRateMax": 0,
+        "coldExactViewportPaintMaxExclusiveMicros": 200000,
+        "visibleProjectionCertificationMaxExclusiveMicros": 500000,
+        "convergenceWallMaxExclusiveMicros": 500000,
+        "uncertifiedVisibleCharacterFramesMaxFormula": "visibleCharacterCount * ceil(500000 / displayFramePeriodMicros)",
+        "peakRssOverBaselineMaxFormula": "max(50331648, 6 * fixtureActualBytes)",
+        "retainedRssOverBaselineAfterCloseMaxBytes": 8388608,
+        "liveDocumentsAfterCloseMax": 0,
+        "liveTransactionsAfterCloseMax": 0,
+        "liveContinuationsAfterCloseMax": 0,
+        "liveHandlesAfterCloseMax": 0,
+        "minimumOpenEditCloseCycles": 100,
+        "minimumProcessReopenCount": 10,
+        "minimumBackgroundForegroundCycles": 20,
+        "minimumSustainedRunSeconds": 1800,
+        "thermalThrottleEventsMax": 0
+      }
+    }
+  ]
+}

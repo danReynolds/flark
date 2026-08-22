@@ -13,11 +13,14 @@ env:
   FLUTTER_VERSION: '3.41.9'
 
 jobs:
-  release-gate:
+  v4-integration-gate:
     runs-on: macos-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          # The qualification suite verifies pinned historical Git objects.
+          fetch-depth: 0
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -29,14 +32,64 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Run release gate
-        run: ./scripts/verify_release.sh
+      - name: Run active v4 integration gate
+        # Pull-request evidence intentionally omits certification stress and
+        # archive runtime execution. The full release receipt remains a
+        # separate, explicitly named lane below.
+        run: bash ./scripts/verify_v4_release.sh --skip-stress --skip-archive-runtime
 
-  # Platform launch smokes. Each builds the example app for a target platform,
+  v4-opening-session-gate:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          # The qualification suite verifies pinned historical Git objects.
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Run the feature-gated streamed-opening suites
+        env:
+          FLARK_V4_FEATURES: opening-session
+        run: bash ./scripts/verify_v4.sh
+
+  v4-release-receipt:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          # The qualification suite verifies pinned historical Git objects.
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Run full v4 release receipt
+        run: bash ./scripts/verify_v4_release.sh
+
+  # Platform build smokes. Each builds the active v4 example for a target,
   # which compiles the native Comrak bridge through hook/build.dart for that
   # platform (so a green build proves the native-assets cross-compile path),
-  # and — on desktop hosts where the app can run — executes the
-  # integration_test smoke to prove the bridge loads and parses on-device.
+  # but does not claim device interaction or packaged-app launch proof. Those
+  # remain separate launch/device receipts.
   macos-smoke:
     runs-on: macos-latest
     steps:
@@ -50,8 +103,8 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - name: macOS launch smoke
-        run: ./scripts/verify_platform_smoke.sh --platform macos
+      - name: macOS build smoke
+        run: bash ./scripts/verify_platform_smoke.sh --platform macos
 
   ios-smoke:
     runs-on: macos-latest
@@ -69,32 +122,7 @@ jobs:
           channel: stable
           cache: true
       - name: iOS build smoke (device arm64, no signing)
-        run: ./scripts/verify_platform_smoke.sh --platform ios
-
-  linux-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - name: Install Linux desktop build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev \
-            xvfb
-      - name: Enable Linux desktop
-        run: flutter config --enable-linux-desktop
-      - name: Linux launch smoke (headless)
-        run: xvfb-run -a ./scripts/verify_platform_smoke.sh --platform linux
+        run: bash ./scripts/verify_platform_smoke.sh --platform ios
 
   android-smoke:
     runs-on: ubuntu-latest
@@ -119,4 +147,4 @@ jobs:
       # ubuntu-latest ships an Android SDK + NDK; hook/build.dart resolves the
       # NDK from ANDROID_NDK_LATEST_HOME (set on the runner) automatically.
       - name: Android build smoke (compiles the bridge for every ABI)
-        run: ./scripts/verify_platform_smoke.sh --platform android
+        run: bash ./scripts/verify_platform_smoke.sh --platform android

@@ -1,53 +1,65 @@
-# Development and Verification
+# Development and verification
 
-## Package Setup
+Flark v4 is split into `packages/flark_core` (Dart plus Rust runtime) and
+`packages/flark` (Flutter). The repository root is a non-publishable
+qualification workspace.
 
-```bash
-flutter pub get
+## Prerequisites
+
+Use a supported Flutter/Dart SDK and a stable Rust toolchain. A cold
+cross-platform build may need network access while `rustup` installs the
+target triple. See [Parser and platforms](parser_and_platforms.md).
+
+## Gates
+
+The fast gate builds the native ABI and executes all active Rust, Dart Core,
+Flutter, and qualification tests with an explicit native library path:
+
+```sh
+bash scripts/verify_v4.sh
 ```
 
-## Fast Gate
+The feature-gated streamed-open surface has a separate run:
 
-```bash
-./scripts/verify_package_confidence.sh
+```sh
+FLARK_V4_FEATURES=opening-session bash scripts/verify_v4.sh
 ```
 
-This runs analysis and the highest-signal editor, parser, projection,
-render-plan, Flutter, example, native, and packaging tests.
+Release and exact-archive gates are canonical and independently runnable:
 
-## Full Release Gate
-
-```bash
-./scripts/verify_release.sh
+```sh
+bash scripts/verify_v4_release.sh
+bash scripts/verify_v4_publish_archives.sh
 ```
 
-This is the release-readiness gate for package maintainers.
+`--skip-stress`, `--skip-archive-runtime`, and `--skip-runtime` produce
+iteration evidence only. They are not full release receipts.
 
-## Docs
+## Platform evidence
 
-```bash
-dart doc --dry-run
+Build smokes prove that the native-assets cross-compile path works; they do
+not prove device interaction or packaged-app launch behavior. The archive
+gate separately executes extracted-package Core JIT/AOT and Flutter widget
+runtime smokes, but its desktop application consumer remains build-only:
+
+```sh
+bash scripts/verify_platform_smoke.sh --platform macos
+bash scripts/verify_platform_smoke.sh --platform ios
+bash scripts/verify_platform_smoke.sh --platform android
+bash scripts/verify_platform_smoke.sh --platform android --device <device-id>
 ```
 
-The dry run should report zero warnings and zero errors before public API
-changes are considered complete.
+The last form adds the Android integration smoke. There is no v4 Web smoke or
+Pages deployment.
 
-## Example App
+## Dogfood and profiling
 
-```bash
-cd example
-flutter run -d macos
+```sh
+bash scripts/run_v4_dogfood.sh
+bash scripts/profile_v4_macos.sh
+bash scripts/profile_v4_sweep.sh /tmp/flark-v4-sweep.jsonl
 ```
 
-The example app is the primary manual QA surface for live-rendered editing,
-toolbars, source mode, preview rendering, parser load status, forms, and
-scratch-pad workflows.
-
-## Native Builds
-
-```bash
-./scripts/build_comrak_all.sh --host-only
-./scripts/build_comrak_all.sh --strict
-```
-
-Use the strict build before changing native bridge ABI or packaging behavior.
+Profile receipts require a foregrounded live display. Keep local checks,
+committed-SHA CI, package archive consumption, and physical-device receipts as
+separate evidence levels.

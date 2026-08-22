@@ -1,5 +1,10 @@
 # RFC 016: Flark Markdown Command Layer
 
+> **Historical v2/v3 design record.** [RFC 026](rfc_026_flark_v4_product_architecture.md),
+> [RFC 027](rfc_027_continuously_rendered_markdown.md), and the
+> [v4 build plan](../v4/build_plan.md) control the active product. The package
+> surface and implementation paths below are superseded.
+
 ## 1. Summary
 
 Define a first-class markdown command API inside `flark` and move toolbar/edit-intent behavior out of app-local `MarkdownFormatting`.

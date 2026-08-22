@@ -1,0 +1,541 @@
+import 'package:flark_flutter/flark_flutter_advanced.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'support/flark_v3_managed_runtime_test_platform.dart';
+
+void main() {
+  testWidgets(
+    'real thematic break is marker-free, source-exact, and affinity-aware',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+
+      const atom = '  * \t* *  \r\n';
+      const source = 'before\n\n$atom\nafter';
+      final atomStart = source.indexOf(atom);
+      final atomEnd = atomStart + atom.length;
+      final harness = await _ManagedThematicBreakHarness.mount(
+        tester,
+        source: source,
+        caretUtf16: atomStart + 3,
+        affinity: TextAffinity.upstream,
+      );
+
+      final selection = await harness.waitForThematicBreak(
+        tester,
+        expectedBoundaryUtf16: atomStart,
+        expectedBoundaryAffinity: TextAffinity.downstream,
+      );
+      final query = selection.query;
+      final row = selection.row;
+      expect(selection.range.sourceRevision, query.sourceRevision);
+      expect(selection.range.structureRevision, query.structureRevision);
+      expect(selection.range.selectedRow, same(row));
+      expect(query.owner.kind, FlarkV3RecursiveGreenKind.thematicBreak);
+      expect(row.kind, FlarkV3RecursiveGreenKind.thematicBreak);
+      expect(
+        row.presentationKind,
+        FlarkV3RecursiveGreenRowPresentationKind.thematicBreak,
+      );
+      expect(row.selected, isTrue);
+      expect(row.inlineCapable, isFalse);
+      expect(row.literal, isTrue);
+      expect(
+        row.editCapability,
+        FlarkV3RecursiveGreenRowEditCapability.contiguous,
+      );
+      expect(row.editableSource, isNotNull);
+      expect(row.editableSource!.startUtf8, row.physicalSource.startUtf8);
+      expect(row.editableSource!.endUtf8, row.physicalSource.startUtf8);
+      expect(row.editableSource!.startUtf16, row.physicalSource.startUtf16);
+      expect(row.editableSource!.endUtf16, row.physicalSource.startUtf16);
+      expect(harness.sourceText(row.presentationPhysicalSource), atom);
+      expect(harness.runtime.exportMarkdown(), source);
+      expect(harness.binding.controller.editingController.text, isEmpty);
+      expect(
+        harness.binding.controller.paintState.atomicBlockLease,
+        FlarkV3FlutterAtomicBlockLease.thematicBreak(
+          source: row.presentationPhysicalSource,
+        ),
+      );
+      expect(find.byKey(const Key('flark-v3-thematic-break')), findsOneWidget);
+      expect(find.bySemanticsLabel('Thematic break'), findsOneWidget);
+      final dividerSize = tester.getSize(
+        find.byKey(const Key('flark-v3-thematic-break')),
+      );
+      expect(dividerSize.height, 1);
+      expect(
+        dividerSize.width,
+        greaterThan(0),
+        reason: 'the parser-certified atom must paint a visible divider',
+      );
+
+      harness.editableState.requestKeyboard();
+      await tester.pump();
+      final editableState = harness.editableState;
+      final setClientCount = _setClientCalls(tester).length;
+      final clientId =
+          (_setClientCalls(tester).last.arguments as List<dynamic>).first
+              as int;
+
+      harness.binding.controller.handoffInputIsland(
+        FlarkV3GlobalEditingState(
+          selection: TextSelection.collapsed(
+            offset: atomStart + 3,
+            affinity: TextAffinity.downstream,
+          ),
+          composing: TextRange.empty,
+        ),
+      );
+      await harness.waitForThematicBreak(
+        tester,
+        expectedBoundaryUtf16: atomEnd,
+        expectedBoundaryAffinity: TextAffinity.upstream,
+      );
+      expect(harness.runtime.exportMarkdown(), source);
+      _expectSameInputClient(
+        tester,
+        harness,
+        editableState: editableState,
+        setClientCount: setClientCount,
+        clientId: clientId,
+      );
+      semantics.dispose();
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+
+  testWidgets(
+    'typing fails semantics closed and both delete keys remove the whole atom',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+
+      const source = '---\nnext';
+      final harness = await _ManagedThematicBreakHarness.mount(
+        tester,
+        source: source,
+        caretUtf16: 1,
+        affinity: TextAffinity.upstream,
+      );
+      await harness.waitForThematicBreak(
+        tester,
+        expectedBoundaryUtf16: 0,
+        expectedBoundaryAffinity: TextAffinity.downstream,
+      );
+      expect(find.bySemanticsLabel('Thematic break'), findsOneWidget);
+
+      harness.editableState.requestKeyboard();
+      await tester.pump();
+      final editableState = harness.editableState;
+      final setClientCount = _setClientCalls(tester).length;
+      final clientId =
+          (_setClientCalls(tester).last.arguments as List<dynamic>).first
+              as int;
+
+      (editableState as DeltaTextInputClient).updateEditingValueWithDeltas([
+        const TextEditingDeltaInsertion(
+          oldText: '',
+          textInserted: 'x',
+          insertionOffset: 0,
+          selection: TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      expect(harness.runtime.exportMarkdown(), 'x---\nnext');
+      expect(
+        harness.binding.controller.semanticActionsValid,
+        isFalse,
+        reason:
+            'source advance must synchronously revoke the old atomic authority',
+      );
+      harness.frameScheduler.flushAll();
+      await tester.pump();
+      expect(find.bySemanticsLabel('Thematic break'), findsNothing);
+      expect(find.byKey(const Key('flark-v3-thematic-break')), findsNothing);
+
+      await harness.waitForParagraph(tester, expectedSource: 'x---\nnext');
+      _expectSameInputClient(
+        tester,
+        harness,
+        editableState: editableState,
+        setClientCount: setClientCount,
+        clientId: clientId,
+      );
+      semantics.dispose();
+
+      expect(harness.runtime.undo(), isNotNull);
+      await harness.waitForThematicBreak(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      expect(
+        harness.runtime.exportMarkdown(),
+        'next',
+        reason: 'Backspace must delete the complete canonical marker line',
+      );
+      await harness.waitForParagraph(tester, expectedSource: 'next');
+      _expectSameInputClient(
+        tester,
+        harness,
+        editableState: editableState,
+        setClientCount: setClientCount,
+        clientId: clientId,
+      );
+
+      expect(harness.runtime.undo(), isNotNull);
+      await harness.waitForThematicBreak(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      expect(
+        harness.runtime.exportMarkdown(),
+        'next',
+        reason: 'Delete must delete the complete canonical marker line',
+      );
+      await harness.waitForParagraph(tester, expectedSource: 'next');
+      _expectSameInputClient(
+        tester,
+        harness,
+        editableState: editableState,
+        setClientCount: setClientCount,
+        clientId: clientId,
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+}
+
+final class _ManagedThematicBreakHarness {
+  _ManagedThematicBreakHarness._({
+    required this.runtime,
+    required this.binding,
+    required this.editableKey,
+    required this.focusNode,
+    required this.frameScheduler,
+  });
+
+  static Future<_ManagedThematicBreakHarness> mount(
+    WidgetTester tester, {
+    required String source,
+    required int caretUtf16,
+    required TextAffinity affinity,
+  }) async {
+    final runtime = await runManagedRuntimeAsyncForTest(
+      tester,
+      () => openManagedRuntimeForTest(source),
+    );
+    final frameScheduler = _ManualFrameScheduler();
+    final binding = FlarkV3ManagedFlutterBinding.attach(
+      runtime: runtime,
+      inputIsland: FlarkV3InputIslandSnapshot(
+        globalStartUtf16: 0,
+        maximumUtf16: 256,
+        value: TextEditingValue(
+          text: source,
+          selection: TextSelection.collapsed(
+            offset: caretUtf16,
+            affinity: affinity,
+          ),
+        ),
+      ),
+      queryBudget: FlarkV3HostQueryBudget(
+        maxEncodedBytes: 16 * 1024,
+        maxOpenDepth: 64,
+        maxLeafCount: 256,
+        maxTreeNodesVisited: 1024,
+      ),
+      frameScheduler: frameScheduler,
+    );
+    final editableKey = GlobalKey<EditableTextState>();
+    final focusNode = FocusNode();
+    final harness = _ManagedThematicBreakHarness._(
+      runtime: runtime,
+      binding: binding,
+      editableKey: editableKey,
+      focusNode: focusNode,
+      frameScheduler: frameScheduler,
+    );
+    addTearDown(() async {
+      binding.dispose();
+      focusNode.dispose();
+      if (runtime.status.state != FlarkV3DocumentRuntimeState.closed) {
+        await runManagedRuntimeAsyncForTest(
+          tester,
+          () => runtime.close().timeout(const Duration(seconds: 5)),
+        );
+      }
+    });
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: SizedBox(
+            width: 320,
+            child: FlarkV3LiveEditorPrototype(
+              controller: binding.controller,
+              editableKey: editableKey,
+              focusNode: focusNode,
+              paintLayerBuilder: (context, state) => const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await runManagedRuntimeAsyncForTest(
+      tester,
+      () => runtime.initialReady.timeout(const Duration(seconds: 10)),
+    );
+    return harness;
+  }
+
+  final FlarkV3DocumentRuntime runtime;
+  final FlarkV3ManagedFlutterBinding binding;
+  final GlobalKey<EditableTextState> editableKey;
+  final FocusNode focusNode;
+  final _ManualFrameScheduler frameScheduler;
+
+  EditableTextState get editableState => editableKey.currentState!;
+
+  String sourceText(FlarkV3SourceSpan span) =>
+      runtime.readSourceRange(span.startUtf16, span.endUtf16);
+
+  Future<_RecursiveGreenSelection> waitForThematicBreak(
+    WidgetTester tester, {
+    int? expectedBoundaryUtf16,
+    TextAffinity? expectedBoundaryAffinity,
+  }) async {
+    if ((expectedBoundaryUtf16 == null) != (expectedBoundaryAffinity == null)) {
+      throw ArgumentError(
+        'Boundary position and affinity must be asserted together.',
+      );
+    }
+    final stopwatch = Stopwatch()..start();
+    while (stopwatch.elapsed < const Duration(seconds: 10)) {
+      await _pumpRuntime(tester);
+      final query = binding.controller.paintState.documentQuery;
+      final selection = query is FlarkV3RecursiveGreenPointQuery
+          ? _selectedRecursiveGreenRow(query)
+          : null;
+      final row = selection?.row;
+      if (runtime.status.structureCurrent &&
+          query is FlarkV3RecursiveGreenPointQuery &&
+          query.structureRevision == runtime.sourceRevision &&
+          query.owner.kind == FlarkV3RecursiveGreenKind.thematicBreak &&
+          selection != null &&
+          row != null &&
+          row.kind == FlarkV3RecursiveGreenKind.thematicBreak &&
+          row.presentationKind ==
+              FlarkV3RecursiveGreenRowPresentationKind.thematicBreak &&
+          row.selected &&
+          !row.inlineCapable &&
+          row.literal &&
+          row.editCapability ==
+              FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+          row.editableSource != null &&
+          row.editableSource!.startUtf8 == row.physicalSource.startUtf8 &&
+          row.editableSource!.endUtf8 == row.physicalSource.startUtf8 &&
+          row.editableSource!.startUtf16 == row.physicalSource.startUtf16 &&
+          row.editableSource!.endUtf16 == row.physicalSource.startUtf16 &&
+          query.inlineFacts == null &&
+          _rowMatchesPointQuery(query, row) &&
+          binding.controller.paintState.mode ==
+              FlarkV3FlutterPaintMode.exactStructural &&
+          binding.controller.paintState.atomicBlockLease ==
+              FlarkV3FlutterAtomicBlockLease.thematicBreak(
+                source: row.presentationPhysicalSource,
+              ) &&
+          binding.controller.editingController.text.isEmpty &&
+          (expectedBoundaryUtf16 == null ||
+              (binding.controller.inputIslandGlobalStartUtf16 ==
+                      expectedBoundaryUtf16 &&
+                  binding.controller.inputIslandGlobalEndUtf16 ==
+                      expectedBoundaryUtf16 &&
+                  binding.controller.globalEditingState.selection ==
+                      TextSelection.collapsed(
+                        offset: expectedBoundaryUtf16,
+                        affinity: expectedBoundaryAffinity!,
+                      ) &&
+                  binding.controller.editingController.selection ==
+                      TextSelection.collapsed(
+                        offset: 0,
+                        affinity: expectedBoundaryAffinity,
+                      )))) {
+        return selection;
+      }
+    }
+    throw TestFailure(
+      'Timed out waiting for managed thematic break: '
+      'revision=${runtime.sourceRevision}, '
+      'sourceCurrent=${runtime.status.sourceCurrent}, '
+      'structureCurrent=${runtime.status.structureCurrent}, '
+      'paint=${binding.controller.paintState.mode.name}, '
+      'query=${binding.controller.paintState.documentQuery.runtimeType}, '
+      'atom=${binding.controller.paintState.atomicBlockLease}, '
+      'island=${binding.controller.inputIslandGlobalStartUtf16}..'
+      '${binding.controller.inputIslandGlobalEndUtf16}, '
+      'text=${binding.controller.editingController.text}, '
+      'source=${runtime.exportMarkdown()}.',
+    );
+  }
+
+  Future<_RecursiveGreenSelection> waitForParagraph(
+    WidgetTester tester, {
+    required String expectedSource,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    while (stopwatch.elapsed < const Duration(seconds: 10)) {
+      await _pumpRuntime(tester);
+      final query = binding.controller.paintState.documentQuery;
+      final selection = query is FlarkV3RecursiveGreenPointQuery
+          ? _selectedRecursiveGreenRow(query)
+          : null;
+      final row = selection?.row;
+      if (runtime.status.structureCurrent &&
+          runtime.exportMarkdown() == expectedSource &&
+          query is FlarkV3RecursiveGreenPointQuery &&
+          query.structureRevision == runtime.sourceRevision &&
+          query.owner.kind == FlarkV3RecursiveGreenKind.paragraph &&
+          selection != null &&
+          row != null &&
+          row.kind == FlarkV3RecursiveGreenKind.paragraph &&
+          row.selected &&
+          row.editCapability ==
+              FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+          row.editableSource != null &&
+          _rowMatchesPointQuery(query, row) &&
+          binding.controller.paintState.mode ==
+              FlarkV3FlutterPaintMode.exactStructural &&
+          binding.controller.paintState.atomicBlockLease == null) {
+        return selection;
+      }
+    }
+    throw TestFailure(
+      'Timed out waiting for managed Paragraph after atomic edit: '
+      'revision=${runtime.sourceRevision}, '
+      'sourceCurrent=${runtime.status.sourceCurrent}, '
+      'structureCurrent=${runtime.status.structureCurrent}, '
+      'paint=${binding.controller.paintState.mode.name}, '
+      'query=${binding.controller.paintState.documentQuery.runtimeType}, '
+      'island=${binding.controller.inputIslandGlobalStartUtf16}..'
+      '${binding.controller.inputIslandGlobalEndUtf16}, '
+      'text=${binding.controller.editingController.text}, '
+      'source=${runtime.exportMarkdown()}.',
+    );
+  }
+
+  Future<void> _pumpRuntime(WidgetTester tester) async {
+    frameScheduler.flushAll();
+    await tester.pump(const Duration(milliseconds: 1));
+    await runManagedRuntimeAsyncForTest(
+      tester,
+      () => Future<void>.delayed(const Duration(milliseconds: 1)),
+    );
+    frameScheduler.flushAll();
+    await tester.pump();
+  }
+
+  _RecursiveGreenSelection? _selectedRecursiveGreenRow(
+    FlarkV3RecursiveGreenPointQuery query,
+  ) {
+    final range = runtime.queryBlockRange(
+      query.source.startUtf16,
+      query.source.endUtf16,
+    );
+    if (range is! FlarkV3RecursiveGreenRowRange ||
+        range.sourceRevision != query.sourceRevision ||
+        range.structureRevision != query.structureRevision) {
+      return null;
+    }
+    final row = range.selectedRow;
+    if (row == null) return null;
+    return _RecursiveGreenSelection(query: query, range: range, row: row);
+  }
+}
+
+final class _RecursiveGreenSelection {
+  const _RecursiveGreenSelection({
+    required this.query,
+    required this.range,
+    required this.row,
+  });
+
+  final FlarkV3RecursiveGreenPointQuery query;
+  final FlarkV3RecursiveGreenRowRange range;
+  final FlarkV3RecursiveGreenRenderableRow row;
+}
+
+bool _rowMatchesPointQuery(
+  FlarkV3RecursiveGreenPointQuery query,
+  FlarkV3RecursiveGreenRenderableRow row,
+) {
+  if (query.owner.frameId != row.frameId ||
+      query.owner.kind != row.kind ||
+      !_sourceSpanContains(row.presentationPhysicalSource, query.source)) {
+    return false;
+  }
+  if (row.kind == FlarkV3RecursiveGreenKind.thematicBreak) {
+    if (row.path.length != 1) return false;
+    final rowOwner = row.path.single;
+    return query.ownerIndex == 1 &&
+        query.ancestry.length == 2 &&
+        query.ancestry.first.kind == FlarkV3RecursiveGreenKind.document &&
+        rowOwner.frameId == query.owner.frameId &&
+        rowOwner.kind == query.owner.kind &&
+        rowOwner.isRowOwner;
+  }
+  if (query.ancestry.length != row.path.length) return false;
+  for (var index = 0; index < row.path.length; index += 1) {
+    final queryFrame = query.ancestry[index];
+    final rowFrame = row.path[index];
+    if (queryFrame.frameId != rowFrame.frameId ||
+        queryFrame.kind != rowFrame.kind ||
+        rowFrame.isRowOwner != (index == query.ownerIndex)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _sourceSpanContains(FlarkV3SourceSpan outer, FlarkV3SourceSpan inner) =>
+    outer.startUtf8 <= inner.startUtf8 &&
+    inner.endUtf8 <= outer.endUtf8 &&
+    outer.startUtf16 <= inner.startUtf16 &&
+    inner.endUtf16 <= outer.endUtf16;
+
+final class _ManualFrameScheduler implements FlarkV3FrameScheduler {
+  final List<VoidCallback> _callbacks = <VoidCallback>[];
+
+  @override
+  void schedule(VoidCallback callback) {
+    _callbacks.add(callback);
+  }
+
+  void flushAll() {
+    var turns = 0;
+    while (_callbacks.isNotEmpty) {
+      if (turns >= 100) {
+        throw StateError('Managed Flutter frame callbacks did not converge.');
+      }
+      turns += 1;
+      _callbacks.removeAt(0)();
+    }
+  }
+}
+
+List<MethodCall> _setClientCalls(WidgetTester tester) => tester
+    .testTextInput
+    .log
+    .where((call) => call.method == 'TextInput.setClient')
+    .toList(growable: false);
+
+void _expectSameInputClient(
+  WidgetTester tester,
+  _ManagedThematicBreakHarness harness, {
+  required EditableTextState editableState,
+  required int setClientCount,
+  required int clientId,
+}) {
+  expect(harness.editableKey.currentState, same(editableState));
+  expect(_setClientCalls(tester), hasLength(setClientCount));
+  expect(
+    (_setClientCalls(tester).last.arguments as List<dynamic>).first,
+    clientId,
+  );
+}

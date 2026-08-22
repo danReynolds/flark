@@ -1,64 +1,20 @@
-name: Deploy GitHub Pages
+name: GitHub Pages (v4 web pending)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  web-support-status:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.41.9'
-          channel: stable
-          cache: true
-
-      - name: Install package dependencies
-        run: flutter pub get
-
-      - name: Install example dependencies
-        working-directory: example
-        run: flutter pub get
-
-      - name: Build web site
-        working-directory: example
-        run: flutter build web --release --base-href /flark/
-
-      - name: Version web entrypoint assets
-        working-directory: example
-        env:
-          WEB_BUILD_VERSION: ${{ github.sha }}
+      - name: Record the active support boundary
         run: |
-          perl -0pi -e 's/src="flutter_bootstrap\.js"/src="flutter_bootstrap.js?v=$ENV{WEB_BUILD_VERSION}"/g' build/web/index.html
-          perl -0pi -e 's/mainJsPath":"main\.dart\.js"/mainJsPath":"main.dart.js?v=$ENV{WEB_BUILD_VERSION}"/g' build/web/flutter_bootstrap.js
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: example/build/web
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
+          echo "Flark v4 currently has no web backend or web example."
+          echo "This workflow intentionally performs no deployment until that product surface is implemented and qualified."

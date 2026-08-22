@@ -1,3 +1,8 @@
 .dart_tool/
-pubspec.lock
 build/
+!pubspec.lock
+.idea/
+.metadata
+*.iml
+flutter_*.log
+results/

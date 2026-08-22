@@ -1,0 +1,2 @@
+export 'native_test_backend_stub.dart'
+    if (dart.library.io) 'native_test_backend_io.dart';

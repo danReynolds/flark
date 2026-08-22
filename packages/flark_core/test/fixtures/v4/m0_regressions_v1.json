@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "statusDefinitions": {
+    "known_failure": "The current v3 path reproduces an incorrect or non-terminal outcome.",
+    "coverage_gap": "The required v4 behavior has no complete executable receipt yet.",
+    "target_pass": "Reserved for a future reviewed v4 receipt; M0 contains no target passes."
+  },
+  "cases": [
+    {
+      "id": "M0-STALL-32K-PASTE",
+      "category": "liveness",
+      "currentStatus": "known_failure",
+      "targetMilestone": "M2",
+      "currentEvidence": "docs/architecture/v4/g3_inframe_results.md",
+      "reproduction": "cd example && dart run lib/g3_headless_probe.dart --lib <release dylib>",
+      "generator": {
+        "id": "paragraph_fixture_v1",
+        "minimumUtf16": 32768,
+        "actualUtf16": 32789,
+        "sha256Utf8": "14f751fa6b47d5294c1793f947036d42f53851bcd5ac99eea6449a458b95fe22"
+      },
+      "targetOutcome": "The staged paste commits atomically, exact source remains available, and bounded pumps either certify the current revision or return a typed terminal reason before the declared pump and wall-time caps."
+    },
+    {
+      "id": "M0-CERT-EMPHASIS-CLOSER-DELETE",
+      "category": "range_certification",
+      "currentStatus": "known_failure",
+      "targetMilestone": "M2",
+      "currentEvidence": "docs/architecture/v4/m0_certification_findings.md",
+      "reproduction": "cd example && dart run lib/m0_certification_probe.dart",
+      "initialSource": "*hello* rest of line.\n\nDistant paragraph that the edit never touches.",
+      "edit": {"startUtf16": 6, "endUtf16": 7, "replacement": ""},
+      "targetOutcome": "The edited emphasis range is neutral pending at the new revision while the untouched distant paragraph remains certified for that revision."
+    },
+    {
+      "id": "M0-CERT-REFERENCE-RETARGET",
+      "category": "range_certification",
+      "currentStatus": "coverage_gap",
+      "targetMilestone": "M2",
+      "currentEvidence": "docs/architecture/v4/m0_certification_findings.md",
+      "reproduction": "future flark-runtime contract test",
+      "initialSource": "[label]\n\n[label]: /old\n\nDistant paragraph.\n",
+      "edit": {"startUtf16": 19, "endUtf16": 22, "replacement": "new"},
+      "targetOutcome": "The definition and every dependent reference are pending until recertified; the unrelated distant paragraph remains certified."
+    },
+    {
+      "id": "M0-GIANT-PARAGRAPH",
+      "category": "bounded_work",
+      "currentStatus": "coverage_gap",
+      "targetMilestone": "M4",
+      "currentEvidence": "docs/architecture/v4/build_plan.md",
+      "reproduction": "future benchmark workload V4-GIANT-PARAGRAPH-5M",
+      "generator": {
+        "id": "word_repeat_paragraph_v1",
+        "repeat": 1048576,
+        "unit": "word ",
+        "suffix": "\n",
+        "actualUtf8": 5242881,
+        "sha256Utf8": "aa35eb1b00096b97e1ec2568d087b7350e762ba04a8f6ee6c2096888f05bb65e"
+      },
+      "targetOutcome": "Open, edit, query, fragment layout, paint, and close remain within their explicit per-call and per-frame caps without whole-paragraph materialization."
+    },
+    {
+      "id": "M0-GIANT-LINE-MARKER-PREFIX",
+      "category": "bounded_work",
+      "currentStatus": "coverage_gap",
+      "targetMilestone": "M4",
+      "currentEvidence": "docs/architecture/v4/build_plan.md",
+      "reproduction": "future benchmark workload V4-GIANT-LINE-5M",
+      "generator": {
+        "id": "atx_giant_line_v1",
+        "prefix": "# ",
+        "bodyScalar": "a",
+        "bodyRepeat": 5242877,
+        "suffix": "\n",
+        "actualUtf8": 5242880,
+        "sha256Utf8": "6a02e8962b5a9e82395e82903d6955756d47abde00158f085b3d3f13bc421384"
+      },
+      "targetOutcome": "The giant physical line is source-exact, incrementally editable, viewport-fragmented, and never copied or shaped in full on a foreground call."
+    },
+    {
+      "id": "M0-LAZY-LIST-CONTINUATION",
+      "category": "incremental_semantics",
+      "currentStatus": "coverage_gap",
+      "targetMilestone": "M6",
+      "currentEvidence": "docs/architecture/v3/current_implementation_checkpoint.md",
+      "reproduction": "future CommonMark incremental history fixture",
+      "initialSource": "- first line\n  continued\n\nlazy continuation\n",
+      "targetOutcome": "Typing, splitting, merging, indenting, and outdenting around the continuation agree with a clean selected-profile parse after every step."
+    },
+    {
+      "id": "M0-VIEWPORT-OUT-OF-AUTHORITY",
+      "category": "query_authority",
+      "currentStatus": "known_failure",
+      "targetMilestone": "M2",
+      "currentEvidence": "docs/architecture/v4/g2_jank_results.md",
+      "reproduction": "cd example && flutter run --profile -d macos -t lib/g2_jank_harness.dart",
+      "targetOutcome": "A stale or out-of-authority viewport request returns a discriminated retry, stale-revision, or source-gap result and never faults the session."
+    },
+    {
+      "id": "M0-STATUS-FAULT-NO-REASON",
+      "category": "terminal_status",
+      "currentStatus": "known_failure",
+      "targetMilestone": "M2",
+      "currentEvidence": "docs/architecture/v4/g2_jank_results.md",
+      "reproduction": "dense G2 viewport path",
+      "targetOutcome": "Every fault carries one stable machine discriminant, owning operation, revision, progress token, and bounded diagnostic detail."
+    },
+    {
+      "id": "M0-STATUS-CLOSED-ONLY",
+      "category": "terminal_status",
+      "currentStatus": "known_failure",
+      "targetMilestone": "M2",
+      "currentEvidence": "docs/architecture/v4/g2_jank_results.md",
+      "reproduction": "continue editing after the G2 viewport fault",
+      "targetOutcome": "Closed is distinct from parser fault, host fault, cancellation, supersession, and completed resumable close."
+    },
+    {
+      "id": "M0-STATUS-AWAITING-PRESENTATION",
+      "category": "terminal_status",
+      "currentStatus": "known_failure",
+      "targetMilestone": "M4",
+      "currentEvidence": "docs/architecture/v4/g2_jank_results.md",
+      "reproduction": "dense G2 presentation timeout",
+      "targetOutcome": "Presentation wait always has live work, an observable dependency, or a typed terminal result; parked-without-progress is impossible."
+    },
+    {
+      "id": "M0-STATUS-QUIESCENT-NONCURRENT",
+      "category": "terminal_status",
+      "currentStatus": "known_failure",
+      "targetMilestone": "M2",
+      "currentEvidence": "docs/architecture/v4/g3_inframe_results.md",
+      "reproduction": "32 KiB G3 paste",
+      "targetOutcome": "A noncurrent session cannot report quiescent unless it also returns a typed blocked, cancelled, superseded, or faulted reason."
+    }
+  ]
+}

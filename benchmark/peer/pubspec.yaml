@@ -4,9 +4,17 @@ publish_to: none
 version: 0.0.0
 environment:
   sdk: ^3.10.0
-dev_dependencies:
+
+dependencies:
+  crypto: ^3.0.6
   flutter:
     sdk: flutter
+  flutter_quill: ^11.5.0
+
+dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_quill: ^11.5.0
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

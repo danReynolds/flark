@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "canonicalEncoding": "UTF-8",
+  "normalization": "preserve_input",
+  "grapheme": {
+    "dartPackage": "characters",
+    "dartPackageVersion": "1.4.1",
+    "unicodeVersion": "16.0.0",
+    "maximumContextUtf16": 1024,
+    "overCapResult": "needs_more_context"
+  },
+  "validCases": [
+    {
+      "id": "U-ASCII",
+      "source": "A",
+      "utf8Hex": "41",
+      "utf16": [65],
+      "graphemeBoundariesUtf16": [0, 1]
+    },
+    {
+      "id": "U-EMOJI",
+      "source": "😀",
+      "utf8Hex": "f09f9880",
+      "utf16": [55357, 56832],
+      "graphemeBoundariesUtf16": [0, 2]
+    },
+    {
+      "id": "U-FLAG-CA",
+      "source": "🇨🇦",
+      "utf8Hex": "f09f87a8f09f87a6",
+      "utf16": [55356, 56808, 55356, 56806],
+      "graphemeBoundariesUtf16": [0, 4]
+    },
+    {
+      "id": "U-ZWJ-FAMILY",
+      "source": "👨‍👩‍👧‍👦",
+      "utf8Hex": "f09f91a8e2808df09f91a9e2808df09f91a7e2808df09f91a6",
+      "utf16": [55357, 56424, 8205, 55357, 56425, 8205, 55357, 56423, 8205, 55357, 56422],
+      "graphemeBoundariesUtf16": [0, 11]
+    },
+    {
+      "id": "U-NFD-E-ACUTE",
+      "source": "é",
+      "utf8Hex": "65cc81",
+      "utf16": [101, 769],
+      "normalizationForm": "NFD",
+      "graphemeBoundariesUtf16": [0, 2]
+    },
+    {
+      "id": "U-NFC-E-ACUTE",
+      "source": "é",
+      "utf8Hex": "c3a9",
+      "utf16": [233],
+      "normalizationForm": "NFC",
+      "graphemeBoundariesUtf16": [0, 1]
+    },
+    {
+      "id": "U-MIXED-LINE-ENDINGS",
+      "source": "a\r\nb\rc\n",
+      "utf8Hex": "610d0a620d630a",
+      "utf16": [97, 13, 10, 98, 13, 99, 10],
+      "lineStartsUtf8": [0, 3, 5, 7],
+      "lineStartsUtf16": [0, 3, 5, 7],
+      "graphemeBoundariesUtf16": [0, 1, 3, 4, 5, 6, 7]
+    },
+    {
+      "id": "U-NONASCII-LINE-STARTS",
+      "source": "😀\r\né\nx\rא",
+      "utf8Hex": "f09f98800d0ac3a90a780dd790",
+      "utf16": [55357, 56832, 13, 10, 233, 10, 120, 13, 1488],
+      "lineStartsUtf8": [0, 6, 9, 11],
+      "lineStartsUtf16": [0, 4, 6, 8],
+      "graphemeBoundariesUtf16": [0, 2, 4, 5, 6, 7, 8, 9]
+    },
+    {
+      "id": "U-NUL-SOURCE",
+      "source": "A\u0000B",
+      "utf8Hex": "410042",
+      "utf16": [65, 0, 66],
+      "semanticScalarPolicy": "replace_nul_with_u+fffd_without_mutating_source",
+      "graphemeBoundariesUtf16": [0, 1, 2, 3]
+    },
+    {
+      "id": "U-BIDI-HEBREW-LATIN",
+      "source": "אa",
+      "utf8Hex": "d79061",
+      "utf16": [1488, 97],
+      "graphemeBoundariesUtf16": [0, 1, 2]
+    }
+  ],
+  "generatedCases": [
+    {
+      "id": "U-OVERSIZED-COMBINING-CLUSTER",
+      "generator": {"prefix": "a", "repeatScalar": 769, "repeat": 4096},
+      "utf16Length": 4097,
+      "graphemeBoundariesUtf16": [0, 4097],
+      "boundedLookupResult": "needs_more_context"
+    }
+  ],
+  "invalidHostInputs": [
+    {"id": "U-INVALID-UTF8-OVERLONG", "utf8Hex": "c0af", "result": "invalid_utf8"},
+    {"id": "U-INVALID-UTF8-SURROGATE", "utf8Hex": "eda080", "result": "invalid_utf8"},
+    {"id": "U-INVALID-UTF8-TOO-LARGE", "utf8Hex": "f4908080", "result": "invalid_utf8"},
+    {"id": "U-INVALID-UTF8-TRUNCATED", "utf8Hex": "f09f", "result": "invalid_utf8"},
+    {"id": "U-UNPAIRED-HIGH-SURROGATE", "utf16": [55296], "result": "invalid_utf16"},
+    {"id": "U-UNPAIRED-LOW-SURROGATE", "utf16": [56320], "result": "invalid_utf16"},
+    {"id": "U-EDIT-SPLIT-SURROGATE", "source": "😀", "editRangeUtf16": [1, 1], "result": "invalid_coordinate"}
+  ]
+}

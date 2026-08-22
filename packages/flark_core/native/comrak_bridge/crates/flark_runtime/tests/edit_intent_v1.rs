@@ -1,0 +1,1192 @@
+use std::time::{Duration, Instant};
+
+use flark_runtime::{
+    DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
+    DocumentSession, DocumentSessionPhase,
+};
+
+fn pump_ready(document: &mut DocumentSession) {
+    let mut turns = 0;
+    while document.phase() != DocumentSessionPhase::Ready {
+        document.pump(512).expect("parser pump");
+        turns += 1;
+        assert!(turns < 1_000_000, "fixture must converge");
+    }
+}
+
+fn source(document: &DocumentSession) -> String {
+    String::from_utf8(
+        document
+            .source_bytes(0..document.source_byte_len())
+            .expect("source bytes"),
+    )
+    .expect("UTF-8 source")
+}
+
+#[test]
+fn structural_presentation_proof_is_parser_bounded_and_fails_closed() {
+    let mut split = DocumentSession::begin("Before **bold**.\n").expect("begin split fixture");
+    pump_ready(&mut split);
+    let split_receipt = split
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "Before **bold**.".len(),
+            false,
+        )
+        .expect("split paragraph");
+    assert_eq!(
+        split_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::SplitParagraph
+    );
+    assert!(split_receipt.presentation_proven);
+    split.close().expect("close split fixture");
+
+    let merge_source = "Before **bold**.\n\nAfter.\n";
+    let mut merge = DocumentSession::begin(merge_source).expect("begin merge fixture");
+    pump_ready(&mut merge);
+    let merge_receipt = merge
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::DeleteBackward,
+            "Before **bold**.\n\n".len(),
+            false,
+        )
+        .expect("merge paragraphs");
+    assert_eq!(
+        merge_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::MergeParagraph
+    );
+    assert!(merge_receipt.presentation_proven);
+    merge.close().expect("close merge fixture");
+
+    let crossing_source = "Before *\n\nafter*\n";
+    let mut crossing = DocumentSession::begin(crossing_source).expect("begin crossing fixture");
+    pump_ready(&mut crossing);
+    let crossing_receipt = crossing
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::DeleteBackward,
+            "Before *\n\n".len(),
+            false,
+        )
+        .expect("merge crossing delimiter paragraphs");
+    assert!(!crossing_receipt.presentation_proven);
+    crossing.close().expect("close crossing fixture");
+
+    let mut pending = DocumentSession::begin("Before **bold**.\n").expect("begin pending fixture");
+    let pending_receipt = pending
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "Before **bold**.".len(),
+            false,
+        )
+        .expect("pending split paragraph");
+    assert!(!pending_receipt.presentation_proven);
+    pending.close().expect("close pending fixture");
+}
+
+#[derive(Clone, Copy)]
+struct IntentCase {
+    name: &'static str,
+    initial: &'static str,
+    intent: DocumentEditIntentV1,
+    selection_utf16: usize,
+    expected: &'static str,
+    expected_selection_utf16: usize,
+    expected_transition: DocumentEditPresentationTransitionV1,
+}
+
+#[test]
+fn collapsed_e1_matrix_commits_one_exact_splice() {
+    let cases = [
+        IntentCase {
+            name: "plain Return",
+            initial: "alpha bravo\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "alpha\n\n bravo\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
+        },
+        IntentCase {
+            name: "terminated paragraph boundary Return creates a distinct editor row",
+            initial: "alpha\n\nnext\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "alpha\n\n\n\nnext\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
+        },
+        IntentCase {
+            name: "ATX heading Return creates a plain successor",
+            initial: "# head",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 6,
+            expected: "# head\n\n",
+            expected_selection_utf16: 8,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
+        },
+        IntentCase {
+            name: "empty ATX heading exits",
+            initial: "# ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 2,
+            expected: "\n",
+            expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitHeading,
+        },
+        IntentCase {
+            name: "indented empty ATX heading preserves indentation",
+            initial: "  ## ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "  \n",
+            expected_selection_utf16: 3,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitHeading,
+        },
+        IntentCase {
+            name: "ATX heading prefix lifts",
+            initial: "## Head\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 3,
+            expected: "Head\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftHeading,
+        },
+        IntentCase {
+            name: "simple quote continues",
+            initial: "> alpha",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 7,
+            expected: "> alpha\n> ",
+            expected_selection_utf16: 10,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+        },
+        IntentCase {
+            name: "projected multiline quote continues its physical line",
+            initial: "> first\n> second\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 13,
+            expected: "> first\n> sec\n> ond\n",
+            expected_selection_utf16: 16,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+        },
+        IntentCase {
+            name: "projected multiline quote lifts one physical line",
+            initial: "> first\n> second\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 10,
+            expected: "> first\n\nsecond\n",
+            expected_selection_utf16: 9,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftBlockQuote,
+        },
+        IntentCase {
+            name: "certified empty multiline quote line exits",
+            initial: "> first\n> \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 10,
+            expected: "> first\n\n",
+            expected_selection_utf16: 8,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitBlockQuote,
+        },
+        IntentCase {
+            name: "certified CRLF empty multiline quote line exits",
+            initial: "> first\r\n> \r\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 11,
+            expected: "> first\r\n\r\n",
+            expected_selection_utf16: 9,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitBlockQuote,
+        },
+        IntentCase {
+            name: "empty quote exits",
+            initial: "> ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 2,
+            expected: "\n",
+            expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitBlockQuote,
+        },
+        IntentCase {
+            name: "quote prefix lifts",
+            initial: "> alpha\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 2,
+            expected: "alpha\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftBlockQuote,
+        },
+        IntentCase {
+            name: "nested quote continues with its exact parser prefix",
+            initial: "> > alpha",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 9,
+            expected: "> > alpha\n> > ",
+            expected_selection_utf16: 14,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+        },
+        IntentCase {
+            name: "nested quote Backspace outdents one container",
+            initial: "> > alpha\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 4,
+            expected: "> alpha\n",
+            expected_selection_utf16: 2,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
+            name: "empty nested quote Return outdents one container",
+            initial: "> > ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 4,
+            expected: "> ",
+            expected_selection_utf16: 2,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
+            name: "multiline nested quote outdents only the active physical line",
+            initial: "> > first\n> > second\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 14,
+            expected: "> > first\n\n> second\n",
+            expected_selection_utf16: 13,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
+            name: "multiline CRLF nested quote preserves its line ending while outdenting",
+            initial: "> > first\r\n> > second\r\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 15,
+            expected: "> > first\r\n\r\n> second\r\n",
+            expected_selection_utf16: 15,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
+            name: "unordered continuation",
+            initial: "- alpha\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 7,
+            expected: "- alpha\n- \n",
+            expected_selection_utf16: 10,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "ordered continuation",
+            initial: "9) alpha\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 8,
+            expected: "9) alpha\n10) \n",
+            expected_selection_utf16: 13,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "Tab indents a later bullet beneath its preceding sibling",
+            initial: "- parent\n- child\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 16,
+            expected: "- parent\n  - child\n",
+            expected_selection_utf16: 18,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
+        },
+        IntentCase {
+            name: "Shift-Tab outdents a nested bullet without moving to its prefix",
+            initial: "- parent\n  - child\n",
+            intent: DocumentEditIntentV1::OutdentListItem,
+            selection_utf16: 18,
+            expected: "- parent\n- child\n",
+            expected_selection_utf16: 16,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
+            name: "ordered indentation uses the preceding item padding",
+            initial: "10. parent\n11. child\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 20,
+            expected: "10. parent\n    11. child\n",
+            expected_selection_utf16: 24,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
+        },
+        IntentCase {
+            name: "task indentation preserves the certified check state",
+            initial: "- [ ] parent\n- [x] child\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 24,
+            expected: "- [ ] parent\n  - [x] child\n",
+            expected_selection_utf16: 26,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
+        },
+        IntentCase {
+            name: "indentation finds a preceding sibling across its nested subtree",
+            initial: "- first\n  - nested\n- second\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 27,
+            expected: "- first\n  - nested\n  - second\n",
+            expected_selection_utf16: 29,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
+        },
+        IntentCase {
+            name: "depth-two continuation preserves its container indentation",
+            initial: "- parent\n  - child\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 18,
+            expected: "- parent\n  - child\n  - \n",
+            expected_selection_utf16: 23,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "depth-two prefix Backspace outdents one level",
+            initial: "- parent\n  - child\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 13,
+            expected: "- parent\n- child\n",
+            expected_selection_utf16: 11,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
+            name: "certified empty depth-two successor outdents one level",
+            initial: "- parent\n  - child\n  - \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 23,
+            expected: "- parent\n  - child\n- \n",
+            expected_selection_utf16: 21,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
+            name: "depth-three continuation preserves its container indentation",
+            initial: "- root\n  - child\n    - leaf\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 27,
+            expected: "- root\n  - child\n    - leaf\n    - \n",
+            expected_selection_utf16: 34,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "depth-three prefix Backspace outdents exactly one level",
+            initial: "- root\n  - child\n    - leaf\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 23,
+            expected: "- root\n  - child\n  - leaf\n",
+            expected_selection_utf16: 21,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
+            name: "unchecked task continuation",
+            initial: "- [ ] alpha\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 11,
+            expected: "- [ ] alpha\n- [ ] \n",
+            expected_selection_utf16: 18,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "checked task continues unchecked",
+            initial: "- [x] done\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 10,
+            expected: "- [x] done\n- [ ] \n",
+            expected_selection_utf16: 17,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "empty task exits",
+            initial: "- [ ] \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 6,
+            expected: "\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
+        },
+        IntentCase {
+            name: "empty list exits",
+            initial: "- \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 2,
+            expected: "\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
+        },
+        IntentCase {
+            name: "unterminated empty list exits onto a blank line",
+            initial: "- ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 2,
+            expected: "\n",
+            expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
+        },
+        IntentCase {
+            name: "later empty list exits into a separated paragraph",
+            initial: "- one\n- \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 8,
+            expected: "- one\n\n\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
+        },
+        IntentCase {
+            name: "standalone empty list preserves existing separation",
+            initial: "para\n\n- \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 8,
+            expected: "para\n\n\n",
+            expected_selection_utf16: 6,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
+        },
+        IntentCase {
+            name: "first list item lifts",
+            initial: "- alpha\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 2,
+            expected: "alpha\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftList,
+        },
+        IntentCase {
+            name: "task item lifts",
+            initial: "- [X] alpha\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 6,
+            expected: "alpha\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftList,
+        },
+        IntentCase {
+            name: "later list item lifts with separation",
+            initial: "- one\n- two\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 8,
+            expected: "- one\n\ntwo\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftList,
+        },
+        IntentCase {
+            name: "plain paragraph merge",
+            initial: "one\n\ntwo\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 5,
+            expected: "onetwo\n",
+            expected_selection_utf16: 3,
+            expected_transition: DocumentEditPresentationTransitionV1::MergeParagraph,
+        },
+        IntentCase {
+            name: "CRLF paragraph Return",
+            initial: "alpha\r\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "alpha\r\n\r\n\r\n",
+            expected_selection_utf16: 9,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
+        },
+        IntentCase {
+            name: "indented code Return preserves the hidden prefix",
+            initial: "    code\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 8,
+            expected: "    code\n    \n",
+            expected_selection_utf16: 13,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "indented code Backspace joins visible lines and hidden prefix",
+            initial: "    one\n    two\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 12,
+            expected: "    onetwo\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::JoinIndentedCode,
+        },
+        IntentCase {
+            name: "first indented code line Backspace lifts to plain text",
+            initial: "    code\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 4,
+            expected: "code\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftIndentedCode,
+        },
+        IntentCase {
+            name: "CRLF indented code Return preserves the hidden prefix",
+            initial: "    code\r\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 8,
+            expected: "    code\r\n    \r\n",
+            expected_selection_utf16: 14,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "tab-indented code Return repeats the parser-owned tab",
+            initial: "\tcode\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "\tcode\n\t\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "mixed space-tab code Return repeats the exact four-column prefix",
+            initial: "  \tcode\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 7,
+            expected: "  \tcode\n  \t\n",
+            expected_selection_utf16: 11,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "residual code indentation remains visible while Return adds four columns",
+            initial: "      code\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 10,
+            expected: "      code\n    \n",
+            expected_selection_utf16: 15,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "BOF BOM is not repeated by indented code Return",
+            initial: "\u{feff}    code\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 9,
+            expected: "\u{feff}    code\n    \n",
+            expected_selection_utf16: 14,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "thematic break Backspace deletes the whole physical atom",
+            initial: "---\nnext",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 0,
+            expected: "next",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::DeleteThematicBreak,
+        },
+        IntentCase {
+            name: "thematic break Delete deletes spaces tabs and CRLF atomically",
+            initial: "  * \t* *  \r\nnext",
+            intent: DocumentEditIntentV1::DeleteForward,
+            selection_utf16: 0,
+            expected: "next",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::DeleteThematicBreak,
+        },
+        IntentCase {
+            name: "thematic break deletion preserves a BOF BOM",
+            initial: "\u{feff}---\nnext",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 1,
+            expected: "\u{feff}next",
+            expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::DeleteThematicBreak,
+        },
+    ];
+
+    for case in cases {
+        let mut document = DocumentSession::begin(case.initial).expect(case.name);
+        pump_ready(&mut document);
+        let receipt = document
+            .try_apply_edit_intent_v1(1, case.intent, case.selection_utf16, false)
+            .unwrap_or_else(|error| panic!("{} failed: {error:?}", case.name));
+        assert_eq!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::Applied,
+            "{}",
+            case.name
+        );
+        assert_eq!(receipt.base_revision, 1, "{}", case.name);
+        assert_eq!(receipt.result_revision, 2, "{}", case.name);
+        assert!(receipt.committed_splice.is_some(), "{}", case.name);
+        assert_eq!(
+            receipt.presentation_transition, case.expected_transition,
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            receipt.result_selection_utf16, case.expected_selection_utf16,
+            "{}",
+            case.name
+        );
+        assert_eq!(source(&document), case.expected, "{}", case.name);
+        document.close().expect("close fixture");
+    }
+}
+
+#[test]
+fn list_indentation_boundary_commands_are_handled_without_mutation() {
+    for (name, source_text, intent, selection) in [
+        (
+            "first item cannot indent",
+            "- first\n- second\n",
+            DocumentEditIntentV1::IndentListItem,
+            7,
+        ),
+        (
+            "top-level item cannot outdent",
+            "- first\n- second\n",
+            DocumentEditIntentV1::OutdentListItem,
+            16,
+        ),
+    ] {
+        let mut document = DocumentSession::begin(source_text).expect(name);
+        pump_ready(&mut document);
+        let receipt = document
+            .try_apply_edit_intent_v1(1, intent, selection, false)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        assert_eq!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::HandledNoChange,
+            "{name}"
+        );
+        assert_eq!(document.revision(), 1, "{name}");
+        assert_eq!(source(&document), source_text, "{name}");
+        document.close().expect("close boundary fixture");
+    }
+}
+
+#[test]
+fn list_indent_never_partially_moves_a_multiline_item_or_its_subtree() {
+    for (name, source_text) in [
+        (
+            "multiline item",
+            "- previous\n- current first\n  continuation\n",
+        ),
+        (
+            "item with a nested child",
+            "- previous\n- current\n  - child\n",
+        ),
+    ] {
+        let selection = source_text.find("current").expect("current item") + "current".len();
+        let mut document = DocumentSession::begin(source_text).expect(name);
+        pump_ready(&mut document);
+        let receipt = document
+            .try_apply_edit_intent_v1(1, DocumentEditIntentV1::IndentListItem, selection, false)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        assert_ne!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::Applied,
+            "{name} must not move only its first physical line"
+        );
+        assert_eq!(document.revision(), 1, "{name}");
+        assert_eq!(source(&document), source_text, "{name}");
+        document.close().expect("close multiline list fixture");
+    }
+}
+
+#[test]
+fn complex_context_fails_closed_and_composition_never_mutates() {
+    for initial in [
+        "> - nested\n",
+        "> # child heading\n",
+        "> ---\n",
+        "Setext\n---\n",
+        "```\ncode\n```\n",
+    ] {
+        let mut document = DocumentSession::begin(initial).expect("begin complex fixture");
+        pump_ready(&mut document);
+        let before = source(&document);
+        let receipt = document
+            .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 0, false)
+            .expect("resolve complex fixture");
+        assert_ne!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::Applied,
+            "{initial:?}"
+        );
+        assert_eq!(document.revision(), 1, "{initial:?}");
+        assert_eq!(source(&document), before, "{initial:?}");
+        document.close().expect("close complex fixture");
+    }
+
+    let mut document = DocumentSession::begin("alpha\n").expect("begin composition fixture");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 5, true)
+        .expect("composition suppression");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::NotApplicable
+    );
+    assert_eq!(document.revision(), 1);
+    assert_eq!(source(&document), "alpha\n");
+    document.close().expect("close composition fixture");
+}
+
+#[test]
+fn parser_pending_lineage_resolves_without_pumping() {
+    let mut document = DocumentSession::begin("- a\n").expect("begin List fixture");
+    pump_ready(&mut document);
+
+    document
+        .apply_edit(1, 3..3, "b")
+        .expect("literal edit before Return");
+    assert_eq!(document.phase(), DocumentSessionPhase::Building);
+    let first = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 4, false)
+        .expect("pending List Return");
+    assert_eq!(first.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(source(&document), "- ab\n- \n");
+
+    document
+        .apply_edit(
+            3,
+            first.result_selection_utf16..first.result_selection_utf16,
+            "x",
+        )
+        .expect("type into native-created pending item");
+    let second = document
+        .try_apply_edit_intent_v1(
+            4,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            first.result_selection_utf16 + 1,
+            false,
+        )
+        .expect("second pending List Return");
+    assert_eq!(second.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(source(&document), "- ab\n- x\n- \n");
+    document.close().expect("close pending fixture");
+}
+
+#[test]
+fn blank_paragraph_returns_and_backspaces_one_editor_row_per_command() {
+    let initial = "alpha\n\nnext\n";
+    let mut document = DocumentSession::begin(initial).expect("begin paragraph gap");
+    pump_ready(&mut document);
+
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 5, false)
+        .expect("first boundary Return");
+    assert_eq!(first.result_selection_utf16, 7);
+    assert_eq!(source(&document), "alpha\n\n\n\nnext\n");
+
+    let second = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            first.result_selection_utf16,
+            false,
+        )
+        .expect("second pending blank Return");
+    assert_eq!(second.result_selection_utf16, 8);
+    assert_eq!(source(&document), "alpha\n\n\n\n\nnext\n");
+
+    let remove_second = document
+        .try_apply_edit_intent_v1(
+            3,
+            DocumentEditIntentV1::DeleteBackward,
+            second.result_selection_utf16,
+            false,
+        )
+        .expect("remove second blank row");
+    assert_eq!(
+        remove_second.presentation_transition,
+        DocumentEditPresentationTransitionV1::RetainParagraphGap
+    );
+    assert_eq!(remove_second.result_selection_utf16, 7);
+    assert_eq!(source(&document), "alpha\n\n\n\nnext\n");
+
+    let remove_first = document
+        .try_apply_edit_intent_v1(
+            4,
+            DocumentEditIntentV1::DeleteBackward,
+            remove_second.result_selection_utf16,
+            false,
+        )
+        .expect("remove first blank row");
+    assert_eq!(
+        remove_first.presentation_transition,
+        DocumentEditPresentationTransitionV1::MergeParagraph
+    );
+    assert_eq!(remove_first.result_selection_utf16, 5);
+    assert_eq!(source(&document), initial);
+    document.close().expect("close paragraph gap");
+}
+
+#[test]
+fn initial_pending_exact_context_distinguishes_later_list_items() {
+    let mut document = DocumentSession::begin("- one\n- two\n").expect("begin pending list");
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 8, false)
+        .expect("lift later pending item");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), "- one\n\ntwo\n");
+    document.close().expect("close pending list");
+}
+
+#[test]
+fn initial_pending_exact_context_preserves_task_semantics() {
+    let mut document = DocumentSession::begin("- [x] task\n").expect("begin pending task");
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 10, false)
+        .expect("continue pending task");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), "- [x] task\n- [ ] \n");
+    document.close().expect("close pending task");
+}
+
+#[test]
+fn parser_pending_quote_continues_then_exits_without_pumping() {
+    let mut document = DocumentSession::begin("> alpha").expect("begin pending quote");
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 7, false)
+        .expect("continue pending quote");
+    assert_eq!(
+        continued.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), "> alpha\n> ");
+
+    let exited = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("exit pending quote");
+    assert_eq!(exited.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(source(&document), "> alpha\n\n");
+    document.close().expect("close pending quote");
+}
+
+#[test]
+fn parser_pending_nested_quote_outdents_one_level_per_command() {
+    let mut document = DocumentSession::begin("> > > ").expect("begin nested quote");
+    pump_ready(&mut document);
+
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 6, false)
+        .expect("first quote outdent");
+    assert_eq!(
+        first.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+    );
+    assert_eq!(source(&document), "> > ");
+    assert_eq!(first.result_selection_utf16, 4);
+
+    let second = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 4, false)
+        .expect("second quote outdent while parser pending");
+    assert_eq!(
+        second.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+    );
+    assert_eq!(source(&document), "> ");
+    assert_eq!(second.result_selection_utf16, 2);
+
+    let exit = document
+        .try_apply_edit_intent_v1(3, DocumentEditIntentV1::InsertParagraphBreak, 2, false)
+        .expect("exit outer quote while parser pending");
+    assert_eq!(
+        exit.presentation_transition,
+        DocumentEditPresentationTransitionV1::ExitBlockQuote,
+    );
+    assert_eq!(source(&document), "\n");
+    document.close().expect("close nested quote");
+}
+
+#[test]
+fn parser_pending_indented_code_continues_without_pumping() {
+    let mut document = DocumentSession::begin("    code").expect("begin indented code sequence");
+    pump_ready(&mut document);
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 8, false)
+        .expect("first indented code Return");
+    assert_eq!(
+        first.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueIndentedCode
+    );
+    assert_eq!(source(&document), "    code\n    ");
+
+    document
+        .apply_edit(
+            2,
+            first.result_selection_utf16..first.result_selection_utf16,
+            "next",
+        )
+        .expect("type into pending indented code line");
+    let second = document
+        .try_apply_edit_intent_v1(
+            3,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            first.result_selection_utf16 + 4,
+            false,
+        )
+        .expect("second pending indented code Return");
+    assert_eq!(
+        second.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueIndentedCode
+    );
+    assert_eq!(source(&document), "    code\n    next\n    ");
+    document.close().expect("close indented code sequence");
+}
+
+#[test]
+fn parser_pending_depth_two_list_continues_then_outdents_without_pumping() {
+    let mut document =
+        DocumentSession::begin("- parent\n  - child").expect("begin nested sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 18, false)
+        .expect("continue nested item");
+    assert_eq!(
+        continued.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueList
+    );
+    assert_eq!(source(&document), "- parent\n  - child\n  - ");
+    assert_ne!(document.phase(), DocumentSessionPhase::Ready);
+
+    let outdented = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 23, false)
+        .expect("outdent generated empty item");
+    assert_eq!(
+        outdented.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList
+    );
+    assert_eq!(outdented.result_selection_utf16, 21);
+    assert_eq!(source(&document), "- parent\n  - child\n- ");
+    document.close().expect("close nested sequence");
+}
+
+#[test]
+fn parser_pending_depth_three_list_outdents_one_level_per_command() {
+    let mut document = DocumentSession::begin("- root\n  - child\n    - leaf")
+        .expect("begin depth-three sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 27, false)
+        .expect("continue depth-three item");
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n    - ");
+
+    let depth_two = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("outdent to depth two");
+    assert_eq!(depth_two.result_selection_utf16, 32);
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n  - ");
+
+    let depth_one = document
+        .try_apply_edit_intent_v1(
+            3,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            depth_two.result_selection_utf16,
+            false,
+        )
+        .expect("outdent to depth one");
+    assert_eq!(depth_one.result_selection_utf16, 30);
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n- ");
+    document.close().expect("close depth-three sequence");
+}
+
+#[test]
+fn terminal_newline_depth_three_list_continues() {
+    let mut document = DocumentSession::begin("- root\n  - child\n    - leaf\n")
+        .expect("begin terminated depth-three sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 27, false)
+        .expect("continue terminated depth-three item");
+    assert_eq!(
+        continued.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueList
+    );
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n    - \n");
+    document.close().expect("close terminated sequence");
+}
+
+#[test]
+fn nonuniform_nested_list_geometry_outdents_by_parent_width() {
+    let initial = "10. root\n    - child\n";
+    let mut document = DocumentSession::begin(initial).expect("begin nonuniform nested List");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 15, false)
+        .expect("resolve nonuniform nested List");
+    assert_eq!(
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList,
+        "{receipt:#?}"
+    );
+    assert_eq!(receipt.result_selection_utf16, 11);
+    assert_eq!(document.revision(), 2);
+    assert_eq!(source(&document), "10. root\n- child\n");
+    document.close().expect("close nonuniform nested List");
+}
+
+#[test]
+fn nonuniform_nested_list_continues_then_outdents_by_parent_width() {
+    let mut document =
+        DocumentSession::begin("10. root\n    - child").expect("begin nonuniform nested sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 20, false)
+        .expect("continue nonuniform nested item");
+    assert_eq!(continued.result_selection_utf16, 27);
+    assert_eq!(source(&document), "10. root\n    - child\n    - ");
+
+    let outdented = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("outdent nonuniform generated item");
+    assert_eq!(
+        outdented.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList
+    );
+    assert_eq!(outdented.result_selection_utf16, 23);
+    assert_eq!(source(&document), "10. root\n    - child\n- ");
+    document.close().expect("close nonuniform nested sequence");
+}
+
+#[test]
+fn nonuniform_outdent_preserves_the_current_item_marker_offset() {
+    let mut document = DocumentSession::begin("10. root\n     - child\n")
+        .expect("begin offset nonuniform nested List");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 16, false)
+        .expect("outdent offset nonuniform nested item");
+    assert_eq!(
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList,
+        "{receipt:#?}"
+    );
+    assert_eq!(receipt.result_selection_utf16, 12);
+    assert_eq!(source(&document), "10. root\n - child\n");
+    document
+        .close()
+        .expect("close offset nonuniform nested List");
+}
+
+#[test]
+fn task_toggle_targets_a_certified_row_without_moving_the_selection() {
+    let initial = "- [ ] task\n\nselection stays here\n";
+    let target = initial.find("task").expect("task content");
+    let selection = initial.find("stays").expect("independent selection");
+    let mut document = DocumentSession::begin(initial).expect("begin task fixture");
+    pump_ready(&mut document);
+
+    let checked = document
+        .try_apply_edit_intent_v1_at_bytes(
+            1,
+            DocumentEditIntentV1::ToggleTaskChecked,
+            selection,
+            target,
+            false,
+        )
+        .expect("check task");
+    assert_eq!(
+        checked.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(
+        checked.presentation_transition,
+        DocumentEditPresentationTransitionV1::ToggleTaskChecked
+    );
+    assert_eq!(checked.result_selection_byte, selection);
+    assert_eq!(checked.result_selection_utf16, selection);
+    let splice = checked.committed_splice.expect("committed check splice");
+    assert_eq!(splice.base_byte_range, 3..4);
+    assert_eq!(splice.base_utf16_range, 3..4);
+    assert_eq!(splice.replacement, "x");
+    assert_eq!(source(&document), "- [x] task\n\nselection stays here\n");
+
+    // The carried edit context makes a repeated action deterministic even
+    // before the incremental parser has recertified the row.
+    let unchecked = document
+        .try_apply_edit_intent_v1_at_bytes(
+            2,
+            DocumentEditIntentV1::ToggleTaskChecked,
+            selection,
+            target,
+            false,
+        )
+        .expect("uncheck task while parser is pending");
+    assert_eq!(unchecked.result_selection_byte, selection);
+    assert_eq!(source(&document), initial);
+    document.close().expect("close task fixture");
+}
+
+#[test]
+fn task_toggle_is_fail_closed_for_non_tasks_and_composition() {
+    let initial = "- item\n";
+    let mut document = DocumentSession::begin(initial).expect("begin plain list");
+    pump_ready(&mut document);
+    let not_a_task = document
+        .try_apply_edit_intent_v1_at_bytes(1, DocumentEditIntentV1::ToggleTaskChecked, 6, 2, false)
+        .expect("reject plain list action");
+    assert_eq!(
+        not_a_task.disposition,
+        DocumentEditIntentDispositionV1::NotApplicable
+    );
+    assert_eq!(source(&document), initial);
+
+    let mut task = DocumentSession::begin("- [X] task\n").expect("begin checked task");
+    pump_ready(&mut task);
+    let composing = task
+        .try_apply_edit_intent_v1_at_bytes(1, DocumentEditIntentV1::ToggleTaskChecked, 10, 6, true)
+        .expect("composition guard");
+    assert_eq!(
+        composing.disposition,
+        DocumentEditIntentDispositionV1::NotApplicable
+    );
+    assert_eq!(source(&task), "- [X] task\n");
+    document.close().expect("close plain list");
+    task.close().expect("close checked task");
+}
+
+#[test]
+fn resolver_cost_is_size_independent_for_large_and_giant_lines() {
+    let ordinary_tail = "paragraph padding for a large ordinary document.\n\n".repeat(24_000);
+    let ordinary_10m_tail = "paragraph padding for a large ordinary document.\n\n".repeat(200_000);
+    let giant_tail = "x".repeat(1024 * 1024);
+    for (shape, initial, caret) in [
+        (
+            "ordinary-1MiB",
+            format!("target paragraph\n\n{ordinary_tail}"),
+            "target paragraph".len(),
+        ),
+        (
+            "giant-line-1MiB",
+            format!("target {giant_tail}\n"),
+            7 + giant_tail.len() / 2,
+        ),
+        (
+            "ordinary-10MiB",
+            format!("target paragraph\n\n{ordinary_10m_tail}"),
+            "target paragraph".len(),
+        ),
+    ] {
+        let mut document = DocumentSession::begin(&initial).expect("begin large fixture");
+        pump_ready(&mut document);
+        let started = Instant::now();
+        let receipt = document
+            .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, caret, false)
+            .unwrap_or_else(|error| panic!("{shape}: {error:?}"));
+        let elapsed = started.elapsed();
+        eprintln!("{shape} semantic resolve+commit: {elapsed:?}");
+        assert_eq!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::Applied,
+            "{shape}"
+        );
+        if !cfg!(debug_assertions) {
+            assert!(
+                elapsed < Duration::from_millis(20),
+                "{shape} semantic call took {elapsed:?}"
+            );
+        }
+        document.close().expect("close large fixture");
+    }
+}

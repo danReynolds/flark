@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-07-14",
+  "upstream": {
+    "name": "comrak",
+    "version": "0.54.0",
+    "gitCommit": "172c2ee7d2c5c262a28be3e407aadf705daea2b7"
+  },
+  "patch": {
+    "path": "0002-Extract-stateful-incremental-parser-API.patch",
+    "sha256": "f5df56f4ad3c51b0107736b58b2375b2d84e17818fb63edbd555102fb6c845f3",
+    "generatedFromCommit": "ac299c7",
+    "insertions": 3435,
+    "deletions": 5,
+    "existingUpstreamInsertions": 53,
+    "existingUpstreamDeletions": 5
+  },
+  "files": [
+    {
+      "path": "src/lib.rs",
+      "ownership": "upstream-hook",
+      "insertions": 4,
+      "deletions": 0,
+      "purpose": "re-export the stateful incremental API"
+    },
+    {
+      "path": "src/parser/inlines.rs",
+      "ownership": "upstream-hook",
+      "insertions": 21,
+      "deletions": 1,
+      "purpose": "opt-in reference-label dependency observation"
+    },
+    {
+      "path": "src/parser/mod.rs",
+      "ownership": "upstream-hook",
+      "insertions": 29,
+      "deletions": 4,
+      "purpose": "child module and opt-in reference-definition observation"
+    },
+    {
+      "path": "src/parser/incremental.rs",
+      "ownership": "flark",
+      "insertions": 3316,
+      "deletions": 0,
+      "purpose": "persistent source, syntax, checkpoint, reference, and stateful document engine"
+    },
+    {
+      "path": "examples/incremental_spike.rs",
+      "ownership": "flark-receipt",
+      "insertions": 65,
+      "deletions": 0,
+      "purpose": "external-crate incremental API benchmark and delta-shape check"
+    }
+  ],
+  "validation": {
+    "unitTestsPassed": 663,
+    "unitTestsIgnored": 2,
+    "docTestsPassed": 203,
+    "focusedNoDefaultFeatureTestsPassed": 14,
+    "wasm32UnknownUnknownReleaseBuild": true,
+    "cleanPatchReplayAndCompile": true,
+    "externalEditReceipt": {
+      "documentBytes": 1000065,
+      "edits": 10000,
+      "applyMicrosP50": 11,
+      "applyMicrosP95": 16,
+      "applyMicrosP99": 20,
+      "applyMicrosMax": 126,
+      "reparsedBytesP95": 63,
+      "reparsedBytesMax": 63
+    },
+    "referenceHeavyFullParseReceipt": {
+      "documentBytes": 1000078,
+      "samples": 101,
+      "stockMicrosP50": 21465,
+      "forkMicrosP50": 21520,
+      "stockMicrosP95": 23389,
+      "forkMicrosP95": 23242
+    }
+  },
+  "knownGaps": [
+    "move colocated helpers into a test-only child module and remove allow(dead_code)",
+    "integrate proved in-list, in-table, and raw-block continuation checkpoints into the document handle",
+    "return inline leaf deltas through the production binary codec",
+    "replace temporary debug-string node kinds with a versioned wire enum",
+    "add cancellation, revision supersession, and byte/node/time budgets",
+    "run extension-complete native and WASM every-revision differential CI"
+  ]
+}

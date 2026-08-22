@@ -1,0 +1,1124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flark.dev/schemas/performance-result-v1.schema.json",
+  "title": "Flark v4 performance result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptKind",
+    "resultId",
+    "matrixId",
+    "workloadId",
+    "measurementSurface",
+    "thresholdProfileId",
+    "tier",
+    "platform",
+    "claimEligible",
+    "resultStatus",
+    "startedAtUtc",
+    "durationMicros",
+    "contract",
+    "provenance",
+    "thresholds",
+    "metrics",
+    "evaluation"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "receiptKind": {"enum": ["measurement", "schema_example"]},
+    "resultId": {"$ref": "#/$defs/nonEmptyString"},
+    "matrixId": {"const": "flark-v4-performance-v1"},
+    "workloadId": {
+      "type": "string",
+      "pattern": "^flark-v4\\.(product|engine)\\.[a-z0-9-]+\\.[a-z0-9-]+\\.[a-z0-9-]+$"
+    },
+    "measurementSurface": {"enum": ["flutter-product", "engine-only"]},
+    "thresholdProfileId": {
+      "enum": ["tier-a-mac-m0-v1", "tier-b-mobile-provisional-m0-v1"]
+    },
+    "tier": {"enum": ["A_MAC", "B_MOBILE"]},
+    "platform": {"enum": ["macos", "android", "ios"]},
+    "claimEligible": {"type": "boolean"},
+    "resultStatus": {"enum": ["PASS", "FAIL"]},
+    "startedAtUtc": {"type": "string", "format": "date-time"},
+    "durationMicros": {"type": "integer", "minimum": 0},
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workloadMatrixPath",
+        "workloadMatrixSha256",
+        "resultSchemaPath",
+        "resultSchemaSha256"
+      ],
+      "properties": {
+        "workloadMatrixPath": {"const": "benchmark/v4/workloads_v1.json"},
+        "workloadMatrixSha256": {"$ref": "#/$defs/sha256"},
+        "resultSchemaPath": {"const": "benchmark/v4/result_v1.schema.json"},
+        "resultSchemaSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "thresholds": {"$ref": "#/$defs/resolvedThresholds"},
+    "metrics": {"$ref": "#/$defs/metrics"},
+    "evaluation": {"$ref": "#/$defs/evaluation"}
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "commitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sampleCount", "p50", "p90", "p99", "max"],
+      "properties": {
+        "sampleCount": {"type": "integer", "minimum": 1},
+        "p50": {"type": "number", "minimum": 0},
+        "p90": {"type": "number", "minimum": 0},
+        "p99": {"type": "number", "minimum": 0},
+        "max": {"type": "number", "minimum": 0}
+      }
+    },
+    "nullableDistribution": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["sampleCount", "p50", "p90", "p99", "max"],
+      "properties": {
+        "sampleCount": {"type": "integer", "minimum": 1},
+        "p50": {"type": "number", "minimum": 0},
+        "p90": {"type": "number", "minimum": 0},
+        "p99": {"type": "number", "minimum": 0},
+        "max": {"type": "number", "minimum": 0}
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv", "cwd", "environment"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        },
+        "cwd": {"$ref": "#/$defs/nonEmptyString"},
+        "environment": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "byteLength", "sha256"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/nonEmptyString"},
+        "path": {"$ref": "#/$defs/nonEmptyString"},
+        "byteLength": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositoryUrl",
+        "commitSha",
+        "dirty",
+        "dirtyDiffSha256",
+        "commands",
+        "fixture",
+        "hardware",
+        "runtime",
+        "renderSurface",
+        "toolchain",
+        "build",
+        "sampling"
+      ],
+      "properties": {
+        "repositoryUrl": {"type": "string", "format": "uri"},
+        "commitSha": {"$ref": "#/$defs/commitSha"},
+        "dirty": {"type": "boolean"},
+        "dirtyDiffSha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/command"}
+        },
+        "fixture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "generatorId",
+            "recipeId",
+            "sizeTierId",
+            "targetBytes",
+            "actualBytes",
+            "sha256",
+            "sizeResolution"
+          ],
+          "properties": {
+            "generatorId": {"const": "flark-v4-deterministic-markdown-v1"},
+            "recipeId": {"$ref": "#/$defs/nonEmptyString"},
+            "sizeTierId": {"$ref": "#/$defs/nonEmptyString"},
+            "targetBytes": {"type": "integer", "minimum": 1},
+            "actualBytes": {"type": "integer", "minimum": 1},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "sizeResolution": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "resolvedBytes",
+                "receiptPath",
+                "receiptSha256",
+                "receiptId"
+              ],
+              "properties": {
+                "kind": {"enum": ["fixed", "competitor-receipt"]},
+                "resolvedBytes": {"type": "integer", "minimum": 1},
+                "receiptPath": {"type": ["string", "null"], "minLength": 1},
+                "receiptSha256": {
+                  "type": ["string", "null"],
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "receiptId": {"type": ["string", "null"], "minLength": 1}
+              }
+            }
+          }
+        },
+        "hardware": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "machineId",
+            "manufacturer",
+            "model",
+            "cpu",
+            "logicalCores",
+            "memoryBytes",
+            "deviceClass"
+          ],
+          "properties": {
+            "machineId": {"$ref": "#/$defs/nonEmptyString"},
+            "manufacturer": {"$ref": "#/$defs/nonEmptyString"},
+            "model": {"$ref": "#/$defs/nonEmptyString"},
+            "cpu": {"$ref": "#/$defs/nonEmptyString"},
+            "logicalCores": {"type": "integer", "minimum": 1},
+            "memoryBytes": {"type": "integer", "minimum": 1},
+            "deviceClass": {"enum": ["desktop", "phone", "tablet"]}
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "osName",
+            "osVersion",
+            "architecture",
+            "physicalDevice",
+            "simulator",
+            "displayRefreshHz",
+            "displayFramePeriodMicros"
+          ],
+          "properties": {
+            "osName": {"$ref": "#/$defs/nonEmptyString"},
+            "osVersion": {"$ref": "#/$defs/nonEmptyString"},
+            "architecture": {"$ref": "#/$defs/nonEmptyString"},
+            "physicalDevice": {"type": "boolean"},
+            "simulator": {"type": "boolean"},
+            "displayRefreshHz": {"type": "number", "exclusiveMinimum": 0},
+            "displayFramePeriodMicros": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "renderSurface": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "viewportLogicalWidth",
+            "viewportLogicalHeight",
+            "devicePixelRatio",
+            "textScaleFactor",
+            "fontAssetId",
+            "fontSizeLogicalPixels",
+            "lineHeight",
+            "fontWeight",
+            "letterSpacingLogicalPixels",
+            "minimumVisibleCharacters"
+          ],
+          "properties": {
+            "viewportLogicalWidth": {"type": "number", "exclusiveMinimum": 0},
+            "viewportLogicalHeight": {"type": "number", "exclusiveMinimum": 0},
+            "devicePixelRatio": {"type": "number", "exclusiveMinimum": 0},
+            "textScaleFactor": {"type": "number", "exclusiveMinimum": 0},
+            "fontAssetId": {"$ref": "#/$defs/nonEmptyString"},
+            "fontSizeLogicalPixels": {"type": "number", "exclusiveMinimum": 0},
+            "lineHeight": {"type": "number", "exclusiveMinimum": 0},
+            "fontWeight": {"type": "integer", "minimum": 1},
+            "letterSpacingLogicalPixels": {"type": "number"},
+            "minimumVisibleCharacters": {"type": "integer", "minimum": 1}
+          }
+        },
+        "toolchain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dart", "flutter", "rustc", "cargo", "xcode", "androidSdk"],
+          "properties": {
+            "dart": {"$ref": "#/$defs/nonEmptyString"},
+            "flutter": {"$ref": "#/$defs/nonEmptyString"},
+            "rustc": {"$ref": "#/$defs/nonEmptyString"},
+            "cargo": {"$ref": "#/$defs/nonEmptyString"},
+            "xcode": {"$ref": "#/$defs/nonEmptyString"},
+            "androidSdk": {"$ref": "#/$defs/nonEmptyString"}
+          }
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "engineRevision",
+            "flutterRevision",
+            "artifactPath",
+            "artifactBytes",
+            "artifactSha256"
+          ],
+          "properties": {
+            "mode": {"enum": ["profile", "release"]},
+            "engineRevision": {"$ref": "#/$defs/commitSha"},
+            "flutterRevision": {"$ref": "#/$defs/commitSha"},
+            "artifactPath": {"$ref": "#/$defs/nonEmptyString"},
+            "artifactBytes": {"type": "integer", "minimum": 1},
+            "artifactSha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "sampling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operationId",
+            "iterationUnit",
+            "warmupIterationsPerRun",
+            "sampleIterationsPerRun",
+            "runCount",
+            "cadenceHz",
+            "totalSampleCount",
+            "visibleCharacterCount",
+            "rawArtifacts"
+          ],
+          "properties": {
+            "operationId": {"$ref": "#/$defs/nonEmptyString"},
+            "iterationUnit": {"$ref": "#/$defs/nonEmptyString"},
+            "warmupIterationsPerRun": {"type": "integer", "minimum": 0},
+            "sampleIterationsPerRun": {"type": "integer", "minimum": 1},
+            "runCount": {"type": "integer", "minimum": 1},
+            "cadenceHz": {"type": "number", "minimum": 0},
+            "totalSampleCount": {"type": "integer", "minimum": 1},
+            "visibleCharacterCount": {"type": "integer", "minimum": 0},
+            "rawArtifacts": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/artifact"}
+            }
+          }
+        }
+      }
+    },
+    "rawSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spanId", "threadId", "startMicros", "finishMicros"],
+      "properties": {
+        "spanId": {"$ref": "#/$defs/nonEmptyString"},
+        "threadId": {"$ref": "#/$defs/nonEmptyString"},
+        "startMicros": {"type": "integer", "minimum": 0},
+        "finishMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawFfiCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callId", "returnedBytes"],
+      "properties": {
+        "callId": {"$ref": "#/$defs/nonEmptyString"},
+        "returnedBytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawProcess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "processId", "startedMicros", "finishedMicros"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "startedMicros": {"type": "integer", "minimum": 0},
+        "finishedMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawOperationStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stage",
+        "sourceRevision",
+        "sourceUtf8Bytes",
+        "sourceSha256",
+        "caretOffsetUtf8"
+      ],
+      "properties": {
+        "stage": {"$ref": "#/$defs/nonEmptyString"},
+        "sourceRevision": {"type": "integer", "minimum": 0},
+        "sourceUtf8Bytes": {"type": "integer", "minimum": 0},
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
+        "caretOffsetUtf8": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawOperationProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "operationOrdinal",
+        "editOffsetUtf8",
+        "insertedText",
+        "deletedText",
+        "paintedStage",
+        "finalStage",
+        "stages"
+      ],
+      "properties": {
+        "kind": {"$ref": "#/$defs/nonEmptyString"},
+        "operationOrdinal": {"type": "integer", "minimum": 0},
+        "editOffsetUtf8": {"type": "integer", "minimum": 0},
+        "insertedText": {"type": "string"},
+        "deletedText": {"type": "string"},
+        "paintedStage": {"$ref": "#/$defs/nonEmptyString"},
+        "finalStage": {"$ref": "#/$defs/nonEmptyString"},
+        "stages": {
+          "type": "array",
+          "minItems": 2,
+          "items": {"$ref": "#/$defs/rawOperationStage"}
+        }
+      }
+    },
+    "rawWarmup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "warmupId",
+        "warmupIndex",
+        "processId",
+        "startedMicros",
+        "finishedMicros",
+        "operationProof"
+      ],
+      "properties": {
+        "runId": {"$ref": "#/$defs/nonEmptyString"},
+        "warmupId": {"$ref": "#/$defs/nonEmptyString"},
+        "warmupIndex": {"type": "integer", "minimum": 0},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "startedMicros": {"type": "integer", "minimum": 0},
+        "finishedMicros": {"type": "integer", "minimum": 0},
+        "operationProof": {"$ref": "#/$defs/rawOperationProof"}
+      }
+    },
+    "rawSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "sampleId",
+        "sampleIndex",
+        "processId",
+        "frameId",
+        "measurementStartVsyncOrdinal",
+        "measurementEndVsyncOrdinal",
+        "scheduledMicros",
+        "acceptedMicros",
+        "sourcePaintMicros",
+        "caretPaintMicros",
+        "selectionPaintMicros",
+        "foregroundStartMicros",
+        "foregroundFinishMicros",
+        "rustStartMicros",
+        "rustFinishMicros",
+        "ffiStartMicros",
+        "ffiFinishMicros",
+        "dartStartMicros",
+        "dartFinishMicros",
+        "layoutStartMicros",
+        "layoutFinishMicros",
+        "paintStartMicros",
+        "paintFinishMicros",
+        "synchronousSpans",
+        "workUnitIds",
+        "pumpIds",
+        "convergenceFinishedMicros",
+        "uncertifiedVisibleCharacterFrameCounts",
+        "terminalState",
+        "terminalReason",
+        "progressTokenAdvanced",
+        "sourceRevisionBefore",
+        "sourceRevisionAfter",
+        "sourceSha256Before",
+        "sourceSha256After",
+        "distantProjectionSha256Before",
+        "distantProjectionSha256After",
+        "referenceDestinationBefore",
+        "referenceDestinationAfter",
+        "postIterationSourceSha256",
+        "operationProof"
+      ],
+      "properties": {
+        "runId": {"$ref": "#/$defs/nonEmptyString"},
+        "sampleId": {"$ref": "#/$defs/nonEmptyString"},
+        "sampleIndex": {"type": "integer", "minimum": 0},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "frameId": {"$ref": "#/$defs/nonEmptyString"},
+        "measurementStartVsyncOrdinal": {"type": "integer", "minimum": 0},
+        "measurementEndVsyncOrdinal": {"type": "integer", "minimum": 0},
+        "scheduledMicros": {"type": "integer", "minimum": 0},
+        "acceptedMicros": {"type": "integer", "minimum": 0},
+        "sourcePaintMicros": {"type": "integer", "minimum": 0},
+        "caretPaintMicros": {"type": "integer", "minimum": 0},
+        "selectionPaintMicros": {"type": "integer", "minimum": 0},
+        "foregroundStartMicros": {"type": "integer", "minimum": 0},
+        "foregroundFinishMicros": {"type": "integer", "minimum": 0},
+        "rustStartMicros": {"type": "integer", "minimum": 0},
+        "rustFinishMicros": {"type": "integer", "minimum": 0},
+        "ffiStartMicros": {"type": "integer", "minimum": 0},
+        "ffiFinishMicros": {"type": "integer", "minimum": 0},
+        "dartStartMicros": {"type": "integer", "minimum": 0},
+        "dartFinishMicros": {"type": "integer", "minimum": 0},
+        "layoutStartMicros": {"type": "integer", "minimum": 0},
+        "layoutFinishMicros": {"type": "integer", "minimum": 0},
+        "paintStartMicros": {"type": "integer", "minimum": 0},
+        "paintFinishMicros": {"type": "integer", "minimum": 0},
+        "synchronousSpans": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/rawSpan"}
+        },
+        "workUnitIds": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        },
+        "pumpIds": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/nonEmptyString"}
+        },
+        "convergenceFinishedMicros": {"type": "integer", "minimum": 0},
+        "uncertifiedVisibleCharacterFrameCounts": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 0}
+        },
+        "terminalState": {"enum": ["complete", "typed_fault", "cancelled", "superseded"]},
+        "terminalReason": {"type": ["string", "null"]},
+        "progressTokenAdvanced": {"type": "boolean"},
+        "sourceRevisionBefore": {"type": "integer", "minimum": 0},
+        "sourceRevisionAfter": {"type": "integer", "minimum": 0},
+        "sourceSha256Before": {"$ref": "#/$defs/sha256"},
+        "sourceSha256After": {"$ref": "#/$defs/sha256"},
+        "distantProjectionSha256Before": {"$ref": "#/$defs/sha256"},
+        "distantProjectionSha256After": {"$ref": "#/$defs/sha256"},
+        "referenceDestinationBefore": {"type": ["string", "null"]},
+        "referenceDestinationAfter": {"type": ["string", "null"]},
+        "postIterationSourceSha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "operationProof": {"$ref": "#/$defs/rawOperationProof"}
+      }
+    },
+    "rawFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "frameId",
+        "vsyncOrdinal",
+        "processId",
+        "sampleId",
+        "editorAttributed",
+        "vsyncStartMicros",
+        "buildStartMicros",
+        "buildFinishMicros",
+        "rasterStartMicros",
+        "rasterFinishMicros",
+        "ffiCalls",
+        "workUnitIds",
+        "pumpIds"
+      ],
+      "properties": {
+        "runId": {"$ref": "#/$defs/nonEmptyString"},
+        "frameId": {"$ref": "#/$defs/nonEmptyString"},
+        "vsyncOrdinal": {"type": "integer", "minimum": 0},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "sampleId": {"type": ["string", "null"]},
+        "editorAttributed": {"type": "boolean"},
+        "vsyncStartMicros": {"type": "integer", "minimum": 0},
+        "buildStartMicros": {"type": "integer", "minimum": 0},
+        "buildFinishMicros": {"type": "integer", "minimum": 0},
+        "rasterStartMicros": {"type": "integer", "minimum": 0},
+        "rasterFinishMicros": {"type": "integer", "minimum": 0},
+        "ffiCalls": {"type": "array", "items": {"$ref": "#/$defs/rawFfiCall"}},
+        "workUnitIds": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}},
+        "pumpIds": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}}
+      }
+    },
+    "rawRenderEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renderEvidenceId",
+        "runId",
+        "sampleId",
+        "processId",
+        "frameId",
+        "sourceRevision",
+        "sourceSha256",
+        "visibleStartUtf8",
+        "visibleEndUtf8",
+        "visibleText",
+        "visibleTextSha256",
+        "projectionSha256",
+        "glyphCount",
+        "glyphRunSha256",
+        "rasterSha256",
+        "rasterFinishedMicros"
+      ],
+      "properties": {
+        "renderEvidenceId": {"$ref": "#/$defs/nonEmptyString"},
+        "runId": {"$ref": "#/$defs/nonEmptyString"},
+        "sampleId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "frameId": {"$ref": "#/$defs/nonEmptyString"},
+        "sourceRevision": {"type": "integer", "minimum": 0},
+        "sourceSha256": {"$ref": "#/$defs/sha256"},
+        "visibleStartUtf8": {"type": "integer", "minimum": 0},
+        "visibleEndUtf8": {"type": "integer", "minimum": 0},
+        "visibleText": {"type": "string"},
+        "visibleTextSha256": {"$ref": "#/$defs/sha256"},
+        "projectionSha256": {"$ref": "#/$defs/sha256"},
+        "glyphCount": {"type": "integer", "minimum": 0},
+        "glyphRunSha256": {"$ref": "#/$defs/sha256"},
+        "rasterSha256": {"$ref": "#/$defs/sha256"},
+        "rasterFinishedMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawMemorySample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memorySampleId",
+        "processId",
+        "timestampMicros",
+        "phase",
+        "residentBytes",
+        "allocationCount",
+        "allocatedBytes",
+        "allocatorRssVarianceBytes"
+      ],
+      "properties": {
+        "memorySampleId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "timestampMicros": {"type": "integer", "minimum": 0},
+        "phase": {"enum": ["baseline", "peak", "close", "post-close"]},
+        "residentBytes": {"type": "integer", "minimum": 0},
+        "allocationCount": {"type": "integer", "minimum": 0},
+        "allocatedBytes": {"type": "integer", "minimum": 0},
+        "allocatorRssVarianceBytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawOpenEditCloseCycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycleId", "processId", "openMicros", "editMicros", "closeMicros"],
+      "properties": {
+        "cycleId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "openMicros": {"type": "integer", "minimum": 0},
+        "editMicros": {"type": "integer", "minimum": 0},
+        "closeMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawProcessReopen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reopenId", "processId", "closedMicros", "openedMicros"],
+      "properties": {
+        "reopenId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "closedMicros": {"type": "integer", "minimum": 0},
+        "openedMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawBackgroundForegroundCycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycleId", "processId", "backgroundMicros", "foregroundMicros"],
+      "properties": {
+        "cycleId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "backgroundMicros": {"type": "integer", "minimum": 0},
+        "foregroundMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawSustainedInterval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intervalId", "processId", "startMicros", "finishMicros"],
+      "properties": {
+        "intervalId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "startMicros": {"type": "integer", "minimum": 0},
+        "finishMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawThermalSample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processId", "timestampMicros", "state"],
+      "properties": {
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "timestampMicros": {"type": "integer", "minimum": 0},
+        "state": {"enum": ["not-applicable", "nominal", "fair", "serious", "critical"]}
+      }
+    },
+    "rawLifecycleEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventId", "processId", "timestampMicros"],
+      "properties": {
+        "eventId": {"$ref": "#/$defs/nonEmptyString"},
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "timestampMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawFinalLiveState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processId",
+        "timestampMicros",
+        "liveDocuments",
+        "liveTransactions",
+        "liveContinuations",
+        "liveHandles"
+      ],
+      "properties": {
+        "processId": {"$ref": "#/$defs/nonEmptyString"},
+        "timestampMicros": {"type": "integer", "minimum": 0},
+        "liveDocuments": {"type": "integer", "minimum": 0},
+        "liveTransactions": {"type": "integer", "minimum": 0},
+        "liveContinuations": {"type": "integer", "minimum": 0},
+        "liveHandles": {"type": "integer", "minimum": 0}
+      }
+    },
+    "rawLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "openEditCloseCycles",
+        "processReopens",
+        "backgroundForegroundCycles",
+        "sustainedIntervals",
+        "thermalSamples",
+        "thermalThrottleEvents",
+        "memoryPressureEvents",
+        "finalLiveStateSamples"
+      ],
+      "properties": {
+        "openEditCloseCycles": {"type": "array", "items": {"$ref": "#/$defs/rawOpenEditCloseCycle"}},
+        "processReopens": {"type": "array", "items": {"$ref": "#/$defs/rawProcessReopen"}},
+        "backgroundForegroundCycles": {"type": "array", "items": {"$ref": "#/$defs/rawBackgroundForegroundCycle"}},
+        "sustainedIntervals": {"type": "array", "items": {"$ref": "#/$defs/rawSustainedInterval"}},
+        "thermalSamples": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rawThermalSample"}},
+        "thermalThrottleEvents": {"type": "array", "items": {"$ref": "#/$defs/rawLifecycleEvent"}},
+        "memoryPressureEvents": {"type": "array", "items": {"$ref": "#/$defs/rawLifecycleEvent"}},
+        "finalLiveStateSamples": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rawFinalLiveState"}}
+      }
+    },
+    "rawEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "evidenceId",
+        "measurementSurface",
+        "contract",
+        "workloadId",
+        "fixture",
+        "processes",
+        "warmups",
+        "samples",
+        "frames",
+        "renderEvidence",
+        "memorySamples",
+        "lifecycle"
+      ],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "evidenceId": {"$ref": "#/$defs/nonEmptyString"},
+        "measurementSurface": {"enum": ["flutter-product", "engine-only"]},
+        "contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workloadMatrixSha256", "resultSchemaSha256"],
+          "properties": {
+            "workloadMatrixSha256": {"$ref": "#/$defs/sha256"},
+            "resultSchemaSha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "workloadId": {"$ref": "#/$defs/nonEmptyString"},
+        "fixture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["recipeId", "targetBytes", "actualBytes", "sha256"],
+          "properties": {
+            "recipeId": {"$ref": "#/$defs/nonEmptyString"},
+            "targetBytes": {"type": "integer", "minimum": 1},
+            "actualBytes": {"type": "integer", "minimum": 1},
+            "sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "processes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rawProcess"}},
+        "warmups": {"type": "array", "items": {"$ref": "#/$defs/rawWarmup"}},
+        "samples": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rawSample"}},
+        "frames": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rawFrame"}},
+        "renderEvidence": {"type": "array", "items": {"$ref": "#/$defs/rawRenderEvidence"}},
+        "memorySamples": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rawMemorySample"}},
+        "lifecycle": {"$ref": "#/$defs/rawLifecycle"}
+      }
+    },
+    "competitorResolutionReceipt": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "receiptId",
+        "suiteId",
+        "protocolId",
+        "mode",
+        "exclusiveMachineAttested",
+        "plan",
+        "runGroups",
+        "processes",
+        "completionEnvelopeEligible",
+        "completionEnvelopeBlockers",
+        "mayResolveCompetitorDerivedSizeTiers",
+        "performanceClaimEligible",
+        "performanceClaimBlockers",
+        "claimEligible",
+        "completedTierByPeer",
+        "cohortCompletedTierBytes",
+        "nextCompetitorTierBytes",
+        "processesValidated"
+      ],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "receiptId": {"$ref": "#/$defs/nonEmptyString"},
+        "suiteId": {"const": "m0-mac-two-peer-suite-v1"},
+        "protocolId": {"const": "m0-mac-competitor-profile-v1"},
+        "mode": {"const": "full-profile-protocol"},
+        "exclusiveMachineAttested": {"const": true},
+        "plan": {
+          "type": "object",
+          "required": ["path", "sha256", "canonicalSha256", "processCount"],
+          "properties": {
+            "path": {"$ref": "#/$defs/nonEmptyString"},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "canonicalSha256": {"$ref": "#/$defs/sha256"},
+            "processCount": {"const": 234}
+          }
+        },
+        "runGroups": {"type": "array", "minItems": 3, "maxItems": 3},
+        "processes": {"type": "array", "minItems": 234, "maxItems": 234},
+        "completionEnvelopeEligible": {"const": true},
+        "completionEnvelopeBlockers": {"type": "array"},
+        "mayResolveCompetitorDerivedSizeTiers": {"const": true},
+        "performanceClaimEligible": {"type": "boolean"},
+        "performanceClaimBlockers": {"type": "array", "items": {"type": "string"}},
+        "claimEligible": {"const": false},
+        "completedTierByPeer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["flutter_quill", "super_editor"],
+          "properties": {
+            "flutter_quill": {"type": "integer", "minimum": 1},
+            "super_editor": {"type": "integer", "minimum": 1}
+          }
+        },
+        "cohortCompletedTierBytes": {"type": "integer", "minimum": 1},
+        "nextCompetitorTierBytes": {"type": "integer", "minimum": 1},
+        "processesValidated": {"const": 234}
+      }
+    },
+    "resolvedThresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceVisibilityMaxFrames",
+        "caretVisibilityMaxFrames",
+        "selectionVisibilityMaxFrames",
+        "inputBacklogMaxFrames",
+        "engineForegroundP99Micros",
+        "flutterFrameWorkP99Micros",
+        "editorAttributedFrameMaxExclusiveMicros",
+        "synchronousSpanMaxExclusiveMicros",
+        "editorAttributedDroppedFramesMax",
+        "editorAttributedMissedFrameRateMax",
+        "coldExactViewportPaintMaxExclusiveMicros",
+        "visibleProjectionCertificationMaxExclusiveMicros",
+        "convergenceWallMaxExclusiveMicros",
+        "uncertifiedVisibleCharacterFramesMax",
+        "peakRssOverBaselineMaxBytes",
+        "retainedRssOverBaselineAfterCloseMaxBytes",
+        "liveDocumentsAfterCloseMax",
+        "liveTransactionsAfterCloseMax",
+        "liveContinuationsAfterCloseMax",
+        "liveHandlesAfterCloseMax",
+        "minimumOpenEditCloseCycles",
+        "minimumProcessReopenCount",
+        "minimumBackgroundForegroundCycles",
+        "minimumSustainedRunSeconds",
+        "thermalThrottleEventsMax"
+      ],
+      "properties": {
+        "sourceVisibilityMaxFrames": {"type": "integer", "minimum": 0},
+        "caretVisibilityMaxFrames": {"type": "integer", "minimum": 0},
+        "selectionVisibilityMaxFrames": {"type": "integer", "minimum": 0},
+        "inputBacklogMaxFrames": {"type": "integer", "minimum": 0},
+        "engineForegroundP99Micros": {"type": "number", "minimum": 0},
+        "flutterFrameWorkP99Micros": {"type": "number", "minimum": 0},
+        "editorAttributedFrameMaxExclusiveMicros": {"type": "number", "exclusiveMinimum": 0},
+        "synchronousSpanMaxExclusiveMicros": {"type": "number", "exclusiveMinimum": 0},
+        "editorAttributedDroppedFramesMax": {"type": "integer", "minimum": 0},
+        "editorAttributedMissedFrameRateMax": {"type": "number", "minimum": 0, "maximum": 1},
+        "coldExactViewportPaintMaxExclusiveMicros": {"type": "number", "exclusiveMinimum": 0},
+        "visibleProjectionCertificationMaxExclusiveMicros": {"type": "number", "exclusiveMinimum": 0},
+        "convergenceWallMaxExclusiveMicros": {"type": "number", "exclusiveMinimum": 0},
+        "uncertifiedVisibleCharacterFramesMax": {"type": "number", "minimum": 0},
+        "peakRssOverBaselineMaxBytes": {"type": "integer", "minimum": 0},
+        "retainedRssOverBaselineAfterCloseMaxBytes": {"type": "integer", "minimum": 0},
+        "liveDocumentsAfterCloseMax": {"type": "integer", "minimum": 0},
+        "liveTransactionsAfterCloseMax": {"type": "integer", "minimum": 0},
+        "liveContinuationsAfterCloseMax": {"type": "integer", "minimum": 0},
+        "liveHandlesAfterCloseMax": {"type": "integer", "minimum": 0},
+        "minimumOpenEditCloseCycles": {"type": "integer", "minimum": 0},
+        "minimumProcessReopenCount": {"type": "integer", "minimum": 0},
+        "minimumBackgroundForegroundCycles": {"type": "integer", "minimum": 0},
+        "minimumSustainedRunSeconds": {"type": "integer", "minimum": 0},
+        "thermalThrottleEventsMax": {"type": "integer", "minimum": 0}
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["latency", "foreground", "frames", "ffi", "convergence", "memory", "lifecycle"],
+      "properties": {
+        "latency": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "sourceVisibilityFrames",
+            "caretVisibilityFrames",
+            "selectionVisibilityFrames",
+            "inputBacklogFrames",
+            "sourceVisibilityMicros",
+            "caretVisibilityMicros",
+            "selectionVisibilityMicros",
+            "inputToPaintMicros",
+            "coldExactViewportPaintMicros",
+            "visibleProjectionCertificationMicros"
+          ],
+          "properties": {
+            "sourceVisibilityFrames": {"$ref": "#/$defs/distribution"},
+            "caretVisibilityFrames": {"$ref": "#/$defs/distribution"},
+            "selectionVisibilityFrames": {"$ref": "#/$defs/distribution"},
+            "inputBacklogFrames": {"$ref": "#/$defs/distribution"},
+            "sourceVisibilityMicros": {"$ref": "#/$defs/distribution"},
+            "caretVisibilityMicros": {"$ref": "#/$defs/distribution"},
+            "selectionVisibilityMicros": {"$ref": "#/$defs/distribution"},
+            "inputToPaintMicros": {"$ref": "#/$defs/distribution"},
+            "coldExactViewportPaintMicros": {"$ref": "#/$defs/nullableDistribution"},
+            "visibleProjectionCertificationMicros": {"$ref": "#/$defs/distribution"}
+          }
+        },
+        "foreground": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "totalMicros",
+            "rustEngineMicros",
+            "ffiMicros",
+            "dartMicros",
+            "flutterBuildMicros",
+            "flutterLayoutMicros",
+            "flutterPaintMicros",
+            "flutterRasterMicros",
+            "longestSynchronousSpanMicros"
+          ],
+          "properties": {
+            "totalMicros": {"$ref": "#/$defs/distribution"},
+            "rustEngineMicros": {"$ref": "#/$defs/distribution"},
+            "ffiMicros": {"$ref": "#/$defs/distribution"},
+            "dartMicros": {"$ref": "#/$defs/distribution"},
+            "flutterBuildMicros": {"$ref": "#/$defs/nullableDistribution"},
+            "flutterLayoutMicros": {"$ref": "#/$defs/nullableDistribution"},
+            "flutterPaintMicros": {"$ref": "#/$defs/nullableDistribution"},
+            "flutterRasterMicros": {"$ref": "#/$defs/nullableDistribution"},
+            "longestSynchronousSpanMicros": {"type": "number", "minimum": 0}
+          }
+        },
+        "frames": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": [
+            "totalFrames",
+            "missedFrames",
+            "editorAttributedDroppedFrames",
+            "editorAttributedMissedFrameRate",
+            "buildMicros",
+            "rasterMicros",
+            "editorWorkMicros",
+            "longestEditorAttributedFrameMicros"
+          ],
+          "properties": {
+            "totalFrames": {"type": "integer", "minimum": 1},
+            "missedFrames": {"type": "integer", "minimum": 0},
+            "editorAttributedDroppedFrames": {"type": "integer", "minimum": 0},
+            "editorAttributedMissedFrameRate": {"type": "number", "minimum": 0, "maximum": 1},
+            "buildMicros": {"$ref": "#/$defs/distribution"},
+            "rasterMicros": {"$ref": "#/$defs/distribution"},
+            "editorWorkMicros": {"$ref": "#/$defs/distribution"},
+            "longestEditorAttributedFrameMicros": {"type": "number", "minimum": 0}
+          }
+        },
+        "ffi": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["totalCalls", "totalReturnedBytes", "callsPerFrame", "returnedBytesPerFrame"],
+          "properties": {
+            "totalCalls": {"type": "integer", "minimum": 0},
+            "totalReturnedBytes": {"type": "integer", "minimum": 0},
+            "callsPerFrame": {"$ref": "#/$defs/distribution"},
+            "returnedBytesPerFrame": {"$ref": "#/$defs/distribution"}
+          }
+        },
+        "convergence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "workUnits",
+            "pumpCount",
+            "wallTimeMicros",
+            "uncertifiedVisibleCharacterFrames",
+            "terminalState",
+            "terminalReason",
+            "progressTokenAdvanced"
+          ],
+          "properties": {
+            "workUnits": {"$ref": "#/$defs/distribution"},
+            "pumpCount": {"$ref": "#/$defs/distribution"},
+            "wallTimeMicros": {"$ref": "#/$defs/distribution"},
+            "uncertifiedVisibleCharacterFrames": {"$ref": "#/$defs/nullableDistribution"},
+            "terminalState": {"enum": ["complete", "typed_fault", "cancelled", "superseded"]},
+            "terminalReason": {"type": ["string", "null"]},
+            "progressTokenAdvanced": {"type": "boolean"}
+          }
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "allocationCount",
+            "allocatedBytes",
+            "baselineRssBytes",
+            "peakRssBytes",
+            "retainedRssBytesAfterClose",
+            "allocatorRssVarianceBytes"
+          ],
+          "properties": {
+            "allocationCount": {"type": "integer", "minimum": 0},
+            "allocatedBytes": {"type": "integer", "minimum": 0},
+            "baselineRssBytes": {"type": "integer", "minimum": 0},
+            "peakRssBytes": {"type": "integer", "minimum": 0},
+            "retainedRssBytesAfterClose": {"type": "integer", "minimum": 0},
+            "allocatorRssVarianceBytes": {"type": "integer", "minimum": 0}
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "openEditCloseCycles",
+            "processReopenCount",
+            "backgroundForegroundCycles",
+            "sustainedRunSeconds",
+            "thermalStartState",
+            "thermalMaxState",
+            "thermalEndState",
+            "thermalThrottleEvents",
+            "memoryPressureEvents",
+            "liveDocumentsAfterClose",
+            "liveTransactionsAfterClose",
+            "liveContinuationsAfterClose",
+            "liveHandlesAfterClose"
+          ],
+          "properties": {
+            "openEditCloseCycles": {"type": "integer", "minimum": 0},
+            "processReopenCount": {"type": "integer", "minimum": 0},
+            "backgroundForegroundCycles": {"type": "integer", "minimum": 0},
+            "sustainedRunSeconds": {"type": "integer", "minimum": 0},
+            "thermalStartState": {"$ref": "#/$defs/nonEmptyString"},
+            "thermalMaxState": {"$ref": "#/$defs/nonEmptyString"},
+            "thermalEndState": {"$ref": "#/$defs/nonEmptyString"},
+            "thermalThrottleEvents": {"type": "integer", "minimum": 0},
+            "memoryPressureEvents": {"type": "integer", "minimum": 0},
+            "liveDocumentsAfterClose": {"type": "integer", "minimum": 0},
+            "liveTransactionsAfterClose": {"type": "integer", "minimum": 0},
+            "liveContinuationsAfterClose": {"type": "integer", "minimum": 0},
+            "liveHandlesAfterClose": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "checks"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["gateId", "passed", "observed", "comparator", "threshold", "unit"],
+            "properties": {
+              "gateId": {"$ref": "#/$defs/nonEmptyString"},
+              "passed": {"type": "boolean"},
+              "observed": {"type": "number"},
+              "comparator": {"enum": ["<=", "<", ">=", "=="]},
+              "threshold": {"type": "number"},
+              "unit": {"$ref": "#/$defs/nonEmptyString"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

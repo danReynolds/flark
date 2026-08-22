@@ -1,7 +1,11 @@
-include: package:flutter_lints/flutter.yaml
+include: package:lints/recommended.yaml
 
 analyzer:
   exclude:
-    - native/comrak_bridge/target/**
-    - native/comrak_bridge/dist/**
+    - packages/flark_core/native/comrak_bridge/target/**
+    - packages/flark_core/native/comrak_bridge/dist/**
     - benchmark/**
+    # Retired v2/v3 sources are preserved as historical evidence, not as an
+    # active workspace package. Their dependencies and APIs were intentionally
+    # removed during the direct v4 cutover.
+    - legacy/**

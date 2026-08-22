@@ -1,0 +1,466 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "flark-v4-m0-baseline-2026-08-08",
+  "observationDate": "2026-08-08",
+  "status": "INCOMPLETE",
+  "m0Complete": false,
+  "claimEligible": false,
+  "planningBase": {
+    "commit": "47692297661489bcbc2a2af4574a6a422cf68ef7",
+    "commitDate": "2026-08-08T18:30:41-04:00",
+    "subject": "Accept Flark v4 product architecture and execution plan"
+  },
+  "observedWorktree": {
+    "headMatchesPlanningBase": true,
+    "clean": false,
+    "immutableRevisionReceipt": false,
+    "note": "This is a partial receipt over a shared dirty worktree containing concurrent M0 repairs and contract work. It is not a release receipt and does not freeze a diff."
+  },
+  "host": {
+    "privacy": "anonymized-no-device-identifiers",
+    "modelName": "MacBook Pro",
+    "modelIdentifier": "MacBookPro18,1",
+    "chip": "Apple M1 Pro",
+    "cpuCores": {
+      "total": 10,
+      "performance": 8,
+      "efficiency": 2
+    },
+    "memoryGB": 16,
+    "architecture": "arm64",
+    "operatingSystem": {
+      "name": "macOS",
+      "version": "26.2",
+      "build": "25C56"
+    },
+    "xcode": {
+      "version": "26.6",
+      "build": "17F113"
+    }
+  },
+  "toolchains": {
+    "dart": {
+      "path": "/opt/homebrew/bin/dart",
+      "version": "3.12.2",
+      "channel": "stable",
+      "platform": "macos_arm64"
+    },
+    "flutter": {
+      "path": "/Users/dan/Coding/flutter_arm64/bin/flutter",
+      "version": "3.44.4",
+      "channel": "user-branch",
+      "frameworkRevision": "ad70ec4617",
+      "engineHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+      "embeddedDart": "3.12.2",
+      "ciPinnedVersion": "3.41.9",
+      "variance": "The local Flutter version differs from the CI pin, so the targeted local Flutter results do not substitute for CI."
+    },
+    "rust": {
+      "cargoPath": "/opt/homebrew/bin/cargo",
+      "rustcVersion": "1.93.1",
+      "rustcCommit": "01f6ddf7588f42ae2d7eb0a2f21d44e8e96674cf",
+      "cargoVersion": "1.93.1",
+      "rustfmtVersion": "1.8.0",
+      "host": "aarch64-apple-darwin",
+      "toolchain": "stable-aarch64-apple-darwin"
+    }
+  },
+  "originalBaselineBlockers": [
+    {
+      "id": "stale_wasm",
+      "originalCommand": "./scripts/verify_package_confidence.sh --skip-native",
+      "originalStatus": "FAIL",
+      "originalFailure": "The first real gate rejected the committed WASM asset as stale relative to the Rust source manifest.",
+      "repairApplied": "Rebuilt and synchronized the root and flark_flutter WASM assets and buildinfo files, then updated the web asset version.",
+      "currentValidation": "FAIL_REOPENED",
+      "currentEvidenceCheck": "wasm_freshness",
+      "currentReason": "Subsequent Rust/Cargo changes moved the source manifest again. The two shipped WASM files remain byte-identical, but the freshness guard fails."
+    },
+    {
+      "id": "missing_expected_structural_ack",
+      "originalCommand": "dart analyze hook lib test",
+      "originalStatus": "FAIL",
+      "originalFailure": "Six decodeBlockRange test calls omitted the now-required expectedStructuralAck argument.",
+      "repairApplied": "Added expectedStructuralAck to all six calls and a deterministic structuralAck fixture.",
+      "currentValidation": "PASS",
+      "currentEvidenceCheck": "root_dart_analysis"
+    },
+    {
+      "id": "rustfmt_drift",
+      "originalCommand": "cargo fmt --all --manifest-path native/comrak_bridge/Cargo.toml -- --check",
+      "originalStatus": "FAIL",
+      "originalFailure": "The Rust workspace contained formatting drift.",
+      "repairApplied": "Applied rustfmt to the affected Rust sources.",
+      "currentValidation": "PASS",
+      "currentEvidenceCheck": "rustfmt_check"
+    },
+    {
+      "id": "flutter_avoid_print",
+      "originalCommand": "cd packages/flark_flutter && flutter analyze lib test",
+      "originalStatus": "FAIL",
+      "originalFailure": "One fatal avoid_print diagnostic remained in the large-document product checkpoint test.",
+      "repairApplied": "Replaced print with debugPrint in that test.",
+      "currentValidation": "PASS_TARGETED_ONLY",
+      "currentEvidenceCheck": "flutter_large_document_file_analysis",
+      "fullPackageValidation": "PENDING"
+    }
+  ],
+  "targetedChecks": [
+    {
+      "id": "rustfmt_check",
+      "command": "cargo fmt --all --manifest-path native/comrak_bridge/Cargo.toml -- --check",
+      "status": "PASS",
+      "scope": "formatting only"
+    },
+    {
+      "id": "flark_parser_lib",
+      "command": "cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml --package flark-parser --lib",
+      "status": "PASS",
+      "passed": 170,
+      "failed": 0,
+      "ignored": 0,
+      "scope": "flark-parser library unit tests only"
+    },
+    {
+      "id": "commonmark_structural_admission",
+      "command": "cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml --package flark-parser --test block_core_commonmark_ledger -- --nocapture",
+      "status": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "scope": "structural admission guard; not semantic or incremental conformance"
+    },
+    {
+      "id": "root_dart_analysis",
+      "command": "dart analyze hook lib test",
+      "status": "PASS",
+      "diagnostics": 0,
+      "scope": "root Dart analyzer targets"
+    },
+    {
+      "id": "v3_commonmark_coverage_contract",
+      "command": "dart test test/v3/conformance/flark_v3_commonmark_coverage_ledger_test.dart --reporter compact",
+      "status": "PASS",
+      "passed": 3,
+      "failed": 0,
+      "scope": "inventory/classification contract; not semantic conformance"
+    },
+    {
+      "id": "v4_root_contracts_before_receipt",
+      "command": "dart test test/v4/contracts --reporter compact",
+      "status": "PASS",
+      "passed": 23,
+      "failed": 0,
+      "scope": "root v4 data and contract fixtures that existed before this receipt contract"
+    },
+    {
+      "id": "competitor_baseline_contract",
+      "command": "dart test test/v4/contracts/competitor_baseline_contract_test.dart --reporter compact",
+      "status": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "scope": "historical non-claim seed and not-yet-executed Mac profile protocol"
+    },
+    {
+      "id": "input_window_contract",
+      "command": "cd packages/flark_flutter && flutter test test/v4/contracts/input_window_matrix_contract_test.dart --reporter compact",
+      "status": "PASS",
+      "passed": 3,
+      "failed": 0,
+      "scope": "bounded input-window fixture contract only"
+    },
+    {
+      "id": "flutter_large_document_file_analysis",
+      "command": "cd packages/flark_flutter && flutter analyze test/v3/flutter/flark_v3_large_document_product_checkpoint_test.dart",
+      "status": "PASS",
+      "diagnostics": 0,
+      "scope": "one repaired Flutter test file only"
+    },
+    {
+      "id": "wasm_freshness",
+      "command": "dart test test/v2/packaging/flark_wasm_freshness_test.dart --reporter compact",
+      "status": "FAIL",
+      "passed": 1,
+      "failed": 1,
+      "scope": "production workspace coverage and root/flark_flutter WASM source freshness",
+      "reason": "The assets are mutually identical, but their buildinfo source manifest no longer matches the current Rust/Cargo inputs."
+    }
+  ],
+  "pendingChecks": [
+    {
+      "id": "full_rust_workspace",
+      "status": "PENDING",
+      "command": "cargo test --workspace --all-targets --locked --exclude comrak --manifest-path native/comrak_bridge/Cargo.toml",
+      "reason": "Requires a stable workspace after concurrent Rust work settles."
+    },
+    {
+      "id": "native_editor_ci_and_packaging",
+      "status": "PENDING",
+      "command": "./scripts/verify_native_editor_ci.sh",
+      "reason": "Includes heavyweight workspace, native, and nested Flutter gates; it has not been run to completion for this receipt."
+    },
+    {
+      "id": "package_confidence",
+      "status": "PENDING",
+      "command": "./scripts/verify_package_confidence.sh",
+      "reason": "The current WASM freshness failure prevents a passing full package-confidence receipt."
+    },
+    {
+      "id": "publish_archives",
+      "status": "PENDING",
+      "command": "./scripts/verify_publish_archives.sh",
+      "reason": "No immutable archive-backed consumer receipt was produced."
+    },
+    {
+      "id": "mac_profile_run",
+      "status": "PENDING",
+      "command": "./scripts/verify_live_rendered_profile.sh",
+      "reason": "No current profile-mode Mac run or raw sample artifact was produced."
+    },
+    {
+      "id": "competitor_profile_protocol",
+      "status": "PENDING",
+      "command": "Run both benchmark/peer and benchmark/peer_supereditor Mac profile harnesses under benchmark/v4/competitor_baseline_v1.json",
+      "reason": "The protocol is pinned, but the required runners and comparable profile evidence do not exist yet."
+    },
+    {
+      "id": "full_flutter_analysis",
+      "status": "PENDING",
+      "command": "cd packages/flark_flutter && flutter analyze lib test",
+      "reason": "Only one repaired file received targeted analysis."
+    },
+    {
+      "id": "full_flutter_tests",
+      "status": "PENDING",
+      "command": "cd packages/flark_flutter && flutter test test --exclude-tags benchmark --reporter compact",
+      "reason": "Only the input-window contract was run in Flutter for this receipt."
+    },
+    {
+      "id": "full_flutter_build",
+      "status": "PENDING",
+      "command": "flutter build macos --profile",
+      "reason": "No full Flutter build was run for this receipt."
+    }
+  ],
+  "immutableInputs": [
+    {
+      "path": "test/fixtures/commonmark/upstream/common_mark_tests.json",
+      "sha256": "d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20",
+      "caseCount": 652
+    },
+    {
+      "path": "test/fixtures/commonmark/upstream/gfm_tests.json",
+      "sha256": "ce09eea1c15b61235868465468f6281ec82ab177998e404d9143e1641c4e5b55",
+      "caseCount": 670
+    },
+    {
+      "path": "test/fixtures/commonmark/v3_coverage_ledger.json",
+      "sha256": "4bbda8d4705a4a89a172ebbad37569482aa449ecc529c96d0ddcc40caaae8648"
+    },
+    {
+      "path": "test/fixtures/v4/markdown_profile_v1.json",
+      "sha256": "d39aae89a531dbf2d2144e3d7af4397bb1d8956368b6619758145a16d15cb8a4"
+    },
+    {
+      "path": "test/fixtures/v4/markdown_ledgers_v1.json",
+      "sha256": "4898b72d18cec3682e2a121ef1b2e3423254ae9728f55a22d539341fe9cbd1f0"
+    },
+    {
+      "path": "test/fixtures/v4/task_list_profile_cases_v1.json",
+      "sha256": "8a735bd2ce45b2cea42a687f6425d0519f8c9b2a62f77d3cb37b9e404c3e9a69",
+      "caseCount": 2
+    },
+    {
+      "path": "test/fixtures/v4/live_projection_matrix_v1.json",
+      "sha256": "ec04891d6101e14e56109db2fd39eae45ed55d9f4d1b992b24ff746d374d5bf8",
+      "caseCount": 10
+    },
+    {
+      "path": "test/fixtures/v4/input_window_matrix_v1.json",
+      "sha256": "9ae00409c53ed2569a689dd5dfc83d716e01d6601e872f4b056e02ae8ec230e6",
+      "transitionCount": 12
+    },
+    {
+      "path": "test/fixtures/v4/m0_regressions_v1.json",
+      "sha256": "944b1db8faa89d0300a7a7b7bf5342e2f4d1e8a81fae8729d5a27ed9cf5f532c",
+      "caseCount": 11
+    },
+    {
+      "path": "test/fixtures/v4/unicode_matrix_v1.json",
+      "sha256": "9d0edf2eedbdc846022a1d7ddf6a072d213348ba689685356df6238fae4f6c49"
+    },
+    {
+      "path": "benchmark/v4/workloads_v1.json",
+      "sha256": "8a90fa2c0b17d514823f68d8cd942635d9ee4c7309ca1ab925038eb47658b2e5"
+    },
+    {
+      "path": "benchmark/v4/competitor_baseline_v1.json",
+      "sha256": "eb8062cf4d9f97091a18841481f532a18767ef804bb4002393fcbd21cc6f58f6"
+    },
+    {
+      "path": "native/comrak_bridge/Cargo.lock",
+      "sha256": "532ee5920f4ef557e04b7a61c60fce376b0cb3cbfaa8c78a615f6e3bd1a9ea7a"
+    }
+  ],
+  "wasmAssetState": {
+    "rootPath": "lib/assets/wasm/flark_comrak_bridge.wasm",
+    "flutterPath": "packages/flark_flutter/lib/assets/wasm/flark_comrak_bridge.wasm",
+    "rootSha256": "01eac3679aa3904b5b70246e2542a8e60bd1640d606badf465d1f9a384f33531",
+    "flutterSha256": "01eac3679aa3904b5b70246e2542a8e60bd1640d606badf465d1f9a384f33531",
+    "assetsByteIdentical": true,
+    "sourceFreshness": "FAIL"
+  },
+  "markdownClaims": {
+    "selectedProfile": {
+      "id": "flark-gfm-0.29-v1",
+      "commonmarkVersion": "0.31.2",
+      "commonmarkDenominator": 652,
+      "gfmVersion": "0.29-gfm",
+      "gfmFixtureCases": 670,
+      "gfmSupplementCases": 2,
+      "gfmDenominator": 672
+    },
+    "structuralAdmission": {
+      "corpus": "CommonMark 0.31.2",
+      "admitted": 652,
+      "denominator": 652,
+      "status": "PASS",
+      "claimBoundary": "This is structural admission only. It is neither semantic conformance nor incremental conformance."
+    },
+    "denominatorOwningLedgers": [
+      {
+        "id": "commonmark_semantic",
+        "denominator": 652,
+        "counts": {
+          "exact": 384,
+          "missing": 262,
+          "divergent": 6,
+          "approved_deviation": 0
+        }
+      },
+      {
+        "id": "gfm_semantic",
+        "denominator": 672,
+        "counts": {
+          "exact": 0,
+          "missing": 672,
+          "divergent": 0,
+          "approved_deviation": 0
+        }
+      },
+      {
+        "id": "commonmark_incremental",
+        "denominator": 652,
+        "counts": {
+          "exact": 0,
+          "missing": 652,
+          "divergent": 0,
+          "approved_deviation": 0
+        }
+      },
+      {
+        "id": "gfm_incremental",
+        "denominator": 672,
+        "counts": {
+          "exact": 0,
+          "missing": 672,
+          "divergent": 0,
+          "approved_deviation": 0
+        }
+      }
+    ],
+    "v3ProbeInventory": {
+      "authoritative_supported_probe": 60,
+      "intentional_fail_closed": 19,
+      "intentional_extension_divergence": 2,
+      "unclassified": 571,
+      "denominator": 652,
+      "claimBoundary": "This diagnostic inventory is not promoted into the four v4 ledgers."
+    }
+  },
+  "contractMatrices": {
+    "liveProjection": {
+      "cases": 10,
+      "seedEvidence": 6,
+      "missing": 4,
+      "completeExecutableLane": false
+    },
+    "boundedInputWindow": {
+      "transitions": 12,
+      "maximumWindowUtf16": 16384,
+      "maximumWindowUtf8": 65536,
+      "contractTest": "PASS",
+      "runtimeImplementationReceipt": "PENDING"
+    },
+    "m0Regressions": {
+      "cases": 11,
+      "knownFailure": 7,
+      "coverageGap": 4,
+      "targetPass": 0
+    }
+  },
+  "historicalNonPassEvidence": [
+    {
+      "id": "G2",
+      "status": "BLOCKED",
+      "source": "docs/architecture/v4/g2_jank_results.md",
+      "sourceSha256": "ec286a2108fd162d4f9f7aa4ca03c741fe773c71a6479c1b90d000fbc61062a8",
+      "plannedConfigurations": 8,
+      "completedConfigurations": 0,
+      "frameTimingsProduced": false,
+      "failures": [
+        "The dense 5 KB viewport path timed out before paint and then faulted the runtime.",
+        "The dense 25 KB viewport path threw an uncaught out-of-authority range-receipt exception with status 0x0111."
+      ],
+      "localization": "A direct-Dart bisect passed 22 of 22 cases, including the 25 KB mixed fixture in 32 ms, localizing the observed defect to the Flutter viewport integration rather than the parser core."
+    },
+    {
+      "id": "G3",
+      "status": "PARTIAL_NONPASS",
+      "source": "docs/architecture/v4/g3_inframe_results.md",
+      "sourceSha256": "f92e3efffb33e5bc65506db7bde1889e43759ed89a5c06eef737beaa92936b70",
+      "ordinaryEditSeed": {
+        "fixtureBytes": 1170,
+        "onePumpWithinFourMs": 113,
+        "edits": 120,
+        "maximumPumpsPerEdit": 2,
+        "sustainedExact": 240,
+        "sustainedPumps": 240,
+        "p99Micros": 3531,
+        "maxMicros": 3733
+      },
+      "pasteFailure": {
+        "pasteBytes": 32789,
+        "pumpAttempts": 100000,
+        "budgetExhaustions": 1,
+        "exactCurrent": false,
+        "sourceIntact": true,
+        "terminalReasonReported": false
+      },
+      "unfinishedSizes": [
+        "100 KB",
+        "1 MB"
+      ],
+      "runLimit": "10 minutes"
+    },
+    {
+      "id": "M0_RANGE_CERTIFICATION",
+      "status": "PARTIAL_NONPASS",
+      "source": "docs/architecture/v4/m0_certification_findings.md",
+      "sourceSha256": "c9b8e9d6984009aeb10c823961746134597f6dbafad9addd5054db78caa902ab",
+      "safetyResult": "The engine returned PENDING rather than stale semantics after all four invalidating edits.",
+      "blockingResult": "The untouched distant range also returned PENDING in all four cases, exposing whole-document rather than per-range certification."
+    }
+  ],
+  "conclusion": {
+    "m0Complete": false,
+    "releaseReady": false,
+    "profileClaimReady": false,
+    "conformanceClaimReady": false,
+    "blockingFacts": [
+      "WASM source freshness currently fails.",
+      "Full workspace, native packaging, archive, Mac profile, and full Flutter gates remain pending.",
+      "The Mac-first competitor protocol is specified but has not been executed with complete comparable evidence.",
+      "The named downstream G2/G3 and range-certification failures are frozen as non-passing regression inputs; repairing them is not an M0 exit requirement."
+    ]
+  }
+}

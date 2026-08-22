@@ -1,194 +1,32 @@
 # Flark
 
-Markdown-first editing and rendering for Flutter.
+Flark is a high-performance, continuously rendered Markdown editor for
+Flutter. The repository has two product packages:
 
-Flark gives Flutter apps two core widgets and a thin Flutter form wrapper:
+- [`flark_core`](packages/flark_core): headless Dart API over the Rust-owned
+  source, incremental GFM parser, transactions, anchors, certification, and
+  history.
+- [`flark`](packages/flark): the Flutter custom editor and read-only rendering
+  surfaces.
 
-Live demo and package site: <https://danreynolds.github.io/flark/>
+`flark_core` builds and bundles its Rust native asset automatically. Consumers
+do not install a separate library or configure a runtime path.
 
-> **Status:** pre-1.0. Runs on macOS, iOS, Android, Linux, and web —
-> **Windows is not supported yet** (the parser is a Rust/WASM Comrak bridge;
-> see [Platform Support](#platform-support-and-build-requirements)). The API
-> may still change between minor versions; breaking changes are called out in
-> the [CHANGELOG](CHANGELOG.md).
+Read the [Flark North Star](NORTH_STAR.md) before changing editor architecture,
+projection authority, rendering, or live-edit test methodology.
 
-```dart
-import 'package:flark/flark.dart';
+## Development gates
 
-FlarkMarkdownEditor(
-  initialMarkdown: '# Hello\n\nEdit **Markdown** without losing the source.',
-  editingMode: FlarkMarkdownEditingMode.liveRendered,
-  onChanged: saveMarkdown,
-)
+```sh
+bash scripts/verify_v4.sh
+FLARK_V4_FEATURES=opening-session bash scripts/verify_v4.sh
+bash scripts/verify_v4_release.sh
+bash scripts/verify_v4_publish_archives.sh
+bash scripts/v4_android.sh verify <device-id>
+bash scripts/v4_android.sh profile <device-id>
 ```
 
-```dart
-FlarkMarkdown(markdown: '# Preview')
-```
-
-The document truth stays FlarkMarkdown. The editor, preview, toolbar commands,
-projection layer, and rendered block widgets all work from that same source
-document instead of converting user content into a private rich-text model.
-
-![Flark visual surfaces](test/v2/flutter/goldens/flark_v2_surfaces.png)
-
-## Why Flark
-
-- `FlarkMarkdownEditor` edits Markdown in source or live-rendered mode.
-- `FlarkMarkdownEditorFormField` wires the editor into Flutter `Form` validation,
-  saving, and reset flows.
-- `FlarkMarkdown` renders read-only Markdown from a string or a shared
-  controller, with optional text selection (`selectable: true`).
-- `FlarkFlutterController` keeps editor, preview, toolbar, undo, redo, parser
-  state, and render plans in sync.
-- The default parser is Comrak: native FFI on macOS, iOS, Android, and Linux;
-  packaged WASM on web.
-- The headless Dart core owns transactions, commands, projection, history, and
-  render plans without importing Flutter.
-
-## Shared Editor and Preview
-
-Use a controller when multiple surfaces should track the same document:
-
-```dart
-final controller = FlarkFlutterController.fromMarkdown(
-  '# Hello\n\nEdit **Markdown** without losing the source.',
-);
-
-Column(
-  children: [
-    Expanded(child: FlarkMarkdownEditor(controller: controller)),
-    Expanded(child: FlarkMarkdown(controller: controller)),
-  ],
-)
-```
-
-`initialMarkdown` is only used to create a widget-owned controller. For
-document switching, pass a new widget key or manage a `FlarkFlutterController`
-yourself.
-
-## Toolbar Commands
-
-Toolbar code talks to the controller, not the widget tree:
-
-```dart
-IconButton(
-  icon: const Icon(Icons.format_bold),
-  onPressed: () => controller.commands.toggleStrong(),
-)
-
-IconButton(
-  icon: const Icon(Icons.table_chart),
-  onPressed: () => controller.commands.insertTable(columns: 3, bodyRows: 2),
-)
-```
-
-Command helpers return `FlarkEditorRuntimeResult`, so advanced integrations can
-inspect whether a command was handled, ignored, or rejected.
-
-## Theming
-
-Every chrome color — code fences, quotes, links, tables, checkboxes, menus,
-syntax highlighting — comes from a `FlarkMarkdownThemeData`. The default
-follows platform brightness (light/dark); pass `theme:` to a widget or wrap a
-subtree in `FlarkMarkdownTheme` to control it:
-
-```dart
-FlarkMarkdownEditor(
-  controller: controller,
-  theme: FlarkMarkdownThemeData.dark.copyWith(linkColor: myBrandBlue),
-)
-```
-
-Text sizing and fonts come from the widget `style`/`textStyle`; the theme owns
-colors.
-
-## Imports
-
-Most apps should use one import:
-
-```dart
-import 'package:flark/flark.dart';
-```
-
-Advanced imports are split by intent:
-
-- `package:flark/flark_core.dart`: headless document/runtime/projection/render
-  plan APIs.
-- `package:flark/flark_advanced.dart`: full parser, native bridge, extension,
-  and Flutter integration surface.
-
-Deep imports under `src/` are for Flark internals and white-box package tests.
-
-## Performance
-
-Editing stays on the synchronous fast path — a keystroke applies in
-microseconds through 100 KB documents:
-
-| Document | Keystroke apply (median) | Native parse + decode (median) |
-| --- | --- | --- |
-| 1 KB | 4 µs | 1 ms |
-| 100 KB | 172 µs | 55 ms |
-| 1 MB | 5.5 ms | ~0.5 s |
-
-Both paths are linear in document size. See [Benchmarks](doc/benchmarks.md) for
-the enforced lane and methodology.
-
-## Platform Support and Build Requirements
-
-| Target | Parser backend | Toolchain |
-| --- | --- | --- |
-| macOS, iOS, Linux | Native Comrak (Rust FFI) | Rust (`rustup` recommended) |
-| Android | Native Comrak (Rust FFI) | Rust + Android NDK |
-| Web | Packaged Comrak WASM | none (prebundled) |
-| Windows | — | not supported yet |
-
-Native targets compile the bundled Rust bridge during `flutter build` via the
-package build hook, so a Rust toolchain must be on `PATH` for those builds.
-Web needs no extra tooling. See
-[Parser and Platforms](doc/parser_and_platforms.md) for details.
-
-## Documentation
-
-- [Getting Started](doc/getting_started.md)
-- [Cookbook](doc/cookbook.md)
-- [API Surface](doc/api_surface.md)
-- [Parser and Platforms](doc/parser_and_platforms.md)
-- [Development and Verification](doc/development.md)
-- [Benchmarks](doc/benchmarks.md)
-- [Architecture Notes](doc/README.md)
-
-## Example App
-
-The `example/` app is the dogfood workbench and GitHub Pages site. It imports
-only `package:flark/flark.dart` and exercises source, live-rendered, form,
-toolbar, docs, and read-only rendering flows.
-
-```bash
-cd example
-flutter run -d macos
-```
-
-## Verification
-
-Fast local confidence gate:
-
-```bash
-./scripts/verify_package_confidence.sh
-```
-
-Full release gate:
-
-```bash
-./scripts/verify_release.sh
-```
-
-Visual baselines:
-
-```bash
-flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
-```
-
-## License
-
-Flark is available under the MIT license. See [LICENSE](LICENSE).
+The repository root is a non-publishable qualification workspace. Superseded
+v2/v3 sources live only under [`legacy/`](legacy) as historical evidence; active
+package resolution, builds, and gates must not depend on them. Flark v4 is
+currently native-only, so there is no active Web/Pages deployment.
