@@ -270,6 +270,8 @@ final class LiveEditorTransitionProbe {
   final List<PublicationSample> publications = [];
   int _sampleSequence = 0;
 
+  String get semanticManifest => _semanticManifest(controller);
+
   void _recordPublication() {
     final sample = PublicationSample.capture(controller, _sampleSequence++);
     sample.expectMechanicallyValid();

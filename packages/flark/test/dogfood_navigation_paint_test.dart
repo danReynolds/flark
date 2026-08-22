@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -403,6 +404,136 @@ void main() {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
+  testWidgets(
+    'Product Tour focus reconnect accepts one current rendered edit',
+    (tester) async {
+      final caret = _productTourSource.indexOf('editor path') + 3;
+      final expectedSource = _productTourSource.replaceRange(caret, caret, 'x');
+      final expectedManifest = (await tester.runAsync(() async {
+        final oracle = await LiveEditorTransitionProbe.open(
+          _marked(expectedSource, caret + 1),
+          libraryPath: libraryPath!,
+        );
+        try {
+          return oracle.semanticManifest;
+        } finally {
+          await oracle.close();
+        }
+      }))!;
+      final editorFocus = FocusNode();
+      final otherFocus = FocusNode();
+      final inputEvents = <String>[];
+      addTearDown(() {
+        editorFocus.dispose();
+        otherFocus.dispose();
+      });
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(
+          _marked(_productTourSource, caret),
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      final mounted = await _MountedEditorPaintRecorder.mount(
+        tester,
+        probe,
+        focusNode: editorFocus,
+        otherFocusNode: otherFocus,
+        debugInputEventObserver: inputEvents.add,
+      );
+      try {
+        expect(editorFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.hasAnyClients, isTrue);
+        final originalGeneration = probe.controller.sourceGeneration;
+        final originalSelectionGeneration =
+            probe.controller.canonicalSelectionGeneration;
+
+        otherFocus.requestFocus();
+        await tester.pump();
+        expect(editorFocus.hasFocus, isFalse);
+        expect(tester.testTextInput.hasAnyClients, isFalse);
+
+        editorFocus.requestFocus();
+        await tester.pump();
+        expect(editorFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.hasAnyClients, isTrue);
+        expect(
+          tester.testTextInput.editingState?['text'],
+          probe.controller.inputValue.text,
+        );
+
+        tester.testTextInput.closeConnection();
+        await tester.pump();
+        expect(editorFocus.hasFocus, isFalse);
+        expect(
+          inputEvents.where((event) => event == 'connection-closed'),
+          hasLength(1),
+        );
+
+        editorFocus.requestFocus();
+        await tester.pump();
+        expect(editorFocus.hasFocus, isTrue);
+        expect(tester.testTextInput.hasAnyClients, isTrue);
+        final before = probe.controller.inputValue;
+        expect(before.selection.isCollapsed, isTrue);
+        final localCaret = before.selection.extentOffset;
+        expect(
+          probe.controller.globalSelectionExtent,
+          caret,
+          reason: 'reconnect must not rehome the canonical caret',
+        );
+        expect(tester.testTextInput.editingState?['text'], before.text);
+
+        final expectedGeneration = originalGeneration + 1;
+        final paintStart = mounted.paints.length;
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: before.text.replaceRange(localCaret, localCaret, 'x'),
+            selection: TextSelection.collapsed(offset: localCaret + 1),
+          ),
+        );
+        await _pumpUntil(
+          tester,
+          () =>
+              probe.controller.sourceGeneration == expectedGeneration &&
+              probe.controller.visibleSource == expectedSource &&
+              probe.controller.globalSelectionExtent == caret + 1,
+        );
+        await _waitForMutationCommitted(tester, probe.controller);
+        await tester.pump();
+
+        expect(
+          probe.controller.canonicalSelectionGeneration,
+          greaterThan(originalSelectionGeneration),
+        );
+        expect(
+          inputEvents.where((event) => event == 'connection-closed'),
+          hasLength(1),
+        );
+        expect(probe.controller.resyncCount, 0);
+        unawaited(probe.controller.continueParsing());
+        await _pumpUntil(tester, () => probe.controller.semanticsCurrent);
+        await tester.pump();
+        mounted.expectPaints(
+          mounted.paints
+              .skip(paintStart)
+              .where((paint) => paint.sourceGeneration == expectedGeneration)
+              .toList(growable: false),
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedBase: caret + 1,
+          expectedExtent: caret + 1,
+        );
+        await tester.runAsync(probe.expectHealthy);
+        expect(probe.semanticManifest, expectedManifest);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
   for (final sequence in const ['👩‍💻', '🧑🏽‍🚀', '👨‍👩‍👧‍👦']) {
     testWidgets(
       'Product Tour Unicode insertion $sequence paints one grapheme-safe result',
@@ -476,20 +607,36 @@ final class _MountedEditorPaintRecorder {
     WidgetTester tester,
     LiveEditorTransitionProbe probe, {
     Size size = const Size(520, 420),
+    FocusNode? focusNode,
+    FocusNode? otherFocusNode,
+    ValueChanged<String>? debugInputEventObserver,
   }) async {
     await tester.binding.setSurfaceSize(size);
     final recorder = _MountedEditorPaintRecorder._(tester, probe);
+    final editor = FlarkEditor(
+      controller: probe.controller,
+      autofocus: true,
+      focusNode: focusNode,
+      padding: EdgeInsets.zero,
+      debugHandle: recorder.debugHandle,
+      debugPaintObserver: recorder.paints.add,
+      debugInputEventObserver: debugInputEventObserver,
+    );
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
         child: SizedBox.expand(
-          child: FlarkEditor(
-            controller: probe.controller,
-            autofocus: true,
-            padding: EdgeInsets.zero,
-            debugHandle: recorder.debugHandle,
-            debugPaintObserver: recorder.paints.add,
-          ),
+          child: otherFocusNode == null
+              ? editor
+              : Column(
+                  children: [
+                    Expanded(child: editor),
+                    Focus(
+                      focusNode: otherFocusNode,
+                      child: const SizedBox(height: 1),
+                    ),
+                  ],
+                ),
         ),
       ),
     );
