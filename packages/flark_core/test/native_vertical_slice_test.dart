@@ -307,6 +307,52 @@ void main() {
   );
 
   test(
+    'parameterized bracket dependency cell crosses the Dart worker boundary',
+    () async {
+      const source = 'Before **bold** after.\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      final cells = row.projectionEditCells
+          .where(
+            (cell) =>
+                cell.matcher ==
+                FlarkProjectionEditMatcher.insertExactScalarAtPoint,
+          )
+          .toList(growable: false);
+      expect(cells, hasLength(3));
+      expect(
+        cells.map(
+          (cell) => (
+            cell.affectedUtf16.start,
+            cell.affectedUtf16.end,
+            cell.triggerUtf16.start,
+            cell.triggerUtf16.end,
+            cell.exactScalar,
+            cell.retainBlockShell,
+            cell.retainOutsideClosure,
+            cell.presentClosureExact,
+            cell.chainResultCell,
+          ),
+        ),
+        [
+          (7, 15, 10, 10, 91, true, true, true, false),
+          (7, 15, 11, 11, 91, true, true, true, false),
+          (7, 15, 12, 12, 91, true, true, true, false),
+        ],
+      );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'dogfood paragraph literal cells cross the Dart worker boundary',
     () async {
       const source =

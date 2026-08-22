@@ -3,7 +3,8 @@ use flark_runtime::{
     DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker,
     DocumentLiteralEditClass, DocumentLiveViewportSpan, DocumentProjectionEditCell,
     DocumentSession, DocumentSessionPhase, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
+    DocumentViewportRowPresentation, DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
@@ -973,6 +974,8 @@ fn canonical_plain_atx_heading_publishes_one_bounded_projection_edit_cell() {
             trigger_range: 2..14,
             trigger_utf16_range: 2..11,
             flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
+            replacement_first: 0,
+            replacement_second: 0,
         }]
     );
     assert!(
@@ -1038,6 +1041,8 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
             trigger_range: 4..4,
             trigger_utf16_range: 4..4,
             flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
+            replacement_first: 0,
+            replacement_second: 0,
         }]
     );
     let facts = row
@@ -1106,6 +1111,80 @@ fn flat_strong_opening_space_cell_retains_shifted_outside_facts() {
         before_outside.content_utf16_range.start + 1..before_outside.content_utf16_range.end + 1
     );
     document.close().expect("close mixed-inline ATX heading");
+}
+
+#[test]
+fn parser_parameterized_bracket_cell_keeps_the_strong_dependency_local() {
+    assert_eq!(DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS, 0x0706);
+    let source = "Before **bold** after.\n";
+    let mut document = DocumentSession::begin(source).expect("begin bracket component");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("bracket component viewport");
+    let row = &viewport.rows[0];
+    let exact_cells = row
+        .projection_edit_cells
+        .iter()
+        .filter(|cell| cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS)
+        .collect::<Vec<_>>();
+    assert_eq!(exact_cells.len(), 3);
+    assert_eq!(
+        exact_cells
+            .iter()
+            .map(|cell| (
+                cell.source_range.clone(),
+                cell.source_utf16_range.clone(),
+                cell.trigger_range.clone(),
+                cell.trigger_utf16_range.clone(),
+                cell.replacement_first,
+                cell.replacement_second,
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (7..15, 7..15, 10..10, 10..10, u32::from('['), 0),
+            (7..15, 7..15, 11..11, 11..11, u32::from('['), 0),
+            (7..15, 7..15, 12..12, 12..12, u32::from('['), 0),
+        ]
+    );
+
+    for point in [10_usize, 11, 12] {
+        assert_single_edit_matches_clean(source, point..point, "[");
+    }
+
+    document
+        .apply_edit(1, 11..11, "[")
+        .expect("insert bracket inside Strong content");
+    pump_ready(&mut document);
+    let edited_source = "Before **bo[ld** after.\n";
+    assert_current_rows_match_clean(&mut document, 2, edited_source);
+    let edited = document
+        .query_viewport(2, 0..edited_source.len(), 8)
+        .expect("edited bracket component viewport");
+    let facts = edited.rows[0]
+        .inline_facts
+        .as_ref()
+        .expect("edited inline facts");
+    assert_eq!(facts.len(), 1);
+    assert_eq!(facts[0].kind, DocumentInlineFactKind::Strong);
+    assert_eq!(facts[0].source_range, 7..16);
+    assert_eq!(facts[0].content_range, 9..14);
+    document.close().expect("close bracket component");
+
+    let unsafe_source = "Before **bold** after ].\n";
+    let mut unsafe_document =
+        DocumentSession::begin(unsafe_source).expect("begin bracket dependency negative");
+    pump_ready(&mut unsafe_document);
+    let unsafe_viewport = unsafe_document
+        .query_viewport(1, 0..unsafe_source.len(), 8)
+        .expect("bracket dependency negative viewport");
+    assert!(unsafe_viewport.rows[0]
+        .projection_edit_cells
+        .iter()
+        .all(|cell| cell.flags != DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS));
+    unsafe_document
+        .close()
+        .expect("close bracket dependency negative");
 }
 
 #[test]
@@ -1238,7 +1317,17 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
         "plain prose cells must coexist with parser-authored Strong leaf authority"
     );
     assert_eq!(
-        row.projection_edit_cells,
+        row.projection_edit_cells
+            .iter()
+            .filter(|cell| {
+                matches!(
+                    cell.flags,
+                    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS
+                        | DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>(),
         vec![
             DocumentProjectionEditCell {
                 source_range: 0..17,
@@ -1246,6 +1335,8 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
                 trigger_range: 0..16,
                 trigger_utf16_range: 0..16,
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
             },
             DocumentProjectionEditCell {
                 source_range: 0..17,
@@ -1253,6 +1344,8 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
                 trigger_range: 0..16,
                 trigger_utf16_range: 0..16,
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
             },
         ],
         "the plain prefix is admitted while the same-line post-fact tail stays fail-closed"
@@ -1282,6 +1375,8 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
                 trigger_range: 0..16,
                 trigger_utf16_range: 0..16,
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
             },
             DocumentProjectionEditCell {
                 source_range: 0..17,
@@ -1289,6 +1384,8 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
                 trigger_range: 0..16,
                 trigger_utf16_range: 0..16,
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
             },
             DocumentProjectionEditCell {
                 source_range: 163..238,
@@ -1296,6 +1393,8 @@ only incomplete or temporarily pending syntax becomes exact source locally.\n";
                 trigger_range: 238..238,
                 trigger_utf16_range: 234..234,
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
             },
         ],
         "only one physical-line terminal gap may back the append cell",
@@ -1736,6 +1835,8 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
                     trigger_range: 2..7,
                     trigger_utf16_range: 2..7,
                     flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+                    replacement_first: 0,
+                    replacement_second: 0,
                 },
                 DocumentProjectionEditCell {
                     source_range: 2..8,
@@ -1743,6 +1844,8 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
                     trigger_range: 2..7,
                     trigger_utf16_range: 2..7,
                     flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+                    replacement_first: 0,
+                    replacement_second: 0,
                 },
                 DocumentProjectionEditCell {
                     source_range: 8..16,
@@ -1750,6 +1853,8 @@ fn simple_list_and_quote_shells_publish_literal_word_cells() {
                     trigger_range: 10..10,
                     trigger_utf16_range: 10..10,
                     flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
+                    replacement_first: 0,
+                    replacement_second: 0,
                 },
             ],
             "{source:?} {row:#?}"
@@ -1836,6 +1941,8 @@ fn plain_table_cell_publishes_a_literal_word_edit_cell() {
                 trigger_range: 2..5,
                 trigger_utf16_range: 2..5,
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
             },
             DocumentProjectionEditCell {
                 source_range: 2..5,
@@ -1843,6 +1950,8 @@ fn plain_table_cell_publishes_a_literal_word_edit_cell() {
                 trigger_range: 2..5,
                 trigger_utf16_range: 2..5,
                 flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
             },
         ]
     );
@@ -1999,6 +2108,8 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
             trigger_range: 2..14,
             trigger_utf16_range: 2..14,
             flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
+            replacement_first: 0,
+            replacement_second: 0,
         }]
     );
     assert!(row.literal_safe_envelopes.is_empty());

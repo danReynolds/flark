@@ -16,8 +16,9 @@ use std::ops::Range;
 use flark_engine::parser_internal::{
     M11InlineLinkValue, M11InlineProjectionBuild, M11InlineProjectionBuildStatus,
     M11InlineProjectionError, M11InlineProjectionFact, M11InlineProjectionKind,
-    M11InlineProjectionRoot, M11ParserSourceRangeAuthority, M11ReferenceResolver,
-    M11_PARSER_PAGE_MAX_POLL_TRANSITIONS,
+    M11InlineProjectionRoot, M11ParserPageError, M11ParserRangeCursor, M11ParserRangeStatus,
+    M11ParserSourceRangeAuthority, M11ReferenceResolver, M11_PARSER_PAGE_MAX_POLL_TRANSITIONS,
+    M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 use flark_engine::{DocumentRuntime, ParserProfileId, SourceVersion};
 
@@ -39,6 +40,10 @@ use crate::inline_code::{
 use crate::inline_direct::{
     M11InlineDirectCandidates, M11InlineDirectError, M11InlineDirectFact, M11InlineDirectJob,
     M11InlineDirectKind, M11InlineDirectPollStatus,
+};
+use crate::inline_edit_component::{
+    derive_inline_edit_components, M11InlineEditComponent,
+    M11_INLINE_EDIT_COMPONENT_SOURCE_MAX_BYTES,
 };
 use crate::inline_emphasis::{
     M11EmphasisCandidate, M11EmphasisCandidateKind, M11InlineCandidates, M11InlineEmphasisError,
@@ -354,6 +359,7 @@ enum M11InlineProjectionJobErrorInner {
     Emphasis(M11InlineEmphasisError),
     Lex(M11InlineLexError),
     Projection(M11InlineProjectionError),
+    Page(M11ParserPageError),
     Publication(M11InlinePublicationError),
     ZeroFuel,
     PollLimitExceeded,
@@ -431,6 +437,12 @@ impl fmt::Display for M11InlineProjectionJobError {
             M11InlineProjectionJobErrorInner::Projection(error) => {
                 write!(formatter, "inline Projection persistence failed: {error}")
             }
+            M11InlineProjectionJobErrorInner::Page(error) => {
+                write!(
+                    formatter,
+                    "inline edit-component source capture failed: {error}"
+                )
+            }
             M11InlineProjectionJobErrorInner::Publication(error) => {
                 write!(formatter, "inline Projection publication failed: {error}")
             }
@@ -479,6 +491,7 @@ impl std::error::Error for M11InlineProjectionJobError {
             M11InlineProjectionJobErrorInner::Emphasis(error) => Some(error),
             M11InlineProjectionJobErrorInner::Lex(error) => Some(error),
             M11InlineProjectionJobErrorInner::Projection(error) => Some(error),
+            M11InlineProjectionJobErrorInner::Page(error) => Some(error),
             M11InlineProjectionJobErrorInner::Publication(error) => Some(error),
             _ => None,
         }
@@ -533,6 +546,12 @@ impl From<M11InlineProjectionError> for M11InlineProjectionJobError {
     }
 }
 
+impl From<M11ParserPageError> for M11InlineProjectionJobError {
+    fn from(value: M11ParserPageError) -> Self {
+        Self(M11InlineProjectionJobErrorInner::Page(value))
+    }
+}
+
 impl From<M11InlinePublicationError> for M11InlineProjectionJobError {
     fn from(value: M11InlinePublicationError) -> Self {
         Self(M11InlineProjectionJobErrorInner::Publication(value))
@@ -561,6 +580,9 @@ enum ProjectionJobPhase {
     PollOfferedPage,
     FinishProjectionInput,
     SealProjection,
+    BeginEditComponents,
+    CaptureEditComponentSource,
+    BuildEditComponents,
     BeginCleanup,
     CleanupCode,
     CleanupOpaque,
@@ -623,6 +645,10 @@ pub struct M11InlineProjectionJob {
     emitted_facts: u64,
     projected_fact_capture: Option<Vec<M11InlineProjectionFact>>,
     projected_link_value_capture: Option<Vec<M11InlineLinkValue>>,
+    projected_edit_component_capture: Option<Vec<M11InlineEditComponent>>,
+    edit_component_cursor: Option<M11ParserRangeCursor>,
+    edit_component_source: Vec<u8>,
+    edit_component_source_written: usize,
     last_order_key: Option<(u32, u32)>,
     initial_lexical_source_bytes_read: u64,
 }
@@ -1004,6 +1030,10 @@ impl M11InlineProjectionJob {
             emitted_facts: 0,
             projected_fact_capture: capture_projected_facts.then(Vec::new),
             projected_link_value_capture: capture_projected_facts.then(Vec::new),
+            projected_edit_component_capture: capture_projected_facts.then(Vec::new),
+            edit_component_cursor: None,
+            edit_component_source: Vec::new(),
+            edit_component_source_written: 0,
             last_order_key: None,
             initial_lexical_source_bytes_read: 0,
         })
@@ -1079,6 +1109,15 @@ impl M11InlineProjectionJob {
                 }
                 ProjectionJobPhase::SealProjection => {
                     self.poll_projection_seal(runtime, fuel, &mut transitions)
+                }
+                ProjectionJobPhase::BeginEditComponents => {
+                    self.begin_edit_components(runtime, &mut transitions)
+                }
+                ProjectionJobPhase::CaptureEditComponentSource => {
+                    self.poll_edit_component_source(fuel, &mut transitions)
+                }
+                ProjectionJobPhase::BuildEditComponents => {
+                    self.build_edit_components(&mut transitions)
                 }
                 ProjectionJobPhase::BeginCleanup => self.begin_cleanup(&mut transitions),
                 ProjectionJobPhase::CleanupCode => {
@@ -1987,13 +2026,136 @@ impl M11InlineProjectionJob {
                 }
                 self.root = Some(root);
                 drop(self.projection.take());
-                self.phase = ProjectionJobPhase::BeginCleanup;
+                self.phase = ProjectionJobPhase::BeginEditComponents;
             }
             M11InlineProjectionBuildStatus::NeedsPage
             | M11InlineProjectionBuildStatus::Cancelled => {
                 return Err(M11InlineProjectionJobError::InvalidState);
             }
         }
+        Ok(())
+    }
+
+    fn begin_edit_components(
+        &mut self,
+        runtime: &DocumentRuntime,
+        transitions: &mut usize,
+    ) -> Result<(), M11InlineProjectionJobError> {
+        if self.projected_edit_component_capture.is_none() {
+            self.phase = ProjectionJobPhase::BeginCleanup;
+            *transitions += 1;
+            return Ok(());
+        }
+        let facts = self
+            .projected_fact_capture
+            .as_ref()
+            .ok_or(M11InlineProjectionJobError::InvalidState)?;
+        let exhaustive_brackets = self
+            .direct
+            .as_ref()
+            .ok_or(M11InlineProjectionJobError::InvalidState)?
+            .exhaustive_bracket_classification();
+        if facts.len() != 1
+            || facts[0].kind() != M11InlineProjectionKind::Strong
+            || !exhaustive_brackets
+        {
+            self.phase = ProjectionJobPhase::BeginCleanup;
+            *transitions += 1;
+            return Ok(());
+        }
+        let source_len = usize::try_from(
+            self.source_range
+                .end
+                .checked_sub(self.source_range.start)
+                .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?,
+        )
+        .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
+        if source_len == 0 || source_len > M11_INLINE_EDIT_COMPONENT_SOURCE_MAX_BYTES {
+            self.phase = ProjectionJobPhase::BeginCleanup;
+            *transitions += 1;
+            return Ok(());
+        }
+        let candidates = self
+            .candidates
+            .as_ref()
+            .ok_or(M11InlineProjectionJobError::InvalidState)?;
+        self.edit_component_cursor = Some(candidates.source_cursor(runtime)?);
+        self.edit_component_source = vec![0; source_len];
+        self.edit_component_source_written = 0;
+        self.phase = ProjectionJobPhase::CaptureEditComponentSource;
+        *transitions += 1;
+        Ok(())
+    }
+
+    fn poll_edit_component_source(
+        &mut self,
+        fuel: usize,
+        transitions: &mut usize,
+    ) -> Result<(), M11InlineProjectionJobError> {
+        let remaining_fuel = fuel.saturating_sub(*transitions);
+        if remaining_fuel == 0 {
+            return Ok(());
+        }
+        let remaining_bytes = self
+            .edit_component_source
+            .len()
+            .saturating_sub(self.edit_component_source_written);
+        if remaining_bytes == 0 {
+            return Err(M11InlineProjectionJobError::InvalidState);
+        }
+        let chunk = remaining_bytes.min(M11_PARSER_RANGE_MAX_POLL_BYTES);
+        let end = self
+            .edit_component_source_written
+            .checked_add(chunk)
+            .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
+        let poll = self
+            .edit_component_cursor
+            .as_mut()
+            .ok_or(M11InlineProjectionJobError::InvalidState)?
+            .poll(
+                remaining_fuel.min(M11_PARSER_RANGE_MAX_POLL_BYTES),
+                &mut self.edit_component_source[self.edit_component_source_written..end],
+            )?;
+        self.edit_component_source_written = self
+            .edit_component_source_written
+            .checked_add(poll.bytes_read())
+            .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
+        *transitions = transitions
+            .checked_add(poll.transitions())
+            .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
+        if poll.status() == M11ParserRangeStatus::Complete {
+            drop(self.edit_component_cursor.take());
+            if self.edit_component_source_written != self.edit_component_source.len() {
+                return Err(M11InlineProjectionJobError::InvalidState);
+            }
+            self.phase = ProjectionJobPhase::BuildEditComponents;
+        }
+        Ok(())
+    }
+
+    fn build_edit_components(
+        &mut self,
+        transitions: &mut usize,
+    ) -> Result<(), M11InlineProjectionJobError> {
+        let facts = self
+            .projected_fact_capture
+            .as_ref()
+            .ok_or(M11InlineProjectionJobError::InvalidState)?;
+        let exhaustive_brackets = self
+            .direct
+            .as_ref()
+            .ok_or(M11InlineProjectionJobError::InvalidState)?
+            .exhaustive_bracket_classification();
+        let components =
+            derive_inline_edit_components(&self.edit_component_source, facts, exhaustive_brackets);
+        *self
+            .projected_edit_component_capture
+            .as_mut()
+            .ok_or(M11InlineProjectionJobError::InvalidState)? = components;
+        self.edit_component_source.clear();
+        self.edit_component_source_written = 0;
+        self.phase = ProjectionJobPhase::BeginCleanup;
+        *transitions += 1;
         Ok(())
     }
 
@@ -2201,6 +2363,19 @@ impl M11InlineProjectionJob {
         self.projected_fact_capture.take()
     }
 
+    /// Transfers parser-authored edit components captured beside the exact
+    /// authoritative fact publication.
+    #[must_use]
+    pub fn take_projected_edit_components(&mut self) -> Option<Vec<M11InlineEditComponent>> {
+        if !matches!(
+            self.phase,
+            ProjectionJobPhase::Complete | ProjectionJobPhase::Transferred
+        ) {
+            return None;
+        }
+        self.projected_edit_component_capture.take()
+    }
+
     /// Transfers cooked link/image values captured with the projected facts.
     /// Entries identify their parent fact ordinal and retain the same bounded
     /// sidecar contract as the authoritative Projection publication.
@@ -2226,6 +2401,11 @@ impl M11InlineProjectionJob {
             return Err(M11InlineProjectionJobError::InvalidState);
         }
         self.phase = ProjectionJobPhase::Aborting;
+
+        if let Some(cursor) = self.edit_component_cursor.as_mut() {
+            cursor.cancel();
+        }
+        drop(self.edit_component_cursor.take());
 
         if let Some(scanner) = self.leaf_scanner.as_mut() {
             scanner.cancel();

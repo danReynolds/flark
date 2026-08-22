@@ -36,6 +36,7 @@ final class FlarkProjectionEditCellReceipt
     required this.presentClosureExact,
     required this.chainResultCell,
     required this.terminalSpaceAvailable,
+    required this.exactScalar,
     required this.editStartUtf16,
     required this.editEndUtf16,
     required this.replacement,
@@ -54,6 +55,7 @@ final class FlarkProjectionEditCellReceipt
   final bool presentClosureExact;
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
+  final int? exactScalar;
   final int editStartUtf16;
   final int editEndUtf16;
   final String replacement;
@@ -81,6 +83,7 @@ final class FlarkProjectionEditCellReceipt
         presentClosureExact: presentClosureExact,
         chainResultCell: chainResultCell,
         terminalSpaceAvailable: terminalSpaceAvailable,
+        exactScalar: exactScalar,
       ),
       startUtf16: startUtf16,
       endUtf16: endUtf16,
@@ -99,6 +102,7 @@ final class _CurrentProjectionEditCell {
     required this.presentClosureExact,
     required this.chainResultCell,
     required this.terminalSpaceAvailable,
+    required this.exactScalar,
   });
 
   final FlarkProjectionEditMatcher matcher;
@@ -109,6 +113,7 @@ final class _CurrentProjectionEditCell {
   final bool presentClosureExact;
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
+  final int? exactScalar;
 }
 
 /// Matches one exact source splice against parser-authored affected geometry.
@@ -147,6 +152,7 @@ FlarkProjectionEditCellReceipt? authorizeProjectionEditCell({
               cell.matcher ==
                   FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
               cell.terminalSpaceAvailable,
+          exactScalar: cell.exactScalar,
         ),
       )
       .where(
@@ -211,6 +217,7 @@ FlarkProjectionEditCellReceipt? _authorizeCurrentProjectionEditCell({
         cell.matcher ==
             FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
         replacement != ' ',
+    exactScalar: cell.exactScalar,
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,
     replacement: replacement,
@@ -272,6 +279,15 @@ bool _projectionEditCellMatches(
                         _isSafeAsciiProsePunctuation(unit),
                   ) ||
               (replacement == ' ' && cell.terminalSpaceAvailable)),
+    FlarkProjectionEditMatcher.insertExactScalarAtPoint =>
+      !cell.chainResultCell &&
+          cell.retainOutsideClosure &&
+          cell.triggerUtf16.length == 0 &&
+          startUtf16 == endUtf16 &&
+          startUtf16 == cell.triggerUtf16.start &&
+          cell.exactScalar != null &&
+          replacement.runes.length == 1 &&
+          replacement.runes.single == cell.exactScalar,
   };
 }
 

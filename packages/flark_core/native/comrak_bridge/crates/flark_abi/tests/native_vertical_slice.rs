@@ -52,7 +52,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let subsequent_minor = NegotiateRequest {
         requested_minor: 33,
-        required_capability_bits: (1_u64 << 33) - 1,
+        required_capability_bits: (1_u64 << 34) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -62,7 +62,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 33) - 1,
+        required_capability_bits: (1_u64 << 34) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -70,7 +70,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::Ok as u32
     );
     assert_eq!(info.abi_minor, ABI_MINOR);
-    assert_eq!(info.capability_bits, (1_u64 << 33) - 1);
+    assert_eq!(info.capability_bits, (1_u64 << 34) - 1);
 
     let base_source = concat!(
         "# *Flark*\n\n",

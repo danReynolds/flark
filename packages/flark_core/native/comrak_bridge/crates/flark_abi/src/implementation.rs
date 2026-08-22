@@ -105,7 +105,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 29)
     | (1 << 30)
     | (1 << 31)
-    | (1 << 32);
+    | (1 << 32)
+    | (1 << 33);
 
 struct Registry {
     next_handle: u64,
@@ -5627,6 +5628,8 @@ fn projection_edit_cell_record(cell: &DocumentProjectionEditCell) -> InlineFactR
         content_end_byte: cell.trigger_range.end,
         content_start_utf16: cell.trigger_utf16_range.start,
         content_end_utf16: cell.trigger_utf16_range.end,
+        replacement_first: cell.replacement_first,
+        replacement_second: cell.replacement_second,
         ..InlineFactRecord::default()
     }
 }

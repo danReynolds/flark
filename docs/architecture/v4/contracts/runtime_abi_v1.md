@@ -420,6 +420,21 @@ continuation, anchor, and history counts, while `reserved[0]` reports live
 sessions and `reserved[1..2]` remain zero. This is bounded lifecycle evidence,
 not document authority, and does not expose parser or allocator internals.
 
+The final pre-D0 ABI 4.32 freeze also adds capability
+`PROJECTION_EDIT_CELLS_V3` without changing the kind-16 record layout. Matcher
+code 6, `INSERT_EXACT_SCALAR_AT_POINT`, uses `replacement_first` as one valid
+Unicode scalar parameter and requires `replacement_second == 0`; every older
+matcher still requires both replacement words to be zero. Its content ranges
+are one zero-width parser-authored trigger strictly inside the source-range
+dependency closure. The host admits only a collapsed insertion of exactly that
+scalar at exactly that point, retains only the declared block shell and outside
+partition, presents the transformed closure as exact current source, and
+consumes the record after one edit. The first bounded emitter covers `[` inside
+one conservatively isolated flat Strong fact on a single physical-line Plain
+row only when the parser's bracket
+classification is exhaustive and the leaf contains no existing bracket
+dependency. This is parser-owned proof data, not a Dart Markdown allowlist.
+
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
 inline grammar and a maximum 4 KiB parser-row source, 512 facts per row, and

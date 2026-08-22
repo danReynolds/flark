@@ -684,6 +684,23 @@ fn projection_edit_cell_vocabulary_remains_bound_to_minor_29() {
 }
 
 #[test]
+fn parameterized_projection_edit_cell_vocabulary_is_bound_to_minor_32() {
+    let manifest = manifest();
+    let cells = &manifest["viewportProjectionEditCellsV3"];
+    assert_eq!(cells["abiMinor"].as_u64(), Some(32));
+    assert_eq!(
+        cells["capability"].as_str(),
+        Some("PROJECTION_EDIT_CELLS_V3")
+    );
+    assert_eq!(
+        cells["matchers"]["INSERT_EXACT_SCALAR_AT_POINT"].as_u64(),
+        Some(6)
+    );
+    assert!(HEADER.contains("FLARK_V4_CAPABILITY_PROJECTION_EDIT_CELLS_V3"));
+    assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_INSERT_EXACT_SCALAR_AT_POINT"));
+}
+
+#[test]
 fn literal_safe_envelope_v2_remains_bound_to_minor_30() {
     let manifest = manifest();
     let envelopes = &manifest["viewportLiteralSafeEnvelopesV2"];

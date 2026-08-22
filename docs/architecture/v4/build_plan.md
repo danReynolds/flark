@@ -513,8 +513,15 @@ group fail-closed behavior.
 ABI 4.32 is the final frozen D0 minor. It adds one process-global live-state
 inspection mode to the existing fixed inspection record so close/lifecycle
 qualification can prove zero sessions, transactions, continuations, anchors,
-and histories after the last session handle has been consumed. It adds no
-document or Markdown authority.
+and histories after the last session handle has been consumed. Before any
+downstream Phase-2 receipt was frozen, the same draft minor was explicitly
+reopened and refrozen with `PROJECTION_EDIT_CELLS_V3`. That capability keeps
+kind 16 and adds a generic one-shot exact-scalar matcher parameterized by Rust.
+The first parser emitter closes the D0 `[`-inside-Strong case on one
+single-physical-line Plain row with a complete Strong dependency closure and
+zero-width guarded trigger; Core compares only
+the scalar and transforms the supplied ranges. No Dart Markdown rule or
+construct-specific wire record was added.
 
 The edit-cell seam is still bounded, not completion of continuously rendered
 editing. When no cell or envelope matches, the controller safely paints the

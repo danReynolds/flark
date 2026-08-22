@@ -27,6 +27,7 @@ mod inline_bare_autolink;
 mod inline_code;
 #[allow(dead_code)] // Staged direct-link/image stage for M11InlineProjectionJob.
 mod inline_direct;
+mod inline_edit_component;
 #[allow(dead_code)] // Staged emphasis stage for M11InlineProjectionJob.
 mod inline_emphasis;
 #[allow(dead_code)] // Staged precedence gate for M11InlineProjectionJob.
@@ -107,6 +108,10 @@ pub use indented_code_projection_job::{
     M11IndentedCodeProjectionJob, M11IndentedCodeProjectionJobError,
     M11IndentedCodeProjectionJobPoll, M11IndentedCodeProjectionJobPollStatus,
     M11IndentedCodeProjectionJobReleasePoll, M11_INDENTED_CODE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+};
+pub use inline_edit_component::{
+    M11InlineEditComponent, M11InlineEditComponentMatcher, M11_INLINE_EDIT_COMPONENTS_MAX,
+    M11_INLINE_EDIT_COMPONENT_SOURCE_MAX_BYTES,
 };
 pub use inline_lex::{
     M11InlineLexError, M11InlineLexEvent, M11InlineLexEventKind, M11InlineLexHazardKind,

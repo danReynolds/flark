@@ -5032,6 +5032,7 @@ pub struct M11CompactInlineProjectionProbe {
     pub inline_source_utf16: Range<u32>,
     pub facts: Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
     pub link_values: Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+    pub edit_components: Vec<crate::M11InlineEditComponent>,
 }
 
 #[cfg(feature = "m11-compact-probe")]
@@ -5096,12 +5097,18 @@ impl M11CompactViewportProbe {
                 .ok_or(M11CompactViewportProbeError::InvalidState(
                     "compact inline capture omitted its link values",
                 ))?;
+        let edit_components = job.take_projected_edit_components().ok_or(
+            M11CompactViewportProbeError::InvalidState(
+                "compact inline capture omitted its edit components",
+            ),
+        )?;
         release_compact_inline_job(runtime, &mut job)?;
         Ok(Some(M11CompactInlineProjectionProbe {
             inline_source,
             inline_source_utf16,
             facts,
             link_values,
+            edit_components,
         }))
     }
 

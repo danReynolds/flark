@@ -89,6 +89,18 @@ void main() {
     chainResultCell: true,
     terminalSpaceAvailable: true,
   );
+  const exactBracketCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.insertExactScalarAtPoint,
+    affectedBytes: FlarkSourceRange(7, 15),
+    affectedUtf16: FlarkSourceRange(7, 15),
+    triggerBytes: FlarkSourceRange(11, 11),
+    triggerUtf16: FlarkSourceRange(11, 11),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: false,
+    exactScalar: 0x5b,
+  );
 
   test('parser word envelope binds one exact contained insertion', () {
     final receipt = authorizeRowProjectionContinuity(
@@ -615,6 +627,44 @@ void main() {
           replacement: edit.replacement,
         ),
         isNull,
+      );
+    }
+  });
+
+  test('parser-parameterized scalar cell is exact and one-shot', () {
+    final receipt = authorizeProjectionEditCell(
+      revision: 33,
+      cells: const [exactBracketCell],
+      authorizedContentUtf16: const FlarkSourceRange(0, 23),
+      startUtf16: 11,
+      endUtf16: 11,
+      replacement: '[',
+    );
+    expect(receipt, isNotNull);
+    expect((receipt!.affectedUtf16.start, receipt.affectedUtf16.end), (7, 16));
+    expect(receipt.exactScalar, 0x5b);
+    expect(
+      receipt.continueWith(startUtf16: 12, endUtf16: 12, replacement: '['),
+      isNull,
+    );
+
+    for (final edit in [
+      (start: 10, end: 10, replacement: '['),
+      (start: 11, end: 11, replacement: ']'),
+      (start: 11, end: 11, replacement: '[['),
+      (start: 11, end: 12, replacement: '['),
+    ]) {
+      expect(
+        authorizeProjectionEditCell(
+          revision: 33,
+          cells: const [exactBracketCell],
+          authorizedContentUtf16: const FlarkSourceRange(0, 23),
+          startUtf16: edit.start,
+          endUtf16: edit.end,
+          replacement: edit.replacement,
+        ),
+        isNull,
+        reason: '$edit',
       );
     }
   });

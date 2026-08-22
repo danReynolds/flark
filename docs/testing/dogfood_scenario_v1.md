@@ -33,7 +33,9 @@ does not count as product-tour evidence.
 - Phase 1 is expected to consolidate host authority state. It may change the
   ABI only when the unified typed contract or global live-state inspector
   cannot be represented by 4.31.
-- Phase 1 records and freezes the final D0 ABI minor. Any later ABI change
+- Phase 1 records and freezes the final D0 ABI minor. The draft 4.32 contract
+  was reopened before any downstream Phase-2 receipt and refrozen at the same
+  minor with capability `PROJECTION_EDIT_CELLS_V3`; any later ABI change
   invalidates Phase 1 and all downstream receipts.
 - The D0 app uses the default Cargo feature set.
 - `opening-session` remains an independently tested feature, not a D0 app
@@ -144,11 +146,11 @@ or native proof is missing. `GAP` means the behavior or proof must be added.
 | INLINE-07 | `**left** mi¦ddle _right_\n`; insert `ke` | P; Strong and Emphasis remain styled | per-edit and 80 ms | PRESENT: independent-facts scenario |
 | INLINE-08 | `# **¦left** middle _right_`; insert one space | I(start of opening `**`, end of closing `**` after edit); Heading shell and outside Emphasis remain rendered | per-edit and 80 ms | PRESENT: `inline_dependency_island_paint_acceptance_test.dart` |
 | INLINE-09 | `Before **bo¦ld** and _right_.\n`; insert `*` | P; inserted literal asterisk is Strong content; outside Emphasis remains styled | per-edit | PRESENT: safe Strong asterisk row |
-| INLINE-10 | `Before **bo¦ld** after.\n`; insert `[` | I(start of opening `**`, end of closing `**` after edit); `Before ` and ` after.` remain projected; paragraph shell retained | per-edit | B1-001: current negative control proves whole-row kind-0 exact paint |
+| INLINE-10 | `Before **bo¦ld** after.\n`; insert `[` | I(start of opening `**`, end of closing `**` after edit); `Before ` and ` after.` remain projected; paragraph shell retained | per-edit | PRESENT: parser-parameterized Strong dependency cell plus actual-paint acceptance |
 
-`INLINE-10` keeps the existing whole-row negative control until the local-island
-implementation lands. D0 closes only when the same detector observes exactly
-the declared Strong-source island and retained outside runs.
+`INLINE-10` uses the generic parser-owned exact-scalar cell. Its same detector
+observes exactly the declared Strong-source island and retained outside runs;
+existing-bracket and non-exhaustive parser shapes remain fail-closed negatives.
 
 ## Syntax construction
 
@@ -248,10 +250,9 @@ the D0 gates must still prove the exact candidate.
 
 ### B1
 
-- **B1-001 — bracket insertion inside Strong paints the whole active row
-  exact.** Reproducer and detector: `INLINE-10` and the unsupported control in
-  `inline_dependency_island_paint_acceptance_test.dart`. Required fix: exactly
-  the ledger-named Strong source island, with projected outside runs.
+No open B1 is recorded at this checkpoint. `B1-001` was closed by the
+parser-parameterized `INLINE-10` dependency cell and actual-paint detector;
+the aggregate candidate gates must still be rerun before D0 can pass.
 
 ### Architecture blockers
 

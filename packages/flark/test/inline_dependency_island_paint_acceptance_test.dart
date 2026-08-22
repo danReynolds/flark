@@ -215,10 +215,12 @@ void main() {
   );
 
   testWidgets(
-    'paint observer control captures an unsupported exact pending frame',
+    'bracket insertion exposes only the parser-declared Strong island',
     (tester) async {
       const initial = 'Before **bo¦ld** after.\n';
       const expected = 'Before **bo[¦ld** after.\n';
+      const pendingPresentation = 'Before **bo[ld** after.';
+      const settledPresentation = 'Before bo[ld after.';
       final marked = MarkedSource.parse(expected);
       final probe = (await tester.runAsync(
         () =>
@@ -230,27 +232,53 @@ void main() {
         final paintStart = mounted.paints.length;
         await mounted.typeText('[');
         await mounted.pumpImmediate();
-        final pending = mounted.paints.skip(paintStart).where((paint) {
-          final active = paint.rows.where((row) => row.active).toList();
-          return paint.sourceGeneration == expectedGeneration &&
-              paint.visibleSource == marked.source &&
-              paint.canonicalSelectionExtentUtf16 == marked.caret &&
-              paint.caretSourceUtf16 == marked.caret &&
-              active.length == 1 &&
-              active.single.neutral &&
-              active.single.kind == 0 &&
-              active.single.text == marked.source;
-        });
+        final pending = mounted.paints
+            .skip(paintStart)
+            .where((paint) => paint.presentation == pendingPresentation);
         expect(
           pending,
           isNotEmpty,
           reason:
-              'the evidence lane must observe a real unsupported pending '
-              'paint instead of coalescing directly to the settled frame',
+              'the evidence lane must observe the declared local exact island '
+              'instead of coalescing directly to the settled frame',
         );
-        await mounted.pumpPresentationSettled();
+        var observed = paintStart;
+        var sawCommittedEdit = false;
+        for (var tick = 0; tick < 250; tick += 1) {
+          for (final paint in mounted.paints.skip(observed)) {
+            _expectBracketIslandPaint(
+              paint,
+              expectedSource: marked.source,
+              expectedGeneration: expectedGeneration,
+              expectedCaret: marked.caret,
+              pendingPresentation: pendingPresentation,
+              settledPresentation: settledPresentation,
+            );
+          }
+          observed = mounted.paints.length;
+          if (probe.controller.pendingEdits == 0) sawCommittedEdit = true;
+          if (sawCommittedEdit && probe.controller.semanticsCurrent) break;
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 8)),
+          );
+          await mounted.pumpImmediate();
+        }
+        expect(sawCommittedEdit, isTrue);
+        expect(probe.controller.semanticsCurrent, isTrue);
+        expect(probe.controller.debugProjectionContinuityActive, isFalse);
+        for (final paint in mounted.paints.skip(observed)) {
+          _expectBracketIslandPaint(
+            paint,
+            expectedSource: marked.source,
+            expectedGeneration: expectedGeneration,
+            expectedCaret: marked.caret,
+            pendingPresentation: pendingPresentation,
+            settledPresentation: settledPresentation,
+          );
+        }
         await tester.runAsync(() => probe.expectSourceAndCaret(expected));
         await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
       } finally {
         await mounted.close();
         await tester.runAsync(probe.close);
@@ -259,6 +287,69 @@ void main() {
     skip: libraryPath == null,
     timeout: const Timeout(Duration(minutes: 2)),
   );
+}
+
+void _expectBracketIslandPaint(
+  FlarkSurfacePaintObservation paint, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+  required String pendingPresentation,
+  required String settledPresentation,
+}) {
+  expect(paint.sourceGeneration, expectedGeneration);
+  expect(paint.visibleUtf16Start, 0);
+  expect(paint.visibleUtf16Length, expectedSource.length);
+  expect(paint.visibleSource, expectedSource);
+  expect(paint.canonicalSelectionBaseUtf16, expectedCaret);
+  expect(paint.canonicalSelectionExtentUtf16, expectedCaret);
+  expect(paint.caretRect, isNotNull);
+  expect(paint.caretSourceUtf16, expectedCaret);
+  final active = paint.rows.singleWhere((row) => row.active);
+  expect(active.neutral, isFalse);
+  expect(active.kind, 5);
+  expect(paint.presentation, anyOf(pendingPresentation, settledPresentation));
+  if (paint.presentation == pendingPresentation) {
+    expect(paint.caretDisplayUtf16, pendingPresentation.indexOf('[') + 1);
+    final island = active.runs.where(
+      (run) =>
+          run.sourceExact &&
+          run.sourceUtf16Start == 7 &&
+          run.sourceUtf16End == 16,
+    );
+    expect(island, isNotEmpty);
+    expect(
+      island.any(
+        (run) =>
+            run.text.contains('**bo[ld**') &&
+            run.styles.isEmpty &&
+            run.resolvedStyle == active.resolvedBlockStyle,
+      ),
+      isTrue,
+      reason: 'only the invalidated Strong closure may paint exact source',
+    );
+    expect(
+      active.runs.where((run) => run.text.contains('**')),
+      everyElement(
+        isA<FlarkSurfacePaintRunObservation>()
+            .having((run) => run.sourceUtf16Start, 'source start', 7)
+            .having((run) => run.sourceUtf16End, 'source end', 16),
+      ),
+      reason: 'no broader exact run may expose the Strong delimiters',
+    );
+  } else {
+    expect(paint.caretDisplayUtf16, settledPresentation.indexOf('[') + 1);
+    expect(
+      active.runs.any(
+        (run) =>
+            run.text.contains('bo[ld') &&
+            run.styles.contains(FlarkSurfaceInlineStyle.strong) &&
+            run.resolvedStyle.fontWeight == FontWeight.w700,
+      ),
+      isTrue,
+      reason: 'fresh parser authority must restore rendered Strong styling',
+    );
+  }
 }
 
 void _expectStrongAsteriskPaint(

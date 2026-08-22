@@ -44,6 +44,11 @@ enum FlarkProjectionEditMatcher {
   /// single spaces, appended at a parser-authored physical-line end. The carried
   /// proof never admits two consecutive terminal spaces.
   appendAsciiLiteralAtLineEnd,
+
+  /// Exactly one parser-declared Unicode scalar inserted at a zero-width
+  /// trigger. Core compares the parameter; it does not assign Markdown
+  /// meaning to the scalar. This proof is deliberately one-shot.
+  insertExactScalarAtPoint,
 }
 
 enum FlarkInlineFactKind {
@@ -553,6 +558,7 @@ final class FlarkProjectionEditCell {
     required this.presentClosureExact,
     required this.chainResultCell,
     this.terminalSpaceAvailable = false,
+    this.exactScalar,
   });
 
   final FlarkProjectionEditMatcher matcher;
@@ -565,6 +571,7 @@ final class FlarkProjectionEditCell {
   final bool presentClosureExact;
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
+  final int? exactScalar;
 
   Map<String, Object?> toMessage() => {
     'matcher': matcher.index,
@@ -577,6 +584,7 @@ final class FlarkProjectionEditCell {
     'presentClosureExact': presentClosureExact,
     'chainResultCell': chainResultCell,
     'terminalSpaceAvailable': terminalSpaceAvailable,
+    'exactScalar': exactScalar,
   };
 
   static FlarkProjectionEditCell fromMessage(Map<Object?, Object?> message) =>
@@ -600,6 +608,7 @@ final class FlarkProjectionEditCell {
         chainResultCell: message['chainResultCell']! as bool,
         terminalSpaceAvailable:
             message['terminalSpaceAvailable'] as bool? ?? false,
+        exactScalar: message['exactScalar'] as int?,
       );
 }
 

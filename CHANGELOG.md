@@ -31,6 +31,11 @@
 - Added ABI 4.32's `GLOBAL_LIVE_STATE_INSPECTION_V1`: after close consumes the
   final session handle, qualification can still prove that the process owns no
   native sessions, transactions, continuations, anchors, or history tokens.
+- Added ABI 4.32's `PROJECTION_EDIT_CELLS_V3`: Rust may parameterize a generic
+  one-shot exact-scalar edit predicate on the existing projection-cell record.
+  The first parser-owned dependency component keeps `[` insertion local to an
+  isolated Strong span, retaining the paragraph shell and outside projection
+  without teaching Dart bracket grammar.
 - Replaced the active release, archive, platform, and documentation entry points
   with v4-only equivalents. Superseded release notes are preserved at
   `legacy/docs/v2_v3/CHANGELOG.md`.

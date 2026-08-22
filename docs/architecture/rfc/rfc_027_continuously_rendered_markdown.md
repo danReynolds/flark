@@ -362,6 +362,18 @@ delimiters stay hidden and the style remains rendered. The proof and every
 same-geometry sibling are consumed; they do not authorize a successor or any
 other delimiter shape.
 
+**ABI 4.32 parameterized dependency cell (2026-08-22).** Capability
+`PROJECTION_EDIT_CELLS_V3` keeps the existing kind-16 layout and adds matcher
+code 6, `INSERT_EXACT_SCALAR_AT_POINT`. Rust supplies a complete affected
+closure, one zero-width trigger, and one scalar parameter; Core only compares
+the declared parameter and transforms the declared ranges. The initial bounded
+emitter handles `[` inside one isolated flat Strong fact on a single
+physical-line Plain row when the parser has an
+exhaustive no-existing-bracket certificate. It exposes only the transformed
+Strong source exactly, retains the paragraph shell and outside projection, and
+is consumed after one edit. This is the first use of the generic parser-owned
+component seam, not a host bracket rule or general bracket-graph claim.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits

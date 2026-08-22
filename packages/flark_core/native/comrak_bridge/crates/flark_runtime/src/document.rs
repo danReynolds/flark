@@ -24,7 +24,8 @@ use flark_parser::{
         M11RecursiveGreenRowPresentation,
     },
     classify_m11_simple_edit_line, project_m11_gfm_inline, project_m11_gfm_table, M11GfmInlineNode,
-    M11GfmInlineOptions, M11GfmTableAlignment, M11InlineProjectionJob, M11InlineProjectionJobError,
+    M11GfmInlineOptions, M11GfmTableAlignment, M11InlineEditComponent,
+    M11InlineEditComponentMatcher, M11InlineProjectionJob, M11InlineProjectionJobError,
     M11InlineProjectionJobPollStatus, M11ParserBinding, M11PersistentRecursiveGreenAdoption,
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
@@ -133,6 +134,7 @@ pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL: u
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_SINGLE_ASCII_SPACE_AT_POINT: u32 = 0x0003;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL: u32 = 0x0004;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_APPEND_ASCII_LITERAL_AT_LINE_END: u32 = 0x0005;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_EXACT_SCALAR_AT_POINT: u32 = 0x0006;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_MATCHER_MASK: u32 = 0x00ff;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL: u32 = 0x0100;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE: u32 = 0x0200;
@@ -168,6 +170,11 @@ pub const DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS: u32 =
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
         | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_MATCH_INSERT_EXACT_SCALAR_AT_POINT
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
+        | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
+        | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT;
 
 /// Parser-authored pre-edit geometry for one bounded projection edit cell.
 ///
@@ -186,6 +193,8 @@ pub struct DocumentProjectionEditCell {
     pub trigger_range: Range<u64>,
     pub trigger_utf16_range: Range<u64>,
     pub flags: u32,
+    pub replacement_first: u32,
+    pub replacement_second: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4213,15 +4222,18 @@ fn query_session_viewport(
 fn map_document_viewport_rows(
     runtime: &mut DocumentRuntime,
     rows: &[M11RecursiveGreenRenderableRow],
-    mut inline_facts: impl FnMut(
+    mut inline_projection: impl FnMut(
         &mut DocumentRuntime,
         &M11RecursiveGreenRenderableRow,
-    ) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError>,
+    ) -> Result<
+        Option<DocumentInlineProjectionAuthority>,
+        DocumentSessionError,
+    >,
 ) -> Result<Vec<DocumentViewportRow>, DocumentSessionError> {
     rows.iter()
         .map(|row| {
-            let inline_facts = inline_facts(runtime, row)?;
-            document_viewport_row_with_inline_facts(runtime, row, inline_facts)
+            let inline_projection = inline_projection(runtime, row)?;
+            document_viewport_row_with_inline_facts(runtime, row, inline_projection)
         })
         .collect()
 }
@@ -4384,8 +4396,17 @@ fn read_utf8_source_range(
 fn document_viewport_row_with_inline_facts(
     runtime: &mut DocumentRuntime,
     row: &M11RecursiveGreenRenderableRow,
-    inline_facts: Option<Vec<DocumentInlineFact>>,
+    inline_projection: Option<DocumentInlineProjectionAuthority>,
 ) -> Result<DocumentViewportRow, DocumentSessionError> {
+    let (inline_facts, parser_edit_cells) = inline_projection.map_or_else(
+        || (None, Vec::new()),
+        |projection| {
+            (
+                Some(projection.inline_facts),
+                projection.projection_edit_cells,
+            )
+        },
+    );
     let mut presentation = match m11_recursive_green_row_presentation(runtime, row)
         .map_err(M11PersistentRecursiveGreenSessionError::from)?
     {
@@ -4574,7 +4595,7 @@ fn document_viewport_row_with_inline_facts(
                 .collect::<Vec<_>>()
         });
     let projection_edit_cells = if projection_segments.is_none() {
-        document_projection_edit_cells(
+        let mut cells = document_projection_edit_cells(
             runtime,
             row,
             presentation,
@@ -4584,7 +4605,11 @@ fn document_viewport_row_with_inline_facts(
             editable_range.as_ref(),
             editable_utf16_range.as_ref(),
             edit_capability,
-        )?
+        )?;
+        if presentation == DocumentViewportRowPresentation::Plain {
+            cells.extend(parser_edit_cells);
+        }
+        cells
     } else {
         Vec::new()
     };
@@ -4844,6 +4869,8 @@ fn document_projection_edit_cells(
             trigger_range: editable.clone(),
             trigger_utf16_range: editable_utf16.clone(),
             flags: DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS,
+            replacement_first: 0,
+            replacement_second: 0,
         }]);
     }
 
@@ -4930,6 +4957,8 @@ fn document_literal_word_edit_cells(
         trigger_range: trigger_range.clone(),
         trigger_utf16_range: trigger_utf16_range.clone(),
         flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_WORD_FLAGS,
+        replacement_first: 0,
+        replacement_second: 0,
     }];
     // A one-unit deletion is safe only when every admitted deletion leaves at
     // least one alphanumeric source unit in the cell. It remains one-shot so
@@ -4941,6 +4970,8 @@ fn document_literal_word_edit_cells(
             trigger_range,
             trigger_utf16_range,
             flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+            replacement_first: 0,
+            replacement_second: 0,
         });
     }
     cells
@@ -5125,6 +5156,8 @@ fn document_terminal_literal_append_cell(
             } else {
                 0
             },
+        replacement_first: 0,
+        replacement_second: 0,
     })
 }
 
@@ -5337,6 +5370,8 @@ fn document_flat_strong_opening_space_edit_cells(
             trigger_utf16_range: candidate.content_utf16_range.start
                 ..candidate.content_utf16_range.start,
             flags: DOCUMENT_PROJECTION_EDIT_CELL_STRONG_OPENING_SPACE_FLAGS,
+            replacement_first: 0,
+            replacement_second: 0,
         });
     }
     cells
@@ -5408,22 +5443,23 @@ struct CapturedDocumentInlineProjection {
     editable: Range<u64>,
     facts: Vec<M11InlineProjectionFact>,
     link_values: Vec<M11InlineLinkValue>,
+    edit_components: Vec<M11InlineEditComponent>,
+}
+
+struct DocumentInlineProjectionAuthority {
+    inline_facts: Vec<DocumentInlineFact>,
+    projection_edit_cells: Vec<DocumentProjectionEditCell>,
 }
 
 fn document_inline_facts(
     runtime: &mut DocumentRuntime,
     session: &M11PersistentRecursiveGreenSession,
     row: &M11RecursiveGreenRenderableRow,
-) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError> {
+) -> Result<Option<DocumentInlineProjectionAuthority>, DocumentSessionError> {
     let Some(captured) = capture_document_inline_projection(runtime, session, row)? else {
         return Ok(None);
     };
-    map_document_inline_facts(
-        runtime,
-        captured.inline_source,
-        captured.editable,
-        captured.facts,
-    )
+    map_document_inline_projection(runtime, captured)
 }
 
 #[cfg(test)]
@@ -5431,18 +5467,13 @@ fn document_inline_facts_without_reference_authority(
     runtime: &mut DocumentRuntime,
     session: &M11PersistentRecursiveGreenSession,
     row: &M11RecursiveGreenRenderableRow,
-) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError> {
+) -> Result<Option<DocumentInlineProjectionAuthority>, DocumentSessionError> {
     let Some(captured) =
         capture_document_inline_projection_without_reference_authority(runtime, session, row)?
     else {
         return Ok(None);
     };
-    map_document_inline_facts(
-        runtime,
-        captured.inline_source,
-        captured.editable,
-        captured.facts,
-    )
+    map_document_inline_projection(runtime, captured)
 }
 
 #[cfg(test)]
@@ -5509,6 +5540,7 @@ fn capture_document_inline_projection_from_compact_probe(
         editable,
         facts: captured.facts,
         link_values: captured.link_values,
+        edit_components: captured.edit_components,
     }))
 }
 
@@ -5517,18 +5549,13 @@ fn document_inline_facts_from_compact_probe(
     runtime: &mut DocumentRuntime,
     probe: &flark_parser::M11CompactViewportProbe,
     row: &M11RecursiveGreenRenderableRow,
-) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError> {
+) -> Result<Option<DocumentInlineProjectionAuthority>, DocumentSessionError> {
     let Some(captured) =
         capture_document_inline_projection_from_compact_probe(runtime, probe, row)?
     else {
         return Ok(None);
     };
-    map_document_inline_facts(
-        runtime,
-        captured.inline_source,
-        captured.editable,
-        captured.facts,
-    )
+    map_document_inline_projection(runtime, captured)
 }
 
 fn capture_document_inline_projection(
@@ -5666,12 +5693,16 @@ fn capture_prepared_inline_projection(
     let link_values = job
         .take_projected_link_values()
         .ok_or(DocumentSessionError::Faulted)?;
+    let edit_components = job
+        .take_projected_edit_components()
+        .ok_or(DocumentSessionError::Faulted)?;
     abort_inline_fact_job(runtime, &mut job)?;
     Ok(Some(CapturedDocumentInlineProjection {
         inline_source,
         editable,
         facts,
         link_values,
+        edit_components,
     }))
 }
 
@@ -5686,6 +5717,69 @@ fn abort_inline_fact_job(
             return Ok(());
         }
     }
+}
+
+fn map_document_inline_projection(
+    runtime: &DocumentRuntime,
+    captured: CapturedDocumentInlineProjection,
+) -> Result<Option<DocumentInlineProjectionAuthority>, DocumentSessionError> {
+    let projection_edit_cells = map_parser_projection_edit_cells(
+        runtime,
+        captured.inline_source.clone(),
+        &captured.editable,
+        captured.edit_components,
+    )?;
+    let Some(inline_facts) = map_document_inline_facts(
+        runtime,
+        captured.inline_source,
+        captured.editable,
+        captured.facts,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(DocumentInlineProjectionAuthority {
+        inline_facts,
+        projection_edit_cells,
+    }))
+}
+
+fn map_parser_projection_edit_cells(
+    runtime: &DocumentRuntime,
+    inline_source: Range<u32>,
+    editable: &Range<u64>,
+    components: Vec<M11InlineEditComponent>,
+) -> Result<Vec<DocumentProjectionEditCell>, DocumentSessionError> {
+    let lease = runtime.snapshot_current_source()?;
+    let mut mapped = Vec::with_capacity(components.len());
+    for component in components {
+        let affected = absolute_inline_range(inline_source.start, component.affected())?;
+        let trigger = absolute_inline_range(inline_source.start, component.trigger())?;
+        if affected.start < editable.start
+            || affected.end > editable.end
+            || trigger.start < affected.start
+            || trigger.end > affected.end
+        {
+            return Err(DocumentSessionError::Faulted);
+        }
+        let (flags, replacement_first, replacement_second) = match component.matcher() {
+            M11InlineEditComponentMatcher::InsertExactScalarAtPoint { scalar } => (
+                DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS,
+                u32::from(scalar),
+                0,
+            ),
+        };
+        mapped.push(DocumentProjectionEditCell {
+            source_utf16_range: source_utf16_range(&lease, &affected)?,
+            trigger_utf16_range: source_utf16_range(&lease, &trigger)?,
+            source_range: affected,
+            trigger_range: trigger,
+            flags,
+            replacement_first,
+            replacement_second,
+        });
+    }
+    Ok(mapped)
 }
 
 fn map_document_inline_facts(

@@ -291,6 +291,18 @@ Runtime differential tests compare admitted ranges, shell boundary cases, and
 representative carried successors with a fresh final-source parse, requiring
 the complete row/fact publication to match.
 
+ABI 4.32 capability `PROJECTION_EDIT_CELLS_V3` adds one generic,
+parser-parameterized exact-scalar predicate without changing the kind-16
+layout. The parser supplies both the affected closure and one zero-width
+trigger, stores the admitted Unicode scalar in `replacement_first`, and leaves
+`replacement_second` zero. Core compares that parameter mechanically; it does
+not classify Markdown. The first emitter admits `[` only at guarded interior
+points of one isolated flat Strong fact on a single physical-line Plain row
+when bracket classification is
+exhaustive and the leaf has no existing bracket dependency. The transformed
+Strong source is exact, plain source outside it remains projected, and the
+one-shot authority is consumed immediately.
+
 General delimiter dependency graphs, non-ASCII composition islands, interior
 punctuation replacements, multi-line or nested structural shells, and broader edit classes remain
 pending. Those paths still paint the whole active row as exact source until
