@@ -5145,10 +5145,17 @@ final class FlarkEditorController extends ChangeNotifier {
         while (!_document.isReady && !_closed) {
           await _document.pump(workUnits: 512);
         }
+        await _restoreHistorySelection(restore);
         await _refreshViewport(
           restoreInputWindow: false,
           expectedEditGeneration: generation,
+          ensureActiveInputVisible: true,
+          publish: false,
         );
+        // The pre-query restore supplies the exact deep source/byte anchor.
+        // Reapply the same canonical selection after fresh rows install so
+        // the platform input window expands to the certified active row.
+        // Publish only after source, rows, and platform selection agree.
         await _restoreHistorySelection(restore);
         _scheduleParsingAfterInput();
         notifyListeners();
@@ -5313,9 +5320,12 @@ final class FlarkEditorController extends ChangeNotifier {
       while (!_document.isReady && !_closed) {
         await _document.pump(workUnits: 512);
       }
+      await _restoreHistorySelection(restore);
       await _refreshViewport(
         restoreInputWindow: false,
         expectedEditGeneration: generation,
+        ensureActiveInputVisible: true,
+        publish: false,
       );
       await _restoreHistorySelection(restore);
       if (outcome is FlarkCoreHistoryDropped) return false;
@@ -5688,6 +5698,7 @@ final class FlarkEditorController extends ChangeNotifier {
     required bool restoreInputWindow,
     int? expectedEditGeneration,
     bool ensureActiveInputVisible = false,
+    bool publish = true,
   }) async {
     if (expectedEditGeneration != null &&
         expectedEditGeneration != _editGeneration) {
@@ -5860,6 +5871,7 @@ final class FlarkEditorController extends ChangeNotifier {
         source,
         restoreInputWindow: restoreInputWindow,
         ensureActiveInputVisible: ensureActiveInputVisible,
+        publish: publish,
       );
       pendingViewport = null;
     } catch (error) {
@@ -5889,6 +5901,7 @@ final class FlarkEditorController extends ChangeNotifier {
     String source, {
     required bool restoreInputWindow,
     bool ensureActiveInputVisible = false,
+    bool publish = true,
   }) {
     _viewport = viewport;
     final visibleEnd = _visibleUtf16Start + _visibleSource.length;
@@ -6008,7 +6021,7 @@ final class FlarkEditorController extends ChangeNotifier {
         FlarkPendingPresentationPart.structuralSurfaces,
       });
     }
-    notifyListeners();
+    if (publish) notifyListeners();
   }
 
   bool _viewportSupersedesProjectionContinuity(FlarkViewport viewport) {

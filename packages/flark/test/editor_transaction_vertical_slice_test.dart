@@ -378,6 +378,8 @@ void main() {
       expect(controller.globalSelectionExtent, 1);
       expect(controller.canUndo, isTrue);
       expect(controller.canRedo, isFalse);
+      expect(controller.inputValue.text, 'x$source');
+      expect(await controller.readSource(), 'x$source');
 
       // Some platform adaptors report cancellation by echoing the exact
       // precomposition editing value before (or instead of) a cancel selector.
@@ -400,6 +402,7 @@ void main() {
       expect(controller.visibleSource, 'x$source');
       expect(controller.globalSelectionBase, 5);
       expect(controller.globalSelectionExtent, 1);
+      expect(await controller.readSource(), 'x$source');
 
       // Delta-model adaptors carry the same observation as a replacement.
       controller.updateEditingValue(
@@ -424,9 +427,11 @@ void main() {
       expect(controller.globalSelectionBase, 5);
       expect(controller.globalSelectionExtent, 1);
       expect(controller.canRedo, isFalse);
+      expect(await controller.readSource(), 'x$source');
 
       expect(await controller.undo(), isTrue);
       expect(controller.visibleSource, source);
+      expect(await controller.readSource(), source);
       expect(controller.canUndo, isFalse);
     },
     skip: libraryPath == null,
