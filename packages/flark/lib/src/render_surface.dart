@@ -1946,7 +1946,10 @@ final class RenderFlarkSurface extends RenderBox {
         }
       }
       row.painter.paint(canvas, origin);
-      if (row.presentation.active && selection != null && selection.isValid) {
+      if (row.presentation.active &&
+          selection != null &&
+          selection.isValid &&
+          selection.isCollapsed) {
         final extent = selection.extentOffset;
         final caretInFragment =
             (extent >= row.fragmentStart && extent < row.fragmentEnd) ||

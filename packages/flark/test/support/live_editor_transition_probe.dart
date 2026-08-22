@@ -144,33 +144,39 @@ final class PublicationSample {
       rows.map((row) => '${row.leadingText}${row.text}').join('\n');
 
   void expectMechanicallyValid() {
-    expect(pendingEdits, greaterThanOrEqualTo(0));
-    expect(status, isNot(FlarkEditorStatus.faulted));
-    expect(lastError, isNull);
-    expect(resyncCount, 0);
+    // This validator also runs synchronously from a ChangeNotifier listener.
+    // `expectSync` preserves immediate failure without entering Flutter's
+    // guarded async API while a pump is delivering a native completion.
+    expectSync(pendingEdits, greaterThanOrEqualTo(0));
+    expectSync(status, isNot(FlarkEditorStatus.faulted));
+    expectSync(lastError, isNull);
+    expectSync(resyncCount, 0);
     final projectedUtf16Length = <int>[
       sourceUtf16Length,
       visibleStart + visibleSource.length,
       inputGlobalStart + inputValue.text.length,
     ].reduce((left, right) => left > right ? left : right);
-    expect(visibleStart, inInclusiveRange(0, projectedUtf16Length));
-    expect(
+    expectSync(visibleStart, inInclusiveRange(0, projectedUtf16Length));
+    expectSync(
       visibleStart + visibleSource.length,
       lessThanOrEqualTo(projectedUtf16Length),
     );
-    expect(globalSelectionBase, inInclusiveRange(0, projectedUtf16Length));
-    expect(globalSelectionExtent, inInclusiveRange(0, projectedUtf16Length));
+    expectSync(globalSelectionBase, inInclusiveRange(0, projectedUtf16Length));
+    expectSync(
+      globalSelectionExtent,
+      inInclusiveRange(0, projectedUtf16Length),
+    );
     final selection = inputValue.selection;
-    expect(selection.isValid, isTrue);
-    expect(selection.start, inInclusiveRange(0, inputValue.text.length));
-    expect(selection.end, inInclusiveRange(0, inputValue.text.length));
+    expectSync(selection.isValid, isTrue);
+    expectSync(selection.start, inInclusiveRange(0, inputValue.text.length));
+    expectSync(selection.end, inInclusiveRange(0, inputValue.text.length));
     if (!hasOversizedSelection) {
-      expect(
+      expectSync(
         inputGlobalStart + selection.baseOffset,
         globalSelectionBase,
         reason: 'the platform input base must represent the canonical base',
       );
-      expect(
+      expectSync(
         inputGlobalStart + selection.extentOffset,
         globalSelectionExtent,
         reason: 'the platform input extent must represent the canonical extent',
@@ -178,21 +184,21 @@ final class PublicationSample {
     }
     final composing = inputValue.composing;
     if (composing != TextRange.empty) {
-      expect(composing.isValid, isTrue);
-      expect(composing.start, inInclusiveRange(0, inputValue.text.length));
-      expect(composing.end, inInclusiveRange(0, inputValue.text.length));
+      expectSync(composing.isValid, isTrue);
+      expectSync(composing.start, inInclusiveRange(0, inputValue.text.length));
+      expectSync(composing.end, inInclusiveRange(0, inputValue.text.length));
     }
     for (final run in rows.expand((row) => row.runs)) {
-      expect(run.sourceStart, lessThanOrEqualTo(run.sourceEnd));
-      expect(run.sourceStart, greaterThanOrEqualTo(visibleStart));
-      expect(
+      expectSync(run.sourceStart, lessThanOrEqualTo(run.sourceEnd));
+      expectSync(run.sourceStart, greaterThanOrEqualTo(visibleStart));
+      expectSync(
         run.sourceEnd,
         lessThanOrEqualTo(visibleStart + visibleSource.length),
       );
       if (!run.sourceExact) continue;
       final localStart = run.sourceStart - visibleStart;
       final localEnd = run.sourceEnd - visibleStart;
-      expect(
+      expectSync(
         visibleSource.substring(localStart, localEnd),
         run.text,
         reason: 'exact run disagrees with its represented source',

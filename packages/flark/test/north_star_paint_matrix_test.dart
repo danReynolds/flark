@@ -1085,14 +1085,23 @@ void _expectDogfoodPaints(
       expectedCaret,
       reason: operation,
     );
-    expect(paint.caretRect, isNotNull, reason: operation);
-    expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
+    final expectedSelectionBase = expectedBase ?? expectedCaret;
     expect(
       paint.canonicalSelectionBaseUtf16,
-      expectedBase ?? expectedCaret,
+      expectedSelectionBase,
       reason: operation,
     );
-    expect(paint.caretDisplayUtf16, isNotNull, reason: operation);
+    if (expectedSelectionBase == expectedCaret) {
+      expect(paint.caretRect, isNotNull, reason: operation);
+      expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
+      expect(paint.caretDisplayUtf16, isNotNull, reason: operation);
+      expect(paint.selectionRects, isEmpty, reason: operation);
+    } else {
+      expect(paint.caretRect, isNull, reason: operation);
+      expect(paint.caretSourceUtf16, isNull, reason: operation);
+      expect(paint.caretDisplayUtf16, isNull, reason: operation);
+      expect(paint.selectionRects, isNotEmpty, reason: operation);
+    }
     expect(paint.presentation, isNot(contains('# ')), reason: operation);
     expect(paint.presentation, isNot(contains('**')), reason: operation);
     _expectStyledRun(active, (
