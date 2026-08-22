@@ -529,6 +529,14 @@ fact. The full prefix is the affected exact closure and the outside Strong fact
 remains projected. Records are one-shot and bounded by the existing component
 cap; this is emitter breadth within V3, not another ABI revision.
 
+The same bounded emitter closes the frozen different-marker syntax rows: `*`,
+backtick, `[` and `]` beside one Emphasis fact, and `_` or `~` beside one
+Strong fact. The parser requires a fact-free ASCII prefix, an alphanumeric
+guard pair, and no current occurrence of the inserted marker; brackets also
+require exhaustive bracket classification. The complete prefix is exact and
+the outside sibling stays projected. These are one-shot V3 cells, not a
+general delimiter-graph claim.
+
 V3 also lets the same parser component seam supply a complete fact-free
 physical-line gap as the affected closure and a maximal ASCII prose run as the
 trigger for the existing ASCII-literal matcher. Core admits one nonempty

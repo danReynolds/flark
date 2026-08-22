@@ -159,11 +159,11 @@ outside fact is parser-provably independent for the frozen case.
 
 | ID | Exact seed and command | Required result | Current evidence |
 |---|---|---|---|
-| SYNTAX-01 | `ab¦cd _right_\n`; insert `*` | I(start of `ab`, end of `cd` after edit); outside Emphasis stays styled | GAP |
-| SYNTAX-02 | `ab¦cd **right**\n`; insert `_` | I(start of `ab`, end of `cd` after edit); outside Strong stays styled | GAP |
-| SYNTAX-03 | `ab¦cd **right**\n`; insert `~` | I(start of `ab`, end of `cd` after edit); outside Strong stays styled | GAP |
-| SYNTAX-04 | `ab¦cd _right_\n`; insert one backtick | I(start of `ab`, end of `cd` after edit); outside Emphasis stays styled | GAP |
-| SYNTAX-05 | `ab¦cd _right_\n`; insert `[` and, in a fresh case, `]` | I(start of `ab`, end of `cd` after edit); outside Emphasis stays styled | GAP |
+| SYNTAX-01 | `ab¦cd _right_\n`; insert `*` | I(start of `ab`, end of `cd` after edit); outside Emphasis stays styled | PRESENT: parser exact-scalar differential plus actual-paint matrix |
+| SYNTAX-02 | `ab¦cd **right**\n`; insert `_` | I(start of `ab`, end of `cd` after edit); outside Strong stays styled | PRESENT: parser exact-scalar differential plus actual-paint matrix |
+| SYNTAX-03 | `ab¦cd **right**\n`; insert `~` | I(start of `ab`, end of `cd` after edit); outside Strong stays styled | PRESENT: parser exact-scalar differential plus actual-paint matrix |
+| SYNTAX-04 | `ab¦cd _right_\n`; insert one backtick | I(start of `ab`, end of `cd` after edit); outside Emphasis stays styled | PRESENT: parser exact-scalar differential plus actual-paint matrix |
+| SYNTAX-05 | `ab¦cd _right_\n`; insert `[` and, in a fresh case, `]` | I(start of `ab`, end of `cd` after edit); outside Emphasis stays styled | PRESENT: exhaustive bracket-classified exact-scalar differential plus actual-paint matrix |
 
 Block construction uses `change this line\n\n**sentinel**\n`, caret at physical-
 line start. Every accepted prefix is compared with a clean parse. Literal

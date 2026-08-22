@@ -2056,7 +2056,10 @@ impl M11InlineProjectionJob {
             .ok_or(M11InlineProjectionJobError::InvalidState)?
             .exhaustive_bracket_classification();
         if facts.len() != 1
-            || facts[0].kind() != M11InlineProjectionKind::Strong
+            || !matches!(
+                facts[0].kind(),
+                M11InlineProjectionKind::Strong | M11InlineProjectionKind::Emphasis
+            )
             || !exhaustive_brackets
         {
             self.phase = ProjectionJobPhase::BeginCleanup;

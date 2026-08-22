@@ -443,6 +443,14 @@ the affected closure; the outside Strong fact remains retained. These records
 are also one-shot, use the same V3 capability, and add no host punctuation
 classification.
 
+The same matcher encodes the frozen different-marker syntax set. Rust may emit
+`*`, backtick, `[` or `]` beside one Emphasis fact and `_` or `~` beside one
+Strong fact only when the complete prefix is fact-free ASCII prose, the trigger
+is between ASCII-alphanumeric guards, and the inserted marker is absent from
+the current source. `[` and `]` additionally require exhaustive bracket
+classification. The prefix is the affected exact closure, the different-marker
+fact is the retained outside partition, and the record is one-shot.
+
 The same V3 capability also permits matcher code 2's existing guarded literal
 cell to accept one nonempty ASCII-alphanumeric/U+0020 replacement when the edit
 is strictly interior to its parser-authored trigger and contains at least one

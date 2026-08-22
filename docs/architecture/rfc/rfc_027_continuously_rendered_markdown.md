@@ -382,6 +382,14 @@ the exact affected closure, the outside Strong fact remains projected, and the
 record is consumed after one edit. This adds parser-owned proof breadth without
 changing the ABI vocabulary or teaching Core punctuation semantics.
 
+The frozen D0 syntax-construction cells use the same one-shot scalar protocol.
+Rust emits `*`, backtick, `[` or `]` only beside one Emphasis sibling and `_`
+or `~` only beside one Strong sibling, with a fact-free ASCII prefix, an
+alphanumeric guard pair, and no occurrence of the inserted marker in the
+current source. Brackets additionally require exhaustive parser bracket
+classification. The prefix becomes exact while the different-marker sibling
+remains projected; no successor authority is inferred.
+
 The same V3 seam may map a parser-authored complete fact-free physical-line
 gap onto the existing guarded ASCII-literal matcher, with a maximal ASCII
 prose run as its trigger. One nonempty ASCII-alphanumeric/U+0020 replacement

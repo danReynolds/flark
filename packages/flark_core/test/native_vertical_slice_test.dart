@@ -367,18 +367,7 @@ void main() {
       await document.pumpUntilReady();
 
       final row = (await document.queryViewport()).rows.single;
-      final cells = row.projectionEditCells
-          .where(
-            (cell) =>
-                cell.matcher ==
-                    FlarkProjectionEditMatcher.insertExactScalarAtPoint &&
-                cell.affectedUtf16.start == 0 &&
-                cell.affectedUtf16.end == 14 &&
-                cell.triggerUtf16.start == 5 &&
-                cell.triggerUtf16.end == 5,
-          )
-          .toList(growable: false);
-      expect(cells.map((cell) => cell.exactScalar), [
+      const expectedScalars = [
         46,
         44,
         59,
@@ -392,7 +381,20 @@ void main() {
         45,
         8211,
         8212,
-      ]);
+      ];
+      final cells = row.projectionEditCells
+          .where(
+            (cell) =>
+                cell.matcher ==
+                    FlarkProjectionEditMatcher.insertExactScalarAtPoint &&
+                cell.affectedUtf16.start == 0 &&
+                cell.affectedUtf16.end == 14 &&
+                cell.triggerUtf16.start == 5 &&
+                cell.triggerUtf16.end == 5 &&
+                expectedScalars.contains(cell.exactScalar),
+          )
+          .toList(growable: false);
+      expect(cells.map((cell) => cell.exactScalar), expectedScalars);
       expect(
         cells.every(
           (cell) =>
@@ -403,6 +405,56 @@ void main() {
         ),
         isTrue,
       );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
+    'parameterized different-marker syntax cells cross the Dart worker boundary',
+    () async {
+      for (final scenario in const [
+        (source: 'abcd **right**\n', scalars: [95, 126]),
+        (source: 'abcd _right_\n', scalars: [42, 96, 91, 93]),
+      ]) {
+        final document = await FlarkCoreDocument.open(
+          scenario.source,
+          libraryPath: libraryPath!,
+        );
+        await document.pumpUntilReady();
+
+        final row = (await document.queryViewport()).rows.single;
+        final cells = row.projectionEditCells
+            .where(
+              (cell) =>
+                  cell.matcher ==
+                      FlarkProjectionEditMatcher.insertExactScalarAtPoint &&
+                  cell.affectedUtf16.start == 0 &&
+                  cell.affectedUtf16.end == 5 &&
+                  cell.triggerUtf16.start == 2 &&
+                  cell.triggerUtf16.end == 2 &&
+                  scenario.scalars.contains(cell.exactScalar),
+            )
+            .toList(growable: false);
+        expect(
+          cells.map((cell) => cell.exactScalar),
+          scenario.scalars,
+          reason: scenario.source,
+        );
+        expect(
+          cells.every(
+            (cell) =>
+                cell.retainBlockShell &&
+                cell.retainOutsideClosure &&
+                cell.presentClosureExact &&
+                !cell.chainResultCell,
+          ),
+          isTrue,
+          reason: scenario.source,
+        );
+        await document.dispose();
+      }
     },
     skip: libraryPath == null
         ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'

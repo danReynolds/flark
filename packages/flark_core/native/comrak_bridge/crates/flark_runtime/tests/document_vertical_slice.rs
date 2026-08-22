@@ -1217,6 +1217,7 @@ fn guarded_plain_prefix_punctuation_cells_preserve_the_outside_strong_fact() {
                 .then_some(char::from_u32(cell.replacement_first))
                 .flatten()
         })
+        .filter(|scalar| scalars.contains(scalar))
         .collect::<Vec<_>>();
     assert_eq!(declared, scalars);
     document.close().expect("close guarded punctuation source");
@@ -1282,6 +1283,83 @@ fn guarded_plain_prefix_punctuation_cells_preserve_the_outside_strong_fact() {
             "{scalar:?}",
         );
         document.close().expect("close guarded punctuation edit");
+    }
+}
+
+#[test]
+fn guarded_plain_prefix_syntax_cells_preserve_the_different_marker_sibling() {
+    for (source, scalar, outside_kind) in [
+        ("abcd _right_\n", '*', DocumentInlineFactKind::Emphasis),
+        ("abcd **right**\n", '_', DocumentInlineFactKind::Strong),
+        ("abcd **right**\n", '~', DocumentInlineFactKind::Strong),
+        ("abcd _right_\n", '`', DocumentInlineFactKind::Emphasis),
+        ("abcd _right_\n", '[', DocumentInlineFactKind::Emphasis),
+        ("abcd _right_\n", ']', DocumentInlineFactKind::Emphasis),
+    ] {
+        let mut document = DocumentSession::begin(source).expect("begin guarded syntax source");
+        pump_ready(&mut document);
+        let before_viewport = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("guarded syntax before viewport");
+        let row = &before_viewport.rows[0];
+        assert!(row.projection_edit_cells.iter().any(|cell| {
+            cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS
+                && cell.source_range == (0..5)
+                && cell.trigger_range == (2..2)
+                && cell.replacement_first == u32::from(scalar)
+        }));
+        let before = row
+            .inline_facts
+            .as_ref()
+            .expect("guarded syntax before facts")
+            .iter()
+            .find(|fact| fact.kind == outside_kind)
+            .expect("guarded syntax outside fact")
+            .clone();
+
+        let replacement = scalar.to_string();
+        document
+            .apply_edit(1, 2..2, &replacement)
+            .expect("apply guarded syntax scalar");
+        let mut edited_source = source.to_owned();
+        edited_source.insert(2, scalar);
+        pump_ready(&mut document);
+        assert_current_rows_match_clean(&mut document, 2, &edited_source);
+        let after = document
+            .query_viewport(2, 0..edited_source.len(), 8)
+            .expect("guarded syntax after viewport")
+            .rows[0]
+            .inline_facts
+            .as_ref()
+            .expect("guarded syntax after facts")
+            .iter()
+            .find(|fact| fact.kind == outside_kind)
+            .expect("guarded syntax retained outside fact")
+            .clone();
+        assert_eq!(after.kind, before.kind, "{scalar:?}");
+        assert_eq!(after.flags, before.flags, "{scalar:?}");
+        assert_eq!(after.replacement, before.replacement, "{scalar:?}");
+        assert_eq!(
+            after.source_range,
+            before.source_range.start + 1..before.source_range.end + 1,
+            "{scalar:?}",
+        );
+        assert_eq!(
+            after.content_range,
+            before.content_range.start + 1..before.content_range.end + 1,
+            "{scalar:?}",
+        );
+        assert_eq!(
+            after.source_utf16_range,
+            before.source_utf16_range.start + 1..before.source_utf16_range.end + 1,
+            "{scalar:?}",
+        );
+        assert_eq!(
+            after.content_utf16_range,
+            before.content_utf16_range.start + 1..before.content_utf16_range.end + 1,
+            "{scalar:?}",
+        );
+        document.close().expect("close guarded syntax source");
     }
 }
 

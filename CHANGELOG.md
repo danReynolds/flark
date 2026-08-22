@@ -40,7 +40,10 @@
   paste, preserving the Product Tour's earlier Strong run through paste and
   history replay. The parameterized scalar path now also covers the frozen D0
   punctuation set at parser-guarded prose points, exacting only the fact-free
-  prefix while retaining its outside Strong fact.
+  prefix while retaining its outside Strong fact. The same one-shot seam now
+  covers the frozen different-marker syntax constructions (`*`, `_`, `~`,
+  backtick, `[` and `]`) when the current source contains no matching marker,
+  keeping the certified Strong or Emphasis sibling projected.
 - Replaced the active release, archive, platform, and documentation entry points
   with v4-only equivalents. Superseded release notes are preserved at
   `legacy/docs/v2_v3/CHANGELOG.md`.

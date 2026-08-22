@@ -310,6 +310,14 @@ prefix before one authoritative Strong fact. The affected closure is that
 complete prefix, so the punctuation result is exact while the outside Strong
 fact remains certified. Each record is consumed after one edit.
 
+V3 also declares the frozen different-marker syntax constructions as one-shot
+exact-scalar cells: `*`, backtick, `[` and `]` beside one Emphasis fact, and
+`_` or `~` beside one Strong fact. The current source must contain no instance
+of the inserted marker, the fact-free prefix must be ASCII prose, and the
+trigger must sit between ASCII-alphanumeric guards. Brackets additionally
+require exhaustive parser bracket classification. The prefix is exact; the
+different-marker sibling remains projected.
+
 V3 also extends the existing guarded ASCII literal matcher with one strictly
 interior, nonempty ASCII-alphanumeric/U+0020 replacement containing at least
 one alphanumeric unit. The parser emits that authority only for a complete
