@@ -30,6 +30,7 @@ void main() {
       final selectionBefore = controller.inputValue.selection;
       final caretBefore = controller.globalCaretOffset;
       final debugHandle = FlarkEditorDebugHandle();
+      final paints = <FlarkSurfacePaintObservation>[];
 
       await tester.pumpWidget(
         Directionality(
@@ -38,13 +39,16 @@ void main() {
             child: FlarkEditor(
               controller: controller,
               debugHandle: debugHandle,
+              debugPaintObserver: paints.add,
             ),
           ),
         ),
       );
       await tester.pump();
+      paints.clear();
       final checkbox = debugHandle.geometryForTaskCheckboxOrdinal(task.ordinal);
       expect(checkbox, isNotNull);
+      final toggleGeneration = controller.sourceGeneration + 1;
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await gesture.addPointer(location: checkbox!.globalPosition);
       await gesture.down(checkbox.globalPosition);
@@ -57,6 +61,12 @@ void main() {
       expect(controller.globalCaretOffset, caretBefore);
       expect(controller.inputValue.selection, selectionBefore);
       expect(controller.lastError, isNull);
+      _expectTaskTogglePaints(
+        paints,
+        expectedSource: 'Selection stays here.\n\n- [x] todo\n',
+        expectedGeneration: toggleGeneration,
+        expectedCaret: caretBefore,
+      );
 
       expect(await tester.runAsync(controller.undo), isTrue);
       await tester.pump();
@@ -273,6 +283,7 @@ void main() {
         await taskController.resolveCanonicalSelection();
       });
       final debugHandle = FlarkEditorDebugHandle();
+      final taskPaints = <FlarkSurfacePaintObservation>[];
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -280,6 +291,7 @@ void main() {
             child: FlarkEditor(
               controller: taskController,
               debugHandle: debugHandle,
+              debugPaintObserver: taskPaints.add,
             ),
           ),
         ),
@@ -289,10 +301,12 @@ void main() {
         debugHandle.geometryForTaskCheckboxOrdinal(task.ordinal),
         isNotNull,
       );
+      taskPaints.clear();
 
       final taskBefore = taskController.inputValue;
       final taskCaret = taskBefore.selection.extentOffset;
       final taskGlobalCaret = taskController.globalCaretOffset;
+      final taskGeneration = taskController.sourceGeneration + 1;
       final pendingTaskInput = taskBefore.text.replaceRange(
         taskCaret,
         taskCaret,
@@ -322,6 +336,12 @@ void main() {
       expect(
         pendingTaskFinder.evaluate().single,
         isSemantics(value: pendingTask.text),
+      );
+      _expectPendingTaskPaints(
+        taskPaints,
+        expectedSource: expectedPendingTaskSource,
+        expectedGeneration: taskGeneration,
+        expectedCaret: taskGlobalCaret + 1,
       );
 
       taskController.commitActiveComposition();
@@ -503,6 +523,7 @@ void main() {
         await controller.resolveCanonicalSelection();
       });
       final events = <String>[];
+      final paints = <FlarkSurfacePaintObservation>[];
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -511,14 +532,17 @@ void main() {
               controller: controller,
               autofocus: true,
               debugInputEventObserver: events.add,
+              debugPaintObserver: paints.add,
             ),
           ),
         ),
       );
       await tester.pump();
+      paints.clear();
 
       final before = controller.inputValue;
       final caret = before.selection.extentOffset;
+      final pendingGeneration = controller.sourceGeneration + 1;
       controller.updateEditingValue(
         TextEditingValue(
           text: before.text.replaceRange(caret, caret, 'x'),
@@ -536,6 +560,12 @@ void main() {
       expect(events, contains('shortcut:indent-list'));
       expect(controller.globalCaretOffset, selectionBeforeTab);
       expect(controller.visibleSource, '- parent\n- chilxd\n');
+      _expectPendingListPaints(
+        paints,
+        expectedSource: '- parent\n- chilxd\n',
+        expectedGeneration: pendingGeneration,
+        expectedCaret: selectionBeforeTab,
+      );
 
       controller.commitActiveComposition();
       await _pumpUntilTransactions(tester, controller);
@@ -561,6 +591,7 @@ void main() {
         await controller.resolveCanonicalSelection();
       });
       final events = <String>[];
+      final paints = <FlarkSurfacePaintObservation>[];
 
       await tester.pumpWidget(
         Directionality(
@@ -570,6 +601,7 @@ void main() {
               controller: controller,
               autofocus: true,
               debugInputEventObserver: events.add,
+              debugPaintObserver: paints.add,
             ),
           ),
         ),
@@ -593,10 +625,19 @@ void main() {
       );
       final dynamic state = tester.state(find.byType(FlarkEditor));
 
+      paints.clear();
       await _performSelectorAndWait(tester, controller, state, 'insertTab:');
       expect(controller.globalCaretOffset, dataCells.last.contentUtf16.start);
       expect(events, contains('shortcut:next-table-cell'));
+      _expectTableNavigationPaints(
+        paints,
+        expectedSource: source,
+        expectedGeneration: controller.sourceGeneration,
+        expectedCaret: dataCells.last.contentUtf16.start,
+        operation: 'next table cell',
+      );
 
+      paints.clear();
       await _performSelectorAndWait(
         tester,
         controller,
@@ -607,6 +648,13 @@ void main() {
       expect(events, contains('shortcut:previous-table-cell'));
       expect(controller.visibleSource, source);
       expect(controller.lastError, isNull);
+      _expectTableNavigationPaints(
+        paints,
+        expectedSource: source,
+        expectedGeneration: controller.sourceGeneration,
+        expectedCaret: dataCells.first.contentUtf16.start,
+        operation: 'previous table cell',
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
@@ -2089,6 +2137,118 @@ void _expectListActionPaints(
   required int expectedCaret,
   required String operation,
 }) {
+  _expectCurrentPaints(
+    paints,
+    expectedSource: expectedSource,
+    expectedGeneration: expectedGeneration,
+    expectedCaret: expectedCaret,
+    operation: operation,
+    expectRows: (rows) {
+      final active = rows.where((row) => row.active).toList(growable: false);
+      expect(active, isNotEmpty, reason: operation);
+      expect(active.map((row) => row.ordinal).toSet(), hasLength(1));
+      for (final row in active) {
+        expect(row.neutral, isFalse, reason: operation);
+        expect(row.kind, 5, reason: operation);
+        expect(row.listItem, isTrue, reason: operation);
+        expect(row.text, contains('child'), reason: operation);
+      }
+    },
+  );
+}
+
+void _expectPendingListPaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+}) {
+  _expectCurrentPaints(
+    paints,
+    expectedSource: expectedSource,
+    expectedGeneration: expectedGeneration,
+    expectedCaret: expectedCaret,
+    operation: 'pending list action suppression',
+    expectRows: (rows) {
+      final active = rows.where((row) => row.active).toList(growable: false);
+      expect(active, isNotEmpty);
+      expect(active.every((row) => !row.neutral), isTrue);
+      expect(active.every((row) => row.kind == 5 && row.listItem), isTrue);
+    },
+  );
+}
+
+void _expectTaskTogglePaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+}) {
+  _expectCurrentPaints(
+    paints,
+    expectedSource: expectedSource,
+    expectedGeneration: expectedGeneration,
+    expectedCaret: expectedCaret,
+    operation: 'task toggle',
+    expectRows: (rows) {
+      final task = rows.where((row) => row.listItem).toList(growable: false);
+      expect(task, isNotEmpty);
+      expect(task.every((row) => !row.neutral && row.kind == 5), isTrue);
+      expect(task.map((row) => row.leadingText).join(), contains('☑'));
+    },
+  );
+}
+
+void _expectPendingTaskPaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+}) {
+  _expectCurrentPaints(
+    paints,
+    expectedSource: expectedSource,
+    expectedGeneration: expectedGeneration,
+    expectedCaret: expectedCaret,
+    operation: 'pending task action suppression',
+    expectRows: (rows) {
+      final active = rows.where((row) => row.active).toList(growable: false);
+      expect(active, isNotEmpty);
+      expect(active.every((row) => !row.neutral), isTrue);
+      expect(active.every((row) => row.kind == 5 && row.listItem), isTrue);
+    },
+  );
+}
+
+void _expectTableNavigationPaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+  required String operation,
+}) {
+  _expectCurrentPaints(
+    paints,
+    expectedSource: expectedSource,
+    expectedGeneration: expectedGeneration,
+    expectedCaret: expectedCaret,
+    operation: operation,
+    expectRows: (rows) {
+      final table = rows.where((row) => row.table).toList(growable: false);
+      expect(table, isNotEmpty);
+      expect(table.every((row) => !row.neutral), isTrue);
+    },
+  );
+}
+
+void _expectCurrentPaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+  required String operation,
+  required void Function(List<FlarkSurfacePaintRowObservation>) expectRows,
+}) {
   final current = paints
       .where((paint) => paint.sourceGeneration == expectedGeneration)
       .toList(growable: false);
@@ -2107,15 +2267,7 @@ void _expectListActionPaints(
     );
     expect(paint.caretRect, isNotNull, reason: operation);
     expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
-    final active = paint.rows.where((row) => row.active).toList();
-    expect(active, isNotEmpty, reason: operation);
-    expect(active.map((row) => row.ordinal).toSet(), hasLength(1));
-    for (final row in active) {
-      expect(row.neutral, isFalse, reason: operation);
-      expect(row.kind, 5, reason: operation);
-      expect(row.listItem, isTrue, reason: operation);
-      expect(row.text, contains('child'), reason: operation);
-    }
+    expectRows(paint.rows);
   }
 }
 
