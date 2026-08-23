@@ -120,7 +120,7 @@ void main() {
             undoReceipt.telemetry!.workerRoundTripMicros,
             greaterThanOrEqualTo(undoReceipt.telemetry!.nativeFfiMicros),
           );
-          expect(outcome!.restoreSelection.extent, 0);
+          expect(outcome.restoreSelection.extent, 0);
           expect(await document.readSource(), 'base\n');
           expect((await session.resolveSelection())!.extent, 0);
           expect(session.canUndo, isFalse);
@@ -132,7 +132,7 @@ void main() {
             (redone! as FlarkCoreHistoryReplayed).receipt.telemetry,
             isNotNull,
           );
-          expect(redone!.restoreSelection.extent, 3);
+          expect(redone.restoreSelection.extent, 3);
           expect(await document.readSource(), 'abcbase\n');
           expect((await session.resolveSelection())!.extent, 3);
         },
