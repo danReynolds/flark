@@ -5,7 +5,7 @@
 - Cut over to the v4 package split: `flark_core` owns the headless Dart/Rust
   runtime and `flark` owns the Flutter product surface.
 - Added bounded, source-authoritative opening, editing, certification, semantic
-  viewport, history, and lifecycle APIs through ABI 4.33.
+  viewport, history, and lifecycle APIs through ABI 4.34.
 - Added parser-authored literal-safe insertion envelopes, ABI 4.27's bounded
   closure/carry proof for immediate word/space successors, and fail-closed exact
   source rendering whenever result-revision semantics are not proven current.
@@ -59,6 +59,13 @@
   caret identity, outside Strong styling, and the clean heading/quote/list
   result on every observed paint at human cadence and in true unpumped bursts
   without adding host Markdown rules.
+- Added the final D0 ABI 4.34 `BOUNDED_PENDING_PRESENTATION_PLANS_V1`
+  contract. The parser now owns one bounded insertion sequence plus the full
+  clean multi-row presentation for every admitted prefix. Core validates and
+  materializes that data through the existing pending-presentation lifecycle,
+  allowing the frozen opening/closing fenced-code journey to remain identical
+  to a clean parse on every paint without adding fence recognition or another
+  authority slot in Flutter.
 - Kept closed fenced-code typing rendered on every paint by publishing an
   authoritative empty inline-fact set plus bounded physical-line ASCII-word
   cells; the code shell remains projected while only the changed authored line

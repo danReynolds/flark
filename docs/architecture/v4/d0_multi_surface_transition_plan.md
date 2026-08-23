@@ -34,17 +34,18 @@ not a fence matcher in Flutter and it is not another controller state slot.
 The plan contains:
 
 1. one exact insertion sequence of at most eight ASCII bytes;
-2. the exact zero-width trigger and activation prefix length;
+2. the exact zero-width trigger;
 3. the base affected source range;
-4. one activation-result snapshot containing one to four ordered result rows;
+4. one complete clean result snapshot for every accepted sequence prefix,
+   each containing one to four ordered result rows;
 5. each result row's byte/UTF-16 source and editable ranges, typed block
    presentation, and complete authoritative inline-fact set; and
 6. the predecessor row ordinals replaced by that result snapshot.
 
-All result coordinates describe the activation result revision. If the parser
-declares additional bytes after activation, Core may advance only the exact
-remaining sequence and transforms the result rows/facts mechanically through
-those insertions. It may not add a row, fact, style, delimiter rule, or shell.
+Each result snapshot describes its own exact result revision. Core may advance
+only the next exact declared scalar and selects the matching parser-supplied
+snapshot. It does not transform a row/fact partition or add a row, fact,
+style, delimiter rule, or shell.
 
 The existing `FlarkPendingPresentationSnapshot` remains the only host pending-
 presentation state. Its dependency variant owns an ordered list of framework-
@@ -54,14 +55,16 @@ use the same retirement/fresh-certification lifecycle.
 
 ## Layer ownership
 
-- `flark-parser` selects the exact prefix, trigger, activation point, affected
-  dependency range, result row partition, shells, and inline facts from a
-  bounded clean counterfactual parse.
-- `flark-runtime` validates revision/source ownership, maps byte and UTF-16
-  coordinates, enforces caps, and omits the optional plan on any ambiguity.
+- `flark-parser` selects the exact bounded sequence, trigger, affected
+  dependency range, and predecessor-row count. The ordinary parser remains
+  the sole author of each counterfactual result's row partition, shells, and
+  inline facts.
+- `flark-runtime` invokes that ordinary clean parser for every declared prefix,
+  validates revision/source ownership, maps byte and UTF-16 coordinates,
+  enforces caps, and omits the optional plan on any ambiguity.
 - the ABI transports the generic plan and result snapshot. The record is not
   named for fenced code and introduces no syntax-specific query kind.
-- Core matches the exact declared sequence, advances declared coordinates,
+- Core matches the exact declared sequence, selects the declared clean step,
   and materializes typed result rows. Core does not classify Markdown.
 - Flutter publishes those rows through `_pendingPresentation`, suppresses only
   the parser-declared predecessor ordinals, and maps selection/caret through
@@ -73,9 +76,11 @@ The first contract is deliberately small:
 
 - the affected current source is at most 16 KiB and fully materialized;
 - the exact sequence is 1–8 ASCII bytes;
-- one row publishes at most four result rows and 128 total result inline facts;
-- result rows are ordered, nonoverlapping, source-contained, and collectively
-  cover the declared result affected range without partial fact sets;
+- one step publishes at most four result rows and the complete plan carries at
+  most 128 total result inline facts;
+- result rows are ordered, nonoverlapping, source-contained, and carry no
+  partial fact sets; source between rows remains the ordinary exact neutral
+  gap owned by the same affected result range;
 - at most one plan may match an edit;
 - optional plan bytes cannot evict ordinary current-revision inline facts from
   any row; and
@@ -83,10 +88,10 @@ The first contract is deliberately small:
   out-of-window plan falls back through the existing exact-source path.
 
 The initial parser emitter is restricted to the frozen top-level BOF fixture:
-the exact seven-byte opening prefix (three U+0060 BACKTICK bytes followed by
-`dart`) and the matching three-backtick closer introduced at the semantic-
-Return successor point. This is a bounded D0 denominator, not an assertion
-that every arbitrary fenced block is covered.
+the exact eight-byte opening journey (three U+0060 BACKTICK bytes, `dart`, and
+Return) and the exact four-byte closing journey (Return followed by three
+backticks). This is a bounded D0 denominator, not an assertion that every
+arbitrary fenced block is covered.
 
 ## Rejected shortcuts
 

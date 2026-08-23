@@ -10,9 +10,14 @@ use flark_abi::{
     PumpRequest, QueryRequest, ResultPageHeader, SemanticTargetRecord, SessionConfig,
     SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
     TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR, INLINE_FACT_EMPHASIS,
-    INLINE_FACT_LITERAL_SAFE_ENVELOPE, INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_TABLE_CELL,
-    INSPECT_FLAG_GLOBAL_LIVE_STATE, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
-    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, PROJECTION_EDIT_CELL_CHAIN_RESULT,
+    INLINE_FACT_LITERAL_SAFE_ENVELOPE, INLINE_FACT_PENDING_PRESENTATION_PLAN,
+    INLINE_FACT_PENDING_PRESENTATION_ROW, INLINE_FACT_PENDING_PRESENTATION_STEP,
+    INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_TABLE_CELL, INSPECT_FLAG_GLOBAL_LIVE_STATE,
+    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
+    PENDING_PRESENTATION_PLAN_REPLACED_ROW_COUNT_SHIFT,
+    PENDING_PRESENTATION_PLAN_SEQUENCE_LENGTH_MASK, PENDING_PRESENTATION_PLAN_STEP_COUNT_SHIFT,
+    PENDING_PRESENTATION_ROW_FACT_COUNT_SHIFT, PENDING_PRESENTATION_STEP_PREFIX_LENGTH_MASK,
+    PENDING_PRESENTATION_STEP_ROW_COUNT_SHIFT, PROJECTION_EDIT_CELL_CHAIN_RESULT,
     PROJECTION_EDIT_CELL_MATCHER_MASK, PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
     PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL,
     PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL,
@@ -58,8 +63,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     let preceding_minor = NegotiateRequest {
         struct_size: size_of::<NegotiateRequest>() as u32,
         requested_major: ABI_MAJOR,
-        requested_minor: 32,
-        required_capability_bits: (1_u64 << 34) - 1,
+        requested_minor: 33,
+        required_capability_bits: (1_u64 << 35) - 1,
     };
     let mut info = AbiInfo::default();
     let mut outcome = Outcome::default();
@@ -69,8 +74,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         "the stateless ABI must reject a preceding minor it cannot tailor"
     );
     let subsequent_minor = NegotiateRequest {
-        requested_minor: 34,
-        required_capability_bits: (1_u64 << 35) - 1,
+        requested_minor: 35,
+        required_capability_bits: (1_u64 << 36) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -80,7 +85,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 35) - 1,
+        required_capability_bits: (1_u64 << 36) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -88,7 +93,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::Ok as u32
     );
     assert_eq!(info.abi_minor, ABI_MINOR);
-    assert_eq!(info.capability_bits, (1_u64 << 35) - 1);
+    assert_eq!(info.capability_bits, (1_u64 << 36) - 1);
 
     let base_source = concat!(
         "# *Flark*\n\n",
@@ -880,4 +885,153 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
 
     status = flark_v4_source_read(&read, page.as_mut_ptr(), page.len() as u64, &mut outcome);
     assert_eq!(status, StatusCode::InvalidHandle as u32);
+
+    // The final D0 ABI carries a complete, nested plan as one optional record
+    // group. Query the exact bounded seed through the raw C boundary so a
+    // partial step/row stream cannot false-green via the higher-level decoder.
+    let plan_source = b"change this line\n\n**sentinel**\n";
+    let plan_owner = 72;
+    let plan_create = CreateRequest {
+        owner_token: plan_owner,
+        expected_total_bytes: plan_source.len() as u64,
+        ..create
+    };
+    status = flark_v4_create_begin(
+        &plan_create,
+        plan_source.as_ptr(),
+        plan_source.len() as u64,
+        &mut outcome,
+    );
+    assert_eq!(status, StatusCode::Ok as u32);
+    let plan_session = SessionRef {
+        session: outcome.primary_handle,
+        owner_token: plan_owner,
+    };
+    let plan_commit = TransactionRequest {
+        session: plan_session,
+        transaction: outcome.secondary_handle,
+        budget: budget(64),
+        ..commit
+    };
+    status = flark_v4_create_commit(&plan_commit, &mut outcome);
+    let mut plan_token = outcome.progress_token;
+    while status == StatusCode::BudgetExhausted as u32 {
+        status = flark_v4_pump(
+            &PumpRequest {
+                struct_size: size_of::<PumpRequest>() as u32,
+                flags: 0,
+                session: plan_session,
+                expected_revision: 1,
+                progress_token: plan_token,
+                budget: budget(64),
+            },
+            &mut outcome,
+        );
+        plan_token = outcome.progress_token;
+    }
+    assert_eq!(status, StatusCode::Ok as u32);
+
+    let plan_query = QueryRequest {
+        session: plan_session,
+        revision: 1,
+        range: SourceRange {
+            start_byte: 0,
+            end_byte: plan_source.len() as u64,
+        },
+        budget: WorkBudget {
+            max_result_items: 8,
+            ..budget(64)
+        },
+        ..query
+    };
+    page.fill(0);
+    status = flark_v4_query_viewport(
+        &plan_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert_eq!(status, StatusCode::Ok as u32);
+    let plan_header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    assert_eq!(plan_header.item_count, 2);
+    let plan_owner_row = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>())
+            .cast::<ViewportRowRecord>()
+            .read_unaligned()
+    };
+    assert_ne!(
+        plan_owner_row.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
+        0
+    );
+    let plan_record_count = plan_owner_row.inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK;
+    let plan_record_start = size_of::<ResultPageHeader>()
+        + plan_header.item_count as usize * size_of::<ViewportRowRecord>();
+    let plan_records = (0..plan_record_count as usize)
+        .map(|index| unsafe {
+            page.as_ptr()
+                .add(plan_record_start + index * size_of::<InlineFactRecord>())
+                .cast::<InlineFactRecord>()
+                .read_unaligned()
+        })
+        .collect::<Vec<_>>();
+    let plan_index = plan_records
+        .iter()
+        .position(|record| record.kind == INLINE_FACT_PENDING_PRESENTATION_PLAN)
+        .expect("bounded plan header");
+    let plan_record = &plan_records[plan_index];
+    assert_eq!(
+        plan_record.flags & PENDING_PRESENTATION_PLAN_SEQUENCE_LENGTH_MASK,
+        8
+    );
+    assert_eq!(
+        (plan_record.flags >> PENDING_PRESENTATION_PLAN_STEP_COUNT_SHIFT) & 0xff,
+        8
+    );
+    assert_eq!(
+        (plan_record.flags >> PENDING_PRESENTATION_PLAN_REPLACED_ROW_COUNT_SHIFT) & 0xff,
+        2
+    );
+    assert_eq!(plan_record.replacement_first, u32::from_le_bytes(*b"```d"));
+    assert_eq!(
+        plan_record.replacement_second,
+        u32::from_le_bytes(*b"art\n")
+    );
+
+    let mut cursor = plan_index + 1;
+    for expected_prefix in 1..=8_u32 {
+        let step = plan_records.get(cursor).expect("complete plan step");
+        assert_eq!(step.kind, INLINE_FACT_PENDING_PRESENTATION_STEP);
+        assert_eq!(
+            step.flags & PENDING_PRESENTATION_STEP_PREFIX_LENGTH_MASK,
+            expected_prefix
+        );
+        let row_count = (step.flags >> PENDING_PRESENTATION_STEP_ROW_COUNT_SHIFT) & 0xff;
+        assert!((1..=4).contains(&row_count));
+        cursor += 1;
+        for _ in 0..row_count {
+            let row = plan_records.get(cursor).expect("complete plan row");
+            assert_eq!(row.kind, INLINE_FACT_PENDING_PRESENTATION_ROW);
+            cursor += 1 + (row.flags >> PENDING_PRESENTATION_ROW_FACT_COUNT_SHIFT) as usize;
+        }
+    }
+    assert!(cursor <= plan_records.len());
+
+    let mut plan_close = CloseRequest {
+        session: plan_session,
+        progress_token: 0,
+        budget: budget(64),
+        ..close
+    };
+    status = flark_v4_close_begin(&plan_close, &mut outcome);
+    while status == StatusCode::BudgetExhausted as u32 {
+        plan_close.progress_token = outcome.progress_token;
+        status = flark_v4_close_pump(&plan_close, &mut outcome);
+    }
+    assert_eq!(status, StatusCode::Ok as u32);
+    plan_close.progress_token = outcome.progress_token;
+    assert_eq!(
+        flark_v4_close_finish(&plan_close, &mut outcome),
+        StatusCode::Ok as u32
+    );
 }

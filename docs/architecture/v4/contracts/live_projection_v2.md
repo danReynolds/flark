@@ -346,6 +346,16 @@ show the clean result shell. Prefix-inclusive fresh certification retires the
 temporary authority, including the intermediate `>` quote before its optional
 space. The host does not scan markers or infer a block transition.
 
+ABI 4.34 capability `BOUNDED_PENDING_PRESENTATION_PLANS_V1` covers the bounded
+multi-row result that kind 16 cannot express. One plan declares an exact ASCII
+insertion sequence, a zero-width trigger, the predecessor-row count, and a
+complete clean row snapshot for every admitted prefix. The parser owns those
+rows and all retained inline facts; Core performs only protocol validation,
+range transformation, and materialization into the single pending-
+presentation snapshot. The initial emitter is deliberately limited to the
+frozen D0 opening/closing fenced-code journey. A mismatch retires the plan
+synchronously and fresh complete certification supersedes the final prefix.
+
 Exact ABI 4.32 additionally maps the parser-certified body of a closed fenced
 code block into bounded ASCII-word cells. Each affected closure is one physical
 code line without its line ending, and each trigger is one maximal ASCII word.

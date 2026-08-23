@@ -4,7 +4,7 @@
   "status": "implemented-direct-v4-boundary",
   "abi": {
     "major": 4,
-    "minor": 33,
+    "minor": 34,
     "minorRule": "NEGOTIATE requires the exact current minor; any major or minor mismatch returns UNSUPPORTED_ABI_VERSION because the runtime retains no per-client negotiation state",
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
@@ -57,7 +57,8 @@
     {"name": "STRUCTURAL_PRESENTATION_PROOFS_V1", "bit": 2147483648},
     {"name": "GLOBAL_LIVE_STATE_INSPECTION_V1", "bit": 4294967296},
     {"name": "PROJECTION_EDIT_CELLS_V3", "bit": 8589934592},
-    {"name": "PROJECTION_EDIT_CELLS_V4", "bit": 17179869184}
+    {"name": "PROJECTION_EDIT_CELLS_V4", "bit": 17179869184},
+    {"name": "BOUNDED_PENDING_PRESENTATION_PLANS_V1", "bit": 34359738368}
   ],
   "operations": [
     {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},
@@ -299,7 +300,7 @@
     {"operation": "SMALL_EDIT", "recordField": "replacement_bytes_len", "callArgument": "replacement_bytes_len", "rule": "MUST_MATCH_OR_INVALID_ARGUMENT"}
   ],
   "inputFlagRules": {
-    "abiMinor": 33,
+    "abiMinor": 34,
     "rule": "Every request flags field, SessionConfig.flags, reserved_u32 field, and reserved array element is zero unless this contract assigns a value. SESSION_INSPECT flag 1 selects process-global live-state inspection behind GLOBAL_LIVE_STATE_INSPECTION_V1 and requires a zero session reference. Any other nonzero value is INVALID_ARGUMENT."
   },
   "admissionRules": [
@@ -430,6 +431,23 @@
       "LIST_ITEM": 4
     },
     "rule": "The parser may publish either one bounded exact splice or one bounded ASCII prefix plan whose clean result replaces the current physical-line block shell. Source ranges carry the complete affected physical-line closure. For EXACT_SPLICE_REPLACE_BLOCK_SHELL, content ranges carry the exact insertion point or deletion range and replacement_first is one exact inserted Unicode scalar or zero for deletion. For SIMPLE_BLOCK_PREFIX_PLAN, content is the zero-width line-start trigger; replacement_first packs up to three nonzero ASCII plan bytes little-endian in bits 0..23 and the 1-based activation prefix length in bits 24..31. replacement_second packs the typed target shell kind in bits 0..3, its final hidden prefix UTF-16 length in bits 4..11, and a heading level or quote depth parameter in bits 12..31. Both require RETAIN_OUTSIDE, PRESENT_EXACT, and REPLACE_BLOCK_SHELL; RETAIN_BLOCK_SHELL is forbidden. Exact splice is consumed after one edit. Prefix plan requires CHAIN_RESULT and advances only the exact remaining sequence; before activation it presents Plain, from activation onward it presents the declared target shell using the consumed prefix length. A specialized prefix-plan match takes precedence over a generic same-edit literal cell, and more than one matching prefix plan fails closed. V4 initially covers bounded donor-classified Plain, ATX heading, depth-1 block quote, and simple list transitions; it grants no host Markdown inference."
+  },
+  "boundedPendingPresentationPlansV1": {
+    "abiMinor": 34,
+    "capability": "BOUNDED_PENDING_PRESENTATION_PLANS_V1",
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "recordKinds": {
+      "PLAN": 17,
+      "STEP": 18,
+      "ROW": 19
+    },
+    "limits": {
+      "sequenceBytes": 8,
+      "affectedBytes": 16384,
+      "rowsPerStep": 4,
+      "factsPerPlan": 128
+    },
+    "rule": "One optional parser-authored plan is an atomic nested INLINE_FACT_RECORD group on its owner row. PLAN flags pack sequence length in bits 0..7, step count in bits 8..15, and replaced predecessor row count in bits 16..23; source ranges carry the base affected range, content ranges the zero-width trigger, and replacement words the 1..8 ASCII sequence little-endian. Exactly one STEP follows per sequence prefix; flags pack the 1-based prefix length in bits 0..7 and result-row count in bits 8..15, while source ranges carry that prefix result's affected range. Each ROW follows its STEP; flags pack the viewport row kind in bits 0..15 and ordinary fact count in bits 16..31, source ranges carry the result row, content ranges its editable range, replacement_first its semantic variant, and replacement_second its semantic value. The ROW is followed by exactly that many ordinary inline facts. V1 admits only complete Plain or fenced CodeBlock clean-result rows, no segments or nested plans, and exact ASCII insertions at the carried point. Core selects the supplied step and never derives Markdown. Intermediate fresh results retain only the exact declared remaining sequence; completion, mismatch, ambiguity, stale revision, malformed geometry, truncation, or out-of-window source retires or omits the plan. The complete plan group may consume only optional kind-6 payload slack after every row's baseline presentation is reserved, so it cannot evict ordinary current-revision facts. The initial bounded emitter covers only the frozen D0 opening sequence ```dart plus Return and the matching Return plus three-backtick closing sequence."
   },
   "viewportLiteralSafeEnvelopesV2": {
     "abiMinor": 30,

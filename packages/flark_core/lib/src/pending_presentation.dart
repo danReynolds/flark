@@ -55,6 +55,212 @@ final class FlarkPendingDependencyPresentation {
   bool get presentsExactIsland => authority.presentsExactIsland;
 }
 
+/// Materializes the current parser-authored plan step from exact visible
+/// source. This is protocol projection only: row shells, ranges, facts, and
+/// replacements all come from the parser snapshot.
+FlarkPendingDependencyPresentation? materializeBoundedPendingPresentationPlan({
+  required FlarkBoundedPendingPresentationPlanReceipt authority,
+  required int rowOrdinal,
+  required String visibleSource,
+  required int visibleUtf16Start,
+}) {
+  final step = authority.step;
+  final visibleEnd = visibleUtf16Start + visibleSource.length;
+  if (step.rows.isEmpty ||
+      step.rows.length > 4 ||
+      step.affectedUtf16.start < visibleUtf16Start ||
+      step.affectedUtf16.end > visibleEnd) {
+    return null;
+  }
+
+  String? slice(FlarkSourceRange range) {
+    if (range.start < visibleUtf16Start || range.end > visibleEnd) return null;
+    return visibleSource.substring(
+      range.start - visibleUtf16Start,
+      range.end - visibleUtf16Start,
+    );
+  }
+
+  final presentations = <FlarkCorePresentationRow>[];
+  for (var rowIndex = 0; rowIndex < step.rows.length; rowIndex += 1) {
+    final row = step.rows[rowIndex];
+    if ((row.kind != 5 && row.kind != 7) ||
+        row.sourceUtf16.start < step.affectedUtf16.start ||
+        row.sourceUtf16.end > step.affectedUtf16.end ||
+        row.inlineFacts == null ||
+        row.projectionSegments != null ||
+        row.pendingPresentationPlans.isNotEmpty) {
+      return null;
+    }
+    final display = row.editableUtf16 ?? row.sourceUtf16;
+    if (display.start < row.sourceUtf16.start ||
+        display.end > row.sourceUtf16.end ||
+        slice(display) == null) {
+      return null;
+    }
+    final runs = _projectPlanInlineRuns(display, row.inlineFacts!, slice);
+    if (runs == null) return null;
+    presentations.add(
+      FlarkCorePresentationRow(
+        sourceUtf16: row.sourceUtf16,
+        leadingText: '',
+        text: runs.map((run) => run.text).join(),
+        globalUtf16Start: display.start,
+        kind: row.kind,
+        headingLevel: row.headingLevel,
+        blockQuoteDepth: row.blockQuote?.nestingDepth,
+        codeBlock: row.codeBlock,
+        thematicBreak: row.thematicBreak,
+        listItem: row.listItem != null,
+        ordinal: rowOrdinal + rowIndex,
+        runs: runs,
+      ),
+    );
+  }
+  return FlarkPendingDependencyPresentation.multi(
+    rowOrdinal: rowOrdinal,
+    authority: authority,
+    presentations: presentations,
+    replacedRowOrdinals: {
+      for (var index = 0; index < authority.plan.replacedRowCount; index += 1)
+        rowOrdinal + index,
+    },
+  );
+}
+
+List<FlarkCorePresentationRun>? _projectPlanInlineRuns(
+  FlarkSourceRange range,
+  List<FlarkInlineFact> facts,
+  String? Function(FlarkSourceRange range) slice,
+) {
+  if (facts.isEmpty) {
+    final text = slice(range);
+    if (text == null) return null;
+    if (text.isEmpty) return const [];
+    return [
+      FlarkCorePresentationRun(
+        text: text,
+        sourceUtf16Start: range.start,
+        sourceUtf16End: range.end,
+        sourceExact: true,
+        styles: const {},
+      ),
+    ];
+  }
+  if (facts.any(
+    (fact) =>
+        fact.sourceUtf16.start < range.start ||
+        fact.sourceUtf16.end > range.end ||
+        fact.contentUtf16.start < fact.sourceUtf16.start ||
+        fact.contentUtf16.end > fact.sourceUtf16.end,
+  )) {
+    return null;
+  }
+  final boundaries = <int>{range.start, range.end};
+  final hidden = <FlarkSourceRange>[];
+  for (final fact in facts) {
+    boundaries
+      ..add(fact.sourceUtf16.start)
+      ..add(fact.contentUtf16.start)
+      ..add(fact.contentUtf16.end)
+      ..add(fact.sourceUtf16.end);
+    if (fact.sourceUtf16.start < fact.contentUtf16.start) {
+      hidden.add(
+        FlarkSourceRange(fact.sourceUtf16.start, fact.contentUtf16.start),
+      );
+    }
+    if (fact.contentUtf16.end < fact.sourceUtf16.end) {
+      hidden.add(FlarkSourceRange(fact.contentUtf16.end, fact.sourceUtf16.end));
+    }
+  }
+  final ordered = boundaries.toList()..sort();
+  final runs = <FlarkCorePresentationRun>[];
+  for (var index = 0; index + 1 < ordered.length; index += 1) {
+    final start = ordered[index];
+    final end = ordered[index + 1];
+    if (start == end ||
+        start < range.start ||
+        end > range.end ||
+        hidden.any((cut) => start >= cut.start && end <= cut.end)) {
+      continue;
+    }
+    final styles = <FlarkCorePresentationInlineStyle>{};
+    for (final fact in facts) {
+      if (start >= fact.contentUtf16.start && end <= fact.contentUtf16.end) {
+        final style = _planStyleFor(fact.kind);
+        if (style != null) styles.add(style);
+      }
+    }
+    String? replacement;
+    for (final fact in facts) {
+      if (fact.replacement != null &&
+          fact.sourceUtf16.start == start &&
+          fact.sourceUtf16.end == end) {
+        replacement = fact.replacement;
+        break;
+      }
+    }
+    final text = replacement ?? slice(FlarkSourceRange(start, end));
+    if (text == null) return null;
+    final sourceExact = replacement == null;
+    final immutableStyles = Set<FlarkCorePresentationInlineStyle>.unmodifiable(
+      styles,
+    );
+    if (runs.isNotEmpty &&
+        sourceExact &&
+        runs.last.sourceExact &&
+        runs.last.sourceUtf16End == start &&
+        _samePlanStyles(runs.last.styles, immutableStyles)) {
+      final prior = runs.removeLast();
+      runs.add(
+        FlarkCorePresentationRun(
+          text: prior.text + text,
+          sourceUtf16Start: prior.sourceUtf16Start,
+          sourceUtf16End: end,
+          sourceExact: true,
+          styles: immutableStyles,
+        ),
+      );
+    } else {
+      runs.add(
+        FlarkCorePresentationRun(
+          text: text,
+          sourceUtf16Start: start,
+          sourceUtf16End: end,
+          sourceExact: sourceExact,
+          styles: immutableStyles,
+        ),
+      );
+    }
+  }
+  return List.unmodifiable(runs);
+}
+
+FlarkCorePresentationInlineStyle? _planStyleFor(FlarkInlineFactKind kind) =>
+    switch (kind) {
+      FlarkInlineFactKind.emphasis => FlarkCorePresentationInlineStyle.emphasis,
+      FlarkInlineFactKind.strong => FlarkCorePresentationInlineStyle.strong,
+      FlarkInlineFactKind.code => FlarkCorePresentationInlineStyle.code,
+      FlarkInlineFactKind.strikethrough =>
+        FlarkCorePresentationInlineStyle.strikethrough,
+      FlarkInlineFactKind.autolinkUri ||
+      FlarkInlineFactKind.autolinkEmail ||
+      FlarkInlineFactKind.directLink ||
+      FlarkInlineFactKind.referenceLink =>
+        FlarkCorePresentationInlineStyle.link,
+      FlarkInlineFactKind.backslashEscape ||
+      FlarkInlineFactKind.hardLineBreak ||
+      FlarkInlineFactKind.replacement ||
+      FlarkInlineFactKind.directImage ||
+      FlarkInlineFactKind.referenceImage ||
+      FlarkInlineFactKind.tableCell => null,
+    };
+
+bool _samePlanStyles(
+  Set<FlarkCorePresentationInlineStyle> left,
+  Set<FlarkCorePresentationInlineStyle> right,
+) => left.length == right.length && left.every(right.contains);
+
 /// One committed structural surface and any parser-authored successor proof
 /// carried by that surface.
 final class FlarkPendingStructuralSurface {

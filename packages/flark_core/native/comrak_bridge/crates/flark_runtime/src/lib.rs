@@ -16,8 +16,9 @@ pub use document::{
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentInlineReplacement, DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
     DocumentLiteralSafeEnvelope, DocumentLiveViewport, DocumentLiveViewportSpan,
-    DocumentProjectionEditCell, DocumentProjectionResultBlockShell, DocumentProjectionSegment,
-    DocumentPumpReceipt, DocumentQueryReceipt, DocumentSemanticTarget, DocumentSemanticTargetKind,
+    DocumentPendingPresentationPlan, DocumentPendingPresentationStep, DocumentProjectionEditCell,
+    DocumentProjectionResultBlockShell, DocumentProjectionSegment, DocumentPumpReceipt,
+    DocumentQueryReceipt, DocumentSemanticTarget, DocumentSemanticTargetKind,
     DocumentSemanticTargetSyntax, DocumentSession, DocumentSessionError, DocumentSessionPhase,
     DocumentViewport, DocumentViewportRow, DocumentViewportRowEditCapability,
     DocumentViewportRowPresentation, DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_PREFIX_PLAN_FLAGS,
@@ -583,6 +584,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("GLOBAL_LIVE_STATE_INSPECTION_V1", 1 << 32),
     ("PROJECTION_EDIT_CELLS_V3", 1 << 33),
     ("PROJECTION_EDIT_CELLS_V4", 1 << 34),
+    ("BOUNDED_PENDING_PRESENTATION_PLANS_V1", 1 << 35),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;

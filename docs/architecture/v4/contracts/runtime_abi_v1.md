@@ -34,7 +34,7 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 33. `NEGOTIATE` is the only ordinary operation
+The direct ABI is major 4, minor 34. `NEGOTIATE` is the only ordinary operation
 permitted without a session. ABI 4.32 also permits the explicitly flagged
 process-global `SESSION_INSPECT` form without a session so post-close lifecycle
 evidence cannot depend on a consumed handle. The host supplies its requested
@@ -469,7 +469,7 @@ guards isolate every retained outside fact. Older hosts reject this
 additional safe shape, while a 4.32 host requires the V3 capability before it
 can observe the record.
 
-The final pre-D0 ABI 4.33 freeze adds capability
+ABI 4.33 added capability
 `PROJECTION_EDIT_CELLS_V4` without changing record kind 16 or query kind 6.
 Matcher code 7, `EXACT_SPLICE_REPLACE_BLOCK_SHELL`, declares one exact
 parser-authored insertion or deletion over a bounded physical-line closure.
@@ -505,6 +505,42 @@ recognizes a Markdown opener nor widens the parser result. Fresh certified rows
 supersede this authority over the prefix-inclusive physical range. The exact
 splice form is one-shot; the prefix-plan form expires when the finite sequence
 is complete or any different edit arrives.
+
+The final D0 ABI 4.34 adds capability
+`BOUNDED_PENDING_PRESENTATION_PLANS_V1` and inline-record kinds 17 `PLAN`, 18
+`STEP`, and 19 `ROW`, all carried only by query kind 6. The new vocabulary
+represents one bounded exact insertion sequence together with a complete clean
+parser result snapshot for every admitted prefix. It is generic result
+authority, not a host-visible fence grammar.
+
+`PLAN.flags` packs sequence length in bits 0–7, step count in bits 8–15, and
+the number of replaced predecessor rows in bits 16–23. Its source ranges name
+the base affected range, its content ranges name the zero-width trigger, and
+the two replacement words carry the 1–8 ASCII sequence in little-endian byte
+order. Exactly one `STEP` follows for every sequence byte. `STEP.flags` packs
+the 1-based prefix length in bits 0–7 and result-row count in bits 8–15; its
+source ranges name that prefix result's affected range.
+
+Each `ROW` follows its owning step. `ROW.flags` packs the viewport row kind in
+bits 0–15 and ordinary inline-fact count in bits 16–31. Its source ranges name
+the clean result row, its content ranges name the editable projection, and its
+replacement words carry the ordinary row semantic variant/value. Exactly that
+many ordinary fact records immediately follow the row. V1 permits only
+complete Plain or fenced CodeBlock result rows, at most four rows per step,
+128 facts across the plan, a 16 KiB affected source, and no segments or nested
+plans. Rows are ordered and nonoverlapping; source gaps remain exact neutral
+source owned by the same affected result.
+
+The plan is encoded as one all-or-nothing optional group after all page rows'
+ordinary facts and required segments have been reserved. It may be omitted for
+capacity but cannot evict baseline presentation. Core matches only the next
+exact scalar at the carried point and selects the supplied clean step. An
+intermediate fresh parse does not discard still-declared successors; the plan
+retires after the complete sequence is freshly certified or synchronously on
+any mismatch, ambiguity, stale revision, malformed geometry, truncation, or
+out-of-window source. The initial emitter covers only the frozen D0 opening
+journey (three backticks, `dart`, Return) and closing journey (Return, three
+backticks); other fenced construction remains fail-closed.
 
 Exact ABI 4.32 also maps maximal ASCII-word triggers inside each physical line
 of a parser-certified closed fenced-code body. The affected closure is that

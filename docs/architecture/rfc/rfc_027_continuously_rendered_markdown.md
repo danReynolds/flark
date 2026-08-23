@@ -423,6 +423,16 @@ matrix demonstrated that ordinary human-cadence entry of the final space in
 The generic result-shell field closes that architectural gap without a host
 marker table and is reused for parser-proved removal geometry.
 
+**ABI 4.34 bounded pending-presentation plans (2026-08-23).** Capability
+`BOUNDED_PENDING_PRESENTATION_PLANS_V1` adds one generic parser-owned result
+plan for the bounded case where an exact insertion sequence changes several
+rows at once. Every admitted prefix carries its complete clean result rows;
+Core validates source geometry and materializes those rows, and Flutter stores
+the result in the same pending-presentation snapshot used by the existing
+dependency authorities. The first emitter is restricted to the frozen D0
+opening/closing fenced-code sources. No Dart fence grammar, alternate
+authority slot, or inference from a predecessor shell is permitted.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits

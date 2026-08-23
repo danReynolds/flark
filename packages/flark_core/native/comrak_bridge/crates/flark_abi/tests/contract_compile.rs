@@ -639,7 +639,7 @@ fn close_initial_admission_snapshot_and_flag_policies_are_frozen() {
         manifest["snapshotLifetime"]["ownership"].as_str(),
         Some("NON_OWNING_EPOCH")
     );
-    assert_eq!(manifest["inputFlagRules"]["abiMinor"].as_u64(), Some(33));
+    assert_eq!(manifest["inputFlagRules"]["abiMinor"].as_u64(), Some(34));
     assert!(manifest["inputFlagRules"]["rule"]
         .as_str()
         .expect("flag rule")
@@ -704,7 +704,7 @@ fn parameterized_projection_edit_cell_vocabulary_is_bound_to_minor_32() {
 fn result_block_shell_projection_edit_cell_is_bound_to_minor_33() {
     let manifest = manifest();
     let cells = &manifest["viewportProjectionEditCellsV4"];
-    assert_eq!(ABI_MINOR, 33);
+    assert_eq!(ABI_MINOR, 34);
     assert_eq!(cells["abiMinor"].as_u64(), Some(33));
     assert_eq!(
         cells["capability"].as_str(),
@@ -723,6 +723,30 @@ fn result_block_shell_projection_edit_cell_is_bound_to_minor_33() {
     assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_MATCH_SIMPLE_BLOCK_PREFIX_PLAN"));
     assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_SIMPLE_BLOCK_PLAN_BYTES_MASK"));
     assert!(HEADER.contains("FLARK_V4_PROJECTION_EDIT_CELL_REPLACE_BLOCK_SHELL"));
+}
+
+#[test]
+fn bounded_pending_presentation_plan_is_bound_to_minor_34() {
+    let manifest = manifest();
+    let plans = &manifest["boundedPendingPresentationPlansV1"];
+    assert_eq!(ABI_MINOR, 34);
+    assert_eq!(plans["abiMinor"].as_u64(), Some(34));
+    assert_eq!(
+        plans["capability"].as_str(),
+        Some("BOUNDED_PENDING_PRESENTATION_PLANS_V1")
+    );
+    assert_eq!(plans["recordKinds"]["PLAN"].as_u64(), Some(17));
+    assert_eq!(plans["recordKinds"]["STEP"].as_u64(), Some(18));
+    assert_eq!(plans["recordKinds"]["ROW"].as_u64(), Some(19));
+    assert_eq!(plans["limits"]["sequenceBytes"].as_u64(), Some(8));
+    assert_eq!(plans["limits"]["rowsPerStep"].as_u64(), Some(4));
+    assert_eq!(plans["limits"]["factsPerPlan"].as_u64(), Some(128));
+    assert!(HEADER.contains("FLARK_V4_CAPABILITY_BOUNDED_PENDING_PRESENTATION_PLANS_V1"));
+    assert!(HEADER.contains("FLARK_V4_INLINE_FACT_PENDING_PRESENTATION_PLAN"));
+    assert!(HEADER.contains("FLARK_V4_INLINE_FACT_PENDING_PRESENTATION_STEP"));
+    assert!(HEADER.contains("FLARK_V4_INLINE_FACT_PENDING_PRESENTATION_ROW"));
+    assert!(HEADER.contains("FLARK_V4_PENDING_PRESENTATION_PLAN_SEQUENCE_LENGTH_MASK"));
+    assert!(HEADER.contains("FLARK_V4_PENDING_PRESENTATION_ROW_FACT_COUNT_SHIFT"));
 }
 
 #[test]
@@ -746,7 +770,7 @@ fn literal_safe_envelope_v2_remains_bound_to_minor_30() {
 fn structural_presentation_proof_is_bound_to_minor_31() {
     let manifest = manifest();
     let proof = &manifest["structuralPresentationProofsV1"];
-    assert_eq!(ABI_MINOR, 33);
+    assert_eq!(ABI_MINOR, 34);
     assert_eq!(proof["abiMinor"].as_u64(), Some(31));
     assert_eq!(
         proof["capability"].as_str(),
@@ -764,7 +788,7 @@ fn structural_presentation_proof_is_bound_to_minor_31() {
 fn global_live_state_inspection_is_bound_to_minor_32() {
     let manifest = manifest();
     let inspection = &manifest["globalLiveStateInspectionV1"];
-    assert_eq!(ABI_MINOR, 33);
+    assert_eq!(ABI_MINOR, 34);
     assert_eq!(inspection["abiMinor"].as_u64(), Some(32));
     assert_eq!(
         inspection["capability"].as_str(),

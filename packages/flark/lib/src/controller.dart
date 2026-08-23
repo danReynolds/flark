@@ -3813,6 +3813,20 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _queueSemanticParagraphBreak(int localCaret) {
     if (!_inputValue.selection.isCollapsed) return false;
+    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    final dependency = _pendingPresentation.dependency;
+    if (dependency?.authority.continueWith(
+          startUtf16: globalCaret,
+          endUtf16: globalCaret,
+          replacement: '\n',
+        ) !=
+        null) {
+      // A parser-authored pending sequence owns this exact newline. Keep it
+      // on the ordinary source-edit lane so Core can select the supplied
+      // result snapshot; a structural intent would race or discard that
+      // stronger pre-edit authority.
+      return false;
+    }
     final row = _activeCachedRow();
     final neutralCaret = (_activeOrdinal ?? 0) < 0;
     // A thematic atom supports whole-atom deletion, not structural Return.
@@ -3822,12 +3836,12 @@ final class FlarkEditorController extends ChangeNotifier {
     if (row?.thematicBreak ?? false) return false;
     final editableRange = row?.editableUtf16;
     final rowEligible = row != null && _supportsSemanticParagraphBreakV1(row);
+    if (row != null && _semanticViewportCurrent && !rowEligible) return false;
     if (!rowEligible && !_semanticEditV1Active && !neutralCaret) return false;
     if (neutralCaret) _semanticEditV1Active = true;
     if (rowEligible) {
       _semanticEditV1Active = true;
       final editable = _mapViewportRange(editableRange!);
-      final globalCaret = _inputGlobalUtf16Start + localCaret;
       if (globalCaret < editable.start || globalCaret > editable.end) {
         // A retained certified row can border the exact neutral island
         // created by the last semantic receipt. While recertification is
@@ -3851,6 +3865,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final rowEligible =
         row != null &&
         (_supportsSemanticDeleteBackwardV1(row) || projectedStructuralRow);
+    if (row != null && _semanticViewportCurrent && !rowEligible) return false;
     if (!rowEligible &&
         (!_semanticEditV1Active || localCaret != 0) &&
         !neutralLineStart) {
@@ -4726,25 +4741,16 @@ final class FlarkEditorController extends ChangeNotifier {
         replacement: replacement,
       );
       if (successor != null) {
-        final presentation = _splicePendingDependencyPresentation(
-          _surfacePresentationFromCore(current.presentation),
-          successor,
-          start,
-          end,
-          replacement,
+        final dependency = _advancePendingDependencyPresentation(
+          current: current,
+          authority: successor,
+          start: start,
+          end: end,
+          replacement: replacement,
         );
-        if (presentation != null) {
-          final delta = replacement.length - (end - start);
-          final priorSource = current.presentation.sourceUtf16;
+        if (dependency != null) {
           _pendingPresentation = _pendingPresentation.withDependency(
-            FlarkPendingDependencyPresentation(
-              rowOrdinal: current.rowOrdinal,
-              authority: successor,
-              presentation: _corePresentationRow(
-                presentation,
-                FlarkSourceRange(priorSource.start, priorSource.end + delta),
-              ),
-            ),
+            dependency,
           );
           return;
         }
@@ -4771,6 +4777,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final base = surfaceRow(row, includeEditingState: false);
     final authority = bindPendingDependencyAuthority(
       revision: revision,
+      plans: row.pendingPresentationPlans,
       cells: row.projectionEditCells,
       envelopes: row.literalSafeEnvelopes,
       authorizedContentUtf16: editable,
@@ -4780,32 +4787,108 @@ final class FlarkEditorController extends ChangeNotifier {
       replacement: replacement,
     );
     if (authority != null) {
-      final presentation = _splicePendingDependencyPresentation(
-        base,
-        authority,
-        start,
-        end,
-        replacement,
+      final dependency = _bindPendingDependencyPresentation(
+        row: row,
+        base: base,
+        authority: authority,
+        start: start,
+        end: end,
+        replacement: replacement,
       );
-      if (presentation != null) {
-        final source = surfaceSourceRange(row);
-        final delta = replacement.length - (end - start);
-        _pendingPresentation = _pendingPresentation.withDependency(
-          FlarkPendingDependencyPresentation(
-            rowOrdinal: row.ordinal,
-            authority: authority,
-            presentation: _corePresentationRow(
-              presentation,
-              FlarkSourceRange(source.start, source.end + delta),
-            ),
-          ),
-        );
+      if (dependency != null) {
+        _pendingPresentation = _pendingPresentation.withDependency(dependency);
         return;
       }
     }
     _pendingPresentation = _pendingPresentation.retire(const {
       FlarkPendingPresentationPart.dependency,
     });
+  }
+
+  FlarkPendingDependencyPresentation? _bindPendingDependencyPresentation({
+    required FlarkViewportRow row,
+    required FlarkSurfaceRow base,
+    required FlarkPendingDependencyAuthority authority,
+    required int start,
+    required int end,
+    required String replacement,
+  }) {
+    if (authority is FlarkBoundedPendingPresentationPlanReceipt) {
+      final source = _visibleSourceAfterSplice(start, end, replacement);
+      if (source == null) return null;
+      return materializeBoundedPendingPresentationPlan(
+        authority: authority,
+        rowOrdinal: row.ordinal,
+        visibleSource: source,
+        visibleUtf16Start: _visibleUtf16Start,
+      );
+    }
+    final presentation = _splicePendingDependencyPresentation(
+      base,
+      authority,
+      start,
+      end,
+      replacement,
+    );
+    if (presentation == null) return null;
+    final source = surfaceSourceRange(row);
+    final delta = replacement.length - (end - start);
+    return FlarkPendingDependencyPresentation(
+      rowOrdinal: row.ordinal,
+      authority: authority,
+      presentation: _corePresentationRow(
+        presentation,
+        FlarkSourceRange(source.start, source.end + delta),
+      ),
+    );
+  }
+
+  FlarkPendingDependencyPresentation? _advancePendingDependencyPresentation({
+    required FlarkPendingDependencyPresentation current,
+    required FlarkPendingDependencyAuthority authority,
+    required int start,
+    required int end,
+    required String replacement,
+  }) {
+    if (authority is FlarkBoundedPendingPresentationPlanReceipt) {
+      final source = _visibleSourceAfterSplice(start, end, replacement);
+      if (source == null) return null;
+      return materializeBoundedPendingPresentationPlan(
+        authority: authority,
+        rowOrdinal: current.rowOrdinal,
+        visibleSource: source,
+        visibleUtf16Start: _visibleUtf16Start,
+      );
+    }
+    final presentation = _splicePendingDependencyPresentation(
+      _surfacePresentationFromCore(current.presentation),
+      authority,
+      start,
+      end,
+      replacement,
+    );
+    if (presentation == null) return null;
+    final delta = replacement.length - (end - start);
+    final priorSource = current.presentation.sourceUtf16;
+    return FlarkPendingDependencyPresentation(
+      rowOrdinal: current.rowOrdinal,
+      authority: authority,
+      presentation: _corePresentationRow(
+        presentation,
+        FlarkSourceRange(priorSource.start, priorSource.end + delta),
+      ),
+    );
+  }
+
+  String? _visibleSourceAfterSplice(int start, int end, String replacement) {
+    final localStart = start - _visibleUtf16Start;
+    final localEnd = end - _visibleUtf16Start;
+    if (localStart < 0 ||
+        localStart > localEnd ||
+        localEnd > _visibleSource.length) {
+      return null;
+    }
+    return _visibleSource.replaceRange(localStart, localEnd, replacement);
   }
 
   FlarkSurfaceRow? _splicePendingDependencyPresentation(
@@ -4829,6 +4912,7 @@ final class FlarkEditorController extends ChangeNotifier {
       end,
       replacement,
     ),
+    FlarkBoundedPendingPresentationPlanReceipt() => null,
   };
 
   FlarkSurfaceRow? _spliceContinuityPresentation(
@@ -6136,6 +6220,27 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     if (viewport.revision < continuity.resultRevision) return false;
     final authorized = continuity.affectedUtf16;
+    if (continuity.authority
+        case final FlarkBoundedPendingPresentationPlanReceipt plan) {
+      // A bounded plan certifies its exact remaining sequence, not merely its
+      // first result. Intermediate fresh parses agree with the supplied clean
+      // snapshot but must not discard later declared prefixes. Any
+      // nonmatching edit still retires it synchronously.
+      if (plan.prefixLength < plan.plan.sequence.length) return false;
+      if (viewport.coveredUtf16.start > authorized.start ||
+          authorized.end > viewport.coveredUtf16.end) {
+        return false;
+      }
+      final coveringRows = viewport.rows
+          .where(
+            (row) =>
+                row.sourceUtf16.start < authorized.end &&
+                authorized.start < row.sourceUtf16.end,
+          )
+          .toList(growable: false);
+      return coveringRows.isNotEmpty &&
+          coveringRows.every((row) => row.inlineFacts != null);
+    }
     for (final row in viewport.rows) {
       final source = _exactRowRange(row);
       if (source.start > authorized.start || authorized.end > source.end) {
@@ -6599,6 +6704,7 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     final authority = bindPendingDependencyAuthority(
       revision: revision,
+      plans: row.pendingPresentationPlans,
       cells: row.projectionEditCells,
       envelopes: row.literalSafeEnvelopes,
       authorizedContentUtf16: editable,

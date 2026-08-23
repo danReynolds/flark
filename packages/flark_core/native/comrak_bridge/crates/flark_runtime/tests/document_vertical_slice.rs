@@ -44,6 +44,82 @@ fn ordinary_projection_edit_cells(row: &DocumentViewportRow) -> Vec<DocumentProj
         .collect()
 }
 
+fn viewport_rows_without_pending_plans(
+    mut rows: Vec<DocumentViewportRow>,
+) -> Vec<DocumentViewportRow> {
+    for row in &mut rows {
+        row.pending_presentation_plans.clear();
+    }
+    rows
+}
+
+#[test]
+fn frozen_fence_plans_publish_every_clean_prefix_result() {
+    let cases = [
+        (
+            "change this line\n\n**sentinel**\n",
+            "```dart\n",
+            0usize,
+            2u8,
+        ),
+        (
+            "```dart\nchange this line\n\n**sentinel**\n",
+            "\n```",
+            24usize,
+            1u8,
+        ),
+    ];
+    for (source, sequence, trigger, replaced_row_count) in cases {
+        let mut document = DocumentSession::begin(source).expect("begin fence plan base");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(document.revision(), 0..source.len(), 8)
+            .expect("query fence plan base");
+        let plans = viewport
+            .rows
+            .iter()
+            .flat_map(|row| &row.pending_presentation_plans)
+            .collect::<Vec<_>>();
+        assert_eq!(plans.len(), 1);
+        let plan = plans[0];
+        assert_eq!(plan.sequence, sequence.as_bytes());
+        assert_eq!(plan.trigger_range, trigger as u64..trigger as u64);
+        assert_eq!(plan.trigger_utf16_range, trigger as u64..trigger as u64);
+        assert_eq!(plan.replaced_row_count, replaced_row_count);
+        assert_eq!(plan.steps.len(), sequence.len());
+
+        for step in &plan.steps {
+            let prefix_length = usize::from(step.prefix_length);
+            let mut edited = source.to_owned();
+            edited.insert_str(trigger, &sequence[..prefix_length]);
+            let mut clean = DocumentSession::begin(&edited).expect("begin clean prefix");
+            pump_ready(&mut clean);
+            let clean_viewport = clean
+                .query_viewport(clean.revision(), 0..edited.len(), 8)
+                .expect("query clean prefix");
+            assert_eq!(
+                step.rows,
+                viewport_rows_without_pending_plans(clean_viewport.rows),
+                "prefix {prefix_length} for {sequence:?}"
+            );
+            for row in &step.rows {
+                assert!(row.inline_facts.is_some(), "authoritative result facts");
+                assert!(row.editable_range.is_some(), "result editable bytes");
+                assert!(row.editable_utf16_range.is_some(), "result editable UTF-16");
+                assert!(row.projection_segments.is_none());
+                assert!(row.pending_presentation_plans.is_empty());
+            }
+            assert_eq!(step.affected_range, 0..edited.len() as u64);
+            assert_eq!(
+                step.affected_utf16_range,
+                0..edited.encode_utf16().count() as u64
+            );
+            clean.close().expect("close clean prefix");
+        }
+        document.close().expect("close fence plan base");
+    }
+}
+
 #[test]
 fn simple_rows_publish_parser_authored_result_block_shell_transitions() {
     let cases = [

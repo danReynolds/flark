@@ -21,6 +21,98 @@ sealed class FlarkPendingDependencyAuthority {
   });
 }
 
+/// Result-revision authority for one parser-authored bounded presentation
+/// sequence.
+///
+/// Every admitted prefix selects a complete clean-parser snapshot. Core only
+/// matches the exact declared bytes and advances to the corresponding step;
+/// it never derives a block shell, row partition, or inline fact.
+final class FlarkBoundedPendingPresentationPlanReceipt
+    extends FlarkPendingDependencyAuthority {
+  const FlarkBoundedPendingPresentationPlanReceipt._({
+    required this.baseRevision,
+    required this.plan,
+    required this.prefixLength,
+  });
+
+  final int baseRevision;
+  final FlarkPendingPresentationPlan plan;
+  final int prefixLength;
+
+  FlarkPendingPresentationStep get step => plan.steps[prefixLength - 1];
+
+  @override
+  int get resultRevision => baseRevision + prefixLength;
+
+  @override
+  FlarkSourceRange get affectedUtf16 => step.affectedUtf16;
+
+  @override
+  bool get presentsExactIsland => false;
+
+  @override
+  FlarkBoundedPendingPresentationPlanReceipt? continueWith({
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+  }) {
+    if (prefixLength >= plan.sequence.length ||
+        startUtf16 != endUtf16 ||
+        startUtf16 != plan.triggerUtf16.start + prefixLength ||
+        replacement !=
+            plan.sequence.substring(prefixLength, prefixLength + 1)) {
+      return null;
+    }
+    return FlarkBoundedPendingPresentationPlanReceipt._(
+      baseRevision: baseRevision,
+      plan: plan,
+      prefixLength: prefixLength + 1,
+    );
+  }
+}
+
+FlarkBoundedPendingPresentationPlanReceipt?
+authorizeBoundedPendingPresentationPlan({
+  required int revision,
+  required List<FlarkPendingPresentationPlan> plans,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) {
+  if (revision <= 0 || startUtf16 != endUtf16 || replacement.length != 1) {
+    return null;
+  }
+  final matches = plans
+      .where((plan) {
+        if (plan.sequence.isEmpty ||
+            plan.sequence.length > 8 ||
+            plan.steps.length != plan.sequence.length ||
+            plan.triggerUtf16.length != 0 ||
+            plan.affectedUtf16.start > plan.affectedUtf16.end ||
+            plan.triggerUtf16.start < plan.affectedUtf16.start ||
+            plan.triggerUtf16.end > plan.affectedUtf16.end ||
+            plan.replacedRowCount <= 0 ||
+            plan.sequence.codeUnits.any((unit) => unit > 0x7f) ||
+            plan.steps.indexed.any(
+              (entry) =>
+                  entry.$2.prefixLength != entry.$1 + 1 ||
+                  entry.$2.rows.isEmpty ||
+                  entry.$2.rows.length > 4,
+            )) {
+          return false;
+        }
+        return startUtf16 == plan.triggerUtf16.start &&
+            replacement == plan.sequence.substring(0, 1);
+      })
+      .toList(growable: false);
+  if (matches.length != 1) return null;
+  return FlarkBoundedPendingPresentationPlanReceipt._(
+    baseRevision: revision,
+    plan: matches.single,
+    prefixLength: 1,
+  );
+}
+
 /// Result-revision authority for one parser-authored projection edit cell.
 final class FlarkProjectionEditCellReceipt
     extends FlarkPendingDependencyAuthority {
@@ -497,6 +589,7 @@ final class FlarkProjectionContinuityReceipt
 /// wire records remain backward-compatible.
 FlarkPendingDependencyAuthority? bindPendingDependencyAuthority({
   required int revision,
+  List<FlarkPendingPresentationPlan> plans = const [],
   required List<FlarkProjectionEditCell> cells,
   required List<FlarkLiteralSafeEnvelope> envelopes,
   required FlarkSourceRange authorizedContentUtf16,
@@ -505,6 +598,13 @@ FlarkPendingDependencyAuthority? bindPendingDependencyAuthority({
   required int endUtf16,
   required String replacement,
 }) =>
+    authorizeBoundedPendingPresentationPlan(
+      revision: revision,
+      plans: plans,
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+      replacement: replacement,
+    ) ??
     authorizeProjectionEditCell(
       revision: revision,
       cells: cells,

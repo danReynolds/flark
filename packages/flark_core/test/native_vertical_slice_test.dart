@@ -8,6 +8,74 @@ void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
   test(
+    'native viewport decodes every bounded fence presentation step',
+    () async {
+      const source = 'change this line\n\n**sentinel**\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+
+      await document.pumpUntilReady();
+      final viewport = await document.queryViewport(maxRows: 8);
+      final plans = viewport.rows
+          .expand((row) => row.pendingPresentationPlans)
+          .toList(growable: false);
+      expect(plans, hasLength(1));
+      final plan = plans.single;
+      expect(plan.sequence, '```dart\n');
+      expect(plan.triggerUtf16.start, 0);
+      expect(plan.triggerUtf16.end, 0);
+      expect(plan.replacedRowCount, 2);
+      expect(plan.steps, hasLength(8));
+      expect(
+        plan.steps.map((step) => step.prefixLength),
+        orderedEquals(const [1, 2, 3, 4, 5, 6, 7, 8]),
+      );
+      expect(plan.steps[0].rows, hasLength(2));
+      expect(plan.steps[1].rows, hasLength(2));
+      expect(plan.steps[2].rows, hasLength(1));
+      expect(plan.steps[2].rows.single.kind, 7);
+      expect(plan.steps.last.rows.single.codeBlock?.closed, isFalse);
+      final sentinel = plan.steps[1].rows.last.inlineFacts!.single;
+      expect(sentinel.kind, FlarkInlineFactKind.strong);
+      expect(
+        sentinel.contentUtf16.start,
+        plan.steps[1].rows.last.sourceUtf16.start + '**'.length,
+      );
+
+      const closingSource = '```dart\nchange this line\n\n**sentinel**\n';
+      final closing = await FlarkCoreDocument.open(
+        closingSource,
+        libraryPath: libraryPath,
+      );
+      addTearDown(closing.dispose);
+      await closing.pumpUntilReady();
+      final closingPlan = (await closing.queryViewport(
+        maxRows: 8,
+      )).rows.expand((row) => row.pendingPresentationPlans).single;
+      expect(closingPlan.sequence, '\n```');
+      expect(closingPlan.triggerUtf16.start, 24);
+      expect(closingPlan.triggerUtf16.end, 24);
+      expect(closingPlan.replacedRowCount, 1);
+      expect(
+        closingPlan.steps.map((step) => step.prefixLength),
+        orderedEquals(const [1, 2, 3, 4]),
+      );
+      expect(closingPlan.steps.last.rows, hasLength(2));
+      expect(closingPlan.steps.last.rows.first.codeBlock?.closed, isTrue);
+      expect(
+        closingPlan.steps.last.rows.last.inlineFacts!.single.kind,
+        FlarkInlineFactKind.strong,
+      );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'malformed host UTF-16 is rejected before an edit mutates the document',
     () async {
       final document = await FlarkCoreDocument.open(

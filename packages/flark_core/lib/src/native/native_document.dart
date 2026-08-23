@@ -90,6 +90,16 @@ const _inlineFactReferenceImage = 13;
 const _inlineFactTableCell = 14;
 const _inlineFactLiteralSafeEnvelope = 15;
 const _inlineFactProjectionEditCell = 16;
+const _inlineFactPendingPresentationPlan = 17;
+const _inlineFactPendingPresentationStep = 18;
+const _inlineFactPendingPresentationRow = 19;
+const _pendingPlanSequenceLengthMask = 0xff;
+const _pendingPlanStepCountShift = 8;
+const _pendingPlanReplacedRowCountShift = 16;
+const _pendingStepPrefixLengthMask = 0xff;
+const _pendingStepRowCountShift = 8;
+const _pendingRowKindMask = 0xffff;
+const _pendingRowFactCountShift = 16;
 const _literalEditClassAsciiWordInsertion = 1;
 const _literalEditClassSingleAsciiSpaceInsertion = 2;
 const _literalEditClassSingleAsciiAsteriskInsertion = 3;
@@ -197,13 +207,13 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 33;
+const _abiMinor = 34;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x7ffffffff;
+const _requiredCapabilityBits = 0xfffffffff;
 const _inspectGlobalLiveState = 1;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
@@ -2615,6 +2625,7 @@ final class FlarkNativeDocument {
       final decodedFacts = inlineIsAuthoritative ? <FlarkInlineFact>[] : null;
       final literalSafeEnvelopes = <FlarkLiteralSafeEnvelope>[];
       final projectionEditCells = <FlarkProjectionEditCell>[];
+      final pendingPresentationPlans = <FlarkPendingPresentationPlan>[];
       final blockAuthorityBytes = FlarkSourceRange(
         listItem?.prefixBytes.start ??
             blockQuote?.prefixBytes.start ??
@@ -2628,7 +2639,8 @@ final class FlarkNativeDocument {
         sourceUtf16.end,
       );
       if (inlineIsAuthoritative) {
-        for (var index = 0; index < inlineFactCount; index += 1) {
+        var index = 0;
+        while (index < inlineFactCount) {
           final semantic = (inlineRecords + nextInlineFact + index).ref;
           if (semantic.kind == _inlineFactLiteralSafeEnvelope) {
             literalSafeEnvelopes.add(
@@ -2640,6 +2652,7 @@ final class FlarkNativeDocument {
                 editableUtf16: editableUtf16,
               ),
             );
+            index += 1;
           } else if (semantic.kind == _inlineFactProjectionEditCell) {
             projectionEditCells.add(
               _decodeProjectionEditCell(
@@ -2652,6 +2665,19 @@ final class FlarkNativeDocument {
                 blockAuthorityUtf16: blockAuthorityUtf16,
               ),
             );
+            index += 1;
+          } else if (semantic.kind == _inlineFactPendingPresentationPlan) {
+            final decoded = _decodePendingPresentationPlan(
+              inlineRecords + nextInlineFact + index,
+              inlineFactCount - index,
+              ownerOrdinal: record.ordinal,
+              ownerSourceBytes: sourceBytes,
+              ownerSourceUtf16: sourceUtf16,
+              coveredBytes: covered,
+              coveredUtf16: coveredUtf16,
+            );
+            pendingPresentationPlans.add(decoded.plan);
+            index += decoded.consumedRecords;
           } else {
             decodedFacts!.add(
               _decodeInlineFact(
@@ -2662,6 +2688,7 @@ final class FlarkNativeDocument {
                 editableUtf16: editableUtf16,
               ),
             );
+            index += 1;
           }
         }
       }
@@ -2670,6 +2697,13 @@ final class FlarkNativeDocument {
           'decode_viewport',
           _notCertified,
           _inlineFactProjectionEditCell,
+        );
+      }
+      if (pendingPresentationPlans.length > 1) {
+        throw const FlarkNativeException(
+          'decode_viewport',
+          _notCertified,
+          _inlineFactPendingPresentationPlan,
         );
       }
       nextInlineFact += inlineFactCount;
@@ -2742,6 +2776,7 @@ final class FlarkNativeDocument {
         inlineFacts: inlineFacts,
         literalSafeEnvelopes: List.unmodifiable(literalSafeEnvelopes),
         projectionEditCells: List.unmodifiable(projectionEditCells),
+        pendingPresentationPlans: List.unmodifiable(pendingPresentationPlans),
         projectionSegments: projectionSegments,
       );
     }, growable: false);
@@ -2763,6 +2798,286 @@ final class FlarkNativeDocument {
 
   static bool matchesBlockQuoteRowKind(int kind) =>
       kind == _paragraphKind || kind == _emptyBlockQuoteKind;
+
+  static ({FlarkPendingPresentationPlan plan, int consumedRecords})
+  _decodePendingPresentationPlan(
+    Pointer<FlarkV4InlineFactRecord> records,
+    int availableRecords, {
+    required int ownerOrdinal,
+    required FlarkSourceRange ownerSourceBytes,
+    required FlarkSourceRange ownerSourceUtf16,
+    required FlarkSourceRange coveredBytes,
+    required FlarkSourceRange coveredUtf16,
+  }) {
+    if (availableRecords < 1) {
+      throw const FlarkNativeException(
+        'decode_viewport',
+        _notCertified,
+        _inlineFactPendingPresentationPlan,
+      );
+    }
+    final header = records.ref;
+    final sequenceLength = header.flags & _pendingPlanSequenceLengthMask;
+    final stepCount = (header.flags >> _pendingPlanStepCountShift) & 0xff;
+    final replacedRowCount =
+        (header.flags >> _pendingPlanReplacedRowCountShift) & 0xff;
+    final affectedBytes = FlarkSourceRange(
+      header.sourceStartByte,
+      header.sourceEndByte,
+    );
+    final affectedUtf16 = FlarkSourceRange(
+      header.sourceStartUtf16,
+      header.sourceEndUtf16,
+    );
+    final triggerBytes = FlarkSourceRange(
+      header.contentStartByte,
+      header.contentEndByte,
+    );
+    final triggerUtf16 = FlarkSourceRange(
+      header.contentStartUtf16,
+      header.contentEndUtf16,
+    );
+    if (header.kind != _inlineFactPendingPresentationPlan ||
+        header.flags & 0xff000000 != 0 ||
+        sequenceLength == 0 ||
+        sequenceLength > 8 ||
+        stepCount != sequenceLength ||
+        replacedRowCount == 0 ||
+        triggerBytes.length != 0 ||
+        triggerUtf16.length != 0 ||
+        affectedBytes.length > 16 * 1024 ||
+        affectedBytes.start < coveredBytes.start ||
+        affectedBytes.end > coveredBytes.end ||
+        affectedUtf16.start < coveredUtf16.start ||
+        affectedUtf16.end > coveredUtf16.end ||
+        triggerBytes.start < ownerSourceBytes.start ||
+        triggerBytes.end > ownerSourceBytes.end ||
+        triggerUtf16.start < ownerSourceUtf16.start ||
+        triggerUtf16.end > ownerSourceUtf16.end) {
+      throw FlarkNativeException(
+        'decode_viewport',
+        _notCertified,
+        header.flags,
+      );
+    }
+    final sequenceBytes = ByteData(8)
+      ..setUint32(0, header.replacementFirst, Endian.little)
+      ..setUint32(4, header.replacementSecond, Endian.little);
+    final sequenceUnits = List<int>.generate(
+      sequenceLength,
+      sequenceBytes.getUint8,
+      growable: false,
+    );
+    if (sequenceUnits.any((unit) => unit > 0x7f)) {
+      throw FlarkNativeException(
+        'decode_viewport',
+        _notCertified,
+        header.replacementFirst,
+      );
+    }
+    final sequence = String.fromCharCodes(sequenceUnits);
+    final steps = <FlarkPendingPresentationStep>[];
+    var cursor = 1;
+    var totalFacts = 0;
+    for (var stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
+      if (cursor >= availableRecords) {
+        throw const FlarkNativeException(
+          'decode_viewport',
+          _notCertified,
+          _inlineFactPendingPresentationStep,
+        );
+      }
+      final stepRecord = (records + cursor).ref;
+      cursor += 1;
+      final prefixLength = stepRecord.flags & _pendingStepPrefixLengthMask;
+      final rowCount = (stepRecord.flags >> _pendingStepRowCountShift) & 0xff;
+      final stepBytes = FlarkSourceRange(
+        stepRecord.sourceStartByte,
+        stepRecord.sourceEndByte,
+      );
+      final stepUtf16 = FlarkSourceRange(
+        stepRecord.sourceStartUtf16,
+        stepRecord.sourceEndUtf16,
+      );
+      if (stepRecord.kind != _inlineFactPendingPresentationStep ||
+          stepRecord.flags & 0xffff0000 != 0 ||
+          prefixLength != stepIndex + 1 ||
+          rowCount == 0 ||
+          rowCount > 4 ||
+          stepBytes.start != affectedBytes.start ||
+          stepBytes.end != affectedBytes.end + prefixLength ||
+          stepUtf16.start != affectedUtf16.start ||
+          stepUtf16.end != affectedUtf16.end + prefixLength ||
+          stepBytes.length > 16 * 1024 ||
+          stepRecord.contentStartByte != 0 ||
+          stepRecord.contentEndByte != 0 ||
+          stepRecord.contentStartUtf16 != 0 ||
+          stepRecord.contentEndUtf16 != 0 ||
+          stepRecord.replacementFirst != 0 ||
+          stepRecord.replacementSecond != 0) {
+        throw FlarkNativeException(
+          'decode_viewport',
+          _notCertified,
+          stepRecord.flags,
+        );
+      }
+      final rows = <FlarkViewportRow>[];
+      var previousRowEndByte = stepBytes.start;
+      var previousRowEndUtf16 = stepUtf16.start;
+      for (var rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        if (cursor >= availableRecords) {
+          throw const FlarkNativeException(
+            'decode_viewport',
+            _notCertified,
+            _inlineFactPendingPresentationRow,
+          );
+        }
+        final rowRecord = (records + cursor).ref;
+        cursor += 1;
+        final kind = rowRecord.flags & _pendingRowKindMask;
+        final factCount = rowRecord.flags >> _pendingRowFactCountShift;
+        final rowBytes = FlarkSourceRange(
+          rowRecord.sourceStartByte,
+          rowRecord.sourceEndByte,
+        );
+        final rowUtf16 = FlarkSourceRange(
+          rowRecord.sourceStartUtf16,
+          rowRecord.sourceEndUtf16,
+        );
+        final editableBytes = FlarkSourceRange(
+          rowRecord.contentStartByte,
+          rowRecord.contentEndByte,
+        );
+        final editableUtf16 = FlarkSourceRange(
+          rowRecord.contentStartUtf16,
+          rowRecord.contentEndUtf16,
+        );
+        if (rowRecord.kind != _inlineFactPendingPresentationRow ||
+            !const {_paragraphKind, _fencedCodeKind}.contains(kind) ||
+            factCount > 128 ||
+            cursor + factCount > availableRecords ||
+            rowBytes.start < previousRowEndByte ||
+            rowUtf16.start < previousRowEndUtf16 ||
+            rowBytes.start < stepBytes.start ||
+            rowBytes.end > stepBytes.end ||
+            rowUtf16.start < stepUtf16.start ||
+            rowUtf16.end > stepUtf16.end ||
+            editableBytes.start < rowBytes.start ||
+            editableBytes.end > rowBytes.end ||
+            editableUtf16.start < rowUtf16.start ||
+            editableUtf16.end > rowUtf16.end) {
+          throw FlarkNativeException(
+            'decode_viewport',
+            _notCertified,
+            rowRecord.flags,
+          );
+        }
+        FlarkCodeBlockPresentation? codeBlock;
+        if (kind == _paragraphKind) {
+          if (rowRecord.replacementFirst != 0 ||
+              rowRecord.replacementSecond != 0) {
+            throw FlarkNativeException(
+              'decode_viewport',
+              _notCertified,
+              rowRecord.replacementFirst,
+            );
+          }
+        } else {
+          final variant = rowRecord.replacementFirst;
+          final fenced = variant & _codeFenced != 0;
+          final offset =
+              (variant & _codeFenceOffsetMask) >> _codeFenceOffsetShift;
+          if (!fenced ||
+              variant & ~_knownCodeVariantBits != 0 ||
+              rowRecord.replacementSecond < 3) {
+            throw FlarkNativeException(
+              'decode_viewport',
+              _notCertified,
+              variant,
+            );
+          }
+          codeBlock = FlarkCodeBlockPresentation(
+            style: variant & _codeTilde != 0
+                ? FlarkCodeBlockStyle.fencedTilde
+                : FlarkCodeBlockStyle.fencedBacktick,
+            minimumClosingLength: rowRecord.replacementSecond,
+            fenceOffset: offset,
+            closed: variant & _codeClosed != 0,
+          );
+        }
+        final facts = <FlarkInlineFact>[];
+        for (var factIndex = 0; factIndex < factCount; factIndex += 1) {
+          final factRecord = (records + cursor).ref;
+          cursor += 1;
+          if (factRecord.kind >= _inlineFactLiteralSafeEnvelope) {
+            throw FlarkNativeException(
+              'decode_viewport',
+              _notCertified,
+              factRecord.kind,
+            );
+          }
+          facts.add(
+            _decodeInlineFact(
+              factRecord,
+              sourceBytes: rowBytes,
+              sourceUtf16: rowUtf16,
+              editableBytes: editableBytes,
+              editableUtf16: editableUtf16,
+            ),
+          );
+        }
+        totalFacts += facts.length;
+        if (totalFacts > 128) {
+          throw const FlarkNativeException(
+            'decode_viewport',
+            _notCertified,
+            _inlineFactPendingPresentationPlan,
+          );
+        }
+        rows.add(
+          FlarkViewportRow(
+            ordinal: ownerOrdinal + rowIndex,
+            kind: kind,
+            sourceBytes: rowBytes,
+            sourceUtf16: rowUtf16,
+            editableBytes: editableBytes,
+            editableUtf16: editableUtf16,
+            editCapability: FlarkViewportRowEditCapability.contiguous,
+            headingLevel: null,
+            headingStyle: null,
+            listItem: null,
+            blockQuote: null,
+            codeBlock: codeBlock,
+            thematicBreak: false,
+            pathDepth: 0,
+            inlineFacts: List.unmodifiable(facts),
+          ),
+        );
+        previousRowEndByte = rowBytes.end;
+        previousRowEndUtf16 = rowUtf16.end;
+      }
+      steps.add(
+        FlarkPendingPresentationStep(
+          prefixLength: prefixLength,
+          affectedBytes: stepBytes,
+          affectedUtf16: stepUtf16,
+          rows: rows,
+        ),
+      );
+    }
+    return (
+      plan: FlarkPendingPresentationPlan(
+        sequence: sequence,
+        triggerBytes: triggerBytes,
+        triggerUtf16: triggerUtf16,
+        affectedBytes: affectedBytes,
+        affectedUtf16: affectedUtf16,
+        replacedRowCount: replacedRowCount,
+        steps: steps,
+      ),
+      consumedRecords: cursor,
+    );
+  }
 
   static bool _validProjectionSegments(
     List<FlarkProjectionSegment> segments, {

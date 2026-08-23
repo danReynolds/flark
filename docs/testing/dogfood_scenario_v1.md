@@ -29,7 +29,7 @@ does not count as product-tour evidence.
 ### Native feature set and ABI
 
 - Starting ABI: `4.31`.
-- Final frozen D0 ABI after Phase 1: `4.33`.
+- Final frozen D0 ABI after Phase 1: `4.34`.
 - Phase 1 is expected to consolidate host authority state. It may change the
   ABI only when the unified typed contract or global live-state inspector
   cannot be represented by 4.31.
@@ -37,9 +37,13 @@ does not count as product-tour evidence.
   was reopened before any downstream Phase-2 receipt for the general
   `PROJECTION_EDIT_CELLS_V3` seam. The D0 block-construction actual-paint RED
   then proved that the existing record could not declare a changed result
-  shell, so architecture review explicitly re-opened the boundary once more
-  and refroze it at 4.33 with `PROJECTION_EDIT_CELLS_V4`. Any later ABI change
-  invalidates Phase 1 and all downstream receipts.
+  shell, so architecture review explicitly re-opened the boundary and froze
+  4.33 with `PROJECTION_EDIT_CELLS_V4`. The frozen multi-row fenced-code
+  journey subsequently proved that a single changed shell could not represent
+  a complete clean multi-row result. Architecture review therefore made the
+  one planned general-authority revision and refroze D0 at 4.34 with
+  `BOUNDED_PENDING_PRESENTATION_PLANS_V1`. Any later ABI change invalidates
+  Phase 1 and all downstream receipts.
 - The D0 app uses the default Cargo feature set.
 - `opening-session` remains an independently tested feature, not a D0 app
   capability.
@@ -179,7 +183,7 @@ publishes the named shell without source marker relay from `**sentinel**`.
 | SYNTAX-07 | insert `> ` per-edit and as one true unpumped burst; then remove it | depth-one BlockQuote, then Plain | PRESENT: same four-layer evidence |
 | SYNTAX-08 | insert `- ` per-edit and as one true unpumped burst; then remove it | bullet ListItem, then Plain | PRESENT: same four-layer evidence |
 | SYNTAX-09 | insert `1. ` per-edit and as one true unpumped burst; then remove it | ordered ListItem, then Plain | PRESENT: same four-layer evidence |
-| SYNTAX-10 | at line start type three backticks followed by `dart`, then Return; after `change this line` type Return followed by three backticks | fenced CodeBlock containing `change this line`, then following Plain sentinel | PARTIAL |
+| SYNTAX-10 | at line start type three backticks followed by `dart`, then Return; after `change this line` type Return followed by three backticks | fenced CodeBlock containing `change this line`, then following Plain sentinel | PRESENT: parser seed, runtime clean result for every prefix, ABI/Core decode, and mounted per-edit plus true-burst clean-oracle paint cases |
 
 ## Block shells, actions, and structural edits
 
@@ -259,16 +263,13 @@ the aggregate candidate gates must still be rerun before D0 can pass.
 
 ### Architecture blockers
 
-- The former controller authority stores and parallel literal-envelope/edit-cell
-  host paths are consolidated behind one sealed
-  `FlarkPendingPresentationSnapshot` and one dependency-authority lifecycle.
-- `SYNTAX-10` remains a Phase-1 blocker: completing a fenced-code delimiter can
-  reclassify more than one visible row, while the current pre-edit dependency
-  result carries one presentation row. D0 needs one bounded parser-authored
-  multi-surface result through the existing snapshot lifecycle, not another
-  controller authority slot or a host Markdown heuristic. The selected bounded
-  seam is frozen in
-  [the D0 multi-surface transition plan](../architecture/v4/d0_multi_surface_transition_plan.md).
+No open Phase-1 architecture blocker is recorded. The former controller
+authority stores and parallel literal-envelope/edit-cell host paths are
+consolidated behind one sealed `FlarkPendingPresentationSnapshot` and one
+dependency-authority lifecycle. `SYNTAX-10` now uses the bounded parser-owned
+multi-surface result frozen in
+[the D0 multi-surface transition plan](../architecture/v4/d0_multi_surface_transition_plan.md);
+it adds neither a controller authority slot nor a host Markdown heuristic.
 
 ### Evidence/tooling blockers
 

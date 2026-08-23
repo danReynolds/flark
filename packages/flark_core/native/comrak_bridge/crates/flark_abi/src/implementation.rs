@@ -12,10 +12,10 @@ use flark_runtime::{
     DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
-    DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentProjectionEditCell,
-    DocumentProjectionResultBlockShell, DocumentProjectionSegment, DocumentSemanticTargetKind,
-    DocumentSemanticTargetSyntax, DocumentSessionError, DocumentSessionPhase,
-    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
+    DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentPendingPresentationPlan,
+    DocumentProjectionEditCell, DocumentProjectionResultBlockShell, DocumentProjectionSegment,
+    DocumentSemanticTargetKind, DocumentSemanticTargetSyntax, DocumentSessionError,
+    DocumentSessionPhase, DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
     GlobalLiveStateInspectionReceipt, HistoryDisposition, HistoryToken, OperationCode,
     OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, QueryKind,
     ResultPageReceipt, ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt,
@@ -52,14 +52,19 @@ use crate::{
     INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
     INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
     INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_LITERAL_SAFE_ENVELOPE,
-    INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
-    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
+    INLINE_FACT_PENDING_PRESENTATION_PLAN, INLINE_FACT_PENDING_PRESENTATION_ROW,
+    INLINE_FACT_PENDING_PRESENTATION_STEP, INLINE_FACT_PROJECTION_EDIT_CELL,
+    INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT,
+    INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
     INSPECT_FLAG_GLOBAL_LIVE_STATE, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION,
     LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION,
-    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION, PROJECTION_EDIT_CELL_RESULT_SHELL_ATX_HEADING,
-    PROJECTION_EDIT_CELL_RESULT_SHELL_BLOCK_QUOTE, PROJECTION_EDIT_CELL_RESULT_SHELL_LIST_ITEM,
-    PROJECTION_EDIT_CELL_RESULT_SHELL_PARAMETER_SHIFT, PROJECTION_EDIT_CELL_RESULT_SHELL_PLAIN,
-    PROJECTION_EDIT_CELL_RESULT_SHELL_PREFIX_SHIFT, SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
+    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
+    PENDING_PRESENTATION_PLAN_REPLACED_ROW_COUNT_SHIFT, PENDING_PRESENTATION_PLAN_STEP_COUNT_SHIFT,
+    PENDING_PRESENTATION_ROW_FACT_COUNT_SHIFT, PENDING_PRESENTATION_STEP_ROW_COUNT_SHIFT,
+    PROJECTION_EDIT_CELL_RESULT_SHELL_ATX_HEADING, PROJECTION_EDIT_CELL_RESULT_SHELL_BLOCK_QUOTE,
+    PROJECTION_EDIT_CELL_RESULT_SHELL_LIST_ITEM, PROJECTION_EDIT_CELL_RESULT_SHELL_PARAMETER_SHIFT,
+    PROJECTION_EDIT_CELL_RESULT_SHELL_PLAIN, PROJECTION_EDIT_CELL_RESULT_SHELL_PREFIX_SHIFT,
+    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
     VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
@@ -111,7 +116,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 31)
     | (1 << 32)
     | (1 << 33)
-    | (1 << 34);
+    | (1 << 34)
+    | (1 << 35);
 
 struct Registry {
     next_handle: u64,
@@ -5035,6 +5041,15 @@ fn query_page(
                     } else {
                         0
                     };
+                let pending_presentation_records =
+                    if query_kind == QueryKind::SemanticProjectedLiteralSafe as u32 {
+                        row.pending_presentation_plans
+                            .first()
+                            .and_then(pending_presentation_plan_records)
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
                 let (inline_authoritative, inline_fact_count) = match &row.inline_facts {
                     Some(facts)
                         if facts.len() <= VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize
@@ -5065,16 +5080,31 @@ fn query_page(
                             VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize - facts.len();
                         let optional_capacity =
                             optional_record_capacity.min(optional_mask_capacity);
+                        let pending_presentation_record_count =
+                            if pending_presentation_records.len() <= optional_capacity {
+                                pending_presentation_records.len()
+                            } else {
+                                0
+                            };
+                        let remaining_optional_capacity =
+                            optional_capacity.saturating_sub(pending_presentation_record_count);
                         let projection_edit_cell_count =
-                            available_projection_edit_cells.min(optional_capacity);
-                        let literal_safe_envelope_count = available_literal_safe_envelopes
-                            .min(optional_capacity.saturating_sub(projection_edit_cell_count));
-                        let semantic_record_count =
-                            facts.len() + literal_safe_envelope_count + projection_edit_cell_count;
+                            available_projection_edit_cells.min(remaining_optional_capacity);
+                        let literal_safe_envelope_count = available_literal_safe_envelopes.min(
+                            remaining_optional_capacity.saturating_sub(projection_edit_cell_count),
+                        );
+                        let semantic_record_count = facts.len()
+                            + pending_presentation_record_count
+                            + literal_safe_envelope_count
+                            + projection_edit_cell_count;
                         remaining_payload_bytes -= (literal_safe_envelope_count
-                            + projection_edit_cell_count)
+                            + projection_edit_cell_count
+                            + pending_presentation_record_count)
                             * size_of::<InlineFactRecord>();
                         inline_facts.extend(facts.iter().map(inline_fact_record));
+                        if pending_presentation_record_count != 0 {
+                            inline_facts.extend(pending_presentation_records);
+                        }
                         if literal_safe_envelope_count != 0 {
                             inline_facts.extend(
                                 row.literal_safe_envelopes
@@ -5663,6 +5693,114 @@ fn projection_edit_cell_record(cell: &DocumentProjectionEditCell) -> InlineFactR
         replacement_second: result_shell.unwrap_or(cell.replacement_second),
         ..InlineFactRecord::default()
     }
+}
+
+fn pending_presentation_plan_records(
+    plan: &DocumentPendingPresentationPlan,
+) -> Option<Vec<InlineFactRecord>> {
+    if plan.sequence.is_empty()
+        || plan.sequence.len() > 8
+        || !plan.sequence.iter().all(u8::is_ascii)
+        || plan.steps.len() != plan.sequence.len()
+        || plan.replaced_row_count == 0
+        || !plan.trigger_range.is_empty()
+        || !plan.trigger_utf16_range.is_empty()
+        || plan.trigger_range.start < plan.affected_range.start
+        || plan.trigger_range.end > plan.affected_range.end
+        || plan.trigger_utf16_range.start < plan.affected_utf16_range.start
+        || plan.trigger_utf16_range.end > plan.affected_utf16_range.end
+        || plan
+            .affected_range
+            .end
+            .saturating_sub(plan.affected_range.start)
+            > 16 * 1024
+    {
+        return None;
+    }
+    let mut sequence = [0_u8; 8];
+    sequence[..plan.sequence.len()].copy_from_slice(&plan.sequence);
+    let mut records = Vec::new();
+    records.push(InlineFactRecord {
+        kind: INLINE_FACT_PENDING_PRESENTATION_PLAN,
+        flags: u32::try_from(plan.sequence.len()).ok()?
+            | u32::try_from(plan.steps.len()).ok()? << PENDING_PRESENTATION_PLAN_STEP_COUNT_SHIFT
+            | u32::from(plan.replaced_row_count)
+                << PENDING_PRESENTATION_PLAN_REPLACED_ROW_COUNT_SHIFT,
+        source_start_byte: plan.affected_range.start,
+        source_end_byte: plan.affected_range.end,
+        source_start_utf16: plan.affected_utf16_range.start,
+        source_end_utf16: plan.affected_utf16_range.end,
+        content_start_byte: plan.trigger_range.start,
+        content_end_byte: plan.trigger_range.end,
+        content_start_utf16: plan.trigger_utf16_range.start,
+        content_end_utf16: plan.trigger_utf16_range.end,
+        replacement_first: u32::from_le_bytes(sequence[..4].try_into().ok()?),
+        replacement_second: u32::from_le_bytes(sequence[4..].try_into().ok()?),
+    });
+    let mut total_facts = 0usize;
+    for (step_index, step) in plan.steps.iter().enumerate() {
+        if usize::from(step.prefix_length) != step_index + 1
+            || step.rows.is_empty()
+            || step.rows.len() > 4
+            || step
+                .affected_range
+                .end
+                .saturating_sub(step.affected_range.start)
+                > 16 * 1024
+        {
+            return None;
+        }
+        records.push(InlineFactRecord {
+            kind: INLINE_FACT_PENDING_PRESENTATION_STEP,
+            flags: u32::from(step.prefix_length)
+                | u32::try_from(step.rows.len()).ok()? << PENDING_PRESENTATION_STEP_ROW_COUNT_SHIFT,
+            source_start_byte: step.affected_range.start,
+            source_end_byte: step.affected_range.end,
+            source_start_utf16: step.affected_utf16_range.start,
+            source_end_utf16: step.affected_utf16_range.end,
+            ..InlineFactRecord::default()
+        });
+        for row in &step.rows {
+            if !matches!(
+                row.presentation,
+                DocumentViewportRowPresentation::Plain
+                    | DocumentViewportRowPresentation::CodeBlock { .. }
+            ) || row.projection_segments.is_some()
+                || !row.pending_presentation_plans.is_empty()
+            {
+                return None;
+            }
+            let facts = row.inline_facts.as_ref()?;
+            total_facts = total_facts.saturating_add(facts.len());
+            if total_facts > 128 || facts.len() > u16::MAX as usize {
+                return None;
+            }
+            let encoded = viewport_record(row, true, u32::try_from(facts.len()).ok()?, 0);
+            let editable = row.editable_range.as_ref()?;
+            let editable_utf16 = row.editable_utf16_range.as_ref()?;
+            if encoded.presentation_prefix_start_byte != u64::MAX || encoded.kind > u16::MAX.into()
+            {
+                return None;
+            }
+            records.push(InlineFactRecord {
+                kind: INLINE_FACT_PENDING_PRESENTATION_ROW,
+                flags: encoded.kind
+                    | u32::try_from(facts.len()).ok()? << PENDING_PRESENTATION_ROW_FACT_COUNT_SHIFT,
+                source_start_byte: encoded.source_start_byte,
+                source_end_byte: encoded.source_end_byte,
+                source_start_utf16: encoded.source_start_utf16,
+                source_end_utf16: encoded.source_end_utf16,
+                content_start_byte: editable.start,
+                content_end_byte: editable.end,
+                content_start_utf16: editable_utf16.start,
+                content_end_utf16: editable_utf16.end,
+                replacement_first: encoded.semantic_variant,
+                replacement_second: encoded.semantic_value,
+            });
+            records.extend(facts.iter().map(inline_fact_record));
+        }
+    }
+    Some(records)
 }
 
 fn write_page<F>(

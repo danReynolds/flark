@@ -23,11 +23,12 @@ use flark_parser::{
         M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
         M11RecursiveGreenRowPresentation,
     },
-    classify_m11_simple_edit_line, derive_m11_simple_block_prefix_plans,
-    derive_m11_simple_block_transitions, project_m11_gfm_inline, project_m11_gfm_table,
-    M11GfmInlineNode, M11GfmInlineOptions, M11GfmTableAlignment, M11InlineEditComponent,
-    M11InlineEditComponentMatcher, M11InlineProjectionJob, M11InlineProjectionJobError,
-    M11InlineProjectionJobPollStatus, M11ParserBinding, M11PersistentRecursiveGreenAdoption,
+    classify_m11_simple_edit_line, derive_m11_pending_presentation_plan_seed,
+    derive_m11_simple_block_prefix_plans, derive_m11_simple_block_transitions,
+    project_m11_gfm_inline, project_m11_gfm_table, M11GfmInlineNode, M11GfmInlineOptions,
+    M11GfmTableAlignment, M11InlineEditComponent, M11InlineEditComponentMatcher,
+    M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPollStatus,
+    M11ParserBinding, M11PersistentRecursiveGreenAdoption,
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
@@ -62,6 +63,9 @@ const VIEWPORT_INLINE_FACTS_PER_ROW_MAX: usize = 512;
 // word-dense fact cannot evict the row's authoritative inline fact set.
 const VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX: usize = 128;
 const VIEWPORT_INLINE_TOTAL_TRANSITIONS_MAX: usize = 1_000_000;
+const PENDING_PRESENTATION_AFFECTED_MAX_BYTES: usize = 16 * 1024;
+const PENDING_PRESENTATION_RESULT_ROWS_MAX: usize = 4;
+const PENDING_PRESENTATION_RESULT_FACTS_MAX: usize = 128;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum StructuralInlineProofToken {
@@ -356,6 +360,30 @@ pub struct DocumentProjectionSegment {
     pub source_utf16_range: Range<u64>,
 }
 
+/// One parser-clean result after accepting an exact prefix of a bounded
+/// pending-presentation sequence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentPendingPresentationStep {
+    pub prefix_length: u8,
+    pub affected_range: Range<u64>,
+    pub affected_utf16_range: Range<u64>,
+    pub rows: Vec<DocumentViewportRow>,
+}
+
+/// One exact parser-authored sequence whose every accepted prefix carries a
+/// complete bounded result publication. The host matches bytes only; all
+/// Markdown row partition and presentation meaning comes from these rows.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentPendingPresentationPlan {
+    pub sequence: Vec<u8>,
+    pub trigger_range: Range<u64>,
+    pub trigger_utf16_range: Range<u64>,
+    pub affected_range: Range<u64>,
+    pub affected_utf16_range: Range<u64>,
+    pub replaced_row_count: u8,
+    pub steps: Vec<DocumentPendingPresentationStep>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum DocumentViewportRowPresentation {
     #[default]
@@ -418,6 +446,9 @@ pub struct DocumentViewportRow {
     /// Bounded parser-authored cells whose declared presentation policies may
     /// bridge a pending parser revision. An empty list fails closed.
     pub projection_edit_cells: Vec<DocumentProjectionEditCell>,
+    /// Optional bounded counterfactual result plans. These are parser-owned
+    /// future-edit authority and may be dropped without weakening correctness.
+    pub pending_presentation_plans: Vec<DocumentPendingPresentationPlan>,
     /// Present only for `ProjectedReserved` rows. Every segment is exact
     /// source; gaps are parser-certified hidden container material.
     pub projection_segments: Option<Vec<DocumentProjectionSegment>>,
@@ -4256,9 +4287,10 @@ fn query_session_viewport(
         }
     };
     let receipt = window.receipt();
-    let rows = map_document_viewport_rows(runtime, window.rows(), |runtime, row| {
+    let mut rows = map_document_viewport_rows(runtime, window.rows(), |runtime, row| {
         document_inline_facts(runtime, session, row)
     })?;
+    attach_bounded_pending_presentation_plan(runtime, window.complete(), &mut rows)?;
     Ok(DocumentViewport {
         revision,
         requested_range: requested_range.start as u64..requested_range.end as u64,
@@ -4273,6 +4305,102 @@ fn query_session_viewport(
             maximum_open_depth: receipt.maximum_open_depth(),
         },
     })
+}
+
+fn attach_bounded_pending_presentation_plan(
+    runtime: &mut DocumentRuntime,
+    viewport_complete: bool,
+    rows: &mut [DocumentViewportRow],
+) -> Result<(), DocumentSessionError> {
+    if !viewport_complete || rows.is_empty() {
+        return Ok(());
+    }
+    let source_length = runtime
+        .current_source_version()
+        .map_or(0, SourceVersion::byte_len);
+    if source_length == 0 || source_length > PENDING_PRESENTATION_AFFECTED_MAX_BYTES {
+        return Ok(());
+    }
+    let source = read_utf8_source_range(runtime, &(0..source_length as u64))?;
+    let Some(seed) = derive_m11_pending_presentation_plan_seed(source.as_bytes()) else {
+        return Ok(());
+    };
+    let Some(owner_index) = rows.iter().position(|row| {
+        row.source_range.start <= seed.trigger_byte() as u64
+            && seed.trigger_byte() as u64 <= row.source_range.end
+    }) else {
+        return Ok(());
+    };
+    let owner_ordinal = rows[owner_index].ordinal;
+    if (0..u64::from(seed.replaced_row_count()))
+        .any(|offset| !rows.iter().any(|row| row.ordinal == owner_ordinal + offset))
+    {
+        return Ok(());
+    }
+
+    let mut steps = Vec::with_capacity(seed.sequence().len());
+    let mut total_facts = 0usize;
+    for prefix_length in 1..=seed.sequence().len() {
+        let prefix = std::str::from_utf8(&seed.sequence()[..prefix_length])
+            .map_err(|_| DocumentSessionError::Faulted)?;
+        let mut edited = String::with_capacity(source.len() + prefix.len());
+        edited.push_str(&source[..seed.trigger_byte()]);
+        edited.push_str(prefix);
+        edited.push_str(&source[seed.trigger_byte()..]);
+        let mut counterfactual = DocumentSession::begin(&edited)?;
+        let mut grants = 0usize;
+        while counterfactual.phase() != DocumentSessionPhase::Ready {
+            counterfactual.pump(512)?;
+            grants = grants.saturating_add(1);
+            if grants > 4096 {
+                return Err(DocumentSessionError::QueryBudgetExceeded);
+            }
+        }
+        let revision = counterfactual.revision();
+        let mut viewport = counterfactual.query_viewport(
+            revision,
+            0..edited.len(),
+            PENDING_PRESENTATION_RESULT_ROWS_MAX as u32,
+        )?;
+        if !viewport.complete || viewport.rows.len() > PENDING_PRESENTATION_RESULT_ROWS_MAX {
+            counterfactual.close()?;
+            return Ok(());
+        }
+        for row in &mut viewport.rows {
+            row.pending_presentation_plans.clear();
+            total_facts = total_facts.saturating_add(row.inline_facts.as_ref().map_or(0, Vec::len));
+        }
+        if total_facts > PENDING_PRESENTATION_RESULT_FACTS_MAX {
+            counterfactual.close()?;
+            return Ok(());
+        }
+        let affected_utf16_end = u64::try_from(edited.encode_utf16().count())
+            .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+        steps.push(DocumentPendingPresentationStep {
+            prefix_length: u8::try_from(prefix_length)
+                .map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+            affected_range: 0..edited.len() as u64,
+            affected_utf16_range: 0..affected_utf16_end,
+            rows: viewport.rows,
+        });
+        counterfactual.close()?;
+    }
+
+    let source_utf16_end = runtime
+        .current_source_version()
+        .map_or(0, SourceVersion::utf16_len) as u64;
+    rows[owner_index]
+        .pending_presentation_plans
+        .push(DocumentPendingPresentationPlan {
+            sequence: seed.sequence().to_vec(),
+            trigger_range: seed.trigger_byte() as u64..seed.trigger_byte() as u64,
+            trigger_utf16_range: seed.trigger_utf16() as u64..seed.trigger_utf16() as u64,
+            affected_range: 0..source.len() as u64,
+            affected_utf16_range: 0..source_utf16_end,
+            replaced_row_count: seed.replaced_row_count(),
+            steps,
+        });
+    Ok(())
 }
 
 fn map_document_viewport_rows(
@@ -4576,14 +4704,14 @@ fn document_viewport_row_with_inline_facts(
         && matches!(
             presentation,
             DocumentViewportRowPresentation::CodeBlock {
-                style: DocumentCodeBlockStyle::Fenced { closed: true, .. },
+                style: DocumentCodeBlockStyle::Fenced { .. },
             }
         )
     {
-        // A closed fenced-code row is parser-certified to have no Markdown
-        // inline facts. Publish that authoritative empty set so its bounded
-        // body edit cells can cross the ABI with the same fail-closed rules as
-        // ordinary inline authority.
+        // Fenced code, closed or still open, is parser-certified to have no
+        // Markdown inline facts. Publish that authoritative empty set so a
+        // bounded future row-partition plan can cross the ABI without
+        // pretending that code content was parsed as inline Markdown.
         inline_facts = Some(Vec::new());
     }
     let source_range = row.physical_range();
@@ -4749,6 +4877,7 @@ fn document_viewport_row_with_inline_facts(
         inline_facts,
         literal_safe_envelopes,
         projection_edit_cells,
+        pending_presentation_plans: Vec::new(),
         projection_segments,
         path_depth: u32::try_from(row.path().len()).unwrap_or(u32::MAX),
     })

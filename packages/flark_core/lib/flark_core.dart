@@ -41,6 +41,8 @@ export 'src/models.dart'
         FlarkLiteralSafeEnvelope,
         FlarkListItemPresentation,
         FlarkListMarkerStyle,
+        FlarkPendingPresentationPlan,
+        FlarkPendingPresentationStep,
         FlarkProjectionSegment,
         FlarkProjectionEditCell,
         FlarkProjectionEditMatcher,
@@ -59,14 +61,17 @@ export 'src/models.dart'
 export 'src/projection_continuity.dart'
     show
         FlarkPendingDependencyAuthority,
+        FlarkBoundedPendingPresentationPlanReceipt,
         FlarkProjectionContinuityReceipt,
         FlarkProjectionEditCellReceipt,
         bindPendingDependencyAuthority,
+        authorizeBoundedPendingPresentationPlan,
         authorizeProjectionEditCell,
         authorizeRowProjectionContinuity;
 export 'src/pending_presentation.dart'
     show
         FlarkPendingDependencyPresentation,
+        materializeBoundedPendingPresentationPlan,
         FlarkPendingPresentationSnapshot,
         FlarkPendingPresentationPart,
         FlarkPendingStructuralSurface;

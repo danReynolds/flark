@@ -26,7 +26,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 33;
+pub const ABI_MINOR: u16 = 34;
 
 /// Requests process-global registry counts from `SESSION_INSPECT`. This mode
 /// requires a zero session reference and capability
@@ -379,6 +379,16 @@ pub const INLINE_FACT_LITERAL_SAFE_ENVELOPE: u32 = 15;
 /// A parser-authored bounded projection edit cell. Source fields carry the
 /// affected closure and content fields carry the admission trigger.
 pub const INLINE_FACT_PROJECTION_EDIT_CELL: u32 = 16;
+pub const INLINE_FACT_PENDING_PRESENTATION_PLAN: u32 = 17;
+pub const INLINE_FACT_PENDING_PRESENTATION_STEP: u32 = 18;
+pub const INLINE_FACT_PENDING_PRESENTATION_ROW: u32 = 19;
+pub const PENDING_PRESENTATION_PLAN_SEQUENCE_LENGTH_MASK: u32 = 0x0000_00ff;
+pub const PENDING_PRESENTATION_PLAN_STEP_COUNT_SHIFT: u32 = 8;
+pub const PENDING_PRESENTATION_PLAN_REPLACED_ROW_COUNT_SHIFT: u32 = 16;
+pub const PENDING_PRESENTATION_STEP_PREFIX_LENGTH_MASK: u32 = 0x0000_00ff;
+pub const PENDING_PRESENTATION_STEP_ROW_COUNT_SHIFT: u32 = 8;
+pub const PENDING_PRESENTATION_ROW_KIND_MASK: u32 = 0x0000_ffff;
+pub const PENDING_PRESENTATION_ROW_FACT_COUNT_SHIFT: u32 = 16;
 pub const LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION: u32 = 1;
 pub const LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION: u32 = 2;
 pub const LITERAL_EDIT_CLASS_SINGLE_ASCII_ASTERISK_INSERTION: u32 = 3;

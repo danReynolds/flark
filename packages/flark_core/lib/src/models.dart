@@ -688,6 +688,7 @@ final class FlarkViewportRow {
     this.inlineFacts,
     this.literalSafeEnvelopes = const [],
     this.projectionEditCells = const [],
+    this.pendingPresentationPlans = const [],
     this.projectionSegments,
   });
 
@@ -718,6 +719,10 @@ final class FlarkViewportRow {
   /// Parser-authored affected-source closures for bounded optimistic edits.
   final List<FlarkProjectionEditCell> projectionEditCells;
 
+  /// Exact parser-authored edit sequences paired with a clean bounded result
+  /// snapshot for every accepted prefix.
+  final List<FlarkPendingPresentationPlan> pendingPresentationPlans;
+
   /// Exact ordered identity cuts for a [FlarkViewportRowEditCapability.projectedReserved]
   /// row. Gaps between cuts are parser-certified hidden container material.
   final List<FlarkProjectionSegment>? projectionSegments;
@@ -746,6 +751,9 @@ final class FlarkViewportRow {
         .toList(growable: false),
     'projectionEditCells': projectionEditCells
         .map((cell) => cell.toMessage())
+        .toList(growable: false),
+    'pendingPresentationPlans': pendingPresentationPlans
+        .map((plan) => plan.toMessage())
         .toList(growable: false),
     'projectionSegments': projectionSegments
         ?.map((segment) => segment.toMessage())
@@ -834,6 +842,17 @@ final class FlarkViewportRow {
             .toList(growable: false),
       _ => const [],
     },
+    pendingPresentationPlans: switch (message['pendingPresentationPlans']) {
+      final List<Object?> plans =>
+        plans
+            .map(
+              (plan) => FlarkPendingPresentationPlan.fromMessage(
+                plan! as Map<Object?, Object?>,
+              ),
+            )
+            .toList(growable: false),
+      _ => const [],
+    },
     projectionSegments: switch (message['projectionSegments']) {
       final List<Object?> segments =>
         segments
@@ -845,6 +864,96 @@ final class FlarkViewportRow {
             .toList(growable: false),
       _ => null,
     },
+  );
+}
+
+final class FlarkPendingPresentationPlan {
+  FlarkPendingPresentationPlan({
+    required this.sequence,
+    required this.triggerBytes,
+    required this.triggerUtf16,
+    required this.affectedBytes,
+    required this.affectedUtf16,
+    required this.replacedRowCount,
+    required List<FlarkPendingPresentationStep> steps,
+  }) : steps = List.unmodifiable(steps);
+
+  final String sequence;
+  final FlarkSourceRange triggerBytes;
+  final FlarkSourceRange triggerUtf16;
+  final FlarkSourceRange affectedBytes;
+  final FlarkSourceRange affectedUtf16;
+  final int replacedRowCount;
+  final List<FlarkPendingPresentationStep> steps;
+
+  Map<String, Object?> toMessage() => {
+    'sequence': sequence,
+    'triggerBytes': triggerBytes.toMessage(),
+    'triggerUtf16': triggerUtf16.toMessage(),
+    'affectedBytes': affectedBytes.toMessage(),
+    'affectedUtf16': affectedUtf16.toMessage(),
+    'replacedRowCount': replacedRowCount,
+    'steps': steps.map((step) => step.toMessage()).toList(growable: false),
+  };
+
+  static FlarkPendingPresentationPlan fromMessage(
+    Map<Object?, Object?> message,
+  ) => FlarkPendingPresentationPlan(
+    sequence: message['sequence']! as String,
+    triggerBytes: FlarkSourceRange.fromMessage(
+      message['triggerBytes']! as Map<Object?, Object?>,
+    ),
+    triggerUtf16: FlarkSourceRange.fromMessage(
+      message['triggerUtf16']! as Map<Object?, Object?>,
+    ),
+    affectedBytes: FlarkSourceRange.fromMessage(
+      message['affectedBytes']! as Map<Object?, Object?>,
+    ),
+    affectedUtf16: FlarkSourceRange.fromMessage(
+      message['affectedUtf16']! as Map<Object?, Object?>,
+    ),
+    replacedRowCount: message['replacedRowCount']! as int,
+    steps: (message['steps']! as List<Object?>)
+        .cast<Map<Object?, Object?>>()
+        .map(FlarkPendingPresentationStep.fromMessage)
+        .toList(growable: false),
+  );
+}
+
+final class FlarkPendingPresentationStep {
+  FlarkPendingPresentationStep({
+    required this.prefixLength,
+    required this.affectedBytes,
+    required this.affectedUtf16,
+    required List<FlarkViewportRow> rows,
+  }) : rows = List.unmodifiable(rows);
+
+  final int prefixLength;
+  final FlarkSourceRange affectedBytes;
+  final FlarkSourceRange affectedUtf16;
+  final List<FlarkViewportRow> rows;
+
+  Map<String, Object?> toMessage() => {
+    'prefixLength': prefixLength,
+    'affectedBytes': affectedBytes.toMessage(),
+    'affectedUtf16': affectedUtf16.toMessage(),
+    'rows': rows.map((row) => row.toMessage()).toList(growable: false),
+  };
+
+  static FlarkPendingPresentationStep fromMessage(
+    Map<Object?, Object?> message,
+  ) => FlarkPendingPresentationStep(
+    prefixLength: message['prefixLength']! as int,
+    affectedBytes: FlarkSourceRange.fromMessage(
+      message['affectedBytes']! as Map<Object?, Object?>,
+    ),
+    affectedUtf16: FlarkSourceRange.fromMessage(
+      message['affectedUtf16']! as Map<Object?, Object?>,
+    ),
+    rows: (message['rows']! as List<Object?>)
+        .cast<Map<Object?, Object?>>()
+        .map(FlarkViewportRow.fromMessage)
+        .toList(growable: false),
   );
 }
 

@@ -36,6 +36,7 @@ mod inline_lex;
 mod inline_projection_job;
 #[allow(dead_code)] // Staged storage foundation for M11InlineProjectionJob.
 mod inline_radix;
+mod pending_presentation_plan;
 mod persistent_recursive_green_session;
 mod projected_inline_projection_job;
 mod publication;
@@ -125,6 +126,10 @@ pub use inline_projection_job::{
     M11InlineProjectionJobPollStatus, M11InlineProjectionJobReleasePoll, M11InlineProjectionOutput,
     M11InlineProjectionPublication, M11InlineProjectionPublicationParts,
     M11InlineProjectionUnsupportedRecord, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+};
+pub use pending_presentation_plan::{
+    derive_m11_pending_presentation_plan_seed, M11PendingPresentationPlanSeed,
+    M11_PENDING_PRESENTATION_SEQUENCE_MAX_BYTES,
 };
 #[cfg(feature = "m11-compact-probe")]
 pub use persistent_recursive_green_session::{

@@ -225,4 +225,139 @@ void main() {
     expect(() => dependency.presentations.add(first), throwsUnsupportedError);
     expect(() => dependency.replacedRowOrdinals.add(5), throwsUnsupportedError);
   });
+
+  test('bounded plan selects and materializes each exact parser step', () {
+    final plan = FlarkPendingPresentationPlan(
+      sequence: 'ab',
+      triggerBytes: const FlarkSourceRange(0, 0),
+      triggerUtf16: const FlarkSourceRange(0, 0),
+      affectedBytes: const FlarkSourceRange(0, 6),
+      affectedUtf16: const FlarkSourceRange(0, 6),
+      replacedRowCount: 1,
+      steps: [
+        FlarkPendingPresentationStep(
+          prefixLength: 1,
+          affectedBytes: const FlarkSourceRange(0, 7),
+          affectedUtf16: const FlarkSourceRange(0, 7),
+          rows: [_strongPlanRow(prefixLength: 1)],
+        ),
+        FlarkPendingPresentationStep(
+          prefixLength: 2,
+          affectedBytes: const FlarkSourceRange(0, 8),
+          affectedUtf16: const FlarkSourceRange(0, 8),
+          rows: [_strongPlanRow(prefixLength: 2)],
+        ),
+      ],
+    );
+
+    final first = bindPendingDependencyAuthority(
+      revision: 7,
+      plans: [plan],
+      cells: const [],
+      envelopes: const [],
+      authorizedContentUtf16: const FlarkSourceRange(0, 6),
+      startUtf16: 0,
+      endUtf16: 0,
+      replacement: 'a',
+    );
+    expect(first, isA<FlarkBoundedPendingPresentationPlanReceipt>());
+    final firstPlan = first! as FlarkBoundedPendingPresentationPlanReceipt;
+    expect(firstPlan.resultRevision, 8);
+    expect(firstPlan.prefixLength, 1);
+    final firstPresentation = materializeBoundedPendingPresentationPlan(
+      authority: firstPlan,
+      rowOrdinal: 4,
+      visibleSource: 'a**x**\n',
+      visibleUtf16Start: 0,
+    )!;
+    expect(firstPresentation.presentations.single.text, 'ax\n');
+    expect(firstPresentation.presentations.single.ordinal, 4);
+    expect(
+      firstPresentation.presentations.single.runs
+          .where((run) => run.text == 'x')
+          .single
+          .styles,
+      {FlarkCorePresentationInlineStyle.strong},
+    );
+
+    final second = firstPlan.continueWith(
+      startUtf16: 1,
+      endUtf16: 1,
+      replacement: 'b',
+    )!;
+    expect(second.resultRevision, 9);
+    expect(second.prefixLength, 2);
+    expect(
+      materializeBoundedPendingPresentationPlan(
+        authority: second,
+        rowOrdinal: 4,
+        visibleSource: 'ab**x**\n',
+        visibleUtf16Start: 0,
+      )!.presentations.single.text,
+      'abx\n',
+    );
+    expect(
+      second.continueWith(startUtf16: 2, endUtf16: 2, replacement: 'c'),
+      isNull,
+    );
+    expect(
+      authorizeBoundedPendingPresentationPlan(
+        revision: 7,
+        plans: [plan],
+        startUtf16: 0,
+        endUtf16: 0,
+        replacement: 'x',
+      ),
+      isNull,
+    );
+    expect(
+      authorizeBoundedPendingPresentationPlan(
+        revision: 7,
+        plans: [plan, plan],
+        startUtf16: 0,
+        endUtf16: 0,
+        replacement: 'a',
+      ),
+      isNull,
+      reason: 'ambiguous parser plans fail closed',
+    );
+    expect(
+      materializeBoundedPendingPresentationPlan(
+        authority: firstPlan,
+        rowOrdinal: 4,
+        visibleSource: 'short',
+        visibleUtf16Start: 0,
+      ),
+      isNull,
+      reason: 'a plan cannot escape the exact materialized source window',
+    );
+  });
 }
+
+FlarkViewportRow _strongPlanRow({required int prefixLength}) =>
+    FlarkViewportRow(
+      ordinal: 0,
+      kind: 5,
+      sourceBytes: FlarkSourceRange(0, 6 + prefixLength),
+      sourceUtf16: FlarkSourceRange(0, 6 + prefixLength),
+      editableBytes: FlarkSourceRange(0, 6 + prefixLength),
+      editableUtf16: FlarkSourceRange(0, 6 + prefixLength),
+      editCapability: FlarkViewportRowEditCapability.contiguous,
+      headingLevel: null,
+      headingStyle: null,
+      listItem: null,
+      blockQuote: null,
+      codeBlock: null,
+      thematicBreak: false,
+      pathDepth: 1,
+      inlineFacts: [
+        FlarkInlineFact(
+          kind: FlarkInlineFactKind.strong,
+          flags: 0,
+          sourceBytes: FlarkSourceRange(prefixLength, prefixLength + 5),
+          sourceUtf16: FlarkSourceRange(prefixLength, prefixLength + 5),
+          contentBytes: FlarkSourceRange(prefixLength + 2, prefixLength + 3),
+          contentUtf16: FlarkSourceRange(prefixLength + 2, prefixLength + 3),
+        ),
+      ],
+    );
