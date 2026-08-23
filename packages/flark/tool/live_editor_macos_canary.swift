@@ -598,6 +598,11 @@ while !shouldStop, let line = readLine() {
     ]
 
     switch operation {
+    case "selectPreset":
+      response["snapshot"] = try appRequest(
+        operation: "selectPreset",
+        arguments: arguments
+      )
     case "reset":
       response["snapshot"] = try appRequest(
         operation: "reset",

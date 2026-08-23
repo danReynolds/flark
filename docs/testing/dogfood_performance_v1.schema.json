@@ -155,11 +155,17 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["run", "processId", "freshProcess", "warmups", "samples", "frames", "inputObservations", "paintObservations", "engineObservations", "memory"],
+      "required": ["run", "processId", "freshProcess", "openObservation", "warmups", "samples", "frames", "inputObservations", "paintObservations", "engineObservations", "memory"],
       "properties": {
         "run": {"type": "integer", "minimum": 0},
         "processId": {"type": "string", "minLength": 1},
         "freshProcess": {"type": "boolean"},
+        "openObservation": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/openObservation"}
+          ]
+        },
         "warmups": {"type": "array", "items": {"$ref": "#/$defs/warmup"}},
         "samples": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sample"}},
         "frames": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/frame"}},
@@ -167,6 +173,30 @@
         "paintObservations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintObservation"}},
         "engineObservations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/engineObservation"}},
         "memory": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/memory"}}
+      }
+    },
+    "openObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "acceptedMicros", "paintMicros", "openToEditableMicros", "sourceGeneration", "sourceSha256", "frameOrdinal", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount"],
+      "properties": {
+        "kind": {"enum": ["processLaunch", "presetSelection"]},
+        "acceptedMicros": {"type": "integer", "minimum": 0},
+        "paintMicros": {"type": "integer", "minimum": 0},
+        "openToEditableMicros": {"type": "integer", "minimum": 0},
+        "sourceGeneration": {"const": 0},
+        "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "frameOrdinal": {"type": "integer", "minimum": 0},
+        "visibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "expectedVisibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "canonicalSelectionBaseUtf16": {"type": "integer", "minimum": 0},
+        "canonicalSelectionExtentUtf16": {"type": "integer", "minimum": 0},
+        "expectedSelectionBaseUtf16": {"type": "integer", "minimum": 0},
+        "expectedSelectionExtentUtf16": {"type": "integer", "minimum": 0},
+        "caretSourceUtf16": {"type": ["integer", "null"], "minimum": 0},
+        "caretDisplayUtf16": {"type": ["integer", "null"], "minimum": 0},
+        "semanticsCurrent": {"const": true},
+        "activeNeutralRowCount": {"const": 0}
       }
     },
     "inputObservation": {
@@ -186,7 +216,7 @@
     "paintObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionOrdinal", "timestampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount"],
+      "required": ["sessionOrdinal", "timestampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount", "activeRowVisible"],
       "properties": {
         "sessionOrdinal": {"type": "integer", "minimum": 0},
         "timestampMicros": {"type": "integer", "minimum": 0},
@@ -201,7 +231,8 @@
         "caretSourceUtf16": {"type": ["integer", "null"], "minimum": 0},
         "caretDisplayUtf16": {"type": ["integer", "null"], "minimum": 0},
         "semanticsCurrent": {"type": "boolean"},
-        "activeNeutralRowCount": {"type": "integer", "minimum": 0}
+        "activeNeutralRowCount": {"type": "integer", "minimum": 0},
+        "activeRowVisible": {"type": "boolean"}
       }
     },
     "engineObservation": {
@@ -270,7 +301,6 @@
         "provingFrameOrdinal": {"type": "integer", "minimum": 0},
         "engineMicros": {"type": "integer", "minimum": 0},
         "visibleCertificationMicros": {"type": "integer", "minimum": 0},
-        "openToEditableMicros": {"type": ["integer", "null"], "minimum": 0},
         "rawProjectionFrames": {"type": "integer", "minimum": 0},
         "sourceIdentityMatched": {"const": true},
         "caretIdentityMatched": {"const": true},

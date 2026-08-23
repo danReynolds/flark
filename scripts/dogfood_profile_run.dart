@@ -116,20 +116,39 @@ Future<_ProfileRunResult> _runCell({
   if (!appExecutable.existsSync() || !embeddedAbi.existsSync()) {
     throw StateError('profile app executable or embedded ABI is missing');
   }
-  final preset = _presetFor(cellId);
-  final initialSource = buildDogfoodDocument(preset);
+  final targetPreset = _presetFor(cellId);
+  final initialPreset = cellId.endsWith('-journey')
+      ? DogfoodDocumentPreset.productTour
+      : targetPreset;
+  final initialSource = buildDogfoodDocument(initialPreset);
   final driver = MacosNativeCanaryDriver(
     appExecutable: appExecutable.path,
     libraryPath: embeddedAbi.path,
     actuatorScript: File(
       'packages/flark/tool/live_editor_macos_canary.swift',
     ).absolute.path,
-    initialPresetName: preset.name,
+    initialPresetName: initialPreset.name,
   );
   try {
     final launched = await driver.start();
     if (launched.source != initialSource) {
       throw StateError('$cellId opened a source different from its preset');
+    }
+    if (cellId.endsWith('-journey')) {
+      final targetSource = buildDogfoodDocument(targetPreset);
+      final run = await _largePresetJourneyRun(
+        driver: driver,
+        launched: launched,
+        preset: targetPreset,
+        source: targetSource,
+        cellId: cellId,
+        runIndex: runIndex,
+        denominator: denominator,
+      );
+      return _ProfileRunResult(
+        initialSourceBytes: utf8.encode(targetSource).length,
+        run: run,
+      );
     }
     if (cellId == 'product-tour-cold-launch') {
       final run = await _coldLaunchRun(
@@ -308,7 +327,13 @@ DogfoodDocumentPreset _presetFor(String cellId) {
   if (cellId.startsWith('ordinary-1m')) {
     return DogfoodDocumentPreset.prose1MiB;
   }
-  throw UnsupportedError('$cellId has no implemented app preset');
+  return switch (cellId) {
+    'dense-blocks-1m-journey' => DogfoodDocumentPreset.denseBlocks1MiB,
+    'ordinary-5m-journey' => DogfoodDocumentPreset.prose5MiB,
+    'giant-line-5m-journey' => DogfoodDocumentPreset.giantLine5MiB,
+    'ordinary-10m-journey' => DogfoodDocumentPreset.prose10MiB,
+    _ => throw UnsupportedError('$cellId has no implemented app preset'),
+  };
 }
 
 List<_ExpectedSample> _insertionExpectations({
@@ -471,6 +496,79 @@ Future<Map<String, Object?>> _coldLaunchRun({
     closed: closed,
     expected: [expected],
     openAcceptedMicros: launchEpoch,
+    openSnapshot: launched,
+  );
+}
+
+Future<Map<String, Object?>> _largePresetJourneyRun({
+  required MacosNativeCanaryDriver driver,
+  required MacosNativeCanarySnapshot launched,
+  required DogfoodDocumentPreset preset,
+  required String source,
+  required String cellId,
+  required int runIndex,
+  required DogfoodCellDenominator denominator,
+}) async {
+  final opened = await driver.selectPreset(preset.name);
+  if (opened.source != source || opened.sourceGeneration != 0) {
+    throw StateError('$cellId did not open its exact target preset');
+  }
+  final accepted = opened.openAcceptedEpochMicros;
+  if (accepted == null) {
+    throw StateError('$cellId did not record preset-selection acceptance');
+  }
+  final caret = switch (preset) {
+    DogfoodDocumentPreset.denseBlocks1MiB =>
+      source.indexOf('Short bounded paragraph 000001.') +
+          'Short bounded'.length,
+    DogfoodDocumentPreset.giantLine5MiB =>
+      source.indexOf('giant-word') + 'giant-word'.length,
+    DogfoodDocumentPreset.prose5MiB || DogfoodDocumentPreset.prose10MiB =>
+      source.indexOf('This is ordinary prose for') + 'This is ordinary'.length,
+    _ => throw UnsupportedError('$cellId has no large-preset anchor'),
+  };
+  final baseline = await driver.activateAtUtf16(
+    caret,
+    windowWidth: _windowWidth,
+    windowHeight: _windowHeight,
+    retainObservations: true,
+  );
+  final expected = _pasteUndoExpectations(
+    source: source,
+    caret: caret,
+    paste: 'x',
+    firstGeneration: baseline.sourceGeneration + 1,
+    count: 1,
+  );
+  await driver.typeText('x');
+  await driver.settle();
+  await driver.pressKey('undo');
+  await driver.settle();
+  await driver.scrollBy(_windowHeight * 2 + 1);
+  final away = await driver.settle();
+  if ((away.scrollOffset - baseline.scrollOffset).abs() < _windowHeight * 2) {
+    throw StateError('$cellId did not traverse two viewport heights');
+  }
+  await driver.scrollBy(-(_windowHeight * 2 + 1));
+  final settled = await driver.settle();
+  final finalGeneration = expected.single.finalGeneration;
+  if (settled.source != finalGeneration.source ||
+      settled.selectionBaseUtf16 != finalGeneration.selectionBase ||
+      settled.selectionExtentUtf16 != finalGeneration.selectionExtent ||
+      settled.scrollOffset != baseline.scrollOffset) {
+    throw StateError('$cellId did not complete its edit/undo/scroll journey');
+  }
+  final closed = await driver.closeSession();
+  return _buildMeasuredRun(
+    runIndex: runIndex,
+    denominator: denominator,
+    baseline: launched,
+    settled: settled,
+    closed: closed,
+    expected: expected,
+    openAcceptedMicros: accepted,
+    openKind: 'presetSelection',
+    openSnapshot: opened,
   );
 }
 
@@ -627,6 +725,7 @@ Map<String, Object?> _mergeLifecycleFragments({
     'run': runIndex,
     'processId': fragments.first['processId'],
     'freshProcess': denominator.processRule == DogfoodProcessRule.freshEveryRun,
+    'openObservation': null,
     'warmups': warmups,
     'samples': samples,
     'frames': frames,
@@ -651,6 +750,8 @@ Map<String, Object?> _buildMeasuredRun({
   required List<_ExpectedSample> expected,
   int sessionOrdinal = 0,
   int? openAcceptedMicros,
+  String openKind = 'processLaunch',
+  MacosNativeCanarySnapshot? openSnapshot,
 }) {
   final expectedByGeneration = <int, _ExpectedGeneration>{
     for (final sample in expected)
@@ -803,6 +904,7 @@ Map<String, Object?> _buildMeasuredRun({
       'caretDisplayUtf16': paint['caretDisplayUtf16'] as int?,
       'semanticsCurrent': paint['semanticsCurrent']! as bool,
       'activeNeutralRowCount': paint['activeNeutralRowCount']! as int,
+      'activeRowVisible': paint['activeRowVisible']! as bool,
       '_nearestFrameDistanceMicros': nearestFrameDistanceMicros,
     });
   }
@@ -828,6 +930,70 @@ Map<String, Object?> _buildMeasuredRun({
     frames[frameOrdinal]['editorSyncMicros'] =
         (frames[frameOrdinal]['editorSyncMicros']! as int) +
         (input['editorSyncMicros']! as int);
+  }
+
+  Map<String, Object?>? openObservation;
+  if (openAcceptedMicros != null) {
+    final snapshot = openSnapshot;
+    if (snapshot == null || snapshot.sourceGeneration != 0) {
+      throw StateError('open measurement has no generation-zero snapshot');
+    }
+    final candidates = <Map<String, Object?>>[];
+    for (final rawPaint in snapshot.paintReceipts) {
+      if (rawPaint['sourceGeneration'] != 0 ||
+          rawPaint['semanticsCurrent'] != true ||
+          rawPaint['activeNeutralRowCount'] != 0 ||
+          rawPaint['activeRowVisible'] != true ||
+          (rawPaint['paintEpochMicros']! as int) < openAcceptedMicros) {
+        continue;
+      }
+      final frameOrdinal = _nearestFrameOrdinal(
+        rawPaint['frameStampMicros']! as int,
+        frameOrdinalByStamp,
+        framePeriodMicros: framePeriodMicros,
+      );
+      if (frameOrdinal == null) continue;
+      final visibleStart = rawPaint['visibleUtf16Start']! as int;
+      final visibleLength = rawPaint['visibleUtf16Length']! as int;
+      candidates.add({
+        'timestampMicros': rawPaint['paintEpochMicros'],
+        'frameOrdinal': frameOrdinal,
+        'visibleSourceSha256': rawPaint['visibleSourceSha256'],
+        'expectedVisibleSourceSha256': _sha(
+          _utf16Slice(snapshot.source, visibleStart, visibleLength),
+        ),
+        'canonicalSelectionBaseUtf16': rawPaint['canonicalSelectionBaseUtf16'],
+        'canonicalSelectionExtentUtf16':
+            rawPaint['canonicalSelectionExtentUtf16'],
+        'caretSourceUtf16': rawPaint['caretSourceUtf16'],
+        'caretDisplayUtf16': rawPaint['caretDisplayUtf16'],
+      });
+    }
+    if (candidates.isEmpty) {
+      throw StateError('open measurement has no certified proving paint');
+    }
+    final paint = candidates.first;
+    frames[paint['frameOrdinal']! as int]['editorAttributed'] = true;
+    openObservation = {
+      'kind': openKind,
+      'acceptedMicros': openAcceptedMicros,
+      'paintMicros': paint['timestampMicros'],
+      'openToEditableMicros':
+          (paint['timestampMicros']! as int) - openAcceptedMicros,
+      'sourceGeneration': 0,
+      'sourceSha256': _sha(snapshot.source),
+      'frameOrdinal': paint['frameOrdinal'],
+      'visibleSourceSha256': paint['visibleSourceSha256'],
+      'expectedVisibleSourceSha256': paint['expectedVisibleSourceSha256'],
+      'canonicalSelectionBaseUtf16': paint['canonicalSelectionBaseUtf16'],
+      'canonicalSelectionExtentUtf16': paint['canonicalSelectionExtentUtf16'],
+      'expectedSelectionBaseUtf16': snapshot.selectionBaseUtf16,
+      'expectedSelectionExtentUtf16': snapshot.selectionExtentUtf16,
+      'caretSourceUtf16': paint['caretSourceUtf16'],
+      'caretDisplayUtf16': paint['caretDisplayUtf16'],
+      'semanticsCurrent': true,
+      'activeNeutralRowCount': 0,
+    };
   }
 
   final warmups = <Map<String, Object?>>[];
@@ -930,9 +1096,6 @@ Map<String, Object?> _buildMeasuredRun({
       'visibleCertificationMicros': currentPaint.isEmpty
           ? 0
           : (currentPaint.first['timestampMicros']! as int) - accepted,
-      'openToEditableMicros': openAcceptedMicros == null
-          ? null
-          : (firstPaint['timestampMicros']! as int) - openAcceptedMicros,
       'rawProjectionFrames': finalPaints
           .where((paint) => (paint['activeNeutralRowCount']! as int) > 0)
           .length,
@@ -942,9 +1105,11 @@ Map<String, Object?> _buildMeasuredRun({
             paint['expectedVisibleSourceSha256'],
       ),
       'caretIdentityMatched': finalPaints.every(
-        (paint) =>
-            paint['caretSourceUtf16'] == finalGeneration.selectionExtent &&
-            paint['caretDisplayUtf16'] != null,
+        (paint) => paint['activeRowVisible'] == true
+            ? paint['caretSourceUtf16'] == finalGeneration.selectionExtent &&
+                  paint['caretDisplayUtf16'] != null
+            : paint['caretSourceUtf16'] == null &&
+                  paint['caretDisplayUtf16'] == null,
       ),
       'selectionIdentityMatched': finalPaints.every(
         (paint) =>
@@ -965,6 +1130,7 @@ Map<String, Object?> _buildMeasuredRun({
     'run': runIndex,
     'processId': '${settled.appProcessId}',
     'freshProcess': denominator.processRule == DogfoodProcessRule.freshEveryRun,
+    'openObservation': openObservation,
     'warmups': warmups,
     'samples': samples,
     'frames': frames,

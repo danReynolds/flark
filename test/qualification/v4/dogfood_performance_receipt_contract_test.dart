@@ -33,7 +33,7 @@ void main() {
       (result.metrics['sourceToPaintMicros']! as Map)['sampleCount'],
       3040,
     );
-    expect((result.metrics['flutterFrameMicros']! as Map)['sampleCount'], 3870);
+    expect((result.metrics['flutterFrameMicros']! as Map)['sampleCount'], 3875);
     expect((result.metrics['engineMicros']! as Map)['sampleCount'], 3870);
     expect((result.metrics['openToEditableMicros']! as Map)['sampleCount'], 25);
   });
@@ -93,15 +93,14 @@ void main() {
       missingOpen,
     ).firstWhere((cell) => cell['id'] == 'product-tour-cold-launch');
     final coldRun = (cold['runs']! as List).first as Map;
-    final coldSample = (coldRun['samples']! as List).first as Map;
-    coldSample['openToEditableMicros'] = null;
+    coldRun['openObservation'] = null;
     final openResult = await verifyDogfoodPerformanceReceipt(
       missingOpen,
       verifyArtifactFiles: false,
     );
     expect(
       openResult.blockers.join('\n'),
-      contains('requires an open-to-editable measurement'),
+      contains('openObservation is required'),
     );
   });
 
@@ -187,6 +186,50 @@ void main() {
       contains('declared source generations must be unique'),
     );
   });
+
+  test('open replay rejects hidden work and a torn first paint', () async {
+    final sealed = await sealDogfoodPerformanceReceipt(
+      _validRawReceipt(),
+      verifyArtifactFiles: false,
+    );
+    final hiddenWork = _copy(sealed);
+    final run =
+        (_cells(hiddenWork).firstWhere(
+                      (cell) => cell['id'] == 'ordinary-5m-journey',
+                    )['runs']!
+                    as List)
+                .first
+            as Map;
+    final open = run['openObservation']! as Map;
+    open['openToEditableMicros'] = 1;
+    final hiddenResult = await verifyDogfoodPerformanceReceipt(
+      hiddenWork,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      hiddenResult.blockers.join('\n'),
+      contains('timing does not replay'),
+    );
+
+    final torn = _copy(sealed);
+    final tornRun =
+        (_cells(torn).firstWhere(
+                      (cell) => cell['id'] == 'ordinary-5m-journey',
+                    )['runs']!
+                    as List)
+                .first
+            as Map;
+    final tornOpen = tornRun['openObservation']! as Map;
+    tornOpen['expectedVisibleSourceSha256'] = _hash('d');
+    final tornResult = await verifyDogfoodPerformanceReceipt(
+      torn,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      tornResult.blockers.join('\n'),
+      contains('is not an exact certified initial paint'),
+    );
+  });
 }
 
 Map<String, Object?> _validRawReceipt() {
@@ -226,7 +269,6 @@ Map<String, Object?> _validRawReceipt() {
               ],
               sourceGeneration: finalGeneration,
               frameOrdinal: finalFrame,
-              requiresOpen: false,
             ),
           ),
         );
@@ -283,7 +325,6 @@ Map<String, Object?> _validRawReceipt() {
             ],
             sourceGeneration: finalGeneration,
             frameOrdinal: finalFrame,
-            requiresOpen: denominator.requiresOpen,
             requiresLiveStateZero: denominator.requiresLiveStateZero,
           ),
         );
@@ -326,6 +367,29 @@ Map<String, Object?> _validRawReceipt() {
             : '${entry.key}-$run',
         'freshProcess':
             denominator.processRule == DogfoodProcessRule.freshEveryRun,
+        'openObservation': denominator.requiresOpen
+            ? {
+                'kind': entry.key == 'product-tour-cold-launch'
+                    ? 'processLaunch'
+                    : 'presetSelection',
+                'acceptedMicros': 1000000,
+                'paintMicros': 1000500,
+                'openToEditableMicros': 500,
+                'sourceGeneration': 0,
+                'sourceSha256': _hash('a'),
+                'frameOrdinal': 0,
+                'visibleSourceSha256': _hash('b'),
+                'expectedVisibleSourceSha256': _hash('b'),
+                'canonicalSelectionBaseUtf16': 0,
+                'canonicalSelectionExtentUtf16': 0,
+                'expectedSelectionBaseUtf16': 0,
+                'expectedSelectionExtentUtf16': 0,
+                'caretSourceUtf16': 0,
+                'caretDisplayUtf16': 0,
+                'semanticsCurrent': true,
+                'activeNeutralRowCount': 0,
+              }
+            : null,
         'warmups': warmups,
         'samples': samples,
         'frames': frames,
@@ -407,7 +471,6 @@ Map<String, Object?> _sample({
   required List<int> acceptedSourceGenerations,
   required int sourceGeneration,
   required int frameOrdinal,
-  required bool requiresOpen,
   int? scheduled,
   bool requiresLiveStateZero = false,
 }) => {
@@ -431,7 +494,6 @@ Map<String, Object?> _sample({
   'provingFrameOrdinal': frameOrdinal,
   'engineMicros': 100,
   'visibleCertificationMicros': 500,
-  'openToEditableMicros': requiresOpen ? 10000 : null,
   'rawProjectionFrames': 0,
   'sourceIdentityMatched': true,
   'caretIdentityMatched': true,
@@ -513,6 +575,7 @@ void _addRawObservations({
     'caretDisplayUtf16': 1,
     'semanticsCurrent': semanticsCurrent,
     'activeNeutralRowCount': activeNeutralRowCount,
+    'activeRowVisible': true,
   });
   engineObservations.add({
     'sessionOrdinal': sessionOrdinal,

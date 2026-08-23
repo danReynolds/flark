@@ -30,6 +30,7 @@ final class MacosNativeCanarySnapshot {
     required this.semanticEditPerformanceReceipts,
     required this.inputEvents,
     required this.processLaunchEpochMicros,
+    required this.openAcceptedEpochMicros,
     required this.currentRssBytes,
     required this.maximumRssBytes,
     required this.display,
@@ -63,6 +64,7 @@ final class MacosNativeCanarySnapshot {
   final List<Map<String, Object?>> semanticEditPerformanceReceipts;
   final List<String> inputEvents;
   final int? processLaunchEpochMicros;
+  final int? openAcceptedEpochMicros;
   final int currentRssBytes;
   final int maximumRssBytes;
   final Map<String, Object?> display;
@@ -122,6 +124,19 @@ final class MacosNativeCanaryDriver {
     );
   }
 
+  Future<MacosNativeCanarySnapshot> selectPreset(String presetName) async {
+    if (_process == null) await _startActuator();
+    _paintObservationStart = 0;
+    _paintReceiptStart = 0;
+    _frameTimingStart = 0;
+    _sourcePerformanceStart = 0;
+    _semanticPerformanceStart = 0;
+    _inputEventStart = 0;
+    return _snapshot(
+      await _request('selectPreset', {'presetName': presetName}),
+    );
+  }
+
   Future<void> _startActuator() async {
     final process = await Process.start('swift', [
       actuatorScript,
@@ -144,6 +159,7 @@ final class MacosNativeCanaryDriver {
     int offset, {
     int windowWidth = 800,
     int windowHeight = 632,
+    bool retainObservations = false,
   }) async {
     _windowWidth = windowWidth;
     _windowHeight = windowHeight;
@@ -154,14 +170,16 @@ final class MacosNativeCanaryDriver {
     });
     final snapshot = _snapshot(response);
     final json = _lastRawSnapshot!;
-    _paintObservationStart = (json['surfaceFrames']! as List).length;
-    _paintReceiptStart = (json['paintReceipts']! as List).length;
-    _frameTimingStart = (json['frameTimingReceipts']! as List).length;
-    _sourcePerformanceStart =
-        (json['sourceEditPerformanceReceipts']! as List).length;
-    _semanticPerformanceStart =
-        (json['semanticEditPerformanceReceipts']! as List).length;
-    _inputEventStart = (json['inputEvents']! as List).length;
+    if (!retainObservations) {
+      _paintObservationStart = (json['surfaceFrames']! as List).length;
+      _paintReceiptStart = (json['paintReceipts']! as List).length;
+      _frameTimingStart = (json['frameTimingReceipts']! as List).length;
+      _sourcePerformanceStart =
+          (json['sourceEditPerformanceReceipts']! as List).length;
+      _semanticPerformanceStart =
+          (json['semanticEditPerformanceReceipts']! as List).length;
+      _inputEventStart = (json['inputEvents']! as List).length;
+    }
     return snapshot;
   }
 
@@ -385,6 +403,7 @@ final class MacosNativeCanaryDriver {
         (json['inputEvents']! as List).cast<String>().skip(_inputEventStart),
       ),
       processLaunchEpochMicros: json['processLaunchEpochMicros'] as int?,
+      openAcceptedEpochMicros: json['openAcceptedEpochMicros'] as int?,
       currentRssBytes: json['currentRssBytes']! as int,
       maximumRssBytes: json['maximumRssBytes']! as int,
       display: Map<String, Object?>.unmodifiable(

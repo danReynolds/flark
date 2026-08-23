@@ -145,6 +145,7 @@ final class DogfoodNativeCanaryReceiptWriter {
   FlarkEditorDebugGeometry? _sourcePointGeometry;
   int? _taskActionTarget;
   FlarkEditorDebugGeometry? _taskActionGeometry;
+  int? _openAcceptedEpochMicros;
   DateTime? _lastInputEventAt;
   double _lastScrollOffset = 0;
 
@@ -170,6 +171,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     _sourcePointGeometry = null;
     _taskActionTarget = null;
     _taskActionGeometry = null;
+    _openAcceptedEpochMicros = null;
     _lastInputEventAt = null;
     _lastScrollOffset = 0;
   }
@@ -270,6 +272,7 @@ final class DogfoodNativeCanaryReceiptWriter {
       'activeNeutralRowCount': observation.rows
           .where((row) => row.active && row.neutral)
           .length,
+      'activeRowVisible': observation.rows.any((row) => row.active),
       'exactRunRanges': observation.rows
           .expand((row) => row.runs)
           .where((run) => run.sourceExact)
@@ -368,6 +371,7 @@ final class DogfoodNativeCanaryReceiptWriter {
 
   Future<void> writeNow({
     required int commandSequence,
+    int? openAcceptedEpochMicros,
     int? sourcePointOffset,
     FlarkEditorDebugGeometry? sourcePointGeometry,
     int? taskActionTarget,
@@ -376,6 +380,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     _timer?.cancel();
     _timer = null;
     _commandSequence = commandSequence;
+    _openAcceptedEpochMicros = openAcceptedEpochMicros;
     _commandError = null;
     _sourcePointOffset = sourcePointOffset;
     _sourcePointGeometry = sourcePointGeometry;
@@ -426,6 +431,7 @@ final class DogfoodNativeCanaryReceiptWriter {
       'commandError': null,
       'status': 'disposed',
       'processLaunchEpochMicros': mode.processLaunchEpochMicros,
+      'openAcceptedEpochMicros': _openAcceptedEpochMicros,
       'closeRequestedEpochMicros': closeRequestedEpochMicros,
       'closeRequestedRssBytes': closeRequestedRssBytes,
       'closeRequestedMaximumRssBytes': closeRequestedMaximumRssBytes,

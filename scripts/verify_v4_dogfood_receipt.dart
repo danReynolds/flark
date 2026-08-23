@@ -504,6 +504,16 @@ void _validateCell(
     }
     final frames = _frames(run['frames'], runPrefix, blockers);
     final measuredFrameOrdinals = <int>{};
+    _validateOpenObservation(
+      run['openObservation'],
+      id: id,
+      required: denominator.requiresOpen,
+      frames: frames,
+      measuredFrameOrdinals: measuredFrameOrdinals,
+      prefix: '$runPrefix.openObservation',
+      blockers: blockers,
+      metricValues: metricValues,
+    );
     final inputObservations = _observationsByGeneration(
       run['inputObservations'],
       '$runPrefix.inputObservations',
@@ -652,7 +662,6 @@ void _validateCell(
         measuredFrameOrdinals: measuredFrameOrdinals,
         framePeriod: framePeriod,
         requiresLiveStateZero: denominator.requiresLiveStateZero,
-        requiresOpen: denominator.requiresOpen,
         prefix: '$runPrefix.sample[$sampleIndex]',
         blockers: blockers,
         metricValues: metricValues,
@@ -680,6 +689,83 @@ void _validateCell(
   if (denominator.processRule == DogfoodProcessRule.oneSharedProcess &&
       processIds.length != 1) {
     blockers.add('$prefix must use exactly one warmed process');
+  }
+}
+
+void _validateOpenObservation(
+  Object? value, {
+  required String id,
+  required bool required,
+  required Map<int, Map<String, Object?>> frames,
+  required Set<int> measuredFrameOrdinals,
+  required String prefix,
+  required List<String> blockers,
+  required Map<String, List<int>> metricValues,
+}) {
+  if (!required) {
+    if (value != null) blockers.add('$prefix is not declared by this cell');
+    return;
+  }
+  if (value == null) {
+    blockers.add('$prefix is required');
+    return;
+  }
+  final observation = _map(value, prefix, blockers);
+  final expectedKind = id == 'product-tour-cold-launch'
+      ? 'processLaunch'
+      : 'presetSelection';
+  if (observation['kind'] != expectedKind) {
+    blockers.add('$prefix must measure $expectedKind');
+  }
+  final accepted = _integer(
+    observation['acceptedMicros'],
+    '$prefix.acceptedMicros',
+    blockers,
+  );
+  final paint = _integer(
+    observation['paintMicros'],
+    '$prefix.paintMicros',
+    blockers,
+  );
+  final elapsed = _integer(
+    observation['openToEditableMicros'],
+    '$prefix.openToEditableMicros',
+    blockers,
+  );
+  if (paint < accepted || paint - accepted != elapsed) {
+    blockers.add('$prefix timing does not replay');
+  }
+  metricValues['openToEditableMicros']!.add(elapsed);
+  if (elapsed >= _maxOpenMicros) {
+    blockers.add('$prefix open exceeded 200 ms');
+  }
+  if (observation['sourceGeneration'] != 0 ||
+      observation['visibleSourceSha256'] !=
+          observation['expectedVisibleSourceSha256'] ||
+      observation['canonicalSelectionBaseUtf16'] !=
+          observation['expectedSelectionBaseUtf16'] ||
+      observation['canonicalSelectionExtentUtf16'] !=
+          observation['expectedSelectionExtentUtf16'] ||
+      observation['semanticsCurrent'] != true ||
+      observation['activeNeutralRowCount'] != 0) {
+    blockers.add('$prefix is not an exact certified initial paint');
+  }
+  final expectedBase = observation['expectedSelectionBaseUtf16'];
+  final expectedExtent = observation['expectedSelectionExtentUtf16'];
+  if (expectedBase == expectedExtent &&
+      (observation['caretSourceUtf16'] != expectedExtent ||
+          observation['caretDisplayUtf16'] == null)) {
+    blockers.add('$prefix has no identity-preserving caret');
+  }
+  final frameOrdinal = _integer(
+    observation['frameOrdinal'],
+    '$prefix.frameOrdinal',
+    blockers,
+  );
+  if (!frames.containsKey(frameOrdinal)) {
+    blockers.add('$prefix references missing frame $frameOrdinal');
+  } else {
+    measuredFrameOrdinals.add(frameOrdinal);
   }
 }
 
@@ -952,7 +1038,6 @@ void _validateSample(
   required Set<int> measuredFrameOrdinals,
   required num framePeriod,
   required bool requiresLiveStateZero,
-  required bool requiresOpen,
   required String prefix,
   required List<String> blockers,
   required Map<String, List<int>> metricValues,
@@ -1118,14 +1203,19 @@ void _validateSample(
       final expectedBase = paint['expectedSelectionBaseUtf16'];
       final expectedExtent = paint['expectedSelectionExtentUtf16'];
       final collapsed = expectedBase == expectedExtent;
+      final activeRowVisible = paint['activeRowVisible'] == true;
       if (!acceptedGenerations.contains(paint['sourceGeneration']) ||
           paint['visibleSourceSha256'] !=
               paint['expectedVisibleSourceSha256'] ||
           paint['canonicalSelectionBaseUtf16'] != expectedBase ||
           paint['canonicalSelectionExtentUtf16'] != expectedExtent ||
           (collapsed &&
+              activeRowVisible &&
               (paint['caretSourceUtf16'] != expectedExtent ||
-                  paint['caretDisplayUtf16'] == null))) {
+                  paint['caretDisplayUtf16'] == null)) ||
+          (!activeRowVisible &&
+              (paint['caretSourceUtf16'] != null ||
+                  paint['caretDisplayUtf16'] != null))) {
         blockers.add('$prefix raw paint $paintIndex is torn or stale');
       }
       final neutral = _integer(
@@ -1234,17 +1324,6 @@ void _validateSample(
   }
   if (certification >= _maxCertificationMicros) {
     blockers.add('$prefix certification exceeded 500 ms');
-  }
-  final open = sample['openToEditableMicros'];
-  if (requiresOpen && open == null) {
-    blockers.add('$prefix requires an open-to-editable measurement');
-  }
-  if (open != null) {
-    final openMicros = _integer(open, '$prefix.openToEditableMicros', blockers);
-    metricValues['openToEditableMicros']!.add(openMicros);
-    if (openMicros >= _maxOpenMicros) {
-      blockers.add('$prefix open exceeded 200 ms');
-    }
   }
   if (sample['rawProjectionFrames'] != 0) {
     blockers.add('$prefix painted an undeclared raw projection');
