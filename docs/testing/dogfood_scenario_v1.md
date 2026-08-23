@@ -266,7 +266,9 @@ the aggregate candidate gates must still be rerun before D0 can pass.
   reclassify more than one visible row, while the current pre-edit dependency
   result carries one presentation row. D0 needs one bounded parser-authored
   multi-surface result through the existing snapshot lifecycle, not another
-  controller authority slot or a host Markdown heuristic.
+  controller authority slot or a host Markdown heuristic. The selected bounded
+  seam is frozen in
+  [the D0 multi-surface transition plan](../architecture/v4/d0_multi_surface_transition_plan.md).
 
 ### Evidence/tooling blockers
 
