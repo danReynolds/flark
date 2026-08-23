@@ -47,7 +47,7 @@ void main() {
   );
 
   test(
-    'cached rows preserve unchanged peers and fail the touched row closed',
+    'cached rows preserve peers and adopt a parser-proved heading transition',
     () async {
       final padding = List<String>.filled(40, 'stable').join(' ');
       final source = List<String>.generate(
@@ -78,10 +78,12 @@ void main() {
       );
       expect(
         controller.surfaceRow(target).kind,
-        0,
-        reason: 'an unsupported touched-row edit has no current semantics',
+        12,
+        reason: 'the parser-proved block transition owns the current shell',
       );
-      expect(controller.surfaceRow(target).text, startsWith('# Paragraph 024'));
+      expect(controller.surfaceRow(target).headingLevel, 1);
+      expect(controller.surfaceRow(target).text, startsWith('Paragraph 024'));
+      expect(controller.surfaceRow(target).text, isNot(startsWith('#')));
 
       // pendingEdits reaches zero at admission, before the post-edit page is
       // installed; the mixed-partition assertions need the installed viewport
@@ -97,15 +99,30 @@ void main() {
       expect(controller.viewport?.revision, controller.revision);
       expect(
         controller.viewport?.certification,
-        FlarkCertification.mixedCurrent,
+        isNot(FlarkCertification.pendingNeutral),
+        reason:
+            'the post-edit page may already be fully certified when immediate '
+            'result-shell convergence wins the scheduling race',
       );
       expect(controller.visibleSource, contains('# Paragraph 024'));
       expect(controller.surfaceRow(first).kind, isNot(0));
+      final postEditTarget = controller.rows.firstWhere(
+        (row) => controller.surfaceRow(row).text.startsWith('Paragraph 024'),
+      );
       expect(
-        controller.surfaceRow(target).kind,
-        0,
+        controller.surfaceRow(postEditTarget).kind,
+        12,
         reason:
-            'a mixed-current page must not restore stale touched-row semantics',
+            'a mixed-current page must retain the result-revision shell proof',
+      );
+      expect(controller.surfaceRow(postEditTarget).headingLevel, 1);
+      expect(
+        controller.surfaceRow(postEditTarget).text,
+        startsWith('Paragraph 024'),
+      );
+      expect(
+        controller.surfaceRow(postEditTarget).text,
+        isNot(startsWith('#')),
       );
 
       await controller.continueParsing();

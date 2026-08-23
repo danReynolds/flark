@@ -1157,6 +1157,7 @@ final class FlarkEditorController extends ChangeNotifier {
       blockQuoteDepth: rowCertified ? blockQuote?.nestingDepth : null,
       codeBlock: rowCertified ? row.codeBlock : null,
       thematicBreak: rowCertified && row.thematicBreak,
+      listItem: rowCertified && listItem != null,
       ordinal: row.ordinal,
       active: active,
       selection: active || selected

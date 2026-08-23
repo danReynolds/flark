@@ -210,7 +210,7 @@ void main() {
   );
 
   test(
-    'space after an opening delimiter has exact immediate source and caret',
+    'space after an opening delimiter adopts the list shell immediately',
     () async {
       final controller = await open('*test*\n');
       addTearDown(controller.close);
@@ -222,7 +222,10 @@ void main() {
       final immediate = activeSurface(controller);
       final selection = immediate.selection!;
 
-      expect(immediate.text, contains('* test*'));
+      expect(immediate.kind, 5);
+      expect(immediate.listItem, isTrue);
+      expect(immediate.leadingText, '* ');
+      expect(immediate.text, 'test*');
       expect(immediate.runs, hasLength(1));
       expect(immediate.runs.single.sourceExact, isTrue);
       expect(controller.inputValue.text, contains('* test*'));
@@ -238,6 +241,11 @@ void main() {
       await settle(controller);
       expect(await controller.readSource(), '* test*\n');
       expect(controller.globalCaretOffset, openingBoundary + 1);
+      final recertified = activeSurface(controller);
+      expect(recertified.kind, 5);
+      expect(recertified.listItem, isTrue);
+      expect(recertified.leadingText, '* ');
+      expect(recertified.text, 'test*');
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
