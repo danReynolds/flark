@@ -423,13 +423,13 @@ Future<Map<String, Object?>> _replayLogProof(String lane, File log) async {
   final lines = await log.readAsLines();
   switch (lane) {
     case 'default':
-      _requireLines(lines, const [
+      _requireTerminalLines(lines, const [
         'verify_v4: active rust + dart + flutter v4 suites executed and passed.',
         'verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes.',
       ]);
       return {'kind': 'script-exit', 'exitCode': 0};
     case 'stress':
-      _requireLines(lines, const [
+      _requireTerminalLines(lines, const [
         'verify_v4_certification_stress: full payload-budget stress passed.',
         'verify_v4_certification_stress: historical M0 receipt drift remains a separate audit.',
       ]);
@@ -440,11 +440,18 @@ Future<Map<String, Object?>> _replayLogProof(String lane, File log) async {
   throw StateError('Unknown gate lane $lane.');
 }
 
-void _requireLines(List<String> lines, List<String> expected) {
-  for (final line in expected) {
-    if (lines.where((value) => value == line).length != 1) {
-      throw StateError('Gate log lacks one exact success protocol line: $line');
-    }
+void _requireTerminalLines(List<String> lines, List<String> expected) {
+  final nonempty = lines.where((line) => line.isNotEmpty).toList();
+  final terminalStart = nonempty.length - expected.length;
+  final matches =
+      terminalStart >= 0 &&
+      Iterable<int>.generate(
+        expected.length,
+      ).every((index) => nonempty[terminalStart + index] == expected[index]);
+  if (!matches) {
+    throw StateError(
+      'Gate log does not end with its exact success protocol lines.',
+    );
   }
 }
 

@@ -50,6 +50,29 @@ void main() {
       await expectLater(fixture.build(), throwsStateError);
       await fixture.defaultLog.writeAsString(defaultLog);
 
+      final defaultReceipt = await fixture.defaultGateReceipt.readAsString();
+      await fixture.defaultLog.writeAsString('${defaultLog}late output\n');
+      final lateReceipt = jsonDecode(defaultReceipt) as Map;
+      lateReceipt['log'] = await _identity(fixture.defaultLog);
+      await fixture.defaultGateReceipt.writeAsString(jsonEncode(lateReceipt));
+      await expectLater(fixture.build(), throwsStateError);
+
+      final reordered = const LineSplitter().convert(defaultLog);
+      final last = reordered.removeLast();
+      final beforeLast = reordered.removeLast();
+      await fixture.defaultLog.writeAsString(
+        '${reordered.join('\n')}\n$last\n$beforeLast\n',
+      );
+      final reorderedReceipt = jsonDecode(defaultReceipt) as Map;
+      reorderedReceipt['log'] = await _identity(fixture.defaultLog);
+      await fixture.defaultGateReceipt.writeAsString(
+        jsonEncode(reorderedReceipt),
+      );
+      await expectLater(fixture.build(), throwsStateError);
+
+      await fixture.defaultLog.writeAsString(defaultLog);
+      await fixture.defaultGateReceipt.writeAsString(defaultReceipt);
+
       final machineLog = await fixture.machineLog.readAsString();
       await fixture.machineLog.writeAsString(
         '${jsonEncode({'type': 'done', 'success': true})}\n',
@@ -264,6 +287,9 @@ final class _CompletionFixture {
       ..createSync(recursive: true)
       ..writeAsStringSync(
         '#!/usr/bin/env bash\n'
+        "echo 'verify_v4: active rust + dart + flutter v4 suites executed and passed.'\n"
+        "echo 'verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes.'\n"
+        "echo 'nested qualification output may repeat the protocol'\n"
         "echo 'verify_v4: active rust + dart + flutter v4 suites executed and passed.'\n"
         "echo 'verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes.'\n",
       );
