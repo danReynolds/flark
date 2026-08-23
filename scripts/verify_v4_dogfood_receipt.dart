@@ -4,6 +4,9 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 
+import 'dogfood_bundle_manifest.dart';
+import 'dogfood_fixture_identity.dart';
+
 const _schema = 'dogfood_performance_v1';
 const _microsPerSecond = 1000000;
 const _maxVisibilityMicros = 16000;
@@ -236,16 +239,8 @@ Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
   required bool verifyAssessment,
 }) async {
   final blockers = <String>[];
-  final metricValues = <String, List<int>>{
-    'sourceToPaintMicros': [],
-    'engineMicros': [],
-    'flutterFrameMicros': [],
-    'editorSpanMicros': [],
-    'visibleCertificationMicros': [],
-    'openToEditableMicros': [],
-    'peakRssDeltaBytes': [],
-    'retainedRssDeltaBytes': [],
-  };
+  final metricValues = _metricBuckets();
+  final cellMetricValues = <String, Map<String, List<int>>>{};
 
   if (receipt['schema'] != _schema || receipt['schemaVersion'] != 1) {
     blockers.add('receipt must declare $_schema schemaVersion=1');
@@ -329,6 +324,7 @@ Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
     ]) {
       await _verifyFileIdentity(artifacts[name], 'artifacts.$name', blockers);
     }
+    await _verifyBundleBinding(artifacts, blockers);
   }
 
   if (repository != null) {
@@ -396,27 +392,33 @@ Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
   for (final entry in expected.entries) {
     final cell = byId[entry.key];
     if (cell == null) continue;
-    _validateCell(
+    final cellMetrics = _validateCell(
       entry.key,
       cell,
       entry.value,
       framePeriod: framePeriod,
       blockers: blockers,
-      metricValues: metricValues,
     );
+    cellMetricValues[entry.key] = cellMetrics;
+    for (final metric in metricValues.entries) {
+      metric.value.addAll(cellMetrics[metric.key]!);
+    }
   }
 
   if (_percentile(metricValues['engineMicros']!, 99) > _maxEngineP99Micros) {
-    blockers.add('Rust engine p99 exceeded 4 ms');
+    blockers.add('Rust engine aggregate p99 exceeded 4 ms');
   }
   if (_percentile(metricValues['flutterFrameMicros']!, 99) >
       _maxFlutterP99Micros) {
-    blockers.add('Flutter frame work p99 exceeded 8 ms');
+    blockers.add('Flutter frame work aggregate p99 exceeded 8 ms');
   }
 
   final metrics = <String, Object>{
     for (final entry in metricValues.entries)
       entry.key: _distribution(entry.value),
+    for (final cell in cellMetricValues.entries)
+      for (final metric in cell.value.entries)
+        'cell[${cell.key}].${metric.key}': _distribution(metric.value),
   };
   if (verifyAssessment) {
     final expectedResult = blockers.isEmpty ? 'PASS' : 'FAIL';
@@ -446,20 +448,71 @@ Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
   );
 }
 
-void _validateCell(
+Map<String, List<int>> _metricBuckets() => <String, List<int>>{
+  'sourceToPaintMicros': [],
+  'engineMicros': [],
+  'flutterFrameMicros': [],
+  'editorSpanMicros': [],
+  'visibleCertificationMicros': [],
+  'openToEditableMicros': [],
+  'peakRssDeltaBytes': [],
+  'retainedRssDeltaBytes': [],
+};
+
+Future<void> _verifyBundleBinding(
+  Map<String, Object?> artifacts,
+  List<String> blockers,
+) async {
+  try {
+    final manifestIdentity = (artifacts['appBundleManifest']! as Map)
+        .cast<String, Object?>();
+    final mainIdentity = (artifacts['mainExecutable']! as Map)
+        .cast<String, Object?>();
+    final abiIdentity = (artifacts['embeddedAbi']! as Map)
+        .cast<String, Object?>();
+    final manifestFile = File(manifestIdentity['path']! as String);
+    final decoded = jsonDecode(await manifestFile.readAsString());
+    if (decoded is! Map<String, Object?> || decoded['bundlePath'] is! String) {
+      throw const FormatException('manifest has no bundlePath');
+    }
+    final bundle = Directory(decoded['bundlePath']! as String);
+    final verified = await verifyDogfoodBundleManifest(bundle, manifestFile);
+    for (final entry in <(Map<String, Object?>, String)>[
+      (mainIdentity, 'main executable'),
+      (abiIdentity, 'embedded ABI'),
+    ]) {
+      final file = File(entry.$1['path']! as String);
+      final manifestEntry = dogfoodBundleEntryForFile(verified, bundle, file);
+      if (manifestEntry.bytes != entry.$1['bytes'] ||
+          manifestEntry.sha256 != entry.$1['sha256']) {
+        blockers.add('${entry.$2} disagrees with the app bundle manifest');
+      }
+    }
+  } on Object catch (error) {
+    blockers.add('app bundle artifact binding failed: $error');
+  }
+}
+
+Map<String, List<int>> _validateCell(
   String id,
   Map<String, Object?> cell,
   DogfoodCellDenominator denominator, {
   required num framePeriod,
   required List<String> blockers,
-  required Map<String, List<int>> metricValues,
 }) {
+  final metricValues = _metricBuckets();
   final prefix = 'cell[$id]';
   final sourceBytes = _integer(
     cell['sourceBytes'],
     '$prefix.sourceBytes',
     blockers,
   );
+  final fixture = _map(cell['fixture'], '$prefix.fixture', blockers);
+  final expectedFixture = dogfoodFixtureIdentity(id);
+  if (!_sameJson(fixture, expectedFixture) ||
+      fixture['sourceBytes'] != sourceBytes) {
+    blockers.add('$prefix fixture identity does not match the frozen preset');
+  }
   if (cell['warmupsPerRun'] != denominator.warmups ||
       cell['samplesPerRun'] != denominator.samples ||
       cell['runCount'] != denominator.runs ||
@@ -562,6 +615,7 @@ void _validateCell(
     for (final entry in <String, Set<_SourceKey>>{
       'input': inputObservations.keys.toSet(),
       'engine': engineObservations.keys.toSet(),
+      'paint': paintObservations.keys.toSet(),
     }.entries) {
       if (!entry.value.containsAll(declaredGenerations) ||
           !declaredGenerations.containsAll(entry.value)) {
@@ -570,10 +624,6 @@ void _validateCell(
           'declared generations',
         );
       }
-    }
-    final paintedGenerations = paintObservations.keys.toSet();
-    if (!declaredGenerations.containsAll(paintedGenerations)) {
-      blockers.add('$runPrefix paints contain an undeclared source generation');
     }
     for (var index = 0; index < samples.length; index += 1) {
       final sample = declared[warmups.length + index];
@@ -690,6 +740,14 @@ void _validateCell(
       processIds.length != 1) {
     blockers.add('$prefix must use exactly one warmed process');
   }
+  if (_percentile(metricValues['engineMicros']!, 99) > _maxEngineP99Micros) {
+    blockers.add('$prefix Rust engine p99 exceeded 4 ms');
+  }
+  if (_percentile(metricValues['flutterFrameMicros']!, 99) >
+      _maxFlutterP99Micros) {
+    blockers.add('$prefix Flutter frame work p99 exceeded 8 ms');
+  }
+  return metricValues;
 }
 
 void _validateOpenObservation(
@@ -1010,7 +1068,11 @@ void _recordMeasuredFrames(
   final ordered = ordinals.toList()..sort();
   for (final ordinal in ordered) {
     final frame = frames[ordinal];
-    if (frame == null || frame['editorAttributed'] != true) continue;
+    if (frame == null) continue;
+    if (frame['editorAttributed'] != true) {
+      blockers.add('$prefix frame $ordinal was not editor-attributed');
+      continue;
+    }
     final build = frame['buildMicros']! as int;
     final raster = frame['rasterMicros']! as int;
     final sync = frame['editorSyncMicros']! as int;
@@ -1139,6 +1201,23 @@ void _validateSample(
   if (orderedPaints.isEmpty) {
     blockers.add('$prefix has no raw paint observation');
   } else {
+    for (final acceptedGeneration in acceptedGenerations) {
+      final generationPaints = orderedPaints.where(
+        (paint) => paint['sourceGeneration'] == acceptedGeneration,
+      );
+      if (generationPaints.isEmpty) {
+        blockers.add(
+          '$prefix accepted generation $acceptedGeneration never painted',
+        );
+      } else if (!generationPaints.any(
+        (paint) => paint['frameOrdinal'] is int,
+      )) {
+        blockers.add(
+          '$prefix accepted generation $acceptedGeneration has no '
+          'FrameTiming join',
+        );
+      }
+    }
     final finalPaints = orderedPaints
         .where((paint) => paint['sourceGeneration'] == generation)
         .toList();
@@ -1271,6 +1350,9 @@ void _validateSample(
   for (var ordinal = start; ordinal <= end; ordinal += 1) {
     if (!frames.containsKey(ordinal)) {
       blockers.add('$prefix is missing frame $ordinal');
+    }
+    if (collectMetrics && requiresInput) {
+      measuredFrameOrdinals.add(ordinal);
     }
   }
   if (frames[proving] == null) {

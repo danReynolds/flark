@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flark.dev/schemas/dogfood_candidate_evidence_v1.schema.json",
+  "title": "Flark D0 candidate evidence inputs",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "candidate", "openingSession", "ci", "reviews", "movingSurface", "blockers", "handoff"],
+  "properties": {
+    "schema": {"const": "dogfood_candidate_evidence_v1"},
+    "candidate": {"$ref": "#/$defs/candidate"},
+    "openingSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "reason"],
+      "properties": {
+        "result": {"const": "DISABLED"},
+        "reason": {"const": "streamed preset disabled in D0 app"}
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["headSha", "checks"],
+      "properties": {
+        "headSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "checks": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "result", "url"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "result": {"const": "SUCCESS"},
+              "url": {"type": "string", "pattern": "^https://github\\.com/"}
+            }
+          }
+        }
+      }
+    },
+    "reviews": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["architecture", "evidence"],
+      "properties": {
+        "architecture": {"$ref": "#/$defs/review"},
+        "evidence": {"$ref": "#/$defs/review"}
+      }
+    },
+    "movingSurface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateCommit", "candidateTree", "result", "reviewer", "appManifestSha256", "completedSteps", "capture", "commandLog"],
+      "properties": {
+        "candidateCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "candidateTree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "result": {"const": "PASS"},
+        "reviewer": {"type": "string", "minLength": 1},
+        "appManifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "completedSteps": {"type": "array", "minItems": 9, "uniqueItems": true, "items": {"type": "string"}},
+        "capture": {"$ref": "#/$defs/fileIdentity"},
+        "commandLog": {"$ref": "#/$defs/fileIdentity"}
+      }
+    },
+    "blockers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["openB0", "openB1", "b2Ledger"],
+      "properties": {
+        "openB0": {"const": 0},
+        "openB1": {"const": 0},
+        "b2Ledger": {"$ref": "#/$defs/fileIdentity"}
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "appBundlePath"],
+      "properties": {
+        "date": {"type": "string", "minLength": 1},
+        "appBundlePath": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateCommit", "candidateTree", "reviewer", "result", "openB0", "openB1", "artifact"],
+      "properties": {
+        "candidateCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "candidateTree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "reviewer": {"type": "string", "minLength": 1},
+        "result": {"const": "PASS"},
+        "openB0": {"const": 0},
+        "openB1": {"const": 0},
+        "artifact": {"$ref": "#/$defs/fileIdentity"}
+      }
+    },
+    "fileIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

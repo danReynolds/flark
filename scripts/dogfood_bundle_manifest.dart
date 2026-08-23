@@ -50,6 +50,60 @@ final class DogfoodBundleManifest {
   };
 }
 
+Future<DogfoodBundleManifest> verifyDogfoodBundleManifest(
+  Directory bundle,
+  File manifestFile,
+) async {
+  if (!await manifestFile.exists()) {
+    throw ArgumentError.value(
+      manifestFile.absolute.path,
+      'manifestFile',
+      'does not exist',
+    );
+  }
+  final decoded = jsonDecode(await manifestFile.readAsString());
+  if (decoded is! Map<String, Object?> ||
+      decoded.keys.toSet().difference(const {
+        'schema',
+        'bundlePath',
+        'sha256',
+        'entries',
+      }).isNotEmpty ||
+      decoded['schema'] != 'dogfood_bundle_manifest_v1') {
+    throw const FormatException('Invalid dogfood bundle manifest.');
+  }
+  final recomputed = await buildDogfoodBundleManifest(bundle);
+  final expected = recomputed.toJson();
+  if (jsonEncode(decoded) != jsonEncode(expected)) {
+    throw StateError(
+      'Dogfood bundle manifest does not match ${bundle.absolute.path}.',
+    );
+  }
+  return recomputed;
+}
+
+DogfoodBundleManifestEntry dogfoodBundleEntryForFile(
+  DogfoodBundleManifest manifest,
+  Directory bundle,
+  File file,
+) {
+  final root = bundle.absolute.path;
+  final absolute = file.absolute.path;
+  if (!absolute.startsWith('$root${Platform.pathSeparator}')) {
+    throw StateError('Artifact is outside the dogfood app bundle: $absolute');
+  }
+  final relative = absolute
+      .substring(root.length + 1)
+      .split(Platform.pathSeparator)
+      .join('/');
+  return manifest.entries.singleWhere(
+    (entry) => entry.path == relative && entry.type == 'file',
+    orElse: () => throw StateError(
+      'Dogfood bundle manifest does not contain file $relative.',
+    ),
+  );
+}
+
 Future<DogfoodBundleManifest> buildDogfoodBundleManifest(
   Directory bundle,
 ) async {

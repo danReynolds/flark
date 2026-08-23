@@ -273,14 +273,14 @@ it adds neither a controller authority slot nor a host Markdown heuristic.
 
 ### Evidence/tooling blockers
 
-- No checked-in dogfood-ready orchestrator can run the native canary without a
-  skip and bind it to the app-embedded ABI. Machine-result and app-bundle
-  manifest validators are present; orchestration and exact-artifact receipt
-  assembly remain open.
-- No `dogfood_performance_v1` schema/replay validator or actual-app timestamp
-  instrumentation exists.
-- The actual-paint gaps marked above can false-green through final-state tests.
-- Historical performance prose is not current-candidate evidence.
+- The checked-in orchestrator, non-skipped native canary, actual-app profile
+  runner, and completion validator now fail closed on missing or mismatched
+  evidence. They are tooling, not a current-candidate receipt.
+- D0 remains blocked until the unlocked foreground macOS session produces the
+  native, moving-surface, performance/lifecycle, and completion receipts on one
+  clean commit whose required CI checks are green.
+- Historical performance prose and receipts from a different commit, app
+  manifest, fixture hash, or display are not current-candidate evidence.
 
 ## Explicit outside-D0 ledger
 

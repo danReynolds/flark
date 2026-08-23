@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 
 import '../packages/flark/example/lib/dogfood_documents.dart';
 import '../packages/flark/test/support/macos_native_canary_driver.dart';
+import 'dogfood_fixture_identity.dart';
 import 'verify_v4_dogfood_receipt.dart';
 
 const _profileCadence = Duration(microseconds: 16667);
@@ -61,10 +62,11 @@ Future<void> main(List<String> arguments) async {
     }
     return;
   }
-  if (arguments.length != 5) {
+  if (arguments.length != 6) {
     stderr.writeln(
       'usage: dart run scripts/dogfood_profile_run.dart '
-      '<cell-id> <run-index> <app-executable> <embedded-abi> <output.json>',
+      '<cell-id> <run-index> <app-executable> <embedded-abi> '
+      '<bundle-manifest.json> <output.json>',
     );
     exitCode = 64;
     return;
@@ -90,17 +92,47 @@ Future<void> main(List<String> arguments) async {
     return;
   }
   try {
+    final appExecutable = File(arguments[2]).absolute;
+    final embeddedAbi = File(arguments[3]).absolute;
+    final manifest = File(arguments[4]).absolute;
     final result = await _runCell(
       cellId: cellId,
       runIndex: runIndex,
       denominator: denominator,
-      appExecutable: File(arguments[2]).absolute,
-      embeddedAbi: File(arguments[3]).absolute,
+      appExecutable: appExecutable,
+      embeddedAbi: embeddedAbi,
     );
-    final output = File(arguments[4]);
+    final manifestValue = jsonDecode(await manifest.readAsString());
+    if (manifestValue is! Map<String, Object?> ||
+        manifestValue['schema'] != 'dogfood_bundle_manifest_v1' ||
+        manifestValue['sha256'] is! String) {
+      throw const FormatException('Invalid dogfood bundle manifest.');
+    }
+    final fixture = dogfoodFixtureIdentity(cellId);
+    if (fixture['sourceBytes'] != result.initialSourceBytes) {
+      throw StateError('$cellId source size disagrees with its frozen fixture');
+    }
+    final output = File(arguments[5]);
     await output.parent.create(recursive: true);
     await output.writeAsString(
-      '${jsonEncode({'id': cellId, 'sourceBytes': result.initialSourceBytes, 'warmupsPerRun': denominator.warmups, 'samplesPerRun': denominator.samples, 'runCount': denominator.runs, 'cadenceHz': denominator.cadenceHz, 'display': result.display, 'run': result.run})}\n',
+      '${jsonEncode({
+        'id': cellId,
+        'sourceBytes': result.initialSourceBytes,
+        'warmupsPerRun': denominator.warmups,
+        'samplesPerRun': denominator.samples,
+        'runCount': denominator.runs,
+        'cadenceHz': denominator.cadenceHz,
+        'binding': {
+          'candidateCommit': await _git(const ['rev-parse', 'HEAD']),
+          'candidateTree': await _git(const ['rev-parse', 'HEAD^{tree}']),
+          'bundleManifestSha256': manifestValue['sha256'],
+          'mainExecutable': await _fileIdentity(appExecutable),
+          'embeddedAbi': await _fileIdentity(embeddedAbi),
+        },
+        'fixture': fixture,
+        'display': result.display,
+        'run': result.run,
+      })}\n',
       flush: true,
     );
     stdout.writeln(
@@ -112,6 +144,27 @@ Future<void> main(List<String> arguments) async {
     stderr.writeln(stackTrace);
     exitCode = 1;
   }
+}
+
+Future<Map<String, Object>> _fileIdentity(File file) async => {
+  'path': file.absolute.path,
+  'bytes': await file.length(),
+  'sha256': (await sha256.bind(file.openRead()).first).toString(),
+};
+
+Future<String> _git(List<String> arguments) async {
+  final repository = File.fromUri(Platform.script).parent.parent;
+  final result = await Process.run(
+    'git',
+    arguments,
+    workingDirectory: repository.path,
+  );
+  if (result.exitCode != 0) {
+    throw StateError(
+      'git ${arguments.join(' ')} failed: ${(result.stderr as String).trim()}',
+    );
+  }
+  return (result.stdout as String).trim();
 }
 
 Future<_ProfileRunResult> _runCell({

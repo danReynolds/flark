@@ -14,6 +14,14 @@ NATIVE_OUT="$OUT_DIR/native"
 MANIFEST="$NATIVE_OUT/app_bundle_manifest.json"
 FRAGMENTS="$OUT_DIR/profile-fragments"
 PERFORMANCE_RECEIPT="$OUT_DIR/dogfood_performance_receipt.json"
+NATIVE_RECEIPT="$NATIVE_OUT/dogfood_native_receipt.json"
+DEFAULT_LOG="$OUT_DIR/default-gate.log"
+STRESS_LOG="$OUT_DIR/certification-stress.log"
+ACTUAL_PAINT_LOG="$OUT_DIR/actual-paint.log"
+COMPLETION_RECEIPT="$OUT_DIR/dogfood_completion_receipt.json"
+CANDIDATE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+CANDIDATE_TREE="$(git -C "$ROOT" rev-parse 'HEAD^{tree}')"
+CANDIDATE_MARKER="dogfood-candidate: commit=$CANDIDATE_COMMIT tree=$CANDIDATE_TREE"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo 'verify-v4-dogfood-ready: macOS is required' >&2
@@ -36,10 +44,12 @@ fi
 mkdir -p "$FRAGMENTS"
 
 echo '==> Active functional gate'
-bash "$ROOT/scripts/verify_v4.sh"
+bash "$ROOT/scripts/verify_v4.sh" 2>&1 | tee "$DEFAULT_LOG"
+echo "$CANDIDATE_MARKER" | tee -a "$DEFAULT_LOG"
 
 echo '==> Certification stress gate'
-bash "$ROOT/scripts/verify_v4_certification_stress.sh"
+bash "$ROOT/scripts/verify_v4_certification_stress.sh" 2>&1 | tee "$STRESS_LOG"
+echo "$CANDIDATE_MARKER" | tee -a "$STRESS_LOG"
 
 echo '==> Exact profile dogfood app'
 (
@@ -53,6 +63,17 @@ for artifact in "$APP" "$MAIN" "$ABI"; do
   fi
 done
 
+echo '==> Non-skipped North-Star actual-paint gate'
+(
+  cd "$ROOT/packages/flark"
+  FLARK_V4_LIBRARY_PATH="$ABI" \
+    flutter test \
+      test/north_star_paint_matrix_test.dart \
+      test/inline_dependency_island_paint_acceptance_test.dart \
+      --concurrency=1
+) 2>&1 | tee "$ACTUAL_PAINT_LOG"
+echo "$CANDIDATE_MARKER" | tee -a "$ACTUAL_PAINT_LOG"
+
 echo '==> Non-skipped native macOS canary'
 FLARK_DOGFOOD_PREBUILT_APP=1 \
   bash "$ROOT/scripts/verify_v4_native_canary.sh" "$NATIVE_OUT"
@@ -62,9 +83,12 @@ while IFS=$'\t' read -r cell_id run_count; do
   for ((run_index = 0; run_index < run_count; run_index += 1)); do
     fragment="$FRAGMENTS/${cell_id}.run-${run_index}.json"
     echo "    $cell_id run $run_index/$((run_count - 1))"
-    /usr/local/bin/timeout 900 \
-      dart run "$ROOT/scripts/dogfood_profile_run.dart" \
-        "$cell_id" "$run_index" "$MAIN" "$ABI" "$fragment"
+    (
+      cd "$ROOT"
+      /usr/local/bin/timeout 900 \
+        dart run scripts/dogfood_profile_run.dart \
+          "$cell_id" "$run_index" "$MAIN" "$ABI" "$MANIFEST" "$fragment"
+    )
   done
 done < <(cd "$ROOT" && dart run scripts/dogfood_profile_run.dart --list)
 
@@ -83,4 +107,20 @@ if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
   exit 1
 fi
 
-echo "verify-v4-dogfood-ready: PASS receipt=$PERFORMANCE_RECEIPT"
+if [[ -z "${FLARK_D0_CANDIDATE_EVIDENCE:-}" ]]; then
+  echo 'verify-v4-dogfood-ready: INCOMPLETE candidate evidence is required' >&2
+  echo "artifacts are preserved at $OUT_DIR" >&2
+  echo 'set FLARK_D0_CANDIDATE_EVIDENCE to the exact-CI/review/moving-surface JSON and run the completion validator' >&2
+  exit 1
+fi
+
+echo '==> Bind final D0 completion receipt'
+(
+  cd "$ROOT"
+  dart run scripts/verify_v4_dogfood_completion.dart \
+    "$ROOT" "$DEFAULT_LOG" "$STRESS_LOG" "$ACTUAL_PAINT_LOG" \
+    "$NATIVE_RECEIPT" "$PERFORMANCE_RECEIPT" \
+    "$FLARK_D0_CANDIDATE_EVIDENCE" "$COMPLETION_RECEIPT"
+)
+
+echo "verify-v4-dogfood-ready: PASS receipt=$COMPLETION_RECEIPT"

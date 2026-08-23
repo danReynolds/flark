@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../../../scripts/dogfood_fixture_identity.dart';
 import '../../../scripts/verify_v4_dogfood_receipt.dart';
 import '../../../scripts/dogfood_performance_receipt.dart';
 
@@ -21,7 +22,7 @@ void main() {
     expect(schema['additionalProperties'], isFalse);
 
     final sealed = await sealDogfoodPerformanceReceipt(
-      _validRawReceipt(),
+      validRawDogfoodPerformanceReceiptForTest(),
       verifyArtifactFiles: false,
     );
     final result = await verifyDogfoodPerformanceReceipt(
@@ -41,7 +42,7 @@ void main() {
 
   test('replay fails closed on timing and denominator tampering', () async {
     final sealed = await sealDogfoodPerformanceReceipt(
-      _validRawReceipt(),
+      validRawDogfoodPerformanceReceiptForTest(),
       verifyArtifactFiles: false,
     );
     final timingTampered = _copy(sealed);
@@ -74,7 +75,7 @@ void main() {
 
   test('replay rejects a forged assessment and missing open proof', () async {
     final sealed = await sealDogfoodPerformanceReceipt(
-      _validRawReceipt(),
+      validRawDogfoodPerformanceReceiptForTest(),
       verifyArtifactFiles: false,
     );
     final forged = _copy(sealed);
@@ -107,7 +108,7 @@ void main() {
 
   test('replay rejects raw paint, input, and engine disagreement', () async {
     final sealed = await sealDogfoodPerformanceReceipt(
-      _validRawReceipt(),
+      validRawDogfoodPerformanceReceiptForTest(),
       verifyArtifactFiles: false,
     );
 
@@ -148,9 +149,87 @@ void main() {
     );
   });
 
+  test(
+    'budgets are enforced per workload rather than diluted globally',
+    () async {
+      final sealed = await sealDogfoodPerformanceReceipt(
+        validRawDogfoodPerformanceReceiptForTest(),
+        verifyArtifactFiles: false,
+      );
+      final tampered = _copy(sealed);
+      final cell = _cells(
+        tampered,
+      ).firstWhere((value) => value['id'] == 'product-tour-typing');
+      final run = ((cell['runs']! as List).first as Map)
+          .cast<String, Object?>();
+      final engines = (run['engineObservations']! as List).cast<Map>();
+      final samples = (run['samples']! as List).cast<Map>();
+      for (var index = 0; index < 4; index += 1) {
+        engines[20 + index]['nativeFfiMicros'] = 5000;
+        samples[index]['engineMicros'] = 5000;
+      }
+      final result = await verifyDogfoodPerformanceReceipt(
+        tampered,
+        verifyArtifactFiles: false,
+      );
+      expect(
+        result.blockers,
+        contains('cell[product-tour-typing] Rust engine p99 exceeded 4 ms'),
+      );
+      expect(
+        result.blockers,
+        isNot(contains('Rust engine aggregate p99 exceeded 4 ms')),
+      );
+    },
+  );
+
+  test('every accepted generation and intervening frame is evidence', () async {
+    final sealed = await sealDogfoodPerformanceReceipt(
+      validRawDogfoodPerformanceReceiptForTest(),
+      verifyArtifactFiles: false,
+    );
+    final missingPaint = _copy(sealed);
+    final structural = _cells(
+      missingPaint,
+    ).firstWhere((value) => value['id'] == 'product-tour-structural-burst');
+    final run = ((structural['runs']! as List).first as Map)
+        .cast<String, Object?>();
+    final sample = ((run['samples']! as List).first as Map)
+        .cast<String, Object?>();
+    final firstGeneration =
+        (sample['acceptedSourceGenerations']! as List).first as int;
+    (run['paintObservations']! as List).removeWhere(
+      (value) => (value as Map)['sourceGeneration'] == firstGeneration,
+    );
+    final missingResult = await verifyDogfoodPerformanceReceipt(
+      missingPaint,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      missingResult.blockers.join('\n'),
+      contains('paint observations do not exactly cover'),
+    );
+
+    final missedFrame = _copy(sealed);
+    final missedStructural = _cells(
+      missedFrame,
+    ).firstWhere((value) => value['id'] == 'product-tour-structural-burst');
+    final missedRun = ((missedStructural['runs']! as List).first as Map)
+        .cast<String, Object?>();
+    final missedSample = ((missedRun['samples']! as List).first as Map)
+        .cast<String, Object?>();
+    final start = missedSample['startFrameOrdinal']! as int;
+    ((missedRun['frames']! as List)[start] as Map)['missed'] = true;
+    final missedResult = await verifyDogfoodPerformanceReceipt(
+      missedFrame,
+      verifyArtifactFiles: false,
+    );
+    expect(missedResult.blockers.join('\n'), contains('frame $start missed'));
+  });
+
   test('lifecycle replay keys restarted generations by session', () async {
     final sealed = await sealDogfoodPerformanceReceipt(
-      _validRawReceipt(),
+      validRawDogfoodPerformanceReceiptForTest(),
       verifyArtifactFiles: false,
     );
     final lifecycle = _cells(
@@ -190,7 +269,7 @@ void main() {
 
   test('open replay rejects hidden work and a torn first paint', () async {
     final sealed = await sealDogfoodPerformanceReceipt(
-      _validRawReceipt(),
+      validRawDogfoodPerformanceReceiptForTest(),
       verifyArtifactFiles: false,
     );
     final hiddenWork = _copy(sealed);
@@ -233,18 +312,28 @@ void main() {
   });
 
   test('fragment assembly is complete, ordered, and display-bound', () {
-    final raw = _validRawReceipt();
+    final raw = validRawDogfoodPerformanceReceiptForTest();
     final display = (raw['display']! as Map).cast<String, Object?>();
     final fragments = <Map<String, Object?>>[];
+    final binding = {
+      'candidateCommit': _hash40('a'),
+      'candidateTree': _hash40('b'),
+      'bundleManifestSha256': _hash('c'),
+      'mainExecutable': _identity('app'),
+      'embeddedAbi': _identity('abi'),
+    };
     for (final cell in _cells(raw).reversed) {
       for (final run in ((cell['runs']! as List).reversed)) {
+        final fixture = dogfoodFixtureIdentity(cell['id']! as String);
         fragments.add({
           'id': cell['id'],
-          'sourceBytes': cell['sourceBytes'],
+          'sourceBytes': fixture['sourceBytes'],
           'warmupsPerRun': cell['warmupsPerRun'],
           'samplesPerRun': cell['samplesPerRun'],
           'runCount': cell['runCount'],
           'cadenceHz': cell['cadenceHz'],
+          'binding': binding,
+          'fixture': fixture,
           'display': display,
           'run': run,
         });
@@ -266,19 +355,33 @@ void main() {
       () => assembleDogfoodProfileFragments([mismatched, ...fragments.skip(1)]),
       throwsStateError,
     );
+
+    final wrongFixture = _copy(fragments.first);
+    (wrongFixture['fixture']! as Map)['sourceBytes'] = 1;
+    expect(
+      () =>
+          assembleDogfoodProfileFragments([wrongFixture, ...fragments.skip(1)]),
+      throwsStateError,
+    );
+
+    final wrongCandidate = _copy(fragments.first);
+    (wrongCandidate['binding']! as Map)['candidateCommit'] = _hash40('d');
+    expect(
+      () => assembleDogfoodProfileFragments([
+        wrongCandidate,
+        ...fragments.skip(1),
+      ]),
+      throwsStateError,
+    );
   });
 }
 
-Map<String, Object?> _validRawReceipt() {
+Map<String, Object?> validRawDogfoodPerformanceReceiptForTest() {
   final cells = <Map<String, Object?>>[];
   for (final entry in requiredDogfoodCells.entries) {
     final denominator = entry.value;
-    final sourceBytes = switch (entry.key) {
-      String id when id.contains('10m') => 10 * 1024 * 1024,
-      String id when id.contains('5m') => 5 * 1024 * 1024,
-      String id when id.contains('1m') => 1024 * 1024,
-      _ => 4096,
-    };
+    final fixture = dogfoodFixtureIdentity(entry.key);
+    final sourceBytes = fixture['sourceBytes']! as int;
     final runs = <Map<String, Object?>>[];
     for (var run = 0; run < denominator.runs; run += 1) {
       final warmups = <Map<String, Object?>>[];
@@ -448,6 +551,7 @@ Map<String, Object?> _validRawReceipt() {
       'samplesPerRun': denominator.samples,
       'runCount': denominator.runs,
       'cadenceHz': denominator.cadenceHz,
+      'fixture': fixture,
       'runs': runs,
     });
   }
@@ -628,6 +732,8 @@ Map<String, Object> _identity(String path) => {
 };
 
 String _hash(String character) => List.filled(64, character).join();
+
+String _hash40(String character) => List.filled(40, character).join();
 
 Map<String, Object?> _copy(Map<String, Object?> value) =>
     jsonDecode(jsonEncode(value)) as Map<String, Object?>;

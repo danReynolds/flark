@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import 'dogfood_bundle_manifest.dart';
 import 'verify_flutter_machine_test.dart';
 
 Future<Map<String, Object?>> buildDogfoodNativeReceipt({
@@ -28,12 +29,20 @@ Future<Map<String, Object?>> buildDogfoodNativeReceipt({
     throw ArgumentError.value(appBundle.path, 'appBundle', 'does not exist');
   }
 
-  final manifestValue = jsonDecode(await bundleManifest.readAsString());
-  if (manifestValue is! Map<String, Object?> ||
-      manifestValue['schema'] != 'dogfood_bundle_manifest_v1' ||
-      manifestValue['sha256'] is! String) {
-    throw const FormatException('Invalid dogfood bundle manifest.');
-  }
+  final verifiedManifest = await verifyDogfoodBundleManifest(
+    appBundle,
+    bundleManifest,
+  );
+  final mainEntry = dogfoodBundleEntryForFile(
+    verifiedManifest,
+    appBundle,
+    mainExecutable,
+  );
+  final abiEntry = dogfoodBundleEntryForFile(
+    verifiedManifest,
+    appBundle,
+    embeddedAbi,
+  );
   final testReceipt = verifyFlutterMachineTest(
     await machineLog.readAsLines(),
     expectedName: expectedTestName,
@@ -53,10 +62,13 @@ Future<Map<String, Object?>> buildDogfoodNativeReceipt({
     'appBundle': {
       'path': appBundle.absolute.path,
       'manifestPath': bundleManifest.absolute.path,
-      'manifestSha256': manifestValue['sha256']! as String,
+      'manifestSha256': verifiedManifest.sha256,
     },
-    'mainExecutable': await _fileIdentity(mainExecutable),
-    'embeddedAbi': await _fileIdentity(embeddedAbi),
+    'mainExecutable': await _fileIdentity(
+      mainExecutable,
+      manifestEntry: mainEntry,
+    ),
+    'embeddedAbi': await _fileIdentity(embeddedAbi, manifestEntry: abiEntry),
     'nativeCanary': {
       'name': testReceipt.name,
       'result': testReceipt.result,
@@ -67,11 +79,20 @@ Future<Map<String, Object?>> buildDogfoodNativeReceipt({
   };
 }
 
-Future<Map<String, Object>> _fileIdentity(File file) async => {
-  'path': file.absolute.path,
-  'bytes': await file.length(),
-  'sha256': (await sha256.bind(file.openRead()).first).toString(),
-};
+Future<Map<String, Object>> _fileIdentity(
+  File file, {
+  DogfoodBundleManifestEntry? manifestEntry,
+}) async {
+  final bytes = await file.length();
+  final digest = (await sha256.bind(file.openRead()).first).toString();
+  if (manifestEntry != null &&
+      (manifestEntry.bytes != bytes || manifestEntry.sha256 != digest)) {
+    throw StateError(
+      'Artifact ${file.absolute.path} disagrees with the bundle manifest.',
+    );
+  }
+  return {'path': file.absolute.path, 'bytes': bytes, 'sha256': digest};
+}
 
 Future<String> _git(Directory repository, List<String> arguments) async {
   final result = await Process.run(

@@ -1,13 +1,22 @@
+// ignore_for_file: avoid_relative_lib_imports
+
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import 'dogfood_bundle_manifest.dart';
+import 'dogfood_fixture_identity.dart';
 import 'verify_v4_dogfood_receipt.dart';
 
 final class DogfoodProfileAssembly {
-  const DogfoodProfileAssembly({required this.display, required this.cells});
+  const DogfoodProfileAssembly({
+    required this.binding,
+    required this.display,
+    required this.cells,
+  });
 
+  final Map<String, Object?> binding;
   final Map<String, Object?> display;
   final List<Map<String, Object?>> cells;
 }
@@ -21,6 +30,7 @@ DogfoodProfileAssembly assembleDogfoodProfileFragments(
     if (streamed) ...streamedDogfoodCell,
   };
   final byCell = <String, List<Map<String, Object?>>>{};
+  Map<String, Object?>? binding;
   Map<String, Object?>? display;
   for (final fragment in fragments) {
     final id = fragment['id'];
@@ -29,6 +39,19 @@ DogfoodProfileAssembly assembleDogfoodProfileFragments(
     }
     final fragmentDisplay = (fragment['display']! as Map)
         .cast<String, Object?>();
+    final fragmentBinding = (fragment['binding']! as Map)
+        .cast<String, Object?>();
+    final fixture = (fragment['fixture']! as Map).cast<String, Object?>();
+    final expectedFixture = dogfoodFixtureIdentity(id);
+    if (jsonEncode(fixture) != jsonEncode(expectedFixture) ||
+        fragment['sourceBytes'] != expectedFixture['sourceBytes']) {
+      throw StateError('$id fragment disagrees with its frozen fixture');
+    }
+    if (binding == null) {
+      binding = fragmentBinding;
+    } else if (jsonEncode(binding) != jsonEncode(fragmentBinding)) {
+      throw StateError('profile fragments disagree on candidate artifacts');
+    }
     if (display == null) {
       display = fragmentDisplay;
     } else if (jsonEncode(display) != jsonEncode(fragmentDisplay)) {
@@ -71,11 +94,18 @@ DogfoodProfileAssembly assembleDogfoodProfileFragments(
       'samplesPerRun': first['samplesPerRun'],
       'runCount': first['runCount'],
       'cadenceHz': first['cadenceHz'],
+      'fixture': first['fixture'],
       'runs': [for (final value in values) value['run']],
     });
   }
-  if (display == null) throw StateError('profile receipt has no display');
-  return DogfoodProfileAssembly(display: display, cells: cells);
+  if (binding == null || display == null) {
+    throw StateError('profile receipt has no binding or display');
+  }
+  return DogfoodProfileAssembly(
+    binding: binding,
+    display: display,
+    cells: cells,
+  );
 }
 
 Future<void> main(List<String> arguments) async {
@@ -120,6 +150,20 @@ Future<void> main(List<String> arguments) async {
     if (status.isNotEmpty) {
       throw StateError('performance receipt requires a clean worktree');
     }
+    final verifiedManifest = await verifyDogfoodBundleManifest(
+      appBundle,
+      bundleManifest,
+    );
+    final mainEntry = dogfoodBundleEntryForFile(
+      verifiedManifest,
+      appBundle,
+      mainExecutable,
+    );
+    final abiEntry = dogfoodBundleEntryForFile(
+      verifiedManifest,
+      appBundle,
+      embeddedAbi,
+    );
     final fragments = <Map<String, Object?>>[];
     await for (final entity in fragmentsDirectory.list()) {
       if (entity is! File || !entity.path.endsWith('.json')) continue;
@@ -137,6 +181,26 @@ Future<void> main(List<String> arguments) async {
     );
     final head = await _git(repository, const ['rev-parse', 'HEAD']);
     final tree = await _git(repository, const ['rev-parse', 'HEAD^{tree}']);
+    final mainIdentity = await _fileIdentity(mainExecutable);
+    final abiIdentity = await _fileIdentity(embeddedAbi);
+    final expectedBinding = <String, Object?>{
+      'candidateCommit': head,
+      'candidateTree': tree,
+      'bundleManifestSha256': verifiedManifest.sha256,
+      'mainExecutable': mainIdentity,
+      'embeddedAbi': abiIdentity,
+    };
+    if (jsonEncode(assembly.binding) != jsonEncode(expectedBinding)) {
+      throw StateError(
+        'profile fragments are not bound to the current candidate app',
+      );
+    }
+    if (mainEntry.bytes != mainIdentity['bytes'] ||
+        mainEntry.sha256 != mainIdentity['sha256'] ||
+        abiEntry.bytes != abiIdentity['bytes'] ||
+        abiEntry.sha256 != abiIdentity['sha256']) {
+      throw StateError('profile artifacts disagree with the bundle manifest');
+    }
     final ledger = File(
       '${repository.path}/docs/testing/dogfood_scenario_v1.md',
     );
@@ -160,8 +224,8 @@ Future<void> main(List<String> arguments) async {
       },
       'artifacts': {
         'appBundleManifest': await _fileIdentity(bundleManifest),
-        'mainExecutable': await _fileIdentity(mainExecutable),
-        'embeddedAbi': await _fileIdentity(embeddedAbi),
+        'mainExecutable': mainIdentity,
+        'embeddedAbi': abiIdentity,
         'profileHarness': await _fileIdentity(harness),
       },
       'host': await _hostIdentity(),

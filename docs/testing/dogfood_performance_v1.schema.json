@@ -140,6 +140,7 @@
         "samplesPerRun",
         "runCount",
         "cadenceHz",
+        "fixture",
         "runs"
       ],
       "properties": {
@@ -149,6 +150,16 @@
         "samplesPerRun": {"type": "integer", "minimum": 1},
         "runCount": {"type": "integer", "minimum": 1},
         "cadenceHz": {"type": "number", "minimum": 0},
+        "fixture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["presetId", "sourceBytes", "sourceSha256"],
+          "properties": {
+            "presetId": {"type": "string", "minLength": 1},
+            "sourceBytes": {"type": "integer", "minimum": 1},
+            "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
         "runs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/run"}}
       }
     },

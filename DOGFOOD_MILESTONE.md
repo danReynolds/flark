@@ -1,7 +1,7 @@
 # D0: Ready for Dan's macOS dogfood
 
-**Status:** draft stop contract; it becomes executable when the Phase 0 ledger
-and Phase 3 orchestrator/schema/validator are checked in
+**Status:** executable stop contract; D0 remains red until one exact candidate
+produces the complete machine-validated receipt below
 
 **North Star:** [NORTH_STAR.md](NORTH_STAR.md)
 
@@ -388,6 +388,13 @@ one exact clean commit:
 5. the non-skipped native canary against that exact embedded binary;
 6. the fixed profile/lifecycle matrix and numeric budgets above; and
 7. a machine-readable completion receipt.
+
+The final receipt is produced by
+`scripts/verify_v4_dogfood_completion.dart`. It recomputes the app-bundle
+manifest, replays the performance receipt, binds every profile fragment to the
+candidate/app/fixture, and requires exact-head CI, two independent reviews, the
+moving-surface capture, and the reviewed B2 ledger. The orchestrator must report
+`INCOMPLETE`, not `PASS`, when that candidate evidence is absent.
 
 The gate fails on a required skip, missing raw sample, invalid display, hash
 mismatch, open blocker, or exceeded budget. It records:
