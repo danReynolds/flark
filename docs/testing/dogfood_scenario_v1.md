@@ -237,12 +237,12 @@ watchdogs are frozen in `DOGFOOD_MILESTONE.md`.
 | ID | Preset and anchor | Required result | Current evidence |
 |---|---|---|---|
 | SCALE-01 | Prose · 1 MiB, first block after `ordinary prose`; typing, inline typing inside first `**Flark**`, structural burst, 32 KiB paste/undo, scroll/page/close | all D0 profile gates | development profile only; dogfood receipt GAP |
-| SCALE-02 | Dense blocks · 1 MiB, first `Short bounded paragraph 000001.` after `bounded`; edit/undo/scroll/page/close | all applicable open/edit/frame/memory/resource gates | GAP |
+| SCALE-02 | Dense blocks · 1 MiB, first `Short bounded paragraph 000001.` after `bounded`; edit/undo/scroll/page/close | all applicable open/edit/frame/memory/resource gates | PARTIAL: exact preset edit/undo/two-page scroll/close actual-paint journey and global-zero close are PRESENT; numeric profile/RSS receipt remains GAP |
 | SCALE-03 | Prose · 5 MiB, same first-block anchor; edit/undo/scroll/page/close | all applicable gates | development evidence only |
 | SCALE-04 | Giant line · 5 MiB, after first `giant-word`; edit/navigation/undo/close | all applicable gates | development evidence only |
 | SCALE-05 | Prose · 10 MiB, first-block anchor and first `**Flark**`; typing/inline typing/scroll/page/close | all applicable gates | development evidence only |
 | SCALE-06 | Product Tour cold launch, five fresh OS processes | complete visible+overscan exact editable paint below 200 ms | GAP: actual app timestamps/receipt |
-| SCALE-07 | Product Tour lifecycle: after `locally.` insert `x`, undo, close; 100 controller/session cycles in one warmed process plus 10 distinct OS processes | zero global native live state after every close; retained RSS within budget | GAP: inspector, harness, receipt |
+| SCALE-07 | Product Tour lifecycle: after `locally.` insert `x`, undo, close; 100 controller/session cycles in one warmed process plus 10 distinct OS processes | zero global native live state after every close; retained RSS within budget | PARTIAL: exact launch/edit/undo/task-overlay/close/pristine-relaunch functional journey and global-zero close are PRESENT; 100+10 process/RSS receipt remains GAP |
 
 ## Known D0 blockers and proof gaps at freeze
 
@@ -259,17 +259,21 @@ the aggregate candidate gates must still be rerun before D0 can pass.
 
 ### Architecture blockers
 
-- Four controller authority stores (`_projectionContinuity`,
-  `_committedParagraphSplit`, `_committedStructuralSurfaces`, and
-  `_committedTaskChecks`) independently broaden/retire row authority. Phase 1
-  replaces them with one sealed pending-presentation snapshot lifecycle.
-- Literal envelopes and edit cells have parallel Core bind/advance paths.
-  Phase 1 normalizes them into one pre-edit dependency-authority variant.
+- The former controller authority stores and parallel literal-envelope/edit-cell
+  host paths are consolidated behind one sealed
+  `FlarkPendingPresentationSnapshot` and one dependency-authority lifecycle.
+- `SYNTAX-10` remains a Phase-1 blocker: completing a fenced-code delimiter can
+  reclassify more than one visible row, while the current pre-edit dependency
+  result carries one presentation row. D0 needs one bounded parser-authored
+  multi-surface result through the existing snapshot lifecycle, not another
+  controller authority slot or a host Markdown heuristic.
 
 ### Evidence/tooling blockers
 
 - No checked-in dogfood-ready orchestrator can run the native canary without a
-  skip and bind it to the app-embedded ABI.
+  skip and bind it to the app-embedded ABI. Machine-result and app-bundle
+  manifest validators are present; orchestration and exact-artifact receipt
+  assembly remain open.
 - No `dogfood_performance_v1` schema/replay validator or actual-app timestamp
   instrumentation exists.
 - The actual-paint gaps marked above can false-green through final-state tests.
