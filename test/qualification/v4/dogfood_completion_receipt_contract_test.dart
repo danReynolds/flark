@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 
 import '../../../scripts/dogfood_bundle_manifest.dart';
+import '../../../scripts/dogfood_gate_receipt.dart';
 import '../../../scripts/dogfood_native_receipt.dart';
 import '../../../scripts/verify_v4_dogfood_completion.dart';
 import '../../../scripts/verify_v4_dogfood_receipt.dart';
@@ -38,6 +39,142 @@ void main() {
     await expectLater(fixture.build(), throwsStateError);
   });
 
+  test(
+    'completion replays gates, native machine output, CI, and app path',
+    () async {
+      final fixture = await _CompletionFixture.create();
+      addTearDown(fixture.dispose);
+
+      final defaultLog = await fixture.defaultLog.readAsString();
+      await fixture.defaultLog.writeAsString('forged success marker\n');
+      await expectLater(fixture.build(), throwsStateError);
+      await fixture.defaultLog.writeAsString(defaultLog);
+
+      final machineLog = await fixture.machineLog.readAsString();
+      await fixture.machineLog.writeAsString(
+        '${jsonEncode({'type': 'done', 'success': true})}\n',
+      );
+      await expectLater(fixture.build(), throwsStateError);
+      await fixture.machineLog.writeAsString(machineLog);
+
+      await expectLater(
+        fixture.build(
+          githubJobLookup: (repository, jobId) async => {
+            'id': jobId,
+            'run_id': jobId == 11 ? 101 : 102,
+            'name': jobId == 11 ? 'v4-integration-gate' : 'macos-smoke',
+            'conclusion': 'failure',
+            'head_sha': fixture.head,
+            'html_url': jobId == 11
+                ? 'https://github.com/example/flark/actions/runs/101/job/11'
+                : 'https://github.com/example/flark/actions/runs/102/job/12',
+          },
+        ),
+        throwsStateError,
+      );
+
+      await fixture.writeEvidence();
+      final evidence = jsonDecode(await fixture.evidence.readAsString()) as Map;
+      (evidence['handoff']! as Map)['appBundlePath'] =
+          '${fixture.base.path}/other.app';
+      await fixture.evidence.writeAsString(jsonEncode(evidence));
+      await expectLater(fixture.build(), throwsStateError);
+    },
+  );
+
+  test('gate execution and native test identity cannot be attested', () async {
+    final fixture = await _CompletionFixture.create();
+    addTearDown(fixture.dispose);
+
+    final failingRepository = Directory('${fixture.base.path}/failing-repo')
+      ..createSync();
+    await _git(failingRepository, const ['init']);
+    await _git(failingRepository, const [
+      'config',
+      'user.email',
+      'test@example.com',
+    ]);
+    await _git(failingRepository, const [
+      'config',
+      'user.name',
+      'Receipt Test',
+    ]);
+    File('${failingRepository.path}/scripts/verify_v4.sh')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(
+        '#!/usr/bin/env bash\n'
+        "echo 'verify_v4: active rust + dart + flutter v4 suites executed and passed.'\n"
+        "echo 'verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes.'\n"
+        'exit 1\n',
+      );
+    await _git(failingRepository, const ['add', '.']);
+    await _git(failingRepository, const ['commit', '-m', 'failing gate']);
+    final failedLog = File('${fixture.base.path}/failed-default.log');
+    await expectLater(
+      runDogfoodGate(
+        repository: failingRepository,
+        lane: 'default',
+        log: failedLog,
+      ),
+      throwsStateError,
+    );
+
+    final sanitized = dogfoodGateProcessEnvironment({
+      'PATH': '/fake/bin',
+      'HOME': '/safe/home',
+      'FLARK_V4_FEATURES': 'opening-session',
+      'FLARK_V4_PROFILE': 'release',
+      'RUSTFLAGS': '-Cinstrument-coverage',
+      'BASH_ENV': '/tmp/inject-success.sh',
+    });
+    expect(sanitized, {'PATH': '/fake/bin', 'HOME': '/safe/home'});
+
+    final paintReceipt =
+        jsonDecode(await fixture.actualPaintReceipt.readAsString()) as Map;
+    final originalPaintReceipt = jsonEncode(paintReceipt);
+    ((paintReceipt['environment']! as Map)['overrides']!
+            as Map)['FLARK_V4_LIBRARY_PATH'] =
+        '${fixture.base.path}/different-abi.dylib';
+    await fixture.actualPaintReceipt.writeAsString(jsonEncode(paintReceipt));
+    await expectLater(fixture.build(), throwsStateError);
+    await fixture.actualPaintReceipt.writeAsString(originalPaintReceipt);
+
+    final shimReceipt =
+        jsonDecode(await fixture.actualPaintReceipt.readAsString()) as Map;
+    final shimIdentity = ((shimReceipt['toolchain']! as List).single as Map);
+    final shim = await _writeExecutable(
+      File('${fixture.base.path}/untrusted-flutter'),
+      '#!/bin/sh\nexit 0\n',
+    );
+    final shimFileIdentity = await _identity(shim);
+    shimIdentity
+      ..['path'] = shimFileIdentity['path']
+      ..['bytes'] = shimFileIdentity['bytes']
+      ..['sha256'] = shimFileIdentity['sha256'];
+    (shimReceipt['command']! as List).first = shim.absolute.path;
+    await fixture.actualPaintReceipt.writeAsString(jsonEncode(shimReceipt));
+    await expectLater(fixture.build(), throwsStateError);
+    await fixture.actualPaintReceipt.writeAsString(originalPaintReceipt);
+
+    await fixture.machineLog.writeAsString(
+      '${jsonEncode({
+        'type': 'testStart',
+        'test': {'id': 1, 'name': 'an unrelated successful Flutter test'},
+      })}\n'
+      '${jsonEncode({'type': 'testDone', 'testID': 1, 'result': 'success', 'skipped': false})}\n'
+      '${jsonEncode({'type': 'done', 'success': true})}\n',
+    );
+    final native =
+        jsonDecode(await fixture.nativeReceipt.readAsString()) as Map;
+    (native['nativeCanary']! as Map)['name'] =
+        'an unrelated successful Flutter test';
+    (native['nativeCanary']! as Map)['machineLog'] = await _identity(
+      fixture.machineLog,
+    );
+    await fixture.nativeReceipt.writeAsString(jsonEncode(native));
+    await expectLater(fixture.build(), throwsStateError);
+  });
+
   test('candidate evidence schema is strict and versioned', () {
     final schema =
         jsonDecode(
@@ -65,6 +202,10 @@ final class _CompletionFixture {
     required this.defaultLog,
     required this.stressLog,
     required this.paintLog,
+    required this.defaultGateReceipt,
+    required this.stressGateReceipt,
+    required this.actualPaintReceipt,
+    required this.machineLog,
     required this.nativeReceipt,
     required this.performanceReceipt,
     required this.evidence,
@@ -87,6 +228,10 @@ final class _CompletionFixture {
   final File defaultLog;
   final File stressLog;
   final File paintLog;
+  final File defaultGateReceipt;
+  final File stressGateReceipt;
+  final File actualPaintReceipt;
+  final File machineLog;
   final File nativeReceipt;
   final File performanceReceipt;
   final File evidence;
@@ -105,7 +250,49 @@ final class _CompletionFixture {
     await _git(repository, const ['init']);
     await _git(repository, const ['config', 'user.email', 'test@example.com']);
     await _git(repository, const ['config', 'user.name', 'Receipt Test']);
+    await _git(repository, const [
+      'remote',
+      'add',
+      'origin',
+      'https://github.com/example/flark.git',
+    ]);
     File('${repository.path}/tracked.txt').writeAsStringSync('tracked\n');
+    File('${repository.path}/.gitignore').writeAsStringSync(
+      '.dart_tool/\n.flutter-plugins*\nbuild/\npubspec.lock\n',
+    );
+    File('${repository.path}/scripts/verify_v4.sh')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(
+        '#!/usr/bin/env bash\n'
+        "echo 'verify_v4: active rust + dart + flutter v4 suites executed and passed.'\n"
+        "echo 'verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes.'\n",
+      );
+    File(
+      '${repository.path}/scripts/verify_v4_certification_stress.sh',
+    ).writeAsStringSync(
+      '#!/usr/bin/env bash\n'
+      "echo 'verify_v4_certification_stress: full payload-budget stress passed.'\n"
+      "echo 'verify_v4_certification_stress: historical M0 receipt drift remains a separate audit.'\n",
+    );
+    for (final path in const [
+      'packages/flark/test/north_star_paint_matrix_test.dart',
+      'packages/flark/test/inline_dependency_island_paint_acceptance_test.dart',
+    ]) {
+      File('${repository.path}/$path')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          "import 'package:flutter_test/flutter_test.dart';\n"
+          "void main() { test('fixture actual paint', () {}); }\n",
+        );
+    }
+    File('${repository.path}/packages/flark/pubspec.yaml').writeAsStringSync(
+      'name: flark_dogfood_gate_fixture\n'
+      'environment:\n'
+      "  sdk: '>=3.9.0 <4.0.0'\n"
+      'dev_dependencies:\n'
+      '  flutter_test:\n'
+      '    sdk: flutter\n',
+    );
     await _git(repository, const ['add', '.']);
     await _git(repository, const ['commit', '-m', 'candidate']);
     final head = await _git(repository, const ['rev-parse', 'HEAD']);
@@ -124,24 +311,45 @@ final class _CompletionFixture {
     final manifest = File('${base.path}/app_bundle_manifest.json')
       ..writeAsStringSync(jsonEncode(builtManifest.toJson()));
 
-    final candidateMarker = 'dogfood-candidate: commit=$head tree=$tree';
-    final defaultLog = File('${base.path}/default.log')
+    final defaultLog = File('${base.path}/default.log');
+    final stressLog = File('${base.path}/stress.log');
+    final paintLog = File('${base.path}/paint.log');
+    final defaultGateReceipt = File('${base.path}/default-gate.json')
       ..writeAsStringSync(
-        'verify_v4: active rust + dart + flutter v4 suites executed and passed.\n'
-        '$candidateMarker\n',
+        jsonEncode(
+          await runDogfoodGate(
+            repository: repository,
+            lane: 'default',
+            log: defaultLog,
+          ),
+        ),
       );
-    final stressLog = File('${base.path}/stress.log')
+    final stressGateReceipt = File('${base.path}/stress-gate.json')
       ..writeAsStringSync(
-        'verify_v4_certification_stress: full payload-budget stress passed.\n'
-        '$candidateMarker\n',
+        jsonEncode(
+          await runDogfoodGate(
+            repository: repository,
+            lane: 'stress',
+            log: stressLog,
+          ),
+        ),
       );
-    final paintLog = File('${base.path}/paint.log')
-      ..writeAsStringSync('All tests passed!\n$candidateMarker\n');
+    final actualPaintReceipt = File('${base.path}/actual-paint.json')
+      ..writeAsStringSync(
+        jsonEncode(
+          await runDogfoodGate(
+            repository: repository,
+            lane: 'actual-paint',
+            log: paintLog,
+            embeddedAbi: abi,
+          ),
+        ),
+      );
     final machine = File('${base.path}/machine.jsonl')
       ..writeAsStringSync(
         '${jsonEncode({
           'type': 'testStart',
-          'test': {'id': 1, 'name': 'required canary'},
+          'test': {'id': 1, 'name': 'macOS routes the native editing canaries without faults or visual relay'},
         })}\n'
         '${jsonEncode({'type': 'testDone', 'testID': 1, 'result': 'success', 'skipped': false})}\n'
         '${jsonEncode({'type': 'done', 'success': true})}\n',
@@ -153,7 +361,8 @@ final class _CompletionFixture {
       mainExecutable: mainExecutable,
       embeddedAbi: abi,
       machineLog: machine,
-      expectedTestName: 'required canary',
+      expectedTestName:
+          'macOS routes the native editing canaries without faults or visual relay',
     );
     final nativeReceipt = File('${base.path}/native.json')
       ..writeAsStringSync(jsonEncode(native));
@@ -165,11 +374,60 @@ final class _CompletionFixture {
     final raw = performance_fixture.validRawDogfoodPerformanceReceiptForTest();
     raw['candidate'] = {'commit': head, 'tree': tree, 'clean': true};
     (raw['configuration']! as Map)['ledger'] = await _identity(ledger);
+    final mainIdentity = await _identity(mainExecutable);
+    final abiIdentity = await _identity(abi);
+    final host = (raw['host']! as Map).cast<String, Object?>();
+    final binding = <String, Object?>{
+      'candidateCommit': head,
+      'candidateTree': tree,
+      'bundleManifestSha256': builtManifest.sha256,
+      'mainExecutable': mainIdentity,
+      'embeddedAbi': abiIdentity,
+      'measurementHost': {
+        for (final name in const [
+          'hostname',
+          'operatingSystem',
+          'architecture',
+          'logicalCores',
+          'physicalMemoryBytes',
+        ])
+          name: host[name],
+      },
+    };
+    final fragments = <File>[];
+    for (final rawCell in (raw['cells']! as List).cast<Map>()) {
+      final cell = rawCell.cast<String, Object?>();
+      for (final rawRun in (cell['runs']! as List).cast<Map>()) {
+        final run = rawRun.cast<String, Object?>();
+        final fragment = File(
+          '${base.path}/fragments/${cell['id']}.run-${run['run']}.json',
+        );
+        await fragment.parent.create(recursive: true);
+        await fragment.writeAsString(
+          jsonEncode({
+            'id': cell['id'],
+            'sourceBytes': cell['sourceBytes'],
+            'warmupsPerRun': cell['warmupsPerRun'],
+            'samplesPerRun': cell['samplesPerRun'],
+            'runCount': cell['runCount'],
+            'cadenceHz': cell['cadenceHz'],
+            'binding': binding,
+            'fixture': cell['fixture'],
+            'display': raw['display'],
+            'run': run,
+          }),
+        );
+        fragments.add(fragment);
+      }
+    }
     raw['artifacts'] = {
       'appBundleManifest': await _identity(manifest),
-      'mainExecutable': await _identity(mainExecutable),
-      'embeddedAbi': await _identity(abi),
+      'mainExecutable': mainIdentity,
+      'embeddedAbi': abiIdentity,
       'profileHarness': await _identity(harness),
+      'profileFragments': [
+        for (final fragment in fragments) await _identity(fragment),
+      ],
     };
     final performance = await sealDogfoodPerformanceReceipt(
       raw,
@@ -199,6 +457,10 @@ final class _CompletionFixture {
       defaultLog: defaultLog,
       stressLog: stressLog,
       paintLog: paintLog,
+      defaultGateReceipt: defaultGateReceipt,
+      stressGateReceipt: stressGateReceipt,
+      actualPaintReceipt: actualPaintReceipt,
+      machineLog: machine,
       nativeReceipt: nativeReceipt,
       performanceReceipt: performanceReceipt,
       evidence: evidence,
@@ -225,17 +487,18 @@ final class _CompletionFixture {
           'reason': 'streamed preset disabled in D0 app',
         },
         'ci': {
+          'repository': 'example/flark',
           'headSha': head,
           'checks': [
             {
               'name': 'v4-integration-gate',
-              'result': 'SUCCESS',
-              'url': 'https://github.com/example/actions/1',
+              'jobId': 11,
+              'url': 'https://github.com/example/flark/actions/runs/101/job/11',
             },
             {
               'name': 'macos-smoke',
-              'result': 'SUCCESS',
-              'url': 'https://github.com/example/actions/2',
+              'jobId': 12,
+              'url': 'https://github.com/example/flark/actions/runs/102/job/12',
             },
           ],
         },
@@ -289,17 +552,42 @@ final class _CompletionFixture {
     );
   }
 
-  Future<Map<String, Object?>> build() => buildDogfoodCompletionReceipt(
+  Future<Map<String, Object?>> build({
+    GitHubJobLookup? githubJobLookup,
+  }) => buildDogfoodCompletionReceipt(
     repository: repository,
-    defaultGateLog: defaultLog,
-    stressGateLog: stressLog,
-    actualPaintLog: paintLog,
+    defaultGateReceiptFile: defaultGateReceipt,
+    stressGateReceiptFile: stressGateReceipt,
+    actualPaintReceiptFile: actualPaintReceipt,
     nativeReceiptFile: nativeReceipt,
     performanceReceiptFile: performanceReceipt,
     candidateEvidenceFile: evidence,
+    githubJobLookup:
+        githubJobLookup ??
+        (repository, jobId) async {
+          final check = jobId == 11
+              ? ('v4-integration-gate', 101)
+              : ('macos-smoke', 102);
+          return {
+            'id': jobId,
+            'run_id': check.$2,
+            'name': check.$1,
+            'conclusion': 'success',
+            'head_sha': head,
+            'html_url':
+                'https://github.com/$repository/actions/runs/${check.$2}/job/$jobId',
+          };
+        },
   );
 
   Future<void> dispose() => base.delete(recursive: true);
+}
+
+Future<File> _writeExecutable(File file, String source) async {
+  await file.writeAsString(source, flush: true);
+  final result = await Process.run('chmod', ['+x', file.path]);
+  expect(result.exitCode, 0, reason: result.stderr as String);
+  return file;
 }
 
 Future<Map<String, Object>> _identity(File file) async => {

@@ -3,9 +3,14 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import 'dogfood_bundle_manifest.dart';
+import 'dogfood_gate_receipt.dart';
+import 'verify_flutter_machine_test.dart';
 import 'verify_v4_dogfood_receipt.dart';
 
 const _requiredCiChecks = {'v4-integration-gate', 'macos-smoke'};
+const _nativeCanaryTestName =
+    'macOS routes the native editing canaries without faults or visual relay';
 const _movingSurfaceSteps = {
   'type-product-tour-prose',
   'replace-undo-redo',
@@ -18,14 +23,18 @@ const _movingSurfaceSteps = {
   'close-cleanly',
 };
 
+typedef GitHubJobLookup =
+    Future<Map<String, Object?>> Function(String repository, int jobId);
+
 Future<Map<String, Object?>> buildDogfoodCompletionReceipt({
   required Directory repository,
-  required File defaultGateLog,
-  required File stressGateLog,
-  required File actualPaintLog,
+  required File defaultGateReceiptFile,
+  required File stressGateReceiptFile,
+  required File actualPaintReceiptFile,
   required File nativeReceiptFile,
   required File performanceReceiptFile,
   required File candidateEvidenceFile,
+  GitHubJobLookup? githubJobLookup,
 }) async {
   final head = await _git(repository, const ['rev-parse', 'HEAD']);
   final tree = await _git(repository, const ['rev-parse', 'HEAD^{tree}']);
@@ -33,23 +42,23 @@ Future<Map<String, Object?>> buildDogfoodCompletionReceipt({
   if (status.isNotEmpty) {
     throw StateError('D0 completion requires a clean worktree.');
   }
-  await _requireLogMarker(
-    defaultGateLog,
-    'verify_v4: active rust + dart + flutter v4 suites executed and passed.',
-  );
-  await _requireLogMarker(
-    stressGateLog,
-    'verify_v4_certification_stress: full payload-budget stress passed.',
-  );
-  await _requireLogMarker(actualPaintLog, 'All tests passed!');
-  final candidateMarker = 'dogfood-candidate: commit=$head tree=$tree';
-  for (final log in [defaultGateLog, stressGateLog, actualPaintLog]) {
-    await _requireLogMarker(log, candidateMarker);
-  }
-
+  final defaultGate = await _readObject(defaultGateReceiptFile);
+  final stressGate = await _readObject(stressGateReceiptFile);
+  final actualPaintGate = await _readObject(actualPaintReceiptFile);
   final native = await _readObject(nativeReceiptFile);
   final performance = await _readObject(performanceReceiptFile);
   final evidence = await _readObject(candidateEvidenceFile);
+  for (final entry in <(String, Map<String, Object?>)>[
+    ('default', defaultGate),
+    ('stress', stressGate),
+    ('actual-paint', actualPaintGate),
+  ]) {
+    _requireCandidate(entry.$2, head, tree);
+    if (entry.$2['lane'] != entry.$1) {
+      throw StateError('D0 gate receipt has the wrong lane: ${entry.$1}.');
+    }
+    await verifyDogfoodGateReceipt(entry.$2, repository: repository);
+  }
   _requireCandidate(native, head, tree, nativeNames: true);
   _requireCandidate(performance, head, tree);
   _requireCandidate(evidence, head, tree);
@@ -59,12 +68,24 @@ Future<Map<String, Object?>> buildDogfoodCompletionReceipt({
     throw StateError('Native receipt is not a clean D0 receipt.');
   }
   final canary = _object(native['nativeCanary'], 'nativeCanary');
-  if (canary['result'] != 'success' ||
+  if (canary['name'] != _nativeCanaryTestName ||
+      canary['result'] != 'success' ||
       canary['skipped'] != false ||
       canary['runnerSucceeded'] != true) {
     throw StateError(
       'Native canary did not execute successfully without skip.',
     );
+  }
+  final machineLog = _object(canary['machineLog'], 'nativeCanary.machineLog');
+  await _verifyFileIdentity(machineLog);
+  final machineReplay = verifyFlutterMachineTest(
+    await File(machineLog['path']! as String).readAsLines(),
+    expectedName: _nativeCanaryTestName,
+  );
+  if (machineReplay.result != canary['result'] ||
+      machineReplay.skipped != canary['skipped'] ||
+      machineReplay.runnerSucceeded != canary['runnerSucceeded']) {
+    throw StateError('Native receipt does not replay from its machine log.');
   }
   final performanceValidation = await verifyDogfoodPerformanceReceipt(
     performance,
@@ -83,7 +104,16 @@ Future<Map<String, Object?>> buildDogfoodCompletionReceipt({
   if (performanceAssessment['result'] != 'PASS') {
     throw StateError('Performance receipt does not declare PASS.');
   }
-  await _requireSameApp(native, performance);
+  final verifiedApp = await _requireSameApp(native, performance);
+  final actualPaintAbi = _object(
+    actualPaintGate['embeddedAbi'],
+    'actualPaint.embeddedAbi',
+  );
+  final nativeAbi = _object(native['embeddedAbi'], 'native.embeddedAbi');
+  if (actualPaintAbi['bytes'] != nativeAbi['bytes'] ||
+      actualPaintAbi['sha256'] != nativeAbi['sha256']) {
+    throw StateError('Actual-paint gate did not use the candidate app ABI.');
+  }
 
   if (evidence['schema'] != 'dogfood_candidate_evidence_v1') {
     throw StateError('Candidate evidence has the wrong schema.');
@@ -95,7 +125,13 @@ Future<Map<String, Object?>> buildDogfoodCompletionReceipt({
       'Opening-session status does not match the frozen D0 app.',
     );
   }
-  _verifyCi(_object(evidence['ci'], 'ci'), head);
+  final expectedRepository = await _githubRepository(repository);
+  await _verifyCi(
+    _object(evidence['ci'], 'ci'),
+    head,
+    expectedRepository,
+    githubJobLookup ?? _fetchGitHubJob,
+  );
   final reviews = _object(evidence['reviews'], 'reviews');
   final architecture = await _verifyReview(
     _object(reviews['architecture'], 'reviews.architecture'),
@@ -127,8 +163,7 @@ Future<Map<String, Object?>> buildDogfoodCompletionReceipt({
   if (handoff['date'] is! String || (handoff['date']! as String).isEmpty) {
     throw StateError('Handoff date is missing.');
   }
-  if (handoff['appBundlePath'] !=
-      _object(native['appBundle'], 'native.appBundle')['path']) {
+  if (handoff['appBundlePath'] != verifiedApp.absolute.path) {
     throw StateError('Handoff app is not the canary-tested app bundle.');
   }
 
@@ -139,18 +174,18 @@ Future<Map<String, Object?>> buildDogfoodCompletionReceipt({
       'appBundle': native['appBundle'],
       'mainExecutable': native['mainExecutable'],
       'embeddedAbi': native['embeddedAbi'],
+      'defaultGateReceipt': await _fileIdentity(defaultGateReceiptFile),
+      'stressGateReceipt': await _fileIdentity(stressGateReceiptFile),
+      'actualPaintReceipt': await _fileIdentity(actualPaintReceiptFile),
       'nativeReceipt': await _fileIdentity(nativeReceiptFile),
       'performanceReceipt': await _fileIdentity(performanceReceiptFile),
       'candidateEvidence': await _fileIdentity(candidateEvidenceFile),
     },
     'gates': {
-      'default': {'result': 'PASS', 'log': await _fileIdentity(defaultGateLog)},
+      'default': {'result': 'PASS', 'evidence': defaultGate},
       'openingSession': opening,
-      'stress': {'result': 'PASS', 'log': await _fileIdentity(stressGateLog)},
-      'actualPaint': {
-        'result': 'PASS',
-        'log': await _fileIdentity(actualPaintLog),
-      },
+      'stress': {'result': 'PASS', 'evidence': stressGate},
+      'actualPaint': {'result': 'PASS', 'evidence': actualPaintGate},
       'nativeCanary': {'result': 'PASS', 'skipped': 0},
       'performanceAndLifecycle': {
         'result': 'PASS',
@@ -183,7 +218,7 @@ void _requireCandidate(
   }
 }
 
-Future<void> _requireSameApp(
+Future<Directory> _requireSameApp(
   Map<String, Object?> native,
   Map<String, Object?> performance,
 ) async {
@@ -193,7 +228,25 @@ Future<void> _requireSameApp(
     artifacts['appBundleManifest'],
     'performance.artifacts.appBundleManifest',
   );
-  final manifest = await _readObject(File(manifestIdentity['path']! as String));
+  await _verifyFileIdentity(manifestIdentity);
+  final manifestFile = File(manifestIdentity['path']! as String);
+  final manifest = await _readObject(manifestFile);
+  final bundlePath = manifest['bundlePath'];
+  if (bundlePath is! String || bundlePath.isEmpty) {
+    throw StateError('Performance manifest has no app bundle path.');
+  }
+  final appBundle = Directory(bundlePath).absolute;
+  final verifiedManifest = await verifyDogfoodBundleManifest(
+    appBundle,
+    manifestFile,
+  );
+  if (nativeApp['path'] != appBundle.path ||
+      nativeApp['manifestPath'] != manifestFile.absolute.path ||
+      nativeApp['manifestSha256'] != verifiedManifest.sha256) {
+    throw StateError(
+      'Native receipt is not bound to the performance app path.',
+    );
+  }
   if (nativeApp['manifestSha256'] != manifest['sha256']) {
     throw StateError(
       'Native and performance receipts use different app bundles.',
@@ -206,10 +259,16 @@ Future<void> _requireSameApp(
       throw StateError('Native and performance receipts disagree on $name.');
     }
   }
+  return appBundle;
 }
 
-void _verifyCi(Map<String, Object?> ci, String head) {
-  if (ci['headSha'] != head) {
+Future<void> _verifyCi(
+  Map<String, Object?> ci,
+  String head,
+  String expectedRepository,
+  GitHubJobLookup lookup,
+) async {
+  if (ci['headSha'] != head || ci['repository'] != expectedRepository) {
     throw StateError('CI head_sha does not match the D0 candidate.');
   }
   final checks = (ci['checks'] as List<Object?>? ?? const [])
@@ -222,15 +281,58 @@ void _verifyCi(Map<String, Object?> ci, String head) {
       throw StateError('CI checks must have unique names.');
     }
     final url = check['url'];
-    if (check['result'] != 'SUCCESS' ||
-        url is! String ||
-        !url.startsWith('https://github.com/')) {
-      throw StateError('CI check $name is not a green GitHub receipt.');
+    final jobId = check['jobId'];
+    final match = url is String
+        ? RegExp(
+            '^https://github\\.com/${RegExp.escape(expectedRepository)}'
+            r'/actions/runs/(\d+)/job/(\d+)$',
+          ).firstMatch(url)
+        : null;
+    if (jobId is! int || match == null || match.group(2) != '$jobId') {
+      throw StateError('CI check $name is not a canonical GitHub job URL.');
+    }
+    final job = await lookup(expectedRepository, jobId);
+    if (job['id'] != jobId ||
+        '${job['run_id']}' != match.group(1) ||
+        job['name'] != name ||
+        job['conclusion'] != 'success' ||
+        job['head_sha'] != head ||
+        job['html_url'] != url) {
+      throw StateError('CI check $name did not replay as exact-head success.');
     }
   }
   if (!names.containsAll(_requiredCiChecks)) {
     throw StateError('Required exact-commit CI checks are missing.');
   }
+}
+
+Future<Map<String, Object?>> _fetchGitHubJob(
+  String repository,
+  int jobId,
+) async {
+  final result = await Process.run('gh', [
+    'api',
+    'repos/$repository/actions/jobs/$jobId',
+  ]);
+  if (result.exitCode != 0) {
+    throw StateError(
+      'GitHub job lookup failed: ${(result.stderr as String).trim()}',
+    );
+  }
+  final value = jsonDecode(result.stdout as String);
+  if (value is! Map) throw StateError('GitHub job response is not an object.');
+  return value.cast<String, Object?>();
+}
+
+Future<String> _githubRepository(Directory repository) async {
+  final remote = await _git(repository, const ['remote', 'get-url', 'origin']);
+  final match = RegExp(
+    r'^(?:git@github\.com:|https://github\.com/)([^/]+/[^/]+?)(?:\.git)?$',
+  ).firstMatch(remote);
+  if (match == null) {
+    throw StateError('D0 completion requires a canonical GitHub origin.');
+  }
+  return match.group(1)!;
 }
 
 Future<String> _verifyReview(
@@ -281,12 +383,6 @@ Future<void> _verifyMovingSurface(
   }
   await _verifyFileIdentity(_object(moving['capture'], 'moving.capture'));
   await _verifyFileIdentity(_object(moving['commandLog'], 'moving.commandLog'));
-}
-
-Future<void> _requireLogMarker(File log, String marker) async {
-  if (!await log.exists() || !(await log.readAsString()).contains(marker)) {
-    throw StateError('Required gate log is missing marker: $marker');
-  }
 }
 
 Future<void> _verifyFileIdentity(Map<String, Object?> identity) async {
@@ -346,7 +442,7 @@ Future<void> main(List<String> arguments) async {
   if (arguments.length != 8) {
     stderr.writeln(
       'usage: dart run scripts/verify_v4_dogfood_completion.dart '
-      '<repository> <default-gate.log> <stress-gate.log> <actual-paint.log> '
+      '<repository> <default-gate.json> <stress-gate.json> <actual-paint.json> '
       '<native-receipt.json> <performance-receipt.json> '
       '<candidate-evidence.json> <output.json>',
     );
@@ -356,9 +452,9 @@ Future<void> main(List<String> arguments) async {
   try {
     final receipt = await buildDogfoodCompletionReceipt(
       repository: Directory(arguments[0]).absolute,
-      defaultGateLog: File(arguments[1]).absolute,
-      stressGateLog: File(arguments[2]).absolute,
-      actualPaintLog: File(arguments[3]).absolute,
+      defaultGateReceiptFile: File(arguments[1]).absolute,
+      stressGateReceiptFile: File(arguments[2]).absolute,
+      actualPaintReceiptFile: File(arguments[3]).absolute,
       nativeReceiptFile: File(arguments[4]).absolute,
       performanceReceiptFile: File(arguments[5]).absolute,
       candidateEvidenceFile: File(arguments[6]).absolute,

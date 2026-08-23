@@ -50,12 +50,17 @@
     "artifacts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["appBundleManifest", "mainExecutable", "embeddedAbi", "profileHarness"],
+      "required": ["appBundleManifest", "mainExecutable", "embeddedAbi", "profileHarness", "profileFragments"],
       "properties": {
         "appBundleManifest": {"$ref": "#/$defs/fileIdentity"},
         "mainExecutable": {"$ref": "#/$defs/fileIdentity"},
         "embeddedAbi": {"$ref": "#/$defs/fileIdentity"},
-        "profileHarness": {"$ref": "#/$defs/fileIdentity"}
+        "profileHarness": {"$ref": "#/$defs/fileIdentity"},
+        "profileFragments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/fileIdentity"}
+        }
       }
     },
     "host": {

@@ -20,8 +20,9 @@
     "ci": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["headSha", "checks"],
+      "required": ["repository", "headSha", "checks"],
       "properties": {
+        "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
         "headSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
         "checks": {
           "type": "array",
@@ -29,11 +30,11 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "result", "url"],
+            "required": ["name", "jobId", "url"],
             "properties": {
               "name": {"type": "string", "minLength": 1},
-              "result": {"const": "SUCCESS"},
-              "url": {"type": "string", "pattern": "^https://github\\.com/"}
+              "jobId": {"type": "integer", "minimum": 1},
+              "url": {"type": "string", "pattern": "^https://github\\.com/[^/]+/[^/]+/actions/runs/[0-9]+/job/[0-9]+$"}
             }
           }
         }

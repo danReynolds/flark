@@ -225,6 +225,28 @@ void main() {
       verifyArtifactFiles: false,
     );
     expect(missedResult.blockers.join('\n'), contains('frame $start missed'));
+
+    final hiddenBeforePaint = _copy(sealed);
+    final hiddenCell = _cells(
+      hiddenBeforePaint,
+    ).firstWhere((cell) => cell['id'] == 'product-tour-typing');
+    final hiddenRun = ((hiddenCell['runs']! as List).first as Map)
+        .cast<String, Object?>();
+    final hiddenSample = ((hiddenRun['samples']! as List)[1] as Map)
+        .cast<String, Object?>();
+    final hiddenStart = hiddenSample['startFrameOrdinal']! as int;
+    final accepted = hiddenSample['acceptedMicros']! as int;
+    final escaped = ((hiddenRun['frames']! as List)[hiddenStart - 1] as Map);
+    escaped['vsyncMicros'] = accepted + 1;
+    escaped['missed'] = true;
+    final hiddenResult = await verifyDogfoodPerformanceReceipt(
+      hiddenBeforePaint,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      hiddenResult.blockers.join('\n'),
+      contains('frame interval does not begin at acceptance'),
+    );
   });
 
   test('lifecycle replay keys restarted generations by session', () async {
@@ -321,6 +343,13 @@ void main() {
       'bundleManifestSha256': _hash('c'),
       'mainExecutable': _identity('app'),
       'embeddedAbi': _identity('abi'),
+      'measurementHost': {
+        'hostname': 'benchmark-mac',
+        'operatingSystem': 'macOS',
+        'architecture': 'arm64',
+        'logicalCores': 8,
+        'physicalMemoryBytes': 16000000000,
+      },
     };
     for (final cell in _cells(raw).reversed) {
       for (final run in ((cell['runs']! as List).reversed)) {
@@ -371,6 +400,14 @@ void main() {
         wrongCandidate,
         ...fragments.skip(1),
       ]),
+      throwsStateError,
+    );
+
+    final wrongHost = _copy(fragments.first);
+    ((wrongHost['binding']! as Map)['measurementHost']! as Map)['hostname'] =
+        'other-mac';
+    expect(
+      () => assembleDogfoodProfileFragments([wrongHost, ...fragments.skip(1)]),
       throwsStateError,
     );
   });
@@ -580,6 +617,7 @@ Map<String, Object?> validRawDogfoodPerformanceReceiptForTest() {
       'mainExecutable': _identity('app'),
       'embeddedAbi': _identity('abi'),
       'profileHarness': _identity('harness'),
+      'profileFragments': [_identity('fragment')],
     },
     'host': {
       'hostname': 'benchmark-mac',
@@ -630,7 +668,7 @@ Map<String, Object?> _sample({
   'canonicalSelectionBaseUtf16': sourceGeneration,
   'canonicalSelectionExtentUtf16': sourceGeneration,
   'paintedCaretSourceUtf16': sourceGeneration,
-  'startFrameOrdinal': frameOrdinal,
+  'startFrameOrdinal': frameOrdinal - (acceptedSourceGenerations.length - 1),
   'endFrameOrdinal': frameOrdinal,
   'provingFrameOrdinal': frameOrdinal,
   'engineMicros': 100,

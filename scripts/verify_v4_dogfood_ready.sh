@@ -18,10 +18,10 @@ NATIVE_RECEIPT="$NATIVE_OUT/dogfood_native_receipt.json"
 DEFAULT_LOG="$OUT_DIR/default-gate.log"
 STRESS_LOG="$OUT_DIR/certification-stress.log"
 ACTUAL_PAINT_LOG="$OUT_DIR/actual-paint.log"
+DEFAULT_RECEIPT="$OUT_DIR/default-gate.json"
+STRESS_RECEIPT="$OUT_DIR/certification-stress.json"
+ACTUAL_PAINT_RECEIPT="$OUT_DIR/actual-paint.json"
 COMPLETION_RECEIPT="$OUT_DIR/dogfood_completion_receipt.json"
-CANDIDATE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
-CANDIDATE_TREE="$(git -C "$ROOT" rev-parse 'HEAD^{tree}')"
-CANDIDATE_MARKER="dogfood-candidate: commit=$CANDIDATE_COMMIT tree=$CANDIDATE_TREE"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo 'verify-v4-dogfood-ready: macOS is required' >&2
@@ -44,12 +44,12 @@ fi
 mkdir -p "$FRAGMENTS"
 
 echo '==> Active functional gate'
-bash "$ROOT/scripts/verify_v4.sh" 2>&1 | tee "$DEFAULT_LOG"
-echo "$CANDIDATE_MARKER" | tee -a "$DEFAULT_LOG"
+dart run "$ROOT/scripts/dogfood_gate_receipt.dart" \
+  "$ROOT" default "$DEFAULT_LOG" "$DEFAULT_RECEIPT"
 
 echo '==> Certification stress gate'
-bash "$ROOT/scripts/verify_v4_certification_stress.sh" 2>&1 | tee "$STRESS_LOG"
-echo "$CANDIDATE_MARKER" | tee -a "$STRESS_LOG"
+dart run "$ROOT/scripts/dogfood_gate_receipt.dart" \
+  "$ROOT" stress "$STRESS_LOG" "$STRESS_RECEIPT"
 
 echo '==> Exact profile dogfood app'
 (
@@ -64,15 +64,8 @@ for artifact in "$APP" "$MAIN" "$ABI"; do
 done
 
 echo '==> Non-skipped North-Star actual-paint gate'
-(
-  cd "$ROOT/packages/flark"
-  FLARK_V4_LIBRARY_PATH="$ABI" \
-    flutter test \
-      test/north_star_paint_matrix_test.dart \
-      test/inline_dependency_island_paint_acceptance_test.dart \
-      --concurrency=1
-) 2>&1 | tee "$ACTUAL_PAINT_LOG"
-echo "$CANDIDATE_MARKER" | tee -a "$ACTUAL_PAINT_LOG"
+dart run "$ROOT/scripts/dogfood_gate_receipt.dart" \
+  "$ROOT" actual-paint "$ACTUAL_PAINT_LOG" "$ACTUAL_PAINT_RECEIPT" "$ABI"
 
 echo '==> Non-skipped native macOS canary'
 FLARK_DOGFOOD_PREBUILT_APP=1 \
@@ -118,7 +111,7 @@ echo '==> Bind final D0 completion receipt'
 (
   cd "$ROOT"
   dart run scripts/verify_v4_dogfood_completion.dart \
-    "$ROOT" "$DEFAULT_LOG" "$STRESS_LOG" "$ACTUAL_PAINT_LOG" \
+    "$ROOT" "$DEFAULT_RECEIPT" "$STRESS_RECEIPT" "$ACTUAL_PAINT_RECEIPT" \
     "$NATIVE_RECEIPT" "$PERFORMANCE_RECEIPT" \
     "$FLARK_D0_CANDIDATE_EVIDENCE" "$COMPLETION_RECEIPT"
 )

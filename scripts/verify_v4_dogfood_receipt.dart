@@ -309,6 +309,14 @@ Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
   if (display['widthLogical'] != 1569 || display['heightLogical'] != 906) {
     blockers.add('display must use the frozen 1569x906 logical geometry');
   }
+  final fragmentIdentities = _list(
+    artifacts['profileFragments'],
+    'artifacts.profileFragments',
+    blockers,
+  );
+  if (fragmentIdentities.isEmpty) {
+    blockers.add('artifacts.profileFragments must not be empty');
+  }
 
   if (verifyArtifactFiles) {
     await _verifyFileIdentity(
@@ -323,6 +331,13 @@ Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
       'profileHarness',
     ]) {
       await _verifyFileIdentity(artifacts[name], 'artifacts.$name', blockers);
+    }
+    for (var index = 0; index < fragmentIdentities.length; index += 1) {
+      await _verifyFileIdentity(
+        fragmentIdentities[index],
+        'artifacts.profileFragments[$index]',
+        blockers,
+      );
     }
     await _verifyBundleBinding(artifacts, blockers);
   }
@@ -403,6 +418,14 @@ Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
     for (final metric in metricValues.entries) {
       metric.value.addAll(cellMetrics[metric.key]!);
     }
+  }
+  if (verifyArtifactFiles) {
+    await _verifyProfileFragmentBinding(
+      receipt,
+      byId,
+      fragmentIdentities,
+      blockers,
+    );
   }
 
   if (_percentile(metricValues['engineMicros']!, 99) > _maxEngineP99Micros) {
@@ -490,6 +513,95 @@ Future<void> _verifyBundleBinding(
     }
   } on Object catch (error) {
     blockers.add('app bundle artifact binding failed: $error');
+  }
+}
+
+Future<void> _verifyProfileFragmentBinding(
+  Map<String, Object?> receipt,
+  Map<String, Map<String, Object?>> cells,
+  List<Object?> identities,
+  List<String> blockers,
+) async {
+  try {
+    final candidate = (receipt['candidate']! as Map).cast<String, Object?>();
+    final artifacts = (receipt['artifacts']! as Map).cast<String, Object?>();
+    final host = (receipt['host']! as Map).cast<String, Object?>();
+    final display = (receipt['display']! as Map).cast<String, Object?>();
+    final manifestIdentity = (artifacts['appBundleManifest']! as Map)
+        .cast<String, Object?>();
+    final manifest =
+        jsonDecode(
+              await File(manifestIdentity['path']! as String).readAsString(),
+            )
+            as Map;
+    final expectedBinding = <String, Object?>{
+      'candidateCommit': candidate['commit'],
+      'candidateTree': candidate['tree'],
+      'bundleManifestSha256': manifest['sha256'],
+      'mainExecutable': artifacts['mainExecutable'],
+      'embeddedAbi': artifacts['embeddedAbi'],
+      'measurementHost': {
+        for (final name in const [
+          'hostname',
+          'operatingSystem',
+          'architecture',
+          'logicalCores',
+          'physicalMemoryBytes',
+        ])
+          name: host[name],
+      },
+    };
+    final expectedRuns = <String, Map<String, Object?>>{};
+    for (final entry in cells.entries) {
+      final runs = (entry.value['runs']! as List).cast<Map>();
+      for (final rawRun in runs) {
+        final run = rawRun.cast<String, Object?>();
+        expectedRuns['${entry.key}/${run['run']}'] = run;
+      }
+    }
+    final observed = <String>{};
+    for (final rawIdentity in identities) {
+      final identity = (rawIdentity! as Map).cast<String, Object?>();
+      final decoded = jsonDecode(
+        await File(identity['path']! as String).readAsString(),
+      );
+      if (decoded is! Map) {
+        blockers.add('profile fragment is not an object: ${identity['path']}');
+        continue;
+      }
+      final fragment = decoded.cast<String, Object?>();
+      final id = fragment['id'];
+      final run = fragment['run'];
+      final runIndex = run is Map ? run['run'] : null;
+      final key = '$id/$runIndex';
+      final cell = id is String ? cells[id] : null;
+      if (cell == null ||
+          run is! Map ||
+          runIndex is! int ||
+          !observed.add(key)) {
+        blockers.add(
+          'profile fragment has an unexpected or duplicate run: $key',
+        );
+        continue;
+      }
+      if (!_sameJson(fragment['binding'], expectedBinding) ||
+          !_sameJson(fragment['display'], display) ||
+          !_sameJson(fragment['fixture'], cell['fixture']) ||
+          fragment['sourceBytes'] != cell['sourceBytes'] ||
+          fragment['warmupsPerRun'] != cell['warmupsPerRun'] ||
+          fragment['samplesPerRun'] != cell['samplesPerRun'] ||
+          fragment['runCount'] != cell['runCount'] ||
+          fragment['cadenceHz'] != cell['cadenceHz'] ||
+          !_sameJson(run, expectedRuns[key])) {
+        blockers.add('profile fragment does not replay into cell run $key');
+      }
+    }
+    if (!observed.containsAll(expectedRuns.keys) ||
+        !expectedRuns.keys.toSet().containsAll(observed)) {
+      blockers.add('profile fragments do not exactly cover final receipt runs');
+    }
+  } on Object catch (error) {
+    blockers.add('profile fragment binding failed: $error');
   }
 }
 
@@ -1344,6 +1456,28 @@ void _validateSample(
     '$prefix.provingFrameOrdinal',
     blockers,
   );
+  final expectedStartFrames =
+      frames.values
+          .where(
+            (frame) =>
+                _integer(
+                  frame['vsyncMicros'],
+                  '$prefix.frame.vsyncMicros',
+                  blockers,
+                ) >=
+                accepted,
+          )
+          .toList()
+        ..sort(
+          (left, right) => (left['vsyncMicros']! as int).compareTo(
+            right['vsyncMicros']! as int,
+          ),
+        );
+  if (expectedStartFrames.isEmpty) {
+    blockers.add('$prefix acceptance has no following frame interval');
+  } else if (start != expectedStartFrames.first['ordinal']) {
+    blockers.add('$prefix frame interval does not begin at acceptance');
+  }
   if (start > proving || proving > end) {
     blockers.add('$prefix proving frame is outside its interval');
   }

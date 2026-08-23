@@ -9,6 +9,7 @@ import 'package:crypto/crypto.dart';
 import '../packages/flark/example/lib/dogfood_documents.dart';
 import '../packages/flark/test/support/macos_native_canary_driver.dart';
 import 'dogfood_fixture_identity.dart';
+import 'dogfood_host_identity.dart';
 import 'verify_v4_dogfood_receipt.dart';
 
 const _profileCadence = Duration(microseconds: 16667);
@@ -128,6 +129,7 @@ Future<void> main(List<String> arguments) async {
           'bundleManifestSha256': manifestValue['sha256'],
           'mainExecutable': await _fileIdentity(appExecutable),
           'embeddedAbi': await _fileIdentity(embeddedAbi),
+          'measurementHost': await dogfoodMeasurementHostIdentity(),
         },
         'fixture': fixture,
         'display': result.display,
@@ -1158,11 +1160,7 @@ Map<String, Object?> _buildMeasuredRun({
       'canonicalSelectionBaseUtf16': finalGeneration.selectionBase,
       'canonicalSelectionExtentUtf16': finalGeneration.selectionExtent,
       'paintedCaretSourceUtf16': firstPaint['caretSourceUtf16'],
-      'startFrameOrdinal': paintObservations
-          .where((paint) => declared.contains(paint['sourceGeneration']))
-          .where((paint) => paint['frameOrdinal'] is int)
-          .map((paint) => paint['frameOrdinal']! as int)
-          .reduce(math.min),
+      'startFrameOrdinal': _firstFrameCoveringAcceptance(frames, accepted),
       'endFrameOrdinal': paintObservations
           .where((paint) => declared.contains(paint['sourceGeneration']))
           .where((paint) => paint['frameOrdinal'] is int)
@@ -1246,6 +1244,19 @@ Map<String, Object?> _buildMeasuredRun({
       },
     ],
   };
+}
+
+int _firstFrameCoveringAcceptance(
+  List<Map<String, Object?>> frames,
+  int acceptedMicros,
+) {
+  final candidates = frames.where(
+    (frame) => (frame['vsyncMicros']! as int) >= acceptedMicros,
+  );
+  if (candidates.isEmpty) {
+    throw StateError('accepted input has no following FrameTiming interval');
+  }
+  return candidates.first['ordinal']! as int;
 }
 
 Map<int, (int, int)> _ordinaryInputEvents(List<String> events) {

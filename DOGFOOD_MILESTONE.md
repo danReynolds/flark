@@ -392,9 +392,11 @@ one exact clean commit:
 The final receipt is produced by
 `scripts/verify_v4_dogfood_completion.dart`. It recomputes the app-bundle
 manifest, replays the performance receipt, binds every profile fragment to the
-candidate/app/fixture, and requires exact-head CI, two independent reviews, the
-moving-surface capture, and the reviewed B2 ledger. The orchestrator must report
-`INCOMPLETE`, not `PASS`, when that candidate evidence is absent.
+candidate/app/fixture/measurement host, replays the native Flutter machine log
+and the structured default/stress/actual-paint gate receipts, and requires live
+GitHub job metadata for exact-head CI, two independent reviews, the
+moving-surface capture, and the reviewed B2 ledger. The orchestrator must
+report `INCOMPLETE`, not `PASS`, when that candidate evidence is absent.
 
 The gate fails on a required skip, missing raw sample, invalid display, hash
 mismatch, open blocker, or exceeded budget. It records:
@@ -408,6 +410,8 @@ mismatch, open blocker, or exceeded budget. It records:
 - scenario-ledger path, schema/version, Git blob hash, and fixture identity;
 - every functional/native/profile result and skip count;
 - numeric distributions, maxima, frame misses, memory, and live resources;
+- every FrameTiming interval from accepted input through the proving paint,
+  including frames before the first generation paint;
 - raw evidence, receipt, schema, and validator paths, versions, sizes, and
   SHA-256 values;
 - required CI workflow run/job URLs whose reported `head_sha` equals the
@@ -415,10 +419,14 @@ mismatch, open blocker, or exceeded budget. It records:
 - moving-surface capture/checklist plus reviewer signoff artifacts; and
 - the reviewed out-of-scope/known-limitation ledger.
 
-The orchestrator reads machine test output and requires the named native canary
-to execute with skip count zero. The certification-stress command proves its
-named dense-runtime capacity case only; it does not substitute for any D0 scale
-or profile cell.
+The orchestrator replays machine test output and requires the named native
+canary and both actual-paint files to execute with skip count zero. Default and
+stress success are carried by structured receipts bound to the exact command,
+absolute hashed toolchain, controlled environment, working directory, runner
+artifact, raw log, observed process exit, commit, and tree rather than by
+copyable log substrings. The certification-stress command proves its named
+dense-runtime capacity case only; it does not substitute for any D0 scale or
+profile cell.
 
 Historical prose and a prior artifact do not count. CI must be green on the
 same commit, but merge to `main` is not required for D0. Required CI build

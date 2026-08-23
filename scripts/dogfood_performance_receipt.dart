@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 
 import 'dogfood_bundle_manifest.dart';
 import 'dogfood_fixture_identity.dart';
+import 'dogfood_host_identity.dart';
 import 'verify_v4_dogfood_receipt.dart';
 
 final class DogfoodProfileAssembly {
@@ -165,6 +166,7 @@ Future<void> main(List<String> arguments) async {
       embeddedAbi,
     );
     final fragments = <Map<String, Object?>>[];
+    final fragmentFiles = <File>[];
     await for (final entity in fragmentsDirectory.list()) {
       if (entity is! File || !entity.path.endsWith('.json')) continue;
       final value = jsonDecode(await entity.readAsString());
@@ -174,7 +176,9 @@ Future<void> main(List<String> arguments) async {
         );
       }
       fragments.add(value.cast<String, Object?>());
+      fragmentFiles.add(entity.absolute);
     }
+    fragmentFiles.sort((left, right) => left.path.compareTo(right.path));
     final assembly = assembleDogfoodProfileFragments(
       fragments,
       streamed: streamed,
@@ -189,6 +193,7 @@ Future<void> main(List<String> arguments) async {
       'bundleManifestSha256': verifiedManifest.sha256,
       'mainExecutable': mainIdentity,
       'embeddedAbi': abiIdentity,
+      'measurementHost': await dogfoodMeasurementHostIdentity(),
     };
     if (jsonEncode(assembly.binding) != jsonEncode(expectedBinding)) {
       throw StateError(
@@ -227,8 +232,11 @@ Future<void> main(List<String> arguments) async {
         'mainExecutable': mainIdentity,
         'embeddedAbi': abiIdentity,
         'profileHarness': await _fileIdentity(harness),
+        'profileFragments': [
+          for (final fragment in fragmentFiles) await _fileIdentity(fragment),
+        ],
       },
-      'host': await _hostIdentity(),
+      'host': await dogfoodHostIdentity(),
       'display': assembly.display,
       'cells': assembly.cells,
     };
@@ -254,25 +262,6 @@ Future<void> main(List<String> arguments) async {
     stderr.writeln(stackTrace);
     exitCode = 1;
   }
-}
-
-Future<Map<String, Object>> _hostIdentity() async {
-  final physicalMemory = int.tryParse(
-    await _command('sysctl', const ['-n', 'hw.memsize']),
-  );
-  return {
-    'hostname': Platform.localHostname,
-    'operatingSystem': Platform.operatingSystemVersion,
-    'architecture': await _command('uname', const ['-m']),
-    'cpu': await _command('sysctl', const ['-n', 'machdep.cpu.brand_string']),
-    'logicalCores': Platform.numberOfProcessors,
-    'physicalMemoryBytes': physicalMemory ?? 1,
-    'flutterVersion': await _command('flutter', const ['--version']),
-    'dartVersion': await _command('dart', const ['--version']),
-    'rustcVersion': await _command('rustc', const ['--version']),
-    'cargoVersion': await _command('cargo', const ['--version']),
-    'xcodeVersion': await _command('xcodebuild', const ['-version']),
-  };
 }
 
 Future<Map<String, Object>> _fileIdentity(File file) async {

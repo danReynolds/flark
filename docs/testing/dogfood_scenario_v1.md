@@ -67,7 +67,9 @@ opening-session functional and five-fresh-process profile lanes mandatory.
 
 ### Required exact-commit CI
 
-The D0 receipt requires these job names with `head_sha` equal to the candidate:
+The D0 receipt resolves each canonical GitHub Actions job URL through the live
+GitHub API and requires these job names with `head_sha` equal to the candidate
+and `conclusion: success`:
 
 - `v4-integration-gate`
 - `macos-smoke`
