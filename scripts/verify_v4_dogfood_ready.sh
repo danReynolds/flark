@@ -27,13 +27,13 @@ if [[ -e "$OUT_DIR" ]]; then
   echo "verify-v4-dogfood-ready: output already exists: $OUT_DIR" >&2
   exit 1
 fi
-mkdir -p "$FRAGMENTS"
 
 frontmost="$({ osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'; } 2>/dev/null || true)"
 if [[ "$frontmost" == "loginwindow" || "$frontmost" == "LoginWindow" ]]; then
   echo 'verify-v4-dogfood-ready: unlock the interactive macOS session first' >&2
   exit 1
 fi
+mkdir -p "$FRAGMENTS"
 
 echo '==> Active functional gate'
 bash "$ROOT/scripts/verify_v4.sh"
