@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flark/flark.dart';
@@ -61,7 +62,12 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
       )..start();
     }
     unawaited(_probeStreamedOpenSupport());
-    unawaited(_load(DogfoodDocumentPreset.productTour));
+    final initialPresetName = widget.nativeCanaryMode?.initialPresetName;
+    final initialPreset = initialPresetName == null
+        ? DogfoodDocumentPreset.productTour
+        : DogfoodDocumentPreset.values.byName(initialPresetName);
+    _preset = initialPreset;
+    unawaited(_load(initialPreset));
   }
 
   @override
@@ -88,7 +94,8 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   Future<void> _load(DogfoodDocumentPreset preset) async {
     final generationWatch = Stopwatch()..start();
     final String source;
-    if (widget.nativeCanaryMode case final mode?) {
+    if (widget.nativeCanaryMode case final mode?
+        when mode.initialPresetName == null) {
       source = mode.source;
     } else {
       source = await compute(buildDogfoodDocument, preset);
@@ -188,6 +195,27 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         await _settleCanaryController(controller);
         await _awaitCanaryFrame();
         await writer.writeNow(commandSequence: command.sequence);
+        return;
+      case 'closeSession':
+        final controller = _controller;
+        if (controller == null) throw StateError('canary has no controller');
+        await writer.waitForPlatformInputQuiescence();
+        await _settleCanaryController(controller);
+        final closeRequestedEpochMicros = DateTime.now().microsecondsSinceEpoch;
+        final closeRequestedRssBytes = ProcessInfo.currentRss;
+        writer.detach();
+        setState(() => _controller = null);
+        await controller.close();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        final globalLiveState = FlarkNativeDocument.inspectGlobalLiveState(
+          libraryPath: widget.libraryPath,
+        );
+        await writer.writeClosed(
+          commandSequence: command.sequence,
+          closeRequestedEpochMicros: closeRequestedEpochMicros,
+          closeRequestedRssBytes: closeRequestedRssBytes,
+          globalLiveState: globalLiveState,
+        );
         return;
       case 'lookupSourcePoint':
         final controller = _controller;

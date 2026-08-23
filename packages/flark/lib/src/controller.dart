@@ -333,6 +333,7 @@ final class _LateSemanticInput {
 /// The profile harness joins this receipt to Flutter's proving frame.
 final class FlarkSemanticEditPerformance {
   const FlarkSemanticEditPerformance({
+    required this.sourceGeneration,
     required this.platformCallbackMicros,
     required this.coreQueueMicros,
     required this.workerRoundTripMicros,
@@ -343,6 +344,7 @@ final class FlarkSemanticEditPerformance {
     required this.callbackToReceiptMicros,
   });
 
+  final int sourceGeneration;
   final int platformCallbackMicros;
   final int coreQueueMicros;
   final int workerRoundTripMicros;
@@ -607,6 +609,8 @@ final class FlarkEditorController extends ChangeNotifier {
   _LateSemanticInput? _lateSemanticInput;
   int? _activePlatformCallbackStartedEpochMicros;
   FlarkSemanticEditPerformance? _lastSemanticEditPerformance;
+  final List<FlarkSemanticEditPerformance> _semanticEditPerformanceReceipts =
+      [];
   final List<FlarkSourceEditPerformance> _sourceEditPerformanceReceipts = [];
   bool _platformNewlineMutationAwaitingAction = false;
   bool _platformDeleteBackwardMutationAwaitingSelector = false;
@@ -715,6 +719,8 @@ final class FlarkEditorController extends ChangeNotifier {
   int get lastSemanticReconciliationMicros => _lastSemanticReconciliationMicros;
   FlarkSemanticEditPerformance? get lastSemanticEditPerformance =>
       _lastSemanticEditPerformance;
+  List<FlarkSemanticEditPerformance> get semanticEditPerformanceReceipts =>
+      List.unmodifiable(_semanticEditPerformanceReceipts);
   List<FlarkSourceEditPerformance> get sourceEditPerformanceReceipts =>
       List.unmodifiable(_sourceEditPerformanceReceipts);
 
@@ -4254,7 +4260,8 @@ final class FlarkEditorController extends ChangeNotifier {
       adoptionWatch.stop();
       if (observedInput != null && observedInput.provisionalMutation != null) {
         final telemetry = receipt.telemetry;
-        _lastSemanticEditPerformance = FlarkSemanticEditPerformance(
+        final performance = FlarkSemanticEditPerformance(
+          sourceGeneration: generation,
           platformCallbackMicros: observedInput.initialCallbackMicros,
           coreQueueMicros: telemetry.coreQueueMicros,
           workerRoundTripMicros: telemetry.workerRoundTripMicros,
@@ -4268,6 +4275,12 @@ final class FlarkEditorController extends ChangeNotifier {
                 observedInput.initialCallbackStartedEpochMicros,
           ),
         );
+        _lastSemanticEditPerformance = performance;
+        _semanticEditPerformanceReceipts.add(performance);
+        if (_semanticEditPerformanceReceipts.length >
+            _maximumPerformanceReceipts) {
+          _semanticEditPerformanceReceipts.removeAt(0);
+        }
       }
       if (generation != _editGeneration || !receipt.hasCommit) {
         _status = _idleStatus(current: _semanticViewportCurrent);

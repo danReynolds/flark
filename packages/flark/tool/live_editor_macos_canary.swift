@@ -38,6 +38,10 @@ func pause(milliseconds: Int) {
   usleep(useconds_t(max(0, milliseconds) * 1_000))
 }
 
+func pause(microseconds: Int) {
+  usleep(useconds_t(max(0, microseconds)))
+}
+
 func readJSON(_ path: String) throws -> [String: Any] {
   let data = try Data(contentsOf: URL(fileURLWithPath: path))
   return try dictionary(JSONSerialization.jsonObject(with: data), "JSON document")
@@ -265,8 +269,18 @@ func scrollDown(deltaY: Int, in window: (origin: CGPoint, size: CGSize, number: 
   pause(milliseconds: 100)
 }
 
-func typeText(_ value: String, intervalMs: Int) {
-  for character in value {
+func typeText(_ value: String, intervalMicros: Int) {
+  let started = DispatchTime.now().uptimeNanoseconds
+  for (index, character) in value.enumerated() {
+    if index > 0 && intervalMicros > 0 {
+      let target = started + UInt64(index * intervalMicros) * 1_000
+      while true {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if now >= target { break }
+        let remaining = target - now
+        pause(microseconds: Int(min(remaining / 1_000, 2_000)))
+      }
+    }
     var units = Array(String(character).utf16)
     let down = CGEvent(
       keyboardEventSource: eventSource,
@@ -292,7 +306,6 @@ func typeText(_ value: String, intervalMs: Int) {
       )
     }
     up.post(tap: .cghidEventTap)
-    pause(milliseconds: intervalMs)
   }
 }
 
@@ -400,9 +413,10 @@ func writeJSONLine(_ value: [String: Any]) {
   }
 }
 
-guard CommandLine.arguments.count == 3 else {
+guard CommandLine.arguments.count == 3 || CommandLine.arguments.count == 4 else {
   fputs(
-    "usage: live_editor_macos_canary.swift APP_EXECUTABLE LIBRARY\n",
+    "usage: live_editor_macos_canary.swift APP_EXECUTABLE LIBRARY " +
+      "[INITIAL_PRESET]\n",
     stderr
   )
   exit(64)
@@ -410,6 +424,9 @@ guard CommandLine.arguments.count == 3 else {
 
 let appExecutable = URL(fileURLWithPath: CommandLine.arguments[1]).path
 let libraryPath = URL(fileURLWithPath: CommandLine.arguments[2]).path
+let initialPreset = CommandLine.arguments.count == 4
+  ? CommandLine.arguments[3]
+  : nil
 let harnessDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
   .appendingPathComponent("flark-native-actuator-\(UUID().uuidString)")
 try FileManager.default.createDirectory(
@@ -425,6 +442,12 @@ var environment = ProcessInfo.processInfo.environment
 environment["FLARK_V4_LIBRARY_PATH"] = libraryPath
 environment["FLARK_CANARY_COMMAND_PATH"] = commandPath
 environment["FLARK_CANARY_RECEIPT_PATH"] = receiptPath
+if let initialPreset {
+  environment["FLARK_CANARY_INITIAL_PRESET"] = initialPreset
+}
+environment["FLARK_CANARY_PROCESS_LAUNCH_EPOCH_MICROS"] = String(
+  Int(Date().timeIntervalSince1970 * 1_000_000)
+)
 appProcess.environment = environment
 appProcess.standardOutput = FileHandle.nullDevice
 appProcess.standardError = FileHandle.standardError
@@ -596,8 +619,13 @@ while !shouldStop, let line = readLine() {
       try verifyExpectedSelection(arguments)
       typeText(
         try string(arguments["text"], "text"),
-        intervalMs: try integer(arguments["cadenceMs"], "cadenceMs")
+        intervalMicros: try integer(
+          arguments["cadenceMicros"],
+          "cadenceMicros"
+        )
       )
+    case "closeSession":
+      response["snapshot"] = try appRequest(operation: "closeSession")
     case "key":
       _ = try focusWindow(
         pid: appPID,

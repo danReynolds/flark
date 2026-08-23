@@ -31,6 +31,7 @@ final class FlarkSurfacePaintObservation {
   const FlarkSurfacePaintObservation({
     required this.revision,
     required this.sourceGeneration,
+    required this.semanticsCurrent,
     required this.viewportPageIndex,
     required this.visibleUtf16Start,
     required this.visibleUtf16Length,
@@ -59,6 +60,7 @@ final class FlarkSurfacePaintObservation {
   /// Unlike [revision], this advances synchronously for an optimistic edit
   /// before the native actor acknowledges its corresponding source revision.
   final int sourceGeneration;
+  final bool semanticsCurrent;
   final int viewportPageIndex;
   final int visibleUtf16Start;
   final int visibleUtf16Length;
@@ -2009,6 +2011,7 @@ final class RenderFlarkSurface extends RenderBox {
       FlarkSurfacePaintObservation(
         revision: _controller.revision,
         sourceGeneration: _controller.sourceGeneration,
+        semanticsCurrent: _controller.semanticsCurrent,
         viewportPageIndex: _controller.viewportPageIndex,
         visibleUtf16Start: _controller.visibleUtf16Start,
         visibleUtf16Length: _controller.visibleSource.length,

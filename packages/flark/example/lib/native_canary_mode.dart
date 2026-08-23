@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show FramePhase, FrameTiming;
 
 import 'package:flark/flark.dart';
 import 'package:flutter/widgets.dart';
@@ -9,6 +10,8 @@ final class DogfoodNativeCanaryMode {
   const DogfoodNativeCanaryMode({
     required this.receiptPath,
     required this.commandPath,
+    required this.initialPresetName,
+    required this.processLaunchEpochMicros,
   });
 
   static DogfoodNativeCanaryMode? fromEnvironment() {
@@ -22,15 +25,24 @@ final class DogfoodNativeCanaryMode {
         ? commandAtBuild
         : Platform.environment['FLARK_CANARY_COMMAND_PATH'];
     if (commandPath == null) return null;
+    final initialPresetName =
+        Platform.environment['FLARK_CANARY_INITIAL_PRESET'];
+    final processLaunchEpochMicros = int.tryParse(
+      Platform.environment['FLARK_CANARY_PROCESS_LAUNCH_EPOCH_MICROS'] ?? '',
+    );
     return DogfoodNativeCanaryMode(
       receiptPath: receiptPath,
       commandPath: commandPath,
+      initialPresetName: initialPresetName,
+      processLaunchEpochMicros: processLaunchEpochMicros,
     );
   }
 
   String get source => '';
   final String receiptPath;
   final String commandPath;
+  final String? initialPresetName;
+  final int? processLaunchEpochMicros;
 }
 
 final class DogfoodNativeCanaryCommand {
@@ -102,7 +114,9 @@ final class DogfoodNativeCanaryCommandMailbox {
 /// bounded observations in memory and publishes atomic receipts outside the
 /// product input callback itself.
 final class DogfoodNativeCanaryReceiptWriter {
-  DogfoodNativeCanaryReceiptWriter(this.mode);
+  DogfoodNativeCanaryReceiptWriter(this.mode) {
+    WidgetsBinding.instance.addTimingsCallback(_recordFrameTimings);
+  }
 
   final DogfoodNativeCanaryMode mode;
   final List<String> _surfaceFrames = [];
@@ -116,6 +130,8 @@ final class DogfoodNativeCanaryReceiptWriter {
   final List<int?> _surfaceCaretDisplays = [];
   final List<String> _surfaceVisibleSources = [];
   final List<List<String>> _surfaceStyledTexts = [];
+  final List<Map<String, Object?>> _paintReceipts = [];
+  final List<Map<String, Object?>> _frameTimingReceipts = [];
   final List<String> _inputEvents = [];
   FlarkEditorController? _controller;
   Timer? _timer;
@@ -145,6 +161,8 @@ final class DogfoodNativeCanaryReceiptWriter {
     _surfaceCaretDisplays.clear();
     _surfaceVisibleSources.clear();
     _surfaceStyledTexts.clear();
+    _paintReceipts.clear();
+    _frameTimingReceipts.clear();
     _inputEvents.clear();
     _settledPresentation = '<empty>';
     _commandError = null;
@@ -170,11 +188,43 @@ final class DogfoodNativeCanaryReceiptWriter {
     _controller = null;
   }
 
-  void dispose() => detach();
+  void dispose() {
+    WidgetsBinding.instance.removeTimingsCallback(_recordFrameTimings);
+    detach();
+  }
+
+  void _recordFrameTimings(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      if (_frameTimingReceipts.length == 1024) {
+        _frameTimingReceipts.removeAt(0);
+      }
+      _frameTimingReceipts.add({
+        'frameNumber': timing.frameNumber,
+        'vsyncStartMicros': timing.timestampInMicroseconds(
+          FramePhase.vsyncStart,
+        ),
+        'buildStartMicros': timing.timestampInMicroseconds(
+          FramePhase.buildStart,
+        ),
+        'buildFinishMicros': timing.timestampInMicroseconds(
+          FramePhase.buildFinish,
+        ),
+        'rasterStartMicros': timing.timestampInMicroseconds(
+          FramePhase.rasterStart,
+        ),
+        'rasterFinishMicros': timing.timestampInMicroseconds(
+          FramePhase.rasterFinish,
+        ),
+        'buildMicros': timing.buildDuration.inMicroseconds,
+        'rasterMicros': timing.rasterDuration.inMicroseconds,
+        'totalSpanMicros': timing.totalSpan.inMicroseconds,
+      });
+    }
+  }
 
   void recordInputEvent(String event) {
     _lastInputEventAt = DateTime.now();
-    if (_inputEvents.length == 128) _inputEvents.removeAt(0);
+    if (_inputEvents.length == 1024) _inputEvents.removeAt(0);
     _inputEvents.add('${DateTime.now().microsecondsSinceEpoch}:$event');
     _record();
   }
@@ -196,6 +246,41 @@ final class DogfoodNativeCanaryReceiptWriter {
 
   void recordPaintObservation(FlarkSurfacePaintObservation observation) {
     _lastScrollOffset = observation.scrollOffset;
+    if (_paintReceipts.length == 1024) _paintReceipts.removeAt(0);
+    _paintReceipts.add({
+      'paintEpochMicros': DateTime.now().microsecondsSinceEpoch,
+      'frameStampMicros':
+          WidgetsBinding.instance.currentSystemFrameTimeStamp.inMicroseconds,
+      'revision': observation.revision,
+      'sourceGeneration': observation.sourceGeneration,
+      'semanticsCurrent': observation.semanticsCurrent,
+      'viewportPageIndex': observation.viewportPageIndex,
+      'visibleUtf16Start': observation.visibleUtf16Start,
+      'visibleUtf16Length': observation.visibleUtf16Length,
+      'visibleSourceSha256': flarkWindowTextSha256(observation.visibleSource),
+      'renderPlanHash': observation.renderPlanHash,
+      'visualStateHash': observation.visualStateHash,
+      'canonicalSelectionBaseUtf16': observation.canonicalSelectionBaseUtf16,
+      'canonicalSelectionExtentUtf16':
+          observation.canonicalSelectionExtentUtf16,
+      'caretSourceUtf16': observation.caretSourceUtf16,
+      'caretDisplayUtf16': observation.caretDisplayUtf16,
+      'selectionRectCount': observation.selectionRects.length,
+      'neutralRowCount': observation.rows.where((row) => row.neutral).length,
+      'activeNeutralRowCount': observation.rows
+          .where((row) => row.active && row.neutral)
+          .length,
+      'exactRunRanges': observation.rows
+          .expand((row) => row.runs)
+          .where((run) => run.sourceExact)
+          .map(
+            (run) => {
+              'startUtf16': run.sourceUtf16Start,
+              'endUtf16': run.sourceUtf16End,
+            },
+          )
+          .toList(growable: false),
+    });
     final surface = observation.presentation;
     if (_surfaceFrames.isEmpty ||
         _surfaceFrames.last != surface ||
@@ -209,7 +294,7 @@ final class DogfoodNativeCanaryReceiptWriter {
         _surfaceCaretSources.last != observation.caretSourceUtf16 ||
         _surfaceCaretDisplays.last != observation.caretDisplayUtf16 ||
         _surfaceVisibleSources.last != observation.visibleSource) {
-      if (_surfaceFrames.length == 128) {
+      if (_surfaceFrames.length == 1024) {
         _surfaceFrames.removeAt(0);
         _surfaceFrameHashes.removeAt(0);
         _surfaceVisualStateHashes.removeAt(0);
@@ -303,6 +388,10 @@ final class DogfoodNativeCanaryReceiptWriter {
     if (controller == null) {
       throw StateError('canary receipt writer has no controller');
     }
+    // FrameTiming is delivered asynchronously after the painted frame. Give
+    // the engine one bounded callback turn so the atomic receipt can join the
+    // paint to its build/raster phases instead of omitting the final frame.
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     final generation = ++_writeGeneration;
     await _write(controller, generation);
   }
@@ -316,6 +405,40 @@ final class DogfoodNativeCanaryReceiptWriter {
     if (controller == null) return;
     final generation = ++_writeGeneration;
     await _write(controller, generation);
+  }
+
+  Future<void> writeClosed({
+    required int commandSequence,
+    required int closeRequestedEpochMicros,
+    required int closeRequestedRssBytes,
+    required FlarkNativeGlobalLiveStateInspection globalLiveState,
+  }) async {
+    _timer?.cancel();
+    _timer = null;
+    _commandSequence = commandSequence;
+    _commandError = null;
+    final receipt = <String, Object?>{
+      'schemaVersion': 5,
+      'canaryId': _canaryId,
+      'commandSequence': commandSequence,
+      'commandError': null,
+      'status': 'disposed',
+      'processLaunchEpochMicros': mode.processLaunchEpochMicros,
+      'closeRequestedEpochMicros': closeRequestedEpochMicros,
+      'closeRequestedRssBytes': closeRequestedRssBytes,
+      'postCloseEpochMicros': DateTime.now().microsecondsSinceEpoch,
+      'postCloseRssBytes': ProcessInfo.currentRss,
+      'maximumRssBytes': ProcessInfo.maxRss,
+      'display': _displayReceipt(),
+      'globalLiveState': {
+        'sessions': globalLiveState.liveSessions,
+        'transactions': globalLiveState.liveTransactions,
+        'continuations': globalLiveState.liveContinuations,
+        'anchors': globalLiveState.liveAnchors,
+        'historyTokens': globalLiveState.liveHistoryTokens,
+      },
+    };
+    await _writeReceipt(receipt);
   }
 
   void _record() {
@@ -354,7 +477,8 @@ final class DogfoodNativeCanaryReceiptWriter {
     final geometry = _sourcePointGeometry;
     final taskGeometry = _taskActionGeometry;
     final receipt = <String, Object?>{
-      'schemaVersion': 4,
+      'schemaVersion': 5,
+      'processLaunchEpochMicros': mode.processLaunchEpochMicros,
       'canaryId': _canaryId,
       'commandSequence': _commandSequence,
       'commandError': _commandError?.toString(),
@@ -367,6 +491,9 @@ final class DogfoodNativeCanaryReceiptWriter {
       'selectionExtentUtf16': selection?.extent ?? controller.globalCaretOffset,
       'caretUtf16': selection?.extent ?? controller.globalCaretOffset,
       'pendingEdits': controller.pendingEdits,
+      'currentRssBytes': ProcessInfo.currentRss,
+      'maximumRssBytes': ProcessInfo.maxRss,
+      'display': _displayReceipt(),
       'resyncCount': controller.resyncCount,
       'lastResyncReason': controller.lastResyncReason.name,
       'lastError': controller.lastError?.toString(),
@@ -394,6 +521,42 @@ final class DogfoodNativeCanaryReceiptWriter {
       'surfaceStyledTexts': _surfaceStyledTexts
           .map(List<String>.unmodifiable)
           .toList(growable: false),
+      'paintReceipts': List<Map<String, Object?>>.unmodifiable(_paintReceipts),
+      'frameTimingReceipts': List<Map<String, Object?>>.unmodifiable(
+        _frameTimingReceipts,
+      ),
+      'sourceEditPerformanceReceipts': controller.sourceEditPerformanceReceipts
+          .map(
+            (receipt) => {
+              'sourceGeneration': receipt.sourceGeneration,
+              'coreQueueMicros': receipt.coreQueueMicros,
+              'workerRoundTripMicros': receipt.workerRoundTripMicros,
+              'workerQueueMicros': receipt.workerQueueMicros,
+              'nativeFfiMicros': receipt.nativeFfiMicros,
+              'coreAdoptionMicros': receipt.coreAdoptionMicros,
+              'flutterReceiptAdoptionMicros':
+                  receipt.flutterReceiptAdoptionMicros,
+              'acceptanceToReceiptMicros': receipt.acceptanceToReceiptMicros,
+            },
+          )
+          .toList(growable: false),
+      'semanticEditPerformanceReceipts': controller
+          .semanticEditPerformanceReceipts
+          .map(
+            (receipt) => {
+              'sourceGeneration': receipt.sourceGeneration,
+              'platformCallbackMicros': receipt.platformCallbackMicros,
+              'coreQueueMicros': receipt.coreQueueMicros,
+              'workerRoundTripMicros': receipt.workerRoundTripMicros,
+              'workerQueueMicros': receipt.workerQueueMicros,
+              'nativeFfiMicros': receipt.nativeFfiMicros,
+              'coreAdoptionMicros': receipt.coreAdoptionMicros,
+              'flutterReceiptAdoptionMicros':
+                  receipt.flutterReceiptAdoptionMicros,
+              'callbackToReceiptMicros': receipt.callbackToReceiptMicros,
+            },
+          )
+          .toList(growable: false),
       'scrollOffset': _lastScrollOffset,
       'inputEvents': List<String>.unmodifiable(_inputEvents),
       if (geometry != null)
@@ -413,9 +576,24 @@ final class DogfoodNativeCanaryReceiptWriter {
           'rootHeight': taskGeometry.rootLogicalSize.height,
         },
     };
+    await _writeReceipt(receipt);
+  }
+
+  Future<void> _writeReceipt(Map<String, Object?> receipt) async {
     final destination = File(mode.receiptPath);
     final temporary = File('${mode.receiptPath}.tmp');
     await temporary.writeAsString(jsonEncode(receipt), flush: true);
     await temporary.rename(destination.path);
+  }
+
+  Map<String, Object> _displayReceipt() {
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final display = view.display;
+    return {
+      'refreshHz': display.refreshRate,
+      'devicePixelRatio': view.devicePixelRatio,
+      'widthLogical': view.physicalSize.width / view.devicePixelRatio,
+      'heightLogical': view.physicalSize.height / view.devicePixelRatio,
+    };
   }
 }

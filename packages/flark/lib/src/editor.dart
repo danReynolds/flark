@@ -1029,10 +1029,17 @@ final class _FlarkEditorState extends State<FlarkEditor>
   @override
   void updateEditingValueWithDeltas(List<TextEditingDelta> textEditingDeltas) {
     _preferredVerticalNavigationX = null;
-    widget.debugInputEventObserver?.call(
+    final observer = widget.debugInputEventObserver;
+    final stopwatch = observer == null ? null : (Stopwatch()..start());
+    observer?.call(
       'deltas:${textEditingDeltas.map(_debugTextEditingDelta).join('|')}',
     );
     widget.controller.applyDeltas(textEditingDeltas);
+    stopwatch?.stop();
+    observer?.call(
+      'accepted-deltas:generation=${widget.controller.sourceGeneration}'
+      ':elapsedMicros=${stopwatch!.elapsedMicroseconds}',
+    );
   }
 
   String _debugTextEditingDelta(TextEditingDelta delta) {
@@ -1060,11 +1067,18 @@ final class _FlarkEditorState extends State<FlarkEditor>
   @override
   void updateEditingValue(TextEditingValue value) {
     _preferredVerticalNavigationX = null;
-    widget.debugInputEventObserver?.call(
+    final observer = widget.debugInputEventObserver;
+    final stopwatch = observer == null ? null : (Stopwatch()..start());
+    observer?.call(
       'full-value:length=${value.text.length}:selection=${value.selection}'
       ':composing=${value.composing}',
     );
     widget.controller.updateEditingValue(value);
+    stopwatch?.stop();
+    observer?.call(
+      'accepted-full-value:generation=${widget.controller.sourceGeneration}'
+      ':elapsedMicros=${stopwatch!.elapsedMicroseconds}',
+    );
   }
 
   @override

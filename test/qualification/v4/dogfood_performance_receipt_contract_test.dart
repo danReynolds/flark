@@ -33,6 +33,7 @@ void main() {
       (result.metrics['sourceToPaintMicros']! as Map)['sampleCount'],
       3045,
     );
+    expect((result.metrics['flutterFrameMicros']! as Map)['sampleCount'], 3045);
     expect((result.metrics['openToEditableMicros']! as Map)['sampleCount'], 25);
   });
 
@@ -102,6 +103,49 @@ void main() {
       contains('requires an open-to-editable measurement'),
     );
   });
+
+  test('replay rejects raw paint, input, and engine disagreement', () async {
+    final sealed = await sealDogfoodPerformanceReceipt(
+      _validRawReceipt(),
+      verifyArtifactFiles: false,
+    );
+
+    final paintTampered = _copy(sealed);
+    final paintRun = _firstRun(paintTampered);
+    final paint = (paintRun['paintObservations']! as List).first as Map;
+    paint['expectedVisibleSourceSha256'] = _hash('d');
+    final paintResult = await verifyDogfoodPerformanceReceipt(
+      paintTampered,
+      verifyArtifactFiles: false,
+    );
+    expect(paintResult.blockers.join('\n'), contains('raw paint 0 is torn'));
+
+    final inputTampered = _copy(sealed);
+    final inputRun = _firstRun(inputTampered);
+    final input = (inputRun['inputObservations']! as List).first as Map;
+    input['sourceSha256'] = _hash('d');
+    final inputResult = await verifyDogfoodPerformanceReceipt(
+      inputTampered,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      inputResult.blockers.join('\n'),
+      contains('does not match its raw input observation'),
+    );
+
+    final engineTampered = _copy(sealed);
+    final engineRun = _firstRun(engineTampered);
+    final engine = (engineRun['engineObservations']! as List).first as Map;
+    engine['nativeFfiMicros'] = 101;
+    final engineResult = await verifyDogfoodPerformanceReceipt(
+      engineTampered,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      engineResult.blockers.join('\n'),
+      contains('engine timing does not replay'),
+    );
+  });
 }
 
 Map<String, Object?> _validRawReceipt() {
@@ -116,57 +160,64 @@ Map<String, Object?> _validRawReceipt() {
     };
     final runs = <Map<String, Object?>>[];
     for (var run = 0; run < denominator.runs; run += 1) {
+      final warmups = <Map<String, Object?>>[];
       final samples = <Map<String, Object?>>[];
       final frames = <Map<String, Object?>>[];
+      final inputObservations = <Map<String, Object?>>[];
+      final paintObservations = <Map<String, Object?>>[];
+      final engineObservations = <Map<String, Object?>>[];
+      var frameOrdinal = 0;
+      var sourceGeneration = 1;
+      for (var warmup = 0; warmup < denominator.warmups; warmup += 1) {
+        final accepted = 500000 + warmup * 20000;
+        warmups.add(
+          _sample(
+            index: warmup,
+            accepted: accepted,
+            sourceGeneration: sourceGeneration,
+            frameOrdinal: frameOrdinal,
+            requiresOpen: false,
+          ),
+        );
+        _addRawObservations(
+          inputObservations: inputObservations,
+          paintObservations: paintObservations,
+          engineObservations: engineObservations,
+          accepted: accepted,
+          sourceGeneration: sourceGeneration,
+          frameOrdinal: frameOrdinal,
+        );
+        frames.add(_frame(frameOrdinal, accepted));
+        frameOrdinal += 1;
+        sourceGeneration += 1;
+      }
       for (var sample = 0; sample < denominator.samples; sample += 1) {
         final scheduled = denominator.cadenceHz == 0
             ? null
             : (sample * 1000000 / denominator.cadenceHz).round();
         final accepted = 1000000 + (scheduled ?? sample * 20000);
-        frames.add({
-          'ordinal': sample,
-          'vsyncMicros': accepted + 500,
-          'buildMicros': 1000,
-          'rasterMicros': 1000,
-          'editorSyncMicros': 100,
-          'editorAttributed': true,
-          'missed': false,
-        });
-        samples.add({
-          'index': sample,
-          'scheduledMicros': scheduled,
-          'acceptedMicros': accepted,
-          'sourcePaintMicros': accepted + 500,
-          'caretPaintMicros': accepted + 500,
-          'selectionPaintMicros': accepted + 500,
-          'sourceGeneration': sample + 1,
-          'paintedSourceGeneration': sample + 1,
-          'sourceSha256': _hash('a'),
-          'visibleSourceSha256': _hash('b'),
-          'canonicalSelectionBaseUtf16': sample + 1,
-          'canonicalSelectionExtentUtf16': sample + 1,
-          'paintedCaretSourceUtf16': sample + 1,
-          'startFrameOrdinal': sample,
-          'endFrameOrdinal': sample,
-          'provingFrameOrdinal': sample,
-          'engineMicros': 100,
-          'visibleCertificationMicros': 5000,
-          'openToEditableMicros': denominator.requiresOpen ? 10000 : null,
-          'rawProjectionFrames': 0,
-          'sourceIdentityMatched': true,
-          'caretIdentityMatched': true,
-          'selectionIdentityMatched': true,
-          'faulted': false,
-          'resyncCount': 0,
-          if (denominator.requiresLiveStateZero)
-            'globalLiveState': {
-              'sessions': 0,
-              'transactions': 0,
-              'continuations': 0,
-              'anchors': 0,
-              'historyTokens': 0,
-            },
-        });
+        samples.add(
+          _sample(
+            index: sample,
+            scheduled: scheduled,
+            accepted: accepted,
+            sourceGeneration: sourceGeneration,
+            frameOrdinal: frameOrdinal,
+            requiresOpen: denominator.requiresOpen,
+            requiresLiveStateZero: denominator.requiresLiveStateZero,
+          ),
+        );
+        _addRawObservations(
+          inputObservations: inputObservations,
+          paintObservations: paintObservations,
+          engineObservations: engineObservations,
+          accepted: accepted,
+          sourceGeneration: sourceGeneration,
+          frameOrdinal: frameOrdinal,
+        );
+        frames.add(_frame(frameOrdinal, accepted));
+        frameOrdinal += 1;
+        sourceGeneration += 1;
       }
       runs.add({
         'run': run,
@@ -176,14 +227,12 @@ Map<String, Object?> _validRawReceipt() {
             : '${entry.key}-$run',
         'freshProcess':
             denominator.processRule == DogfoodProcessRule.freshEveryRun,
-        'warmups': List.generate(
-          denominator.warmups,
-          (index) => samples.isEmpty
-              ? _warmup(index)
-              : {...samples.first, 'index': index},
-        ),
+        'warmups': warmups,
         'samples': samples,
         'frames': frames,
+        'inputObservations': inputObservations,
+        'paintObservations': paintObservations,
+        'engineObservations': engineObservations,
         'memory': const [
           {'stage': 'baseline', 'timestampMicros': 1, 'rssBytes': 100000000},
           {'stage': 'peak', 'timestampMicros': 2, 'rssBytes': 110000000},
@@ -252,31 +301,96 @@ Map<String, Object?> _validRawReceipt() {
   };
 }
 
-Map<String, Object?> _warmup(int index) => {
+Map<String, Object?> _sample({
+  required int index,
+  required int accepted,
+  required int sourceGeneration,
+  required int frameOrdinal,
+  required bool requiresOpen,
+  int? scheduled,
+  bool requiresLiveStateZero = false,
+}) => {
   'index': index,
-  'acceptedMicros': 0,
-  'sourcePaintMicros': 0,
-  'caretPaintMicros': 0,
-  'selectionPaintMicros': 0,
-  'sourceGeneration': 0,
-  'paintedSourceGeneration': 0,
+  'scheduledMicros': scheduled,
+  'acceptedMicros': accepted,
+  'sourcePaintMicros': accepted + 500,
+  'caretPaintMicros': accepted + 500,
+  'selectionPaintMicros': accepted + 500,
+  'sourceGeneration': sourceGeneration,
+  'paintedSourceGeneration': sourceGeneration,
   'sourceSha256': _hash('a'),
   'visibleSourceSha256': _hash('b'),
-  'canonicalSelectionBaseUtf16': 0,
-  'canonicalSelectionExtentUtf16': 0,
-  'paintedCaretSourceUtf16': 0,
-  'startFrameOrdinal': 0,
-  'endFrameOrdinal': 0,
-  'provingFrameOrdinal': 0,
-  'engineMicros': 0,
-  'visibleCertificationMicros': 0,
+  'canonicalSelectionBaseUtf16': sourceGeneration,
+  'canonicalSelectionExtentUtf16': sourceGeneration,
+  'paintedCaretSourceUtf16': sourceGeneration,
+  'startFrameOrdinal': frameOrdinal,
+  'endFrameOrdinal': frameOrdinal,
+  'provingFrameOrdinal': frameOrdinal,
+  'engineMicros': 100,
+  'visibleCertificationMicros': 500,
+  'openToEditableMicros': requiresOpen ? 10000 : null,
   'rawProjectionFrames': 0,
   'sourceIdentityMatched': true,
   'caretIdentityMatched': true,
   'selectionIdentityMatched': true,
   'faulted': false,
   'resyncCount': 0,
+  if (requiresLiveStateZero)
+    'globalLiveState': {
+      'sessions': 0,
+      'transactions': 0,
+      'continuations': 0,
+      'anchors': 0,
+      'historyTokens': 0,
+    },
 };
+
+Map<String, Object?> _frame(int ordinal, int accepted) => {
+  'ordinal': ordinal,
+  'vsyncMicros': accepted + 500,
+  'buildMicros': 1000,
+  'rasterMicros': 1000,
+  'editorSyncMicros': 100,
+  'editorAttributed': true,
+  'missed': false,
+};
+
+void _addRawObservations({
+  required List<Map<String, Object?>> inputObservations,
+  required List<Map<String, Object?>> paintObservations,
+  required List<Map<String, Object?>> engineObservations,
+  required int accepted,
+  required int sourceGeneration,
+  required int frameOrdinal,
+}) {
+  inputObservations.add({
+    'sourceGeneration': sourceGeneration,
+    'acceptedMicros': accepted,
+    'editorSyncMicros': 100,
+    'sourceSha256': _hash('a'),
+    'canonicalSelectionBaseUtf16': sourceGeneration,
+    'canonicalSelectionExtentUtf16': sourceGeneration,
+  });
+  paintObservations.add({
+    'timestampMicros': accepted + 500,
+    'frameOrdinal': frameOrdinal,
+    'sourceGeneration': sourceGeneration,
+    'visibleSourceSha256': _hash('b'),
+    'expectedVisibleSourceSha256': _hash('b'),
+    'canonicalSelectionBaseUtf16': sourceGeneration,
+    'canonicalSelectionExtentUtf16': sourceGeneration,
+    'expectedSelectionBaseUtf16': sourceGeneration,
+    'expectedSelectionExtentUtf16': sourceGeneration,
+    'caretSourceUtf16': sourceGeneration,
+    'caretDisplayUtf16': 1,
+    'semanticsCurrent': true,
+    'activeNeutralRowCount': 0,
+  });
+  engineObservations.add({
+    'sourceGeneration': sourceGeneration,
+    'nativeFfiMicros': 100,
+  });
+}
 
 Map<String, Object> _identity(String path) => {
   'path': path,
@@ -293,6 +407,10 @@ List<Map<String, Object?>> _cells(Map<String, Object?> receipt) =>
     (receipt['cells']! as List).cast<Map<String, Object?>>();
 
 Map<String, Object?> _firstSample(Map<String, Object?> receipt) {
-  final run = (_cells(receipt).first['runs']! as List).first as Map;
+  final run = _firstRun(receipt);
   return (run['samples']! as List).first as Map<String, Object?>;
 }
+
+Map<String, Object?> _firstRun(Map<String, Object?> receipt) =>
+    ((_cells(receipt).first['runs']! as List).first as Map)
+        .cast<String, Object?>();
