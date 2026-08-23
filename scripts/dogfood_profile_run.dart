@@ -143,6 +143,20 @@ Future<_ProfileRunResult> _runCell({
         run: run,
       );
     }
+    if (cellId == 'lifecycle-same-process' ||
+        cellId == 'lifecycle-fresh-process') {
+      final run = await _lifecycleRun(
+        driver: driver,
+        launched: launched,
+        source: initialSource,
+        runIndex: runIndex,
+        denominator: denominator,
+      );
+      return _ProfileRunResult(
+        initialSourceBytes: utf8.encode(initialSource).length,
+        run: run,
+      );
+    }
 
     final total = denominator.warmups + denominator.samples;
     late MacosNativeCanarySnapshot baseline;
@@ -288,7 +302,7 @@ Future<_ProfileRunResult> _runCell({
 }
 
 DogfoodDocumentPreset _presetFor(String cellId) {
-  if (cellId.startsWith('product-tour')) {
+  if (cellId.startsWith('product-tour') || cellId.startsWith('lifecycle-')) {
     return DogfoodDocumentPreset.productTour;
   }
   if (cellId.startsWith('ordinary-1m')) {
@@ -460,6 +474,174 @@ Future<Map<String, Object?>> _coldLaunchRun({
   );
 }
 
+Future<Map<String, Object?>> _lifecycleRun({
+  required MacosNativeCanaryDriver driver,
+  required MacosNativeCanarySnapshot launched,
+  required String source,
+  required int runIndex,
+  required DogfoodCellDenominator denominator,
+}) async {
+  final fragments = <Map<String, Object?>>[];
+  var opened = launched;
+  for (
+    var sessionOrdinal = 0;
+    sessionOrdinal < denominator.samples;
+    sessionOrdinal += 1
+  ) {
+    if (sessionOrdinal > 0) {
+      opened = await driver.reset(
+        id: 'lifecycle-$runIndex-$sessionOrdinal',
+        source: source,
+      );
+    }
+    if (opened.source != source || opened.sourceGeneration != 0) {
+      throw StateError(
+        'lifecycle session $sessionOrdinal did not open the pristine preset',
+      );
+    }
+    final marker = 'locally.';
+    final caret = source.indexOf(marker) + marker.length;
+    final baseline = await driver.activateAtUtf16(
+      caret,
+      windowWidth: _windowWidth,
+      windowHeight: _windowHeight,
+    );
+    final expected = _pasteUndoExpectations(
+      source: source,
+      caret: caret,
+      paste: 'x',
+      firstGeneration: baseline.sourceGeneration + 1,
+      count: 1,
+    );
+    await driver.typeText('x');
+    await driver.settle();
+    await driver.pressKey('undo');
+    final settled = await driver.settle();
+    final finalGeneration = expected.single.finalGeneration;
+    if (settled.source != finalGeneration.source ||
+        settled.selectionBaseUtf16 != finalGeneration.selectionBase ||
+        settled.selectionExtentUtf16 != finalGeneration.selectionExtent) {
+      throw StateError(
+        'lifecycle session $sessionOrdinal did not undo to the pristine source',
+      );
+    }
+    final closed = await driver.closeSession();
+    fragments.add(
+      _buildMeasuredRun(
+        runIndex: runIndex,
+        denominator: denominator,
+        baseline: baseline,
+        settled: settled,
+        closed: closed,
+        expected: expected,
+        sessionOrdinal: sessionOrdinal,
+      ),
+    );
+  }
+  return _mergeLifecycleFragments(
+    runIndex: runIndex,
+    denominator: denominator,
+    fragments: fragments,
+  );
+}
+
+Map<String, Object?> _mergeLifecycleFragments({
+  required int runIndex,
+  required DogfoodCellDenominator denominator,
+  required List<Map<String, Object?>> fragments,
+}) {
+  if (fragments.isEmpty) {
+    throw StateError('lifecycle run has no sessions');
+  }
+  final processIds = fragments.map((fragment) => fragment['processId']).toSet();
+  if (processIds.length != 1) {
+    throw StateError('one lifecycle run crossed process identities');
+  }
+  final warmups = <Map<String, Object?>>[];
+  final samples = <Map<String, Object?>>[];
+  final frames = <Map<String, Object?>>[];
+  final inputs = <Map<String, Object?>>[];
+  final paints = <Map<String, Object?>>[];
+  final engines = <Map<String, Object?>>[];
+  var frameOffset = 0;
+  for (
+    var sessionOrdinal = 0;
+    sessionOrdinal < fragments.length;
+    sessionOrdinal += 1
+  ) {
+    final fragment = fragments[sessionOrdinal];
+    final fragmentFrames = (fragment['frames']! as List)
+        .cast<Map<String, Object?>>();
+    for (final frame in fragmentFrames) {
+      frames.add({
+        ...frame,
+        'ordinal': (frame['ordinal']! as int) + frameOffset,
+      });
+    }
+    for (final paint
+        in (fragment['paintObservations']! as List)
+            .cast<Map<String, Object?>>()) {
+      final ordinal = paint['frameOrdinal'];
+      paints.add({
+        ...paint,
+        if (ordinal is int) 'frameOrdinal': ordinal + frameOffset,
+      });
+    }
+    inputs.addAll(
+      (fragment['inputObservations']! as List).cast<Map<String, Object?>>(),
+    );
+    engines.addAll(
+      (fragment['engineObservations']! as List).cast<Map<String, Object?>>(),
+    );
+    for (final sample
+        in (fragment['samples']! as List).cast<Map<String, Object?>>()) {
+      samples.add({
+        ...sample,
+        'index': sessionOrdinal,
+        'startFrameOrdinal':
+            (sample['startFrameOrdinal']! as int) + frameOffset,
+        'endFrameOrdinal': (sample['endFrameOrdinal']! as int) + frameOffset,
+        'provingFrameOrdinal':
+            (sample['provingFrameOrdinal']! as int) + frameOffset,
+      });
+    }
+    frameOffset += fragmentFrames.length;
+  }
+  final firstMemory = (fragments.first['memory']! as List)
+      .cast<Map<String, Object?>>();
+  final lastMemory = (fragments.last['memory']! as List)
+      .cast<Map<String, Object?>>();
+  final peak = fragments
+      .expand(
+        (fragment) =>
+            (fragment['memory']! as List).cast<Map<String, Object?>>(),
+      )
+      .where((sample) => sample['stage'] == 'peak')
+      .reduce(
+        (left, right) =>
+            (left['rssBytes']! as int) >= (right['rssBytes']! as int)
+            ? left
+            : right,
+      );
+  return {
+    'run': runIndex,
+    'processId': fragments.first['processId'],
+    'freshProcess': denominator.processRule == DogfoodProcessRule.freshEveryRun,
+    'warmups': warmups,
+    'samples': samples,
+    'frames': frames,
+    'inputObservations': inputs,
+    'paintObservations': paints,
+    'engineObservations': engines,
+    'memory': [
+      firstMemory.firstWhere((sample) => sample['stage'] == 'baseline'),
+      peak,
+      lastMemory.firstWhere((sample) => sample['stage'] == 'close'),
+      lastMemory.firstWhere((sample) => sample['stage'] == 'postClose'),
+    ],
+  };
+}
+
 Map<String, Object?> _buildMeasuredRun({
   required int runIndex,
   required DogfoodCellDenominator denominator,
@@ -467,6 +649,7 @@ Map<String, Object?> _buildMeasuredRun({
   required MacosNativeCanarySnapshot settled,
   required Map<String, Object?> closed,
   required List<_ExpectedSample> expected,
+  int sessionOrdinal = 0,
   int? openAcceptedMicros,
 }) {
   final expectedByGeneration = <int, _ExpectedGeneration>{
@@ -498,11 +681,16 @@ Map<String, Object?> _buildMeasuredRun({
       inputObservations.add(
         _inputObservation(
           expectation,
+          sessionOrdinal: sessionOrdinal,
           acceptedMicros: openAcceptedMicros,
           editorSyncMicros: 0,
         ),
       );
-      engineObservations.add({'sourceGeneration': 0, 'nativeFfiMicros': 0});
+      engineObservations.add({
+        'sessionOrdinal': sessionOrdinal,
+        'sourceGeneration': 0,
+        'nativeFfiMicros': 0,
+      });
       continue;
     }
     final input =
@@ -515,6 +703,7 @@ Map<String, Object?> _buildMeasuredRun({
     inputObservations.add(
       _inputObservation(
         expectation,
+        sessionOrdinal: sessionOrdinal,
         acceptedMicros: input.$1,
         editorSyncMicros: input.$2,
       ),
@@ -524,6 +713,7 @@ Map<String, Object?> _buildMeasuredRun({
       throw StateError('generation $generation has no engine receipt');
     }
     engineObservations.add({
+      'sessionOrdinal': sessionOrdinal,
       'sourceGeneration': generation,
       'nativeFfiMicros': performance['nativeFfiMicros']! as int,
     });
@@ -597,6 +787,7 @@ Map<String, Object?> _buildMeasuredRun({
       visibleLength,
     );
     paintObservations.add({
+      'sessionOrdinal': sessionOrdinal,
       'timestampMicros': paint['paintEpochMicros']! as int,
       'frameOrdinal': frameOrdinal,
       'sourceGeneration': generation,
@@ -668,6 +859,7 @@ Map<String, Object?> _buildMeasuredRun({
     if (operation < denominator.warmups) {
       warmups.add({
         'index': operation,
+        'sessionOrdinal': sessionOrdinal,
         'acceptedMicros': accepted,
         'acceptedSourceGenerations': declared,
         'sourceGeneration': finalGeneration.generation,
@@ -709,6 +901,7 @@ Map<String, Object?> _buildMeasuredRun({
     );
     final sample = <String, Object?>{
       'index': operation - denominator.warmups,
+      'sessionOrdinal': sessionOrdinal,
       'scheduledMicros': expectation.scheduledMicros,
       'acceptedMicros': accepted,
       'sourcePaintMicros': firstPaint['timestampMicros'],
@@ -762,6 +955,8 @@ Map<String, Object?> _buildMeasuredRun({
       ),
       'faulted': settled.faulted,
       'resyncCount': settled.resyncCount,
+      if (denominator.requiresLiveStateZero)
+        'globalLiveState': closed['globalLiveState'],
     };
     samples.add(sample);
   }
@@ -906,9 +1101,11 @@ Map<int, (int, int)> _historyInputEvents(
 
 Map<String, Object?> _inputObservation(
   _ExpectedGeneration expectation, {
+  required int sessionOrdinal,
   required int acceptedMicros,
   required int editorSyncMicros,
 }) => {
+  'sessionOrdinal': sessionOrdinal,
   'sourceGeneration': expectation.generation,
   'acceptedMicros': acceptedMicros,
   'editorSyncMicros': editorSyncMicros,

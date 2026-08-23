@@ -33,8 +33,8 @@ void main() {
       (result.metrics['sourceToPaintMicros']! as Map)['sampleCount'],
       3040,
     );
-    expect((result.metrics['flutterFrameMicros']! as Map)['sampleCount'], 3760);
-    expect((result.metrics['engineMicros']! as Map)['sampleCount'], 3760);
+    expect((result.metrics['flutterFrameMicros']! as Map)['sampleCount'], 3870);
+    expect((result.metrics['engineMicros']! as Map)['sampleCount'], 3870);
     expect((result.metrics['openToEditableMicros']! as Map)['sampleCount'], 25);
   });
 
@@ -147,6 +147,46 @@ void main() {
       contains('engine timing does not replay'),
     );
   });
+
+  test('lifecycle replay keys restarted generations by session', () async {
+    final sealed = await sealDogfoodPerformanceReceipt(
+      _validRawReceipt(),
+      verifyArtifactFiles: false,
+    );
+    final lifecycle = _cells(
+      sealed,
+    ).firstWhere((cell) => cell['id'] == 'lifecycle-same-process');
+    final run = (lifecycle['runs']! as List).single as Map;
+    final samples = (run['samples']! as List).cast<Map>();
+    expect(samples[0]['acceptedSourceGenerations'], [1, 2]);
+    expect(samples[1]['acceptedSourceGenerations'], [1, 2]);
+    expect(samples[0]['sessionOrdinal'], 0);
+    expect(samples[1]['sessionOrdinal'], 1);
+
+    final conflated = _copy(sealed);
+    final conflatedLifecycle = _cells(
+      conflated,
+    ).firstWhere((cell) => cell['id'] == 'lifecycle-same-process');
+    final conflatedRun = (conflatedLifecycle['runs']! as List).single as Map;
+    for (final key in const [
+      'samples',
+      'inputObservations',
+      'paintObservations',
+      'engineObservations',
+    ]) {
+      for (final value in (conflatedRun[key]! as List).cast<Map>()) {
+        if (value['sessionOrdinal'] == 1) value['sessionOrdinal'] = 0;
+      }
+    }
+    final result = await verifyDogfoodPerformanceReceipt(
+      conflated,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      result.blockers.join('\n'),
+      contains('declared source generations must be unique'),
+    );
+  });
 }
 
 Map<String, Object?> _validRawReceipt() {
@@ -170,6 +210,7 @@ Map<String, Object?> _validRawReceipt() {
       var frameOrdinal = 0;
       var sourceGeneration = denominator.requiresInput ? 1 : 0;
       final structural = entry.key.endsWith('structural-burst');
+      final lifecycle = entry.key.startsWith('lifecycle-');
       for (var warmup = 0; warmup < denominator.warmups; warmup += 1) {
         final accepted = 500000 + warmup * 20000;
         final finalGeneration = sourceGeneration + (structural ? 1 : 0);
@@ -219,20 +260,26 @@ Map<String, Object?> _validRawReceipt() {
         sourceGeneration += 1;
       }
       for (var sample = 0; sample < denominator.samples; sample += 1) {
+        final sessionOrdinal = lifecycle && denominator.samples > 1
+            ? sample
+            : 0;
+        if (lifecycle) sourceGeneration = 1;
         final scheduled = denominator.cadenceHz == 0
             ? null
             : (sample * 1000000 / denominator.cadenceHz).round();
         final accepted = 1000000 + (scheduled ?? sample * 20000);
-        final finalGeneration = sourceGeneration + (structural ? 1 : 0);
-        final finalFrame = frameOrdinal + (structural ? 1 : 0);
+        final multiGeneration = structural || lifecycle;
+        final finalGeneration = sourceGeneration + (multiGeneration ? 1 : 0);
+        final finalFrame = frameOrdinal + (multiGeneration ? 1 : 0);
         samples.add(
           _sample(
             index: sample,
+            sessionOrdinal: sessionOrdinal,
             scheduled: scheduled,
             accepted: accepted,
             acceptedSourceGenerations: [
               sourceGeneration,
-              if (structural) finalGeneration,
+              if (multiGeneration) finalGeneration,
             ],
             sourceGeneration: finalGeneration,
             frameOrdinal: finalFrame,
@@ -240,7 +287,7 @@ Map<String, Object?> _validRawReceipt() {
             requiresLiveStateZero: denominator.requiresLiveStateZero,
           ),
         );
-        if (structural) {
+        if (multiGeneration) {
           _addRawObservations(
             inputObservations: inputObservations,
             paintObservations: paintObservations,
@@ -248,6 +295,7 @@ Map<String, Object?> _validRawReceipt() {
             accepted: accepted,
             paintTimestamp: accepted + 50,
             sourceGeneration: sourceGeneration,
+            sessionOrdinal: sessionOrdinal,
             frameOrdinal: frameOrdinal,
             semanticsCurrent: false,
             activeNeutralRowCount: 1,
@@ -263,6 +311,7 @@ Map<String, Object?> _validRawReceipt() {
           accepted: accepted + (structural ? 100 : 0),
           paintTimestamp: accepted + 500,
           sourceGeneration: sourceGeneration,
+          sessionOrdinal: sessionOrdinal,
           frameOrdinal: frameOrdinal,
         );
         frames.add(_frame(frameOrdinal, accepted));
@@ -353,6 +402,7 @@ Map<String, Object?> _validRawReceipt() {
 
 Map<String, Object?> _sample({
   required int index,
+  int sessionOrdinal = 0,
   required int accepted,
   required List<int> acceptedSourceGenerations,
   required int sourceGeneration,
@@ -362,6 +412,7 @@ Map<String, Object?> _sample({
   bool requiresLiveStateZero = false,
 }) => {
   'index': index,
+  'sessionOrdinal': sessionOrdinal,
   'scheduledMicros': scheduled,
   'acceptedMicros': accepted,
   'sourcePaintMicros': accepted + 500,
@@ -400,6 +451,7 @@ Map<String, Object?> _sample({
 Map<String, Object?> _warmupFromSample(Map<String, Object?> sample) => {
   for (final name in const [
     'index',
+    'sessionOrdinal',
     'acceptedMicros',
     'acceptedSourceGenerations',
     'sourceGeneration',
@@ -432,11 +484,13 @@ void _addRawObservations({
   required int accepted,
   required int paintTimestamp,
   required int sourceGeneration,
+  int sessionOrdinal = 0,
   required int frameOrdinal,
   bool semanticsCurrent = true,
   int activeNeutralRowCount = 0,
 }) {
   inputObservations.add({
+    'sessionOrdinal': sessionOrdinal,
     'sourceGeneration': sourceGeneration,
     'acceptedMicros': accepted,
     'editorSyncMicros': 100,
@@ -445,6 +499,7 @@ void _addRawObservations({
     'canonicalSelectionExtentUtf16': sourceGeneration,
   });
   paintObservations.add({
+    'sessionOrdinal': sessionOrdinal,
     'timestampMicros': paintTimestamp,
     'frameOrdinal': frameOrdinal,
     'sourceGeneration': sourceGeneration,
@@ -460,6 +515,7 @@ void _addRawObservations({
     'activeNeutralRowCount': activeNeutralRowCount,
   });
   engineObservations.add({
+    'sessionOrdinal': sessionOrdinal,
     'sourceGeneration': sourceGeneration,
     'nativeFfiMicros': 100,
   });

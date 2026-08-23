@@ -172,8 +172,9 @@
     "inputObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceGeneration", "acceptedMicros", "editorSyncMicros", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16"],
+      "required": ["sessionOrdinal", "sourceGeneration", "acceptedMicros", "editorSyncMicros", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16"],
       "properties": {
+        "sessionOrdinal": {"type": "integer", "minimum": 0},
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "editorSyncMicros": {"type": "integer", "minimum": 0},
@@ -185,8 +186,9 @@
     "paintObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["timestampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount"],
+      "required": ["sessionOrdinal", "timestampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount"],
       "properties": {
+        "sessionOrdinal": {"type": "integer", "minimum": 0},
         "timestampMicros": {"type": "integer", "minimum": 0},
         "frameOrdinal": {"type": ["integer", "null"], "minimum": 0},
         "sourceGeneration": {"type": "integer", "minimum": 0},
@@ -205,8 +207,9 @@
     "engineObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceGeneration", "nativeFfiMicros"],
+      "required": ["sessionOrdinal", "sourceGeneration", "nativeFfiMicros"],
       "properties": {
+        "sessionOrdinal": {"type": "integer", "minimum": 0},
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "nativeFfiMicros": {"type": "integer", "minimum": 0}
       }
@@ -216,6 +219,7 @@
       "additionalProperties": false,
       "required": [
         "index",
+        "sessionOrdinal",
         "acceptedMicros",
         "sourcePaintMicros",
         "caretPaintMicros",
@@ -242,6 +246,7 @@
       ],
       "properties": {
         "index": {"type": "integer", "minimum": 0},
+        "sessionOrdinal": {"type": "integer", "minimum": 0},
         "scheduledMicros": {"type": ["integer", "null"], "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "sourcePaintMicros": {"type": "integer", "minimum": 0},
@@ -278,9 +283,10 @@
     "warmup": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["index", "acceptedMicros", "acceptedSourceGenerations", "sourceGeneration", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "engineMicros"],
+      "required": ["index", "sessionOrdinal", "acceptedMicros", "acceptedSourceGenerations", "sourceGeneration", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "engineMicros"],
       "properties": {
         "index": {"type": "integer", "minimum": 0},
+        "sessionOrdinal": {"type": "integer", "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "acceptedSourceGenerations": {
           "type": "array",

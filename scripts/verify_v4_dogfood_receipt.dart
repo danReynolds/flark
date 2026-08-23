@@ -16,6 +16,7 @@ const _maxRetainedRssBytes = 16 * 1024 * 1024;
 const _largeSourceBytes = 1024 * 1024;
 final _commitPattern = RegExp(r'^[0-9a-f]{40}$');
 final _shaPattern = RegExp(r'^[0-9a-f]{64}$');
+typedef _SourceKey = ({int sessionOrdinal, int sourceGeneration});
 const _enabledPresetIds = <String>{
   'productTour',
   'prose1MiB',
@@ -527,20 +528,28 @@ void _validateCell(
       for (var index = 0; index < samples.length; index += 1)
         _map(samples[index], '$runPrefix.samples[$index]', blockers),
     ];
-    final declaredGenerations = <int>{};
+    final declaredGenerations = <_SourceKey>{};
     for (var index = 0; index < declared.length; index += 1) {
+      final sessionOrdinal = _integer(
+        declared[index]['sessionOrdinal'],
+        '$runPrefix.declared[$index].sessionOrdinal',
+        blockers,
+      );
       for (final generation in _acceptedGenerations(
         declared[index],
         '$runPrefix.declared[$index]',
         blockers,
         allowZero: !denominator.requiresInput,
       )) {
-        if (!declaredGenerations.add(generation)) {
+        if (!declaredGenerations.add((
+          sessionOrdinal: sessionOrdinal,
+          sourceGeneration: generation,
+        ))) {
           blockers.add('$runPrefix declared source generations must be unique');
         }
       }
     }
-    for (final entry in <String, Set<int>>{
+    for (final entry in <String, Set<_SourceKey>>{
       'input': inputObservations.keys.toSet(),
       'engine': engineObservations.keys.toSet(),
     }.entries) {
@@ -557,10 +566,15 @@ void _validateCell(
       blockers.add('$runPrefix paints contain an undeclared source generation');
     }
     for (var index = 0; index < samples.length; index += 1) {
-      final finalGeneration =
-          declared[warmups.length + index]['sourceGeneration'];
+      final sample = declared[warmups.length + index];
+      final finalGeneration = sample['sourceGeneration'];
+      final sessionOrdinal = sample['sessionOrdinal'];
       if (finalGeneration is! int ||
-          !paintObservations.containsKey(finalGeneration)) {
+          sessionOrdinal is! int ||
+          !paintObservations.containsKey((
+            sessionOrdinal: sessionOrdinal,
+            sourceGeneration: finalGeneration,
+          ))) {
         blockers.add('$runPrefix sample[$index] has no final-generation paint');
       }
     }
@@ -572,14 +586,23 @@ void _validateCell(
         blockers,
         allowZero: !denominator.requiresInput,
       );
+      final sessionOrdinal = warmup['sessionOrdinal']! as int;
       _validateWarmup(
         warmup,
         warmupIndex,
         rawInputs: [
-          for (final generation in generations) inputObservations[generation],
+          for (final generation in generations)
+            inputObservations[(
+              sessionOrdinal: sessionOrdinal,
+              sourceGeneration: generation,
+            )],
         ],
         rawEngines: [
-          for (final generation in generations) engineObservations[generation],
+          for (final generation in generations)
+            engineObservations[(
+              sessionOrdinal: sessionOrdinal,
+              sourceGeneration: generation,
+            )],
         ],
         requiresInput: denominator.requiresInput,
         prefix: '$runPrefix.warmup[$warmupIndex]',
@@ -596,19 +619,32 @@ void _validateCell(
         blockers,
         allowZero: !denominator.requiresInput,
       );
+      final sessionOrdinal = sample['sessionOrdinal']! as int;
       _validateSample(
         sample,
         sampleIndex,
         frames,
         rawInputs: [
-          for (final generation in generations) inputObservations[generation],
+          for (final generation in generations)
+            inputObservations[(
+              sessionOrdinal: sessionOrdinal,
+              sourceGeneration: generation,
+            )],
         ],
         rawEngines: [
-          for (final generation in generations) engineObservations[generation],
+          for (final generation in generations)
+            engineObservations[(
+              sessionOrdinal: sessionOrdinal,
+              sourceGeneration: generation,
+            )],
         ],
         rawPaints: [
           for (final generation in generations)
-            ...paintObservations[generation] ?? const [],
+            ...paintObservations[(
+                  sessionOrdinal: sessionOrdinal,
+                  sourceGeneration: generation,
+                )] ??
+                const [],
         ],
         nextAcceptedMicros: _nextAcceptedMicros(declared, declaredIndex),
         collectMetrics: true,
@@ -756,14 +792,14 @@ List<int> _acceptedGenerations(
   return result;
 }
 
-Map<int, Map<String, Object?>> _observationsByGeneration(
+Map<_SourceKey, Map<String, Object?>> _observationsByGeneration(
   Object? value,
   String prefix,
   List<String> blockers, {
   bool allowZero = false,
 }) {
   final values = _list(value, prefix, blockers);
-  final result = <int, Map<String, Object?>>{};
+  final result = <_SourceKey, Map<String, Object?>>{};
   for (var index = 0; index < values.length; index += 1) {
     final observation = _map(values[index], '$prefix[$index]', blockers);
     final generation = _integer(
@@ -771,29 +807,40 @@ Map<int, Map<String, Object?>> _observationsByGeneration(
       '$prefix[$index].sourceGeneration',
       blockers,
     );
-    if ((!allowZero && generation == 0) || result.containsKey(generation)) {
+    final sessionOrdinal = _integer(
+      observation['sessionOrdinal'],
+      '$prefix[$index].sessionOrdinal',
+      blockers,
+    );
+    final key = (sessionOrdinal: sessionOrdinal, sourceGeneration: generation);
+    if ((!allowZero && generation == 0) || result.containsKey(key)) {
       blockers.add('$prefix has a duplicate or zero source generation');
       continue;
     }
-    result[generation] = observation;
+    result[key] = observation;
   }
   return result;
 }
 
-Map<int, List<Map<String, Object?>>> _paintObservationsByGeneration(
+Map<_SourceKey, List<Map<String, Object?>>> _paintObservationsByGeneration(
   Object? value,
   String prefix,
   List<String> blockers, {
   bool allowZero = false,
 }) {
   final values = _list(value, prefix, blockers);
-  final result = <int, List<Map<String, Object?>>>{};
+  final result = <_SourceKey, List<Map<String, Object?>>>{};
   var previousTimestamp = -1;
   for (var index = 0; index < values.length; index += 1) {
     final observation = _map(values[index], '$prefix[$index]', blockers);
     final generation = _integer(
       observation['sourceGeneration'],
       '$prefix[$index].sourceGeneration',
+      blockers,
+    );
+    final sessionOrdinal = _integer(
+      observation['sessionOrdinal'],
+      '$prefix[$index].sessionOrdinal',
       blockers,
     );
     final timestamp = _integer(
@@ -809,7 +856,12 @@ Map<int, List<Map<String, Object?>>> _paintObservationsByGeneration(
       blockers.add('$prefix paint timestamps are not ordered');
     }
     previousTimestamp = timestamp;
-    result.putIfAbsent(generation, () => []).add(observation);
+    result
+        .putIfAbsent((
+          sessionOrdinal: sessionOrdinal,
+          sourceGeneration: generation,
+        ), () => [])
+        .add(observation);
   }
   return result;
 }
