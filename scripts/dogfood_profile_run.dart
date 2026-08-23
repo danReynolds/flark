@@ -45,14 +45,22 @@ final class _ExpectedSample {
 final class _ProfileRunResult {
   const _ProfileRunResult({
     required this.initialSourceBytes,
+    required this.display,
     required this.run,
   });
 
   final int initialSourceBytes;
+  final Map<String, Object?> display;
   final Map<String, Object?> run;
 }
 
 Future<void> main(List<String> arguments) async {
+  if (arguments.length == 1 && arguments.single == '--list') {
+    for (final entry in requiredDogfoodCells.entries) {
+      stdout.writeln('${entry.key}\t${entry.value.runs}');
+    }
+    return;
+  }
   if (arguments.length != 5) {
     stderr.writeln(
       'usage: dart run scripts/dogfood_profile_run.dart '
@@ -92,7 +100,7 @@ Future<void> main(List<String> arguments) async {
     final output = File(arguments[4]);
     await output.parent.create(recursive: true);
     await output.writeAsString(
-      '${jsonEncode({'id': cellId, 'sourceBytes': result.initialSourceBytes, 'warmupsPerRun': denominator.warmups, 'samplesPerRun': denominator.samples, 'runCount': denominator.runs, 'cadenceHz': denominator.cadenceHz, 'run': result.run})}\n',
+      '${jsonEncode({'id': cellId, 'sourceBytes': result.initialSourceBytes, 'warmupsPerRun': denominator.warmups, 'samplesPerRun': denominator.samples, 'runCount': denominator.runs, 'cadenceHz': denominator.cadenceHz, 'display': result.display, 'run': result.run})}\n',
       flush: true,
     );
     stdout.writeln(
@@ -130,7 +138,11 @@ Future<_ProfileRunResult> _runCell({
     initialPresetName: initialPreset.name,
   );
   try {
-    final launched = await driver.start();
+    await driver.start();
+    final launched = await driver.prepareObservationWindow(
+      windowWidth: _windowWidth,
+      windowHeight: _windowHeight,
+    );
     if (launched.source != initialSource) {
       throw StateError('$cellId opened a source different from its preset');
     }
@@ -147,6 +159,7 @@ Future<_ProfileRunResult> _runCell({
       );
       return _ProfileRunResult(
         initialSourceBytes: utf8.encode(targetSource).length,
+        display: _profileDisplay(launched.display),
         run: run,
       );
     }
@@ -159,6 +172,7 @@ Future<_ProfileRunResult> _runCell({
       );
       return _ProfileRunResult(
         initialSourceBytes: utf8.encode(initialSource).length,
+        display: _profileDisplay(launched.display),
         run: run,
       );
     }
@@ -173,6 +187,7 @@ Future<_ProfileRunResult> _runCell({
       );
       return _ProfileRunResult(
         initialSourceBytes: utf8.encode(initialSource).length,
+        display: _profileDisplay(launched.display),
         run: run,
       );
     }
@@ -306,6 +321,7 @@ Future<_ProfileRunResult> _runCell({
     final closed = await driver.closeSession();
     return _ProfileRunResult(
       initialSourceBytes: utf8.encode(initialSource).length,
+      display: _profileDisplay(settled.display),
       run: _buildMeasuredRun(
         runIndex: runIndex,
         denominator: denominator,
@@ -319,6 +335,14 @@ Future<_ProfileRunResult> _runCell({
     await driver.close();
   }
 }
+
+Map<String, Object?> _profileDisplay(Map<String, Object?> appDisplay) => {
+  'refreshHz': appDisplay['refreshHz'],
+  'framePeriodMicros': 1000000 / (appDisplay['refreshHz']! as num),
+  'widthLogical': _windowWidth,
+  'heightLogical': _windowHeight,
+  'devicePixelRatio': appDisplay['devicePixelRatio'],
+};
 
 DogfoodDocumentPreset _presetFor(String cellId) {
   if (cellId.startsWith('product-tour') || cellId.startsWith('lifecycle-')) {

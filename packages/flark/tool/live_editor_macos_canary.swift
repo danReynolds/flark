@@ -598,6 +598,13 @@ while !shouldStop, let line = readLine() {
     ]
 
     switch operation {
+    case "prepareObservationWindow":
+      _ = try focusWindow(
+        pid: appPID,
+        width: try integer(arguments["windowWidth"], "windowWidth"),
+        height: try integer(arguments["windowHeight"], "windowHeight")
+      )
+      response["snapshot"] = try appRequest(operation: "beginObservation")
     case "selectPreset":
       response["snapshot"] = try appRequest(
         operation: "selectPreset",

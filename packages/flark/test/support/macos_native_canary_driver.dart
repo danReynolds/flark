@@ -108,6 +108,27 @@ final class MacosNativeCanaryDriver {
     return _snapshot(await _request('settle'));
   }
 
+  Future<MacosNativeCanarySnapshot> prepareObservationWindow({
+    required int windowWidth,
+    required int windowHeight,
+  }) async {
+    if (_process == null) await _startActuator();
+    _windowWidth = windowWidth;
+    _windowHeight = windowHeight;
+    _paintObservationStart = 0;
+    _paintReceiptStart = 0;
+    _frameTimingStart = 0;
+    _sourcePerformanceStart = 0;
+    _semanticPerformanceStart = 0;
+    _inputEventStart = 0;
+    return _snapshot(
+      await _request('prepareObservationWindow', {
+        'windowWidth': windowWidth,
+        'windowHeight': windowHeight,
+      }),
+    );
+  }
+
   Future<MacosNativeCanarySnapshot> reset({
     required String id,
     required String source,

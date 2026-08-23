@@ -26,10 +26,12 @@ if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
 fi
 
 mkdir -p "$OUT_DIR"
-(
-  cd "$EXAMPLE"
-  flutter build macos --profile
-)
+if [[ "${FLARK_DOGFOOD_PREBUILT_APP:-0}" != "1" ]]; then
+  (
+    cd "$EXAMPLE"
+    flutter build macos --profile
+  )
+fi
 for required in "$APP" "$MAIN" "$ABI"; do
   if [[ ! -e "$required" ]]; then
     echo "verify-v4-native-canary: missing built artifact: $required" >&2

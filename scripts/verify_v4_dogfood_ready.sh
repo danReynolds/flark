@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT_DIR="${1:-$ROOT/build/dogfood-ready}"
+EXAMPLE="$ROOT/packages/flark/example"
+APP="$EXAMPLE/build/macos/Build/Products/Profile/Flark Dogfood.app"
+MAIN="$APP/Contents/MacOS/Flark Dogfood"
+ABI="$APP/Contents/Frameworks/flark_abi.framework/flark_abi"
+NATIVE_OUT="$OUT_DIR/native"
+MANIFEST="$NATIVE_OUT/app_bundle_manifest.json"
+FRAGMENTS="$OUT_DIR/profile-fragments"
+PERFORMANCE_RECEIPT="$OUT_DIR/dogfood_performance_receipt.json"
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo 'verify-v4-dogfood-ready: macOS is required' >&2
+  exit 64
+fi
+if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
+  echo 'verify-v4-dogfood-ready: a clean worktree is required' >&2
+  exit 1
+fi
+if [[ -e "$OUT_DIR" ]]; then
+  echo "verify-v4-dogfood-ready: output already exists: $OUT_DIR" >&2
+  exit 1
+fi
+mkdir -p "$FRAGMENTS"
+
+frontmost="$({ osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'; } 2>/dev/null || true)"
+if [[ "$frontmost" == "loginwindow" || "$frontmost" == "LoginWindow" ]]; then
+  echo 'verify-v4-dogfood-ready: unlock the interactive macOS session first' >&2
+  exit 1
+fi
+
+echo '==> Active functional gate'
+bash "$ROOT/scripts/verify_v4.sh"
+
+echo '==> Certification stress gate'
+bash "$ROOT/scripts/verify_v4_certification_stress.sh"
+
+echo '==> Exact profile dogfood app'
+(
+  cd "$EXAMPLE"
+  flutter build macos --profile
+)
+for artifact in "$APP" "$MAIN" "$ABI"; do
+  if [[ ! -e "$artifact" ]]; then
+    echo "verify-v4-dogfood-ready: missing app artifact: $artifact" >&2
+    exit 1
+  fi
+done
+
+echo '==> Non-skipped native macOS canary'
+FLARK_DOGFOOD_PREBUILT_APP=1 \
+  bash "$ROOT/scripts/verify_v4_native_canary.sh" "$NATIVE_OUT"
+
+echo '==> Fixed profile and lifecycle matrix'
+while IFS=$'\t' read -r cell_id run_count; do
+  for ((run_index = 0; run_index < run_count; run_index += 1)); do
+    fragment="$FRAGMENTS/${cell_id}.run-${run_index}.json"
+    echo "    $cell_id run $run_index/$((run_count - 1))"
+    /usr/local/bin/timeout 900 \
+      dart run "$ROOT/scripts/dogfood_profile_run.dart" \
+        "$cell_id" "$run_index" "$MAIN" "$ABI" "$fragment"
+  done
+done < <(cd "$ROOT" && dart run scripts/dogfood_profile_run.dart --list)
+
+echo '==> Replay and seal performance receipt'
+(
+  cd "$ROOT"
+  dart run scripts/dogfood_performance_receipt.dart \
+    "$ROOT" "$APP" "$MANIFEST" "$MAIN" "$ABI" "$FRAGMENTS" \
+    "$PERFORMANCE_RECEIPT"
+  dart run scripts/verify_v4_dogfood_receipt.dart \
+    "$ROOT" "$PERFORMANCE_RECEIPT"
+)
+
+if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
+  echo 'verify-v4-dogfood-ready: worktree changed during the gate' >&2
+  exit 1
+fi
+
+echo "verify-v4-dogfood-ready: PASS receipt=$PERFORMANCE_RECEIPT"

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import '../../../scripts/verify_v4_dogfood_receipt.dart';
+import '../../../scripts/dogfood_performance_receipt.dart';
 
 void main() {
   test('schema and replay freeze the complete D0 denominator', () async {
@@ -228,6 +229,42 @@ void main() {
     expect(
       tornResult.blockers.join('\n'),
       contains('is not an exact certified initial paint'),
+    );
+  });
+
+  test('fragment assembly is complete, ordered, and display-bound', () {
+    final raw = _validRawReceipt();
+    final display = (raw['display']! as Map).cast<String, Object?>();
+    final fragments = <Map<String, Object?>>[];
+    for (final cell in _cells(raw).reversed) {
+      for (final run in ((cell['runs']! as List).reversed)) {
+        fragments.add({
+          'id': cell['id'],
+          'sourceBytes': cell['sourceBytes'],
+          'warmupsPerRun': cell['warmupsPerRun'],
+          'samplesPerRun': cell['samplesPerRun'],
+          'runCount': cell['runCount'],
+          'cadenceHz': cell['cadenceHz'],
+          'display': display,
+          'run': run,
+        });
+      }
+    }
+    final assembly = assembleDogfoodProfileFragments(fragments);
+    expect(assembly.cells.map((cell) => cell['id']), requiredDogfoodCells.keys);
+    for (final cell in assembly.cells) {
+      final runs = (cell['runs']! as List).cast<Map>();
+      expect(
+        runs.map((run) => run['run']),
+        List<int>.generate(runs.length, (index) => index),
+      );
+    }
+
+    final mismatched = _copy(fragments.first);
+    mismatched['display'] = {...display, 'refreshHz': 120};
+    expect(
+      () => assembleDogfoodProfileFragments([mismatched, ...fragments.skip(1)]),
+      throwsStateError,
     );
   });
 }

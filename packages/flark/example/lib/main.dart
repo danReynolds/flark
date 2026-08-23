@@ -172,6 +172,14 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   Future<void> _handleCanaryCommand(DogfoodNativeCanaryCommand command) async {
     final writer = _canaryReceiptWriter!;
     switch (command.operation) {
+      case 'beginObservation':
+        final controller = _controller;
+        if (controller == null) throw StateError('canary has no controller');
+        writer.beginCanary('profile-observation');
+        await _settleCanaryController(controller);
+        await _awaitCanaryFrame();
+        await writer.writeNow(commandSequence: command.sequence);
+        return;
       case 'selectPreset':
         final presetName = command.arguments['presetName']! as String;
         final preset = DogfoodDocumentPreset.values.byName(presetName);
