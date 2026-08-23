@@ -663,7 +663,7 @@ final class RenderFlarkSurface extends RenderBox {
           }
           top = _emitFragments(
             presentation: presentation,
-            ordinal: row.ordinal,
+            ordinal: presentation.ordinal,
             top: top,
             maxWidth: maxWidth,
             row: row,

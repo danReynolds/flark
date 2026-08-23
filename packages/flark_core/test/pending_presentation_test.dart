@@ -152,4 +152,77 @@ void main() {
     expect(cleared.isEmpty, isTrue);
     expect(snapshot.isEmpty, isFalse, reason: 'snapshots are immutable');
   });
+
+  test('dependency publication owns an ordered multi-row result immutably', () {
+    final authority = bindPendingDependencyAuthority(
+      revision: 4,
+      cells: const [cell],
+      envelopes: const [],
+      authorizedContentUtf16: const FlarkSourceRange(0, 4),
+      startUtf16: 2,
+      endUtf16: 2,
+      replacement: 'x',
+    )!;
+    const first = FlarkCorePresentationRow(
+      sourceUtf16: FlarkSourceRange(0, 5),
+      leadingText: '',
+      text: 'code\n',
+      globalUtf16Start: 0,
+      kind: 7,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: FlarkCodeBlockPresentation(
+        style: FlarkCodeBlockStyle.fencedBacktick,
+        minimumClosingLength: 3,
+        fenceOffset: 0,
+        closed: true,
+      ),
+      thematicBreak: false,
+      ordinal: 3,
+      runs: [
+        FlarkCorePresentationRun(
+          text: 'code\n',
+          sourceUtf16Start: 0,
+          sourceUtf16End: 5,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    const second = FlarkCorePresentationRow(
+      sourceUtf16: FlarkSourceRange(5, 13),
+      leadingText: '',
+      text: 'sentinel',
+      globalUtf16Start: 5,
+      kind: 5,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: null,
+      thematicBreak: false,
+      ordinal: 4,
+      runs: [
+        FlarkCorePresentationRun(
+          text: 'sentinel',
+          sourceUtf16Start: 5,
+          sourceUtf16End: 13,
+          sourceExact: true,
+          styles: {FlarkCorePresentationInlineStyle.strong},
+        ),
+      ],
+    );
+    final dependency = FlarkPendingDependencyPresentation.multi(
+      rowOrdinal: 3,
+      authority: authority,
+      presentations: const [first, second],
+      replacedRowOrdinals: const {3, 4},
+    );
+
+    expect(dependency.presentations, const [first, second]);
+    expect(dependency.replacedRowOrdinals, const {3, 4});
+    expect(dependency.sourceUtf16.start, 0);
+    expect(dependency.sourceUtf16.end, 13);
+    expect(() => dependency.presentation, throwsStateError);
+    expect(() => dependency.presentations.add(first), throwsUnsupportedError);
+    expect(() => dependency.replacedRowOrdinals.add(5), throwsUnsupportedError);
+  });
 }

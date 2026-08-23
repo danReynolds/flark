@@ -1050,7 +1050,7 @@ final class FlarkEditorController extends ChangeNotifier {
         _crossRowSelection &&
         (_selectionIntersects(semanticRange) || active);
     if (continuityOwnsRow) {
-      return _activeContinuitySurface(continuity, row.ordinal);
+      return _activeContinuitySurface(continuity);
     }
     if (selected && !active && (!rowCertified || row.table != null)) {
       return _exactSelectionSurfaceRow(
@@ -1133,17 +1133,28 @@ final class FlarkEditorController extends ChangeNotifier {
     bool includeEditingState = true,
   }) {
     final structurals = _structuralSurfacesFor(row.ordinal);
-    if (structurals.isEmpty) {
-      return [surfaceRow(row, includeEditingState: includeEditingState)];
-    }
-    return List.unmodifiable(
-      structurals.map(
-        (structural) => _committedStructuralSurfaceRow(
-          structural,
-          includeEditingState: includeEditingState,
+    if (structurals.isNotEmpty) {
+      return List.unmodifiable(
+        structurals.map(
+          (structural) => _committedStructuralSurfaceRow(
+            structural,
+            includeEditingState: includeEditingState,
+          ),
         ),
-      ),
-    );
+      );
+    }
+    final dependency = _pendingPresentation.dependency;
+    if (includeEditingState &&
+        dependency != null &&
+        _dependencyPublicationOwnsSelection(dependency)) {
+      if (dependency.rowOrdinal == row.ordinal) {
+        return _dependencySurfaceRows(dependency);
+      }
+      if (dependency.replacedRowOrdinals.contains(row.ordinal)) {
+        return const [];
+      }
+    }
+    return [surfaceRow(row, includeEditingState: includeEditingState)];
   }
 
   List<FlarkCoreCommittedPresentationSurfaceV1> _structuralSurfacesFor(
@@ -1166,8 +1177,8 @@ final class FlarkEditorController extends ChangeNotifier {
     final continuity = _pendingPresentation.dependency;
     final currentMapped = continuity?.rowOrdinal == row.ordinal
         ? FlarkSourceRange(
-            math.min(mapped.start, continuity!.affectedUtf16.start),
-            math.max(mapped.end, continuity.affectedUtf16.end),
+            math.min(mapped.start, continuity!.sourceUtf16.start),
+            math.max(mapped.end, continuity.sourceUtf16.end),
           )
         : mapped;
     final split = _pendingPresentation.paragraphGap;
@@ -1385,9 +1396,21 @@ final class FlarkEditorController extends ChangeNotifier {
 
   FlarkSurfaceRow _activeContinuitySurface(
     FlarkPendingDependencyPresentation continuity,
-    int ordinal,
   ) {
-    final presentation = _surfacePresentationFromCore(continuity.presentation);
+    final presentations = continuity.presentations;
+    var selected = presentations.first;
+    for (var index = 0; index < presentations.length; index += 1) {
+      final candidate = presentations[index];
+      if (_presentationOwnsOffset(
+        candidate.sourceUtf16,
+        _globalSelectionExtent,
+        isLast: index == presentations.length - 1,
+      )) {
+        selected = candidate;
+        break;
+      }
+    }
+    final presentation = _surfacePresentationFromCore(selected);
     final runs = presentation.runs;
     return FlarkSurfaceRow(
       leadingText: presentation.leadingText,
@@ -1399,11 +1422,62 @@ final class FlarkEditorController extends ChangeNotifier {
       codeBlock: presentation.codeBlock,
       thematicBreak: presentation.thematicBreak,
       listItem: presentation.listItem,
-      ordinal: ordinal,
+      ordinal: presentation.ordinal,
       active: true,
       selection: _projectedSelection(runs, presentation.text.length),
       runs: runs,
     );
+  }
+
+  bool _dependencyPublicationOwnsSelection(
+    FlarkPendingDependencyPresentation dependency,
+  ) =>
+      !_crossRowSelection &&
+      _activeOrdinal == dependency.rowOrdinal &&
+      dependency.sourceUtf16.start <= _globalSelectionExtent &&
+      _globalSelectionExtent <= dependency.sourceUtf16.end;
+
+  bool _presentationOwnsOffset(
+    FlarkSourceRange range,
+    int offset, {
+    required bool isLast,
+  }) =>
+      range.start <= offset &&
+      (offset < range.end || (isLast && offset == range.end));
+
+  List<FlarkSurfaceRow> _dependencySurfaceRows(
+    FlarkPendingDependencyPresentation dependency,
+  ) {
+    final result = <FlarkSurfaceRow>[];
+    for (var index = 0; index < dependency.presentations.length; index += 1) {
+      final core = dependency.presentations[index];
+      final presentation = _surfacePresentationFromCore(core);
+      final active = _presentationOwnsOffset(
+        core.sourceUtf16,
+        _globalSelectionExtent,
+        isLast: index == dependency.presentations.length - 1,
+      );
+      result.add(
+        FlarkSurfaceRow(
+          leadingText: presentation.leadingText,
+          text: presentation.text,
+          globalUtf16Start: presentation.globalUtf16Start,
+          kind: presentation.kind,
+          headingLevel: presentation.headingLevel,
+          blockQuoteDepth: presentation.blockQuoteDepth,
+          codeBlock: presentation.codeBlock,
+          thematicBreak: presentation.thematicBreak,
+          listItem: presentation.listItem,
+          ordinal: presentation.ordinal,
+          active: active,
+          selection: active
+              ? _projectedSelection(presentation.runs, presentation.text.length)
+              : null,
+          runs: presentation.runs,
+        ),
+      );
+    }
+    return List.unmodifiable(result);
   }
 
   FlarkSurfaceRow _surfacePresentationFromCore(

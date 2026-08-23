@@ -12,19 +12,43 @@ enum FlarkPendingPresentationPart {
 
 /// One pre-edit dependency proof paired with its exact result presentation.
 ///
-/// [presentation] is framework-neutral. Frontends may add selection and paint
-/// geometry, but the source mapping, styles, block shell, and affected-island
-/// consequence stay bound to [authority] and [rowOrdinal].
+/// [presentations] are framework-neutral. Frontends may add selection and
+/// paint geometry, but the source mapping, styles, block shells, and affected-
+/// island consequence stay bound to [authority] and [rowOrdinal].
 final class FlarkPendingDependencyPresentation {
-  const FlarkPendingDependencyPresentation({
+  FlarkPendingDependencyPresentation({
     required this.rowOrdinal,
     required this.authority,
-    required this.presentation,
-  });
+    required FlarkCorePresentationRow presentation,
+  }) : presentations = List.unmodifiable([presentation]),
+       replacedRowOrdinals = Set.unmodifiable({rowOrdinal});
+
+  FlarkPendingDependencyPresentation.multi({
+    required this.rowOrdinal,
+    required this.authority,
+    required List<FlarkCorePresentationRow> presentations,
+    required Set<int> replacedRowOrdinals,
+  }) : assert(presentations.isNotEmpty),
+       assert(replacedRowOrdinals.contains(rowOrdinal)),
+       presentations = List.unmodifiable(presentations),
+       replacedRowOrdinals = Set.unmodifiable(replacedRowOrdinals);
 
   final int rowOrdinal;
   final FlarkPendingDependencyAuthority authority;
-  final FlarkCorePresentationRow presentation;
+  final List<FlarkCorePresentationRow> presentations;
+
+  /// Cached predecessor ordinals replaced by [presentations]. The owner
+  /// ordinal remains the stable publication anchor even when a result merges
+  /// or splits the parser's prior row partition.
+  final Set<int> replacedRowOrdinals;
+
+  /// Compatibility view for existing one-row dependency authorities.
+  FlarkCorePresentationRow get presentation => presentations.single;
+
+  FlarkSourceRange get sourceUtf16 => FlarkSourceRange(
+    presentations.first.sourceUtf16.start,
+    presentations.last.sourceUtf16.end,
+  );
 
   int get resultRevision => authority.resultRevision;
   FlarkSourceRange get affectedUtf16 => authority.affectedUtf16;
