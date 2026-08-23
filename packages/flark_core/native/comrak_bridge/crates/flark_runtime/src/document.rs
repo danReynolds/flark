@@ -4571,9 +4571,17 @@ fn read_utf8_source_range(
     let start = usize::try_from(range.start).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
     let end = usize::try_from(range.end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
     let mut bytes = vec![0_u8; end.saturating_sub(start)];
-    if runtime.read_current_source_window(start..end, &mut bytes)? != bytes.len() {
-        return Err(DocumentSessionError::RangeOutOfBounds);
+    let lease = runtime.snapshot_current_source()?;
+    let mut cursor = lease.cursor_in(start..end)?;
+    let mut written = 0;
+    while written < bytes.len() {
+        let count = cursor.read(&mut bytes[written..]);
+        if count == 0 {
+            return Err(DocumentSessionError::RangeOutOfBounds);
+        }
+        written += count;
     }
+    let _lease = cursor.finish()?;
     String::from_utf8(bytes).map_err(|_| DocumentSessionError::Faulted)
 }
 
