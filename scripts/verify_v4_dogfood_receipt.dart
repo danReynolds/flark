@@ -556,47 +556,34 @@ void _validateCell(
     if (!declaredGenerations.containsAll(paintedGenerations)) {
       blockers.add('$runPrefix paints contain an undeclared source generation');
     }
-    for (var index = 0; index < declared.length; index += 1) {
-      final finalGeneration = declared[index]['sourceGeneration'];
+    for (var index = 0; index < samples.length; index += 1) {
+      final finalGeneration =
+          declared[warmups.length + index]['sourceGeneration'];
       if (finalGeneration is! int ||
           !paintObservations.containsKey(finalGeneration)) {
-        blockers.add(
-          '$runPrefix declared[$index] has no final-generation paint',
-        );
+        blockers.add('$runPrefix sample[$index] has no final-generation paint');
       }
     }
     for (var warmupIndex = 0; warmupIndex < warmups.length; warmupIndex += 1) {
-      final sample = declared[warmupIndex];
+      final warmup = declared[warmupIndex];
       final generations = _acceptedGenerations(
-        sample,
+        warmup,
         '$runPrefix.warmup[$warmupIndex]',
         blockers,
         allowZero: !denominator.requiresInput,
       );
-      _validateSample(
-        sample,
+      _validateWarmup(
+        warmup,
         warmupIndex,
-        frames,
         rawInputs: [
           for (final generation in generations) inputObservations[generation],
         ],
         rawEngines: [
           for (final generation in generations) engineObservations[generation],
         ],
-        rawPaints: [
-          for (final generation in generations)
-            ...paintObservations[generation] ?? const [],
-        ],
-        nextAcceptedMicros: _nextAcceptedMicros(declared, warmupIndex),
-        collectMetrics: false,
         requiresInput: denominator.requiresInput,
-        measuredFrameOrdinals: measuredFrameOrdinals,
-        framePeriod: framePeriod,
-        requiresLiveStateZero: false,
-        requiresOpen: false,
         prefix: '$runPrefix.warmup[$warmupIndex]',
         blockers: blockers,
-        metricValues: metricValues,
       );
     }
     _validateCadence(samples, denominator.cadenceHz, runPrefix, blockers);
@@ -657,6 +644,79 @@ void _validateCell(
   if (denominator.processRule == DogfoodProcessRule.oneSharedProcess &&
       processIds.length != 1) {
     blockers.add('$prefix must use exactly one warmed process');
+  }
+}
+
+void _validateWarmup(
+  Map<String, Object?> warmup,
+  int expectedIndex, {
+  required List<Map<String, Object?>?> rawInputs,
+  required List<Map<String, Object?>?> rawEngines,
+  required bool requiresInput,
+  required String prefix,
+  required List<String> blockers,
+}) {
+  if (warmup['index'] != expectedIndex) {
+    blockers.add('$prefix has wrong index');
+  }
+  final generation = _integer(
+    warmup['sourceGeneration'],
+    '$prefix.sourceGeneration',
+    blockers,
+  );
+  final acceptedGenerations = _acceptedGenerations(
+    warmup,
+    prefix,
+    blockers,
+    allowZero: !requiresInput,
+  );
+  final accepted = _integer(
+    warmup['acceptedMicros'],
+    '$prefix.acceptedMicros',
+    blockers,
+  );
+  final presentInputs = rawInputs.whereType<Map<String, Object?>>().toList()
+    ..sort(
+      (left, right) => (left['sourceGeneration']! as int).compareTo(
+        right['sourceGeneration']! as int,
+      ),
+    );
+  if (presentInputs.length != acceptedGenerations.length) {
+    blockers.add('$prefix does not have one raw input per accepted generation');
+  }
+  final firstInput = presentInputs.isEmpty ? null : presentInputs.first;
+  final finalInput = presentInputs.isEmpty ? null : presentInputs.last;
+  if (firstInput == null || finalInput == null) {
+    blockers.add('$prefix has no raw input observation');
+  } else if (firstInput['acceptedMicros'] != accepted ||
+      finalInput['sourceGeneration'] != generation ||
+      finalInput['sourceSha256'] != warmup['sourceSha256'] ||
+      finalInput['canonicalSelectionBaseUtf16'] !=
+          warmup['canonicalSelectionBaseUtf16'] ||
+      finalInput['canonicalSelectionExtentUtf16'] !=
+          warmup['canonicalSelectionExtentUtf16']) {
+    blockers.add('$prefix does not match its raw input observations');
+  }
+  final presentEngines = rawEngines.whereType<Map<String, Object?>>().toList();
+  if (presentEngines.length != acceptedGenerations.length) {
+    blockers.add('$prefix does not have one engine receipt per generation');
+  }
+  final rawNativeFfiMicros = <int>[
+    for (var index = 0; index < presentEngines.length; index += 1)
+      _integer(
+        presentEngines[index]['nativeFfiMicros'],
+        '$prefix.rawEngine[$index].nativeFfiMicros',
+        blockers,
+      ),
+  ];
+  final engineMicros = _integer(
+    warmup['engineMicros'],
+    '$prefix.engineMicros',
+    blockers,
+  );
+  if (rawNativeFfiMicros.isEmpty ||
+      rawNativeFfiMicros.reduce(math.max) != engineMicros) {
+    blockers.add('$prefix engine timing does not replay');
   }
 }
 
@@ -950,13 +1010,21 @@ void _validateSample(
       return;
     }
     final firstPaint = finalPaints.first;
+    final joinedFinalPaint = finalPaints.cast<Map<String, Object?>>().where(
+      (paint) => paint['frameOrdinal'] is int,
+    );
+    if (joinedFinalPaint.isEmpty) {
+      blockers.add('$prefix has no proving paint joined to FrameTiming');
+      return;
+    }
+    final provingPaint = joinedFinalPaint.first;
     final firstTimestamp = _integer(
       firstPaint['timestampMicros'],
       '$prefix.rawPaint.timestampMicros',
       blockers,
     );
     final firstFrame = _integer(
-      firstPaint['frameOrdinal'],
+      provingPaint['frameOrdinal'],
       '$prefix.rawPaint.frameOrdinal',
       blockers,
     );
@@ -973,24 +1041,27 @@ void _validateSample(
         '$prefix.rawPaint[$paintIndex].timestampMicros',
         blockers,
       );
-      final frameOrdinal = _integer(
-        paint['frameOrdinal'],
-        '$prefix.rawPaint[$paintIndex].frameOrdinal',
-        blockers,
-      );
+      final frameValue = paint['frameOrdinal'];
       if (timestamp < accepted ||
           (nextAcceptedMicros != null && timestamp >= nextAcceptedMicros)) {
         blockers.add(
           '$prefix contains a paint outside its acceptance interval',
         );
       }
-      if (!frames.containsKey(frameOrdinal)) {
-        blockers.add(
-          '$prefix raw paint references missing frame $frameOrdinal',
+      if (frameValue != null) {
+        final frameOrdinal = _integer(
+          frameValue,
+          '$prefix.rawPaint[$paintIndex].frameOrdinal',
+          blockers,
         );
-      }
-      if (collectMetrics && requiresInput) {
-        measuredFrameOrdinals.add(frameOrdinal);
+        if (!frames.containsKey(frameOrdinal)) {
+          blockers.add(
+            '$prefix raw paint references missing frame $frameOrdinal',
+          );
+        }
+        if (collectMetrics && requiresInput) {
+          measuredFrameOrdinals.add(frameOrdinal);
+        }
       }
       final expectedBase = paint['expectedSelectionBaseUtf16'];
       final expectedExtent = paint['expectedSelectionExtentUtf16'];
@@ -1236,8 +1307,8 @@ void _validateMemory(
     '$prefix.memory.postClose.rss',
     blockers,
   );
-  if (peak < baseline || peak < close || peak < postClose) {
-    blockers.add('$prefix peak RSS is lower than another memory stage');
+  if (peak < baseline || peak < close) {
+    blockers.add('$prefix active-run peak RSS is lower than an active stage');
   }
   final peakDelta = peak - baseline;
   final retainedDelta = math.max(0, postClose - baseline);

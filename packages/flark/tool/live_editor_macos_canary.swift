@@ -140,6 +140,11 @@ func focusWindow(
     kAXFocusedAttribute as CFString,
     kCFBooleanTrue
   )
+  if NSWorkspace.shared.frontmostApplication?.localizedName == "loginwindow" {
+    throw ActuatorFailure.message(
+      "interactive macOS session is unavailable (loginwindow is frontmost)"
+    )
+  }
   NSRunningApplication(processIdentifier: pid)?.activate(
     options: [.activateAllWindows]
   )

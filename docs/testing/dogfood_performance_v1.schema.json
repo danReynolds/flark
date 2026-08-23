@@ -160,7 +160,7 @@
         "run": {"type": "integer", "minimum": 0},
         "processId": {"type": "string", "minLength": 1},
         "freshProcess": {"type": "boolean"},
-        "warmups": {"type": "array", "items": {"$ref": "#/$defs/sample"}},
+        "warmups": {"type": "array", "items": {"$ref": "#/$defs/warmup"}},
         "samples": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sample"}},
         "frames": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/frame"}},
         "inputObservations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/inputObservation"}},
@@ -188,7 +188,7 @@
       "required": ["timestampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount"],
       "properties": {
         "timestampMicros": {"type": "integer", "minimum": 0},
-        "frameOrdinal": {"type": "integer", "minimum": 0},
+        "frameOrdinal": {"type": ["integer", "null"], "minimum": 0},
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "visibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "expectedVisibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -273,6 +273,26 @@
         "faulted": {"type": "boolean"},
         "resyncCount": {"type": "integer", "minimum": 0},
         "globalLiveState": {"$ref": "#/$defs/liveState"}
+      }
+    },
+    "warmup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "acceptedMicros", "acceptedSourceGenerations", "sourceGeneration", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "engineMicros"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "acceptedMicros": {"type": "integer", "minimum": 0},
+        "acceptedSourceGenerations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "sourceGeneration": {"type": "integer", "minimum": 1},
+        "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "canonicalSelectionBaseUtf16": {"type": "integer", "minimum": 0},
+        "canonicalSelectionExtentUtf16": {"type": "integer", "minimum": 0},
+        "engineMicros": {"type": "integer", "minimum": 0}
       }
     },
     "frame": {

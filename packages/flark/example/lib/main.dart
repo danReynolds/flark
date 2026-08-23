@@ -203,6 +203,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         await _settleCanaryController(controller);
         final closeRequestedEpochMicros = DateTime.now().microsecondsSinceEpoch;
         final closeRequestedRssBytes = ProcessInfo.currentRss;
+        final closeRequestedMaximumRssBytes = ProcessInfo.maxRss;
         writer.detach();
         setState(() => _controller = null);
         await controller.close();
@@ -214,6 +215,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
           commandSequence: command.sequence,
           closeRequestedEpochMicros: closeRequestedEpochMicros,
           closeRequestedRssBytes: closeRequestedRssBytes,
+          closeRequestedMaximumRssBytes: closeRequestedMaximumRssBytes,
           globalLiveState: globalLiveState,
         );
         return;

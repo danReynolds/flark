@@ -175,16 +175,18 @@ Map<String, Object?> _validRawReceipt() {
         final finalGeneration = sourceGeneration + (structural ? 1 : 0);
         final finalFrame = frameOrdinal + (structural ? 1 : 0);
         warmups.add(
-          _sample(
-            index: warmup,
-            accepted: accepted,
-            acceptedSourceGenerations: [
-              sourceGeneration,
-              if (structural) finalGeneration,
-            ],
-            sourceGeneration: finalGeneration,
-            frameOrdinal: finalFrame,
-            requiresOpen: false,
+          _warmupFromSample(
+            _sample(
+              index: warmup,
+              accepted: accepted,
+              acceptedSourceGenerations: [
+                sourceGeneration,
+                if (structural) finalGeneration,
+              ],
+              sourceGeneration: finalGeneration,
+              frameOrdinal: finalFrame,
+              requiresOpen: false,
+            ),
           ),
         );
         if (structural) {
@@ -393,6 +395,20 @@ Map<String, Object?> _sample({
       'anchors': 0,
       'historyTokens': 0,
     },
+};
+
+Map<String, Object?> _warmupFromSample(Map<String, Object?> sample) => {
+  for (final name in const [
+    'index',
+    'acceptedMicros',
+    'acceptedSourceGenerations',
+    'sourceGeneration',
+    'sourceSha256',
+    'canonicalSelectionBaseUtf16',
+    'canonicalSelectionExtentUtf16',
+    'engineMicros',
+  ])
+    name: sample[name],
 };
 
 Map<String, Object?> _frame(

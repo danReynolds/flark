@@ -388,10 +388,10 @@ final class DogfoodNativeCanaryReceiptWriter {
     if (controller == null) {
       throw StateError('canary receipt writer has no controller');
     }
-    // FrameTiming is delivered asynchronously after the painted frame. Give
-    // the engine one bounded callback turn so the atomic receipt can join the
-    // paint to its build/raster phases instead of omitting the final frame.
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    // FrameTiming is delivered asynchronously after the painted frame. Wait
+    // for the final paint's real engine timestamp rather than inventing a
+    // duration or silently dropping the proving frame from the receipt.
+    await _waitForFinalFrameTiming();
     final generation = ++_writeGeneration;
     await _write(controller, generation);
   }
@@ -411,6 +411,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     required int commandSequence,
     required int closeRequestedEpochMicros,
     required int closeRequestedRssBytes,
+    required int closeRequestedMaximumRssBytes,
     required FlarkNativeGlobalLiveStateInspection globalLiveState,
   }) async {
     _timer?.cancel();
@@ -427,6 +428,7 @@ final class DogfoodNativeCanaryReceiptWriter {
       'processLaunchEpochMicros': mode.processLaunchEpochMicros,
       'closeRequestedEpochMicros': closeRequestedEpochMicros,
       'closeRequestedRssBytes': closeRequestedRssBytes,
+      'closeRequestedMaximumRssBytes': closeRequestedMaximumRssBytes,
       'postCloseEpochMicros': DateTime.now().microsecondsSinceEpoch,
       'postCloseRssBytes': ProcessInfo.currentRss,
       'maximumRssBytes': ProcessInfo.maxRss,
@@ -450,6 +452,25 @@ final class DogfoodNativeCanaryReceiptWriter {
       _captureSettledPresentation();
     });
     WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Future<void> _waitForFinalFrameTiming() async {
+    if (_paintReceipts.isEmpty) return;
+    final paintStamp = _paintReceipts.last['frameStampMicros']! as int;
+    final refreshHz = _displayReceipt()['refreshHz']! as num;
+    final framePeriodMicros = (1000000 / refreshHz).round();
+    for (var attempt = 0; attempt < 20; attempt += 1) {
+      final joined = _frameTimingReceipts.any(
+        (timing) =>
+            ((timing['vsyncStartMicros']! as int) +
+                    framePeriodMicros -
+                    paintStamp)
+                .abs() <=
+            32,
+      );
+      if (joined) return;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
   }
 
   void _captureSettledPresentation() {
