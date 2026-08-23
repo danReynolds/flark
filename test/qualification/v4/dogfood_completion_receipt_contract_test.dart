@@ -73,6 +73,37 @@ void main() {
       await fixture.defaultLog.writeAsString(defaultLog);
       await fixture.defaultGateReceipt.writeAsString(defaultReceipt);
 
+      final paintLog = await fixture.paintLog.readAsString();
+      final paintReceipt = await fixture.actualPaintReceipt.readAsString();
+      final mislabeledPaintLines = const LineSplitter().convert(paintLog);
+      var relabeledPaintTests = 0;
+      for (var index = 0; index < mislabeledPaintLines.length; index += 1) {
+        Object? decoded;
+        try {
+          decoded = jsonDecode(mislabeledPaintLines[index]);
+        } on FormatException {
+          continue;
+        }
+        if (decoded is! Map || decoded['type'] != 'testStart') continue;
+        final test = decoded['test'];
+        if (test is! Map || test['root_url'] is! String) continue;
+        test['root_url'] = 'file://${fixture.base.path}/unrelated_test.dart';
+        mislabeledPaintLines[index] = jsonEncode(decoded);
+        relabeledPaintTests += 1;
+      }
+      expect(relabeledPaintTests, greaterThan(0));
+      await fixture.paintLog.writeAsString(
+        '${mislabeledPaintLines.join('\n')}\n',
+      );
+      final mislabeledPaintReceipt = jsonDecode(paintReceipt) as Map;
+      mislabeledPaintReceipt['log'] = await _identity(fixture.paintLog);
+      await fixture.actualPaintReceipt.writeAsString(
+        jsonEncode(mislabeledPaintReceipt),
+      );
+      await expectLater(fixture.build(), throwsStateError);
+      await fixture.paintLog.writeAsString(paintLog);
+      await fixture.actualPaintReceipt.writeAsString(paintReceipt);
+
       final machineLog = await fixture.machineLog.readAsString();
       await fixture.machineLog.writeAsString(
         '${jsonEncode({'type': 'done', 'success': true})}\n',
@@ -308,7 +339,7 @@ final class _CompletionFixture {
         ..createSync(recursive: true)
         ..writeAsStringSync(
           "import 'package:flutter_test/flutter_test.dart';\n"
-          "void main() { test('fixture actual paint', () {}); }\n",
+          "void main() { testWidgets('fixture actual paint', (tester) async {}); }\n",
         );
     }
     File('${repository.path}/packages/flark/pubspec.yaml').writeAsStringSync(

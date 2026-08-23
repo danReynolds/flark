@@ -470,13 +470,18 @@ Map<String, Object?> _verifyMachineSuite(Iterable<String> lines) {
     switch (decoded['type']) {
       case 'testStart':
         final test = decoded['test'];
+        final sourceUrl = test is Map && test['root_url'] is String
+            ? test['root_url']
+            : test is Map
+            ? test['url']
+            : null;
         if (test is Map &&
             test['id'] is int &&
             test['name'] is String &&
-            test['url'] is String) {
+            sourceUrl is String) {
           starts[test['id']! as int] = (
             name: test['name']! as String,
-            url: test['url']! as String,
+            url: sourceUrl,
           );
         }
       case 'testDone':
