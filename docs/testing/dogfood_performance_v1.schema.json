@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flark.dev/schemas/dogfood_performance_v1.schema.json",
+  "title": "Flark D0 dogfood performance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schemaVersion",
+    "candidate",
+    "configuration",
+    "artifacts",
+    "host",
+    "display",
+    "cells",
+    "assessment"
+  ],
+  "properties": {
+    "schema": {"const": "dogfood_performance_v1"},
+    "schemaVersion": {"const": 1},
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree", "clean"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "clean": {"const": true}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledger",
+        "streamedOpeningEnabled",
+        "enabledPresetIds"
+      ],
+      "properties": {
+        "ledger": {"$ref": "#/$defs/fileIdentity"},
+        "streamedOpeningEnabled": {"type": "boolean"},
+        "enabledPresetIds": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["appBundleManifest", "mainExecutable", "embeddedAbi", "profileHarness"],
+      "properties": {
+        "appBundleManifest": {"$ref": "#/$defs/fileIdentity"},
+        "mainExecutable": {"$ref": "#/$defs/fileIdentity"},
+        "embeddedAbi": {"$ref": "#/$defs/fileIdentity"},
+        "profileHarness": {"$ref": "#/$defs/fileIdentity"}
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostname",
+        "operatingSystem",
+        "architecture",
+        "cpu",
+        "logicalCores",
+        "physicalMemoryBytes",
+        "flutterVersion",
+        "dartVersion",
+        "rustcVersion",
+        "cargoVersion",
+        "xcodeVersion"
+      ],
+      "properties": {
+        "hostname": {"type": "string", "minLength": 1},
+        "operatingSystem": {"type": "string", "minLength": 1},
+        "architecture": {"type": "string", "minLength": 1},
+        "cpu": {"type": "string", "minLength": 1},
+        "logicalCores": {"type": "integer", "minimum": 1},
+        "physicalMemoryBytes": {"type": "integer", "minimum": 1},
+        "flutterVersion": {"type": "string", "minLength": 1},
+        "dartVersion": {"type": "string", "minLength": 1},
+        "rustcVersion": {"type": "string", "minLength": 1},
+        "cargoVersion": {"type": "string", "minLength": 1},
+        "xcodeVersion": {"type": "string", "minLength": 1}
+      }
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refreshHz", "framePeriodMicros", "widthLogical", "heightLogical", "devicePixelRatio"],
+      "properties": {
+        "refreshHz": {"type": "number", "exclusiveMinimum": 0},
+        "framePeriodMicros": {"type": "number", "exclusiveMinimum": 0},
+        "widthLogical": {"const": 1569},
+        "heightLogical": {"const": 906},
+        "devicePixelRatio": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "cells": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/cell"}
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "blockers", "metrics"],
+      "properties": {
+        "result": {"enum": ["PASS", "FAIL"]},
+        "blockers": {"type": "array", "items": {"type": "string"}},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/metric"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "fileIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceBytes",
+        "warmupsPerRun",
+        "samplesPerRun",
+        "runCount",
+        "cadenceHz",
+        "runs"
+      ],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "sourceBytes": {"type": "integer", "minimum": 1},
+        "warmupsPerRun": {"type": "integer", "minimum": 0},
+        "samplesPerRun": {"type": "integer", "minimum": 1},
+        "runCount": {"type": "integer", "minimum": 1},
+        "cadenceHz": {"type": "number", "minimum": 0},
+        "runs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/run"}}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "processId", "freshProcess", "warmups", "samples", "frames", "memory"],
+      "properties": {
+        "run": {"type": "integer", "minimum": 0},
+        "processId": {"type": "string", "minLength": 1},
+        "freshProcess": {"type": "boolean"},
+        "warmups": {"type": "array", "items": {"$ref": "#/$defs/sample"}},
+        "samples": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sample"}},
+        "frames": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/frame"}},
+        "memory": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/memory"}}
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "acceptedMicros",
+        "sourcePaintMicros",
+        "caretPaintMicros",
+        "selectionPaintMicros",
+        "sourceGeneration",
+        "paintedSourceGeneration",
+        "sourceSha256",
+        "visibleSourceSha256",
+        "canonicalSelectionBaseUtf16",
+        "canonicalSelectionExtentUtf16",
+        "paintedCaretSourceUtf16",
+        "startFrameOrdinal",
+        "endFrameOrdinal",
+        "provingFrameOrdinal",
+        "engineMicros",
+        "visibleCertificationMicros",
+        "rawProjectionFrames",
+        "sourceIdentityMatched",
+        "caretIdentityMatched",
+        "selectionIdentityMatched",
+        "faulted",
+        "resyncCount"
+      ],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "scheduledMicros": {"type": ["integer", "null"], "minimum": 0},
+        "acceptedMicros": {"type": "integer", "minimum": 0},
+        "sourcePaintMicros": {"type": "integer", "minimum": 0},
+        "caretPaintMicros": {"type": "integer", "minimum": 0},
+        "selectionPaintMicros": {"type": "integer", "minimum": 0},
+        "sourceGeneration": {"type": "integer", "minimum": 0},
+        "paintedSourceGeneration": {"type": "integer", "minimum": 0},
+        "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "visibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "canonicalSelectionBaseUtf16": {"type": "integer", "minimum": 0},
+        "canonicalSelectionExtentUtf16": {"type": "integer", "minimum": 0},
+        "paintedCaretSourceUtf16": {"type": ["integer", "null"], "minimum": 0},
+        "startFrameOrdinal": {"type": "integer", "minimum": 0},
+        "endFrameOrdinal": {"type": "integer", "minimum": 0},
+        "provingFrameOrdinal": {"type": "integer", "minimum": 0},
+        "engineMicros": {"type": "integer", "minimum": 0},
+        "visibleCertificationMicros": {"type": "integer", "minimum": 0},
+        "openToEditableMicros": {"type": ["integer", "null"], "minimum": 0},
+        "rawProjectionFrames": {"type": "integer", "minimum": 0},
+        "sourceIdentityMatched": {"const": true},
+        "caretIdentityMatched": {"const": true},
+        "selectionIdentityMatched": {"const": true},
+        "faulted": {"type": "boolean"},
+        "resyncCount": {"type": "integer", "minimum": 0},
+        "globalLiveState": {"$ref": "#/$defs/liveState"}
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "vsyncMicros", "buildMicros", "rasterMicros", "editorSyncMicros", "editorAttributed", "missed"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 0},
+        "vsyncMicros": {"type": "integer", "minimum": 0},
+        "buildMicros": {"type": "integer", "minimum": 0},
+        "rasterMicros": {"type": "integer", "minimum": 0},
+        "editorSyncMicros": {"type": "integer", "minimum": 0},
+        "editorAttributed": {"type": "boolean"},
+        "missed": {"type": "boolean"}
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "timestampMicros", "rssBytes"],
+      "properties": {
+        "stage": {"enum": ["baseline", "peak", "close", "postClose"]},
+        "timestampMicros": {"type": "integer", "minimum": 0},
+        "rssBytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "liveState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessions", "transactions", "continuations", "anchors", "historyTokens"],
+      "properties": {
+        "sessions": {"type": "integer", "minimum": 0},
+        "transactions": {"type": "integer", "minimum": 0},
+        "continuations": {"type": "integer", "minimum": 0},
+        "anchors": {"type": "integer", "minimum": 0},
+        "historyTokens": {"type": "integer", "minimum": 0}
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sampleCount", "p50", "p90", "p99", "max"],
+      "properties": {
+        "sampleCount": {"type": "integer", "minimum": 0},
+        "p50": {"type": "number", "minimum": 0},
+        "p90": {"type": "number", "minimum": 0},
+        "p99": {"type": "number", "minimum": 0},
+        "max": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

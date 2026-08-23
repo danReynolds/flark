@@ -275,18 +275,22 @@ final class FlarkCoreEditorSession {
     bool coalesceTyping = false,
     int? compositionGroup,
     bool compositionFinal = false,
-  }) => _serializeCommand(
-    () => _applyEditUtf16(
-      start,
-      end,
-      replacement,
-      beforeSelection: beforeSelection,
-      afterSelection: afterSelection,
-      coalesceTyping: coalesceTyping,
-      compositionGroup: compositionGroup,
-      compositionFinal: compositionFinal,
-    ),
-  );
+  }) {
+    final queuedAt = _clockMicros();
+    return _serializeCommand(
+      () => _applyEditUtf16(
+        start,
+        end,
+        replacement,
+        beforeSelection: beforeSelection,
+        afterSelection: afterSelection,
+        coalesceTyping: coalesceTyping,
+        compositionGroup: compositionGroup,
+        compositionFinal: compositionFinal,
+        coreQueueMicros: _clockMicros() - queuedAt,
+      ),
+    );
+  }
 
   Future<FlarkCoreEditReceipt> _applyEditUtf16(
     int start,
@@ -297,6 +301,7 @@ final class FlarkCoreEditorSession {
     bool coalesceTyping = false,
     int? compositionGroup,
     bool compositionFinal = false,
+    required int coreQueueMicros,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
     if (_selectionStart == null ||
@@ -336,6 +341,7 @@ final class FlarkCoreEditorSession {
           coalesceTyping: coalesceTyping,
           compositionGroup: compositionGroup,
           compositionFinal: compositionFinal,
+          coreQueueMicros: coreQueueMicros,
         );
       }
       return _applyLegacyBulkEditUtf16(
@@ -416,6 +422,7 @@ final class FlarkCoreEditorSession {
       _postCommitUnknown = true;
       rethrow;
     }
+    final adoptionWatch = Stopwatch()..start();
     if (transaction.logicalEditId != logicalEditId ||
         transaction.requestDigest != requestDigest ||
         transaction.baseRevision != baseRevision ||
@@ -464,7 +471,13 @@ final class FlarkCoreEditorSession {
       _postCommitUnknown = true;
       rethrow;
     }
-    return receipt;
+    adoptionWatch.stop();
+    return receipt.withTelemetry(
+      transaction.telemetry.withCoreStages(
+        coreQueueMicros: coreQueueMicros,
+        coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+      ),
+    );
   }
 
   Future<FlarkCoreEditReceipt> _applyStagedSourceTransactionUtf16(
@@ -476,6 +489,7 @@ final class FlarkCoreEditorSession {
     required bool coalesceTyping,
     required int? compositionGroup,
     required bool compositionFinal,
+    required int coreQueueMicros,
   }) async {
     final startAnchor = _selectionStart!;
     final endAnchor = _selectionEnd!;
@@ -523,6 +537,7 @@ final class FlarkCoreEditorSession {
       _postCommitUnknown = true;
       rethrow;
     }
+    final adoptionWatch = Stopwatch()..start();
     if (transaction.logicalEditId != logicalEditId ||
         transaction.requestDigest != requestDigest ||
         transaction.baseRevision != baseRevision ||
@@ -566,7 +581,13 @@ final class FlarkCoreEditorSession {
       _postCommitUnknown = true;
       rethrow;
     }
-    return receipt;
+    adoptionWatch.stop();
+    return receipt.withTelemetry(
+      transaction.telemetry.withCoreStages(
+        coreQueueMicros: coreQueueMicros,
+        coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+      ),
+    );
   }
 
   /// Compatibility fallback for a rare oversized operation whose requested

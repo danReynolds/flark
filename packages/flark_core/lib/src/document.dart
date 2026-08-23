@@ -131,6 +131,7 @@ final class FlarkCoreEditReceipt {
     required this.sourceUtf16Length,
     required this.historyToken,
     required this.historyDisposition,
+    this.telemetry,
   });
 
   final int revision;
@@ -138,6 +139,17 @@ final class FlarkCoreEditReceipt {
   final int sourceUtf16Length;
   final FlarkCoreHistoryToken? historyToken;
   final FlarkCoreHistoryDisposition historyDisposition;
+  final FlarkCoreEditIntentTelemetryV1? telemetry;
+
+  FlarkCoreEditReceipt withTelemetry(FlarkCoreEditIntentTelemetryV1 value) =>
+      FlarkCoreEditReceipt(
+        revision: revision,
+        sourceByteLength: sourceByteLength,
+        sourceUtf16Length: sourceUtf16Length,
+        historyToken: historyToken,
+        historyDisposition: historyDisposition,
+        telemetry: value,
+      );
 }
 
 /// Complete authoritative result of one caller-known literal transaction.

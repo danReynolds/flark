@@ -11,6 +11,7 @@ export 'src/controller.dart'
         FlarkEditorController,
         FlarkEditorStatus,
         FlarkSemanticEditPerformance,
+        FlarkSourceEditPerformance,
         FlarkSurfaceInlineStyle,
         FlarkSurfaceRow,
         FlarkSurfaceTextRun;

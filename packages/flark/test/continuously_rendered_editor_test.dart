@@ -609,6 +609,13 @@ void main() {
       );
       await _settle(controller);
       expect(controller.visibleSource, '**boxld** after\n');
+      final performance = controller.sourceEditPerformanceReceipts.single;
+      expect(performance.sourceGeneration, controller.sourceGeneration);
+      expect(performance.nativeFfiMicros, greaterThanOrEqualTo(0));
+      expect(
+        performance.workerRoundTripMicros,
+        greaterThanOrEqualTo(performance.nativeFfiMicros),
+      );
       final settled = controller.surfaceRow(controller.rows.first);
       expect(settled.active, isTrue);
       expect(settled.text, 'boxld after');

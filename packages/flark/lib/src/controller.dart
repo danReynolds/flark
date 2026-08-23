@@ -20,6 +20,7 @@ const _maximumActiveViewportPageHops =
     1;
 const _parseIdleDelay = Duration(milliseconds: 32);
 const _maximumSemanticSuccessors = 7;
+const _maximumPerformanceReceipts = 512;
 // The bounded head window every parse-pending consumer polls during a
 // streamed open: the same 4 KiB certification-probe discipline the core
 // layer applies inside its own opening viewport query.
@@ -352,6 +353,33 @@ final class FlarkSemanticEditPerformance {
   final int callbackToReceiptMicros;
 }
 
+/// Layer attribution for a committed ordinary source transaction.
+///
+/// This bounded diagnostic stream is consumed by the D0 profile harness. It
+/// observes the existing source-authoritative command path and does not
+/// participate in editing or presentation authority.
+final class FlarkSourceEditPerformance {
+  const FlarkSourceEditPerformance({
+    required this.sourceGeneration,
+    required this.coreQueueMicros,
+    required this.workerRoundTripMicros,
+    required this.workerQueueMicros,
+    required this.nativeFfiMicros,
+    required this.coreAdoptionMicros,
+    required this.flutterReceiptAdoptionMicros,
+    required this.acceptanceToReceiptMicros,
+  });
+
+  final int sourceGeneration;
+  final int coreQueueMicros;
+  final int workerRoundTripMicros;
+  final int workerQueueMicros;
+  final int nativeFfiMicros;
+  final int coreAdoptionMicros;
+  final int flutterReceiptAdoptionMicros;
+  final int acceptanceToReceiptMicros;
+}
+
 /// One bounded monotone map between a platform-provisional input window and
 /// the Rust-committed window. Offsets inside the differing interiors are
 /// intentionally unmappable; callers resynchronize instead of guessing.
@@ -579,6 +607,7 @@ final class FlarkEditorController extends ChangeNotifier {
   _LateSemanticInput? _lateSemanticInput;
   int? _activePlatformCallbackStartedEpochMicros;
   FlarkSemanticEditPerformance? _lastSemanticEditPerformance;
+  final List<FlarkSourceEditPerformance> _sourceEditPerformanceReceipts = [];
   bool _platformNewlineMutationAwaitingAction = false;
   bool _platformDeleteBackwardMutationAwaitingSelector = false;
   _CompositionInputBase? _compositionInputBase;
@@ -686,6 +715,8 @@ final class FlarkEditorController extends ChangeNotifier {
   int get lastSemanticReconciliationMicros => _lastSemanticReconciliationMicros;
   FlarkSemanticEditPerformance? get lastSemanticEditPerformance =>
       _lastSemanticEditPerformance;
+  List<FlarkSourceEditPerformance> get sourceEditPerformanceReceipts =>
+      List.unmodifiable(_sourceEditPerformanceReceipts);
 
   /// Completes when this controller first publishes a viewport that carries
   /// parser-certified semantic rows — for a streamed open, the moment the
@@ -3759,6 +3790,7 @@ final class FlarkEditorController extends ChangeNotifier {
     bool recenterAfterOptimisticEdit = false,
     bool restoreSelectionAfterCommit = false,
   }) {
+    final acceptedAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
     _retainOptimisticRefreshAnchor(start, deriveFromInput: false);
     final split = _pendingPresentation.paragraphGap;
     if (split != null &&
@@ -3792,8 +3824,8 @@ final class FlarkEditorController extends ChangeNotifier {
     _publishedSourceGeneration = generation;
     _pendingEdits += 1;
     _status = FlarkEditorStatus.editing;
-    final operation = _editTail.then((_) async {
-      await _session.applyEditUtf16(
+    final operation = _editTail.then<FlarkCoreEditReceipt>((_) async {
+      final receipt = await _session.applyEditUtf16(
         start,
         end,
         replacement,
@@ -3806,9 +3838,14 @@ final class FlarkEditorController extends ChangeNotifier {
       if (restoreSelectionAfterCommit) {
         await _restoreHistorySelection(afterSelection);
       }
+      return receipt;
     });
-    _editTail = operation.catchError((Object _, StackTrace _) {});
-    unawaited(_completeQueuedEdit(operation, generation));
+    _editTail = operation
+        .then<void>((_) {})
+        .catchError((Object _, StackTrace _) {});
+    unawaited(
+      _completeQueuedEdit(operation, generation, acceptedAtEpochMicros),
+    );
   }
 
   bool _queueSemanticParagraphBreak(int localCaret) {
@@ -5227,11 +5264,14 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   Future<void> _completeQueuedEdit(
-    Future<void> operation,
+    Future<FlarkCoreEditReceipt> operation,
     int generation,
+    int acceptedAtEpochMicros,
   ) async {
     try {
-      await operation;
+      final receipt = await operation;
+      final receiptAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
+      final adoptionWatch = Stopwatch()..start();
       if (generation == _editGeneration) {
         final retainsProjectedTransition =
             _pendingPresentation.dependency != null ||
@@ -5262,6 +5302,29 @@ final class FlarkEditorController extends ChangeNotifier {
         }
       }
       _pendingEdits = math.max(0, _pendingEdits - 1);
+      adoptionWatch.stop();
+      final telemetry = receipt.telemetry;
+      if (telemetry != null) {
+        _sourceEditPerformanceReceipts.add(
+          FlarkSourceEditPerformance(
+            sourceGeneration: generation,
+            coreQueueMicros: telemetry.coreQueueMicros,
+            workerRoundTripMicros: telemetry.workerRoundTripMicros,
+            workerQueueMicros: telemetry.workerQueueMicros,
+            nativeFfiMicros: telemetry.nativeFfiMicros,
+            coreAdoptionMicros: telemetry.coreAdoptionMicros,
+            flutterReceiptAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+            acceptanceToReceiptMicros: math.max(
+              0,
+              receiptAtEpochMicros - acceptedAtEpochMicros,
+            ),
+          ),
+        );
+        if (_sourceEditPerformanceReceipts.length >
+            _maximumPerformanceReceipts) {
+          _sourceEditPerformanceReceipts.removeAt(0);
+        }
+      }
       notifyListeners();
     } catch (error) {
       _pendingPresentation = _pendingPresentation.retire(const {

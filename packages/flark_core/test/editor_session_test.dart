@@ -94,7 +94,16 @@ void main() {
             await document.dispose();
           });
 
-          await type(0, 'a');
+          final firstReceipt = await type(0, 'a');
+          expect(firstReceipt.telemetry, isNotNull);
+          expect(
+            firstReceipt.telemetry!.coreQueueMicros,
+            greaterThanOrEqualTo(0),
+          );
+          expect(
+            firstReceipt.telemetry!.workerRoundTripMicros,
+            greaterThanOrEqualTo(firstReceipt.telemetry!.nativeFfiMicros),
+          );
           clockMicros += 400000;
           await type(1, 'b');
           clockMicros += 400000;

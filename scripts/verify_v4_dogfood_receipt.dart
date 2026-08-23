@@ -1,0 +1,957 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:crypto/crypto.dart';
+
+const _schema = 'dogfood_performance_v1';
+const _microsPerSecond = 1000000;
+const _maxVisibilityMicros = 16000;
+const _maxEngineP99Micros = 4000;
+const _maxFlutterP99Micros = 8000;
+const _maxEditorSpanMicros = 16000;
+const _maxOpenMicros = 200000;
+const _maxCertificationMicros = 500000;
+const _maxRetainedRssBytes = 16 * 1024 * 1024;
+const _largeSourceBytes = 1024 * 1024;
+final _commitPattern = RegExp(r'^[0-9a-f]{40}$');
+final _shaPattern = RegExp(r'^[0-9a-f]{64}$');
+const _enabledPresetIds = <String>{
+  'productTour',
+  'prose1MiB',
+  'prose5MiB',
+  'prose10MiB',
+  'giantLine5MiB',
+  'denseBlocks1MiB',
+};
+
+enum DogfoodProcessRule { any, freshEveryRun, oneSharedProcess }
+
+final class DogfoodCellDenominator {
+  const DogfoodCellDenominator({
+    required this.warmups,
+    required this.samples,
+    required this.runs,
+    required this.cadenceHz,
+    this.processRule = DogfoodProcessRule.any,
+    this.requiresLiveStateZero = false,
+    this.requiresOpen = false,
+  });
+
+  final int warmups;
+  final int samples;
+  final int runs;
+  final num cadenceHz;
+  final DogfoodProcessRule processRule;
+  final bool requiresLiveStateZero;
+  final bool requiresOpen;
+}
+
+const requiredDogfoodCells = <String, DogfoodCellDenominator>{
+  'product-tour-cold-launch': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 1,
+    runs: 5,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.freshEveryRun,
+    requiresOpen: true,
+  ),
+  'product-tour-typing': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'product-tour-inline-typing': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'product-tour-deletion': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'product-tour-structural-burst': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'ordinary-1m-typing': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'ordinary-1m-inline-typing': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'ordinary-1m-deletion': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'ordinary-1m-structural-burst': DogfoodCellDenominator(
+    warmups: 20,
+    samples: 120,
+    runs: 3,
+    cadenceHz: 60,
+  ),
+  'ordinary-1m-paste-32kib': DogfoodCellDenominator(
+    warmups: 2,
+    samples: 10,
+    runs: 3,
+    cadenceHz: 0,
+  ),
+  'dense-blocks-1m-journey': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 1,
+    runs: 5,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.freshEveryRun,
+    requiresOpen: true,
+  ),
+  'ordinary-5m-journey': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 1,
+    runs: 5,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.freshEveryRun,
+    requiresOpen: true,
+  ),
+  'giant-line-5m-journey': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 1,
+    runs: 5,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.freshEveryRun,
+    requiresOpen: true,
+  ),
+  'ordinary-10m-journey': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 1,
+    runs: 5,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.freshEveryRun,
+    requiresOpen: true,
+  ),
+  'lifecycle-same-process': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 100,
+    runs: 1,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.oneSharedProcess,
+    requiresLiveStateZero: true,
+  ),
+  'lifecycle-fresh-process': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 1,
+    runs: 10,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.freshEveryRun,
+    requiresLiveStateZero: true,
+  ),
+};
+
+const streamedDogfoodCell = <String, DogfoodCellDenominator>{
+  'streamed-10m-journey': DogfoodCellDenominator(
+    warmups: 0,
+    samples: 1,
+    runs: 5,
+    cadenceHz: 0,
+    processRule: DogfoodProcessRule.freshEveryRun,
+    requiresOpen: true,
+  ),
+};
+
+final class DogfoodReceiptValidation {
+  const DogfoodReceiptValidation({
+    required this.blockers,
+    required this.metrics,
+  });
+
+  final List<String> blockers;
+  final Map<String, Object> metrics;
+
+  bool get passed => blockers.isEmpty;
+}
+
+Future<DogfoodReceiptValidation> verifyDogfoodPerformanceReceipt(
+  Map<String, Object?> receipt, {
+  Directory? repository,
+  bool verifyArtifactFiles = true,
+}) => _evaluateDogfoodPerformanceReceipt(
+  receipt,
+  repository: repository,
+  verifyArtifactFiles: verifyArtifactFiles,
+  verifyAssessment: true,
+);
+
+Future<DogfoodReceiptValidation> evaluateDogfoodPerformanceReceipt(
+  Map<String, Object?> receipt, {
+  Directory? repository,
+  bool verifyArtifactFiles = true,
+}) => _evaluateDogfoodPerformanceReceipt(
+  receipt,
+  repository: repository,
+  verifyArtifactFiles: verifyArtifactFiles,
+  verifyAssessment: false,
+);
+
+Future<Map<String, Object?>> sealDogfoodPerformanceReceipt(
+  Map<String, Object?> receipt, {
+  Directory? repository,
+  bool verifyArtifactFiles = true,
+}) async {
+  final result = await evaluateDogfoodPerformanceReceipt(
+    receipt,
+    repository: repository,
+    verifyArtifactFiles: verifyArtifactFiles,
+  );
+  return <String, Object?>{
+    ...receipt,
+    'assessment': <String, Object?>{
+      'result': result.passed ? 'PASS' : 'FAIL',
+      'blockers': result.blockers,
+      'metrics': result.metrics,
+    },
+  };
+}
+
+Future<DogfoodReceiptValidation> _evaluateDogfoodPerformanceReceipt(
+  Map<String, Object?> receipt, {
+  required Directory? repository,
+  required bool verifyArtifactFiles,
+  required bool verifyAssessment,
+}) async {
+  final blockers = <String>[];
+  final metricValues = <String, List<int>>{
+    'sourceToPaintMicros': [],
+    'engineMicros': [],
+    'flutterFrameMicros': [],
+    'editorSpanMicros': [],
+    'visibleCertificationMicros': [],
+    'openToEditableMicros': [],
+    'peakRssDeltaBytes': [],
+    'retainedRssDeltaBytes': [],
+  };
+
+  if (receipt['schema'] != _schema || receipt['schemaVersion'] != 1) {
+    blockers.add('receipt must declare $_schema schemaVersion=1');
+  }
+
+  final candidate = _map(receipt['candidate'], 'candidate', blockers);
+  final configuration = _map(
+    receipt['configuration'],
+    'configuration',
+    blockers,
+  );
+  final artifacts = _map(receipt['artifacts'], 'artifacts', blockers);
+  final host = _map(receipt['host'], 'host', blockers);
+  final display = _map(receipt['display'], 'display', blockers);
+  final assessment = verifyAssessment
+      ? _map(receipt['assessment'], 'assessment', blockers)
+      : const <String, Object?>{};
+
+  for (final name in const ['commit', 'tree']) {
+    final value = candidate[name];
+    if (value is! String || !_commitPattern.hasMatch(value)) {
+      blockers.add('candidate.$name must be a lowercase 40-digit git id');
+    }
+  }
+  for (final name in const [
+    'hostname',
+    'operatingSystem',
+    'architecture',
+    'cpu',
+    'flutterVersion',
+    'dartVersion',
+    'rustcVersion',
+    'cargoVersion',
+    'xcodeVersion',
+  ]) {
+    if (host[name] is! String || (host[name]! as String).isEmpty) {
+      blockers.add('host.$name must be nonempty');
+    }
+  }
+  if (host['logicalCores'] is! int || (host['logicalCores']! as int) < 1) {
+    blockers.add('host.logicalCores must be positive');
+  }
+  if (host['physicalMemoryBytes'] is! int ||
+      (host['physicalMemoryBytes']! as int) < 1) {
+    blockers.add('host.physicalMemoryBytes must be positive');
+  }
+
+  final refreshHz = _number(
+    display['refreshHz'],
+    'display.refreshHz',
+    blockers,
+  );
+  final framePeriod = _number(
+    display['framePeriodMicros'],
+    'display.framePeriodMicros',
+    blockers,
+  );
+  if (refreshHz > 0 && framePeriod > 0) {
+    final derived = _microsPerSecond / refreshHz;
+    if ((derived - framePeriod).abs() > 1) {
+      blockers.add(
+        'display frame period $framePeriod does not match refresh $refreshHz',
+      );
+    }
+  }
+  if (display['widthLogical'] != 1569 || display['heightLogical'] != 906) {
+    blockers.add('display must use the frozen 1569x906 logical geometry');
+  }
+
+  if (verifyArtifactFiles) {
+    await _verifyFileIdentity(
+      configuration['ledger'],
+      'configuration.ledger',
+      blockers,
+    );
+    for (final name in const [
+      'appBundleManifest',
+      'mainExecutable',
+      'embeddedAbi',
+      'profileHarness',
+    ]) {
+      await _verifyFileIdentity(artifacts[name], 'artifacts.$name', blockers);
+    }
+  }
+
+  if (repository != null) {
+    final head = await _git(repository, const ['rev-parse', 'HEAD'], blockers);
+    final tree = await _git(repository, const [
+      'rev-parse',
+      'HEAD^{tree}',
+    ], blockers);
+    final status = await _git(repository, const [
+      'status',
+      '--porcelain',
+    ], blockers);
+    if (candidate['commit'] != head || candidate['tree'] != tree) {
+      blockers.add('candidate commit/tree does not match the repository');
+    }
+    if (candidate['clean'] != true || status.isNotEmpty) {
+      blockers.add('candidate worktree is not clean');
+    }
+  } else if (candidate['clean'] != true) {
+    blockers.add('candidate.clean must be true');
+  }
+
+  final streamed = configuration['streamedOpeningEnabled'] == true;
+  final configuredPresets = _list(
+    configuration['enabledPresetIds'],
+    'configuration.enabledPresetIds',
+    blockers,
+  ).whereType<String>().toSet();
+  final expectedPresets = <String>{
+    ..._enabledPresetIds,
+    if (streamed) 'streamed10MiB',
+  };
+  if (!configuredPresets.containsAll(expectedPresets) ||
+      !expectedPresets.containsAll(configuredPresets)) {
+    blockers.add('enabled preset ids do not match the frozen D0 menu');
+  }
+  final expected = <String, DogfoodCellDenominator>{
+    ...requiredDogfoodCells,
+    if (streamed) ...streamedDogfoodCell,
+  };
+  final cells = _list(receipt['cells'], 'cells', blockers);
+  final byId = <String, Map<String, Object?>>{};
+  for (final value in cells) {
+    final cell = _map(value, 'cells[]', blockers);
+    final id = cell['id'];
+    if (id is! String || id.isEmpty) {
+      blockers.add('each cell must have a nonempty id');
+      continue;
+    }
+    if (byId.containsKey(id)) blockers.add('duplicate cell $id');
+    byId[id] = cell;
+  }
+  final actualIds = byId.keys.toSet();
+  final expectedIds = expected.keys.toSet();
+  for (final missing in expectedIds.difference(actualIds)) {
+    blockers.add('missing required cell $missing');
+  }
+  for (final extra in actualIds.difference(expectedIds)) {
+    blockers.add('unexpected cell $extra');
+  }
+  if (!streamed && actualIds.contains('streamed-10m-journey')) {
+    blockers.add('streamed cell is present while the feature is disabled');
+  }
+
+  for (final entry in expected.entries) {
+    final cell = byId[entry.key];
+    if (cell == null) continue;
+    _validateCell(
+      entry.key,
+      cell,
+      entry.value,
+      framePeriod: framePeriod,
+      blockers: blockers,
+      metricValues: metricValues,
+    );
+  }
+
+  if (_percentile(metricValues['engineMicros']!, 99) > _maxEngineP99Micros) {
+    blockers.add('Rust engine p99 exceeded 4 ms');
+  }
+  if (_percentile(metricValues['flutterFrameMicros']!, 99) >
+      _maxFlutterP99Micros) {
+    blockers.add('Flutter frame work p99 exceeded 8 ms');
+  }
+
+  final metrics = <String, Object>{
+    for (final entry in metricValues.entries)
+      entry.key: _distribution(entry.value),
+  };
+  if (verifyAssessment) {
+    final expectedResult = blockers.isEmpty ? 'PASS' : 'FAIL';
+    if (assessment['result'] != expectedResult) {
+      blockers.add(
+        'assessment.result=${assessment['result']} but replay computed '
+        '$expectedResult',
+      );
+    }
+    final computedBeforeAssessment = [...blockers]..sort();
+    final claimedBlockers = _list(
+      assessment['blockers'],
+      'assessment.blockers',
+      blockers,
+    ).whereType<String>().toList()..sort();
+    if (!_sameJson(claimedBlockers, computedBeforeAssessment)) {
+      blockers.add('assessment.blockers does not match replayed blockers');
+    }
+    if (!_sameJson(assessment['metrics'], metrics)) {
+      blockers.add('assessment.metrics does not match replayed metrics');
+    }
+  }
+
+  return DogfoodReceiptValidation(
+    blockers: List.unmodifiable(blockers),
+    metrics: Map.unmodifiable(metrics),
+  );
+}
+
+void _validateCell(
+  String id,
+  Map<String, Object?> cell,
+  DogfoodCellDenominator denominator, {
+  required num framePeriod,
+  required List<String> blockers,
+  required Map<String, List<int>> metricValues,
+}) {
+  final prefix = 'cell[$id]';
+  final sourceBytes = _integer(
+    cell['sourceBytes'],
+    '$prefix.sourceBytes',
+    blockers,
+  );
+  if (cell['warmupsPerRun'] != denominator.warmups ||
+      cell['samplesPerRun'] != denominator.samples ||
+      cell['runCount'] != denominator.runs ||
+      cell['cadenceHz'] != denominator.cadenceHz) {
+    blockers.add('$prefix denominator does not match the frozen D0 matrix');
+  }
+  final runs = _list(cell['runs'], '$prefix.runs', blockers);
+  if (runs.length != denominator.runs) {
+    blockers.add(
+      '$prefix expected ${denominator.runs} runs, got ${runs.length}',
+    );
+  }
+  final processIds = <String>{};
+  for (var runIndex = 0; runIndex < runs.length; runIndex += 1) {
+    final run = _map(runs[runIndex], '$prefix.runs[$runIndex]', blockers);
+    final runPrefix = '$prefix.run[$runIndex]';
+    if (run['run'] != runIndex) {
+      blockers.add('$runPrefix has wrong run ordinal');
+    }
+    final processId = run['processId'];
+    if (processId is! String || processId.isEmpty) {
+      blockers.add('$runPrefix has no process identity');
+    } else {
+      processIds.add(processId);
+    }
+    if (denominator.processRule == DogfoodProcessRule.freshEveryRun &&
+        run['freshProcess'] != true) {
+      blockers.add('$runPrefix must use a fresh process');
+    }
+    if (denominator.processRule == DogfoodProcessRule.oneSharedProcess &&
+        run['freshProcess'] != false) {
+      blockers.add('$runPrefix must use the warmed shared process');
+    }
+
+    final warmups = _list(run['warmups'], '$runPrefix.warmups', blockers);
+    final samples = _list(run['samples'], '$runPrefix.samples', blockers);
+    if (warmups.length != denominator.warmups) {
+      blockers.add('$runPrefix expected ${denominator.warmups} warmups');
+    }
+    if (samples.length != denominator.samples) {
+      blockers.add('$runPrefix expected ${denominator.samples} samples');
+    }
+    final frames = _frames(run['frames'], runPrefix, blockers, metricValues);
+    _validateCadence(samples, denominator.cadenceHz, runPrefix, blockers);
+    for (var sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
+      final sample = _map(
+        samples[sampleIndex],
+        '$runPrefix.samples[$sampleIndex]',
+        blockers,
+      );
+      _validateSample(
+        sample,
+        sampleIndex,
+        frames,
+        framePeriod: framePeriod,
+        requiresLiveStateZero: denominator.requiresLiveStateZero,
+        requiresOpen: denominator.requiresOpen,
+        prefix: '$runPrefix.sample[$sampleIndex]',
+        blockers: blockers,
+        metricValues: metricValues,
+      );
+    }
+    _validateMemory(
+      run['memory'],
+      sourceBytes,
+      runPrefix,
+      blockers,
+      metricValues,
+    );
+  }
+  if (denominator.processRule == DogfoodProcessRule.freshEveryRun &&
+      processIds.length != runs.length) {
+    blockers.add('$prefix fresh runs did not use distinct process identities');
+  }
+  if (denominator.processRule == DogfoodProcessRule.oneSharedProcess &&
+      processIds.length != 1) {
+    blockers.add('$prefix must use exactly one warmed process');
+  }
+}
+
+Map<int, Map<String, Object?>> _frames(
+  Object? value,
+  String prefix,
+  List<String> blockers,
+  Map<String, List<int>> metricValues,
+) {
+  final values = _list(value, '$prefix.frames', blockers);
+  final result = <int, Map<String, Object?>>{};
+  var previousVsync = -1;
+  for (var index = 0; index < values.length; index += 1) {
+    final frame = _map(values[index], '$prefix.frames[$index]', blockers);
+    final ordinal = _integer(
+      frame['ordinal'],
+      '$prefix.frames[$index].ordinal',
+      blockers,
+    );
+    if (ordinal != index) {
+      blockers.add('$prefix frame ordinals are not contiguous');
+    }
+    if (result.containsKey(ordinal)) {
+      blockers.add('$prefix has duplicate frame $ordinal');
+    }
+    result[ordinal] = frame;
+    final vsync = _integer(frame['vsyncMicros'], 'frame.vsyncMicros', blockers);
+    if (vsync <= previousVsync) {
+      blockers.add('$prefix frame vsync timestamps are not increasing');
+    }
+    previousVsync = vsync;
+    final build = _integer(frame['buildMicros'], 'frame.buildMicros', blockers);
+    final raster = _integer(
+      frame['rasterMicros'],
+      'frame.rasterMicros',
+      blockers,
+    );
+    final sync = _integer(
+      frame['editorSyncMicros'],
+      'frame.editorSyncMicros',
+      blockers,
+    );
+    if (frame['editorAttributed'] == true) {
+      metricValues['flutterFrameMicros']!.add(build + raster);
+      metricValues['editorSpanMicros']!.add(build + raster + sync);
+      if (frame['missed'] == true) {
+        blockers.add('$prefix frame $ordinal missed');
+      }
+      if (build + raster + sync >= _maxEditorSpanMicros) {
+        blockers.add('$prefix frame $ordinal exceeded the editor span budget');
+      }
+    }
+  }
+  return result;
+}
+
+void _validateSample(
+  Map<String, Object?> sample,
+  int expectedIndex,
+  Map<int, Map<String, Object?>> frames, {
+  required num framePeriod,
+  required bool requiresLiveStateZero,
+  required bool requiresOpen,
+  required String prefix,
+  required List<String> blockers,
+  required Map<String, List<int>> metricValues,
+}) {
+  if (sample['index'] != expectedIndex) blockers.add('$prefix has wrong index');
+  final accepted = _integer(
+    sample['acceptedMicros'],
+    '$prefix.acceptedMicros',
+    blockers,
+  );
+  final sourcePaint = _integer(
+    sample['sourcePaintMicros'],
+    '$prefix.sourcePaintMicros',
+    blockers,
+  );
+  final caretPaint = _integer(
+    sample['caretPaintMicros'],
+    '$prefix.caretPaintMicros',
+    blockers,
+  );
+  final selectionPaint = _integer(
+    sample['selectionPaintMicros'],
+    '$prefix.selectionPaintMicros',
+    blockers,
+  );
+  final visibility =
+      math.max(sourcePaint, math.max(caretPaint, selectionPaint)) - accepted;
+  metricValues['sourceToPaintMicros']!.add(visibility);
+  final visibilityBudget = math.min(_maxVisibilityMicros, framePeriod.round());
+  if (sourcePaint < accepted ||
+      caretPaint < accepted ||
+      selectionPaint < accepted ||
+      visibility > visibilityBudget) {
+    blockers.add(
+      '$prefix did not paint source/caret/selection by the next frame',
+    );
+  }
+  if (sample['sourceGeneration'] != sample['paintedSourceGeneration'] ||
+      sample['sourceIdentityMatched'] != true ||
+      sample['caretIdentityMatched'] != true ||
+      sample['selectionIdentityMatched'] != true) {
+    blockers.add('$prefix painted a torn source/selection generation');
+  }
+  for (final name in const ['sourceSha256', 'visibleSourceSha256']) {
+    final value = sample[name];
+    if (value is! String || !_shaPattern.hasMatch(value)) {
+      blockers.add('$prefix.$name must be a lowercase SHA-256');
+    }
+  }
+  final start = _integer(
+    sample['startFrameOrdinal'],
+    '$prefix.startFrameOrdinal',
+    blockers,
+  );
+  final end = _integer(
+    sample['endFrameOrdinal'],
+    '$prefix.endFrameOrdinal',
+    blockers,
+  );
+  final proving = _integer(
+    sample['provingFrameOrdinal'],
+    '$prefix.provingFrameOrdinal',
+    blockers,
+  );
+  if (start > proving || proving > end) {
+    blockers.add('$prefix proving frame is outside its interval');
+  }
+  for (var ordinal = start; ordinal <= end; ordinal += 1) {
+    if (!frames.containsKey(ordinal)) {
+      blockers.add('$prefix is missing frame $ordinal');
+    }
+  }
+  if (frames[proving] == null) {
+    blockers.add('$prefix proving frame does not exist');
+  }
+  final engine = _integer(
+    sample['engineMicros'],
+    '$prefix.engineMicros',
+    blockers,
+  );
+  final certification = _integer(
+    sample['visibleCertificationMicros'],
+    '$prefix.visibleCertificationMicros',
+    blockers,
+  );
+  metricValues['engineMicros']!.add(engine);
+  metricValues['visibleCertificationMicros']!.add(certification);
+  if (certification >= _maxCertificationMicros) {
+    blockers.add('$prefix certification exceeded 500 ms');
+  }
+  final open = sample['openToEditableMicros'];
+  if (requiresOpen && open == null) {
+    blockers.add('$prefix requires an open-to-editable measurement');
+  }
+  if (open != null) {
+    final openMicros = _integer(open, '$prefix.openToEditableMicros', blockers);
+    metricValues['openToEditableMicros']!.add(openMicros);
+    if (openMicros >= _maxOpenMicros) {
+      blockers.add('$prefix open exceeded 200 ms');
+    }
+  }
+  if (sample['rawProjectionFrames'] != 0) {
+    blockers.add('$prefix painted an undeclared raw projection');
+  }
+  if (sample['faulted'] != false || sample['resyncCount'] != 0) {
+    blockers.add('$prefix faulted or resynchronized');
+  }
+  if (requiresLiveStateZero) {
+    final live = _map(
+      sample['globalLiveState'],
+      '$prefix.globalLiveState',
+      blockers,
+    );
+    for (final name in const [
+      'sessions',
+      'transactions',
+      'continuations',
+      'anchors',
+      'historyTokens',
+    ]) {
+      if (live[name] != 0) blockers.add('$prefix leaked native $name');
+    }
+  }
+}
+
+void _validateCadence(
+  List<Object?> samples,
+  num cadenceHz,
+  String prefix,
+  List<String> blockers,
+) {
+  if (cadenceHz == 0 || samples.length < 2) return;
+  final first = _map(samples.first, '$prefix.samples[0]', blockers);
+  final firstScheduled = first['scheduledMicros'];
+  final firstAccepted = first['acceptedMicros'];
+  if (firstScheduled is! int || firstAccepted is! int) {
+    blockers.add('$prefix cadence samples require scheduledMicros');
+    return;
+  }
+  final acceptanceOffset = firstAccepted - firstScheduled;
+  for (var index = 0; index < samples.length; index += 1) {
+    final sample = _map(samples[index], '$prefix.samples[$index]', blockers);
+    final scheduled = sample['scheduledMicros'];
+    final accepted = sample['acceptedMicros'];
+    final expected =
+        firstScheduled + (index * _microsPerSecond / cadenceHz).round();
+    if (scheduled is! int || (scheduled - expected).abs() > 1) {
+      blockers.add(
+        '$prefix sample $index violates the ${cadenceHz}Hz schedule',
+      );
+    }
+    if (scheduled is int &&
+        (accepted is! int ||
+            (accepted - scheduled - acceptanceOffset).abs() > 1000)) {
+      blockers.add('$prefix sample $index was not accepted on schedule');
+    }
+  }
+}
+
+void _validateMemory(
+  Object? value,
+  int sourceBytes,
+  String prefix,
+  List<String> blockers,
+  Map<String, List<int>> metricValues,
+) {
+  final values = _list(value, '$prefix.memory', blockers);
+  final stages = <String, Map<String, Object?>>{};
+  for (final value in values) {
+    final sample = _map(value, '$prefix.memory[]', blockers);
+    final stage = sample['stage'];
+    if (stage is! String || stages.containsKey(stage)) {
+      blockers.add('$prefix memory stages must be unique');
+      continue;
+    }
+    stages[stage] = sample;
+  }
+  const required = ['baseline', 'peak', 'close', 'postClose'];
+  if (!stages.keys.toSet().containsAll(required)) {
+    blockers.add('$prefix memory receipt is incomplete');
+    return;
+  }
+  var priorTimestamp = -1;
+  for (final stage in required) {
+    final timestamp = _integer(
+      stages[stage]!['timestampMicros'],
+      '$prefix.memory.$stage.timestamp',
+      blockers,
+    );
+    if (timestamp < priorTimestamp) {
+      blockers.add('$prefix memory stages are out of order');
+    }
+    priorTimestamp = timestamp;
+  }
+  final baseline = _integer(
+    stages['baseline']!['rssBytes'],
+    '$prefix.memory.baseline.rss',
+    blockers,
+  );
+  final peak = _integer(
+    stages['peak']!['rssBytes'],
+    '$prefix.memory.peak.rss',
+    blockers,
+  );
+  final close = _integer(
+    stages['close']!['rssBytes'],
+    '$prefix.memory.close.rss',
+    blockers,
+  );
+  final postClose = _integer(
+    stages['postClose']!['rssBytes'],
+    '$prefix.memory.postClose.rss',
+    blockers,
+  );
+  if (peak < baseline || peak < close || peak < postClose) {
+    blockers.add('$prefix peak RSS is lower than another memory stage');
+  }
+  final peakDelta = peak - baseline;
+  final retainedDelta = math.max(0, postClose - baseline);
+  metricValues['peakRssDeltaBytes']!.add(peakDelta);
+  metricValues['retainedRssDeltaBytes']!.add(retainedDelta);
+  if (sourceBytes >= _largeSourceBytes) {
+    final peakBudget = math.max(64 * 1024 * 1024, sourceBytes * 8);
+    if (peakDelta > peakBudget) {
+      blockers.add('$prefix peak RSS exceeded $peakBudget bytes');
+    }
+    if (retainedDelta > _maxRetainedRssBytes) {
+      blockers.add('$prefix retained RSS exceeded 16 MiB');
+    }
+  }
+}
+
+Map<String, Object> _distribution(List<int> values) {
+  final sorted = [...values]..sort();
+  int percentile(int value) {
+    if (sorted.isEmpty) return 0;
+    final index = ((sorted.length * value + 99) ~/ 100 - 1).clamp(
+      0,
+      sorted.length - 1,
+    );
+    return sorted[index];
+  }
+
+  return {
+    'sampleCount': sorted.length,
+    'p50': percentile(50),
+    'p90': percentile(90),
+    'p99': percentile(99),
+    'max': sorted.isEmpty ? 0 : sorted.last,
+  };
+}
+
+int _percentile(List<int> values, int percentile) {
+  if (values.isEmpty) return 0;
+  final sorted = [...values]..sort();
+  final index = ((sorted.length * percentile + 99) ~/ 100 - 1).clamp(
+    0,
+    sorted.length - 1,
+  );
+  return sorted[index];
+}
+
+Map<String, Object?> _map(Object? value, String path, List<String> blockers) {
+  if (value is Map<String, Object?>) return value;
+  blockers.add('$path must be an object');
+  return <String, Object?>{};
+}
+
+List<Object?> _list(Object? value, String path, List<String> blockers) {
+  if (value is List<Object?>) return value;
+  blockers.add('$path must be an array');
+  return const [];
+}
+
+int _integer(Object? value, String path, List<String> blockers) {
+  if (value is int && value >= 0) return value;
+  blockers.add('$path must be a nonnegative integer');
+  return 0;
+}
+
+num _number(Object? value, String path, List<String> blockers) {
+  if (value is num && value > 0) return value;
+  blockers.add('$path must be positive');
+  return 0;
+}
+
+Future<void> _verifyFileIdentity(
+  Object? value,
+  String path,
+  List<String> blockers,
+) async {
+  final identity = _map(value, path, blockers);
+  final filePath = identity['path'];
+  if (filePath is! String || filePath.isEmpty) {
+    blockers.add('$path.path must be nonempty');
+    return;
+  }
+  final file = File(filePath);
+  if (!await file.exists()) {
+    blockers.add('$path file does not exist: $filePath');
+    return;
+  }
+  final bytes = await file.length();
+  final digest = (await sha256.bind(file.openRead()).first).toString();
+  if (identity['bytes'] != bytes || identity['sha256'] != digest) {
+    blockers.add('$path identity does not match $filePath');
+  }
+}
+
+Future<String> _git(
+  Directory repository,
+  List<String> arguments,
+  List<String> blockers,
+) async {
+  final result = await Process.run(
+    'git',
+    arguments,
+    workingDirectory: repository.path,
+  );
+  if (result.exitCode != 0) {
+    blockers.add('git ${arguments.join(' ')} failed');
+    return '';
+  }
+  return (result.stdout as String).trim();
+}
+
+bool _sameJson(Object? left, Object? right) =>
+    jsonEncode(left) == jsonEncode(right);
+
+Future<void> main(List<String> arguments) async {
+  if (arguments.length != 2) {
+    stderr.writeln(
+      'usage: dart run scripts/verify_v4_dogfood_receipt.dart '
+      '<repository> <dogfood-performance.json>',
+    );
+    exitCode = 64;
+    return;
+  }
+  try {
+    final decoded = jsonDecode(await File(arguments[1]).readAsString());
+    if (decoded is! Map<String, Object?>) {
+      throw const FormatException('receipt root must be an object');
+    }
+    final result = await verifyDogfoodPerformanceReceipt(
+      decoded,
+      repository: Directory(arguments[0]),
+    );
+    if (!result.passed) {
+      for (final blocker in result.blockers) {
+        stderr.writeln('dogfood-performance: $blocker');
+      }
+      throw StateError('${result.blockers.length} receipt blocker(s)');
+    }
+    stdout.writeln('dogfood-performance: PASS ${jsonEncode(result.metrics)}');
+  } on Object catch (error) {
+    stderr.writeln('dogfood-performance: FAIL $error');
+    exitCode = 1;
+  }
+}
