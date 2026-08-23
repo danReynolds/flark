@@ -31,9 +31,10 @@ void main() {
     expect((sealed['assessment']! as Map)['result'], 'PASS');
     expect(
       (result.metrics['sourceToPaintMicros']! as Map)['sampleCount'],
-      3045,
+      3040,
     );
-    expect((result.metrics['flutterFrameMicros']! as Map)['sampleCount'], 3045);
+    expect((result.metrics['flutterFrameMicros']! as Map)['sampleCount'], 3760);
+    expect((result.metrics['engineMicros']! as Map)['sampleCount'], 3760);
     expect((result.metrics['openToEditableMicros']! as Map)['sampleCount'], 25);
   });
 
@@ -130,7 +131,7 @@ void main() {
     );
     expect(
       inputResult.blockers.join('\n'),
-      contains('does not match its raw input observation'),
+      contains('does not match its raw input observations'),
     );
 
     final engineTampered = _copy(sealed);
@@ -167,23 +168,47 @@ Map<String, Object?> _validRawReceipt() {
       final paintObservations = <Map<String, Object?>>[];
       final engineObservations = <Map<String, Object?>>[];
       var frameOrdinal = 0;
-      var sourceGeneration = 1;
+      var sourceGeneration = denominator.requiresInput ? 1 : 0;
+      final structural = entry.key.endsWith('structural-burst');
       for (var warmup = 0; warmup < denominator.warmups; warmup += 1) {
         final accepted = 500000 + warmup * 20000;
+        final finalGeneration = sourceGeneration + (structural ? 1 : 0);
+        final finalFrame = frameOrdinal + (structural ? 1 : 0);
         warmups.add(
           _sample(
             index: warmup,
             accepted: accepted,
-            sourceGeneration: sourceGeneration,
-            frameOrdinal: frameOrdinal,
+            acceptedSourceGenerations: [
+              sourceGeneration,
+              if (structural) finalGeneration,
+            ],
+            sourceGeneration: finalGeneration,
+            frameOrdinal: finalFrame,
             requiresOpen: false,
           ),
         );
+        if (structural) {
+          _addRawObservations(
+            inputObservations: inputObservations,
+            paintObservations: paintObservations,
+            engineObservations: engineObservations,
+            accepted: accepted,
+            paintTimestamp: accepted + 50,
+            sourceGeneration: sourceGeneration,
+            frameOrdinal: frameOrdinal,
+            semanticsCurrent: false,
+            activeNeutralRowCount: 1,
+          );
+          frames.add(_frame(frameOrdinal, accepted, paintDelayMicros: 50));
+          frameOrdinal += 1;
+          sourceGeneration += 1;
+        }
         _addRawObservations(
           inputObservations: inputObservations,
           paintObservations: paintObservations,
           engineObservations: engineObservations,
-          accepted: accepted,
+          accepted: accepted + (structural ? 100 : 0),
+          paintTimestamp: accepted + 500,
           sourceGeneration: sourceGeneration,
           frameOrdinal: frameOrdinal,
         );
@@ -196,22 +221,45 @@ Map<String, Object?> _validRawReceipt() {
             ? null
             : (sample * 1000000 / denominator.cadenceHz).round();
         final accepted = 1000000 + (scheduled ?? sample * 20000);
+        final finalGeneration = sourceGeneration + (structural ? 1 : 0);
+        final finalFrame = frameOrdinal + (structural ? 1 : 0);
         samples.add(
           _sample(
             index: sample,
             scheduled: scheduled,
             accepted: accepted,
-            sourceGeneration: sourceGeneration,
-            frameOrdinal: frameOrdinal,
+            acceptedSourceGenerations: [
+              sourceGeneration,
+              if (structural) finalGeneration,
+            ],
+            sourceGeneration: finalGeneration,
+            frameOrdinal: finalFrame,
             requiresOpen: denominator.requiresOpen,
             requiresLiveStateZero: denominator.requiresLiveStateZero,
           ),
         );
+        if (structural) {
+          _addRawObservations(
+            inputObservations: inputObservations,
+            paintObservations: paintObservations,
+            engineObservations: engineObservations,
+            accepted: accepted,
+            paintTimestamp: accepted + 50,
+            sourceGeneration: sourceGeneration,
+            frameOrdinal: frameOrdinal,
+            semanticsCurrent: false,
+            activeNeutralRowCount: 1,
+          );
+          frames.add(_frame(frameOrdinal, accepted, paintDelayMicros: 50));
+          frameOrdinal += 1;
+          sourceGeneration += 1;
+        }
         _addRawObservations(
           inputObservations: inputObservations,
           paintObservations: paintObservations,
           engineObservations: engineObservations,
-          accepted: accepted,
+          accepted: accepted + (structural ? 100 : 0),
+          paintTimestamp: accepted + 500,
           sourceGeneration: sourceGeneration,
           frameOrdinal: frameOrdinal,
         );
@@ -304,6 +352,7 @@ Map<String, Object?> _validRawReceipt() {
 Map<String, Object?> _sample({
   required int index,
   required int accepted,
+  required List<int> acceptedSourceGenerations,
   required int sourceGeneration,
   required int frameOrdinal,
   required bool requiresOpen,
@@ -316,6 +365,7 @@ Map<String, Object?> _sample({
   'sourcePaintMicros': accepted + 500,
   'caretPaintMicros': accepted + 500,
   'selectionPaintMicros': accepted + 500,
+  'acceptedSourceGenerations': acceptedSourceGenerations,
   'sourceGeneration': sourceGeneration,
   'paintedSourceGeneration': sourceGeneration,
   'sourceSha256': _hash('a'),
@@ -345,9 +395,13 @@ Map<String, Object?> _sample({
     },
 };
 
-Map<String, Object?> _frame(int ordinal, int accepted) => {
+Map<String, Object?> _frame(
+  int ordinal,
+  int accepted, {
+  int paintDelayMicros = 500,
+}) => {
   'ordinal': ordinal,
-  'vsyncMicros': accepted + 500,
+  'vsyncMicros': accepted + paintDelayMicros,
   'buildMicros': 1000,
   'rasterMicros': 1000,
   'editorSyncMicros': 100,
@@ -360,8 +414,11 @@ void _addRawObservations({
   required List<Map<String, Object?>> paintObservations,
   required List<Map<String, Object?>> engineObservations,
   required int accepted,
+  required int paintTimestamp,
   required int sourceGeneration,
   required int frameOrdinal,
+  bool semanticsCurrent = true,
+  int activeNeutralRowCount = 0,
 }) {
   inputObservations.add({
     'sourceGeneration': sourceGeneration,
@@ -372,7 +429,7 @@ void _addRawObservations({
     'canonicalSelectionExtentUtf16': sourceGeneration,
   });
   paintObservations.add({
-    'timestampMicros': accepted + 500,
+    'timestampMicros': paintTimestamp,
     'frameOrdinal': frameOrdinal,
     'sourceGeneration': sourceGeneration,
     'visibleSourceSha256': _hash('b'),
@@ -383,8 +440,8 @@ void _addRawObservations({
     'expectedSelectionExtentUtf16': sourceGeneration,
     'caretSourceUtf16': sourceGeneration,
     'caretDisplayUtf16': 1,
-    'semanticsCurrent': true,
-    'activeNeutralRowCount': 0,
+    'semanticsCurrent': semanticsCurrent,
+    'activeNeutralRowCount': activeNeutralRowCount,
   });
   engineObservations.add({
     'sourceGeneration': sourceGeneration,
@@ -407,7 +464,10 @@ List<Map<String, Object?>> _cells(Map<String, Object?> receipt) =>
     (receipt['cells']! as List).cast<Map<String, Object?>>();
 
 Map<String, Object?> _firstSample(Map<String, Object?> receipt) {
-  final run = _firstRun(receipt);
+  final cell = _cells(
+    receipt,
+  ).firstWhere((candidate) => candidate['id'] == 'product-tour-typing');
+  final run = ((cell['runs']! as List).first as Map).cast<String, Object?>();
   return (run['samples']! as List).first as Map<String, Object?>;
 }
 

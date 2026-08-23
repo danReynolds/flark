@@ -272,15 +272,7 @@ func scrollDown(deltaY: Int, in window: (origin: CGPoint, size: CGSize, number: 
 func typeText(_ value: String, intervalMicros: Int) {
   let started = DispatchTime.now().uptimeNanoseconds
   for (index, character) in value.enumerated() {
-    if index > 0 && intervalMicros > 0 {
-      let target = started + UInt64(index * intervalMicros) * 1_000
-      while true {
-        let now = DispatchTime.now().uptimeNanoseconds
-        if now >= target { break }
-        let remaining = target - now
-        pause(microseconds: Int(min(remaining / 1_000, 2_000)))
-      }
-    }
+    waitForSchedule(started: started, index: index, intervalMicros: intervalMicros)
     var units = Array(String(character).utf16)
     let down = CGEvent(
       keyboardEventSource: eventSource,
@@ -306,6 +298,38 @@ func typeText(_ value: String, intervalMicros: Int) {
       )
     }
     up.post(tap: .cghidEventTap)
+  }
+}
+
+func waitForSchedule(
+  started: UInt64,
+  index: Int,
+  intervalMicros: Int
+) {
+  if index == 0 || intervalMicros == 0 { return }
+  let target = started + UInt64(index * intervalMicros) * 1_000
+  while true {
+    let now = DispatchTime.now().uptimeNanoseconds
+    if now >= target { return }
+    let remaining = target - now
+    pause(microseconds: Int(min(remaining / 1_000, 2_000)))
+  }
+}
+
+func repeatKey(_ name: String, count: Int, intervalMicros: Int) throws {
+  let started = DispatchTime.now().uptimeNanoseconds
+  for index in 0..<count {
+    waitForSchedule(started: started, index: index, intervalMicros: intervalMicros)
+    try postKey(named: name)
+  }
+}
+
+func typeStructuralBursts(count: Int, intervalMicros: Int) throws {
+  let started = DispatchTime.now().uptimeNanoseconds
+  for index in 0..<count {
+    waitForSchedule(started: started, index: index, intervalMicros: intervalMicros)
+    try postKey(named: "enter")
+    typeText("x", intervalMicros: 0)
   }
 }
 
@@ -626,6 +650,35 @@ while !shouldStop, let line = readLine() {
       )
     case "closeSession":
       response["snapshot"] = try appRequest(operation: "closeSession")
+    case "repeatKey":
+      _ = try focusWindow(
+        pid: appPID,
+        width: arguments["windowWidth"] as? Int ?? 800,
+        height: arguments["windowHeight"] as? Int ?? 632
+      )
+      try verifyExpectedSelection(arguments)
+      try repeatKey(
+        try string(arguments["key"], "key"),
+        count: try integer(arguments["count"], "count"),
+        intervalMicros: try integer(
+          arguments["cadenceMicros"],
+          "cadenceMicros"
+        )
+      )
+    case "structuralBursts":
+      _ = try focusWindow(
+        pid: appPID,
+        width: arguments["windowWidth"] as? Int ?? 800,
+        height: arguments["windowHeight"] as? Int ?? 632
+      )
+      try verifyExpectedSelection(arguments)
+      try typeStructuralBursts(
+        count: try integer(arguments["count"], "count"),
+        intervalMicros: try integer(
+          arguments["cadenceMicros"],
+          "cadenceMicros"
+        )
+      )
     case "key":
       _ = try focusWindow(
         pid: appPID,

@@ -36,6 +36,7 @@ final class DogfoodCellDenominator {
     this.processRule = DogfoodProcessRule.any,
     this.requiresLiveStateZero = false,
     this.requiresOpen = false,
+    this.requiresInput = true,
   });
 
   final int warmups;
@@ -45,6 +46,7 @@ final class DogfoodCellDenominator {
   final DogfoodProcessRule processRule;
   final bool requiresLiveStateZero;
   final bool requiresOpen;
+  final bool requiresInput;
 }
 
 const requiredDogfoodCells = <String, DogfoodCellDenominator>{
@@ -55,6 +57,7 @@ const requiredDogfoodCells = <String, DogfoodCellDenominator>{
     cadenceHz: 0,
     processRule: DogfoodProcessRule.freshEveryRun,
     requiresOpen: true,
+    requiresInput: false,
   ),
   'product-tour-typing': DogfoodCellDenominator(
     warmups: 20,
@@ -504,16 +507,19 @@ void _validateCell(
       run['inputObservations'],
       '$runPrefix.inputObservations',
       blockers,
+      allowZero: !denominator.requiresInput,
     );
     final engineObservations = _observationsByGeneration(
       run['engineObservations'],
       '$runPrefix.engineObservations',
       blockers,
+      allowZero: !denominator.requiresInput,
     );
     final paintObservations = _paintObservationsByGeneration(
       run['paintObservations'],
       '$runPrefix.paintObservations',
       blockers,
+      allowZero: !denominator.requiresInput,
     );
     final declared = <Map<String, Object?>>[
       for (var index = 0; index < warmups.length; index += 1)
@@ -523,19 +529,20 @@ void _validateCell(
     ];
     final declaredGenerations = <int>{};
     for (var index = 0; index < declared.length; index += 1) {
-      final generation = _integer(
-        declared[index]['sourceGeneration'],
-        '$runPrefix.declared[$index].sourceGeneration',
+      for (final generation in _acceptedGenerations(
+        declared[index],
+        '$runPrefix.declared[$index]',
         blockers,
-      );
-      if (generation == 0 || !declaredGenerations.add(generation)) {
-        blockers.add('$runPrefix declared source generations must be unique');
+        allowZero: !denominator.requiresInput,
+      )) {
+        if (!declaredGenerations.add(generation)) {
+          blockers.add('$runPrefix declared source generations must be unique');
+        }
       }
     }
     for (final entry in <String, Set<int>>{
       'input': inputObservations.keys.toSet(),
       'engine': engineObservations.keys.toSet(),
-      'paint': paintObservations.keys.toSet(),
     }.entries) {
       if (!entry.value.containsAll(declaredGenerations) ||
           !declaredGenerations.containsAll(entry.value)) {
@@ -545,18 +552,44 @@ void _validateCell(
         );
       }
     }
+    final paintedGenerations = paintObservations.keys.toSet();
+    if (!declaredGenerations.containsAll(paintedGenerations)) {
+      blockers.add('$runPrefix paints contain an undeclared source generation');
+    }
+    for (var index = 0; index < declared.length; index += 1) {
+      final finalGeneration = declared[index]['sourceGeneration'];
+      if (finalGeneration is! int ||
+          !paintObservations.containsKey(finalGeneration)) {
+        blockers.add(
+          '$runPrefix declared[$index] has no final-generation paint',
+        );
+      }
+    }
     for (var warmupIndex = 0; warmupIndex < warmups.length; warmupIndex += 1) {
       final sample = declared[warmupIndex];
-      final generation = sample['sourceGeneration'] as int? ?? 0;
+      final generations = _acceptedGenerations(
+        sample,
+        '$runPrefix.warmup[$warmupIndex]',
+        blockers,
+        allowZero: !denominator.requiresInput,
+      );
       _validateSample(
         sample,
         warmupIndex,
         frames,
-        rawInput: inputObservations[generation],
-        rawEngine: engineObservations[generation],
-        rawPaints: paintObservations[generation] ?? const [],
+        rawInputs: [
+          for (final generation in generations) inputObservations[generation],
+        ],
+        rawEngines: [
+          for (final generation in generations) engineObservations[generation],
+        ],
+        rawPaints: [
+          for (final generation in generations)
+            ...paintObservations[generation] ?? const [],
+        ],
         nextAcceptedMicros: _nextAcceptedMicros(declared, warmupIndex),
         collectMetrics: false,
+        requiresInput: denominator.requiresInput,
         measuredFrameOrdinals: measuredFrameOrdinals,
         framePeriod: framePeriod,
         requiresLiveStateZero: false,
@@ -570,16 +603,29 @@ void _validateCell(
     for (var sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
       final declaredIndex = warmups.length + sampleIndex;
       final sample = declared[declaredIndex];
-      final generation = sample['sourceGeneration'] as int? ?? 0;
+      final generations = _acceptedGenerations(
+        sample,
+        '$runPrefix.sample[$sampleIndex]',
+        blockers,
+        allowZero: !denominator.requiresInput,
+      );
       _validateSample(
         sample,
         sampleIndex,
         frames,
-        rawInput: inputObservations[generation],
-        rawEngine: engineObservations[generation],
-        rawPaints: paintObservations[generation] ?? const [],
+        rawInputs: [
+          for (final generation in generations) inputObservations[generation],
+        ],
+        rawEngines: [
+          for (final generation in generations) engineObservations[generation],
+        ],
+        rawPaints: [
+          for (final generation in generations)
+            ...paintObservations[generation] ?? const [],
+        ],
         nextAcceptedMicros: _nextAcceptedMicros(declared, declaredIndex),
         collectMetrics: true,
+        requiresInput: denominator.requiresInput,
         measuredFrameOrdinals: measuredFrameOrdinals,
         framePeriod: framePeriod,
         requiresLiveStateZero: denominator.requiresLiveStateZero,
@@ -619,11 +665,43 @@ int? _nextAcceptedMicros(List<Map<String, Object?>> declared, int index) =>
     ? null
     : declared[index + 1]['acceptedMicros'] as int?;
 
+List<int> _acceptedGenerations(
+  Map<String, Object?> sample,
+  String prefix,
+  List<String> blockers, {
+  bool allowZero = false,
+}) {
+  final values = _list(
+    sample['acceptedSourceGenerations'],
+    '$prefix.acceptedSourceGenerations',
+    blockers,
+  );
+  final result = <int>[];
+  var previous = -1;
+  for (var index = 0; index < values.length; index += 1) {
+    final generation = _integer(
+      values[index],
+      '$prefix.acceptedSourceGenerations[$index]',
+      blockers,
+    );
+    if ((!allowZero && generation == 0) || generation <= previous) {
+      blockers.add('$prefix accepted source generations are not increasing');
+    }
+    result.add(generation);
+    previous = generation;
+  }
+  if (result.isEmpty || sample['sourceGeneration'] != result.last) {
+    blockers.add('$prefix final source generation does not match its sequence');
+  }
+  return result;
+}
+
 Map<int, Map<String, Object?>> _observationsByGeneration(
   Object? value,
   String prefix,
-  List<String> blockers,
-) {
+  List<String> blockers, {
+  bool allowZero = false,
+}) {
   final values = _list(value, prefix, blockers);
   final result = <int, Map<String, Object?>>{};
   for (var index = 0; index < values.length; index += 1) {
@@ -633,7 +711,7 @@ Map<int, Map<String, Object?>> _observationsByGeneration(
       '$prefix[$index].sourceGeneration',
       blockers,
     );
-    if (generation == 0 || result.containsKey(generation)) {
+    if ((!allowZero && generation == 0) || result.containsKey(generation)) {
       blockers.add('$prefix has a duplicate or zero source generation');
       continue;
     }
@@ -645,8 +723,9 @@ Map<int, Map<String, Object?>> _observationsByGeneration(
 Map<int, List<Map<String, Object?>>> _paintObservationsByGeneration(
   Object? value,
   String prefix,
-  List<String> blockers,
-) {
+  List<String> blockers, {
+  bool allowZero = false,
+}) {
   final values = _list(value, prefix, blockers);
   final result = <int, List<Map<String, Object?>>>{};
   var previousTimestamp = -1;
@@ -662,7 +741,7 @@ Map<int, List<Map<String, Object?>>> _paintObservationsByGeneration(
       '$prefix[$index].timestampMicros',
       blockers,
     );
-    if (generation == 0) {
+    if (!allowZero && generation == 0) {
       blockers.add('$prefix[$index] has a zero source generation');
       continue;
     }
@@ -752,11 +831,12 @@ void _validateSample(
   Map<String, Object?> sample,
   int expectedIndex,
   Map<int, Map<String, Object?>> frames, {
-  required Map<String, Object?>? rawInput,
-  required Map<String, Object?>? rawEngine,
+  required List<Map<String, Object?>?> rawInputs,
+  required List<Map<String, Object?>?> rawEngines,
   required List<Map<String, Object?>> rawPaints,
   required int? nextAcceptedMicros,
   required bool collectMetrics,
+  required bool requiresInput,
   required Set<int> measuredFrameOrdinals,
   required num framePeriod,
   required bool requiresLiveStateZero,
@@ -770,6 +850,12 @@ void _validateSample(
     sample['sourceGeneration'],
     '$prefix.sourceGeneration',
     blockers,
+  );
+  final acceptedGenerations = _acceptedGenerations(
+    sample,
+    prefix,
+    blockers,
+    allowZero: !requiresInput,
   );
   final accepted = _integer(
     sample['acceptedMicros'],
@@ -793,12 +879,14 @@ void _validateSample(
   );
   final visibility =
       math.max(sourcePaint, math.max(caretPaint, selectionPaint)) - accepted;
-  if (collectMetrics) metricValues['sourceToPaintMicros']!.add(visibility);
+  if (collectMetrics && requiresInput) {
+    metricValues['sourceToPaintMicros']!.add(visibility);
+  }
   final visibilityBudget = math.min(_maxVisibilityMicros, framePeriod.round());
   if (sourcePaint < accepted ||
       caretPaint < accepted ||
       selectionPaint < accepted ||
-      visibility > visibilityBudget) {
+      (requiresInput && visibility > visibilityBudget)) {
     blockers.add(
       '$prefix did not paint source/caret/selection by the next frame',
     );
@@ -815,23 +903,34 @@ void _validateSample(
       blockers.add('$prefix.$name must be a lowercase SHA-256');
     }
   }
-  if (rawInput == null) {
-    blockers.add('$prefix has no raw input observation');
-  } else {
+  final presentInputs = rawInputs.whereType<Map<String, Object?>>().toList();
+  if (presentInputs.length != acceptedGenerations.length) {
+    blockers.add('$prefix does not have one raw input per accepted generation');
+  }
+  presentInputs.sort(
+    (left, right) => (left['sourceGeneration']! as int).compareTo(
+      right['sourceGeneration']! as int,
+    ),
+  );
+  for (var index = 0; index < presentInputs.length; index += 1) {
     _integer(
-      rawInput['editorSyncMicros'],
-      '$prefix.rawInput.editorSyncMicros',
+      presentInputs[index]['editorSyncMicros'],
+      '$prefix.rawInput[$index].editorSyncMicros',
       blockers,
     );
-    if (rawInput['acceptedMicros'] != accepted ||
-        rawInput['sourceGeneration'] != generation ||
-        rawInput['sourceSha256'] != sample['sourceSha256'] ||
-        rawInput['canonicalSelectionBaseUtf16'] !=
-            sample['canonicalSelectionBaseUtf16'] ||
-        rawInput['canonicalSelectionExtentUtf16'] !=
-            sample['canonicalSelectionExtentUtf16']) {
-      blockers.add('$prefix does not match its raw input observation');
-    }
+  }
+  final firstInput = presentInputs.isEmpty ? null : presentInputs.first;
+  final finalInput = presentInputs.isEmpty ? null : presentInputs.last;
+  if (firstInput == null || finalInput == null) {
+    blockers.add('$prefix has no raw input observation');
+  } else if (firstInput['acceptedMicros'] != accepted ||
+      finalInput['sourceGeneration'] != generation ||
+      finalInput['sourceSha256'] != sample['sourceSha256'] ||
+      finalInput['canonicalSelectionBaseUtf16'] !=
+          sample['canonicalSelectionBaseUtf16'] ||
+      finalInput['canonicalSelectionExtentUtf16'] !=
+          sample['canonicalSelectionExtentUtf16']) {
+    blockers.add('$prefix does not match its raw input observations');
   }
 
   final orderedPaints = [...rawPaints]
@@ -843,7 +942,14 @@ void _validateSample(
   if (orderedPaints.isEmpty) {
     blockers.add('$prefix has no raw paint observation');
   } else {
-    final firstPaint = orderedPaints.first;
+    final finalPaints = orderedPaints
+        .where((paint) => paint['sourceGeneration'] == generation)
+        .toList();
+    if (finalPaints.isEmpty) {
+      blockers.add('$prefix has no final-generation paint observation');
+      return;
+    }
+    final firstPaint = finalPaints.first;
     final firstTimestamp = _integer(
       firstPaint['timestampMicros'],
       '$prefix.rawPaint.timestampMicros',
@@ -883,11 +989,13 @@ void _validateSample(
           '$prefix raw paint references missing frame $frameOrdinal',
         );
       }
-      if (collectMetrics) measuredFrameOrdinals.add(frameOrdinal);
+      if (collectMetrics && requiresInput) {
+        measuredFrameOrdinals.add(frameOrdinal);
+      }
       final expectedBase = paint['expectedSelectionBaseUtf16'];
       final expectedExtent = paint['expectedSelectionExtentUtf16'];
       final collapsed = expectedBase == expectedExtent;
-      if (paint['sourceGeneration'] != generation ||
+      if (!acceptedGenerations.contains(paint['sourceGeneration']) ||
           paint['visibleSourceSha256'] !=
               paint['expectedVisibleSourceSha256'] ||
           paint['canonicalSelectionBaseUtf16'] != expectedBase ||
@@ -902,8 +1010,11 @@ void _validateSample(
         '$prefix.rawPaint[$paintIndex].activeNeutralRowCount',
         blockers,
       );
-      if (neutral > 0) rawProjectionFrames += 1;
-      if (paint['semanticsCurrent'] == true) {
+      if (paint['sourceGeneration'] == generation && neutral > 0) {
+        rawProjectionFrames += 1;
+      }
+      if (paint['sourceGeneration'] == generation &&
+          paint['semanticsCurrent'] == true) {
         certificationTimestamp ??= timestamp;
       }
     }
@@ -951,9 +1062,9 @@ void _validateSample(
   }
   if (frames[proving] == null) {
     blockers.add('$prefix proving frame does not exist');
-  } else if (rawInput != null) {
+  } else if (finalInput != null) {
     final rawEditorSync = _integer(
-      rawInput['editorSyncMicros'],
+      finalInput['editorSyncMicros'],
       '$prefix.rawInput.editorSyncMicros',
       blockers,
     );
@@ -976,21 +1087,26 @@ void _validateSample(
     '$prefix.visibleCertificationMicros',
     blockers,
   );
-  if (rawEngine == null) {
-    blockers.add('$prefix has no raw engine observation');
-  } else {
-    final rawNativeFfi = _integer(
-      rawEngine['nativeFfiMicros'],
-      '$prefix.rawEngine.nativeFfiMicros',
-      blockers,
-    );
-    if (rawEngine['sourceGeneration'] != generation ||
-        rawNativeFfi != engineMicros) {
-      blockers.add('$prefix engine timing does not replay');
-    }
+  final presentEngines = rawEngines.whereType<Map<String, Object?>>().toList();
+  if (presentEngines.length != acceptedGenerations.length) {
+    blockers.add('$prefix does not have one engine receipt per generation');
   }
-  if (collectMetrics) {
-    metricValues['engineMicros']!.add(engineMicros);
+  final rawNativeFfiMicros = <int>[];
+  for (var index = 0; index < presentEngines.length; index += 1) {
+    rawNativeFfiMicros.add(
+      _integer(
+        presentEngines[index]['nativeFfiMicros'],
+        '$prefix.rawEngine[$index].nativeFfiMicros',
+        blockers,
+      ),
+    );
+  }
+  if (rawNativeFfiMicros.isEmpty ||
+      rawNativeFfiMicros.reduce(math.max) != engineMicros) {
+    blockers.add('$prefix engine timing does not replay');
+  }
+  if (collectMetrics && requiresInput) {
+    metricValues['engineMicros']!.addAll(rawNativeFfiMicros);
     metricValues['visibleCertificationMicros']!.add(certification);
   }
   if (certification >= _maxCertificationMicros) {

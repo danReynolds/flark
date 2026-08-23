@@ -174,7 +174,7 @@
       "additionalProperties": false,
       "required": ["sourceGeneration", "acceptedMicros", "editorSyncMicros", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16"],
       "properties": {
-        "sourceGeneration": {"type": "integer", "minimum": 1},
+        "sourceGeneration": {"type": "integer", "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "editorSyncMicros": {"type": "integer", "minimum": 0},
         "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -189,7 +189,7 @@
       "properties": {
         "timestampMicros": {"type": "integer", "minimum": 0},
         "frameOrdinal": {"type": "integer", "minimum": 0},
-        "sourceGeneration": {"type": "integer", "minimum": 1},
+        "sourceGeneration": {"type": "integer", "minimum": 0},
         "visibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "expectedVisibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "canonicalSelectionBaseUtf16": {"type": "integer", "minimum": 0},
@@ -207,7 +207,7 @@
       "additionalProperties": false,
       "required": ["sourceGeneration", "nativeFfiMicros"],
       "properties": {
-        "sourceGeneration": {"type": "integer", "minimum": 1},
+        "sourceGeneration": {"type": "integer", "minimum": 0},
         "nativeFfiMicros": {"type": "integer", "minimum": 0}
       }
     },
@@ -220,6 +220,7 @@
         "sourcePaintMicros",
         "caretPaintMicros",
         "selectionPaintMicros",
+        "acceptedSourceGenerations",
         "sourceGeneration",
         "paintedSourceGeneration",
         "sourceSha256",
@@ -246,6 +247,12 @@
         "sourcePaintMicros": {"type": "integer", "minimum": 0},
         "caretPaintMicros": {"type": "integer", "minimum": 0},
         "selectionPaintMicros": {"type": "integer", "minimum": 0},
+        "acceptedSourceGenerations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 0}
+        },
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "paintedSourceGeneration": {"type": "integer", "minimum": 0},
         "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

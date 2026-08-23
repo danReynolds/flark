@@ -419,6 +419,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     _commandError = null;
     final receipt = <String, Object?>{
       'schemaVersion': 5,
+      'receiptEpochMicros': DateTime.now().microsecondsSinceEpoch,
       'canaryId': _canaryId,
       'commandSequence': commandSequence,
       'commandError': null,
@@ -478,6 +479,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     final taskGeometry = _taskActionGeometry;
     final receipt = <String, Object?>{
       'schemaVersion': 5,
+      'receiptEpochMicros': DateTime.now().microsecondsSinceEpoch,
       'processLaunchEpochMicros': mode.processLaunchEpochMicros,
       'canaryId': _canaryId,
       'commandSequence': _commandSequence,

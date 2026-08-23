@@ -33,6 +33,8 @@ final class MacosNativeCanarySnapshot {
     required this.currentRssBytes,
     required this.maximumRssBytes,
     required this.display,
+    required this.appProcessId,
+    required this.receiptEpochMicros,
   });
 
   final String source;
@@ -64,6 +66,8 @@ final class MacosNativeCanarySnapshot {
   final int currentRssBytes;
   final int maximumRssBytes;
   final Map<String, Object?> display;
+  final int appProcessId;
+  final int receiptEpochMicros;
 }
 
 /// Thin actuator for the few macOS facts that headless Flutter cannot prove:
@@ -177,6 +181,26 @@ final class MacosNativeCanaryDriver {
 
   Future<void> pressKey(String key) =>
       _request('key', {'key': key, ..._expectedSelectionArguments()});
+
+  Future<void> repeatKey(
+    String key, {
+    required int count,
+    required Duration cadence,
+  }) => _request('repeatKey', {
+    'key': key,
+    'count': count,
+    'cadenceMicros': cadence.inMicroseconds,
+    ..._expectedSelectionArguments(),
+  });
+
+  Future<void> typeStructuralBursts({
+    required int count,
+    required Duration cadence,
+  }) => _request('structuralBursts', {
+    'count': count,
+    'cadenceMicros': cadence.inMicroseconds,
+    ..._expectedSelectionArguments(),
+  });
 
   Map<String, Object?> _expectedSelectionArguments() {
     final snapshot = _lastRawSnapshot;
@@ -341,11 +365,7 @@ final class MacosNativeCanaryDriver {
                   List<String>.unmodifiable((styles as List).cast<String>()),
             ),
       ),
-      paintReceipts: _objects(
-        json,
-        'paintReceipts',
-        skip: _paintReceiptStart,
-      ),
+      paintReceipts: _objects(json, 'paintReceipts', skip: _paintReceiptStart),
       frameTimingReceipts: _objects(
         json,
         'frameTimingReceipts',
@@ -370,6 +390,8 @@ final class MacosNativeCanaryDriver {
       display: Map<String, Object?>.unmodifiable(
         (json['display']! as Map).cast<String, Object?>(),
       ),
+      appProcessId: response['appPid']! as int,
+      receiptEpochMicros: json['receiptEpochMicros']! as int,
     );
   }
 
@@ -377,12 +399,13 @@ final class MacosNativeCanaryDriver {
     Map<String, Object?> json,
     String name, {
     int skip = 0,
-  }
-  ) => List<Map<String, Object?>>.unmodifiable(
-    (json[name]! as List).skip(skip).map(
-      (value) => Map<String, Object?>.unmodifiable(
-        (value as Map).cast<String, Object?>(),
-      ),
-    ),
+  }) => List<Map<String, Object?>>.unmodifiable(
+    (json[name]! as List)
+        .skip(skip)
+        .map(
+          (value) => Map<String, Object?>.unmodifiable(
+            (value as Map).cast<String, Object?>(),
+          ),
+        ),
   );
 }
