@@ -234,6 +234,29 @@ Future<_ProfileRunResult> _runCell({
           count: total,
           cadence: _profileCadence,
         );
+      case 'ordinary-1m-paste-32kib':
+        final offset =
+            initialSource.indexOf('This is ordinary') +
+            'This is ordinary'.length;
+        baseline = await driver.activateAtUtf16(
+          offset,
+          windowWidth: _windowWidth,
+          windowHeight: _windowHeight,
+        );
+        final paste = List.filled(32 * 1024, 'p').join();
+        expected = _pasteUndoExpectations(
+          source: baseline.source,
+          caret: offset,
+          paste: paste,
+          firstGeneration: baseline.sourceGeneration + 1,
+          count: total,
+        );
+        for (var operation = 0; operation < total; operation += 1) {
+          await driver.pasteText(paste);
+          await driver.settle();
+          await driver.pressKey('undo');
+          await driver.settle();
+        }
       default:
         throw UnsupportedError(
           '$cellId needs its history/scale journey telemetry before D0',
@@ -373,6 +396,34 @@ List<_ExpectedSample> _structuralExpectations({
   return result;
 }
 
+List<_ExpectedSample> _pasteUndoExpectations({
+  required String source,
+  required int caret,
+  required String paste,
+  required int firstGeneration,
+  required int count,
+}) => [
+  for (var index = 0; index < count; index += 1)
+    _ExpectedSample(
+      index: index,
+      generations: [
+        _ExpectedGeneration(
+          generation: firstGeneration + index * 2,
+          source: source.replaceRange(caret, caret, paste),
+          selectionBase: caret + paste.length,
+          selectionExtent: caret + paste.length,
+        ),
+        _ExpectedGeneration(
+          generation: firstGeneration + index * 2 + 1,
+          source: source,
+          selectionBase: caret,
+          selectionExtent: caret,
+        ),
+      ],
+      scheduledMicros: null,
+    ),
+];
+
 String _alternatingText(int count) =>
     List.generate(count, (index) => index.isEven ? 'x' : 'y').join();
 
@@ -428,6 +479,10 @@ Map<String, Object?> _buildMeasuredRun({
     settled.inputEvents,
     settled.semanticEditPerformanceReceipts,
   );
+  final historyInputs = _historyInputEvents(
+    settled.inputEvents,
+    settled.sourceEditPerformanceReceipts,
+  );
   final performanceByGeneration = <int, Map<String, Object?>>{
     for (final receipt in settled.sourceEditPerformanceReceipts)
       receipt['sourceGeneration']! as int: receipt,
@@ -450,7 +505,10 @@ Map<String, Object?> _buildMeasuredRun({
       engineObservations.add({'sourceGeneration': 0, 'nativeFfiMicros': 0});
       continue;
     }
-    final input = ordinaryInputs[generation] ?? semanticInputs[generation];
+    final input =
+        ordinaryInputs[generation] ??
+        semanticInputs[generation] ??
+        historyInputs[generation];
     if (input == null) {
       throw StateError('generation $generation has no acceptance event');
     }
@@ -797,6 +855,51 @@ Map<int, (int, int)> _semanticInputEvents(
       orderedReceipts[index]['sourceGeneration']! as int: (
         actionEpochs[index],
         orderedReceipts[index]['platformCallbackMicros']! as int,
+      ),
+  };
+}
+
+Map<int, (int, int)> _historyInputEvents(
+  List<String> events,
+  List<Map<String, Object?>> receipts,
+) {
+  final shortcuts = <(int, String)>[];
+  final pattern = RegExp(r'^(\d+):shortcut:(undo|redo)$');
+  for (final event in events) {
+    final match = pattern.firstMatch(event);
+    if (match == null) continue;
+    shortcuts.add((int.parse(match.group(1)!), match.group(2)!));
+  }
+  final historyReceipts =
+      receipts
+          .where(
+            (receipt) => receipt['kind'] == 'undo' || receipt['kind'] == 'redo',
+          )
+          .toList()
+        ..sort(
+          (left, right) => (left['sourceGeneration']! as int).compareTo(
+            right['sourceGeneration']! as int,
+          ),
+        );
+  if (shortcuts.length != historyReceipts.length) {
+    throw StateError(
+      'history shortcuts (${shortcuts.length}) do not match receipts '
+      '(${historyReceipts.length})',
+    );
+  }
+  for (var index = 0; index < historyReceipts.length; index += 1) {
+    if (historyReceipts[index]['kind'] != shortcuts[index].$2) {
+      throw StateError(
+        'history shortcut ${shortcuts[index].$2} does not match '
+        'receipt ${historyReceipts[index]['kind']}',
+      );
+    }
+  }
+  return {
+    for (var index = 0; index < historyReceipts.length; index += 1)
+      historyReceipts[index]['sourceGeneration']! as int: (
+        shortcuts[index].$1,
+        0,
       ),
   };
 }

@@ -114,6 +114,12 @@ void main() {
 
           final outcome = await session.undo();
           expect(outcome, isA<FlarkCoreHistoryReplayed>());
+          final undoReceipt = (outcome! as FlarkCoreHistoryReplayed).receipt;
+          expect(undoReceipt.telemetry, isNotNull);
+          expect(
+            undoReceipt.telemetry!.workerRoundTripMicros,
+            greaterThanOrEqualTo(undoReceipt.telemetry!.nativeFfiMicros),
+          );
           expect(outcome!.restoreSelection.extent, 0);
           expect(await document.readSource(), 'base\n');
           expect((await session.resolveSelection())!.extent, 0);
@@ -122,6 +128,10 @@ void main() {
 
           final redone = await session.redo();
           expect(redone, isA<FlarkCoreHistoryReplayed>());
+          expect(
+            (redone! as FlarkCoreHistoryReplayed).receipt.telemetry,
+            isNotNull,
+          );
           expect(redone!.restoreSelection.extent, 3);
           expect(await document.readSource(), 'abcbase\n');
           expect((await session.resolveSelection())!.extent, 3);

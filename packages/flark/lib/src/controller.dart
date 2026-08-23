@@ -355,13 +355,16 @@ final class FlarkSemanticEditPerformance {
   final int callbackToReceiptMicros;
 }
 
-/// Layer attribution for a committed ordinary source transaction.
+/// Layer attribution for a committed source or history transaction.
 ///
 /// This bounded diagnostic stream is consumed by the D0 profile harness. It
 /// observes the existing source-authoritative command path and does not
 /// participate in editing or presentation authority.
+enum FlarkSourceEditPerformanceKind { source, undo, redo }
+
 final class FlarkSourceEditPerformance {
   const FlarkSourceEditPerformance({
+    required this.kind,
     required this.sourceGeneration,
     required this.coreQueueMicros,
     required this.workerRoundTripMicros,
@@ -372,6 +375,7 @@ final class FlarkSourceEditPerformance {
     required this.acceptanceToReceiptMicros,
   });
 
+  final FlarkSourceEditPerformanceKind kind;
   final int sourceGeneration;
   final int coreQueueMicros;
   final int workerRoundTripMicros;
@@ -5318,25 +5322,16 @@ final class FlarkEditorController extends ChangeNotifier {
       adoptionWatch.stop();
       final telemetry = receipt.telemetry;
       if (telemetry != null) {
-        _sourceEditPerformanceReceipts.add(
-          FlarkSourceEditPerformance(
-            sourceGeneration: generation,
-            coreQueueMicros: telemetry.coreQueueMicros,
-            workerRoundTripMicros: telemetry.workerRoundTripMicros,
-            workerQueueMicros: telemetry.workerQueueMicros,
-            nativeFfiMicros: telemetry.nativeFfiMicros,
-            coreAdoptionMicros: telemetry.coreAdoptionMicros,
-            flutterReceiptAdoptionMicros: adoptionWatch.elapsedMicroseconds,
-            acceptanceToReceiptMicros: math.max(
-              0,
-              receiptAtEpochMicros - acceptedAtEpochMicros,
-            ),
+        _recordSourceEditPerformance(
+          kind: FlarkSourceEditPerformanceKind.source,
+          generation: generation,
+          telemetry: telemetry,
+          flutterReceiptAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+          acceptanceToReceiptMicros: math.max(
+            0,
+            receiptAtEpochMicros - acceptedAtEpochMicros,
           ),
         );
-        if (_sourceEditPerformanceReceipts.length >
-            _maximumPerformanceReceipts) {
-          _sourceEditPerformanceReceipts.removeAt(0);
-        }
       }
       notifyListeners();
     } catch (error) {
@@ -5564,6 +5559,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _endCompositionHistoryGroup();
     _parseTimer?.cancel();
     _parseTimer = null;
+    final acceptedAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
     final generation = ++_editGeneration;
     _pendingEdits += 1;
     _status = FlarkEditorStatus.editing;
@@ -5574,6 +5570,8 @@ final class FlarkEditorController extends ChangeNotifier {
           ? await _session.undo()
           : await _session.redo();
       if (outcome == null) return false;
+      final receiptAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
+      final adoptionWatch = Stopwatch()..start();
       final restore = _adapterSnapshot(outcome.restoreSelection);
       _optimisticViewportEdits.clear();
       _clearPendingTaskChecks();
@@ -5595,6 +5593,25 @@ final class FlarkEditorController extends ChangeNotifier {
       await _restoreHistorySelection(restore);
       if (outcome is FlarkCoreHistoryDropped) return false;
       _scheduleParsingAfterInput();
+      adoptionWatch.stop();
+      if (outcome is FlarkCoreHistoryReplayed) {
+        final telemetry = outcome.receipt.telemetry;
+        if (telemetry == null) {
+          throw StateError('Flark history replay omitted telemetry');
+        }
+        _recordSourceEditPerformance(
+          kind: undoDirection
+              ? FlarkSourceEditPerformanceKind.undo
+              : FlarkSourceEditPerformanceKind.redo,
+          generation: generation,
+          telemetry: telemetry,
+          flutterReceiptAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+          acceptanceToReceiptMicros: math.max(
+            0,
+            receiptAtEpochMicros - acceptedAtEpochMicros,
+          ),
+        );
+      }
       notifyListeners();
       return true;
     });
@@ -5620,6 +5637,31 @@ final class FlarkEditorController extends ChangeNotifier {
           }),
     );
     return operation;
+  }
+
+  void _recordSourceEditPerformance({
+    required FlarkSourceEditPerformanceKind kind,
+    required int generation,
+    required FlarkCoreEditIntentTelemetryV1 telemetry,
+    required int flutterReceiptAdoptionMicros,
+    required int acceptanceToReceiptMicros,
+  }) {
+    _sourceEditPerformanceReceipts.add(
+      FlarkSourceEditPerformance(
+        kind: kind,
+        sourceGeneration: generation,
+        coreQueueMicros: telemetry.coreQueueMicros,
+        workerRoundTripMicros: telemetry.workerRoundTripMicros,
+        workerQueueMicros: telemetry.workerQueueMicros,
+        nativeFfiMicros: telemetry.nativeFfiMicros,
+        coreAdoptionMicros: telemetry.coreAdoptionMicros,
+        flutterReceiptAdoptionMicros: flutterReceiptAdoptionMicros,
+        acceptanceToReceiptMicros: acceptanceToReceiptMicros,
+      ),
+    );
+    if (_sourceEditPerformanceReceipts.length > _maximumPerformanceReceipts) {
+      _sourceEditPerformanceReceipts.removeAt(0);
+    }
   }
 
   void _scheduleParsingAfterInput({bool immediate = false}) {

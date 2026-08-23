@@ -986,15 +986,27 @@ final class FlarkCoreDocument {
     FlarkCoreHistoryToken token,
   ) async {
     _requireOwnedHistoryToken(token);
+    final dispatchEpochMicros = DateTime.now().microsecondsSinceEpoch;
+    final roundTrip = Stopwatch()..start();
     final result = await _request('replayHistory', {
       'historyToken': token._value,
+      'dispatchEpochMicros': dispatchEpochMicros,
     });
+    roundTrip.stop();
     token._consumed = true;
     _revision = result['revision']! as int;
     _sourceByteLength = result['sourceByteLength']! as int;
     _sourceUtf16Length = result['sourceUtf16Length']! as int;
     _ready = false;
-    return _editReceipt(result);
+    return _editReceipt(result).withTelemetry(
+      FlarkCoreEditIntentTelemetryV1(
+        coreQueueMicros: 0,
+        workerRoundTripMicros: roundTrip.elapsedMicroseconds,
+        workerQueueMicros: result['workerQueueMicros']! as int,
+        nativeFfiMicros: result['nativeFfiMicros']! as int,
+        coreAdoptionMicros: 0,
+      ),
+    );
   }
 
   /// Releases [token] without changing source.
@@ -1503,15 +1515,25 @@ Future<void> _documentWorker(List<Object?> startup) async {
               reply.send(envelope);
             }
           case 'replayHistory':
+            final workerReceivedEpochMicros =
+                DateTime.now().microsecondsSinceEpoch;
+            final nativeWatch = Stopwatch()..start();
             final receipt = document.replayHistory(
               arguments['historyToken']! as int,
             );
+            nativeWatch.stop();
             reply.send({
               'revision': receipt.revision,
               'sourceByteLength': receipt.sourceByteLength,
               'sourceUtf16Length': receipt.sourceUtf16Length,
               'historyToken': receipt.historyToken,
               'historyDisposition': receipt.historyDisposition.index,
+              'workerQueueMicros': math.max(
+                0,
+                workerReceivedEpochMicros -
+                    (arguments['dispatchEpochMicros']! as int),
+              ),
+              'nativeFfiMicros': nativeWatch.elapsedMicroseconds,
             });
           case 'releaseHistory':
             document.releaseHistory(arguments['historyToken']! as int);

@@ -610,6 +610,7 @@ void main() {
       await _settle(controller);
       expect(controller.visibleSource, '**boxld** after\n');
       final performance = controller.sourceEditPerformanceReceipts.single;
+      expect(performance.kind, FlarkSourceEditPerformanceKind.source);
       expect(performance.sourceGeneration, controller.sourceGeneration);
       expect(performance.nativeFfiMicros, greaterThanOrEqualTo(0));
       expect(
@@ -619,6 +620,12 @@ void main() {
       final settled = controller.surfaceRow(controller.rows.first);
       expect(settled.active, isTrue);
       expect(settled.text, 'boxld after');
+      expect(await controller.undo(), isTrue);
+      await _settle(controller);
+      final undoPerformance = controller.sourceEditPerformanceReceipts.last;
+      expect(undoPerformance.kind, FlarkSourceEditPerformanceKind.undo);
+      expect(undoPerformance.sourceGeneration, controller.sourceGeneration);
+      expect(undoPerformance.nativeFfiMicros, greaterThanOrEqualTo(0));
     },
     skip: libraryPath == null,
   );

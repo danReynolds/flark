@@ -551,6 +551,7 @@ final class DogfoodNativeCanaryReceiptWriter {
       'sourceEditPerformanceReceipts': controller.sourceEditPerformanceReceipts
           .map(
             (receipt) => {
+              'kind': receipt.kind.name,
               'sourceGeneration': receipt.sourceGeneration,
               'coreQueueMicros': receipt.coreQueueMicros,
               'workerRoundTripMicros': receipt.workerRoundTripMicros,

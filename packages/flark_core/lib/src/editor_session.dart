@@ -867,11 +867,25 @@ final class FlarkCoreEditorSession {
   Future<void> finishComposition() =>
       _serializeCommand(_releaseCompositionScope);
 
-  Future<FlarkCoreHistoryOutcome?> undo() =>
-      _serializeCommand(() => _replayDirection(undo: true));
+  Future<FlarkCoreHistoryOutcome?> undo() {
+    final queuedAt = _clockMicros();
+    return _serializeCommand(
+      () => _replayDirection(
+        undo: true,
+        coreQueueMicros: _clockMicros() - queuedAt,
+      ),
+    );
+  }
 
-  Future<FlarkCoreHistoryOutcome?> redo() =>
-      _serializeCommand(() => _replayDirection(undo: false));
+  Future<FlarkCoreHistoryOutcome?> redo() {
+    final queuedAt = _clockMicros();
+    return _serializeCommand(
+      () => _replayDirection(
+        undo: false,
+        coreQueueMicros: _clockMicros() - queuedAt,
+      ),
+    );
+  }
 
   /// Releases every retained unit in both directions.
   Future<void> clearHistory() => _serializeCommand(_clearHistory);
@@ -1206,6 +1220,7 @@ final class FlarkCoreEditorSession {
 
   Future<FlarkCoreHistoryOutcome?> _replayDirection({
     required bool undo,
+    required int coreQueueMicros,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
     final source = undo ? _undoUnits : _redoUnits;
@@ -1230,6 +1245,7 @@ final class FlarkCoreEditorSession {
       );
       return FlarkCoreHistoryDropped(restore);
     }
+    final adoptionWatch = Stopwatch()..start();
     destination.add(replayed.unit);
     final restore = undo ? unit.beforeSelection : unit.afterSelection;
     await _setSelectionUtf16(
@@ -1238,7 +1254,20 @@ final class FlarkCoreEditorSession {
       affinity: restore.affinity,
       adapterState: restore.adapterState,
     );
-    return FlarkCoreHistoryReplayed(restore, replayed.receipt);
+    adoptionWatch.stop();
+    final telemetry = replayed.receipt.telemetry;
+    if (telemetry == null) {
+      throw StateError('Flark history replay omitted performance telemetry');
+    }
+    return FlarkCoreHistoryReplayed(
+      restore,
+      replayed.receipt.withTelemetry(
+        telemetry.withCoreStages(
+          coreQueueMicros: coreQueueMicros,
+          coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+        ),
+      ),
+    );
   }
 
   Future<void> _breakActiveGroups() async {
@@ -1252,9 +1281,19 @@ final class FlarkCoreEditorSession {
   ) async {
     final reverseTokens = <FlarkCoreHistoryToken>[];
     late FlarkCoreEditReceipt receipt;
+    var workerRoundTripMicros = 0;
+    var workerQueueMicros = 0;
+    var nativeFfiMicros = 0;
     for (final token in unit.tokens.reversed) {
       try {
         receipt = await document.replayHistory(token);
+        final telemetry = receipt.telemetry;
+        if (telemetry == null) {
+          throw StateError('Flark history replay omitted worker telemetry');
+        }
+        workerRoundTripMicros += telemetry.workerRoundTripMicros;
+        workerQueueMicros += telemetry.workerQueueMicros;
+        nativeFfiMicros += telemetry.nativeFfiMicros;
         _pendingTerminalLogicalEditId = 0;
       } on FlarkCoreNativeException catch (error) {
         if (error.status == _historyTokenEvicted ||
@@ -1278,7 +1317,15 @@ final class FlarkCoreEditorSession {
         beforeSelection: unit.beforeSelection,
         afterSelection: unit.afterSelection,
       ),
-      receipt: receipt,
+      receipt: receipt.withTelemetry(
+        FlarkCoreEditIntentTelemetryV1(
+          coreQueueMicros: 0,
+          workerRoundTripMicros: workerRoundTripMicros,
+          workerQueueMicros: workerQueueMicros,
+          nativeFfiMicros: nativeFfiMicros,
+          coreAdoptionMicros: 0,
+        ),
+      ),
     );
   }
 
