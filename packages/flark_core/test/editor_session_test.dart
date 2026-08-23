@@ -705,7 +705,7 @@ void main() {
       test('lost staged reply recovers the terminal exactly once', () async {
         await open(
           'base\n',
-          editIntentReplyTimeout: const Duration(milliseconds: 10),
+          editIntentReplyTimeout: const Duration(microseconds: 1),
           debugDropFirstEditIntentReply: true,
         );
         addTearDown(() async {

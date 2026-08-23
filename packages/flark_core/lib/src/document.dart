@@ -10,6 +10,7 @@ import 'text_unicode.dart';
 
 const _notReadySourceGapStatus = 8;
 const _invalidUtf16HostInputStatus = 0x020b;
+const _minimumMutationTerminalRecoveryTimeout = Duration(seconds: 2);
 // One streamed-open transport slice: the ABI's MAX_SOURCE_CHUNK_BYTES. The
 // owner isolate forwards at most one slice per worker acknowledgement, so
 // derived ingress buffers stay bounded far below the 2 MiB product gate and
@@ -1199,12 +1200,16 @@ final class FlarkCoreDocument {
     } on TimeoutException {
       // The native terminal slot makes this exact logical ID/digest replay
       // idempotent whether the first request committed or was merely delayed.
+      // Recovery can queue behind that request and must not inherit an
+      // intentionally short loss-detection deadline, but it remains bounded.
+      final recoveryTimeout = Duration(
+        microseconds: math.max(
+          _editIntentReplyTimeout.inMicroseconds,
+          _minimumMutationTerminalRecoveryTimeout.inMicroseconds,
+        ),
+      );
       try {
-        return await _send(
-          operation,
-          arguments,
-          replyTimeout: _editIntentReplyTimeout,
-        );
+        return await _send(operation, arguments, replyTimeout: recoveryTimeout);
       } on FlarkCoreWorkerException {
         rethrow;
       } on Object catch (error) {
