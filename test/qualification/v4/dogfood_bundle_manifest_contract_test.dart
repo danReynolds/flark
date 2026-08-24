@@ -43,4 +43,51 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test('framework binary links bind to their in-bundle file target', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'flark-dogfood-framework-',
+    );
+    addTearDown(() => root.delete(recursive: true));
+    final framework = Directory(
+      '${root.path}/Contents/Frameworks/flark_abi.framework',
+    );
+    final binary = File('${framework.path}/Versions/A/flark_abi');
+    await binary.create(recursive: true);
+    await binary.writeAsString('abi-v1');
+    final linkedBinary = File('${framework.path}/flark_abi');
+    await Link(linkedBinary.path).create('Versions/A/flark_abi');
+
+    final manifest = await buildDogfoodBundleManifest(root);
+    final entry = dogfoodBundleEntryForFile(manifest, root, linkedBinary);
+
+    expect(
+      entry.path,
+      'Contents/Frameworks/flark_abi.framework/Versions/A/flark_abi',
+    );
+    expect(entry.type, 'file');
+    expect(entry.bytes, 6);
+  });
+
+  test('framework binary links cannot escape the app bundle', () async {
+    final base = await Directory.systemTemp.createTemp(
+      'flark-dogfood-framework-escape-',
+    );
+    addTearDown(() => base.delete(recursive: true));
+    final root = Directory('${base.path}/App.app');
+    final framework = Directory(
+      '${root.path}/Contents/Frameworks/flark_abi.framework',
+    );
+    await framework.create(recursive: true);
+    final outside = File('${base.path}/outside-abi');
+    await outside.writeAsString('abi-v1');
+    final linkedBinary = File('${framework.path}/flark_abi');
+    await Link(linkedBinary.path).create(outside.path);
+    final manifest = await buildDogfoodBundleManifest(root);
+
+    expect(
+      () => dogfoodBundleEntryForFile(manifest, root, linkedBinary),
+      throwsStateError,
+    );
+  });
 }

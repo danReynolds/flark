@@ -87,8 +87,8 @@ DogfoodBundleManifestEntry dogfoodBundleEntryForFile(
   Directory bundle,
   File file,
 ) {
-  final root = bundle.absolute.path;
-  final absolute = file.absolute.path;
+  final root = bundle.absolute.resolveSymbolicLinksSync();
+  final absolute = file.absolute.resolveSymbolicLinksSync();
   if (!absolute.startsWith('$root${Platform.pathSeparator}')) {
     throw StateError('Artifact is outside the dogfood app bundle: $absolute');
   }
