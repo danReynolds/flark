@@ -110,6 +110,7 @@ final class MacosNativeCanaryDriver {
   int _windowHeight = 632;
   Map<String, Object?>? _lastRawSnapshot;
   final List<Map<String, Object?>> _appAcknowledgements = [];
+  final List<Map<String, Object?>> _inputDeliveryAcknowledgements = [];
 
   int get commandSequence => _sequence;
   int get appAcknowledgementCount => _appAcknowledgements.length;
@@ -117,6 +118,16 @@ final class MacosNativeCanaryDriver {
   List<Map<String, Object?>> appAcknowledgementsSince(int index) =>
       List<Map<String, Object?>>.unmodifiable(
         _appAcknowledgements.skip(index).map(Map<String, Object?>.unmodifiable),
+      );
+
+  int get inputDeliveryAcknowledgementCount =>
+      _inputDeliveryAcknowledgements.length;
+
+  List<Map<String, Object?>> inputDeliveryAcknowledgementsSince(int index) =>
+      List<Map<String, Object?>>.unmodifiable(
+        _inputDeliveryAcknowledgements
+            .skip(index)
+            .map(Map<String, Object?>.unmodifiable),
       );
 
   String get debugLastReceipt =>
@@ -363,6 +374,28 @@ final class MacosNativeCanaryDriver {
       throw StateError(
         'macOS actuator $operation failed: ${response['error']}',
       );
+    }
+    if (response['inputDeliveryAcknowledgement'] case final Map value) {
+      final acknowledgement = value.cast<String, Object?>();
+      final acknowledgedOperation = acknowledgement['operation'];
+      if (acknowledgedOperation is! String ||
+          (acknowledgedOperation != operation &&
+              !acknowledgedOperation.startsWith('$operation:')) ||
+          acknowledgement['terminalInputEventOrdinal'] is! int ||
+          acknowledgement['baselineInputEventOrdinal'] is! int ||
+          acknowledgement['terminalSourceGeneration'] is! int ||
+          acknowledgement['baselineSourceGeneration'] is! int ||
+          acknowledgement['expectedGenerationAdvance'] is! int ||
+          acknowledgement['terminalEvent'] is! String) {
+        throw StateError(
+          'macOS actuator $operation returned an invalid input delivery '
+          'acknowledgement',
+        );
+      }
+      _inputDeliveryAcknowledgements.add({
+        'actuatorSequence': sequence,
+        ...acknowledgement,
+      });
     }
     final snapshot = response['snapshot'];
     if (snapshot is Map) {

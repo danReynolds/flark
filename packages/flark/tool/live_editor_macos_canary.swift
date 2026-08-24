@@ -414,6 +414,8 @@ func postKey(named name: String) throws {
   case "enter": pressKey(36)
   case "backspace": pressKey(51)
   case "delete": pressKey(117)
+  case "left": pressKey(123)
+  case "right": pressKey(124)
   case "selectAll": pressCommandShortcut(0)
   case "copy": pressCommandShortcut(8)
   case "cut": pressCommandShortcut(7)
@@ -432,6 +434,19 @@ func writeJSONLine(_ value: [String: Any]) {
     fflush(stdout)
   } catch {
     fputs("actuator could not serialize response: \(error)\n", stderr)
+  }
+}
+
+if CommandLine.arguments.count == 2 &&
+  CommandLine.arguments[1] == "--delivery-self-test"
+{
+  do {
+    try runInputDeliverySelfTest()
+    print("input delivery self-test PASS")
+    exit(0)
+  } catch {
+    fputs("input delivery self-test FAIL: \(error)\n", stderr)
+    exit(1)
   }
 }
 
@@ -527,25 +542,167 @@ func verifyExpectedSelection(_ arguments: [String: Any]) throws -> [String: Any]
   return receipt
 }
 
+func inputDeliveryAcknowledgement(
+  baselineReceipt: [String: Any],
+  candidateReceipt: [String: Any],
+  operation: String,
+  expectedGenerationAdvance: Int,
+  terminalEventPrefix: String? = nil
+) throws -> [String: Any]? {
+  guard let baselineOrdinal = baselineReceipt["inputEventOrdinal"] as? Int,
+    let baselineGeneration = baselineReceipt["sourceGeneration"] as? Int,
+    let candidateOrdinal = candidateReceipt["inputEventOrdinal"] as? Int,
+    let candidateGeneration = candidateReceipt["sourceGeneration"] as? Int,
+    let events = candidateReceipt["inputEvents"] as? [String]
+  else {
+    throw ActuatorFailure.message(
+      "\(operation) input acknowledgement is missing or malformed"
+    )
+  }
+  guard expectedGenerationAdvance >= 0 else {
+    throw ActuatorFailure.message(
+      "\(operation) has a negative expected generation advance"
+    )
+  }
+  guard candidateOrdinal > baselineOrdinal, let terminalEvent = events.last else {
+    return nil
+  }
+  let targetGeneration = baselineGeneration + expectedGenerationAdvance
+  guard candidateGeneration == targetGeneration else { return nil }
+  guard terminalEvent.contains("generation=\(targetGeneration)") else {
+    return nil
+  }
+  if let terminalEventPrefix,
+    !terminalEvent.contains(":\(terminalEventPrefix):")
+  {
+    return nil
+  }
+  return [
+    "operation": operation,
+    "baselineInputEventOrdinal": baselineOrdinal,
+    "terminalInputEventOrdinal": candidateOrdinal,
+    "baselineSourceGeneration": baselineGeneration,
+    "terminalSourceGeneration": candidateGeneration,
+    "expectedGenerationAdvance": expectedGenerationAdvance,
+    "terminalEvent": terminalEvent,
+  ]
+}
+
+func runInputDeliverySelfTest() throws {
+  let baseline: [String: Any] = [
+    "inputEventOrdinal": 10,
+    "sourceGeneration": 4,
+    "inputEvents": ["100:accepted-deltas:generation=4"],
+  ]
+  let noDelivery = try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: baseline,
+    operation: "batch",
+    expectedGenerationAdvance: 2
+  )
+  guard noDelivery == nil else {
+    throw ActuatorFailure.message("no-delivery control acknowledged")
+  }
+  let unrelated: [String: Any] = [
+    "inputEventOrdinal": 11,
+    "sourceGeneration": 4,
+    "inputEvents": [
+      "100:accepted-deltas:generation=4",
+      "110:shortcut:copy:generation=4",
+    ],
+  ]
+  guard try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: unrelated,
+    operation: "batch",
+    expectedGenerationAdvance: 2
+  ) == nil else {
+    throw ActuatorFailure.message("unrelated event acknowledged")
+  }
+  let partial: [String: Any] = [
+    "inputEventOrdinal": 11,
+    "sourceGeneration": 5,
+    "inputEvents": [
+      "100:accepted-deltas:generation=4",
+      "110:accepted-deltas:generation=5",
+    ],
+  ]
+  guard try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: partial,
+    operation: "batch",
+    expectedGenerationAdvance: 2
+  ) == nil else {
+    throw ActuatorFailure.message("partial batch acknowledged")
+  }
+  let terminal: [String: Any] = [
+    "inputEventOrdinal": 12,
+    "sourceGeneration": 6,
+    "inputEvents": [
+      "100:accepted-deltas:generation=4",
+      "110:accepted-deltas:generation=5",
+      "120:accepted-deltas:generation=6",
+    ],
+  ]
+  guard try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: terminal,
+    operation: "batch",
+    expectedGenerationAdvance: 2
+  ) != nil else {
+    throw ActuatorFailure.message("terminal batch was not acknowledged")
+  }
+  let copied: [String: Any] = [
+    "inputEventOrdinal": 11,
+    "sourceGeneration": 4,
+    "inputEvents": [
+      "100:accepted-deltas:generation=4",
+      "110:completed-copy:generation=4",
+    ],
+  ]
+  guard try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: copied,
+    operation: "copy",
+    expectedGenerationAdvance: 0,
+    terminalEventPrefix: "completed-copy"
+  ) != nil else {
+    throw ActuatorFailure.message("nonmutating terminal event was not acknowledged")
+  }
+  do {
+    _ = try inputDeliveryAcknowledgement(
+      baselineReceipt: baseline,
+      candidateReceipt: ["inputEvents": []],
+      operation: "malformed",
+      expectedGenerationAdvance: 1
+    )
+    throw ActuatorFailure.message("malformed acknowledgement did not fail")
+  } catch ActuatorFailure.message(let message) {
+    guard message.contains("missing or malformed") else {
+      throw ActuatorFailure.message(message)
+    }
+  }
+}
+
 func waitForInputDelivery(
   after baselineReceipt: [String: Any],
-  operation: String
-) throws {
-  let baselineEvents = baselineReceipt["inputEvents"] as? [String] ?? []
-  var observedEvents: [String]?
-  var stableSince: Date?
+  operation: String,
+  expectedGenerationAdvance: Int,
+  terminalEventPrefix: String? = nil
+) throws -> [String: Any] {
+  var acknowledgement: [String: Any]?
   try waitUntil("app input delivery for \(operation)") {
     guard let receipt = try? readJSON(receiptPath) else { return false }
-    let events = receipt["inputEvents"] as? [String] ?? []
-    guard events != baselineEvents else { return false }
-    if events != observedEvents {
-      observedEvents = events
-      stableSince = Date()
-      return false
-    }
-    guard let stableSince else { return false }
-    return Date().timeIntervalSince(stableSince) >= 0.1
+    acknowledgement = try inputDeliveryAcknowledgement(
+      baselineReceipt: baselineReceipt,
+      candidateReceipt: receipt,
+      operation: operation,
+      expectedGenerationAdvance: expectedGenerationAdvance,
+      terminalEventPrefix: terminalEventPrefix
+    )
+    return acknowledgement != nil
   }
+  return acknowledgement!
 }
 
 func screenPoint(
@@ -680,9 +837,10 @@ while !shouldStop, let line = readLine() {
           "cadenceMicros"
         )
       )
-      try waitForInputDelivery(
+      response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "insertText"
+        operation: "insertText",
+        expectedGenerationAdvance: try string(arguments["text"], "text").count
       )
     case "closeSession":
       response["snapshot"] = try appRequest(operation: "closeSession")
@@ -701,9 +859,10 @@ while !shouldStop, let line = readLine() {
           "cadenceMicros"
         )
       )
-      try waitForInputDelivery(
+      response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "repeatKey"
+        operation: "repeatKey",
+        expectedGenerationAdvance: try integer(arguments["count"], "count")
       )
     case "structuralBursts":
       _ = try focusWindow(
@@ -719,9 +878,11 @@ while !shouldStop, let line = readLine() {
           "cadenceMicros"
         )
       )
-      try waitForInputDelivery(
+      response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "structuralBursts"
+        operation: "structuralBursts",
+        expectedGenerationAdvance:
+          try integer(arguments["count"], "count") * 2
       )
     case "key":
       _ = try focusWindow(
@@ -738,7 +899,24 @@ while !shouldStop, let line = readLine() {
           NSPasteboard.general.changeCount != pasteboardChange
         }
       }
-      try waitForInputDelivery(after: baselineReceipt, operation: "key:\(key)")
+      let nonMutating =
+        key == "copy" || key == "selectAll" || key == "left" || key == "right"
+      let terminalPrefix: String? = switch key {
+      case "copy": "completed-copy"
+      case "selectAll": "completed-select-all"
+      case "cut": "completed-cut"
+      case "paste": "completed-paste"
+      case "undo": "completed-undo"
+      case "redo": "completed-redo"
+      case "left", "right": "completed-navigation"
+      default: nil
+      }
+      response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
+        after: baselineReceipt,
+        operation: "key:\(key)",
+        expectedGenerationAdvance: nonMutating ? 0 : 1,
+        terminalEventPrefix: terminalPrefix
+      )
     case "pasteText":
       _ = try focusWindow(
         pid: appPID,
@@ -752,7 +930,12 @@ while !shouldStop, let line = readLine() {
         throw ActuatorFailure.message("could not set the macOS pasteboard")
       }
       pressCommandShortcut(9)
-      try waitForInputDelivery(after: baselineReceipt, operation: "pasteText")
+      response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
+        after: baselineReceipt,
+        operation: "pasteText",
+        expectedGenerationAdvance: 1,
+        terminalEventPrefix: "completed-paste"
+      )
     case "toggleTaskAtUtf16":
       let target = try integer(arguments["targetUtf16"], "targetUtf16")
       let window = try focusWindow(pid: appPID)

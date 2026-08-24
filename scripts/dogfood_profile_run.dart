@@ -42,13 +42,17 @@ final class _ExpectedSample {
     required this.index,
     required this.generations,
     required this.scheduledMicros,
+    this.measuredGenerationIndex,
   });
 
   final int index;
   final List<_ExpectedGeneration> generations;
   final int? scheduledMicros;
+  final int? measuredGenerationIndex;
 
   _ExpectedGeneration get finalGeneration => generations.last;
+  _ExpectedGeneration get measuredGeneration =>
+      generations[measuredGenerationIndex ?? generations.length - 1];
 }
 
 final class _ProfileRunResult {
@@ -734,6 +738,7 @@ List<_ExpectedSample> _pasteUndoExpectations({
   for (var index = 0; index < count; index += 1)
     _ExpectedSample(
       index: index,
+      measuredGenerationIndex: 0,
       generations: [
         _ExpectedGeneration(
           generation: firstGeneration + index * 2,
@@ -822,17 +827,64 @@ Future<Map<String, Object?>> _largePresetJourneyRun({
     windowHeight: _windowHeight,
     retainObservations: true,
   );
-  final expected = _pasteUndoExpectations(
+  if (preset == DogfoodDocumentPreset.giantLine5MiB) {
+    await driver.pressKey('right');
+    final navigated = await driver.settle();
+    if (navigated.source != source ||
+        navigated.selectionBaseUtf16 != caret + 1 ||
+        navigated.selectionExtentUtf16 != caret + 1) {
+      throw StateError('$cellId did not navigate its giant physical line');
+    }
+    await driver.activateAtUtf16(
+      caret,
+      windowWidth: _windowWidth,
+      windowHeight: _windowHeight,
+      retainObservations: true,
+    );
+  }
+  final firstEdit = _pasteUndoExpectations(
     source: source,
     caret: caret,
     paste: 'x',
     firstGeneration: baseline.sourceGeneration + 1,
     count: 1,
-  );
+  ).single;
   await driver.typeText('x');
   await driver.settle();
   await driver.pressKey('undo');
   await driver.settle();
+  var expected = [firstEdit];
+  if (preset == DogfoodDocumentPreset.prose10MiB) {
+    final styledCaret = source.indexOf('**Flark**') + '**Fla'.length;
+    if (styledCaret < '**Fla'.length) {
+      throw StateError('$cellId is missing its frozen inline-style anchor');
+    }
+    await driver.activateAtUtf16(
+      styledCaret,
+      windowWidth: _windowWidth,
+      windowHeight: _windowHeight,
+      retainObservations: true,
+    );
+    final styledEdit = _pasteUndoExpectations(
+      source: source,
+      caret: styledCaret,
+      paste: 'y',
+      firstGeneration: baseline.sourceGeneration + 3,
+      count: 1,
+    ).single;
+    await driver.typeText('y');
+    await driver.settle();
+    await driver.pressKey('undo');
+    await driver.settle();
+    expected = [
+      _ExpectedSample(
+        index: 0,
+        generations: [...firstEdit.generations, ...styledEdit.generations],
+        measuredGenerationIndex: 2,
+        scheduledMicros: null,
+      ),
+    ];
+  }
   await driver.scrollBy(_windowHeight * 2 + 1);
   final away = await driver.settle();
   if ((away.scrollOffset - baseline.scrollOffset).abs() < _windowHeight * 2) {
@@ -1066,6 +1118,9 @@ Map<String, Object?> _buildMeasuredRun({
     for (final receipt in settled.semanticEditPerformanceReceipts)
       receipt['sourceGeneration']! as int: receipt,
   };
+  final operationTimingByGeneration = _operationTimingsByGeneration(
+    settled.inputEvents,
+  );
   final inputObservations = <Map<String, Object?>>[];
   final engineObservations = <Map<String, Object?>>[];
   for (final entry in expectedByGeneration.entries) {
@@ -1093,8 +1148,12 @@ Map<String, Object?> _buildMeasuredRun({
     if (performance == null) {
       throw StateError('generation $generation has no acceptance receipt');
     }
-    final acceptedMicros = performance['acceptedAtEpochMicros'];
+    final operationTiming = operationTimingByGeneration[generation];
+    final acceptedMicros =
+        operationTiming?['_acceptedMicros'] ??
+        performance['acceptedAtEpochMicros'];
     final editorSyncMicros =
+        operationTiming?['_editorSyncMicros'] ??
         performance['editorSyncMicros'] ??
         performance['platformCallbackMicros'];
     if (acceptedMicros is! int ||
@@ -1119,6 +1178,7 @@ Map<String, Object?> _buildMeasuredRun({
         measurementSessionIdentity: performanceSessionIdentity,
         acceptedMicros: acceptedMicros,
         editorSyncMicros: editorSyncMicros,
+        operationTiming: operationTiming,
       ),
     );
     engineObservations.add({
@@ -1421,17 +1481,17 @@ Map<String, Object?> _buildMeasuredRun({
         .toList(growable: false);
     final scheduleAcceptedMicros =
         declaredInputs.first['acceptedMicros']! as int;
-    final accepted = declaredInputs.last['acceptedMicros']! as int;
-    final finalGeneration = expectation.finalGeneration;
-    final engineMicros = declared
-        .map(
-          (generation) =>
-              engineObservations.firstWhere(
-                    (engine) => engine['sourceGeneration'] == generation,
-                  )['nativeFfiMicros']!
-                  as int,
-        )
-        .reduce(math.max);
+    final measuredGeneration = expectation.measuredGeneration;
+    final measuredInput = declaredInputs.firstWhere(
+      (input) => input['sourceGeneration'] == measuredGeneration.generation,
+    );
+    final accepted = measuredInput['acceptedMicros']! as int;
+    final engineMicros =
+        engineObservations.firstWhere(
+              (engine) =>
+                  engine['sourceGeneration'] == measuredGeneration.generation,
+            )['nativeFfiMicros']!
+            as int;
     if (operation < denominator.warmups) {
       warmups.add({
         'index': operation,
@@ -1439,26 +1499,26 @@ Map<String, Object?> _buildMeasuredRun({
         'acceptedMicros': accepted,
         'scheduleAcceptedMicros': scheduleAcceptedMicros,
         'acceptedSourceGenerations': declared,
-        'sourceGeneration': finalGeneration.generation,
-        'sourceSha256': _sha(finalGeneration.source),
-        'canonicalSelectionBaseUtf16': finalGeneration.selectionBase,
-        'canonicalSelectionExtentUtf16': finalGeneration.selectionExtent,
+        'sourceGeneration': measuredGeneration.generation,
+        'sourceSha256': _sha(measuredGeneration.source),
+        'canonicalSelectionBaseUtf16': measuredGeneration.selectionBase,
+        'canonicalSelectionExtentUtf16': measuredGeneration.selectionExtent,
         'engineMicros': engineMicros,
       });
       continue;
     }
     var summaryPaints = paintObservations
         .where(
-          (paint) => paint['sourceGeneration'] == finalGeneration.generation,
+          (paint) => paint['sourceGeneration'] == measuredGeneration.generation,
         )
         .toList();
-    var paintedGeneration = finalGeneration;
+    var paintedGeneration = measuredGeneration;
     var paintedAcceptedMicros = accepted;
     var visibilityDisposition = 'painted';
     int? supersededBySourceGeneration;
     if (summaryPaints.isEmpty) {
       final nextExpectation = operation + 1 < expected.length
-          ? expected[operation + 1].finalGeneration
+          ? expected[operation + 1].measuredGeneration
           : null;
       final nextInputs = nextExpectation == null
           ? const <Map<String, Object?>>[]
@@ -1502,7 +1562,7 @@ Map<String, Object?> _buildMeasuredRun({
           .where((paint) {
             final generation = paint['sourceGeneration'];
             return generation is int &&
-                (generation - finalGeneration.generation).abs() <= 3;
+                (generation - measuredGeneration.generation).abs() <= 3;
           })
           .map(
             (paint) =>
@@ -1513,7 +1573,7 @@ Map<String, Object?> _buildMeasuredRun({
       final nearbyInputs = inputObservations
           .where((input) {
             final generation = input['sourceGeneration']! as int;
-            return (generation - finalGeneration.generation).abs() <= 3;
+            return (generation - measuredGeneration.generation).abs() <= 3;
           })
           .map((input) {
             final generation = input['sourceGeneration']! as int;
@@ -1538,7 +1598,7 @@ Map<String, Object?> _buildMeasuredRun({
           )
           .toList(growable: false);
       throw StateError(
-        'generation ${finalGeneration.generation} never painted; '
+        'generation ${measuredGeneration.generation} never painted; '
         'accepted=$accepted nearbyInputs=$nearbyInputs nearbyPaints=$nearby '
         'nearbyFrames=$nearbyFrames',
       );
@@ -1575,12 +1635,12 @@ Map<String, Object?> _buildMeasuredRun({
       'caretPaintMicros': firstPaint['timestampMicros'],
       'selectionPaintMicros': firstPaint['timestampMicros'],
       'acceptedSourceGenerations': declared,
-      'sourceGeneration': finalGeneration.generation,
+      'sourceGeneration': measuredGeneration.generation,
       'paintedSourceGeneration': firstPaint['sourceGeneration'],
-      'sourceSha256': _sha(finalGeneration.source),
+      'sourceSha256': _sha(measuredGeneration.source),
       'visibleSourceSha256': firstPaint['visibleSourceSha256'],
-      'canonicalSelectionBaseUtf16': finalGeneration.selectionBase,
-      'canonicalSelectionExtentUtf16': finalGeneration.selectionExtent,
+      'canonicalSelectionBaseUtf16': measuredGeneration.selectionBase,
+      'canonicalSelectionExtentUtf16': measuredGeneration.selectionExtent,
       'paintedCaretSourceUtf16': firstPaint['caretSourceUtf16'],
       'startFrameOrdinal': _firstFrameCoveringAcceptance(frames, accepted),
       'endFrameOrdinal': summaryPaints
@@ -1710,6 +1770,7 @@ Map<String, Object?> _inputObservation(
   required String measurementSessionIdentity,
   required int acceptedMicros,
   required int editorSyncMicros,
+  Map<String, Object?>? operationTiming,
 }) => {
   'sessionOrdinal': sessionOrdinal,
   'measurementSessionIdentity': measurementSessionIdentity,
@@ -1719,7 +1780,38 @@ Map<String, Object?> _inputObservation(
   'sourceSha256': _sha(expectation.source),
   'canonicalSelectionBaseUtf16': expectation.selectionBase,
   'canonicalSelectionExtentUtf16': expectation.selectionExtent,
+  if (operationTiming != null)
+    'operationTimingKind': operationTiming['operationTimingKind'],
+  if (operationTiming != null)
+    'operationTimingEvent': operationTiming['operationTimingEvent'],
 };
+
+Map<int, Map<String, Object?>> _operationTimingsByGeneration(
+  List<String> inputEvents,
+) {
+  final result = <int, Map<String, Object?>>{};
+  final pastePattern = RegExp(
+    r'^\d+:completed-paste:generation=(\d+)'
+    r':acceptedAtEpochMicros=(\d+):elapsedMicros=(\d+)$',
+  );
+  for (final event in inputEvents) {
+    final match = pastePattern.firstMatch(event);
+    if (match == null) continue;
+    final generation = int.parse(match.group(1)!);
+    if (result.containsKey(generation)) {
+      throw StateError(
+        'generation $generation has duplicate platform operation timings',
+      );
+    }
+    result[generation] = {
+      'operationTimingKind': 'platform-paste',
+      'operationTimingEvent': event,
+      '_acceptedMicros': int.parse(match.group(2)!),
+      '_editorSyncMicros': int.parse(match.group(3)!),
+    };
+  }
+  return result;
+}
 
 String _utf16Slice(String source, int start, int length) {
   final units = source.codeUnits;

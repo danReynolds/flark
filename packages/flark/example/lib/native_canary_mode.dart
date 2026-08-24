@@ -197,6 +197,7 @@ final class DogfoodNativeCanaryReceiptWriter {
   final List<Map<String, Object?>> _paintReceipts = [];
   final List<Map<String, Object?>> _frameTimingReceipts = [];
   final List<String> _inputEvents = [];
+  int _inputEventOrdinal = 0;
   FlarkEditorController? _controller;
   Timer? _timer;
   int _writeGeneration = 0;
@@ -232,6 +233,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     _paintReceipts.clear();
     _frameTimingReceipts.clear();
     _inputEvents.clear();
+    _inputEventOrdinal = 0;
     _settledPresentation = '<empty>';
     _commandError = null;
     _sourcePointOffset = null;
@@ -294,6 +296,7 @@ final class DogfoodNativeCanaryReceiptWriter {
 
   void recordInputEvent(String event) {
     _lastInputEventAt = DateTime.now();
+    _inputEventOrdinal += 1;
     if (_inputEvents.length == 1024) _inputEvents.removeAt(0);
     _inputEvents.add('${DateTime.now().microsecondsSinceEpoch}:$event');
     _record();
@@ -741,6 +744,7 @@ final class DogfoodNativeCanaryReceiptWriter {
           .toList(growable: false),
       'scrollOffset': _lastScrollOffset,
       'inputEvents': List<String>.unmodifiable(_inputEvents),
+      'inputEventOrdinal': _inputEventOrdinal,
       if (geometry != null)
         'sourcePoint': {
           'utf16Offset': _sourcePointOffset,

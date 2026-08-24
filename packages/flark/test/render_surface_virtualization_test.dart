@@ -383,7 +383,7 @@ void main() {
       );
       final firstPaint = paints.last;
       expect(firstPaint.completeVisibleSurface, isTrue);
-      expect(firstPaint.completeVisiblePlusOverscanSurface, isFalse);
+      expect(firstPaint.completeVisiblePlusOverscanSurface, isTrue);
       expect(firstPaint.rows.length, firstPaint.requiredVisibleFragmentCount);
       expect(
         firstPaint.laidOutVisiblePlusOverscanFragmentCount,
@@ -393,18 +393,28 @@ void main() {
         firstPaint.visiblePlusOverscanUtf16End,
         greaterThan(firstPaint.paintedSourceUtf16End!),
       );
+      expect(
+        firstPaint.visiblePlusOverscanUtf16End,
+        lessThan(firstPaint.visibleUtf16Start + firstPaint.visibleUtf16Length),
+      );
       final laidOutBefore = surface.debugLaidOutRowCount;
 
       // Scrolling toward the estimated region materializes it.
-      surface.scrollBy(600);
+      surface.scrollBy(100);
       await tester.pump();
       expect(surface.debugLaidOutRowCount, greaterThan(laidOutBefore));
       final scrolledPaint = paints.last;
       expect(scrolledPaint.completeVisibleSurface, isTrue);
-      expect(scrolledPaint.completeVisiblePlusOverscanSurface, isFalse);
+      expect(scrolledPaint.completeVisiblePlusOverscanSurface, isTrue);
       expect(
         scrolledPaint.rows.length,
         scrolledPaint.requiredVisibleFragmentCount,
+      );
+      expect(
+        scrolledPaint.visiblePlusOverscanUtf16End,
+        lessThan(
+          scrolledPaint.visibleUtf16Start + scrolledPaint.visibleUtf16Length,
+        ),
       );
 
       await tester.pumpWidget(const SizedBox.shrink());

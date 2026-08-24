@@ -71,6 +71,12 @@ void main() {
         source: clipboardSource,
       );
       await driver.selectSourceRange(base: 0, extent: 5);
+      await driver.pressKey('copy');
+      final copied = await driver.settle();
+      _expectHealthy(copied, driver);
+      expect(copied.source, clipboardSource);
+      expect(copied.selectionBaseUtf16, 0);
+      expect(copied.selectionExtentUtf16, 5);
       await driver.pressKey('cut');
       final cut = await driver.settle();
       _expectHealthy(cut, driver);
@@ -187,6 +193,37 @@ void main() {
       expect(
         wrapped.paintedStyledTexts,
         everyElement(contains('strong:Rust → Dart → Flutter')),
+      );
+
+      final deliveryAcknowledgements = driver
+          .inputDeliveryAcknowledgementsSince(0);
+      expect(deliveryAcknowledgements, hasLength(11));
+      for (final acknowledgement in deliveryAcknowledgements) {
+        final baselineOrdinal =
+            acknowledgement['baselineInputEventOrdinal']! as int;
+        final terminalOrdinal =
+            acknowledgement['terminalInputEventOrdinal']! as int;
+        final baselineGeneration =
+            acknowledgement['baselineSourceGeneration']! as int;
+        final terminalGeneration =
+            acknowledgement['terminalSourceGeneration']! as int;
+        final advance = acknowledgement['expectedGenerationAdvance']! as int;
+        expect(terminalOrdinal, greaterThan(baselineOrdinal));
+        expect(terminalGeneration, baselineGeneration + advance);
+        expect(
+          acknowledgement['terminalEvent'],
+          contains('generation=$terminalGeneration'),
+        );
+      }
+      expect(
+        deliveryAcknowledgements,
+        contains(
+          isA<Map<String, Object?>>().having(
+            (acknowledgement) => acknowledgement['expectedGenerationAdvance'],
+            'full wrapped typing batch',
+            successor.length,
+          ),
+        ),
       );
     },
     skip: enabled

@@ -111,6 +111,32 @@ void main() {
     );
   });
 
+  test('open opportunity begins at frame build start, not vsync', () async {
+    final raw = validRawDogfoodPerformanceReceiptForTest();
+    final cold = _cells(
+      raw,
+    ).firstWhere((cell) => cell['id'] == 'product-tour-cold-launch');
+    final run = ((cold['runs']! as List).first as Map).cast<String, Object?>();
+    final open = (run['openObservation']! as Map).cast<String, Object?>();
+    final accepted = open['acceptedMicros']! as int;
+    final frame = (run['frames']! as List).first as Map;
+    frame
+      ..['vsyncMicros'] = accepted - 100
+      ..['monotonicVsyncMicros'] = accepted - 100
+      ..['buildStartMonotonicMicros'] = accepted + 100
+      ..['buildFinishMonotonicMicros'] = accepted + 1100;
+
+    final sealed = await sealDogfoodPerformanceReceipt(
+      raw,
+      verifyArtifactFiles: false,
+    );
+    final result = await verifyDogfoodPerformanceReceipt(
+      sealed,
+      verifyArtifactFiles: false,
+    );
+    expect(result.blockers, isEmpty);
+  });
+
   test('replay rejects raw paint, input, and engine disagreement', () async {
     final sealed = await sealDogfoodPerformanceReceipt(
       validRawDogfoodPerformanceReceiptForTest(),
@@ -151,6 +177,132 @@ void main() {
     expect(
       engineResult.blockers.join('\n'),
       contains('engine timing does not replay'),
+    );
+  });
+
+  test(
+    'surface replay accepts bounded virtualization and rejects gaps',
+    () async {
+      Future<String> blockersFor(
+        Map<String, Object?> raw, {
+        void Function(Map<String, Object?> paint)? mutate,
+      }) async {
+        final paint = _firstProductTourTypingPaint(raw);
+        _makeBoundedVirtualizedSurface(paint);
+        mutate?.call(paint);
+        final sealed = await sealDogfoodPerformanceReceipt(
+          raw,
+          verifyArtifactFiles: false,
+        );
+        final result = await verifyDogfoodPerformanceReceipt(
+          sealed,
+          verifyArtifactFiles: false,
+        );
+        return result.blockers.join('\n');
+      }
+
+      expect(
+        await blockersFor(validRawDogfoodPerformanceReceiptForTest()),
+        isEmpty,
+        reason: 'ready overscan may be a proper subset of the parser page',
+      );
+
+      expect(
+        await blockersFor(
+          validRawDogfoodPerformanceReceiptForTest(),
+          mutate: (paint) {
+            for (final key in const [
+              'requiredVisibleFragments',
+              'laidOutVisiblePlusOverscanFragments',
+              'paintedFragments',
+            ]) {
+              (paint[key]! as List).removeAt(1);
+            }
+            paint
+              ..['requiredVisibleFragmentCount'] = 2
+              ..['laidOutVisiblePlusOverscanFragmentCount'] = 3
+              ..['paintedRowCount'] = 2;
+          },
+        ),
+        contains('raw paint 0 is torn'),
+        reason: 'a consistently omitted middle fragment must not self-attest',
+      );
+
+      expect(
+        await blockersFor(
+          validRawDogfoodPerformanceReceiptForTest(),
+          mutate: (paint) {
+            (paint['laidOutVisiblePlusOverscanFragments']! as List).removeAt(1);
+            paint['laidOutVisiblePlusOverscanFragmentCount'] = 3;
+          },
+        ),
+        contains('raw paint 0 is torn'),
+      );
+
+      expect(
+        await blockersFor(
+          validRawDogfoodPerformanceReceiptForTest(),
+          mutate: (paint) => paint['visiblePlusOverscanUtf16End'] = 7,
+        ),
+        contains('raw paint 0 is torn'),
+      );
+
+      expect(
+        await blockersFor(
+          validRawDogfoodPerformanceReceiptForTest(),
+          mutate: (paint) =>
+              paint['expectedVisiblePlusOverscanSourceSha256'] = _hash('x'),
+        ),
+        contains('raw paint 0 is torn'),
+      );
+
+      expect(
+        await blockersFor(
+          validRawDogfoodPerformanceReceiptForTest(),
+          mutate: (paint) =>
+              paint['completeVisiblePlusOverscanSurface'] = false,
+        ),
+        contains('raw paint 0 is torn'),
+      );
+    },
+  );
+
+  test('paste timing begins before asynchronous clipboard retrieval', () async {
+    final raw = validRawDogfoodPerformanceReceiptForTest();
+    final pasteCell = _cells(
+      raw,
+    ).firstWhere((cell) => cell['id'] == 'ordinary-1m-paste-32kib');
+    final run = ((pasteCell['runs']! as List).first as Map)
+        .cast<String, Object?>();
+    final sample = ((run['samples']! as List).first as Map)
+        .cast<String, Object?>();
+    final generation = sample['sourceGeneration']! as int;
+    final input = (run['inputObservations']! as List).cast<Map>().firstWhere(
+      (candidate) => candidate['sourceGeneration'] == generation,
+    );
+    final delayedAcceptance = (input['acceptedMicros']! as int) - 20000;
+    input
+      ..['acceptedMicros'] = delayedAcceptance
+      ..['editorSyncMicros'] = 20100
+      ..['operationTimingEvent'] =
+          '${delayedAcceptance + 20100}:completed-paste:'
+          'generation=$generation:'
+          'acceptedAtEpochMicros=$delayedAcceptance:'
+          'elapsedMicros=20100';
+    sample['acceptedMicros'] = delayedAcceptance;
+
+    final sealed = await sealDogfoodPerformanceReceipt(
+      raw,
+      verifyArtifactFiles: false,
+    );
+    final result = await verifyDogfoodPerformanceReceipt(
+      sealed,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      result.blockers.join('\n'),
+      contains('did not paint source/caret/selection by the next frame'),
+      reason: 'clipboard delay must remain inside source-to-paint latency',
     );
   });
 
@@ -331,6 +483,74 @@ void main() {
         verifyArtifactFiles: false,
       );
       expect(coalescedResult.blockers, isEmpty);
+
+      final buildBoundaryCoalesced = validRawDogfoodPerformanceReceiptForTest();
+      final buildBoundaryCell = _cells(
+        buildBoundaryCoalesced,
+      ).firstWhere((value) => value['id'] == 'product-tour-structural-burst');
+      final buildBoundaryRun =
+          ((buildBoundaryCell['runs']! as List).first as Map)
+              .cast<String, Object?>();
+      for (final phase in [
+        buildBoundaryRun,
+        (buildBoundaryRun['structuralBurst']! as Map).cast<String, Object?>(),
+      ]) {
+        _coalesceFirstStructuralReturn(phase, attributeSync: true);
+        final returnAccepted =
+            ((phase['inputObservations']! as List).cast<Map>().firstWhere(
+                  (input) => input['sourceGeneration'] == 1,
+                )['acceptedMicros']!
+                as int);
+        final frame = (phase['frames']! as List).first as Map;
+        frame
+          ..['vsyncMicros'] = returnAccepted - 10
+          ..['monotonicVsyncMicros'] = returnAccepted - 10;
+      }
+      expect(
+        await replayBlockers(buildBoundaryCoalesced),
+        isEmpty,
+        reason:
+            'input before build start may coalesce even when vsync already '
+            'occurred',
+      );
+
+      final buildOpportunity = validRawDogfoodPerformanceReceiptForTest();
+      final buildOpportunityCell = _cells(
+        buildOpportunity,
+      ).firstWhere((value) => value['id'] == 'product-tour-structural-burst');
+      final buildOpportunityRun =
+          ((buildOpportunityCell['runs']! as List).first as Map)
+              .cast<String, Object?>();
+      for (final phase in [
+        buildOpportunityRun,
+        (buildOpportunityRun['structuralBurst']! as Map)
+            .cast<String, Object?>(),
+      ]) {
+        _coalesceFirstStructuralReturn(phase, attributeSync: true);
+        final inputs = (phase['inputObservations']! as List).cast<Map>();
+        final returnAccepted =
+            inputs.firstWhere(
+                  (input) => input['sourceGeneration'] == 1,
+                )['acceptedMicros']!
+                as int;
+        final successorAccepted =
+            inputs.firstWhere(
+                  (input) => input['sourceGeneration'] == 2,
+                )['acceptedMicros']!
+                as int;
+        final buildStart =
+            returnAccepted + ((successorAccepted - returnAccepted) ~/ 2);
+        final frame = (phase['frames']! as List).first as Map;
+        frame
+          ..['vsyncMicros'] = returnAccepted - 10
+          ..['monotonicVsyncMicros'] = returnAccepted - 10
+          ..['buildStartMonotonicMicros'] = buildStart
+          ..['buildFinishMonotonicMicros'] = buildStart + 1000;
+      }
+      expect(
+        await replayBlockers(buildOpportunity),
+        contains('coalesced Return despite a frame opportunity'),
+      );
 
       final omittedCoalescedSync = validRawDogfoodPerformanceReceiptForTest();
       final omittedStructural = _cells(
@@ -870,6 +1090,27 @@ void main() {
         hiddenResult.blockers.join('\n'),
         contains('frame interval does not begin at acceptance'),
       );
+
+      final lateFrameReceipt = _copy(sealed);
+      final delayedCell = _cells(
+        lateFrameReceipt,
+      ).firstWhere((cell) => cell['id'] == 'product-tour-typing');
+      final lateFrameRun = ((delayedCell['runs']! as List).first as Map)
+          .cast<String, Object?>();
+      final delayedSample = ((lateFrameRun['samples']! as List).first as Map)
+          .cast<String, Object?>();
+      final firstOpportunity = delayedSample['startFrameOrdinal']! as int;
+      delayedSample
+        ..['provingFrameOrdinal'] = firstOpportunity + 1
+        ..['endFrameOrdinal'] = firstOpportunity + 1;
+      final delayedResult = await verifyDogfoodPerformanceReceipt(
+        lateFrameReceipt,
+        verifyArtifactFiles: false,
+      );
+      expect(
+        delayedResult.blockers.join('\n'),
+        contains('visible result missed its first frame opportunity'),
+      );
     },
   );
 
@@ -1398,6 +1639,10 @@ Map<String, Object?> validRawDogfoodPerformanceReceiptForTest() {
         final multiGeneration = structural || lifecycle;
         final finalGeneration = sourceGeneration + (multiGeneration ? 1 : 0);
         final finalFrame = frameOrdinal + (multiGeneration ? 1 : 0);
+        final measuredGeneration = lifecycle
+            ? sourceGeneration
+            : finalGeneration;
+        final measuredFrame = lifecycle ? frameOrdinal : finalFrame;
         samples.add(
           _sample(
             index: sample,
@@ -1409,19 +1654,23 @@ Map<String, Object?> validRawDogfoodPerformanceReceiptForTest() {
               sourceGeneration,
               if (multiGeneration) finalGeneration,
             ],
-            sourceGeneration: finalGeneration,
-            frameOrdinal: finalFrame,
-            startFrameOrdinal: structural ? finalFrame : null,
+            sourceGeneration: measuredGeneration,
+            frameOrdinal: measuredFrame,
+            startFrameOrdinal: structural || lifecycle ? measuredFrame : null,
             requiresLiveStateZero: denominator.requiresLiveStateZero,
             sourceSha256: structural
-                ? structuralExpected[finalGeneration - 1].sourceSha256
-                : finalGeneration == 0
+                ? structuralExpected[measuredGeneration - 1].sourceSha256
+                : measuredGeneration == 0
                 ? fixture['sourceSha256']! as String
                 : null,
             caret: structural
-                ? structuralExpected[finalGeneration - 1].caret
+                ? structuralExpected[measuredGeneration - 1].caret
                 : null,
-            paintDelayMicros: structural ? 400 : 500,
+            paintDelayMicros: lifecycle
+                ? 50
+                : structural
+                ? 400
+                : 500,
           ),
         );
         if (multiGeneration) {
@@ -1434,8 +1683,8 @@ Map<String, Object?> validRawDogfoodPerformanceReceiptForTest() {
             sourceGeneration: sourceGeneration,
             sessionOrdinal: sessionOrdinal,
             frameOrdinal: frameOrdinal,
-            semanticsCurrent: false,
-            activeNeutralRowCount: structural ? 0 : 1,
+            semanticsCurrent: lifecycle,
+            activeNeutralRowCount: 0,
             sourceSha256: structural
                 ? structuralExpected[sourceGeneration - 1].sourceSha256
                 : null,
@@ -1574,6 +1823,20 @@ Map<String, Object?> validRawDogfoodPerformanceReceiptForTest() {
           {'stage': 'postClose', 'timestampMicros': 4, 'rssBytes': 102000000},
         ],
       };
+      if (entry.key == 'ordinary-1m-paste-32kib') {
+        for (final input in inputObservations) {
+          final generation = input['sourceGeneration']! as int;
+          final accepted = input['acceptedMicros']! as int;
+          final editorSync = input['editorSyncMicros']! as int;
+          input
+            ..['operationTimingKind'] = 'platform-paste'
+            ..['operationTimingEvent'] =
+                '${accepted + editorSync}:completed-paste:'
+                'generation=$generation:'
+                'acceptedAtEpochMicros=$accepted:'
+                'elapsedMicros=$editorSync';
+        }
+      }
       _bindRawSessionIdentity(runValue, latencySessionIdentity);
       if (structural) {
         runValue['structuralPhase'] = 'latency';
@@ -2176,6 +2439,57 @@ void _coalesceFirstCadenceSample(Map<String, Object?> run) {
 
 List<Map<String, Object?>> _cells(Map<String, Object?> receipt) =>
     (receipt['cells']! as List).cast<Map<String, Object?>>();
+
+Map<String, Object?> _firstProductTourTypingPaint(
+  Map<String, Object?> receipt,
+) {
+  final cell = _cells(
+    receipt,
+  ).firstWhere((candidate) => candidate['id'] == 'product-tour-typing');
+  final run = ((cell['runs']! as List).first as Map).cast<String, Object?>();
+  final generation =
+      ((run['samples']! as List).first as Map)['sourceGeneration'];
+  return ((run['paintObservations']! as List).cast<Map>().firstWhere(
+    (paint) => paint['sourceGeneration'] == generation,
+  )).cast<String, Object?>();
+}
+
+void _makeBoundedVirtualizedSurface(Map<String, Object?> paint) {
+  Map<String, Object?> fragment(int ordinal, int start, int end) => {
+    'ordinal': ordinal,
+    'fragmentStart': 0,
+    'fragmentEnd': end - start,
+    'sourceUtf16Start': start,
+    'sourceUtf16End': end,
+  };
+
+  final caret = paint['expectedSelectionExtentUtf16']! as int;
+  final start = caret - 2;
+  final visible = [
+    fragment(0, start, start + 2),
+    fragment(1, start + 2, start + 4),
+    fragment(2, start + 4, start + 6),
+  ];
+  final ready = [...visible, fragment(3, start + 6, start + 8)];
+  paint
+    ..['visibleUtf16Start'] = 0
+    ..['visibleUtf16Length'] = start + 10
+    ..['requiredVisibleFragmentCount'] = visible.length
+    ..['laidOutVisiblePlusOverscanFragmentCount'] = ready.length
+    ..['requiredVisibleFragments'] = _copyList(visible)
+    ..['laidOutVisiblePlusOverscanFragments'] = _copyList(ready)
+    ..['paintedFragments'] = _copyList(visible)
+    ..['paintedRowCount'] = visible.length
+    ..['paintedSourceUtf16Start'] = start
+    ..['paintedSourceUtf16End'] = start + 6
+    ..['visiblePlusOverscanUtf16Start'] = start
+    ..['visiblePlusOverscanUtf16End'] = start + 8
+    ..['visiblePlusOverscanSourceSha256'] = _hash('r')
+    ..['expectedVisiblePlusOverscanSourceSha256'] = _hash('r');
+}
+
+List<Map<String, Object?>> _copyList(List<Map<String, Object?>> value) =>
+    value.map((entry) => Map<String, Object?>.of(entry)).toList();
 
 Map<String, Object?> _firstSample(Map<String, Object?> receipt) {
   final cell = _cells(

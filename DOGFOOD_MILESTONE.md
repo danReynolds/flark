@@ -281,10 +281,14 @@ Required workloads are:
 - product tour: ordinary and styled typing plus structural Return/typing;
 - 1 MiB ordinary: typing, inline typing, structural burst, and 32 KiB
   paste/undo;
-- 1 MiB dense blocks: open, scroll/page, local edit, and close;
-- 5 MiB ordinary: open, scroll/page, local edit/undo, and close;
-- 5 MiB giant line: open, local edit/navigation, and close;
-- 10 MiB ordinary: typing, inline typing, scroll/page, and close; and
+- 1 MiB dense blocks: open, a two-viewport scroll round trip, local edit/undo,
+  and close;
+- 5 MiB ordinary: open, a two-viewport scroll round trip, local edit/undo, and
+  close;
+- 5 MiB giant line: open, local edit/undo, one-character keyboard navigation,
+  a two-viewport scroll round trip, and close;
+- 10 MiB ordinary: ordinary and inline-styled local edit/undo, a two-viewport
+  scroll round trip, and close; and
 - streamed 10 MiB opening for five runs if that feature is enabled in D0.
 
 The whole interaction matrix runs on the product tour; large shapes exercise
@@ -383,6 +387,13 @@ surface. The validator replays the clock mappings, paint-to-`FrameTiming` join,
 session identity, and surface coverage before applying any latency or frame
 budget. Directly comparing the two clock domains, trusting a prejoined ordinal,
 or calling a runner-labelled/partial surface complete is invalid D0 evidence.
+
+`completeVisiblePlusOverscanSurface` means that every fragment intersecting the
+actual visual viewport painted and the laid-out ready fragment set reached the
+declared overscan boundary while containing that visible set. It does not mean
+that virtualization laid out the controller's entire parser page. The receipt
+binds the ready set to its own exact source bounds and hash, independently of
+the full parser-page source hash.
 
 Every lifecycle sample uses Product Tour, activates immediately after
 `locally.`, inserts `x`, undoes it, closes the session, and records a global-zero

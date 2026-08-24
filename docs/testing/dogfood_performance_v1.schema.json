@@ -270,6 +270,8 @@
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "editorSyncMicros": {"type": "integer", "minimum": 0},
+        "operationTimingKind": {"enum": ["platform-paste"]},
+        "operationTimingEvent": {"type": "string", "minLength": 1},
         "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "canonicalSelectionBaseUtf16": {"type": "integer", "minimum": 0},
         "canonicalSelectionExtentUtf16": {"type": "integer", "minimum": 0}

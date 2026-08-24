@@ -752,6 +752,26 @@ Map<String, List<int>> _validateCell(
     if (denominator.requiresOpen) {
       declaredGenerations.add((sessionOrdinal: 0, sourceGeneration: 0));
     }
+    final measuredGenerations = {
+      for (final sample in declared)
+        if (sample['sourceGeneration'] case final int generation)
+          (
+            sessionOrdinal: sample['sessionOrdinal']! as int,
+            sourceGeneration: generation,
+          ),
+    };
+    for (final entry in inputObservations.entries) {
+      _validateOperationTiming(
+        entry.value,
+        required:
+            id == 'ordinary-1m-paste-32kib' &&
+            measuredGenerations.contains(entry.key),
+        prefix:
+            '$runPrefix.input[${entry.key.sessionOrdinal}:'
+            '${entry.key.sourceGeneration}]',
+        blockers: blockers,
+      );
+    }
     for (final entry in <String, Set<_SourceKey>>{
       'input': inputObservations.keys.toSet(),
       'engine': engineObservations.keys.toSet(),
@@ -949,6 +969,34 @@ Map<String, List<int>> _validateCell(
     }
   }
   return metricValues;
+}
+
+void _validateOperationTiming(
+  Map<String, Object?> input, {
+  required bool required,
+  required String prefix,
+  required List<String> blockers,
+}) {
+  final kind = input['operationTimingKind'];
+  final event = input['operationTimingEvent'];
+  if (kind == null && event == null) {
+    if (required) blockers.add('$prefix has no platform paste timing');
+    return;
+  }
+  if (kind != 'platform-paste' || event is! String) {
+    blockers.add('$prefix has invalid platform operation timing');
+    return;
+  }
+  final match = RegExp(
+    r'^\d+:completed-paste:generation=(\d+)'
+    r':acceptedAtEpochMicros=(\d+):elapsedMicros=(\d+)$',
+  ).firstMatch(event);
+  if (match == null ||
+      int.tryParse(match.group(1)!) != input['sourceGeneration'] ||
+      int.tryParse(match.group(2)!) != input['acceptedMicros'] ||
+      int.tryParse(match.group(3)!) != input['editorSyncMicros']) {
+    blockers.add('$prefix platform paste timing does not replay');
+  }
 }
 
 void _validateStructuralEvidence({
@@ -1273,11 +1321,15 @@ bool _paintClockReplays(
   return paintMonotonic >= buildStart && paintMonotonic <= buildFinish;
 }
 
-({Set<String> keys, int start, int end})? _paintFragmentLedger(Object? value) {
+({Set<String> keys, int start, int end, bool coversBounds})?
+_paintFragmentLedger(Object? value) {
   if (value is! List || value.isEmpty) return null;
   final keys = <String>{};
   int? sourceStart;
   int? sourceEnd;
+  int? previousStart;
+  int? coveredEnd;
+  var coversBounds = true;
   for (final entry in value) {
     if (entry is! Map) return null;
     final ordinal = entry['ordinal'];
@@ -1298,10 +1350,21 @@ bool _paintClockReplays(
     }
     final key = '$ordinal:$fragmentStart:$fragmentEnd:$start:$end';
     if (!keys.add(key)) return null;
+    if (previousStart != null &&
+        (start < previousStart || start > coveredEnd! + 1)) {
+      coversBounds = false;
+    }
+    previousStart = start;
+    coveredEnd = coveredEnd == null ? end : math.max(coveredEnd, end);
     sourceStart = sourceStart == null ? start : math.min(sourceStart, start);
     sourceEnd = sourceEnd == null ? end : math.max(sourceEnd, end);
   }
-  return (keys: keys, start: sourceStart!, end: sourceEnd!);
+  return (
+    keys: keys,
+    start: sourceStart!,
+    end: sourceEnd!,
+    coversBounds: coversBounds,
+  );
 }
 
 bool _paintSurfaceReplays(Map<String, Object?> paint, Object? expectedExtent) {
@@ -1334,6 +1397,9 @@ bool _paintSurfaceReplays(Map<String, Object?> paint, Object? expectedExtent) {
       requiredLedger != null &&
       readyLedger != null &&
       paintedLedger != null &&
+      requiredLedger.coversBounds &&
+      readyLedger.coversBounds &&
+      paintedLedger.coversBounds &&
       requiredLedger.keys.length == requiredVisibleFragmentCount &&
       paintedLedger.keys.length == rowCount &&
       readyLedger.keys.length == laidOutVisiblePlusOverscanFragmentCount &&
@@ -1349,8 +1415,10 @@ bool _paintSurfaceReplays(Map<String, Object?> paint, Object? expectedExtent) {
       readyStart is int &&
       readyEnd is int &&
       readyEnd > readyStart &&
-      readyStart == visibleStart &&
-      readyEnd == visibleStart + visibleLength &&
+      readyStart >= visibleStart &&
+      readyEnd <= visibleStart + visibleLength &&
+      readyStart <= requiredLedger.start &&
+      readyEnd >= requiredLedger.end &&
       paintedStart >= readyStart &&
       paintedEnd <= readyEnd &&
       paintedLedger.start == paintedStart &&
@@ -1359,10 +1427,7 @@ bool _paintSurfaceReplays(Map<String, Object?> paint, Object? expectedExtent) {
       readyLedger.end == readyEnd &&
       paint['visiblePlusOverscanSourceSha256'] ==
           paint['expectedVisiblePlusOverscanSourceSha256'] &&
-      paint['visiblePlusOverscanSourceSha256'] ==
-          paint['visibleSourceSha256'] &&
-      paint['expectedVisiblePlusOverscanSourceSha256'] ==
-          paint['expectedVisibleSourceSha256'] &&
+      paint['visibleSourceSha256'] == paint['expectedVisibleSourceSha256'] &&
       expectedExtent is int &&
       paintedStart <= expectedExtent &&
       expectedExtent <= paintedEnd;
@@ -1553,7 +1618,7 @@ void _validateStructuralPhase({
       if (successorPaints == null || successorPaints.isEmpty) {
         blockers.add('$prefix pair $pair successor never painted');
       } else {
-        final firstSuccessorFrame = _firstFrameAtOrAfter(
+        final firstSuccessorFrame = _firstFrameBuildAtOrAfter(
           frames,
           successorAccepted,
         );
@@ -1590,7 +1655,10 @@ void _validateStructuralPhase({
       final returnPaints =
           paints[(sessionOrdinal: 0, sourceGeneration: returnGeneration)];
       if (returnPaints != null && returnPaints.isNotEmpty) {
-        final firstReturnFrame = _firstFrameAtOrAfter(frames, returnAccepted);
+        final firstReturnFrame = _firstFrameBuildAtOrAfter(
+          frames,
+          returnAccepted,
+        );
         if (firstReturnFrame == null ||
             !returnPaints.any(
               (paint) => paint['frameOrdinal'] == firstReturnFrame,
@@ -1606,10 +1674,8 @@ void _validateStructuralPhase({
         }
       } else if (!requireEveryGenerationPaint) {
         final hadFrameOpportunity = frames.values.any((frame) {
-          final vsync = frame['vsyncMicros'];
-          return vsync is int &&
-              vsync >= returnAccepted &&
-              vsync < successorAccepted;
+          final buildStart = _frameBuildStartEpochMicros(frame);
+          return buildStart >= returnAccepted && buildStart < successorAccepted;
         });
         if (hadFrameOpportunity) {
           blockers.add(
@@ -1727,7 +1793,7 @@ void _validateStructuralPhase({
     );
   for (final input in orderedInputs) {
     final accepted = input['acceptedMicros']! as int;
-    final frameOrdinal = _firstFrameAtOrAfter(frames, accepted);
+    final frameOrdinal = _firstFrameBuildAtOrAfter(frames, accepted);
     if (frameOrdinal == null) {
       blockers.add(
         '$prefix generation ${input['sourceGeneration']} has no following frame',
@@ -1794,7 +1860,7 @@ void _validateStructuralPhase({
       blockers.add('$prefix cannot bind its complete burst frame interval');
       return;
     }
-    final firstFrame = _firstFrameAtOrAfter(frames, firstAccepted);
+    final firstFrame = _firstFrameBuildAtOrAfter(frames, firstAccepted);
     if (firstFrame == null) {
       blockers.add('$prefix has no frame after burst acceptance');
       return;
@@ -2035,17 +2101,22 @@ List<_StructuralExpected> _structuralExpectedSequence({
   return result;
 });
 
-int? _firstFrameAtOrAfter(
+int? _firstFrameBuildAtOrAfter(
   Map<int, Map<String, Object?>> frames,
   int acceptedMicros,
 ) {
   final candidates =
       frames.entries
           .where(
-            (entry) => (entry.value['vsyncMicros']! as int) >= acceptedMicros,
+            (entry) =>
+                _frameBuildStartEpochMicros(entry.value) >= acceptedMicros,
           )
           .toList()
-        ..sort((left, right) => left.key.compareTo(right.key));
+        ..sort(
+          (left, right) => _frameBuildStartEpochMicros(
+            left.value,
+          ).compareTo(_frameBuildStartEpochMicros(right.value)),
+        );
   return candidates.isEmpty ? null : candidates.first.key;
 }
 
@@ -2263,7 +2334,7 @@ void _validateOpenObservation(
   if (!frames.containsKey(frameOrdinal)) {
     blockers.add('$prefix references missing frame $frameOrdinal');
   } else {
-    final firstFrame = _firstFrameAtOrAfter(frames, accepted);
+    final firstFrame = _firstFrameBuildAtOrAfter(frames, accepted);
     if (firstFrame == null || firstFrame > frameOrdinal) {
       blockers.add('$prefix cannot bind the complete cold-open frame interval');
     } else {
@@ -2322,16 +2393,17 @@ void _validateWarmup(
   if (presentInputs.length != acceptedGenerations.length) {
     blockers.add('$prefix does not have one raw input per accepted generation');
   }
-  final firstInput = presentInputs.isEmpty ? null : presentInputs.first;
-  final finalInput = presentInputs.isEmpty ? null : presentInputs.last;
-  if (firstInput == null || finalInput == null) {
+  final summaryInputs = presentInputs.where(
+    (input) => input['sourceGeneration'] == generation,
+  );
+  final summaryInput = summaryInputs.length == 1 ? summaryInputs.single : null;
+  if (presentInputs.isEmpty || summaryInput == null) {
     blockers.add('$prefix has no raw input observation');
-  } else if (finalInput['acceptedMicros'] != accepted ||
-      finalInput['sourceGeneration'] != generation ||
-      finalInput['sourceSha256'] != warmup['sourceSha256'] ||
-      finalInput['canonicalSelectionBaseUtf16'] !=
+  } else if (summaryInput['acceptedMicros'] != accepted ||
+      summaryInput['sourceSha256'] != warmup['sourceSha256'] ||
+      summaryInput['canonicalSelectionBaseUtf16'] !=
           warmup['canonicalSelectionBaseUtf16'] ||
-      finalInput['canonicalSelectionExtentUtf16'] !=
+      summaryInput['canonicalSelectionExtentUtf16'] !=
           warmup['canonicalSelectionExtentUtf16']) {
     blockers.add('$prefix does not match its raw input observations');
   }
@@ -2339,21 +2411,23 @@ void _validateWarmup(
   if (presentEngines.length != acceptedGenerations.length) {
     blockers.add('$prefix does not have one engine receipt per generation');
   }
-  final rawNativeFfiMicros = <int>[
-    for (var index = 0; index < presentEngines.length; index += 1)
-      _integer(
-        presentEngines[index]['nativeFfiMicros'],
-        '$prefix.rawEngine[$index].nativeFfiMicros',
-        blockers,
-      ),
-  ];
+  for (var index = 0; index < presentEngines.length; index += 1) {
+    _integer(
+      presentEngines[index]['nativeFfiMicros'],
+      '$prefix.rawEngine[$index].nativeFfiMicros',
+      blockers,
+    );
+  }
   final engineMicros = _integer(
     warmup['engineMicros'],
     '$prefix.engineMicros',
     blockers,
   );
-  if (rawNativeFfiMicros.isEmpty ||
-      rawNativeFfiMicros.reduce(math.max) != engineMicros) {
+  final summaryEngines = presentEngines.where(
+    (engine) => engine['sourceGeneration'] == generation,
+  );
+  if (summaryEngines.length != 1 ||
+      summaryEngines.single['nativeFfiMicros'] != engineMicros) {
     blockers.add('$prefix engine timing does not replay');
   }
 }
@@ -2390,8 +2464,10 @@ List<int> _acceptedGenerations(
     result.add(generation);
     previous = generation;
   }
-  if (result.isEmpty || sample['sourceGeneration'] != result.last) {
-    blockers.add('$prefix final source generation does not match its sequence');
+  if (result.isEmpty || !result.contains(sample['sourceGeneration'])) {
+    blockers.add(
+      '$prefix measured source generation is not in its accepted sequence',
+    );
   }
   return result;
 }
@@ -2746,16 +2822,17 @@ void _validateSample(
       blockers,
     );
   }
-  final firstInput = presentInputs.isEmpty ? null : presentInputs.first;
-  final finalInput = presentInputs.isEmpty ? null : presentInputs.last;
-  if (firstInput == null || finalInput == null) {
+  final summaryInputs = presentInputs.where(
+    (input) => input['sourceGeneration'] == generation,
+  );
+  final summaryInput = summaryInputs.length == 1 ? summaryInputs.single : null;
+  if (presentInputs.isEmpty || summaryInput == null) {
     blockers.add('$prefix has no raw input observation');
-  } else if (finalInput['acceptedMicros'] != accepted ||
-      finalInput['sourceGeneration'] != generation ||
-      finalInput['sourceSha256'] != sample['sourceSha256'] ||
-      finalInput['canonicalSelectionBaseUtf16'] !=
+  } else if (summaryInput['acceptedMicros'] != accepted ||
+      summaryInput['sourceSha256'] != sample['sourceSha256'] ||
+      summaryInput['canonicalSelectionBaseUtf16'] !=
           sample['canonicalSelectionBaseUtf16'] ||
-      finalInput['canonicalSelectionExtentUtf16'] !=
+      summaryInput['canonicalSelectionExtentUtf16'] !=
           sample['canonicalSelectionExtentUtf16']) {
     blockers.add('$prefix does not match its raw input observations');
   }
@@ -2990,8 +3067,8 @@ void _validateSample(
   } else if (start != expectedStartFrames.first['ordinal']) {
     blockers.add('$prefix frame interval does not begin at acceptance');
   }
-  if (supersededBeforeFrame && proving != start) {
-    blockers.add('$prefix superseding source did not paint on the first frame');
+  if (proving != start) {
+    blockers.add('$prefix visible result missed its first frame opportunity');
   }
   if (start > proving || proving > end) {
     blockers.add('$prefix proving frame is outside its interval');
@@ -3006,9 +3083,9 @@ void _validateSample(
   }
   if (frames[proving] == null) {
     blockers.add('$prefix proving frame does not exist');
-  } else if (finalInput != null) {
+  } else if (summaryInput != null) {
     final rawEditorSync = _integer(
-      finalInput['editorSyncMicros'],
+      summaryInput['editorSyncMicros'],
       '$prefix.rawInput.editorSyncMicros',
       blockers,
     );
@@ -3045,8 +3122,11 @@ void _validateSample(
       ),
     );
   }
-  if (rawNativeFfiMicros.isEmpty ||
-      rawNativeFfiMicros.reduce(math.max) != engineMicros) {
+  final summaryEngines = presentEngines.where(
+    (engine) => engine['sourceGeneration'] == generation,
+  );
+  if (summaryEngines.length != 1 ||
+      summaryEngines.single['nativeFfiMicros'] != engineMicros) {
     blockers.add('$prefix engine timing does not replay');
   }
   if (collectMetrics && requiresInput) {

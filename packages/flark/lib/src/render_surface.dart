@@ -408,6 +408,7 @@ final class RenderFlarkSurface extends RenderBox {
   int _skippedRowCount = 0;
   int _skippedFragmentCount = 0;
   double _skippedFragmentEstimate = 0;
+  double _layoutCoverageBottom = 0;
   int _reusedPainterCount = 0;
   Map<int, SemanticsNode> _semanticRowNodes = <int, SemanticsNode>{};
 
@@ -702,6 +703,7 @@ final class RenderFlarkSurface extends RenderBox {
     _skippedRowCount = 0;
     _skippedFragmentCount = 0;
     _skippedFragmentEstimate = 0;
+    _layoutCoverageBottom = _padding.top;
     _reusedPainterCount = 0;
     final maxWidth = math.max(0.0, size.width - _padding.horizontal);
     var top = _padding.top;
@@ -753,6 +755,7 @@ final class RenderFlarkSurface extends RenderBox {
                 presentationIndex == presentations.length - 1,
           );
           top += 6;
+          _layoutCoverageBottom = math.max(_layoutCoverageBottom, top);
           _laidOutRowCount += 1;
         }
         sourceCursor = math.max(sourceCursor, sourceRange.end);
@@ -969,6 +972,7 @@ final class RenderFlarkSurface extends RenderBox {
       }
       _paintedRows.add(paintedRow);
       top += height;
+      _layoutCoverageBottom = math.max(_layoutCoverageBottom, top);
       fragmentStart = fragmentEnd;
       first = false;
       if (text.isEmpty) break;
@@ -1397,6 +1401,23 @@ final class RenderFlarkSurface extends RenderBox {
           .map((fragment) => fragment.sourceUtf16End)
           .reduce(math.max),
     );
+  }
+
+  bool _fragmentsCoverTheirBounds(
+    List<FlarkSurfaceLayoutFragmentObservation> fragments,
+  ) {
+    if (fragments.isEmpty) return false;
+    var previousStart = fragments.first.sourceUtf16Start;
+    var coveredEnd = fragments.first.sourceUtf16End;
+    for (final fragment in fragments.skip(1)) {
+      if (fragment.sourceUtf16Start < previousStart ||
+          fragment.sourceUtf16Start > coveredEnd + 1) {
+        return false;
+      }
+      previousStart = fragment.sourceUtf16Start;
+      coveredEnd = math.max(coveredEnd, fragment.sourceUtf16End);
+    }
+    return true;
   }
 
   _PaintedRow? _logicalRowForSourceUtf16(int offset) {
@@ -2058,6 +2079,9 @@ final class RenderFlarkSurface extends RenderBox {
     Rect? observedCaretRect;
     int? observedCaretSourceUtf16;
     int? observedCaretDisplayUtf16;
+    // This ledger is selected from the pre-paint-cull layout plan. The
+    // painted ledger below is collected independently from the fragments that
+    // actually intersect the canvas clip.
     final requiredVisibleWitnesses = paintObserver == null
         ? const <_LayoutFragmentWitness>[]
         : _layoutFragmentWitnesses
@@ -2081,6 +2105,9 @@ final class RenderFlarkSurface extends RenderBox {
     final readyFragments = readyWitnesses
         .map((witness) => witness.fragment)
         .toList(growable: false);
+    final readyFragmentKeys = paintObserver == null
+        ? const <Object>{}
+        : readyFragments.map(_fragmentObservationKey).toSet();
     canvas.save();
     canvas.clipRect(offset & size);
     for (final row in _paintedRows) {
@@ -2267,6 +2294,8 @@ final class RenderFlarkSurface extends RenderBox {
     final visiblePlusOverscanUtf16End = visiblePlusOverscanBounds?.end;
     final completeVisibleSurface =
         requiredVisibleFragmentKeys.isNotEmpty &&
+        _fragmentsCoverTheirBounds(requiredVisibleFragments) &&
+        _fragmentsCoverTheirBounds(observedFragments) &&
         observedFragmentKeys!.length == requiredVisibleFragmentKeys.length &&
         observedFragmentKeys.containsAll(requiredVisibleFragmentKeys) &&
         requiredVisibleBounds != null &&
@@ -2275,15 +2304,15 @@ final class RenderFlarkSurface extends RenderBox {
     final laidOutThroughOverscan =
         _skippedRowCount == 0 && _skippedFragmentCount == 0 ||
         readyWitnesses.isNotEmpty &&
-            readyWitnesses.last.top + readyWitnesses.last.height >=
-                _layoutBudgetBottom;
-    final visibleSourceEnd =
-        _controller.visibleUtf16Start + _controller.visibleSource.length;
+            _layoutCoverageBottom >= _layoutBudgetBottom;
     final completeVisiblePlusOverscanSurface =
         completeVisibleSurface &&
         laidOutThroughOverscan &&
-        visiblePlusOverscanUtf16Start == _controller.visibleUtf16Start &&
-        visiblePlusOverscanUtf16End == visibleSourceEnd;
+        visiblePlusOverscanBounds != null &&
+        _fragmentsCoverTheirBounds(readyFragments) &&
+        readyFragmentKeys.containsAll(requiredVisibleFragmentKeys) &&
+        visiblePlusOverscanBounds.start <= requiredVisibleBounds.start &&
+        visiblePlusOverscanBounds.end >= requiredVisibleBounds.end;
     paintObserver(
       FlarkSurfacePaintObservation(
         revision: _controller.revision,

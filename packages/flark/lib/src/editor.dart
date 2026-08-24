@@ -530,6 +530,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
     await controller.selectOversizedRangeUtf16(0, controller.sourceUtf16Length);
     if (!mounted || !identical(controller, widget.controller)) return;
     _sendEditingState(force: true);
+    widget.debugInputEventObserver?.call(
+      'completed-select-all:generation=${controller.sourceGeneration}',
+    );
   }
 
   void _moveToLineBoundary({required bool forward, required bool modify}) {
@@ -1002,7 +1005,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       },
       SingleActivator(LogicalKeyboardKey.keyZ, meta: meta, control: !meta): () {
         widget.debugInputEventObserver?.call('shortcut:undo');
-        unawaited(widget.controller.undo());
+        unawaited(_undo());
       },
       SingleActivator(
         LogicalKeyboardKey.keyZ,
@@ -1011,12 +1014,12 @@ final class _FlarkEditorState extends State<FlarkEditor>
         shift: true,
       ): () {
         widget.debugInputEventObserver?.call('shortcut:redo');
-        unawaited(widget.controller.redo());
+        unawaited(_redo());
       },
     },
     SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
       widget.debugInputEventObserver?.call('shortcut:redo');
-      unawaited(widget.controller.redo());
+      unawaited(_redo());
     },
   };
 
@@ -1105,13 +1108,29 @@ final class _FlarkEditorState extends State<FlarkEditor>
       case 'deleteBackward:':
         _preferredVerticalNavigationX = null;
         widget.controller.observePlatformDeleteBackwardAction();
+        widget.debugInputEventObserver?.call(
+          'accepted-selector:delete-backward:'
+          'generation=${widget.controller.sourceGeneration}',
+        );
       case 'deleteForward:':
         _preferredVerticalNavigationX = null;
         widget.controller.deleteForward();
+        widget.debugInputEventObserver?.call(
+          'accepted-selector:delete-forward:'
+          'generation=${widget.controller.sourceGeneration}',
+        );
       case 'moveLeft:' || 'moveBackward:':
         _moveCharacter(forward: false, modify: false);
+        widget.debugInputEventObserver?.call(
+          'completed-navigation:generation='
+          '${widget.controller.sourceGeneration}',
+        );
       case 'moveRight:' || 'moveForward:':
         _moveCharacter(forward: true, modify: false);
+        widget.debugInputEventObserver?.call(
+          'completed-navigation:generation='
+          '${widget.controller.sourceGeneration}',
+        );
       case 'moveLeftAndModifySelection:':
         _moveCharacter(forward: false, modify: true);
       case 'moveRightAndModifySelection:':
@@ -1155,12 +1174,16 @@ final class _FlarkEditorState extends State<FlarkEditor>
       case 'insertNewline:':
         _preferredVerticalNavigationX = null;
         widget.controller.insertNewline();
+        widget.debugInputEventObserver?.call(
+          'accepted-selector:insert-newline:'
+          'generation=${widget.controller.sourceGeneration}',
+        );
       case 'undo:':
         _preferredVerticalNavigationX = null;
-        unawaited(widget.controller.undo());
+        unawaited(_undo());
       case 'redo:':
         _preferredVerticalNavigationX = null;
-        unawaited(widget.controller.redo());
+        unawaited(_redo());
       case 'cancelOperation:':
         _preferredVerticalNavigationX = null;
         unawaited(widget.controller.cancelComposition());
@@ -1173,6 +1196,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
     final text = await widget.controller.readSelectedText();
     if (text == null) return;
     await Clipboard.setData(ClipboardData(text: text));
+    widget.debugInputEventObserver?.call(
+      'completed-copy:generation=${widget.controller.sourceGeneration}',
+    );
   }
 
   Future<void> _cutSelection() async {
@@ -1187,16 +1213,48 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (controller.inputValue != value) return;
     if (controller.canonicalSelectionGeneration != selectionGeneration) return;
     controller.replaceSelection('');
+    widget.debugInputEventObserver?.call(
+      'completed-cut:generation=${controller.sourceGeneration}',
+    );
   }
 
   Future<void> _pasteClipboard() async {
     _preferredVerticalNavigationX = null;
+    final observer = widget.debugInputEventObserver;
+    final acceptedAtEpochMicros = observer == null
+        ? null
+        : DateTime.now().microsecondsSinceEpoch;
+    final stopwatch = observer == null ? null : (Stopwatch()..start());
     final controller = widget.controller;
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (!mounted || !identical(controller, widget.controller)) return;
     final text = data?.text;
     if (text == null || text.isEmpty) return;
     controller.replaceSelection(text);
+    stopwatch?.stop();
+    observer?.call(
+      'completed-paste:generation=${controller.sourceGeneration}'
+      ':acceptedAtEpochMicros=$acceptedAtEpochMicros'
+      ':elapsedMicros=${stopwatch!.elapsedMicroseconds}',
+    );
+  }
+
+  Future<void> _undo() async {
+    final controller = widget.controller;
+    await controller.undo();
+    if (!mounted || !identical(controller, widget.controller)) return;
+    widget.debugInputEventObserver?.call(
+      'completed-undo:generation=${controller.sourceGeneration}',
+    );
+  }
+
+  Future<void> _redo() async {
+    final controller = widget.controller;
+    await controller.redo();
+    if (!mounted || !identical(controller, widget.controller)) return;
+    widget.debugInputEventObserver?.call(
+      'completed-redo:generation=${controller.sourceGeneration}',
+    );
   }
 
   @override
