@@ -243,6 +243,9 @@ must not be reported as green when environment-gated and skipped. It proves:
 - Return, Backspace, pointer selection, cut, undo, and wheel scrolling;
 - frontmost PID, accessibility focus, window geometry, and pre-input selection
   preconditions; and
+- an app-authored, stable input-delivery acknowledgement after every injected
+  key, text batch, structural burst, and paste, before settlement is accepted;
+  and
 - every-generation source, presentation, style, and caret identity for the
   sustained wrapped product-tour edit.
 

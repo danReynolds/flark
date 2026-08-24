@@ -286,7 +286,8 @@ final class MacosNativeCanaryDriver {
     _snapshot(await _request('settle'));
   }
 
-  Future<void> pasteText(String text) => _request('pasteText', {'text': text});
+  Future<void> pasteText(String text) =>
+      _request('pasteText', {'text': text, ..._expectedSelectionArguments()});
 
   Future<void> scrollBy(int deltaY) => _request('scrollBy', {'deltaY': deltaY});
 

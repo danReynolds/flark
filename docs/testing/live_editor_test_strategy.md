@@ -192,6 +192,11 @@ frontmost and accessibility-focused, waits for requested window geometry to
 converge, and verifies the expected source selection again. A canary is invalid
 if any of those preconditions drift; it must not type into an assumed target.
 
+After sending native input, the actuator requires a new app-authored input
+event and waits for that event stream to become stable before accepting a
+settled snapshot. Posting a key is not a delivery acknowledgement: under load,
+macOS can enqueue that key behind the command-channel settle request.
+
 iOS and Android later get similarly small canaries for touch, clipboard/menu,
 lifecycle, and accessibility routing. Real IME, autocorrect, dictation,
 selection handles, VoiceOver/TalkBack, and device performance remain physical

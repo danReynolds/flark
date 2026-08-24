@@ -509,11 +509,11 @@ func appRequest(
   return receipt
 }
 
-func verifyExpectedSelection(_ arguments: [String: Any]) throws {
+func verifyExpectedSelection(_ arguments: [String: Any]) throws -> [String: Any] {
+  let receipt = try appRequest(operation: "settle")
   guard let expectedBase = arguments["expectedBaseUtf16"] as? Int,
     let expectedExtent = arguments["expectedExtentUtf16"] as? Int
-  else { return }
-  let receipt = try appRequest(operation: "settle")
+  else { return receipt }
   let actualBase = receipt["selectionBaseUtf16"] as? Int
   let actualExtent = receipt["selectionExtentUtf16"] as? Int
   guard actualBase == expectedBase, actualExtent == expectedExtent else {
@@ -523,6 +523,28 @@ func verifyExpectedSelection(_ arguments: [String: Any]) throws {
         "\(String(describing: actualBase)).." +
         "\(String(describing: actualExtent))"
     )
+  }
+  return receipt
+}
+
+func waitForInputDelivery(
+  after baselineReceipt: [String: Any],
+  operation: String
+) throws {
+  let baselineEvents = baselineReceipt["inputEvents"] as? [String] ?? []
+  var observedEvents: [String]?
+  var stableSince: Date?
+  try waitUntil("app input delivery for \(operation)") {
+    guard let receipt = try? readJSON(receiptPath) else { return false }
+    let events = receipt["inputEvents"] as? [String] ?? []
+    guard events != baselineEvents else { return false }
+    if events != observedEvents {
+      observedEvents = events
+      stableSince = Date()
+      return false
+    }
+    guard let stableSince else { return false }
+    return Date().timeIntervalSince(stableSince) >= 0.1
   }
 }
 
@@ -650,13 +672,17 @@ while !shouldStop, let line = readLine() {
         width: arguments["windowWidth"] as? Int ?? 800,
         height: arguments["windowHeight"] as? Int ?? 632
       )
-      try verifyExpectedSelection(arguments)
+      let baselineReceipt = try verifyExpectedSelection(arguments)
       typeText(
         try string(arguments["text"], "text"),
         intervalMicros: try integer(
           arguments["cadenceMicros"],
           "cadenceMicros"
         )
+      )
+      try waitForInputDelivery(
+        after: baselineReceipt,
+        operation: "insertText"
       )
     case "closeSession":
       response["snapshot"] = try appRequest(operation: "closeSession")
@@ -666,7 +692,7 @@ while !shouldStop, let line = readLine() {
         width: arguments["windowWidth"] as? Int ?? 800,
         height: arguments["windowHeight"] as? Int ?? 632
       )
-      try verifyExpectedSelection(arguments)
+      let baselineReceipt = try verifyExpectedSelection(arguments)
       try repeatKey(
         try string(arguments["key"], "key"),
         count: try integer(arguments["count"], "count"),
@@ -675,13 +701,17 @@ while !shouldStop, let line = readLine() {
           "cadenceMicros"
         )
       )
+      try waitForInputDelivery(
+        after: baselineReceipt,
+        operation: "repeatKey"
+      )
     case "structuralBursts":
       _ = try focusWindow(
         pid: appPID,
         width: arguments["windowWidth"] as? Int ?? 800,
         height: arguments["windowHeight"] as? Int ?? 632
       )
-      try verifyExpectedSelection(arguments)
+      let baselineReceipt = try verifyExpectedSelection(arguments)
       try typeStructuralBursts(
         count: try integer(arguments["count"], "count"),
         intervalMicros: try integer(
@@ -689,13 +719,17 @@ while !shouldStop, let line = readLine() {
           "cadenceMicros"
         )
       )
+      try waitForInputDelivery(
+        after: baselineReceipt,
+        operation: "structuralBursts"
+      )
     case "key":
       _ = try focusWindow(
         pid: appPID,
         width: arguments["windowWidth"] as? Int ?? 800,
         height: arguments["windowHeight"] as? Int ?? 632
       )
-      try verifyExpectedSelection(arguments)
+      let baselineReceipt = try verifyExpectedSelection(arguments)
       let key = try string(arguments["key"], "key")
       let pasteboardChange = NSPasteboard.general.changeCount
       try postKey(named: key)
@@ -704,13 +738,21 @@ while !shouldStop, let line = readLine() {
           NSPasteboard.general.changeCount != pasteboardChange
         }
       }
+      try waitForInputDelivery(after: baselineReceipt, operation: "key:\(key)")
     case "pasteText":
+      _ = try focusWindow(
+        pid: appPID,
+        width: arguments["windowWidth"] as? Int ?? 800,
+        height: arguments["windowHeight"] as? Int ?? 632
+      )
+      let baselineReceipt = try verifyExpectedSelection(arguments)
       let text = try string(arguments["text"], "text")
       NSPasteboard.general.clearContents()
       guard NSPasteboard.general.setString(text, forType: .string) else {
         throw ActuatorFailure.message("could not set the macOS pasteboard")
       }
       pressCommandShortcut(9)
+      try waitForInputDelivery(after: baselineReceipt, operation: "pasteText")
     case "toggleTaskAtUtf16":
       let target = try integer(arguments["targetUtf16"], "targetUtf16")
       let window = try focusWindow(pid: appPID)
