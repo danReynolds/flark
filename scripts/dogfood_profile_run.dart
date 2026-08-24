@@ -13,8 +13,15 @@ import 'dogfood_host_identity.dart';
 import 'verify_v4_dogfood_receipt.dart';
 
 const _profileCadence = Duration(microseconds: 16667);
+const _structuralBurstCadence = Duration(microseconds: 33333);
 const _windowWidth = 1569;
 const _windowHeight = 906;
+const _structuralBurstEvidenceDenominator = DogfoodCellDenominator(
+  warmups: 0,
+  samples: 1,
+  runs: 3,
+  cadenceHz: 0,
+);
 
 final class _ExpectedGeneration {
   const _ExpectedGeneration({
@@ -249,6 +256,20 @@ Future<_ProfileRunResult> _runCell({
         run: run,
       );
     }
+    if (cellId.endsWith('-structural-burst')) {
+      final run = await _structuralCellRun(
+        driver: driver,
+        source: initialSource,
+        cellId: cellId,
+        runIndex: runIndex,
+        denominator: denominator,
+      );
+      return _ProfileRunResult(
+        initialSourceBytes: utf8.encode(initialSource).length,
+        display: _profileDisplay(launched.display),
+        run: run,
+      );
+    }
 
     final total = denominator.warmups + denominator.samples;
     late MacosNativeCanarySnapshot baseline;
@@ -292,9 +313,17 @@ Future<_ProfileRunResult> _runCell({
           cadence: _profileCadence,
         );
       case 'product-tour-deletion' || 'ordinary-1m-deletion':
-        final offset = cellId.startsWith('product-tour')
+        final productTour = cellId.startsWith('product-tour');
+        final offset = productTour
             ? initialSource.indexOf('This intentionally') + 'This '.length
             : initialSource.indexOf('This is ordinary') + 'This '.length;
+        if (productTour) {
+          // The frozen deletion target intentionally lives in the wrapped
+          // paragraph below the first viewport. Setup wheel input is excluded
+          // when activateAtUtf16 resets the measured observation window.
+          await driver.scrollBy(_windowHeight);
+          await driver.settle();
+        }
         await driver.activateAtUtf16(
           offset,
           windowWidth: _windowWidth,
@@ -317,26 +346,6 @@ Future<_ProfileRunResult> _runCell({
         );
         await driver.repeatKey(
           'backspace',
-          count: total,
-          cadence: _profileCadence,
-        );
-      case 'product-tour-structural-burst' || 'ordinary-1m-structural-burst':
-        final marker = cellId.startsWith('product-tour')
-            ? 'locally.'
-            : 'parser catches up.';
-        final offset = initialSource.indexOf(marker) + marker.length;
-        baseline = await driver.activateAtUtf16(
-          offset,
-          windowWidth: _windowWidth,
-          windowHeight: _windowHeight,
-        );
-        expected = _structuralExpectations(
-          source: baseline.source,
-          caret: offset,
-          firstGeneration: baseline.sourceGeneration + 1,
-          count: total,
-        );
-        await driver.typeStructuralBursts(
           count: total,
           cadence: _profileCadence,
         );
@@ -369,13 +378,12 @@ Future<_ProfileRunResult> _runCell({
         );
     }
     final settled = await driver.settle();
-    if (settled.source != expected.last.finalGeneration.source ||
-        settled.selectionBaseUtf16 !=
-            expected.last.finalGeneration.selectionBase ||
-        settled.selectionExtentUtf16 !=
-            expected.last.finalGeneration.selectionExtent) {
-      throw StateError('$cellId did not reach its deterministic final state');
-    }
+    _requireExpectedTerminalState(
+      cellId: cellId,
+      baseline: baseline,
+      settled: settled,
+      expected: expected,
+    );
     final closed = await driver.closeSession();
     return _ProfileRunResult(
       initialSourceBytes: utf8.encode(initialSource).length,
@@ -391,6 +399,200 @@ Future<_ProfileRunResult> _runCell({
     );
   } finally {
     await driver.close();
+  }
+}
+
+enum _StructuralPhase { latency, burst, perEditControl }
+
+Future<Map<String, Object?>> _structuralCellRun({
+  required MacosNativeCanaryDriver driver,
+  required String source,
+  required String cellId,
+  required int runIndex,
+  required DogfoodCellDenominator denominator,
+}) async {
+  final marker = cellId.startsWith('product-tour')
+      ? 'locally.'
+      : 'parser catches up.';
+  final offset = source.indexOf(marker) + marker.length;
+  if (offset < marker.length) {
+    throw StateError('$cellId is missing its frozen structural anchor');
+  }
+  final total = denominator.warmups + denominator.samples;
+
+  Future<Map<String, Object?>> runPhase(_StructuralPhase phase) async {
+    final setupAcknowledgementStart = driver.appAcknowledgementCount;
+    final opened = await driver.reset(
+      id: '$cellId-${phase.name}-$runIndex',
+      source: source,
+    );
+    if (opened.source != source || opened.sourceGeneration != 0) {
+      throw StateError('$cellId ${phase.name} did not open its exact fixture');
+    }
+    final baseline = await driver.activateAtUtf16(
+      offset,
+      windowWidth: _windowWidth,
+      windowHeight: _windowHeight,
+    );
+    final setupAcknowledgements = driver.appAcknowledgementsSince(
+      setupAcknowledgementStart,
+    );
+    if (setupAcknowledgements.length != 2 ||
+        setupAcknowledgements[0]['operation'] != 'reset' ||
+        setupAcknowledgements[1]['operation'] != 'activateAtUtf16' ||
+        setupAcknowledgements.any(
+          (acknowledgement) => acknowledgement['canaryId'] != baseline.canaryId,
+        )) {
+      throw StateError(
+        '$cellId ${phase.name} did not bind reset and activation to one app session',
+      );
+    }
+    final commandSequenceStart = driver.commandSequence;
+    final measurementAcknowledgementStart = driver.appAcknowledgementCount;
+    final expected = _structuralExpectations(
+      source: baseline.source,
+      caret: offset,
+      firstGeneration: baseline.sourceGeneration + 1,
+      count: total,
+      scheduledCadence: phase == _StructuralPhase.burst
+          ? _structuralBurstCadence
+          : null,
+    );
+    final transcript = <String>[];
+    switch (phase) {
+      case _StructuralPhase.latency:
+        for (var index = 0; index < total; index += 1) {
+          transcript.add('typeStructuralBursts:1:0');
+          await driver.typeStructuralBursts(count: 1, cadence: Duration.zero);
+          transcript.add('settle');
+          await driver.settle();
+        }
+      case _StructuralPhase.burst:
+        transcript.add(
+          'typeStructuralBursts:$total:'
+          '${_structuralBurstCadence.inMicroseconds}',
+        );
+        await driver.typeStructuralBursts(
+          count: total,
+          cadence: _structuralBurstCadence,
+        );
+      case _StructuralPhase.perEditControl:
+        for (var index = 0; index < total; index += 1) {
+          transcript.add('pressKey:enter');
+          await driver.pressKey('enter');
+          transcript.add('settle');
+          await driver.settle();
+          transcript.add('typeText:x:0');
+          await driver.typeText('x', cadence: Duration.zero);
+          transcript.add('settle');
+          await driver.settle();
+        }
+    }
+    transcript.add('settle');
+    final settled = await driver.settle();
+    _requireExpectedTerminalState(
+      cellId: '$cellId ${phase.name}',
+      baseline: baseline,
+      settled: settled,
+      expected: expected,
+    );
+    transcript.add('closeSession');
+    final closed = await driver.closeSession();
+    final commandSequenceEnd = driver.commandSequence;
+    final appAcknowledgements = driver.appAcknowledgementsSince(
+      measurementAcknowledgementStart,
+    );
+    Map<String, Object?> bindPhase(Map<String, Object?> measured) => {
+      ...measured,
+      'structuralPhase': phase.name,
+      'structuralSessionIdentity': baseline.canaryId,
+      'structuralActuatorSequenceStart': commandSequenceStart,
+      'structuralActuatorSequenceEnd': commandSequenceEnd,
+      'structuralCommandTranscript': transcript,
+      'structuralSetupAcknowledgements': setupAcknowledgements,
+      'structuralAppAcknowledgements': appAcknowledgements,
+    };
+    if (phase == _StructuralPhase.burst) {
+      final allGenerations = [
+        for (final sample in expected) ...sample.generations,
+      ];
+      return bindPhase(
+        _buildMeasuredRun(
+          runIndex: runIndex,
+          denominator: _structuralBurstEvidenceDenominator,
+          baseline: baseline,
+          settled: settled,
+          closed: closed,
+          expected: [
+            _ExpectedSample(
+              index: 0,
+              generations: allGenerations,
+              scheduledMicros: null,
+            ),
+          ],
+        ),
+      );
+    }
+    return bindPhase(
+      _buildMeasuredRun(
+        runIndex: runIndex,
+        denominator: denominator,
+        baseline: baseline,
+        settled: settled,
+        closed: closed,
+        expected: expected,
+      ),
+    );
+  }
+
+  final latency = await runPhase(_StructuralPhase.latency);
+  final burst = await runPhase(_StructuralPhase.burst);
+  final control = runIndex == 0
+      ? await runPhase(_StructuralPhase.perEditControl)
+      : null;
+  return {
+    ...latency,
+    'structuralEvidenceVersion': 1,
+    'structuralBurst': burst,
+    'structuralPerEditControl': ?control,
+  };
+}
+
+void _requireExpectedTerminalState({
+  required String cellId,
+  required MacosNativeCanarySnapshot baseline,
+  required MacosNativeCanarySnapshot settled,
+  required List<_ExpectedSample> expected,
+}) {
+  if (settled.faulted ||
+      settled.lastError != null ||
+      settled.resyncCount != baseline.resyncCount) {
+    throw StateError(
+      '$cellId became unhealthy: faulted=${settled.faulted} '
+      'lastError=${settled.lastError} '
+      'resyncCount=${baseline.resyncCount}->${settled.resyncCount} '
+      'lastResyncReason=${settled.lastResyncReason}',
+    );
+  }
+  final finalGeneration = expected.last.finalGeneration;
+  if (settled.source != finalGeneration.source ||
+      settled.selectionBaseUtf16 != finalGeneration.selectionBase ||
+      settled.selectionExtentUtf16 != finalGeneration.selectionExtent) {
+    throw StateError(
+      '$cellId did not reach its deterministic final state: '
+      'sourceGeneration=${settled.sourceGeneration} '
+      'actualSourceLength=${settled.source.length} '
+      'expectedSourceLength=${finalGeneration.source.length} '
+      'actualSourceSha256=${_sha(settled.source)} '
+      'expectedSourceSha256=${_sha(finalGeneration.source)} '
+      'actualSelection=${settled.selectionBaseUtf16}..'
+      '${settled.selectionExtentUtf16} '
+      'expectedSelection=${finalGeneration.selectionBase}..'
+      '${finalGeneration.selectionExtent} '
+      'resyncCount=${settled.resyncCount} '
+      'lastResyncReason=${settled.lastResyncReason} '
+      'faulted=${settled.faulted} lastError=${settled.lastError}',
+    );
   }
 }
 
@@ -484,14 +686,17 @@ List<_ExpectedSample> _structuralExpectations({
   required int caret,
   required int firstGeneration,
   required int count,
+  required Duration? scheduledCadence,
 }) {
   final result = <_ExpectedSample>[];
   var current = source;
   var currentCaret = caret;
   var generation = firstGeneration;
   for (var index = 0; index < count; index += 1) {
-    current = current.replaceRange(currentCaret, currentCaret, '\n');
-    currentCaret += 1;
+    // The parser-authored paragraph-break action commits the blank-line
+    // separator required to split one Markdown paragraph into two blocks.
+    current = current.replaceRange(currentCaret, currentCaret, '\n\n');
+    currentCaret += 2;
     final structural = _ExpectedGeneration(
       generation: generation++,
       source: current,
@@ -510,7 +715,9 @@ List<_ExpectedSample> _structuralExpectations({
       _ExpectedSample(
         index: index,
         generations: [structural, successor],
-        scheduledMicros: index * _profileCadence.inMicroseconds,
+        scheduledMicros: scheduledCadence == null
+            ? null
+            : index * scheduledCadence.inMicroseconds,
       ),
     );
   }
@@ -814,6 +1021,10 @@ Map<String, Object?> _mergeLifecycleFragments({
     'inputObservations': inputs,
     'paintObservations': paints,
     'engineObservations': engines,
+    'faulted': fragments.any((fragment) => fragment['faulted'] == true),
+    'resyncCount': fragments
+        .map((fragment) => fragment['resyncCount']! as int)
+        .fold<int>(0, (current, value) => math.max(current, value)),
     'memory': [
       firstMemory.firstWhere((sample) => sample['stage'] == 'baseline'),
       peak,
@@ -835,20 +1046,20 @@ Map<String, Object?> _buildMeasuredRun({
   String openKind = 'processLaunch',
   MacosNativeCanarySnapshot? openSnapshot,
 }) {
+  final openMeasurementSnapshot = openSnapshot ?? baseline;
   final expectedByGeneration = <int, _ExpectedGeneration>{
     for (final sample in expected)
       for (final generation in sample.generations)
         generation.generation: generation,
   };
-  final ordinaryInputs = _ordinaryInputEvents(settled.inputEvents);
-  final semanticInputs = _semanticInputEvents(
-    settled.inputEvents,
-    settled.semanticEditPerformanceReceipts,
-  );
-  final historyInputs = _historyInputEvents(
-    settled.inputEvents,
-    settled.sourceEditPerformanceReceipts,
-  );
+  if (openAcceptedMicros != null && !expectedByGeneration.containsKey(0)) {
+    expectedByGeneration[0] = _ExpectedGeneration(
+      generation: 0,
+      source: openMeasurementSnapshot.source,
+      selectionBase: openMeasurementSnapshot.selectionBaseUtf16,
+      selectionExtent: openMeasurementSnapshot.selectionExtentUtf16,
+    );
+  }
   final performanceByGeneration = <int, Map<String, Object?>>{
     for (final receipt in settled.sourceEditPerformanceReceipts)
       receipt['sourceGeneration']! as int: receipt,
@@ -865,38 +1076,54 @@ Map<String, Object?> _buildMeasuredRun({
         _inputObservation(
           expectation,
           sessionOrdinal: sessionOrdinal,
+          measurementSessionIdentity: openMeasurementSnapshot.canaryId,
           acceptedMicros: openAcceptedMicros,
           editorSyncMicros: 0,
         ),
       );
       engineObservations.add({
         'sessionOrdinal': sessionOrdinal,
+        'measurementSessionIdentity': openMeasurementSnapshot.canaryId,
         'sourceGeneration': 0,
         'nativeFfiMicros': 0,
       });
       continue;
     }
-    final input =
-        ordinaryInputs[generation] ??
-        semanticInputs[generation] ??
-        historyInputs[generation];
-    if (input == null) {
-      throw StateError('generation $generation has no acceptance event');
+    final performance = performanceByGeneration[generation];
+    if (performance == null) {
+      throw StateError('generation $generation has no acceptance receipt');
+    }
+    final acceptedMicros = performance['acceptedAtEpochMicros'];
+    final editorSyncMicros =
+        performance['editorSyncMicros'] ??
+        performance['platformCallbackMicros'];
+    if (acceptedMicros is! int ||
+        acceptedMicros <= 0 ||
+        editorSyncMicros is! int ||
+        editorSyncMicros < 0) {
+      throw StateError(
+        'generation $generation has an invalid acceptance clock',
+      );
+    }
+    final performanceSessionIdentity = performance['canaryId'];
+    if (performanceSessionIdentity is! String ||
+        performanceSessionIdentity.isEmpty) {
+      throw StateError(
+        'generation $generation has no app-authored session identity',
+      );
     }
     inputObservations.add(
       _inputObservation(
         expectation,
         sessionOrdinal: sessionOrdinal,
-        acceptedMicros: input.$1,
-        editorSyncMicros: input.$2,
+        measurementSessionIdentity: performanceSessionIdentity,
+        acceptedMicros: acceptedMicros,
+        editorSyncMicros: editorSyncMicros,
       ),
     );
-    final performance = performanceByGeneration[generation];
-    if (performance == null) {
-      throw StateError('generation $generation has no engine receipt');
-    }
     engineObservations.add({
       'sessionOrdinal': sessionOrdinal,
+      'measurementSessionIdentity': performanceSessionIdentity,
       'sourceGeneration': generation,
       'nativeFfiMicros': performance['nativeFfiMicros']! as int,
     });
@@ -936,8 +1163,12 @@ Map<String, Object?> _buildMeasuredRun({
     frameOrdinalByStamp[stamp] = index;
     frames.add({
       'ordinal': index,
+      'sessionOrdinal': sessionOrdinal,
+      'measurementSessionIdentity': timing['canaryId'],
       'vsyncMicros': anchorEpochMidpoint + stamp - anchorMonotonic,
       'monotonicVsyncMicros': stamp,
+      'buildStartMonotonicMicros': timing['buildStartMicros'],
+      'buildFinishMonotonicMicros': timing['buildFinishMicros'],
       'clockAnchorEpochBeforeMicros': anchorEpochBefore,
       'clockAnchorEpochAfterMicros': anchorEpochAfter,
       'clockAnchorMonotonicMicros': anchorMonotonic,
@@ -981,10 +1212,42 @@ Map<String, Object?> _buildMeasuredRun({
     );
     paintObservations.add({
       'sessionOrdinal': sessionOrdinal,
+      'measurementSessionIdentity': paint['canaryId'],
       'timestampMicros': paint['paintEpochMicros']! as int,
+      'paintMonotonicMicros': paint['paintMonotonicMicros']! as int,
+      'paintEpochBeforeMicros': paint['paintEpochBeforeMicros']! as int,
+      'paintEpochAfterMicros': paint['paintEpochAfterMicros']! as int,
       'frameStampMicros': stamp,
       'frameOrdinal': frameOrdinal,
       'sourceGeneration': generation,
+      'visibleUtf16Start': visibleStart,
+      'visibleUtf16Length': visibleLength,
+      'completeVisibleSurface': paint['completeVisibleSurface'] == true,
+      'completeVisiblePlusOverscanSurface':
+          paint['completeVisiblePlusOverscanSurface'] == true,
+      'requiredVisibleFragmentCount':
+          paint['requiredVisibleFragmentCount']! as int,
+      'laidOutVisiblePlusOverscanFragmentCount':
+          paint['laidOutVisiblePlusOverscanFragmentCount']! as int,
+      'requiredVisibleFragments': paint['requiredVisibleFragments']! as List,
+      'laidOutVisiblePlusOverscanFragments':
+          paint['laidOutVisiblePlusOverscanFragments']! as List,
+      'paintedFragments': paint['paintedFragments']! as List,
+      'paintedRowCount': paint['paintedRowCount']! as int,
+      'paintedSourceUtf16Start': paint['paintedSourceUtf16Start'] as int?,
+      'paintedSourceUtf16End': paint['paintedSourceUtf16End'] as int?,
+      'visiblePlusOverscanUtf16Start':
+          paint['visiblePlusOverscanUtf16Start'] as int?,
+      'visiblePlusOverscanUtf16End':
+          paint['visiblePlusOverscanUtf16End'] as int?,
+      'visiblePlusOverscanSourceSha256':
+          paint['visiblePlusOverscanSourceSha256'] as String?,
+      'expectedVisiblePlusOverscanSourceSha256':
+          _expectedVisiblePlusOverscanSourceSha256(
+            expectation.source,
+            paint['visiblePlusOverscanUtf16Start'] as int?,
+            paint['visiblePlusOverscanUtf16End'] as int?,
+          ),
       'visibleSourceSha256': paint['visibleSourceSha256']! as String,
       'expectedVisibleSourceSha256': _sha(expectedVisible),
       'canonicalSelectionBaseUtf16':
@@ -1008,18 +1271,13 @@ Map<String, Object?> _buildMeasuredRun({
   );
 
   for (final input in inputObservations) {
-    final generation = input['sourceGeneration']! as int;
     final accepted = input['acceptedMicros']! as int;
-    final candidatePaints = paintObservations
-        .where(
-          (paint) =>
-              paint['sourceGeneration'] == generation &&
-              (paint['timestampMicros']! as int) >= accepted &&
-              paint['frameOrdinal'] is int,
-        )
-        .toList();
-    if (candidatePaints.isEmpty) continue;
-    final frameOrdinal = candidatePaints.first['frameOrdinal']! as int;
+    // A burst may accept a newer exact generation before Flutter has another
+    // frame opportunity. Attribute every callback to the first following real
+    // frame independently of whether that generation itself painted; using a
+    // paint join here could hide synchronous work when Flutter legitimately
+    // coalesces an intermediate publication.
+    final frameOrdinal = _firstFrameCoveringAcceptance(frames, accepted);
     frames[frameOrdinal]['editorSyncMicros'] =
         (frames[frameOrdinal]['editorSyncMicros']! as int) +
         (input['editorSyncMicros']! as int);
@@ -1049,12 +1307,43 @@ Map<String, Object?> _buildMeasuredRun({
       final visibleStart = rawPaint['visibleUtf16Start']! as int;
       final visibleLength = rawPaint['visibleUtf16Length']! as int;
       candidates.add({
+        'measurementSessionIdentity': rawPaint['canaryId'],
         'timestampMicros': rawPaint['paintEpochMicros'],
+        'paintMonotonicMicros': rawPaint['paintMonotonicMicros'],
+        'paintEpochBeforeMicros': rawPaint['paintEpochBeforeMicros'],
+        'paintEpochAfterMicros': rawPaint['paintEpochAfterMicros'],
         'frameOrdinal': frameOrdinal,
         'visibleSourceSha256': rawPaint['visibleSourceSha256'],
         'expectedVisibleSourceSha256': _sha(
           _utf16Slice(snapshot.source, visibleStart, visibleLength),
         ),
+        'visibleUtf16Start': visibleStart,
+        'visibleUtf16Length': visibleLength,
+        'completeVisibleSurface': rawPaint['completeVisibleSurface'],
+        'completeVisiblePlusOverscanSurface':
+            rawPaint['completeVisiblePlusOverscanSurface'],
+        'requiredVisibleFragmentCount':
+            rawPaint['requiredVisibleFragmentCount'],
+        'laidOutVisiblePlusOverscanFragmentCount':
+            rawPaint['laidOutVisiblePlusOverscanFragmentCount'],
+        'requiredVisibleFragments': rawPaint['requiredVisibleFragments'],
+        'laidOutVisiblePlusOverscanFragments':
+            rawPaint['laidOutVisiblePlusOverscanFragments'],
+        'paintedFragments': rawPaint['paintedFragments'],
+        'paintedRowCount': rawPaint['paintedRowCount'],
+        'paintedSourceUtf16Start': rawPaint['paintedSourceUtf16Start'],
+        'paintedSourceUtf16End': rawPaint['paintedSourceUtf16End'],
+        'visiblePlusOverscanUtf16Start':
+            rawPaint['visiblePlusOverscanUtf16Start'],
+        'visiblePlusOverscanUtf16End': rawPaint['visiblePlusOverscanUtf16End'],
+        'visiblePlusOverscanSourceSha256':
+            rawPaint['visiblePlusOverscanSourceSha256'],
+        'expectedVisiblePlusOverscanSourceSha256':
+            _expectedVisiblePlusOverscanSourceSha256(
+              snapshot.source,
+              rawPaint['visiblePlusOverscanUtf16Start'] as int?,
+              rawPaint['visiblePlusOverscanUtf16End'] as int?,
+            ),
         'canonicalSelectionBaseUtf16': rawPaint['canonicalSelectionBaseUtf16'],
         'canonicalSelectionExtentUtf16':
             rawPaint['canonicalSelectionExtentUtf16'],
@@ -1069,8 +1358,12 @@ Map<String, Object?> _buildMeasuredRun({
     frames[paint['frameOrdinal']! as int]['editorAttributed'] = true;
     openObservation = {
       'kind': openKind,
+      'measurementSessionIdentity': paint['measurementSessionIdentity'],
       'acceptedMicros': openAcceptedMicros,
       'paintMicros': paint['timestampMicros'],
+      'paintMonotonicMicros': paint['paintMonotonicMicros'],
+      'paintEpochBeforeMicros': paint['paintEpochBeforeMicros'],
+      'paintEpochAfterMicros': paint['paintEpochAfterMicros'],
       'openToEditableMicros':
           (paint['timestampMicros']! as int) - openAcceptedMicros,
       'sourceGeneration': 0,
@@ -1078,6 +1371,27 @@ Map<String, Object?> _buildMeasuredRun({
       'frameOrdinal': paint['frameOrdinal'],
       'visibleSourceSha256': paint['visibleSourceSha256'],
       'expectedVisibleSourceSha256': paint['expectedVisibleSourceSha256'],
+      'visibleUtf16Start': paint['visibleUtf16Start'],
+      'visibleUtf16Length': paint['visibleUtf16Length'],
+      'completeVisibleSurface': paint['completeVisibleSurface'],
+      'completeVisiblePlusOverscanSurface':
+          paint['completeVisiblePlusOverscanSurface'],
+      'requiredVisibleFragmentCount': paint['requiredVisibleFragmentCount'],
+      'laidOutVisiblePlusOverscanFragmentCount':
+          paint['laidOutVisiblePlusOverscanFragmentCount'],
+      'requiredVisibleFragments': paint['requiredVisibleFragments'],
+      'laidOutVisiblePlusOverscanFragments':
+          paint['laidOutVisiblePlusOverscanFragments'],
+      'paintedFragments': paint['paintedFragments'],
+      'paintedRowCount': paint['paintedRowCount'],
+      'paintedSourceUtf16Start': paint['paintedSourceUtf16Start'],
+      'paintedSourceUtf16End': paint['paintedSourceUtf16End'],
+      'visiblePlusOverscanUtf16Start': paint['visiblePlusOverscanUtf16Start'],
+      'visiblePlusOverscanUtf16End': paint['visiblePlusOverscanUtf16End'],
+      'visiblePlusOverscanSourceSha256':
+          paint['visiblePlusOverscanSourceSha256'],
+      'expectedVisiblePlusOverscanSourceSha256':
+          paint['expectedVisiblePlusOverscanSourceSha256'],
       'canonicalSelectionBaseUtf16': paint['canonicalSelectionBaseUtf16'],
       'canonicalSelectionExtentUtf16': paint['canonicalSelectionExtentUtf16'],
       'expectedSelectionBaseUtf16': snapshot.selectionBaseUtf16,
@@ -1096,15 +1410,16 @@ Map<String, Object?> _buildMeasuredRun({
     final declared = expectation.generations
         .map((generation) => generation.generation)
         .toList(growable: false);
-    final accepted = declared
+    final declaredInputs = declared
         .map(
-          (generation) =>
-              inputObservations.firstWhere(
-                    (input) => input['sourceGeneration'] == generation,
-                  )['acceptedMicros']!
-                  as int,
+          (generation) => inputObservations.firstWhere(
+            (input) => input['sourceGeneration'] == generation,
+          ),
         )
-        .reduce(math.min);
+        .toList(growable: false);
+    final scheduleAcceptedMicros =
+        declaredInputs.first['acceptedMicros']! as int;
+    final accepted = declaredInputs.last['acceptedMicros']! as int;
     final finalGeneration = expectation.finalGeneration;
     final engineMicros = declared
         .map(
@@ -1120,6 +1435,7 @@ Map<String, Object?> _buildMeasuredRun({
         'index': operation,
         'sessionOrdinal': sessionOrdinal,
         'acceptedMicros': accepted,
+        'scheduleAcceptedMicros': scheduleAcceptedMicros,
         'acceptedSourceGenerations': declared,
         'sourceGeneration': finalGeneration.generation,
         'sourceSha256': _sha(finalGeneration.source),
@@ -1135,8 +1451,49 @@ Map<String, Object?> _buildMeasuredRun({
         )
         .toList();
     if (finalPaints.isEmpty) {
+      final nearby = paintObservations
+          .where((paint) {
+            final generation = paint['sourceGeneration'];
+            return generation is int &&
+                (generation - finalGeneration.generation).abs() <= 3;
+          })
+          .map(
+            (paint) =>
+                '${paint['sourceGeneration']}@${paint['timestampMicros']}'
+                '/f${paint['frameOrdinal']}',
+          )
+          .toList(growable: false);
+      final nearbyInputs = inputObservations
+          .where((input) {
+            final generation = input['sourceGeneration']! as int;
+            return (generation - finalGeneration.generation).abs() <= 3;
+          })
+          .map((input) {
+            final generation = input['sourceGeneration']! as int;
+            final performance = performanceByGeneration[generation]!;
+            return '$generation@${input['acceptedMicros']}'
+                '/sync${input['editorSyncMicros']}'
+                '/ffi${performance['nativeFfiMicros']}'
+                '/worker${performance['workerRoundTripMicros']}'
+                '/acceptToReceipt${performance['acceptanceToReceiptMicros'] ?? performance['callbackToReceiptMicros']}';
+          })
+          .toList(growable: false);
+      final nearbyFrames = frames
+          .where((frame) {
+            final vsync = frame['vsyncMicros']! as int;
+            return vsync >= accepted - 50000 && vsync <= accepted + 70000;
+          })
+          .map(
+            (frame) =>
+                'f${frame['ordinal']}@${frame['vsyncMicros']}'
+                '/b${frame['buildMicros']}/r${frame['rasterMicros']}'
+                '/missed=${frame['missed']}',
+          )
+          .toList(growable: false);
       throw StateError(
-        'generation ${finalGeneration.generation} never painted',
+        'generation ${finalGeneration.generation} never painted; '
+        'accepted=$accepted nearbyInputs=$nearbyInputs nearbyPaints=$nearby '
+        'nearbyFrames=$nearbyFrames',
       );
     }
     final firstPaint = finalPaints.first;
@@ -1155,6 +1512,7 @@ Map<String, Object?> _buildMeasuredRun({
         );
       },
     );
+    final provingFrameOrdinal = provingPaint['frameOrdinal']! as int;
     final currentPaint = finalPaints.cast<Map<String, Object?>>().where(
       (paint) => paint['semanticsCurrent'] == true,
     );
@@ -1163,6 +1521,7 @@ Map<String, Object?> _buildMeasuredRun({
       'sessionOrdinal': sessionOrdinal,
       'scheduledMicros': expectation.scheduledMicros,
       'acceptedMicros': accepted,
+      'scheduleAcceptedMicros': scheduleAcceptedMicros,
       'sourcePaintMicros': firstPaint['timestampMicros'],
       'caretPaintMicros': firstPaint['timestampMicros'],
       'selectionPaintMicros': firstPaint['timestampMicros'],
@@ -1180,7 +1539,7 @@ Map<String, Object?> _buildMeasuredRun({
           .where((paint) => paint['frameOrdinal'] is int)
           .map((paint) => paint['frameOrdinal']! as int)
           .reduce(math.max),
-      'provingFrameOrdinal': provingPaint['frameOrdinal'],
+      'provingFrameOrdinal': provingFrameOrdinal,
       'engineMicros': engineMicros,
       'visibleCertificationMicros': currentPaint.isEmpty
           ? 0
@@ -1232,6 +1591,8 @@ Map<String, Object?> _buildMeasuredRun({
         },
     ],
     'engineObservations': engineObservations,
+    'faulted': settled.faulted,
+    'resyncCount': settled.resyncCount,
     'memory': [
       {
         'stage': 'baseline',
@@ -1260,6 +1621,16 @@ Map<String, Object?> _buildMeasuredRun({
   };
 }
 
+String? _expectedVisiblePlusOverscanSourceSha256(
+  String source,
+  int? start,
+  int? end,
+) {
+  if (start == null || end == null || start < 0 || end <= start) return null;
+  if (end > source.length) return null;
+  return _sha(source.substring(start, end));
+}
+
 int _firstFrameCoveringAcceptance(
   List<Map<String, Object?>> frames,
   int acceptedMicros,
@@ -1273,107 +1644,15 @@ int _firstFrameCoveringAcceptance(
   return candidates.first['ordinal']! as int;
 }
 
-Map<int, (int, int)> _ordinaryInputEvents(List<String> events) {
-  final result = <int, (int, int)>{};
-  final pattern = RegExp(
-    r'^(\d+):accepted-(?:deltas|full-value):generation=(\d+):elapsedMicros=(\d+)$',
-  );
-  for (final event in events) {
-    final match = pattern.firstMatch(event);
-    if (match == null) continue;
-    final generation = int.parse(match.group(2)!);
-    if (generation == 0) continue;
-    result[generation] = (
-      int.parse(match.group(1)!),
-      int.parse(match.group(3)!),
-    );
-  }
-  return result;
-}
-
-Map<int, (int, int)> _semanticInputEvents(
-  List<String> events,
-  List<Map<String, Object?>> receipts,
-) {
-  final actionEpochs = <int>[];
-  final pattern = RegExp(r'^(\d+):action:');
-  for (final event in events) {
-    final match = pattern.firstMatch(event);
-    if (match != null) actionEpochs.add(int.parse(match.group(1)!));
-  }
-  final orderedReceipts = [...receipts]
-    ..sort(
-      (left, right) => (left['sourceGeneration']! as int).compareTo(
-        right['sourceGeneration']! as int,
-      ),
-    );
-  if (actionEpochs.length != orderedReceipts.length) {
-    throw StateError(
-      'semantic action events (${actionEpochs.length}) do not match receipts '
-      '(${orderedReceipts.length})',
-    );
-  }
-  return {
-    for (var index = 0; index < orderedReceipts.length; index += 1)
-      orderedReceipts[index]['sourceGeneration']! as int: (
-        actionEpochs[index],
-        orderedReceipts[index]['platformCallbackMicros']! as int,
-      ),
-  };
-}
-
-Map<int, (int, int)> _historyInputEvents(
-  List<String> events,
-  List<Map<String, Object?>> receipts,
-) {
-  final shortcuts = <(int, String)>[];
-  final pattern = RegExp(r'^(\d+):shortcut:(undo|redo)$');
-  for (final event in events) {
-    final match = pattern.firstMatch(event);
-    if (match == null) continue;
-    shortcuts.add((int.parse(match.group(1)!), match.group(2)!));
-  }
-  final historyReceipts =
-      receipts
-          .where(
-            (receipt) => receipt['kind'] == 'undo' || receipt['kind'] == 'redo',
-          )
-          .toList()
-        ..sort(
-          (left, right) => (left['sourceGeneration']! as int).compareTo(
-            right['sourceGeneration']! as int,
-          ),
-        );
-  if (shortcuts.length != historyReceipts.length) {
-    throw StateError(
-      'history shortcuts (${shortcuts.length}) do not match receipts '
-      '(${historyReceipts.length})',
-    );
-  }
-  for (var index = 0; index < historyReceipts.length; index += 1) {
-    if (historyReceipts[index]['kind'] != shortcuts[index].$2) {
-      throw StateError(
-        'history shortcut ${shortcuts[index].$2} does not match '
-        'receipt ${historyReceipts[index]['kind']}',
-      );
-    }
-  }
-  return {
-    for (var index = 0; index < historyReceipts.length; index += 1)
-      historyReceipts[index]['sourceGeneration']! as int: (
-        shortcuts[index].$1,
-        0,
-      ),
-  };
-}
-
 Map<String, Object?> _inputObservation(
   _ExpectedGeneration expectation, {
   required int sessionOrdinal,
+  required String measurementSessionIdentity,
   required int acceptedMicros,
   required int editorSyncMicros,
 }) => {
   'sessionOrdinal': sessionOrdinal,
+  'measurementSessionIdentity': measurementSessionIdentity,
   'sourceGeneration': expectation.generation,
   'acceptedMicros': acceptedMicros,
   'editorSyncMicros': editorSyncMicros,

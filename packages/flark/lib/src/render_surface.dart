@@ -35,6 +35,17 @@ final class FlarkSurfacePaintObservation {
     required this.viewportPageIndex,
     required this.visibleUtf16Start,
     required this.visibleUtf16Length,
+    required this.completeVisibleSurface,
+    required this.completeVisiblePlusOverscanSurface,
+    required this.requiredVisibleFragments,
+    required this.laidOutVisiblePlusOverscanFragments,
+    required this.paintedFragments,
+    required this.requiredVisibleFragmentCount,
+    required this.laidOutVisiblePlusOverscanFragmentCount,
+    required this.paintedSourceUtf16Start,
+    required this.paintedSourceUtf16End,
+    required this.visiblePlusOverscanUtf16Start,
+    required this.visiblePlusOverscanUtf16End,
     required this.scrollOffset,
     required this.presentation,
     required this.renderPlanHash,
@@ -64,6 +75,18 @@ final class FlarkSurfacePaintObservation {
   final int viewportPageIndex;
   final int visibleUtf16Start;
   final int visibleUtf16Length;
+  final bool completeVisibleSurface;
+  final bool completeVisiblePlusOverscanSurface;
+  final List<FlarkSurfaceLayoutFragmentObservation> requiredVisibleFragments;
+  final List<FlarkSurfaceLayoutFragmentObservation>
+  laidOutVisiblePlusOverscanFragments;
+  final List<FlarkSurfaceLayoutFragmentObservation> paintedFragments;
+  final int requiredVisibleFragmentCount;
+  final int laidOutVisiblePlusOverscanFragmentCount;
+  final int? paintedSourceUtf16Start;
+  final int? paintedSourceUtf16End;
+  final int? visiblePlusOverscanUtf16Start;
+  final int? visiblePlusOverscanUtf16End;
   final double scrollOffset;
   final String presentation;
   final int renderPlanHash;
@@ -85,6 +108,23 @@ final class FlarkSurfacePaintObservation {
   final int? composingSourceUtf16End;
 }
 
+/// One parser-mapped fragment required by the pre-paint layout ledger.
+final class FlarkSurfaceLayoutFragmentObservation {
+  const FlarkSurfaceLayoutFragmentObservation({
+    required this.ordinal,
+    required this.fragmentStart,
+    required this.fragmentEnd,
+    required this.sourceUtf16Start,
+    required this.sourceUtf16End,
+  });
+
+  final int ordinal;
+  final int fragmentStart;
+  final int fragmentEnd;
+  final int sourceUtf16Start;
+  final int sourceUtf16End;
+}
+
 /// Bounded geometry for one fragment visited by an actual surface paint.
 final class FlarkSurfacePaintRowObservation {
   const FlarkSurfacePaintRowObservation({
@@ -97,6 +137,7 @@ final class FlarkSurfacePaintRowObservation {
     required this.table,
     required this.leadingText,
     required this.sourceUtf16Start,
+    required this.sourceUtf16End,
     required this.fragmentStart,
     required this.fragmentEnd,
     required this.text,
@@ -117,6 +158,7 @@ final class FlarkSurfacePaintRowObservation {
   final bool table;
   final String leadingText;
   final int sourceUtf16Start;
+  final int sourceUtf16End;
   final int fragmentStart;
   final int fragmentEnd;
   final String text;
@@ -222,6 +264,8 @@ final class _PaintedRow {
     required this.fragmentEnd,
     required this.leadingLength,
     required this.layoutMaxWidth,
+    this.ownsSemanticSourceStart = false,
+    this.ownsSemanticSourceEnd = false,
     this.row,
     this.neutralText,
     this.neutralUtf16Start,
@@ -246,9 +290,27 @@ final class _PaintedRow {
   /// the latter explicitly for safe cross-frame reuse.
   final double layoutMaxWidth;
 
+  /// Whether this presentation is the first/last visual surface emitted for
+  /// its parser-authored semantic row. Only those outer surfaces may extend a
+  /// fragment witness across hidden block syntax owned by the semantic row.
+  final bool ownsSemanticSourceStart;
+  final bool ownsSemanticSourceEnd;
+
   final FlarkViewportRow? row;
   final String? neutralText;
   final int? neutralUtf16Start;
+}
+
+final class _LayoutFragmentWitness {
+  const _LayoutFragmentWitness({
+    required this.top,
+    required this.height,
+    required this.fragment,
+  });
+
+  final double top;
+  final double height;
+  final FlarkSurfaceLayoutFragmentObservation fragment;
 }
 
 final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
@@ -314,7 +376,7 @@ final class RenderFlarkSurface extends RenderBox {
     required Color selectionColor,
     required bool includeEditingState,
     required FlarkSurfaceSemanticsActions? semanticsActions,
-    this.debugPaintObserver,
+    ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver,
     required TextDirection textDirection,
   }) : _controller = controller,
        _textStyle = textStyle,
@@ -323,6 +385,7 @@ final class RenderFlarkSurface extends RenderBox {
        _selectionColor = selectionColor,
        _includeEditingState = includeEditingState,
        _semanticsActions = semanticsActions,
+       _debugPaintObserver = debugPaintObserver,
        _textDirection = textDirection;
 
   FlarkEditorController _controller;
@@ -332,10 +395,11 @@ final class RenderFlarkSurface extends RenderBox {
   Color _selectionColor;
   bool _includeEditingState;
   FlarkSurfaceSemanticsActions? _semanticsActions;
-  ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
+  ValueChanged<FlarkSurfacePaintObservation>? _debugPaintObserver;
   TextDirection _textDirection;
   final List<_PaintedRow> _paintedRows = [];
   final List<_PaintedRow> _reusablePaintedRows = [];
+  final List<_LayoutFragmentWitness> _layoutFragmentWitnesses = [];
   double _scrollOffset = 0;
   double _contentHeight = 0;
   int _laidOutPageIndex = 0;
@@ -505,6 +569,14 @@ final class RenderFlarkSurface extends RenderBox {
     markNeedsSemanticsUpdate();
   }
 
+  ValueChanged<FlarkSurfacePaintObservation>? get debugPaintObserver =>
+      _debugPaintObserver;
+  set debugPaintObserver(ValueChanged<FlarkSurfacePaintObservation>? value) {
+    if (identical(value, _debugPaintObserver)) return;
+    _debugPaintObserver = value;
+    markNeedsLayout();
+  }
+
   TextDirection get textDirection => _textDirection;
   set textDirection(TextDirection value) {
     if (value == _textDirection) return;
@@ -534,6 +606,7 @@ final class RenderFlarkSurface extends RenderBox {
       row.painter.dispose();
     }
     _reusablePaintedRows.clear();
+    _layoutFragmentWitnesses.clear();
     super.dispose();
   }
 
@@ -613,6 +686,7 @@ final class RenderFlarkSurface extends RenderBox {
     assert(_reusablePaintedRows.isEmpty);
     _reusablePaintedRows.addAll(_paintedRows);
     _paintedRows.clear();
+    _layoutFragmentWitnesses.clear();
     try {
       _buildVisibleLayoutsBody();
     } finally {
@@ -657,7 +731,12 @@ final class RenderFlarkSurface extends RenderBox {
           row,
           includeEditingState: _includeEditingState,
         );
-        for (final presentation in presentations) {
+        for (
+          var presentationIndex = 0;
+          presentationIndex < presentations.length;
+          presentationIndex += 1
+        ) {
+          final presentation = presentations[presentationIndex];
           if (top > _layoutBudgetBottom) {
             _skippedRowCount += 1;
             skippedEstimate += _estimatedRowHeight + 6;
@@ -669,6 +748,9 @@ final class RenderFlarkSurface extends RenderBox {
             top: top,
             maxWidth: maxWidth,
             row: row,
+            ownsSemanticSourceStart: presentationIndex == 0,
+            ownsSemanticSourceEnd:
+                presentationIndex == presentations.length - 1,
           );
           top += 6;
           _laidOutRowCount += 1;
@@ -826,6 +908,8 @@ final class RenderFlarkSurface extends RenderBox {
     required double top,
     required double maxWidth,
     FlarkViewportRow? row,
+    bool ownsSemanticSourceStart = false,
+    bool ownsSemanticSourceEnd = false,
     String? neutralText,
     int? neutralUtf16Start,
   }) {
@@ -858,22 +942,32 @@ final class RenderFlarkSurface extends RenderBox {
         includeLeading: first,
       );
       final height = math.max(painter.height, painter.preferredLineHeight);
-      _paintedRows.add(
-        _PaintedRow(
-          top: top,
-          height: height,
-          painter: painter,
-          presentation: presentation,
-          ordinal: ordinal,
-          fragmentStart: fragmentStart,
-          fragmentEnd: fragmentEnd,
-          leadingLength: first ? presentation.leadingText.length : 0,
-          layoutMaxWidth: maxWidth,
-          row: row,
-          neutralText: neutralText,
-          neutralUtf16Start: neutralUtf16Start,
-        ),
+      final paintedRow = _PaintedRow(
+        top: top,
+        height: height,
+        painter: painter,
+        presentation: presentation,
+        ordinal: ordinal,
+        fragmentStart: fragmentStart,
+        fragmentEnd: fragmentEnd,
+        leadingLength: first ? presentation.leadingText.length : 0,
+        layoutMaxWidth: maxWidth,
+        ownsSemanticSourceStart: ownsSemanticSourceStart,
+        ownsSemanticSourceEnd: ownsSemanticSourceEnd,
+        row: row,
+        neutralText: neutralText,
+        neutralUtf16Start: neutralUtf16Start,
       );
+      if (_debugPaintObserver != null) {
+        _layoutFragmentWitnesses.add(
+          _LayoutFragmentWitness(
+            top: top,
+            height: height,
+            fragment: _fragmentObservation(paintedRow),
+          ),
+        );
+      }
+      _paintedRows.add(paintedRow);
       top += height;
       fragmentStart = fragmentEnd;
       first = false;
@@ -1197,6 +1291,111 @@ final class RenderFlarkSurface extends RenderBox {
     return (
       start: row.presentation.globalUtf16Start,
       end: row.presentation.globalUtf16Start + row.presentation.text.length,
+    );
+  }
+
+  bool _intersectsVisibleBand(_LayoutFragmentWitness witness) {
+    final paintedTop = witness.top - _scrollOffset;
+    return paintedTop + witness.height >= 0 && paintedTop <= size.height;
+  }
+
+  Object _fragmentObservationKey(
+    FlarkSurfaceLayoutFragmentObservation fragment,
+  ) => (
+    fragment.ordinal,
+    fragment.fragmentStart,
+    fragment.fragmentEnd,
+    fragment.sourceUtf16Start,
+    fragment.sourceUtf16End,
+  );
+
+  FlarkSurfaceLayoutFragmentObservation _fragmentObservation(_PaintedRow row) {
+    final bounds = _fragmentSourceBounds(row);
+    return FlarkSurfaceLayoutFragmentObservation(
+      ordinal: row.ordinal,
+      fragmentStart: row.fragmentStart,
+      fragmentEnd: row.fragmentEnd,
+      sourceUtf16Start: bounds.start,
+      sourceUtf16End: bounds.end,
+    );
+  }
+
+  ({int start, int end}) _fragmentSourceBounds(
+    _PaintedRow row, {
+    bool includeSemanticOwnership = true,
+  }) {
+    if (row.neutralUtf16Start case final neutralStart?) {
+      return (
+        start: neutralStart + row.fragmentStart,
+        end: neutralStart + row.fragmentEnd,
+      );
+    }
+    int? start;
+    int? end;
+    var cursor = 0;
+    for (final run in row.presentation.runs) {
+      final runEnd = cursor + run.text.length;
+      final sliceStart = math.max(row.fragmentStart, cursor);
+      final sliceEnd = math.min(row.fragmentEnd, runEnd);
+      if (sliceEnd > sliceStart) {
+        final sourceStart = run.sourceExact
+            ? run.sourceUtf16Start + sliceStart - cursor
+            : row.presentation.sourceOffsetForTextOffset(
+                sliceStart,
+                affinity: TextAffinity.downstream,
+              );
+        final sourceEnd = run.sourceExact
+            ? run.sourceUtf16Start + sliceEnd - cursor
+            : row.presentation.sourceOffsetForTextOffset(
+                sliceEnd,
+                affinity: TextAffinity.upstream,
+              );
+        start = start == null ? sourceStart : math.min(start, sourceStart);
+        end = end == null ? sourceEnd : math.max(end, sourceEnd);
+      }
+      cursor = runEnd;
+      if (cursor >= row.fragmentEnd) break;
+    }
+    var sourceStart =
+        start ??
+        row.presentation.sourceOffsetForTextOffset(
+          row.fragmentStart,
+          affinity: TextAffinity.downstream,
+        );
+    var sourceEnd =
+        end ??
+        row.presentation.sourceOffsetForTextOffset(
+          row.fragmentEnd,
+          affinity: TextAffinity.upstream,
+        );
+    final semanticRow = row.row;
+    if (includeSemanticOwnership && semanticRow != null) {
+      final owned = _controller.surfaceSourceRange(semanticRow);
+      if (row.ownsSemanticSourceStart && row.fragmentStart == 0) {
+        sourceStart = math.min(sourceStart, owned.start);
+      }
+      if (row.ownsSemanticSourceEnd &&
+          row.fragmentEnd == row.presentation.text.length) {
+        sourceEnd = math.max(sourceEnd, owned.end);
+      }
+    }
+    return (
+      start: math.min(sourceStart, sourceEnd),
+      end: math.max(sourceStart, sourceEnd),
+    );
+  }
+
+  ({int start, int end})? _sourceBoundsForFragments(
+    List<FlarkSurfaceLayoutFragmentObservation> fragments,
+  ) {
+    if (fragments.isEmpty) return null;
+    return (
+      start: fragments
+          .map((fragment) => fragment.sourceUtf16Start)
+          .reduce(math.min),
+      end: fragments
+          .map((fragment) => fragment.sourceUtf16End)
+          .reduce(math.max),
     );
   }
 
@@ -1851,15 +2050,47 @@ final class RenderFlarkSurface extends RenderBox {
     final observedGeometry = paintObserver == null
         ? null
         : <FlarkSurfacePaintRowObservation>[];
+    final observedFragmentKeys = paintObserver == null ? null : <Object>{};
+    final observedFragments = paintObserver == null
+        ? null
+        : <FlarkSurfaceLayoutFragmentObservation>[];
     final observedSelectionRects = paintObserver == null ? null : <Rect>[];
     Rect? observedCaretRect;
     int? observedCaretSourceUtf16;
     int? observedCaretDisplayUtf16;
+    final requiredVisibleWitnesses = paintObserver == null
+        ? const <_LayoutFragmentWitness>[]
+        : _layoutFragmentWitnesses
+              .where((witness) => _intersectsVisibleBand(witness))
+              .toList(growable: false);
+    final requiredVisibleFragments = requiredVisibleWitnesses
+        .map((witness) => witness.fragment)
+        .toList(growable: false);
+    final requiredVisibleFragmentKeys = paintObserver == null
+        ? const <Object>{}
+        : requiredVisibleFragments.map(_fragmentObservationKey).toSet();
+    final readyWitnesses = paintObserver == null
+        ? const <_LayoutFragmentWitness>[]
+        : _layoutFragmentWitnesses
+              .where((witness) {
+                final bottom = witness.top + witness.height;
+                return bottom >= _scrollOffset &&
+                    witness.top <= _layoutBudgetBottom;
+              })
+              .toList(growable: false);
+    final readyFragments = readyWitnesses
+        .map((witness) => witness.fragment)
+        .toList(growable: false);
     canvas.save();
     canvas.clipRect(offset & size);
     for (final row in _paintedRows) {
       final paintedTop = row.top - _scrollOffset;
       if (paintedTop + row.height < 0 || paintedTop > size.height) continue;
+      if (observedFragmentKeys != null) {
+        final fragment = _fragmentObservation(row);
+        observedFragmentKeys.add(_fragmentObservationKey(fragment));
+        observedFragments!.add(fragment);
+      }
       if (observedKeys != null) {
         final observationKey = row.row != null
             ? (
@@ -1876,6 +2107,17 @@ final class RenderFlarkSurface extends RenderBox {
         }
       }
       final origin = offset + Offset(_padding.left, paintedTop);
+      final visualFragmentSourceBounds = paintObserver == null
+          ? null
+          : _fragmentSourceBounds(row, includeSemanticOwnership: false);
+      final observedRowSourceStart = paintObserver == null
+          ? null
+          : row.fragmentStart == 0
+          ? math.min(
+              visualFragmentSourceBounds!.start,
+              row.neutralUtf16Start ?? row.presentation.globalUtf16Start,
+            )
+          : visualFragmentSourceBounds!.start;
       observedGeometry?.add(
         FlarkSurfacePaintRowObservation(
           ordinal: row.ordinal,
@@ -1886,8 +2128,8 @@ final class RenderFlarkSurface extends RenderBox {
           listItem: row.presentation.listItem || row.row?.listItem != null,
           table: row.row?.table != null,
           leadingText: row.presentation.leadingText,
-          sourceUtf16Start:
-              row.neutralUtf16Start ?? row.presentation.globalUtf16Start,
+          sourceUtf16Start: observedRowSourceStart!,
+          sourceUtf16End: visualFragmentSourceBounds!.end,
           fragmentStart: row.fragmentStart,
           fragmentEnd: row.fragmentEnd,
           text: row.presentation.text,
@@ -2007,6 +2249,41 @@ final class RenderFlarkSurface extends RenderBox {
     final composingEnd = composing.isValid && !composing.isCollapsed
         ? _controller.inputWindowShadow.globalUtf16Start + composing.end
         : null;
+    final paintedSourceUtf16Start = observedFragments!.isEmpty
+        ? null
+        : observedFragments
+              .map((fragment) => fragment.sourceUtf16Start)
+              .reduce(math.min);
+    final paintedSourceUtf16End = observedFragments.isEmpty
+        ? null
+        : observedFragments
+              .map((fragment) => fragment.sourceUtf16End)
+              .reduce(math.max);
+    final requiredVisibleBounds = _sourceBoundsForFragments(
+      requiredVisibleFragments,
+    );
+    final visiblePlusOverscanBounds = _sourceBoundsForFragments(readyFragments);
+    final visiblePlusOverscanUtf16Start = visiblePlusOverscanBounds?.start;
+    final visiblePlusOverscanUtf16End = visiblePlusOverscanBounds?.end;
+    final completeVisibleSurface =
+        requiredVisibleFragmentKeys.isNotEmpty &&
+        observedFragmentKeys!.length == requiredVisibleFragmentKeys.length &&
+        observedFragmentKeys.containsAll(requiredVisibleFragmentKeys) &&
+        requiredVisibleBounds != null &&
+        paintedSourceUtf16Start == requiredVisibleBounds.start &&
+        paintedSourceUtf16End == requiredVisibleBounds.end;
+    final laidOutThroughOverscan =
+        _skippedRowCount == 0 && _skippedFragmentCount == 0 ||
+        readyWitnesses.isNotEmpty &&
+            readyWitnesses.last.top + readyWitnesses.last.height >=
+                _layoutBudgetBottom;
+    final visibleSourceEnd =
+        _controller.visibleUtf16Start + _controller.visibleSource.length;
+    final completeVisiblePlusOverscanSurface =
+        completeVisibleSurface &&
+        laidOutThroughOverscan &&
+        visiblePlusOverscanUtf16Start == _controller.visibleUtf16Start &&
+        visiblePlusOverscanUtf16End == visibleSourceEnd;
     paintObserver(
       FlarkSurfacePaintObservation(
         revision: _controller.revision,
@@ -2015,6 +2292,17 @@ final class RenderFlarkSurface extends RenderBox {
         viewportPageIndex: _controller.viewportPageIndex,
         visibleUtf16Start: _controller.visibleUtf16Start,
         visibleUtf16Length: _controller.visibleSource.length,
+        completeVisibleSurface: completeVisibleSurface,
+        completeVisiblePlusOverscanSurface: completeVisiblePlusOverscanSurface,
+        requiredVisibleFragments: List.unmodifiable(requiredVisibleFragments),
+        laidOutVisiblePlusOverscanFragments: List.unmodifiable(readyFragments),
+        paintedFragments: List.unmodifiable(observedFragments),
+        requiredVisibleFragmentCount: requiredVisibleFragmentKeys.length,
+        laidOutVisiblePlusOverscanFragmentCount: readyFragments.length,
+        paintedSourceUtf16Start: paintedSourceUtf16Start,
+        paintedSourceUtf16End: paintedSourceUtf16End,
+        visiblePlusOverscanUtf16Start: visiblePlusOverscanUtf16Start,
+        visiblePlusOverscanUtf16End: visiblePlusOverscanUtf16End,
         scrollOffset: _scrollOffset,
         presentation: observedRows!.isEmpty
             ? '<empty>'

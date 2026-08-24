@@ -268,6 +268,7 @@ final class DogfoodNativeCanaryReceiptWriter {
         _frameTimingReceipts.removeAt(0);
       }
       _frameTimingReceipts.add({
+        'canaryId': _canaryId,
         'frameNumber': timing.frameNumber,
         'vsyncStartMicros': timing.timestampInMicroseconds(
           FramePhase.vsyncStart,
@@ -316,8 +317,17 @@ final class DogfoodNativeCanaryReceiptWriter {
   void recordPaintObservation(FlarkSurfacePaintObservation observation) {
     _lastScrollOffset = observation.scrollOffset;
     if (_paintReceipts.length == 1024) _paintReceipts.removeAt(0);
+    final paintClock = dogfoodFrameClockAnchor();
+    final paintEpochMicros =
+        paintClock['epochBeforeMicros']! +
+        ((paintClock['epochAfterMicros']! - paintClock['epochBeforeMicros']!) ~/
+            2);
     _paintReceipts.add({
-      'paintEpochMicros': DateTime.now().microsecondsSinceEpoch,
+      'canaryId': _canaryId,
+      'paintEpochMicros': paintEpochMicros,
+      'paintMonotonicMicros': paintClock['monotonicMicros'],
+      'paintEpochBeforeMicros': paintClock['epochBeforeMicros'],
+      'paintEpochAfterMicros': paintClock['epochAfterMicros'],
       'frameStampMicros':
           WidgetsBinding.instance.currentSystemFrameTimeStamp.inMicroseconds,
       'revision': observation.revision,
@@ -326,6 +336,55 @@ final class DogfoodNativeCanaryReceiptWriter {
       'viewportPageIndex': observation.viewportPageIndex,
       'visibleUtf16Start': observation.visibleUtf16Start,
       'visibleUtf16Length': observation.visibleUtf16Length,
+      'completeVisibleSurface': observation.completeVisibleSurface,
+      'completeVisiblePlusOverscanSurface':
+          observation.completeVisiblePlusOverscanSurface,
+      'requiredVisibleFragmentCount': observation.requiredVisibleFragmentCount,
+      'laidOutVisiblePlusOverscanFragmentCount':
+          observation.laidOutVisiblePlusOverscanFragmentCount,
+      'requiredVisibleFragments': observation.requiredVisibleFragments
+          .map(
+            (fragment) => {
+              'ordinal': fragment.ordinal,
+              'fragmentStart': fragment.fragmentStart,
+              'fragmentEnd': fragment.fragmentEnd,
+              'sourceUtf16Start': fragment.sourceUtf16Start,
+              'sourceUtf16End': fragment.sourceUtf16End,
+            },
+          )
+          .toList(growable: false),
+      'laidOutVisiblePlusOverscanFragments': observation
+          .laidOutVisiblePlusOverscanFragments
+          .map(
+            (fragment) => {
+              'ordinal': fragment.ordinal,
+              'fragmentStart': fragment.fragmentStart,
+              'fragmentEnd': fragment.fragmentEnd,
+              'sourceUtf16Start': fragment.sourceUtf16Start,
+              'sourceUtf16End': fragment.sourceUtf16End,
+            },
+          )
+          .toList(growable: false),
+      'paintedFragments': observation.paintedFragments
+          .map(
+            (fragment) => {
+              'ordinal': fragment.ordinal,
+              'fragmentStart': fragment.fragmentStart,
+              'fragmentEnd': fragment.fragmentEnd,
+              'sourceUtf16Start': fragment.sourceUtf16Start,
+              'sourceUtf16End': fragment.sourceUtf16End,
+            },
+          )
+          .toList(growable: false),
+      'paintedRowCount': observation.rows.length,
+      'paintedSourceUtf16Start': observation.paintedSourceUtf16Start,
+      'paintedSourceUtf16End': observation.paintedSourceUtf16End,
+      'visiblePlusOverscanUtf16Start':
+          observation.visiblePlusOverscanUtf16Start,
+      'visiblePlusOverscanUtf16End': observation.visiblePlusOverscanUtf16End,
+      'visiblePlusOverscanSourceSha256': _visiblePlusOverscanSourceSha256(
+        observation,
+      ),
       'visibleSourceSha256': flarkWindowTextSha256(observation.visibleSource),
       'renderPlanHash': observation.renderPlanHash,
       'visualStateHash': observation.visualStateHash,
@@ -436,6 +495,24 @@ final class DogfoodNativeCanaryReceiptWriter {
     );
   }
 
+  String? _visiblePlusOverscanSourceSha256(
+    FlarkSurfacePaintObservation observation,
+  ) {
+    final start = observation.visiblePlusOverscanUtf16Start;
+    final end = observation.visiblePlusOverscanUtf16End;
+    if (start == null || end == null || end < start) return null;
+    final localStart = start - observation.visibleUtf16Start;
+    final localEnd = end - observation.visibleUtf16Start;
+    if (localStart < 0 ||
+        localEnd < localStart ||
+        localEnd > observation.visibleSource.length) {
+      return null;
+    }
+    return flarkWindowTextSha256(
+      observation.visibleSource.substring(localStart, localEnd),
+    );
+  }
+
   Future<void> writeNow({
     required int commandSequence,
     int? openAcceptedEpochMicros,
@@ -492,7 +569,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     _commandSequence = commandSequence;
     _commandError = null;
     final receipt = <String, Object?>{
-      'schemaVersion': 5,
+      'schemaVersion': 6,
       'receiptEpochMicros': DateTime.now().microsecondsSinceEpoch,
       'canaryId': _canaryId,
       'commandSequence': commandSequence,
@@ -574,7 +651,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     final taskGeometry = _taskActionGeometry;
     final frameClockAnchor = dogfoodFrameClockAnchor();
     final receipt = <String, Object?>{
-      'schemaVersion': 5,
+      'schemaVersion': 6,
       'receiptEpochMicros': DateTime.now().microsecondsSinceEpoch,
       'processLaunchEpochMicros': mode.processLaunchEpochMicros,
       'frameClockAnchor': frameClockAnchor,
@@ -627,8 +704,11 @@ final class DogfoodNativeCanaryReceiptWriter {
       'sourceEditPerformanceReceipts': controller.sourceEditPerformanceReceipts
           .map(
             (receipt) => {
+              'canaryId': _canaryId,
               'kind': receipt.kind.name,
               'sourceGeneration': receipt.sourceGeneration,
+              'acceptedAtEpochMicros': receipt.acceptedAtEpochMicros,
+              'editorSyncMicros': receipt.editorSyncMicros,
               'coreQueueMicros': receipt.coreQueueMicros,
               'workerRoundTripMicros': receipt.workerRoundTripMicros,
               'workerQueueMicros': receipt.workerQueueMicros,
@@ -644,7 +724,9 @@ final class DogfoodNativeCanaryReceiptWriter {
           .semanticEditPerformanceReceipts
           .map(
             (receipt) => {
+              'canaryId': _canaryId,
               'sourceGeneration': receipt.sourceGeneration,
+              'acceptedAtEpochMicros': receipt.acceptedAtEpochMicros,
               'platformCallbackMicros': receipt.platformCallbackMicros,
               'coreQueueMicros': receipt.coreQueueMicros,
               'workerRoundTripMicros': receipt.workerRoundTripMicros,

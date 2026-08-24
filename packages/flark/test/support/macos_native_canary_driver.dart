@@ -4,6 +4,8 @@ import 'dart:io';
 
 final class MacosNativeCanarySnapshot {
   const MacosNativeCanarySnapshot({
+    required this.canaryId,
+    required this.commandSequence,
     required this.source,
     required this.selectionBaseUtf16,
     required this.selectionExtentUtf16,
@@ -39,6 +41,8 @@ final class MacosNativeCanarySnapshot {
     required this.frameClockAnchor,
   });
 
+  final String canaryId;
+  final int commandSequence;
   final String source;
   final int selectionBaseUtf16;
   final int selectionExtentUtf16;
@@ -105,6 +109,15 @@ final class MacosNativeCanaryDriver {
   int _windowWidth = 800;
   int _windowHeight = 632;
   Map<String, Object?>? _lastRawSnapshot;
+  final List<Map<String, Object?>> _appAcknowledgements = [];
+
+  int get commandSequence => _sequence;
+  int get appAcknowledgementCount => _appAcknowledgements.length;
+
+  List<Map<String, Object?>> appAcknowledgementsSince(int index) =>
+      List<Map<String, Object?>>.unmodifiable(
+        _appAcknowledgements.skip(index).map(Map<String, Object?>.unmodifiable),
+      );
 
   String get debugLastReceipt =>
       const JsonEncoder.withIndent('  ').convert(_lastRawSnapshot);
@@ -350,6 +363,25 @@ final class MacosNativeCanaryDriver {
         'macOS actuator $operation failed: ${response['error']}',
       );
     }
+    final snapshot = response['snapshot'];
+    if (snapshot is Map) {
+      final json = snapshot.cast<String, Object?>();
+      final appCommandSequence = json['commandSequence'];
+      final canaryId = json['canaryId'];
+      if (appCommandSequence is! int ||
+          canaryId is! String ||
+          canaryId.isEmpty) {
+        throw StateError(
+          'macOS actuator $operation returned an invalid app acknowledgement',
+        );
+      }
+      _appAcknowledgements.add({
+        'actuatorSequence': sequence,
+        'operation': operation,
+        'appCommandSequence': appCommandSequence,
+        'canaryId': canaryId,
+      });
+    }
     return response;
   }
 
@@ -357,6 +389,8 @@ final class MacosNativeCanaryDriver {
     final json = (response['snapshot']! as Map).cast<String, Object?>();
     _lastRawSnapshot = json;
     return MacosNativeCanarySnapshot(
+      canaryId: json['canaryId']! as String,
+      commandSequence: json['commandSequence']! as int,
       source: json['source']! as String,
       selectionBaseUtf16: json['selectionBaseUtf16']! as int,
       selectionExtentUtf16: json['selectionExtentUtf16']! as int,

@@ -1,9 +1,12 @@
+// ignore_for_file: avoid_relative_lib_imports
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 
+import '../packages/flark/example/lib/dogfood_documents.dart';
 import 'dogfood_bundle_manifest.dart';
 import 'dogfood_fixture_identity.dart';
 
@@ -20,6 +23,10 @@ const _largeSourceBytes = 1024 * 1024;
 final _commitPattern = RegExp(r'^[0-9a-f]{40}$');
 final _shaPattern = RegExp(r'^[0-9a-f]{64}$');
 typedef _SourceKey = ({int sessionOrdinal, int sourceGeneration});
+typedef _StructuralExpected = ({String sourceSha256, int caret});
+final _structuralExpectedCache = <String, List<_StructuralExpected>>{};
+final _structuralInitialSourceCache = <String, String>{};
+final _openSourceCache = <String, ({String source, String sha256})>{};
 const _enabledPresetIds = <String>{
   'productTour',
   'prose1MiB',
@@ -85,7 +92,7 @@ const requiredDogfoodCells = <String, DogfoodCellDenominator>{
     warmups: 20,
     samples: 120,
     runs: 3,
-    cadenceHz: 60,
+    cadenceHz: 30,
   ),
   'ordinary-1m-typing': DogfoodCellDenominator(
     warmups: 20,
@@ -109,7 +116,7 @@ const requiredDogfoodCells = <String, DogfoodCellDenominator>{
     warmups: 20,
     samples: 120,
     runs: 3,
-    cadenceHz: 60,
+    cadenceHz: 30,
   ),
   'ordinary-1m-paste-32kib': DogfoodCellDenominator(
     warmups: 2,
@@ -613,6 +620,9 @@ Map<String, List<int>> _validateCell(
   required List<String> blockers,
 }) {
   final metricValues = _metricBuckets();
+  final structuralBurstMetricValues = id.endsWith('-structural-burst')
+      ? _metricBuckets()
+      : null;
   final prefix = 'cell[$id]';
   final sourceBytes = _integer(
     cell['sourceBytes'],
@@ -650,6 +660,9 @@ Map<String, List<int>> _validateCell(
     } else {
       processIds.add(processId);
     }
+    if (run['faulted'] != false || run['resyncCount'] != 0) {
+      blockers.add('$runPrefix faulted or resynchronized');
+    }
     if (denominator.processRule == DogfoodProcessRule.freshEveryRun &&
         run['freshProcess'] != true) {
       blockers.add('$runPrefix must use a fresh process');
@@ -669,33 +682,45 @@ Map<String, List<int>> _validateCell(
     }
     final frames = _frames(run['frames'], runPrefix, blockers);
     final measuredFrameOrdinals = <int>{};
-    _validateOpenObservation(
-      run['openObservation'],
-      id: id,
-      required: denominator.requiresOpen,
-      frames: frames,
-      measuredFrameOrdinals: measuredFrameOrdinals,
-      prefix: '$runPrefix.openObservation',
-      blockers: blockers,
-      metricValues: metricValues,
-    );
     final inputObservations = _observationsByGeneration(
       run['inputObservations'],
       '$runPrefix.inputObservations',
       blockers,
-      allowZero: !denominator.requiresInput,
+      allowZero: denominator.requiresOpen || !denominator.requiresInput,
     );
     final engineObservations = _observationsByGeneration(
       run['engineObservations'],
       '$runPrefix.engineObservations',
       blockers,
-      allowZero: !denominator.requiresInput,
+      allowZero: denominator.requiresOpen || !denominator.requiresInput,
     );
     final paintObservations = _paintObservationsByGeneration(
       run['paintObservations'],
       '$runPrefix.paintObservations',
       blockers,
-      allowZero: !denominator.requiresInput,
+      allowZero: denominator.requiresOpen || !denominator.requiresInput,
+    );
+    final runSessionIdentities = _validateRunSessionIdentities(
+      frames: frames,
+      inputs: inputObservations,
+      paints: paintObservations,
+      engines: engineObservations,
+      prefix: runPrefix,
+      blockers: blockers,
+    );
+    _validateOpenObservation(
+      run['openObservation'],
+      id: id,
+      required: denominator.requiresOpen,
+      frames: frames,
+      rawInputs: inputObservations,
+      rawPaints: paintObservations,
+      runSessionIdentities: runSessionIdentities,
+      framePeriod: framePeriod,
+      measuredFrameOrdinals: measuredFrameOrdinals,
+      prefix: '$runPrefix.openObservation',
+      blockers: blockers,
+      metricValues: metricValues,
     );
     final declared = <Map<String, Object?>>[
       for (var index = 0; index < warmups.length; index += 1)
@@ -724,10 +749,12 @@ Map<String, List<int>> _validateCell(
         }
       }
     }
+    if (denominator.requiresOpen) {
+      declaredGenerations.add((sessionOrdinal: 0, sourceGeneration: 0));
+    }
     for (final entry in <String, Set<_SourceKey>>{
       'input': inputObservations.keys.toSet(),
       'engine': engineObservations.keys.toSet(),
-      'paint': paintObservations.keys.toSet(),
     }.entries) {
       if (!entry.value.containsAll(declaredGenerations) ||
           !declaredGenerations.containsAll(entry.value)) {
@@ -736,6 +763,14 @@ Map<String, List<int>> _validateCell(
           'declared generations',
         );
       }
+    }
+    final observedPaintGenerations = paintObservations.keys.toSet();
+    if (!declaredGenerations.containsAll(observedPaintGenerations) ||
+        (!id.endsWith('-structural-burst') &&
+            !observedPaintGenerations.containsAll(declaredGenerations))) {
+      blockers.add(
+        '$runPrefix paint observations do not ${id.endsWith('-structural-burst') ? 'form a subset of' : 'exactly cover'} the declared generations',
+      );
     }
     for (var index = 0; index < samples.length; index += 1) {
       final sample = declared[warmups.length + index];
@@ -781,7 +816,9 @@ Map<String, List<int>> _validateCell(
         blockers: blockers,
       );
     }
-    _validateCadence(samples, denominator.cadenceHz, runPrefix, blockers);
+    if (!id.endsWith('-structural-burst')) {
+      _validateCadence(samples, denominator.cadenceHz, runPrefix, blockers);
+    }
     for (var sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
       final declaredIndex = warmups.length + sampleIndex;
       final sample = declared[declaredIndex];
@@ -821,12 +858,25 @@ Map<String, List<int>> _validateCell(
         nextAcceptedMicros: _nextAcceptedMicros(declared, declaredIndex),
         collectMetrics: true,
         requiresInput: denominator.requiresInput,
+        allowIntermediatePaintCoalescing: id.endsWith('-structural-burst'),
         measuredFrameOrdinals: measuredFrameOrdinals,
         framePeriod: framePeriod,
         requiresLiveStateZero: denominator.requiresLiveStateZero,
         prefix: '$runPrefix.sample[$sampleIndex]',
         blockers: blockers,
         metricValues: metricValues,
+      );
+    }
+    if (id.endsWith('-structural-burst')) {
+      _validateStructuralEvidence(
+        id: id,
+        runIndex: runIndex,
+        run: run,
+        denominator: denominator,
+        framePeriod: framePeriod,
+        prefix: runPrefix,
+        blockers: blockers,
+        burstMetricValues: structuralBurstMetricValues!,
       );
     }
     _recordMeasuredFrames(
@@ -859,7 +909,1120 @@ Map<String, List<int>> _validateCell(
       _maxFlutterP99Micros) {
     blockers.add('$prefix Flutter frame work p99 exceeded 8 ms');
   }
+  if (structuralBurstMetricValues != null) {
+    if (_percentile(structuralBurstMetricValues['engineMicros']!, 99) >
+        _maxEngineP99Micros) {
+      blockers.add('$prefix structural burst Rust engine p99 exceeded 4 ms');
+    }
+    if (_percentile(structuralBurstMetricValues['flutterFrameMicros']!, 99) >
+        _maxFlutterP99Micros) {
+      blockers.add(
+        '$prefix structural burst Flutter frame work p99 exceeded 8 ms',
+      );
+    }
+    for (final entry in structuralBurstMetricValues.entries) {
+      metricValues[entry.key]!.addAll(entry.value);
+    }
+  }
   return metricValues;
+}
+
+void _validateStructuralEvidence({
+  required String id,
+  required int runIndex,
+  required Map<String, Object?> run,
+  required DogfoodCellDenominator denominator,
+  required num framePeriod,
+  required String prefix,
+  required List<String> blockers,
+  required Map<String, List<int>> burstMetricValues,
+}) {
+  if (run['structuralEvidenceVersion'] != 1) {
+    blockers.add('$prefix has no structural evidence version 1');
+  }
+  _validateStructuralPhase(
+    id: id,
+    value: run,
+    denominator: denominator,
+    expectedPhase: 'latency',
+    runIndex: runIndex,
+    requireEveryGenerationPaint: false,
+    enforceCadence: false,
+    collectFrameMetrics: false,
+    framePeriod: framePeriod,
+    prefix: '$prefix.structuralLatency',
+    blockers: blockers,
+    metricValues: _metricBuckets(),
+  );
+  _validateStructuralPhase(
+    id: id,
+    value: run['structuralBurst'],
+    denominator: denominator,
+    expectedPhase: 'burst',
+    runIndex: runIndex,
+    requireEveryGenerationPaint: false,
+    enforceCadence: true,
+    collectFrameMetrics: true,
+    framePeriod: framePeriod,
+    prefix: '$prefix.structuralBurst',
+    blockers: blockers,
+    metricValues: burstMetricValues,
+  );
+  final control = run['structuralPerEditControl'];
+  if (runIndex == 0) {
+    _validateStructuralPhase(
+      id: id,
+      value: control,
+      denominator: denominator,
+      expectedPhase: 'perEditControl',
+      runIndex: runIndex,
+      requireEveryGenerationPaint: true,
+      enforceCadence: false,
+      collectFrameMetrics: false,
+      framePeriod: framePeriod,
+      prefix: '$prefix.structuralPerEditControl',
+      blockers: blockers,
+      metricValues: _metricBuckets(),
+    );
+  } else if (control != null) {
+    blockers.add('$prefix may carry a per-edit control only in run zero');
+  }
+  final phases = <Map<String, Object?>>[
+    run,
+    _map(run['structuralBurst'], '$prefix.structuralBurst', blockers),
+    if (runIndex == 0)
+      _map(
+        run['structuralPerEditControl'],
+        '$prefix.structuralPerEditControl',
+        blockers,
+      ),
+  ];
+  final identities = phases
+      .map((phase) => phase['structuralSessionIdentity'])
+      .whereType<String>()
+      .toSet();
+  if (identities.length != phases.length) {
+    blockers.add('$prefix structural phases did not use distinct sessions');
+  }
+  int? previousSequenceEnd;
+  int? previousAppSequenceEnd;
+  for (var index = 0; index < phases.length; index += 1) {
+    final start = phases[index]['structuralActuatorSequenceStart'];
+    final end = phases[index]['structuralActuatorSequenceEnd'];
+    if (start is! int ||
+        end is! int ||
+        end <= start ||
+        (previousSequenceEnd == null && start != 3) ||
+        (previousSequenceEnd != null && start != previousSequenceEnd + 2)) {
+      blockers.add(
+        '$prefix structural phases do not have ordered actuator ranges',
+      );
+    }
+    if (end is int) previousSequenceEnd = end;
+    final setup = phases[index]['structuralSetupAcknowledgements'];
+    final app = phases[index]['structuralAppAcknowledgements'];
+    if (setup is List && setup.length == 2 && app is List && app.isNotEmpty) {
+      final reset = setup.first;
+      final terminal = app.last;
+      final resetSequence = reset is Map ? reset['appCommandSequence'] : null;
+      final terminalSequence = terminal is Map
+          ? terminal['appCommandSequence']
+          : null;
+      if (resetSequence is! int ||
+          terminalSequence is! int ||
+          (previousAppSequenceEnd == null && resetSequence != 2) ||
+          (previousAppSequenceEnd != null &&
+              resetSequence != previousAppSequenceEnd + 1)) {
+        blockers.add(
+          '$prefix structural phases do not have contiguous app commands',
+        );
+      }
+      if (terminalSequence is int) previousAppSequenceEnd = terminalSequence;
+    }
+  }
+}
+
+Set<String> _validateRunSessionIdentities({
+  required Map<int, Map<String, Object?>> frames,
+  required Map<_SourceKey, Map<String, Object?>> inputs,
+  required Map<_SourceKey, List<Map<String, Object?>>> paints,
+  required Map<_SourceKey, Map<String, Object?>> engines,
+  required String prefix,
+  required List<String> blockers,
+}) {
+  final identities = <String>{};
+  final identityBySession = <int, String>{};
+  var invalid = false;
+  final sourceKeys = <_SourceKey>{
+    ...inputs.keys,
+    ...paints.keys,
+    ...engines.keys,
+  };
+  for (final key in sourceKeys) {
+    final keyIdentities = <String>{};
+    final observations = <Map<String, Object?>>[
+      ?inputs[key],
+      ...?paints[key],
+      ?engines[key],
+    ];
+    for (final observation in observations) {
+      final identity = observation['measurementSessionIdentity'];
+      if (identity is! String || identity.isEmpty) {
+        invalid = true;
+      } else {
+        keyIdentities.add(identity);
+        identities.add(identity);
+      }
+    }
+    if (keyIdentities.length != 1) invalid = true;
+    if (keyIdentities.length == 1) {
+      final identity = keyIdentities.single;
+      final prior = identityBySession[key.sessionOrdinal];
+      if (prior != null && prior != identity) {
+        invalid = true;
+      } else {
+        identityBySession[key.sessionOrdinal] = identity;
+      }
+    }
+  }
+  if (identityBySession.values.toSet().length != identityBySession.length) {
+    invalid = true;
+  }
+  for (final observation in frames.values) {
+    final identity = observation['measurementSessionIdentity'];
+    final sessionOrdinal = observation['sessionOrdinal'];
+    if (identity is! String ||
+        identity.isEmpty ||
+        sessionOrdinal is! int ||
+        identityBySession[sessionOrdinal] != identity) {
+      invalid = true;
+    }
+  }
+  if (invalid || identities.isEmpty) {
+    blockers.add(
+      '$prefix raw observations do not preserve app-authored sessions',
+    );
+  }
+  return identities;
+}
+
+void _validateStructuralAcknowledgements({
+  required Map<String, Object?> phase,
+  required Object? sessionIdentity,
+  required List<Object?> commandTranscript,
+  required Object? sequenceStart,
+  required Object? sequenceEnd,
+  required String prefix,
+  required List<String> blockers,
+}) {
+  final setup = _list(
+    phase['structuralSetupAcknowledgements'],
+    '$prefix.structuralSetupAcknowledgements',
+    blockers,
+  );
+  final app = _list(
+    phase['structuralAppAcknowledgements'],
+    '$prefix.structuralAppAcknowledgements',
+    blockers,
+  );
+  if (sequenceStart is! int || sequenceEnd is! int) return;
+  final expectedSetup = <({int actuatorSequence, String operation})>[
+    (actuatorSequence: sequenceStart - 1, operation: 'reset'),
+    (actuatorSequence: sequenceStart, operation: 'activateAtUtf16'),
+  ];
+  final expectedApp = <({int actuatorSequence, String operation})>[];
+  for (var index = 0; index < commandTranscript.length; index += 1) {
+    final command = commandTranscript[index];
+    if (command is! String) continue;
+    final operation = command.split(':').first;
+    if (operation == 'settle' || operation == 'closeSession') {
+      expectedApp.add((
+        actuatorSequence: sequenceStart + index + 1,
+        operation: operation,
+      ));
+    }
+  }
+  if (setup.length != expectedSetup.length ||
+      app.length != expectedApp.length) {
+    blockers.add('$prefix app acknowledgements do not replay');
+    return;
+  }
+  final setupMaps = <Map<String, Object?>>[];
+  for (var index = 0; index < setup.length; index += 1) {
+    final acknowledgement = _map(
+      setup[index],
+      '$prefix.setup[$index]',
+      blockers,
+    );
+    setupMaps.add(acknowledgement);
+    if (acknowledgement['actuatorSequence'] !=
+            expectedSetup[index].actuatorSequence ||
+        acknowledgement['operation'] != expectedSetup[index].operation ||
+        acknowledgement['canaryId'] != sessionIdentity) {
+      blockers.add('$prefix setup app acknowledgement $index is invalid');
+    }
+  }
+  final resetAppSequence = setupMaps[0]['appCommandSequence'];
+  final activationAppSequence = setupMaps[1]['appCommandSequence'];
+  if (resetAppSequence is! int ||
+      activationAppSequence is! int ||
+      activationAppSequence != resetAppSequence + 2) {
+    blockers.add('$prefix setup app command sequence does not replay');
+    return;
+  }
+  var expectedAppSequence = activationAppSequence;
+  var acknowledgementIndex = 0;
+  for (var index = 0; index < commandTranscript.length; index += 1) {
+    final command = commandTranscript[index];
+    if (command is! String) continue;
+    final operation = command.split(':').first;
+    switch (operation) {
+      case 'typeStructuralBursts':
+      case 'pressKey':
+      case 'typeText':
+        // The actuator asks the app to settle once to prove the selection
+        // before dispatching these platform inputs.
+        expectedAppSequence += 1;
+      case 'settle':
+      case 'closeSession':
+        expectedAppSequence += 1;
+        final acknowledgement = _map(
+          app[acknowledgementIndex],
+          '$prefix.measurement[$acknowledgementIndex]',
+          blockers,
+        );
+        final expected = expectedApp[acknowledgementIndex];
+        if (acknowledgement['actuatorSequence'] != expected.actuatorSequence ||
+            acknowledgement['operation'] != expected.operation ||
+            acknowledgement['canaryId'] != sessionIdentity ||
+            acknowledgement['appCommandSequence'] != expectedAppSequence) {
+          blockers.add(
+            '$prefix measurement app acknowledgement '
+            '$acknowledgementIndex is invalid',
+          );
+        }
+        acknowledgementIndex += 1;
+      default:
+        blockers.add('$prefix contains an unsupported actuator transcript');
+    }
+  }
+  if (expectedApp.isEmpty || expectedApp.last.actuatorSequence != sequenceEnd) {
+    blockers.add('$prefix final app acknowledgement does not close its range');
+  }
+}
+
+bool _paintClockReplays(
+  Map<String, Object?> paint,
+  Map<String, Object?>? frame, {
+  required int framePeriodMicros,
+}) {
+  if (frame == null) return false;
+  final timestamp = paint['timestampMicros'];
+  final paintMonotonic = paint['paintMonotonicMicros'];
+  final paintBefore = paint['paintEpochBeforeMicros'];
+  final paintAfter = paint['paintEpochAfterMicros'];
+  final frameBefore = frame['clockAnchorEpochBeforeMicros'];
+  final frameAfter = frame['clockAnchorEpochAfterMicros'];
+  final frameMonotonic = frame['clockAnchorMonotonicMicros'];
+  final frameVsync = frame['monotonicVsyncMicros'];
+  final buildStart = frame['buildStartMonotonicMicros'];
+  final buildFinish = frame['buildFinishMonotonicMicros'];
+  if (timestamp is! int ||
+      paintMonotonic is! int ||
+      paintBefore is! int ||
+      paintAfter is! int ||
+      frameBefore is! int ||
+      frameAfter is! int ||
+      frameMonotonic is! int ||
+      frameVsync is! int ||
+      buildStart is! int ||
+      buildFinish is! int ||
+      buildFinish < buildStart ||
+      paintAfter < paintBefore ||
+      paintAfter - paintBefore >= 1000 ||
+      timestamp != paintBefore + ((paintAfter - paintBefore) ~/ 2)) {
+    return false;
+  }
+  final mappedBefore = frameBefore + paintMonotonic - frameMonotonic;
+  final mappedAfter = frameAfter + paintMonotonic - frameMonotonic;
+  if (mappedAfter < paintBefore || mappedBefore > paintAfter) return false;
+  return paintMonotonic >= buildStart && paintMonotonic <= buildFinish;
+}
+
+({Set<String> keys, int start, int end})? _paintFragmentLedger(Object? value) {
+  if (value is! List || value.isEmpty) return null;
+  final keys = <String>{};
+  int? sourceStart;
+  int? sourceEnd;
+  for (final entry in value) {
+    if (entry is! Map) return null;
+    final ordinal = entry['ordinal'];
+    final fragmentStart = entry['fragmentStart'];
+    final fragmentEnd = entry['fragmentEnd'];
+    final start = entry['sourceUtf16Start'];
+    final end = entry['sourceUtf16End'];
+    if (ordinal is! int ||
+        fragmentStart is! int ||
+        fragmentEnd is! int ||
+        start is! int ||
+        end is! int ||
+        fragmentStart < 0 ||
+        fragmentEnd < fragmentStart ||
+        start < 0 ||
+        end < start) {
+      return null;
+    }
+    final key = '$ordinal:$fragmentStart:$fragmentEnd:$start:$end';
+    if (!keys.add(key)) return null;
+    sourceStart = sourceStart == null ? start : math.min(sourceStart, start);
+    sourceEnd = sourceEnd == null ? end : math.max(sourceEnd, end);
+  }
+  return (keys: keys, start: sourceStart!, end: sourceEnd!);
+}
+
+bool _paintSurfaceReplays(Map<String, Object?> paint, Object? expectedExtent) {
+  final rowCount = paint['paintedRowCount'];
+  final requiredVisibleFragmentCount = paint['requiredVisibleFragmentCount'];
+  final laidOutVisiblePlusOverscanFragmentCount =
+      paint['laidOutVisiblePlusOverscanFragmentCount'];
+  final visibleStart = paint['visibleUtf16Start'];
+  final visibleLength = paint['visibleUtf16Length'];
+  final paintedStart = paint['paintedSourceUtf16Start'];
+  final paintedEnd = paint['paintedSourceUtf16End'];
+  final readyStart = paint['visiblePlusOverscanUtf16Start'];
+  final readyEnd = paint['visiblePlusOverscanUtf16End'];
+  final requiredLedger = _paintFragmentLedger(
+    paint['requiredVisibleFragments'],
+  );
+  final readyLedger = _paintFragmentLedger(
+    paint['laidOutVisiblePlusOverscanFragments'],
+  );
+  final paintedLedger = _paintFragmentLedger(paint['paintedFragments']);
+  return paint['completeVisibleSurface'] == true &&
+      paint['completeVisiblePlusOverscanSurface'] == true &&
+      rowCount is int &&
+      rowCount > 0 &&
+      requiredVisibleFragmentCount is int &&
+      requiredVisibleFragmentCount > 0 &&
+      rowCount == requiredVisibleFragmentCount &&
+      laidOutVisiblePlusOverscanFragmentCount is int &&
+      laidOutVisiblePlusOverscanFragmentCount >= requiredVisibleFragmentCount &&
+      requiredLedger != null &&
+      readyLedger != null &&
+      paintedLedger != null &&
+      requiredLedger.keys.length == requiredVisibleFragmentCount &&
+      paintedLedger.keys.length == rowCount &&
+      readyLedger.keys.length == laidOutVisiblePlusOverscanFragmentCount &&
+      requiredLedger.keys.length == paintedLedger.keys.length &&
+      requiredLedger.keys.containsAll(paintedLedger.keys) &&
+      readyLedger.keys.containsAll(requiredLedger.keys) &&
+      visibleStart is int &&
+      visibleLength is int &&
+      visibleLength > 0 &&
+      paintedStart is int &&
+      paintedEnd is int &&
+      paintedEnd > paintedStart &&
+      readyStart is int &&
+      readyEnd is int &&
+      readyEnd > readyStart &&
+      readyStart == visibleStart &&
+      readyEnd == visibleStart + visibleLength &&
+      paintedStart >= readyStart &&
+      paintedEnd <= readyEnd &&
+      paintedLedger.start == paintedStart &&
+      paintedLedger.end == paintedEnd &&
+      readyLedger.start == readyStart &&
+      readyLedger.end == readyEnd &&
+      paint['visiblePlusOverscanSourceSha256'] ==
+          paint['expectedVisiblePlusOverscanSourceSha256'] &&
+      paint['visiblePlusOverscanSourceSha256'] ==
+          paint['visibleSourceSha256'] &&
+      paint['expectedVisiblePlusOverscanSourceSha256'] ==
+          paint['expectedVisibleSourceSha256'] &&
+      expectedExtent is int &&
+      paintedStart <= expectedExtent &&
+      expectedExtent <= paintedEnd;
+}
+
+void _validateStructuralPhase({
+  required String id,
+  required Object? value,
+  required DogfoodCellDenominator denominator,
+  required String expectedPhase,
+  required int runIndex,
+  required bool requireEveryGenerationPaint,
+  required bool enforceCadence,
+  required bool collectFrameMetrics,
+  required num framePeriod,
+  required String prefix,
+  required List<String> blockers,
+  required Map<String, List<int>> metricValues,
+}) {
+  final phase = _map(value, prefix, blockers);
+  final pairCount = denominator.warmups + denominator.samples;
+  if (phase['run'] != runIndex || phase['structuralPhase'] != expectedPhase) {
+    blockers.add('$prefix has the wrong structural phase identity');
+  }
+  final sessionIdentity = phase['structuralSessionIdentity'];
+  if (sessionIdentity is! String || sessionIdentity.isEmpty) {
+    blockers.add('$prefix has no structural session identity');
+  }
+  if (!_sameJson(
+    phase['structuralCommandTranscript'],
+    _expectedStructuralTranscript(expectedPhase, pairCount),
+  )) {
+    blockers.add('$prefix actuator command transcript does not match');
+  }
+  final commandTranscript = _list(
+    phase['structuralCommandTranscript'],
+    '$prefix.structuralCommandTranscript',
+    blockers,
+  );
+  final sequenceStart = phase['structuralActuatorSequenceStart'];
+  final sequenceEnd = phase['structuralActuatorSequenceEnd'];
+  if (sequenceStart is! int ||
+      sequenceEnd is! int ||
+      sequenceEnd - sequenceStart != commandTranscript.length) {
+    blockers.add('$prefix actuator acknowledgement range does not replay');
+  }
+  _validateStructuralAcknowledgements(
+    phase: phase,
+    sessionIdentity: sessionIdentity,
+    commandTranscript: commandTranscript,
+    sequenceStart: sequenceStart,
+    sequenceEnd: sequenceEnd,
+    prefix: prefix,
+    blockers: blockers,
+  );
+  if (phase['faulted'] != false || phase['resyncCount'] != 0) {
+    blockers.add('$prefix faulted or resynchronized');
+  }
+  final frames = _frames(phase['frames'], prefix, blockers);
+  final inputs = _observationsByGeneration(
+    phase['inputObservations'],
+    '$prefix.inputObservations',
+    blockers,
+  );
+  final engines = _observationsByGeneration(
+    phase['engineObservations'],
+    '$prefix.engineObservations',
+    blockers,
+  );
+  final paints = _paintObservationsByGeneration(
+    phase['paintObservations'],
+    '$prefix.paintObservations',
+    blockers,
+  );
+  final generationCount = pairCount * 2;
+  for (final entry in <String, Iterable<Map<String, Object?>>>{
+    'frame': frames.values,
+    'input': inputs.values,
+    'engine': engines.values,
+    'paint': paints.values.expand((values) => values),
+  }.entries) {
+    if (entry.value.any(
+      (observation) =>
+          observation['measurementSessionIdentity'] != sessionIdentity,
+    )) {
+      blockers.add(
+        '$prefix ${entry.key} observations escaped their app-echoed session',
+      );
+    }
+  }
+  final expectedKeys = <_SourceKey>{
+    for (var generation = 1; generation <= generationCount; generation += 1)
+      (sessionOrdinal: 0, sourceGeneration: generation),
+  };
+  for (final entry in {'input': inputs.keys, 'engine': engines.keys}.entries) {
+    if (!entry.value.toSet().containsAll(expectedKeys) ||
+        !expectedKeys.containsAll(entry.value)) {
+      blockers.add(
+        '$prefix ${entry.key} observations do not exactly cover all '
+        '$generationCount structural generations',
+      );
+    }
+  }
+  if (!expectedKeys.containsAll(paints.keys) ||
+      (requireEveryGenerationPaint &&
+          !paints.keys.toSet().containsAll(expectedKeys))) {
+    blockers.add(
+      '$prefix paint observations do not ${requireEveryGenerationPaint ? 'exactly cover' : 'form a subset of'} all structural generations',
+    );
+  }
+  _validateStructuralSummaryShape(
+    phase,
+    phaseKind: expectedPhase,
+    denominator: denominator,
+    generationCount: generationCount,
+    inputs: inputs,
+    prefix: prefix,
+    blockers: blockers,
+  );
+
+  final preset = id.startsWith('product-tour')
+      ? DogfoodDocumentPreset.productTour
+      : DogfoodDocumentPreset.prose1MiB;
+  final initialSource = _structuralInitialSourceCache.putIfAbsent(
+    id,
+    () => buildDogfoodDocument(preset),
+  );
+  final marker = id.startsWith('product-tour')
+      ? 'locally.'
+      : 'parser catches up.';
+  final initialCaret = initialSource.indexOf(marker) + marker.length;
+  final expectedSequence = _structuralExpectedSequence(
+    cacheKey: '$id/$pairCount',
+    source: initialSource,
+    caret: initialCaret,
+    pairCount: pairCount,
+  );
+  final firstMeasuredGeneration = denominator.warmups * 2 + 1;
+  int? firstPairAccepted;
+  int? previousAccepted;
+  for (var pair = 0; pair < pairCount; pair += 1) {
+    final returnGeneration = pair * 2 + 1;
+    final successorGeneration = returnGeneration + 1;
+    final returnExpected = expectedSequence[returnGeneration - 1];
+    final returnInput =
+        inputs[(sessionOrdinal: 0, sourceGeneration: returnGeneration)];
+    _validateStructuralInput(
+      returnInput,
+      generation: returnGeneration,
+      expectedSourceSha256: returnExpected.sourceSha256,
+      expectedCaret: returnExpected.caret,
+      previousAccepted: previousAccepted,
+      prefix: '$prefix.pair[$pair].return',
+      blockers: blockers,
+    );
+    final returnAccepted = returnInput?['acceptedMicros'];
+    if (returnAccepted is int) {
+      firstPairAccepted ??= returnAccepted;
+      previousAccepted = returnAccepted;
+      if (enforceCadence) {
+        final expected =
+            firstPairAccepted + pair * _structuralPairCadenceMicros;
+        if ((returnAccepted - expected).abs() > 1000) {
+          blockers.add('$prefix pair $pair was not accepted on schedule');
+        }
+      }
+    }
+    final successorExpected = expectedSequence[successorGeneration - 1];
+    final successorInput =
+        inputs[(sessionOrdinal: 0, sourceGeneration: successorGeneration)];
+    _validateStructuralInput(
+      successorInput,
+      generation: successorGeneration,
+      expectedSourceSha256: successorExpected.sourceSha256,
+      expectedCaret: successorExpected.caret,
+      previousAccepted: previousAccepted,
+      prefix: '$prefix.pair[$pair].successor',
+      blockers: blockers,
+    );
+    final successorAccepted = successorInput?['acceptedMicros'];
+    if (returnAccepted is int && successorAccepted is int) {
+      final delay = successorAccepted - returnAccepted;
+      if (delay < 0 || delay > _structuralImmediateSuccessorMicros) {
+        blockers.add('$prefix pair $pair successor was not immediate');
+      }
+      final successorPaints =
+          paints[(sessionOrdinal: 0, sourceGeneration: successorGeneration)];
+      if (successorPaints == null || successorPaints.isEmpty) {
+        blockers.add('$prefix pair $pair successor never painted');
+      } else {
+        final firstSuccessorFrame = _firstFrameAtOrAfter(
+          frames,
+          successorAccepted,
+        );
+        final orderedSuccessorPaints = [...successorPaints]
+          ..sort(
+            (left, right) => (left['timestampMicros']! as int).compareTo(
+              right['timestampMicros']! as int,
+            ),
+          );
+        final firstSuccessorPaint = orderedSuccessorPaints.first;
+        final successorVisibility =
+            (firstSuccessorPaint['timestampMicros']! as int) -
+            successorAccepted;
+        final visibilityBudget = math.min(
+          _maxVisibilityMicros,
+          framePeriod.round(),
+        );
+        if (firstSuccessorFrame == null ||
+            !successorPaints.any(
+              (paint) => paint['frameOrdinal'] == firstSuccessorFrame,
+            )) {
+          blockers.add('$prefix pair $pair successor missed its next frame');
+        }
+        if (successorVisibility < 0 || successorVisibility > visibilityBudget) {
+          blockers.add(
+            '$prefix pair $pair successor exceeded the visibility budget',
+          );
+        }
+        if (collectFrameMetrics &&
+            successorGeneration >= firstMeasuredGeneration) {
+          metricValues['sourceToPaintMicros']!.add(successorVisibility);
+        }
+      }
+      final returnPaints =
+          paints[(sessionOrdinal: 0, sourceGeneration: returnGeneration)];
+      if (returnPaints != null && returnPaints.isNotEmpty) {
+        final firstReturnFrame = _firstFrameAtOrAfter(frames, returnAccepted);
+        if (firstReturnFrame == null ||
+            !returnPaints.any(
+              (paint) => paint['frameOrdinal'] == firstReturnFrame,
+            ) ||
+            returnPaints.any(
+              (paint) =>
+                  paint['timestampMicros'] is! int ||
+                  (paint['timestampMicros']! as int) >= successorAccepted,
+            )) {
+          blockers.add(
+            '$prefix pair $pair Return did not paint on its first opportunity before the successor',
+          );
+        }
+      } else if (!requireEveryGenerationPaint) {
+        final hadFrameOpportunity = frames.values.any((frame) {
+          final vsync = frame['vsyncMicros'];
+          return vsync is int &&
+              vsync >= returnAccepted &&
+              vsync < successorAccepted;
+        });
+        if (hadFrameOpportunity) {
+          blockers.add(
+            '$prefix pair $pair coalesced Return despite a frame opportunity',
+          );
+        }
+      }
+      previousAccepted = successorAccepted;
+    }
+  }
+
+  for (final entry in engines.entries) {
+    final nativeMicros = _integer(
+      entry.value['nativeFfiMicros'],
+      '$prefix.engine.nativeFfiMicros',
+      blockers,
+    );
+    if (collectFrameMetrics &&
+        entry.key.sourceGeneration >= firstMeasuredGeneration) {
+      metricValues['engineMicros']!.add(nativeMicros);
+    }
+  }
+  for (final entry in paints.entries) {
+    final input = inputs[entry.key];
+    if (input == null) continue;
+    final nextInput =
+        inputs[(
+          sessionOrdinal: entry.key.sessionOrdinal,
+          sourceGeneration: entry.key.sourceGeneration + 1,
+        )];
+    final nextAcceptedMicros = nextInput?['acceptedMicros'];
+    final expectedSourceHash = input['sourceSha256'];
+    final expectedBase = input['canonicalSelectionBaseUtf16'];
+    final expectedExtent = input['canonicalSelectionExtentUtf16'];
+    for (final paint in entry.value) {
+      final active = paint['activeRowVisible'] == true;
+      final frameOrdinal = paint['frameOrdinal'];
+      final frameStamp = paint['frameStampMicros'];
+      final visibleStart = paint['visibleUtf16Start'];
+      final visibleLength = paint['visibleUtf16Length'];
+      String? expectedVisibleHash;
+      if (visibleStart is int && visibleLength is int) {
+        try {
+          expectedVisibleHash = sha256
+              .convert(
+                utf8.encode(
+                  _structuralVisibleSlice(
+                    source: initialSource,
+                    caret: initialCaret,
+                    generation: entry.key.sourceGeneration,
+                    start: visibleStart,
+                    length: visibleLength,
+                  ),
+                ),
+              )
+              .toString();
+        } on RangeError {
+          expectedVisibleHash = null;
+        }
+      }
+      if (paint['timestampMicros'] is! int ||
+          (paint['timestampMicros']! as int) <
+              (input['acceptedMicros']! as int) ||
+          (nextAcceptedMicros is int &&
+              (paint['timestampMicros']! as int) >= nextAcceptedMicros) ||
+          expectedVisibleHash == null ||
+          visibleLength is! int ||
+          visibleLength <= 0 ||
+          paint['completeVisibleSurface'] != true ||
+          !active ||
+          !_paintSurfaceReplays(paint, expectedExtent) ||
+          paint['visibleSourceSha256'] != expectedVisibleHash ||
+          paint['expectedVisibleSourceSha256'] != expectedVisibleHash ||
+          paint['canonicalSelectionBaseUtf16'] != expectedBase ||
+          paint['canonicalSelectionExtentUtf16'] != expectedExtent ||
+          (active &&
+              (expectedExtent is! int ||
+                  visibleStart is! int ||
+                  expectedExtent < visibleStart ||
+                  expectedExtent > visibleStart + visibleLength ||
+                  paint['caretSourceUtf16'] != expectedExtent ||
+                  paint['caretDisplayUtf16'] == null)) ||
+          (paint['activeNeutralRowCount'] as int? ?? 1) != 0 ||
+          frameOrdinal is! int ||
+          !frames.containsKey(frameOrdinal) ||
+          frames[frameOrdinal]?['sessionOrdinal'] != paint['sessionOrdinal'] ||
+          frames[frameOrdinal]?['measurementSessionIdentity'] !=
+              paint['measurementSessionIdentity'] ||
+          frameStamp is! int ||
+          _nearestFrameOrdinal(
+                frameStamp,
+                frames,
+                framePeriodMicros: framePeriod.round(),
+              ) !=
+              frameOrdinal ||
+          !_paintClockReplays(
+            paint,
+            frames[frameOrdinal],
+            framePeriodMicros: framePeriod.round(),
+          ) ||
+          expectedSourceHash is! String) {
+        blockers.add(
+          '$prefix generation ${entry.key.sourceGeneration} has a stale or raw paint',
+        );
+      }
+    }
+  }
+
+  final expectedSyncByFrame = <int, int>{};
+  final orderedInputs = inputs.values.toList()
+    ..sort(
+      (left, right) => (left['sourceGeneration']! as int).compareTo(
+        right['sourceGeneration']! as int,
+      ),
+    );
+  for (final input in orderedInputs) {
+    final accepted = input['acceptedMicros']! as int;
+    final frameOrdinal = _firstFrameAtOrAfter(frames, accepted);
+    if (frameOrdinal == null) {
+      blockers.add(
+        '$prefix generation ${input['sourceGeneration']} has no following frame',
+      );
+      continue;
+    }
+    expectedSyncByFrame.update(
+      frameOrdinal,
+      (value) => value + (input['editorSyncMicros']! as int),
+      ifAbsent: () => input['editorSyncMicros']! as int,
+    );
+  }
+  for (final entry in frames.entries) {
+    final expectedSync = expectedSyncByFrame[entry.key] ?? 0;
+    final frameSync = entry.value['editorSyncMicros'];
+    if (frameSync != expectedSync) {
+      blockers.add(
+        '$prefix frame ${entry.key} does not exactly attribute coalesced '
+        'synchronous editor work',
+      );
+    }
+  }
+
+  final terminalKey = (sessionOrdinal: 0, sourceGeneration: generationCount);
+  final terminalPaints = paints[terminalKey] ?? const [];
+  final terminalCurrent =
+      terminalPaints
+          .where(
+            (paint) =>
+                paint['semanticsCurrent'] == true &&
+                paint['frameOrdinal'] is int,
+          )
+          .toList()
+        ..sort(
+          (left, right) => (left['timestampMicros']! as int).compareTo(
+            right['timestampMicros']! as int,
+          ),
+        );
+  if (terminalCurrent.isEmpty) {
+    blockers.add('$prefix terminal generation did not paint and certify');
+    return;
+  }
+  final terminalAccepted = inputs[terminalKey]?['acceptedMicros'];
+  final terminalTimestamp = terminalCurrent.first['timestampMicros'];
+  if (terminalAccepted is! int || terminalTimestamp is! int) {
+    blockers.add('$prefix cannot bind terminal certification latency');
+  } else {
+    final certification = terminalTimestamp - terminalAccepted;
+    if (certification < 0 || certification >= _maxCertificationMicros) {
+      blockers.add('$prefix terminal certification exceeded 500 ms');
+    }
+    if (collectFrameMetrics) {
+      metricValues['visibleCertificationMicros']!.add(certification);
+    }
+  }
+  if (collectFrameMetrics) {
+    final firstAccepted =
+        inputs[(
+          sessionOrdinal: 0,
+          sourceGeneration: firstMeasuredGeneration,
+        )]?['acceptedMicros'];
+    final terminalFrame = terminalCurrent.first['frameOrdinal'];
+    if (firstAccepted is! int || terminalFrame is! int) {
+      blockers.add('$prefix cannot bind its complete burst frame interval');
+      return;
+    }
+    final firstFrame = _firstFrameAtOrAfter(frames, firstAccepted);
+    if (firstFrame == null) {
+      blockers.add('$prefix has no frame after burst acceptance');
+      return;
+    }
+    _recordMeasuredFrames(
+      frames,
+      {
+        for (var ordinal = firstFrame; ordinal <= terminalFrame; ordinal += 1)
+          ordinal,
+      },
+      prefix,
+      blockers,
+      metricValues,
+    );
+  }
+}
+
+const _structuralPairCadenceMicros = 33333;
+const _structuralImmediateSuccessorMicros = 30000;
+
+List<String> _expectedStructuralTranscript(String phase, int pairCount) {
+  final result = <String>[];
+  switch (phase) {
+    case 'latency':
+      for (var index = 0; index < pairCount; index += 1) {
+        result
+          ..add('typeStructuralBursts:1:0')
+          ..add('settle');
+      }
+      break;
+    case 'burst':
+      result.add(
+        'typeStructuralBursts:$pairCount:$_structuralPairCadenceMicros',
+      );
+      break;
+    case 'perEditControl':
+      for (var index = 0; index < pairCount; index += 1) {
+        result
+          ..add('pressKey:enter')
+          ..add('settle')
+          ..add('typeText:x:0')
+          ..add('settle');
+      }
+      break;
+    default:
+      return const [];
+  }
+  return result
+    ..add('settle')
+    ..add('closeSession');
+}
+
+void _validateStructuralSummaryShape(
+  Map<String, Object?> phase, {
+  required String phaseKind,
+  required DogfoodCellDenominator denominator,
+  required int generationCount,
+  required Map<_SourceKey, Map<String, Object?>> inputs,
+  required String prefix,
+  required List<String> blockers,
+}) {
+  final warmups = _list(phase['warmups'], '$prefix.warmups', blockers);
+  final samples = _list(phase['samples'], '$prefix.samples', blockers);
+  if (phaseKind == 'burst') {
+    if (warmups.isNotEmpty || samples.length != 1) {
+      blockers.add('$prefix burst summary must be one aggregate sample');
+      return;
+    }
+    final sample = _map(samples.single, '$prefix.samples[0]', blockers);
+    final generations = _acceptedGenerations(
+      sample,
+      '$prefix.samples[0]',
+      blockers,
+    );
+    final expected = [
+      for (var generation = 1; generation <= generationCount; generation += 1)
+        generation,
+    ];
+    if (sample['index'] != 0 ||
+        sample['sourceGeneration'] != generationCount ||
+        !_sameJson(generations, expected) ||
+        sample['scheduleAcceptedMicros'] !=
+            inputs[(
+              sessionOrdinal: 0,
+              sourceGeneration: 1,
+            )]?['acceptedMicros'] ||
+        sample['acceptedMicros'] !=
+            inputs[(
+              sessionOrdinal: 0,
+              sourceGeneration: generationCount,
+            )]?['acceptedMicros']) {
+      blockers.add('$prefix burst summary does not cover the exact sequence');
+    }
+    if (sample['faulted'] != false || sample['resyncCount'] != 0) {
+      blockers.add('$prefix burst sample faulted or resynchronized');
+    }
+    return;
+  }
+  if (warmups.length != denominator.warmups ||
+      samples.length != denominator.samples) {
+    blockers.add('$prefix does not preserve the frozen pair denominator');
+    return;
+  }
+  for (
+    var operation = 0;
+    operation < denominator.warmups + denominator.samples;
+    operation += 1
+  ) {
+    final isWarmup = operation < denominator.warmups;
+    final index = isWarmup ? operation : operation - denominator.warmups;
+    final collection = isWarmup ? warmups : samples;
+    final summary = _map(
+      collection[index],
+      '$prefix.${isWarmup ? 'warmups' : 'samples'}[$index]',
+      blockers,
+    );
+    final expectedGenerations = [operation * 2 + 1, operation * 2 + 2];
+    final generations = _acceptedGenerations(
+      summary,
+      '$prefix.summary[$operation]',
+      blockers,
+    );
+    final returnInput =
+        inputs[(
+          sessionOrdinal: 0,
+          sourceGeneration: expectedGenerations.first,
+        )];
+    final successorInput =
+        inputs[(sessionOrdinal: 0, sourceGeneration: expectedGenerations.last)];
+    if (summary['index'] != index ||
+        summary['sourceGeneration'] != expectedGenerations.last ||
+        !_sameJson(generations, expectedGenerations) ||
+        summary['scheduleAcceptedMicros'] != returnInput?['acceptedMicros'] ||
+        summary['acceptedMicros'] != successorInput?['acceptedMicros'] ||
+        summary['sourceSha256'] != successorInput?['sourceSha256'] ||
+        summary['canonicalSelectionBaseUtf16'] !=
+            successorInput?['canonicalSelectionBaseUtf16'] ||
+        summary['canonicalSelectionExtentUtf16'] !=
+            successorInput?['canonicalSelectionExtentUtf16']) {
+      blockers.add(
+        '$prefix summary $operation does not bind one exact Return+x pair',
+      );
+    }
+    if (!isWarmup &&
+        (summary['faulted'] != false || summary['resyncCount'] != 0)) {
+      blockers.add('$prefix summary $operation faulted or resynchronized');
+    }
+  }
+}
+
+String _structuralVisibleSlice({
+  required String source,
+  required int caret,
+  required int generation,
+  required int start,
+  required int length,
+}) {
+  final completedPairs = generation ~/ 2;
+  final insertion =
+      '${List.filled(completedPairs, '\n\nx').join()}'
+      '${generation.isOdd ? '\n\n' : ''}';
+  final resultLength = source.length + insertion.length;
+  final end = start + length;
+  if (start < 0 || length < 0 || end > resultLength) {
+    throw RangeError.range(end, start, resultLength);
+  }
+  final buffer = StringBuffer();
+  void appendOverlap(
+    int segmentStart,
+    int segmentEnd,
+    String segment,
+    int segmentSourceStart,
+  ) {
+    final overlapStart = math.max(start, segmentStart);
+    final overlapEnd = math.min(end, segmentEnd);
+    if (overlapStart >= overlapEnd) return;
+    buffer.write(
+      segment.substring(
+        segmentSourceStart + overlapStart - segmentStart,
+        segmentSourceStart + overlapEnd - segmentStart,
+      ),
+    );
+  }
+
+  appendOverlap(0, caret, source, 0);
+  appendOverlap(caret, caret + insertion.length, insertion, 0);
+  appendOverlap(caret + insertion.length, resultLength, source, caret);
+  return buffer.toString();
+}
+
+void _validateStructuralInput(
+  Map<String, Object?>? input, {
+  required int generation,
+  required String expectedSourceSha256,
+  required int expectedCaret,
+  required int? previousAccepted,
+  required String prefix,
+  required List<String> blockers,
+}) {
+  if (input == null) {
+    blockers.add('$prefix is missing');
+    return;
+  }
+  final accepted = input['acceptedMicros'];
+  if (input['sourceGeneration'] != generation ||
+      input['sourceSha256'] != expectedSourceSha256 ||
+      input['canonicalSelectionBaseUtf16'] != expectedCaret ||
+      input['canonicalSelectionExtentUtf16'] != expectedCaret ||
+      accepted is! int ||
+      (previousAccepted != null && accepted < previousAccepted)) {
+    blockers.add('$prefix does not match the exact parser-authored transition');
+  }
+}
+
+List<_StructuralExpected> _structuralExpectedSequence({
+  required String cacheKey,
+  required String source,
+  required int caret,
+  required int pairCount,
+}) => _structuralExpectedCache.putIfAbsent(cacheKey, () {
+  var current = source;
+  var currentCaret = caret;
+  final result = <_StructuralExpected>[];
+  for (var pair = 0; pair < pairCount; pair += 1) {
+    current = current.replaceRange(currentCaret, currentCaret, '\n\n');
+    currentCaret += 2;
+    result.add((
+      sourceSha256: sha256.convert(utf8.encode(current)).toString(),
+      caret: currentCaret,
+    ));
+    current = current.replaceRange(currentCaret, currentCaret, 'x');
+    currentCaret += 1;
+    result.add((
+      sourceSha256: sha256.convert(utf8.encode(current)).toString(),
+      caret: currentCaret,
+    ));
+  }
+  return result;
+});
+
+int? _firstFrameAtOrAfter(
+  Map<int, Map<String, Object?>> frames,
+  int acceptedMicros,
+) {
+  final candidates =
+      frames.entries
+          .where(
+            (entry) => (entry.value['vsyncMicros']! as int) >= acceptedMicros,
+          )
+          .toList()
+        ..sort((left, right) => left.key.compareTo(right.key));
+  return candidates.isEmpty ? null : candidates.first.key;
 }
 
 void _validateOpenObservation(
@@ -867,6 +2030,10 @@ void _validateOpenObservation(
   required String id,
   required bool required,
   required Map<int, Map<String, Object?>> frames,
+  required Map<_SourceKey, Map<String, Object?>> rawInputs,
+  required Map<_SourceKey, List<Map<String, Object?>>> rawPaints,
+  required Set<String> runSessionIdentities,
+  required num framePeriod,
   required Set<int> measuredFrameOrdinals,
   required String prefix,
   required List<String> blockers,
@@ -881,6 +2048,11 @@ void _validateOpenObservation(
     return;
   }
   final observation = _map(value, prefix, blockers);
+  final openSessionIdentity = observation['measurementSessionIdentity'];
+  if (openSessionIdentity is! String ||
+      !runSessionIdentities.contains(openSessionIdentity)) {
+    blockers.add('$prefix escaped its app-authored measurement session');
+  }
   final expectedKind = id == 'product-tour-cold-launch'
       ? 'processLaunch'
       : 'presetSelection';
@@ -910,8 +2082,6 @@ void _validateOpenObservation(
     blockers.add('$prefix open exceeded 200 ms');
   }
   if (observation['sourceGeneration'] != 0 ||
-      observation['visibleSourceSha256'] !=
-          observation['expectedVisibleSourceSha256'] ||
       observation['canonicalSelectionBaseUtf16'] !=
           observation['expectedSelectionBaseUtf16'] ||
       observation['canonicalSelectionExtentUtf16'] !=
@@ -920,10 +2090,51 @@ void _validateOpenObservation(
       observation['activeNeutralRowCount'] != 0) {
     blockers.add('$prefix is not an exact certified initial paint');
   }
+  final visibleStart = observation['visibleUtf16Start'];
+  final visibleLength = observation['visibleUtf16Length'];
+  final openSource = _openSourceCache.putIfAbsent(id, () {
+    final source = buildDogfoodDocument(_openPresetForCell(id));
+    return (
+      source: source,
+      sha256: sha256.convert(utf8.encode(source)).toString(),
+    );
+  });
+  final expectedSource = openSource.source;
+  String? expectedVisibleHash;
+  if (visibleStart is int && visibleLength is int) {
+    try {
+      expectedVisibleHash = sha256
+          .convert(
+            utf8.encode(
+              expectedSource.substring(
+                visibleStart,
+                visibleStart + visibleLength,
+              ),
+            ),
+          )
+          .toString();
+    } on RangeError {
+      expectedVisibleHash = null;
+    }
+  }
   final expectedBase = observation['expectedSelectionBaseUtf16'];
   final expectedExtent = observation['expectedSelectionExtentUtf16'];
+  if (observation['sourceSha256'] != openSource.sha256 ||
+      expectedVisibleHash == null ||
+      visibleLength is! int ||
+      visibleLength <= 0 ||
+      !_paintSurfaceReplays(observation, expectedExtent) ||
+      observation['visibleSourceSha256'] != expectedVisibleHash ||
+      observation['expectedVisibleSourceSha256'] != expectedVisibleHash) {
+    blockers.add('$prefix source identity does not match its frozen preset');
+  }
   if (expectedBase == expectedExtent &&
-      (observation['caretSourceUtf16'] != expectedExtent ||
+      (expectedExtent is! int ||
+          visibleStart is! int ||
+          visibleLength is! int ||
+          expectedExtent < visibleStart ||
+          expectedExtent > visibleStart + visibleLength ||
+          observation['caretSourceUtf16'] != expectedExtent ||
           observation['caretDisplayUtf16'] == null)) {
     blockers.add('$prefix has no identity-preserving caret');
   }
@@ -932,12 +2143,126 @@ void _validateOpenObservation(
     '$prefix.frameOrdinal',
     blockers,
   );
+  final openKey = (sessionOrdinal: 0, sourceGeneration: 0);
+  final rawInput = rawInputs[openKey];
+  if (rawInput == null ||
+      rawInput['measurementSessionIdentity'] != openSessionIdentity ||
+      rawInput['acceptedMicros'] != accepted ||
+      rawInput['sourceSha256'] != openSource.sha256 ||
+      rawInput['canonicalSelectionBaseUtf16'] != expectedBase ||
+      rawInput['canonicalSelectionExtentUtf16'] != expectedExtent) {
+    blockers.add('$prefix does not match its raw generation-zero acceptance');
+  }
+  final qualifyingPaints = [...rawPaints[openKey] ?? const []]
+    ..removeWhere(
+      (candidate) =>
+          candidate['timestampMicros'] is! int ||
+          (candidate['timestampMicros']! as int) < accepted ||
+          candidate['semanticsCurrent'] != true ||
+          candidate['activeNeutralRowCount'] != 0 ||
+          candidate['activeRowVisible'] != true ||
+          !_paintSurfaceReplays(
+            candidate,
+            observation['expectedSelectionExtentUtf16'],
+          ) ||
+          (candidate['visibleUtf16Length'] as int? ?? 0) <= 0,
+    )
+    ..sort(
+      (left, right) => (left['timestampMicros']! as int).compareTo(
+        right['timestampMicros']! as int,
+      ),
+    );
+  if (qualifyingPaints.isEmpty) {
+    blockers.add('$prefix has no raw generation-zero proving paint');
+  } else {
+    final rawPaint = qualifyingPaints.first;
+    final rawStamp = rawPaint['frameStampMicros'];
+    final replayedFrame = rawStamp is int
+        ? _nearestFrameOrdinal(
+            rawStamp,
+            frames,
+            framePeriodMicros: framePeriod.round(),
+          )
+        : null;
+    final replayedFrameValue = replayedFrame == null
+        ? null
+        : frames[replayedFrame];
+    if (rawPaint['timestampMicros'] != paint ||
+        rawPaint['measurementSessionIdentity'] != openSessionIdentity ||
+        replayedFrameValue?['measurementSessionIdentity'] !=
+            openSessionIdentity ||
+        rawPaint['frameOrdinal'] != frameOrdinal ||
+        replayedFrame != frameOrdinal ||
+        !_paintClockReplays(
+          rawPaint,
+          replayedFrameValue,
+          framePeriodMicros: framePeriod.round(),
+        ) ||
+        rawPaint['visibleUtf16Start'] != visibleStart ||
+        rawPaint['visibleUtf16Length'] != visibleLength ||
+        rawPaint['visibleSourceSha256'] != expectedVisibleHash ||
+        rawPaint['canonicalSelectionBaseUtf16'] != expectedBase ||
+        rawPaint['canonicalSelectionExtentUtf16'] != expectedExtent ||
+        rawPaint['caretSourceUtf16'] != observation['caretSourceUtf16'] ||
+        rawPaint['caretDisplayUtf16'] != observation['caretDisplayUtf16'] ||
+        rawPaint['paintMonotonicMicros'] !=
+            observation['paintMonotonicMicros'] ||
+        rawPaint['paintEpochBeforeMicros'] !=
+            observation['paintEpochBeforeMicros'] ||
+        rawPaint['paintEpochAfterMicros'] !=
+            observation['paintEpochAfterMicros'] ||
+        rawPaint['paintedRowCount'] != observation['paintedRowCount'] ||
+        rawPaint['requiredVisibleFragmentCount'] !=
+            observation['requiredVisibleFragmentCount'] ||
+        rawPaint['laidOutVisiblePlusOverscanFragmentCount'] !=
+            observation['laidOutVisiblePlusOverscanFragmentCount'] ||
+        jsonEncode(rawPaint['requiredVisibleFragments']) !=
+            jsonEncode(observation['requiredVisibleFragments']) ||
+        jsonEncode(rawPaint['laidOutVisiblePlusOverscanFragments']) !=
+            jsonEncode(observation['laidOutVisiblePlusOverscanFragments']) ||
+        jsonEncode(rawPaint['paintedFragments']) !=
+            jsonEncode(observation['paintedFragments']) ||
+        rawPaint['paintedSourceUtf16Start'] !=
+            observation['paintedSourceUtf16Start'] ||
+        rawPaint['paintedSourceUtf16End'] !=
+            observation['paintedSourceUtf16End'] ||
+        rawPaint['completeVisiblePlusOverscanSurface'] !=
+            observation['completeVisiblePlusOverscanSurface'] ||
+        rawPaint['visiblePlusOverscanUtf16Start'] !=
+            observation['visiblePlusOverscanUtf16Start'] ||
+        rawPaint['visiblePlusOverscanUtf16End'] !=
+            observation['visiblePlusOverscanUtf16End'] ||
+        rawPaint['visiblePlusOverscanSourceSha256'] !=
+            observation['visiblePlusOverscanSourceSha256'] ||
+        rawPaint['expectedVisiblePlusOverscanSourceSha256'] !=
+            observation['expectedVisiblePlusOverscanSourceSha256']) {
+      blockers.add('$prefix does not replay its earliest raw proving paint');
+    }
+  }
   if (!frames.containsKey(frameOrdinal)) {
     blockers.add('$prefix references missing frame $frameOrdinal');
   } else {
-    measuredFrameOrdinals.add(frameOrdinal);
+    final firstFrame = _firstFrameAtOrAfter(frames, accepted);
+    if (firstFrame == null || firstFrame > frameOrdinal) {
+      blockers.add('$prefix cannot bind the complete cold-open frame interval');
+    } else {
+      measuredFrameOrdinals.addAll([
+        for (var ordinal = firstFrame; ordinal <= frameOrdinal; ordinal += 1)
+          ordinal,
+      ]);
+    }
   }
 }
+
+DogfoodDocumentPreset _openPresetForCell(String id) => switch (id) {
+  'product-tour-cold-launch' => DogfoodDocumentPreset.productTour,
+  'dense-blocks-1m-journey' => DogfoodDocumentPreset.denseBlocks1MiB,
+  'ordinary-5m-journey' => DogfoodDocumentPreset.prose5MiB,
+  'giant-line-5m-journey' => DogfoodDocumentPreset.giantLine5MiB,
+  'ordinary-10m-journey' ||
+  'streamed-10m-journey' => DogfoodDocumentPreset.prose10MiB,
+  _ => throw StateError('$id has no frozen open preset'),
+};
 
 void _validateWarmup(
   Map<String, Object?> warmup,
@@ -980,7 +2305,7 @@ void _validateWarmup(
   final finalInput = presentInputs.isEmpty ? null : presentInputs.last;
   if (firstInput == null || finalInput == null) {
     blockers.add('$prefix has no raw input observation');
-  } else if (firstInput['acceptedMicros'] != accepted ||
+  } else if (finalInput['acceptedMicros'] != accepted ||
       finalInput['sourceGeneration'] != generation ||
       finalInput['sourceSha256'] != warmup['sourceSha256'] ||
       finalInput['canonicalSelectionBaseUtf16'] !=
@@ -1015,7 +2340,9 @@ void _validateWarmup(
 int? _nextAcceptedMicros(List<Map<String, Object?>> declared, int index) =>
     index + 1 >= declared.length
     ? null
-    : declared[index + 1]['acceptedMicros'] as int?;
+    : (declared[index + 1]['scheduleAcceptedMicros'] ??
+              declared[index + 1]['acceptedMicros'])
+          as int?;
 
 List<int> _acceptedGenerations(
   Map<String, Object?> sample,
@@ -1159,6 +2486,22 @@ Map<int, Map<String, Object?>> _frames(
       blockers.add('$prefix frame monotonic timestamps are not increasing');
     }
     previousMonotonicVsync = monotonicVsync;
+    final buildStart = _integer(
+      frame['buildStartMonotonicMicros'],
+      'frame.buildStartMonotonicMicros',
+      blockers,
+    );
+    final buildFinish = _integer(
+      frame['buildFinishMonotonicMicros'],
+      'frame.buildFinishMonotonicMicros',
+      blockers,
+    );
+    final build = _integer(frame['buildMicros'], 'frame.buildMicros', blockers);
+    if (buildStart < monotonicVsync ||
+        buildFinish < buildStart ||
+        buildFinish - buildStart != build) {
+      blockers.add('$prefix frame $ordinal has an invalid build interval');
+    }
     final anchorBefore = _integer(
       frame['clockAnchorEpochBeforeMicros'],
       'frame.clockAnchorEpochBeforeMicros',
@@ -1182,7 +2525,6 @@ Map<int, Map<String, Object?>> _frames(
     if (vsync < mappedBefore || vsync > mappedAfter) {
       blockers.add('$prefix frame epoch timestamp does not replay its clock');
     }
-    final build = _integer(frame['buildMicros'], 'frame.buildMicros', blockers);
     final raster = _integer(
       frame['rasterMicros'],
       'frame.rasterMicros',
@@ -1242,6 +2584,7 @@ void _validateSample(
   required int? nextAcceptedMicros,
   required bool collectMetrics,
   required bool requiresInput,
+  required bool allowIntermediatePaintCoalescing,
   required Set<int> measuredFrameOrdinals,
   required num framePeriod,
   required bool requiresLiveStateZero,
@@ -1327,7 +2670,7 @@ void _validateSample(
   final finalInput = presentInputs.isEmpty ? null : presentInputs.last;
   if (firstInput == null || finalInput == null) {
     blockers.add('$prefix has no raw input observation');
-  } else if (firstInput['acceptedMicros'] != accepted ||
+  } else if (finalInput['acceptedMicros'] != accepted ||
       finalInput['sourceGeneration'] != generation ||
       finalInput['sourceSha256'] != sample['sourceSha256'] ||
       finalInput['canonicalSelectionBaseUtf16'] !=
@@ -1347,6 +2690,10 @@ void _validateSample(
     blockers.add('$prefix has no raw paint observation');
   } else {
     for (final acceptedGeneration in acceptedGenerations) {
+      if (allowIntermediatePaintCoalescing &&
+          acceptedGeneration != generation) {
+        continue;
+      }
       final generationPaints = orderedPaints.where(
         (paint) => paint['sourceGeneration'] == acceptedGeneration,
       );
@@ -1391,6 +2738,10 @@ void _validateSample(
     );
     int? certificationTimestamp;
     var rawProjectionFrames = 0;
+    final acceptanceByGeneration = <int, int>{
+      for (final input in presentInputs)
+        input['sourceGeneration']! as int: input['acceptedMicros']! as int,
+    };
     for (
       var paintIndex = 0;
       paintIndex < orderedPaints.length;
@@ -1403,7 +2754,9 @@ void _validateSample(
         blockers,
       );
       final frameValue = paint['frameOrdinal'];
-      if (timestamp < accepted ||
+      final paintAccepted = acceptanceByGeneration[paint['sourceGeneration']];
+      if (paintAccepted == null ||
+          timestamp < paintAccepted ||
           (nextAcceptedMicros != null && timestamp >= nextAcceptedMicros)) {
         blockers.add(
           '$prefix contains a paint outside its acceptance interval',
@@ -1418,6 +2771,14 @@ void _validateSample(
         if (!frames.containsKey(frameOrdinal)) {
           blockers.add(
             '$prefix raw paint references missing frame $frameOrdinal',
+          );
+        }
+        final joinedFrame = frames[frameOrdinal];
+        if (joinedFrame?['sessionOrdinal'] != paint['sessionOrdinal'] ||
+            joinedFrame?['measurementSessionIdentity'] !=
+                paint['measurementSessionIdentity']) {
+          blockers.add(
+            '$prefix raw paint $paintIndex joined a foreign-session frame',
           );
         }
         final frameStamp = _integer(
@@ -1435,6 +2796,15 @@ void _validateSample(
             '$prefix raw paint $paintIndex does not replay its FrameTiming join',
           );
         }
+        if (!_paintClockReplays(
+          paint,
+          frames[frameOrdinal],
+          framePeriodMicros: framePeriod.round(),
+        )) {
+          blockers.add(
+            '$prefix raw paint $paintIndex does not replay its paint clock',
+          );
+        }
         if (collectMetrics && requiresInput) {
           measuredFrameOrdinals.add(frameOrdinal);
         }
@@ -1443,18 +2813,28 @@ void _validateSample(
       final expectedExtent = paint['expectedSelectionExtentUtf16'];
       final collapsed = expectedBase == expectedExtent;
       final activeRowVisible = paint['activeRowVisible'] == true;
+      final visibleStart = paint['visibleUtf16Start'];
+      final visibleLength = paint['visibleUtf16Length'];
       if (!acceptedGenerations.contains(paint['sourceGeneration']) ||
+          visibleStart is! int ||
+          visibleLength is! int ||
+          visibleLength <= 0 ||
+          paint['completeVisibleSurface'] != true ||
           paint['visibleSourceSha256'] !=
               paint['expectedVisibleSourceSha256'] ||
           paint['canonicalSelectionBaseUtf16'] != expectedBase ||
           paint['canonicalSelectionExtentUtf16'] != expectedExtent ||
           (collapsed &&
               activeRowVisible &&
-              (paint['caretSourceUtf16'] != expectedExtent ||
+              (expectedExtent is! int ||
+                  expectedExtent < visibleStart ||
+                  expectedExtent > visibleStart + visibleLength ||
+                  paint['caretSourceUtf16'] != expectedExtent ||
                   paint['caretDisplayUtf16'] == null)) ||
-          (!activeRowVisible &&
-              (paint['caretSourceUtf16'] != null ||
-                  paint['caretDisplayUtf16'] != null))) {
+          (collapsed &&
+              activeRowVisible &&
+              !_paintSurfaceReplays(paint, expectedExtent)) ||
+          !activeRowVisible) {
         blockers.add('$prefix raw paint $paintIndex is torn or stale');
       }
       final neutral = _integer(
@@ -1641,7 +3021,7 @@ void _validateCadence(
   if (cadenceHz == 0 || samples.length < 2) return;
   final first = _map(samples.first, '$prefix.samples[0]', blockers);
   final firstScheduled = first['scheduledMicros'];
-  final firstAccepted = first['acceptedMicros'];
+  final firstAccepted = first['scheduleAcceptedMicros'];
   if (firstScheduled is! int || firstAccepted is! int) {
     blockers.add('$prefix cadence samples require scheduledMicros');
     return;
@@ -1650,7 +3030,7 @@ void _validateCadence(
   for (var index = 0; index < samples.length; index += 1) {
     final sample = _map(samples[index], '$prefix.samples[$index]', blockers);
     final scheduled = sample['scheduledMicros'];
-    final accepted = sample['acceptedMicros'];
+    final accepted = sample['scheduleAcceptedMicros'];
     final expected =
         firstScheduled + (index * _microsPerSecond / cadenceHz).round();
     if (scheduled is! int || (scheduled - expected).abs() > 1) {

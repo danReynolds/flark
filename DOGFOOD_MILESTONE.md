@@ -293,11 +293,32 @@ The D0 sampling denominator is fixed:
 | Cell | Warmups per run | Measured samples per run | Runs | Cadence |
 |---|---:|---:|---:|---:|
 | product-tour cold launch | 0 | 1 | 5 fresh OS processes | unthrottled |
-| product-tour and 1 MiB typing, inline typing, deletion, and structural burst | 20 | 120 | 3 | 60 Hz |
+| product-tour and 1 MiB typing, inline typing, and deletion | 20 | 120 | 3 | 60 edits/second |
+| product-tour and 1 MiB structural burst | 20 | 120 | 3 | 30 immediate Return-plus-`x` pairs/second; 60 accepted edits/second |
 | 32 KiB paste/undo | 2 | 10 | 3 | unthrottled |
 | each buffered large-preset open/edit/undo/scroll/close journey | 0 | 1 | 5 fresh preset sessions | unthrottled |
 | streamed 10 MiB open/edit/close, when enabled | 0 | 1 | 5 fresh sessions | unthrottled |
 | lifecycle | 0 | 100 same-process cycles plus 10 distinct OS processes | 1 fixed sequence per cycle/process | unthrottled |
+
+Each structural run contains two distinct measurements against the identical
+fixture and anchor. The latency phase sends one immediate Return-plus-`x` pair
+and waits for the successor's proving paint before the next pair; the Return
+paint may coalesce only when no FrameTiming opportunity occurs before `x`; the
+`x` callback begins within 30 milliseconds of Return and must paint on its next
+real frame. The continuous phase sends all 140 pairs at the fixed
+30-pair/second schedule under that same immediate-successor bound, permits an
+intermediate Return generation to coalesce only when no frame opportunity
+exists, requires all 280 ordered input/engine receipts and exact transitions,
+and requires the terminal generation to paint and certify. Run zero also
+replays all 140 pairs with a pump after both Return and `x`, requiring all 280
+generations to paint. Each phase begins with an app-acknowledged reset and
+activation into a distinct canary session. The receipt records the exact frozen
+actuator transcript plus every app-returned setup, settle, and close
+acknowledgement; raw frame, input, engine, and paint observations retain the
+app-authored session identity rather than a runner-applied phase label. The
+control is correctness-only; all first
+20-pair warmups are excluded from phase metrics, and latency and continuous
+burst budgets are evaluated independently before aggregation.
 
 Phase 3 adds `docs/testing/dogfood_performance_v1.schema.json` and
 `scripts/verify_v4_dogfood_receipt.dart`, a machine schema and replay validator
@@ -324,12 +345,13 @@ Gate applicability is explicit:
 Latency start/end events cannot exclude inconvenient work:
 
 - product-tour cold start begins at fresh OS process launch and ends only when
-  the complete visible plus overscan range has painted exact editable content;
+  the complete visual viewport has painted exact editable content and the
+  declared layout-overscan range is laid out from the same current source;
 - a preset-open sample begins when the app accepts the preset-selection command,
   includes fixture generation and native admission, and ends at that same
-  complete visible-plus-overscan paint;
-- visible certification ends only when the complete visible-plus-overscan range
-  is current for the accepted source revision; and
+  complete visible paint plus current layout-overscan readiness;
+- visible certification ends only when the complete visual viewport and its
+  declared layout-overscan range are current for the accepted source revision;
 - every fresh-session and process-reopen count above names a distinct OS
   process, while the 100 lifecycle cycles are explicit controller/session
   cycles within the named warmed process.
@@ -338,11 +360,14 @@ The profile app launches at the frozen 1569-by-906 window geometry, and the
 cold-launch cell retains the initial engine paint stream rather than clearing it
 and forcing a later observer-only repaint. Accepted input and process-launch
 times use wall-clock epoch microseconds, while Flutter `FrameTiming` and paint
-frame stamps use the engine's monotonic clock. Every raw frame therefore carries
-a tight epoch/monotonic clock anchor, and the validator replays both that mapping
-and each paint-to-`FrameTiming` join before applying any latency or frame budget.
-Directly comparing the two clock domains, or trusting a prejoined ordinal, is
-invalid D0 evidence.
+frame stamps use the engine's monotonic clock. Every raw frame and paint carries
+a tight epoch/monotonic clock anchor. Each paint also carries the render-derived
+painted-fragment count and source coverage, so a structural or opening proving
+paint must include the active canonical caret within the complete observed
+surface. The validator replays the clock mappings, paint-to-`FrameTiming` join,
+session identity, and surface coverage before applying any latency or frame
+budget. Directly comparing the two clock domains, trusting a prejoined ordinal,
+or calling a runner-labelled/partial surface complete is invalid D0 evidence.
 
 Every lifecycle sample uses Product Tour, activates immediately after
 `locally.`, inserts `x`, undoes it, closes the session, and records a global-zero

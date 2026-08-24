@@ -345,6 +345,7 @@ void main() {
         () => FlarkEditorController.open(source, libraryPath: libraryPath!),
       ))!;
       await tester.runAsync(controller.continueParsing);
+      final paints = <FlarkSurfacePaintObservation>[];
 
       await tester.pumpWidget(
         Directionality(
@@ -353,7 +354,10 @@ void main() {
             child: SizedBox(
               width: 640,
               height: 240,
-              child: FlarkEditor(controller: controller),
+              child: FlarkEditor(
+                controller: controller,
+                debugPaintObserver: paints.add,
+              ),
             ),
           ),
         ),
@@ -377,12 +381,31 @@ void main() {
         surface.debugLaidOutRowCount + surface.debugSkippedRowCount,
         controller.rows.length,
       );
+      final firstPaint = paints.last;
+      expect(firstPaint.completeVisibleSurface, isTrue);
+      expect(firstPaint.completeVisiblePlusOverscanSurface, isFalse);
+      expect(firstPaint.rows.length, firstPaint.requiredVisibleFragmentCount);
+      expect(
+        firstPaint.laidOutVisiblePlusOverscanFragmentCount,
+        greaterThan(firstPaint.requiredVisibleFragmentCount),
+      );
+      expect(
+        firstPaint.visiblePlusOverscanUtf16End,
+        greaterThan(firstPaint.paintedSourceUtf16End!),
+      );
       final laidOutBefore = surface.debugLaidOutRowCount;
 
       // Scrolling toward the estimated region materializes it.
       surface.scrollBy(600);
       await tester.pump();
       expect(surface.debugLaidOutRowCount, greaterThan(laidOutBefore));
+      final scrolledPaint = paints.last;
+      expect(scrolledPaint.completeVisibleSurface, isTrue);
+      expect(scrolledPaint.completeVisiblePlusOverscanSurface, isFalse);
+      expect(
+        scrolledPaint.rows.length,
+        scrolledPaint.requiredVisibleFragmentCount,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);

@@ -612,6 +612,8 @@ void main() {
       final performance = controller.sourceEditPerformanceReceipts.single;
       expect(performance.kind, FlarkSourceEditPerformanceKind.source);
       expect(performance.sourceGeneration, controller.sourceGeneration);
+      expect(performance.acceptedAtEpochMicros, greaterThan(0));
+      expect(performance.editorSyncMicros, greaterThanOrEqualTo(0));
       expect(performance.nativeFfiMicros, greaterThanOrEqualTo(0));
       expect(
         performance.workerRoundTripMicros,

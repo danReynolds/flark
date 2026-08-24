@@ -79,8 +79,28 @@ void main() {
         );
         try {
           probe.pressReturn();
+          final successorCallbackStarted =
+              DateTime.now().microsecondsSinceEpoch;
           probe.typeText('Next');
+          final successorCallbackReturned =
+              DateTime.now().microsecondsSinceEpoch;
           await probe.expectSourceAndCaret(expected);
+          final successorReceipts =
+              probe.controller.sourceEditPerformanceReceipts;
+          expect(successorReceipts, hasLength(4));
+          for (final receipt in successorReceipts) {
+            expect(
+              receipt.acceptedAtEpochMicros,
+              inInclusiveRange(
+                successorCallbackStarted,
+                successorCallbackReturned,
+              ),
+              reason:
+                  'a deferred successor must retain its platform callback '
+                  'acceptance instead of adopting its later promotion time',
+            );
+            expect(receipt.editorSyncMicros, greaterThanOrEqualTo(0));
+          }
           await probe.expectHealthy();
           await probe.expectConvergesWithCleanRebuild();
         } finally {
@@ -102,6 +122,36 @@ void main() {
         probe.pressBackspace();
         probe.typeText('X');
         await probe.expectSourceAndCaret('alphaX¦beta\n');
+        await probe.expectHealthy();
+        await probe.expectConvergesWithCleanRebuild();
+      } finally {
+        await probe.close();
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'deferred structural command retains its platform callback timing',
+    () async {
+      final probe = await LiveEditorTransitionProbe.open(
+        '- parent\n  - child¦',
+        libraryPath: libraryPath!,
+      );
+      try {
+        probe.pressReturn();
+        final successorCallbackStarted = DateTime.now().microsecondsSinceEpoch;
+        probe.pressReturn();
+        final successorCallbackReturned = DateTime.now().microsecondsSinceEpoch;
+        await probe.expectSourceAndCaret('- parent\n  - child\n- ¦');
+        final receipts = probe.controller.semanticEditPerformanceReceipts;
+        expect(receipts, hasLength(2));
+        final successor = receipts.last;
+        expect(
+          successor.acceptedAtEpochMicros,
+          inInclusiveRange(successorCallbackStarted, successorCallbackReturned),
+        );
+        expect(successor.platformCallbackMicros, greaterThanOrEqualTo(0));
         await probe.expectHealthy();
         await probe.expectConvergesWithCleanRebuild();
       } finally {

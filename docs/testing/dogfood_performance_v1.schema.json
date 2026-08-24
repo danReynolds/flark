@@ -171,7 +171,7 @@
     "run": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["run", "processId", "freshProcess", "openObservation", "warmups", "samples", "frames", "inputObservations", "paintObservations", "engineObservations", "memory"],
+      "required": ["run", "processId", "freshProcess", "openObservation", "warmups", "samples", "frames", "inputObservations", "paintObservations", "engineObservations", "faulted", "resyncCount", "memory"],
       "properties": {
         "run": {"type": "integer", "minimum": 0},
         "processId": {"type": "string", "minLength": 1},
@@ -188,21 +188,66 @@
         "inputObservations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/inputObservation"}},
         "paintObservations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintObservation"}},
         "engineObservations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/engineObservation"}},
-        "memory": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/memory"}}
+        "memory": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/memory"}},
+        "structuralEvidenceVersion": {"const": 1},
+        "structuralPhase": {"enum": ["latency", "burst", "perEditControl"]},
+        "structuralSessionIdentity": {"type": "string", "minLength": 1},
+        "structuralActuatorSequenceStart": {"type": "integer", "minimum": 0},
+        "structuralActuatorSequenceEnd": {"type": "integer", "minimum": 1},
+        "structuralCommandTranscript": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "structuralSetupAcknowledgements": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"$ref": "#/$defs/appAcknowledgement"}
+        },
+        "structuralAppAcknowledgements": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/appAcknowledgement"}
+        },
+        "structuralBurst": {"$ref": "#/$defs/run"},
+        "structuralPerEditControl": {"$ref": "#/$defs/run"},
+        "faulted": {"type": "boolean"},
+        "resyncCount": {"type": "integer", "minimum": 0}
       }
     },
     "openObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "acceptedMicros", "paintMicros", "openToEditableMicros", "sourceGeneration", "sourceSha256", "frameOrdinal", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount"],
+      "required": ["kind", "measurementSessionIdentity", "acceptedMicros", "paintMicros", "paintMonotonicMicros", "paintEpochBeforeMicros", "paintEpochAfterMicros", "openToEditableMicros", "sourceGeneration", "sourceSha256", "frameOrdinal", "visibleUtf16Start", "visibleUtf16Length", "completeVisibleSurface", "completeVisiblePlusOverscanSurface", "requiredVisibleFragmentCount", "laidOutVisiblePlusOverscanFragmentCount", "requiredVisibleFragments", "laidOutVisiblePlusOverscanFragments", "paintedFragments", "paintedRowCount", "paintedSourceUtf16Start", "paintedSourceUtf16End", "visiblePlusOverscanUtf16Start", "visiblePlusOverscanUtf16End", "visiblePlusOverscanSourceSha256", "expectedVisiblePlusOverscanSourceSha256", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount"],
       "properties": {
         "kind": {"enum": ["processLaunch", "presetSelection"]},
+        "measurementSessionIdentity": {"type": "string", "minLength": 1},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "paintMicros": {"type": "integer", "minimum": 0},
+        "paintMonotonicMicros": {"type": "integer", "minimum": 0},
+        "paintEpochBeforeMicros": {"type": "integer", "minimum": 0},
+        "paintEpochAfterMicros": {"type": "integer", "minimum": 0},
         "openToEditableMicros": {"type": "integer", "minimum": 0},
         "sourceGeneration": {"const": 0},
         "sourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "frameOrdinal": {"type": "integer", "minimum": 0},
+        "visibleUtf16Start": {"type": "integer", "minimum": 0},
+        "visibleUtf16Length": {"type": "integer", "minimum": 1},
+        "completeVisibleSurface": {"const": true},
+        "completeVisiblePlusOverscanSurface": {"const": true},
+        "requiredVisibleFragmentCount": {"type": "integer", "minimum": 1},
+        "laidOutVisiblePlusOverscanFragmentCount": {"type": "integer", "minimum": 1},
+        "requiredVisibleFragments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintFragment"}},
+        "laidOutVisiblePlusOverscanFragments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintFragment"}},
+        "paintedFragments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintFragment"}},
+        "paintedRowCount": {"type": "integer", "minimum": 1},
+        "paintedSourceUtf16Start": {"type": "integer", "minimum": 0},
+        "paintedSourceUtf16End": {"type": "integer", "minimum": 0},
+        "visiblePlusOverscanUtf16Start": {"type": "integer", "minimum": 0},
+        "visiblePlusOverscanUtf16End": {"type": "integer", "minimum": 1},
+        "visiblePlusOverscanSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "expectedVisiblePlusOverscanSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "visibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "expectedVisibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "canonicalSelectionBaseUtf16": {"type": "integer", "minimum": 0},
@@ -218,9 +263,10 @@
     "inputObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionOrdinal", "sourceGeneration", "acceptedMicros", "editorSyncMicros", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16"],
+      "required": ["sessionOrdinal", "measurementSessionIdentity", "sourceGeneration", "acceptedMicros", "editorSyncMicros", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16"],
       "properties": {
         "sessionOrdinal": {"type": "integer", "minimum": 0},
+        "measurementSessionIdentity": {"type": "string", "minLength": 1},
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "editorSyncMicros": {"type": "integer", "minimum": 0},
@@ -232,13 +278,33 @@
     "paintObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionOrdinal", "timestampMicros", "frameStampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount", "activeRowVisible"],
+      "required": ["sessionOrdinal", "measurementSessionIdentity", "timestampMicros", "paintMonotonicMicros", "paintEpochBeforeMicros", "paintEpochAfterMicros", "frameStampMicros", "frameOrdinal", "sourceGeneration", "visibleUtf16Start", "visibleUtf16Length", "completeVisibleSurface", "completeVisiblePlusOverscanSurface", "requiredVisibleFragmentCount", "laidOutVisiblePlusOverscanFragmentCount", "requiredVisibleFragments", "laidOutVisiblePlusOverscanFragments", "paintedFragments", "paintedRowCount", "paintedSourceUtf16Start", "paintedSourceUtf16End", "visiblePlusOverscanUtf16Start", "visiblePlusOverscanUtf16End", "visiblePlusOverscanSourceSha256", "expectedVisiblePlusOverscanSourceSha256", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount", "activeRowVisible"],
       "properties": {
         "sessionOrdinal": {"type": "integer", "minimum": 0},
+        "measurementSessionIdentity": {"type": "string", "minLength": 1},
         "timestampMicros": {"type": "integer", "minimum": 0},
+        "paintMonotonicMicros": {"type": "integer", "minimum": 0},
+        "paintEpochBeforeMicros": {"type": "integer", "minimum": 0},
+        "paintEpochAfterMicros": {"type": "integer", "minimum": 0},
         "frameStampMicros": {"type": "integer", "minimum": 0},
         "frameOrdinal": {"type": ["integer", "null"], "minimum": 0},
         "sourceGeneration": {"type": "integer", "minimum": 0},
+        "visibleUtf16Start": {"type": "integer", "minimum": 0},
+        "visibleUtf16Length": {"type": "integer", "minimum": 1},
+        "completeVisibleSurface": {"const": true},
+        "completeVisiblePlusOverscanSurface": {"const": true},
+        "requiredVisibleFragmentCount": {"type": "integer", "minimum": 1},
+        "laidOutVisiblePlusOverscanFragmentCount": {"type": "integer", "minimum": 1},
+        "requiredVisibleFragments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintFragment"}},
+        "laidOutVisiblePlusOverscanFragments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintFragment"}},
+        "paintedFragments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/paintFragment"}},
+        "paintedRowCount": {"type": "integer", "minimum": 1},
+        "paintedSourceUtf16Start": {"type": "integer", "minimum": 0},
+        "paintedSourceUtf16End": {"type": "integer", "minimum": 0},
+        "visiblePlusOverscanUtf16Start": {"type": "integer", "minimum": 0},
+        "visiblePlusOverscanUtf16End": {"type": "integer", "minimum": 1},
+        "visiblePlusOverscanSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "expectedVisiblePlusOverscanSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "visibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "expectedVisibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "canonicalSelectionBaseUtf16": {"type": "integer", "minimum": 0},
@@ -252,14 +318,38 @@
         "activeRowVisible": {"type": "boolean"}
       }
     },
+    "paintFragment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "fragmentStart", "fragmentEnd", "sourceUtf16Start", "sourceUtf16End"],
+      "properties": {
+        "ordinal": {"type": "integer"},
+        "fragmentStart": {"type": "integer", "minimum": 0},
+        "fragmentEnd": {"type": "integer", "minimum": 0},
+        "sourceUtf16Start": {"type": "integer", "minimum": 0},
+        "sourceUtf16End": {"type": "integer", "minimum": 0}
+      }
+    },
     "engineObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionOrdinal", "sourceGeneration", "nativeFfiMicros"],
+      "required": ["sessionOrdinal", "measurementSessionIdentity", "sourceGeneration", "nativeFfiMicros"],
       "properties": {
         "sessionOrdinal": {"type": "integer", "minimum": 0},
+        "measurementSessionIdentity": {"type": "string", "minLength": 1},
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "nativeFfiMicros": {"type": "integer", "minimum": 0}
+      }
+    },
+    "appAcknowledgement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actuatorSequence", "operation", "appCommandSequence", "canaryId"],
+      "properties": {
+        "actuatorSequence": {"type": "integer", "minimum": 1},
+        "operation": {"type": "string", "minLength": 1},
+        "appCommandSequence": {"type": "integer", "minimum": 1},
+        "canaryId": {"type": "string", "minLength": 1}
       }
     },
     "sample": {
@@ -269,6 +359,7 @@
         "index",
         "sessionOrdinal",
         "acceptedMicros",
+        "scheduleAcceptedMicros",
         "sourcePaintMicros",
         "caretPaintMicros",
         "selectionPaintMicros",
@@ -297,6 +388,7 @@
         "sessionOrdinal": {"type": "integer", "minimum": 0},
         "scheduledMicros": {"type": ["integer", "null"], "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
+        "scheduleAcceptedMicros": {"type": "integer", "minimum": 0},
         "sourcePaintMicros": {"type": "integer", "minimum": 0},
         "caretPaintMicros": {"type": "integer", "minimum": 0},
         "selectionPaintMicros": {"type": "integer", "minimum": 0},
@@ -330,11 +422,12 @@
     "warmup": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["index", "sessionOrdinal", "acceptedMicros", "acceptedSourceGenerations", "sourceGeneration", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "engineMicros"],
+      "required": ["index", "sessionOrdinal", "acceptedMicros", "scheduleAcceptedMicros", "acceptedSourceGenerations", "sourceGeneration", "sourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "engineMicros"],
       "properties": {
         "index": {"type": "integer", "minimum": 0},
         "sessionOrdinal": {"type": "integer", "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
+        "scheduleAcceptedMicros": {"type": "integer", "minimum": 0},
         "acceptedSourceGenerations": {
           "type": "array",
           "minItems": 1,
@@ -351,11 +444,15 @@
     "frame": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ordinal", "vsyncMicros", "monotonicVsyncMicros", "clockAnchorEpochBeforeMicros", "clockAnchorEpochAfterMicros", "clockAnchorMonotonicMicros", "buildMicros", "rasterMicros", "editorSyncMicros", "editorAttributed", "missed"],
+      "required": ["ordinal", "sessionOrdinal", "measurementSessionIdentity", "vsyncMicros", "monotonicVsyncMicros", "buildStartMonotonicMicros", "buildFinishMonotonicMicros", "clockAnchorEpochBeforeMicros", "clockAnchorEpochAfterMicros", "clockAnchorMonotonicMicros", "buildMicros", "rasterMicros", "editorSyncMicros", "editorAttributed", "missed"],
       "properties": {
         "ordinal": {"type": "integer", "minimum": 0},
+        "sessionOrdinal": {"type": "integer", "minimum": 0},
+        "measurementSessionIdentity": {"type": "string", "minLength": 1},
         "vsyncMicros": {"type": "integer", "minimum": 0},
         "monotonicVsyncMicros": {"type": "integer", "minimum": 0},
+        "buildStartMonotonicMicros": {"type": "integer", "minimum": 0},
+        "buildFinishMonotonicMicros": {"type": "integer", "minimum": 0},
         "clockAnchorEpochBeforeMicros": {"type": "integer", "minimum": 0},
         "clockAnchorEpochAfterMicros": {"type": "integer", "minimum": 0},
         "clockAnchorMonotonicMicros": {"type": "integer", "minimum": 0},
