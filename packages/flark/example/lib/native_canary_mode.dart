@@ -212,6 +212,7 @@ final class DogfoodNativeCanaryReceiptWriter {
   FlarkEditorDebugGeometry? _taskActionGeometry;
   int? _openAcceptedEpochMicros;
   DateTime? _lastInputEventAt;
+  int? _lastControllerSourceGeneration;
   double _lastScrollOffset = 0;
 
   void beginCanary(String id) {
@@ -242,21 +243,36 @@ final class DogfoodNativeCanaryReceiptWriter {
     _taskActionGeometry = null;
     _openAcceptedEpochMicros = null;
     _lastInputEventAt = null;
+    _lastControllerSourceGeneration = _controller?.sourceGeneration;
     _lastScrollOffset = 0;
   }
 
   void attach(FlarkEditorController controller) {
     detach();
     _controller = controller;
-    controller.addListener(_record);
+    _lastControllerSourceGeneration = controller.sourceGeneration;
+    controller.addListener(_recordControllerChange);
     _record();
   }
 
   void detach() {
     _timer?.cancel();
     _timer = null;
-    _controller?.removeListener(_record);
+    _controller?.removeListener(_recordControllerChange);
     _controller = null;
+    _lastControllerSourceGeneration = null;
+  }
+
+  void _recordControllerChange() {
+    final controller = _controller;
+    if (controller == null) return;
+    final sourceGeneration = controller.sourceGeneration;
+    if (sourceGeneration != _lastControllerSourceGeneration) {
+      _lastControllerSourceGeneration = sourceGeneration;
+      recordInputEvent('controller-generation:generation=$sourceGeneration');
+      return;
+    }
+    _record();
   }
 
   void dispose() {

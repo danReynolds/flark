@@ -179,9 +179,66 @@ func focusWindow(
   )
 }
 
+func focusedAccessibilityTarget() -> (pid: pid_t, role: String, subrole: String) {
+  let systemWide = AXUIElementCreateSystemWide()
+  var value: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(
+    systemWide,
+    kAXFocusedUIElementAttribute as CFString,
+    &value
+  ) == .success,
+    let focused = value as! AXUIElement?
+  else { return (0, "unavailable", "unavailable") }
+  var focusedPID: pid_t = 0
+  _ = AXUIElementGetPid(focused, &focusedPID)
+
+  func attribute(_ name: String) -> String {
+    var attributeValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+      focused,
+      name as CFString,
+      &attributeValue
+    ) == .success,
+      let result = attributeValue as? String
+    else { return "unavailable" }
+    return result
+  }
+
+  return (
+    focusedPID,
+    attribute(kAXRoleAttribute),
+    attribute(kAXSubroleAttribute)
+  )
+}
+
+/// Confirms that the activation/click which established the editor's input
+/// connection is still authoritative. Do not raise or refocus the window here:
+/// doing so can replace the editor first responder immediately before input.
+func requireDogfoodApplicationFocus(pid: pid_t) throws {
+  try waitUntil("focused dogfood input target", timeoutSeconds: 2) {
+    focusedAccessibilityTarget().pid == pid
+  }
+}
+
 let eventSource = CGEventSource(stateID: .hidSystemState)
+var lastPrimaryPointerUpAt: Date?
+
+func beginIndependentPrimaryPointerSequence() {
+  if let lastPrimaryPointerUpAt {
+    let elapsed = Date().timeIntervalSince(lastPrimaryPointerUpAt)
+    let minimum = NSEvent.doubleClickInterval + 0.05
+    if elapsed < minimum {
+      pause(milliseconds: Int((minimum - elapsed) * 1_000) + 1)
+    }
+  }
+}
+
+func finishPrimaryPointerSequence() {
+  lastPrimaryPointerUpAt = Date()
+}
 
 func click(_ location: CGPoint) {
+  beginIndependentPrimaryPointerSequence()
   CGEvent(
     mouseEventSource: eventSource,
     mouseType: .mouseMoved,
@@ -206,10 +263,12 @@ func click(_ location: CGPoint) {
   )
   up?.setIntegerValueField(.mouseEventClickState, value: 1)
   up?.post(tap: .cghidEventTap)
+  finishPrimaryPointerSequence()
   pause(milliseconds: 100)
 }
 
 func drag(from start: CGPoint, to end: CGPoint) {
+  beginIndependentPrimaryPointerSequence()
   CGEvent(
     mouseEventSource: eventSource,
     mouseType: .mouseMoved,
@@ -247,6 +306,7 @@ func drag(from start: CGPoint, to end: CGPoint) {
   )
   up?.setIntegerValueField(.mouseEventClickState, value: 1)
   up?.post(tap: .cghidEventTap)
+  finishPrimaryPointerSequence()
   pause(milliseconds: 60)
 }
 
@@ -406,6 +466,7 @@ func pressAcuteE() {
   modifier(true, flags: leftOption)
   pressKey(14, flags: leftOption)
   modifier(false, flags: [])
+  pause(milliseconds: 50)
   pressKey(14)
 }
 
@@ -564,23 +625,34 @@ func inputDeliveryAcknowledgement(
       "\(operation) has a negative expected generation advance"
     )
   }
-  guard candidateOrdinal > baselineOrdinal, let terminalEvent = events.last else {
+  guard candidateOrdinal > baselineOrdinal else {
     return nil
   }
+  let firstRetainedOrdinal = candidateOrdinal - events.count + 1
+  guard baselineOrdinal >= firstRetainedOrdinal - 1 else {
+    throw ActuatorFailure.message(
+      "\(operation) input events rolled over before acknowledgement"
+    )
+  }
+  let firstNewIndex = max(0, baselineOrdinal + 1 - firstRetainedOrdinal)
+  let newEvents = events.enumerated().dropFirst(firstNewIndex)
   let targetGeneration = baselineGeneration + expectedGenerationAdvance
   guard candidateGeneration == targetGeneration else { return nil }
-  guard terminalEvent.contains("generation=\(targetGeneration)") else {
+  guard let terminal = newEvents.last(where: { _, event in
+    guard event.contains("generation=\(targetGeneration)") else {
+      return false
+    }
+    guard let terminalEventPrefix else { return true }
+    return event.contains(":\(terminalEventPrefix):")
+  }) else {
     return nil
   }
-  if let terminalEventPrefix,
-    !terminalEvent.contains(":\(terminalEventPrefix):")
-  {
-    return nil
-  }
+  let terminalOrdinal = firstRetainedOrdinal + terminal.offset
+  let terminalEvent = terminal.element
   return [
     "operation": operation,
     "baselineInputEventOrdinal": baselineOrdinal,
-    "terminalInputEventOrdinal": candidateOrdinal,
+    "terminalInputEventOrdinal": terminalOrdinal,
     "baselineSourceGeneration": baselineGeneration,
     "terminalSourceGeneration": candidateGeneration,
     "expectedGenerationAdvance": expectedGenerationAdvance,
@@ -636,20 +708,25 @@ func runInputDeliverySelfTest() throws {
     throw ActuatorFailure.message("partial batch acknowledged")
   }
   let terminal: [String: Any] = [
-    "inputEventOrdinal": 12,
+    "inputEventOrdinal": 13,
     "sourceGeneration": 6,
     "inputEvents": [
       "100:accepted-deltas:generation=4",
       "110:accepted-deltas:generation=5",
       "120:accepted-deltas:generation=6",
+      "130:key-up",
     ],
   ]
-  guard try inputDeliveryAcknowledgement(
+  let terminalAcknowledgement = try inputDeliveryAcknowledgement(
     baselineReceipt: baseline,
     candidateReceipt: terminal,
     operation: "batch",
     expectedGenerationAdvance: 2
-  ) != nil else {
+  )
+  guard terminalAcknowledgement?["terminalInputEventOrdinal"] as? Int == 12,
+    terminalAcknowledgement?["terminalEvent"] as? String ==
+      "120:accepted-deltas:generation=6"
+  else {
     throw ActuatorFailure.message("terminal batch was not acknowledged")
   }
   let copied: [String: Any] = [
@@ -691,16 +768,38 @@ func waitForInputDelivery(
   terminalEventPrefix: String? = nil
 ) throws -> [String: Any] {
   var acknowledgement: [String: Any]?
-  try waitUntil("app input delivery for \(operation)") {
-    guard let receipt = try? readJSON(receiptPath) else { return false }
-    acknowledgement = try inputDeliveryAcknowledgement(
-      baselineReceipt: baselineReceipt,
-      candidateReceipt: receipt,
-      operation: operation,
-      expectedGenerationAdvance: expectedGenerationAdvance,
-      terminalEventPrefix: terminalEventPrefix
+  do {
+    try waitUntil("app input delivery for \(operation)") {
+      guard let receipt = try? readJSON(receiptPath) else { return false }
+      acknowledgement = try inputDeliveryAcknowledgement(
+        baselineReceipt: baselineReceipt,
+        candidateReceipt: receipt,
+        operation: operation,
+        expectedGenerationAdvance: expectedGenerationAdvance,
+        terminalEventPrefix: terminalEventPrefix
+      )
+      return acknowledgement != nil
+    }
+  } catch {
+    let latest = try? readJSON(receiptPath)
+    let baselineOrdinal = baselineReceipt["inputEventOrdinal"] as? Int
+    let baselineGeneration = baselineReceipt["sourceGeneration"] as? Int
+    let latestOrdinal = latest?["inputEventOrdinal"] as? Int
+    let latestGeneration = latest?["sourceGeneration"] as? Int
+    let latestSelectionBase = latest?["selectionBaseUtf16"] as? Int
+    let latestSelectionExtent = latest?["selectionExtentUtf16"] as? Int
+    let latestEvents = (latest?["inputEvents"] as? [String])?.suffix(4) ?? []
+    let focused = focusedAccessibilityTarget()
+    throw ActuatorFailure.message(
+      "\(error); baselineOrdinal=\(String(describing: baselineOrdinal)); " +
+        "latestOrdinal=\(String(describing: latestOrdinal)); " +
+        "baselineGeneration=\(String(describing: baselineGeneration)); " +
+        "latestGeneration=\(String(describing: latestGeneration)); " +
+        "latestSelection=\(String(describing: latestSelectionBase)).." +
+        "\(String(describing: latestSelectionExtent)); " +
+        "focusedPid=\(focused.pid); focusedRole=\(focused.role); " +
+        "focusedSubrole=\(focused.subrole); latestEvents=\(latestEvents)"
     )
-    return acknowledgement != nil
   }
   return acknowledgement!
 }
@@ -799,36 +898,47 @@ while !shouldStop, let line = readLine() {
         height: arguments["windowHeight"] as? Int ?? 632
       )
       let point = try screenPoint(sourceUtf16Offset: offset, window: window)
-      click(point)
-      let activationReceipt = try appRequest(operation: "settle")
-      let actualBase = activationReceipt["selectionBaseUtf16"] as? Int
-      let actualExtent = activationReceipt["selectionExtentUtf16"] as? Int
-      guard actualBase == offset, actualExtent == offset
-      else {
-        let events = activationReceipt["inputEvents"] as? [String] ?? []
-        throw ActuatorFailure.message(
-          "activation did not settle at source offset \(offset); " +
-            "actual=\(String(describing: actualBase)).." +
-            "\(String(describing: actualExtent)); " +
-            "point=\(point); window=\(window.origin)/\(window.size); " +
-            "events=\(events)"
+      var activationReceipt: [String: Any] = [:]
+      for attempt in 1...2 {
+        _ = try focusWindow(
+          pid: appPID,
+          width: Int(window.size.width),
+          height: Int(window.size.height)
         )
+        click(point)
+        pause(
+          milliseconds: Int(NSEvent.doubleClickInterval * 1_000) + 75
+        )
+        activationReceipt = try appRequest(operation: "settle")
+        let actualBase = activationReceipt["selectionBaseUtf16"] as? Int
+        let actualExtent = activationReceipt["selectionExtentUtf16"] as? Int
+        if actualBase == offset, actualExtent == offset { break }
+        if attempt == 2 {
+          let events = activationReceipt["inputEvents"] as? [String] ?? []
+          throw ActuatorFailure.message(
+            "activation did not remain at source offset \(offset); " +
+              "actual=\(String(describing: actualBase)).." +
+              "\(String(describing: actualExtent)); " +
+              "point=\(point); window=\(window.origin)/\(window.size); " +
+              "events=\(events)"
+          )
+        }
       }
       response["snapshot"] = activationReceipt
     case "selectSourceRange":
       let base = try integer(arguments["baseUtf16"], "baseUtf16")
       let extent = try integer(arguments["extentUtf16"], "extentUtf16")
       let window = try focusWindow(pid: appPID)
-      drag(
-        from: try screenPoint(sourceUtf16Offset: base, window: window),
-        to: try screenPoint(sourceUtf16Offset: extent, window: window)
-      )
-    case "insertText":
+      let basePoint = try screenPoint(sourceUtf16Offset: base, window: window)
+      let extentPoint = try screenPoint(sourceUtf16Offset: extent, window: window)
       _ = try focusWindow(
         pid: appPID,
-        width: arguments["windowWidth"] as? Int ?? 800,
-        height: arguments["windowHeight"] as? Int ?? 632
+        width: Int(window.size.width),
+        height: Int(window.size.height)
       )
+      drag(from: basePoint, to: extentPoint)
+    case "insertText":
+      try requireDogfoodApplicationFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       typeText(
         try string(arguments["text"], "text"),
@@ -845,11 +955,7 @@ while !shouldStop, let line = readLine() {
     case "closeSession":
       response["snapshot"] = try appRequest(operation: "closeSession")
     case "repeatKey":
-      _ = try focusWindow(
-        pid: appPID,
-        width: arguments["windowWidth"] as? Int ?? 800,
-        height: arguments["windowHeight"] as? Int ?? 632
-      )
+      try requireDogfoodApplicationFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       try repeatKey(
         try string(arguments["key"], "key"),
@@ -865,11 +971,7 @@ while !shouldStop, let line = readLine() {
         expectedGenerationAdvance: try integer(arguments["count"], "count")
       )
     case "structuralBursts":
-      _ = try focusWindow(
-        pid: appPID,
-        width: arguments["windowWidth"] as? Int ?? 800,
-        height: arguments["windowHeight"] as? Int ?? 632
-      )
+      try requireDogfoodApplicationFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       try typeStructuralBursts(
         count: try integer(arguments["count"], "count"),
@@ -885,11 +987,7 @@ while !shouldStop, let line = readLine() {
           try integer(arguments["count"], "count") * 2
       )
     case "key":
-      _ = try focusWindow(
-        pid: appPID,
-        width: arguments["windowWidth"] as? Int ?? 800,
-        height: arguments["windowHeight"] as? Int ?? 632
-      )
+      try requireDogfoodApplicationFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       let key = try string(arguments["key"], "key")
       let pasteboardChange = NSPasteboard.general.changeCount
@@ -901,6 +999,7 @@ while !shouldStop, let line = readLine() {
       }
       let nonMutating =
         key == "copy" || key == "selectAll" || key == "left" || key == "right"
+      let expectedGenerationAdvance = nonMutating ? 0 : (key == "acuteE" ? 2 : 1)
       let terminalPrefix: String? = switch key {
       case "copy": "completed-copy"
       case "selectAll": "completed-select-all"
@@ -914,15 +1013,11 @@ while !shouldStop, let line = readLine() {
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
         operation: "key:\(key)",
-        expectedGenerationAdvance: nonMutating ? 0 : 1,
+        expectedGenerationAdvance: expectedGenerationAdvance,
         terminalEventPrefix: terminalPrefix
       )
     case "pasteText":
-      _ = try focusWindow(
-        pid: appPID,
-        width: arguments["windowWidth"] as? Int ?? 800,
-        height: arguments["windowHeight"] as? Int ?? 632
-      )
+      try requireDogfoodApplicationFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       let text = try string(arguments["text"], "text")
       NSPasteboard.general.clearContents()
@@ -939,7 +1034,16 @@ while !shouldStop, let line = readLine() {
     case "toggleTaskAtUtf16":
       let target = try integer(arguments["targetUtf16"], "targetUtf16")
       let window = try focusWindow(pid: appPID)
-      click(try taskCheckboxScreenPoint(targetUtf16: target, window: window))
+      let point = try taskCheckboxScreenPoint(
+        targetUtf16: target,
+        window: window
+      )
+      _ = try focusWindow(
+        pid: appPID,
+        width: Int(window.size.width),
+        height: Int(window.size.height)
+      )
+      click(point)
     case "scrollBy":
       let deltaY = try integer(arguments["deltaY"], "deltaY")
       let window = try focusWindow(pid: appPID)
