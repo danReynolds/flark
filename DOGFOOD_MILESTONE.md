@@ -300,6 +300,18 @@ The D0 sampling denominator is fixed:
 | streamed 10 MiB open/edit/close, when enabled | 0 | 1 | 5 fresh sessions | unthrottled |
 | lifecycle | 0 | 100 same-process cycles plus 10 distinct OS processes | 1 fixed sequence per cycle/process | unthrottled |
 
+The 60-edit-per-second cells are input-throughput measurements on the actual
+display, not a demand for an impossible one-frame-per-input phase lock. A
+generation may be recorded as `superseded-before-frame` only when the next
+declared generation is accepted before the first real `FrameTiming` build begins
+after it and that exact successor paints on that frame. The superseded
+input still counts toward the fixed denominator and its synchronous/native work
+stays attributed to that frame, but it contributes no duplicate visibility
+latency sample. A frame opportunity before supersession, a missing successor
+paint, or a successor that misses that first frame is B1. The separate
+per-edit-pump actual-paint lane remains the proof that each individual
+generation is renderable and correct when it has a frame opportunity.
+
 Each structural run contains two distinct measurements against the identical
 fixture and anchor. The latency phase sends one immediate Return-plus-`x` pair
 and waits for the successor's proving paint before the next pair; the Return

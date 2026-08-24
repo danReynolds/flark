@@ -1447,12 +1447,57 @@ Map<String, Object?> _buildMeasuredRun({
       });
       continue;
     }
-    final finalPaints = paintObservations
+    var summaryPaints = paintObservations
         .where(
           (paint) => paint['sourceGeneration'] == finalGeneration.generation,
         )
         .toList();
-    if (finalPaints.isEmpty) {
+    var paintedGeneration = finalGeneration;
+    var paintedAcceptedMicros = accepted;
+    var visibilityDisposition = 'painted';
+    int? supersededBySourceGeneration;
+    if (summaryPaints.isEmpty) {
+      final nextExpectation = operation + 1 < expected.length
+          ? expected[operation + 1].finalGeneration
+          : null;
+      final nextInputs = nextExpectation == null
+          ? const <Map<String, Object?>>[]
+          : inputObservations
+                .where(
+                  (input) =>
+                      input['sourceGeneration'] == nextExpectation.generation,
+                )
+                .toList();
+      final nextInput = nextInputs.isEmpty ? null : nextInputs.first;
+      final firstFrameOrdinal = _firstFrameCoveringAcceptance(frames, accepted);
+      final firstFrameBuildStart = _frameBuildStartEpochMicros(
+        frames[firstFrameOrdinal],
+      );
+      final nextAccepted = nextInput?['acceptedMicros'];
+      final nextPaints = nextExpectation == null
+          ? const <Map<String, Object?>>[]
+          : paintObservations
+                .where(
+                  (paint) =>
+                      paint['sourceGeneration'] == nextExpectation.generation,
+                )
+                .toList();
+      final provingNextPaints = nextPaints.where(
+        (paint) => paint['frameOrdinal'] == firstFrameOrdinal,
+      );
+      if (nextExpectation != null &&
+          nextAccepted is int &&
+          nextAccepted >= accepted &&
+          nextAccepted < firstFrameBuildStart &&
+          provingNextPaints.isNotEmpty) {
+        visibilityDisposition = 'superseded-before-frame';
+        supersededBySourceGeneration = nextExpectation.generation;
+        paintedGeneration = nextExpectation;
+        paintedAcceptedMicros = nextAccepted;
+        summaryPaints = nextPaints;
+      }
+    }
+    if (summaryPaints.isEmpty) {
       final nearby = paintObservations
           .where((paint) {
             final generation = paint['sourceGeneration'];
@@ -1498,29 +1543,31 @@ Map<String, Object?> _buildMeasuredRun({
         'nearbyFrames=$nearbyFrames',
       );
     }
-    final firstPaint = finalPaints.first;
-    final provingPaint = finalPaints.cast<Map<String, Object?>>().firstWhere(
+    final firstPaint = summaryPaints.first;
+    final provingPaint = summaryPaints.cast<Map<String, Object?>>().firstWhere(
       (paint) => paint['frameOrdinal'] is int,
       orElse: () {
         final distances =
-            finalPaints
+            summaryPaints
                 .map((paint) => paint['_nearestFrameDistanceMicros'])
                 .whereType<int>()
                 .toList()
               ..sort();
         throw StateError(
-          'generation ${finalGeneration.generation} has no proving '
+          'generation ${paintedGeneration.generation} has no proving '
           'FrameTiming; nearest=${distances.isEmpty ? 'none' : distances.first}',
         );
       },
     );
     final provingFrameOrdinal = provingPaint['frameOrdinal']! as int;
-    final currentPaint = finalPaints.cast<Map<String, Object?>>().where(
+    final currentPaint = summaryPaints.cast<Map<String, Object?>>().where(
       (paint) => paint['semanticsCurrent'] == true,
     );
     final sample = <String, Object?>{
       'index': operation - denominator.warmups,
       'sessionOrdinal': sessionOrdinal,
+      'visibilityDisposition': visibilityDisposition,
+      'supersededBySourceGeneration': supersededBySourceGeneration,
       'scheduledMicros': expectation.scheduledMicros,
       'acceptedMicros': accepted,
       'scheduleAcceptedMicros': scheduleAcceptedMicros,
@@ -1536,8 +1583,7 @@ Map<String, Object?> _buildMeasuredRun({
       'canonicalSelectionExtentUtf16': finalGeneration.selectionExtent,
       'paintedCaretSourceUtf16': firstPaint['caretSourceUtf16'],
       'startFrameOrdinal': _firstFrameCoveringAcceptance(frames, accepted),
-      'endFrameOrdinal': paintObservations
-          .where((paint) => declared.contains(paint['sourceGeneration']))
+      'endFrameOrdinal': summaryPaints
           .where((paint) => paint['frameOrdinal'] is int)
           .map((paint) => paint['frameOrdinal']! as int)
           .reduce(math.max),
@@ -1545,28 +1591,29 @@ Map<String, Object?> _buildMeasuredRun({
       'engineMicros': engineMicros,
       'visibleCertificationMicros': currentPaint.isEmpty
           ? 0
-          : (currentPaint.first['timestampMicros']! as int) - accepted,
-      'rawProjectionFrames': finalPaints
+          : (currentPaint.first['timestampMicros']! as int) -
+                paintedAcceptedMicros,
+      'rawProjectionFrames': summaryPaints
           .where((paint) => (paint['activeNeutralRowCount']! as int) > 0)
           .length,
-      'sourceIdentityMatched': finalPaints.every(
+      'sourceIdentityMatched': summaryPaints.every(
         (paint) =>
             paint['visibleSourceSha256'] ==
             paint['expectedVisibleSourceSha256'],
       ),
-      'caretIdentityMatched': finalPaints.every(
+      'caretIdentityMatched': summaryPaints.every(
         (paint) => paint['activeRowVisible'] == true
-            ? paint['caretSourceUtf16'] == finalGeneration.selectionExtent &&
+            ? paint['caretSourceUtf16'] == paintedGeneration.selectionExtent &&
                   paint['caretDisplayUtf16'] != null
             : paint['caretSourceUtf16'] == null &&
                   paint['caretDisplayUtf16'] == null,
       ),
-      'selectionIdentityMatched': finalPaints.every(
+      'selectionIdentityMatched': summaryPaints.every(
         (paint) =>
             paint['canonicalSelectionBaseUtf16'] ==
-                finalGeneration.selectionBase &&
+                paintedGeneration.selectionBase &&
             paint['canonicalSelectionExtentUtf16'] ==
-                finalGeneration.selectionExtent,
+                paintedGeneration.selectionExtent,
       ),
       'faulted': settled.faulted,
       'resyncCount': settled.resyncCount,
@@ -1638,12 +1685,23 @@ int _firstFrameCoveringAcceptance(
   int acceptedMicros,
 ) {
   final candidates = frames.where(
-    (frame) => (frame['vsyncMicros']! as int) >= acceptedMicros,
+    (frame) => _frameBuildStartEpochMicros(frame) >= acceptedMicros,
   );
   if (candidates.isEmpty) {
     throw StateError('accepted input has no following FrameTiming interval');
   }
   return candidates.first['ordinal']! as int;
+}
+
+int _frameBuildStartEpochMicros(Map<String, Object?> frame) {
+  final epochBefore = frame['clockAnchorEpochBeforeMicros']! as int;
+  final epochAfter = frame['clockAnchorEpochAfterMicros']! as int;
+  final anchorMonotonic = frame['clockAnchorMonotonicMicros']! as int;
+  final buildStartMonotonic = frame['buildStartMonotonicMicros']! as int;
+  return epochBefore +
+      ((epochAfter - epochBefore) ~/ 2) +
+      buildStartMonotonic -
+      anchorMonotonic;
 }
 
 Map<String, Object?> _inputObservation(

@@ -123,6 +123,14 @@ rows also run at 80-millisecond cadence. The exact true-burst sequences are:
 The identical sequence runs per-edit before its burst variant. A burst may
 paint only its final generation.
 
+The fixed 60 Hz profile cells use the same physical rule without reclassifying
+ordinary typing as a burst: if a newer declared input is accepted before the
+first real frame build begins, the older generation may be explicitly recorded
+as `superseded-before-frame`. The first frame must paint the exact newer source,
+caret, and selection, and both inputs' synchronous/native work remains in the
+frame accounting. This exception is invalid when any frame opportunity existed
+before supersession and never substitutes for the per-edit-pump paint proof.
+
 Every editable collapsed-selection paint requires a non-null caret whose source
 offset equals the canonical extent. Range-selection rows require selection
 geometry for the canonical base/extent and no caret. Read-only rows require

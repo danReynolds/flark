@@ -856,8 +856,12 @@ void main() {
       final hiddenStart = hiddenSample['startFrameOrdinal']! as int;
       final accepted = hiddenSample['acceptedMicros']! as int;
       final escaped = ((hiddenRun['frames']! as List)[hiddenStart - 1] as Map);
-      escaped['vsyncMicros'] = accepted + 1;
-      escaped['missed'] = true;
+      escaped
+        ..['vsyncMicros'] = accepted + 1
+        ..['monotonicVsyncMicros'] = accepted + 1
+        ..['buildStartMonotonicMicros'] = accepted + 1
+        ..['buildFinishMonotonicMicros'] = accepted + 1001
+        ..['missed'] = true;
       final hiddenResult = await verifyDogfoodPerformanceReceipt(
         hiddenBeforePaint,
         verifyArtifactFiles: false,
@@ -865,6 +869,73 @@ void main() {
       expect(
         hiddenResult.blockers.join('\n'),
         contains('frame interval does not begin at acceptance'),
+      );
+    },
+  );
+
+  test(
+    '60 Hz input coalesces only when a successor wins before the first frame',
+    () async {
+      Future<String> replayBlockers(Map<String, Object?> raw) async {
+        final sealed = await sealDogfoodPerformanceReceipt(
+          raw,
+          verifyArtifactFiles: false,
+        );
+        final result = await verifyDogfoodPerformanceReceipt(
+          sealed,
+          verifyArtifactFiles: false,
+        );
+        return result.blockers.join('\n');
+      }
+
+      Map<String, Object?> firstInlineRun(Map<String, Object?> receipt) =>
+          ((_cells(receipt).firstWhere(
+                            (cell) =>
+                                cell['id'] == 'product-tour-inline-typing',
+                          )['runs']!
+                          as List)
+                      .first
+                  as Map)
+              .cast<String, Object?>();
+
+      final valid = validRawDogfoodPerformanceReceiptForTest();
+      _coalesceFirstCadenceSample(firstInlineRun(valid));
+      expect(await replayBlockers(valid), isEmpty);
+
+      final framed = validRawDogfoodPerformanceReceiptForTest();
+      final framedRun = firstInlineRun(framed);
+      _coalesceFirstCadenceSample(framedRun);
+      final framedSample = ((framedRun['samples']! as List).first as Map)
+          .cast<String, Object?>();
+      final framedFrame = ((framedRun['frames']! as List)
+          .cast<Map>()
+          .firstWhere(
+            (frame) => frame['ordinal'] == framedSample['startFrameOrdinal'],
+          ));
+      final beforeSuccessor = (framedSample['acceptedMicros']! as int) + 500;
+      framedFrame
+        ..['vsyncMicros'] = beforeSuccessor
+        ..['monotonicVsyncMicros'] = beforeSuccessor
+        ..['buildStartMonotonicMicros'] = beforeSuccessor
+        ..['buildFinishMonotonicMicros'] = beforeSuccessor + 1000;
+      expect(
+        await replayBlockers(framed),
+        contains('was not superseded before its first frame'),
+      );
+
+      final missingSuccessor = validRawDogfoodPerformanceReceiptForTest();
+      final missingRun = firstInlineRun(missingSuccessor);
+      _coalesceFirstCadenceSample(missingRun);
+      final missingSample = ((missingRun['samples']! as List).first as Map)
+          .cast<String, Object?>();
+      (missingRun['paintObservations']! as List).removeWhere(
+        (paint) =>
+            (paint as Map)['sourceGeneration'] ==
+            missingSample['supersededBySourceGeneration'],
+      );
+      expect(
+        await replayBlockers(missingSuccessor),
+        contains('sample[0] has no final-generation paint'),
       );
     },
   );
@@ -1700,6 +1771,8 @@ Map<String, Object?> _sample({
 }) => {
   'index': index,
   'sessionOrdinal': sessionOrdinal,
+  'visibilityDisposition': 'painted',
+  'supersededBySourceGeneration': null,
   'scheduledMicros': scheduled,
   'acceptedMicros': accepted,
   'scheduleAcceptedMicros': scheduleAccepted ?? accepted,
@@ -2015,6 +2088,90 @@ void _coalesceFirstStructuralReturn(
     ..['paintEpochAfterMicros'] = firstVsync
     ..['frameStampMicros'] = firstVsync + 16667
     ..['frameOrdinal'] = 0;
+}
+
+void _coalesceFirstCadenceSample(Map<String, Object?> run) {
+  final samples = (run['samples']! as List).cast<Map>();
+  final sample = samples[0];
+  final successor = samples[1];
+  final generation = sample['sourceGeneration']! as int;
+  final successorGeneration = successor['sourceGeneration']! as int;
+  final inputs = (run['inputObservations']! as List).cast<Map>();
+  final accepted =
+      inputs.firstWhere(
+            (input) => input['sourceGeneration'] == generation,
+          )['acceptedMicros']!
+          as int;
+  final successorAccepted =
+      inputs.firstWhere(
+            (input) => input['sourceGeneration'] == successorGeneration,
+          )['acceptedMicros']!
+          as int;
+  final frames = (run['frames']! as List).cast<Map>();
+  final firstFrameOrdinal = sample['provingFrameOrdinal']! as int;
+  final oldSuccessorFrameOrdinal = successor['provingFrameOrdinal']! as int;
+  final firstFrame = frames.firstWhere(
+    (frame) => frame['ordinal'] == firstFrameOrdinal,
+  );
+  final oldSuccessorFrame = frames.firstWhere(
+    (frame) => frame['ordinal'] == oldSuccessorFrameOrdinal,
+  );
+  final firstVsync = successorAccepted + 100;
+  firstFrame
+    ..['vsyncMicros'] = firstVsync
+    ..['monotonicVsyncMicros'] = firstVsync
+    ..['buildStartMonotonicMicros'] = firstVsync
+    ..['buildFinishMonotonicMicros'] = firstVsync + 1000
+    ..['editorSyncMicros'] = 200
+    ..['editorAttributed'] = true;
+  final laterVsync = successorAccepted + 2000;
+  oldSuccessorFrame
+    ..['vsyncMicros'] = laterVsync
+    ..['monotonicVsyncMicros'] = laterVsync
+    ..['buildStartMonotonicMicros'] = laterVsync
+    ..['buildFinishMonotonicMicros'] = laterVsync + 1000
+    ..['editorSyncMicros'] = 0
+    ..['editorAttributed'] = false;
+
+  final paints = (run['paintObservations']! as List).cast<Map>();
+  paints.removeWhere((paint) => paint['sourceGeneration'] == generation);
+  final successorPaint = paints.firstWhere(
+    (paint) => paint['sourceGeneration'] == successorGeneration,
+  );
+  final paintTimestamp = successorAccepted + 500;
+  successorPaint
+    ..['timestampMicros'] = paintTimestamp
+    ..['paintMonotonicMicros'] = paintTimestamp
+    ..['paintEpochBeforeMicros'] = paintTimestamp
+    ..['paintEpochAfterMicros'] = paintTimestamp
+    ..['frameStampMicros'] = firstVsync + 16667
+    ..['frameOrdinal'] = firstFrameOrdinal;
+
+  void bindPaintSummary(Map sample, {required bool coalesced}) {
+    sample
+      ..['visibilityDisposition'] = coalesced
+          ? 'superseded-before-frame'
+          : 'painted'
+      ..['supersededBySourceGeneration'] = coalesced
+          ? successorGeneration
+          : null
+      ..['sourcePaintMicros'] = paintTimestamp
+      ..['caretPaintMicros'] = paintTimestamp
+      ..['selectionPaintMicros'] = paintTimestamp
+      ..['paintedSourceGeneration'] = successorGeneration
+      ..['visibleSourceSha256'] = successorPaint['visibleSourceSha256']
+      ..['paintedCaretSourceUtf16'] = successorPaint['caretSourceUtf16']
+      ..['startFrameOrdinal'] = firstFrameOrdinal
+      ..['endFrameOrdinal'] = firstFrameOrdinal
+      ..['provingFrameOrdinal'] = firstFrameOrdinal
+      ..['visibleCertificationMicros'] = paintTimestamp - successorAccepted;
+  }
+
+  bindPaintSummary(sample, coalesced: true);
+  bindPaintSummary(successor, coalesced: false);
+  if (accepted >= successorAccepted) {
+    throw StateError('fixture successor must follow the coalesced input');
+  }
 }
 
 List<Map<String, Object?>> _cells(Map<String, Object?> receipt) =>

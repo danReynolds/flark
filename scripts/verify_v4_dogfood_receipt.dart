@@ -765,22 +765,26 @@ Map<String, List<int>> _validateCell(
       }
     }
     final observedPaintGenerations = paintObservations.keys.toSet();
-    if (!declaredGenerations.containsAll(observedPaintGenerations) ||
-        (!id.endsWith('-structural-burst') &&
-            !observedPaintGenerations.containsAll(declaredGenerations))) {
+    if (!declaredGenerations.containsAll(observedPaintGenerations)) {
       blockers.add(
-        '$runPrefix paint observations do not ${id.endsWith('-structural-burst') ? 'form a subset of' : 'exactly cover'} the declared generations',
+        '$runPrefix paint observations contain an undeclared generation',
       );
     }
     for (var index = 0; index < samples.length; index += 1) {
       final sample = declared[warmups.length + index];
       final finalGeneration = sample['sourceGeneration'];
       final sessionOrdinal = sample['sessionOrdinal'];
+      final disposition = sample['visibilityDisposition'];
+      final supersededBy = sample['supersededBySourceGeneration'];
+      final paintedGeneration = disposition == 'superseded-before-frame'
+          ? supersededBy
+          : finalGeneration;
       if (finalGeneration is! int ||
           sessionOrdinal is! int ||
+          paintedGeneration is! int ||
           !paintObservations.containsKey((
             sessionOrdinal: sessionOrdinal,
-            sourceGeneration: finalGeneration,
+            sourceGeneration: paintedGeneration,
           ))) {
         blockers.add('$runPrefix sample[$index] has no final-generation paint');
       }
@@ -829,6 +833,10 @@ Map<String, List<int>> _validateCell(
         allowZero: !denominator.requiresInput,
       );
       final sessionOrdinal = sample['sessionOrdinal']! as int;
+      final supersededBy =
+          sample['visibilityDisposition'] == 'superseded-before-frame'
+          ? sample['supersededBySourceGeneration'] as int?
+          : null;
       _validateSample(
         sample,
         sampleIndex,
@@ -854,8 +862,24 @@ Map<String, List<int>> _validateCell(
                   sourceGeneration: generation,
                 )] ??
                 const [],
+          if (supersededBy != null)
+            ...paintObservations[(
+                  sessionOrdinal: sessionOrdinal,
+                  sourceGeneration: supersededBy,
+                )] ??
+                const [],
         ],
+        supersedingInput: supersededBy == null
+            ? null
+            : inputObservations[(
+                sessionOrdinal: sessionOrdinal,
+                sourceGeneration: supersededBy,
+              )],
         nextAcceptedMicros: _nextAcceptedMicros(declared, declaredIndex),
+        paintIntervalEndMicros: _nextAcceptedMicros(
+          declared,
+          declaredIndex + (supersededBy == null ? 0 : 1),
+        ),
         collectMetrics: true,
         requiresInput: denominator.requiresInput,
         allowIntermediatePaintCoalescing: id.endsWith('-structural-burst'),
@@ -2571,6 +2595,17 @@ void _recordMeasuredFrames(
   }
 }
 
+int _frameBuildStartEpochMicros(Map<String, Object?> frame) {
+  final epochBefore = frame['clockAnchorEpochBeforeMicros']! as int;
+  final epochAfter = frame['clockAnchorEpochAfterMicros']! as int;
+  final anchorMonotonic = frame['clockAnchorMonotonicMicros']! as int;
+  final buildStartMonotonic = frame['buildStartMonotonicMicros']! as int;
+  return epochBefore +
+      ((epochAfter - epochBefore) ~/ 2) +
+      buildStartMonotonic -
+      anchorMonotonic;
+}
+
 void _validateSample(
   Map<String, Object?> sample,
   int expectedIndex,
@@ -2578,7 +2613,9 @@ void _validateSample(
   required List<Map<String, Object?>?> rawInputs,
   required List<Map<String, Object?>?> rawEngines,
   required List<Map<String, Object?>> rawPaints,
+  required Map<String, Object?>? supersedingInput,
   required int? nextAcceptedMicros,
+  required int? paintIntervalEndMicros,
   required bool collectMetrics,
   required bool requiresInput,
   required bool allowIntermediatePaintCoalescing,
@@ -2595,6 +2632,20 @@ void _validateSample(
     '$prefix.sourceGeneration',
     blockers,
   );
+  final visibilityDisposition = sample['visibilityDisposition'];
+  final supersededByValue = sample['supersededBySourceGeneration'];
+  final supersededBeforeFrame =
+      visibilityDisposition == 'superseded-before-frame';
+  if (visibilityDisposition != 'painted' && !supersededBeforeFrame) {
+    blockers.add('$prefix has an invalid visibility disposition');
+  }
+  if ((!supersededBeforeFrame && supersededByValue != null) ||
+      (supersededBeforeFrame && supersededByValue is! int)) {
+    blockers.add('$prefix has an invalid superseding generation');
+  }
+  final paintedGeneration = supersededBeforeFrame && supersededByValue is int
+      ? supersededByValue
+      : generation;
   final acceptedGenerations = _acceptedGenerations(
     sample,
     prefix,
@@ -2606,6 +2657,37 @@ void _validateSample(
     '$prefix.acceptedMicros',
     blockers,
   );
+  int visibilityAccepted = accepted;
+  if (supersededBeforeFrame) {
+    if (!requiresInput ||
+        acceptedGenerations.length != 1 ||
+        paintedGeneration != generation + 1 ||
+        supersedingInput == null ||
+        supersedingInput['sourceGeneration'] != paintedGeneration ||
+        supersedingInput['acceptedMicros'] != nextAcceptedMicros) {
+      blockers.add('$prefix has invalid before-frame supersession lineage');
+    } else {
+      visibilityAccepted = _integer(
+        supersedingInput['acceptedMicros'],
+        '$prefix.supersedingInput.acceptedMicros',
+        blockers,
+      );
+      final followingFrames =
+          frames.values
+              .where((frame) => _frameBuildStartEpochMicros(frame) >= accepted)
+              .toList()
+            ..sort(
+              (left, right) => _frameBuildStartEpochMicros(
+                left,
+              ).compareTo(_frameBuildStartEpochMicros(right)),
+            );
+      if (followingFrames.isEmpty ||
+          visibilityAccepted >=
+              _frameBuildStartEpochMicros(followingFrames.first)) {
+        blockers.add('$prefix was not superseded before its first frame');
+      }
+    }
+  }
   final sourcePaint = _integer(
     sample['sourcePaintMicros'],
     '$prefix.sourcePaintMicros',
@@ -2622,20 +2704,21 @@ void _validateSample(
     blockers,
   );
   final visibility =
-      math.max(sourcePaint, math.max(caretPaint, selectionPaint)) - accepted;
-  if (collectMetrics && requiresInput) {
+      math.max(sourcePaint, math.max(caretPaint, selectionPaint)) -
+      visibilityAccepted;
+  if (collectMetrics && requiresInput && !supersededBeforeFrame) {
     metricValues['sourceToPaintMicros']!.add(visibility);
   }
   final visibilityBudget = math.min(_maxVisibilityMicros, framePeriod.round());
-  if (sourcePaint < accepted ||
-      caretPaint < accepted ||
-      selectionPaint < accepted ||
+  if (sourcePaint < visibilityAccepted ||
+      caretPaint < visibilityAccepted ||
+      selectionPaint < visibilityAccepted ||
       (requiresInput && visibility > visibilityBudget)) {
     blockers.add(
       '$prefix did not paint source/caret/selection by the next frame',
     );
   }
-  if (sample['sourceGeneration'] != sample['paintedSourceGeneration'] ||
+  if (sample['paintedSourceGeneration'] != paintedGeneration ||
       sample['sourceIdentityMatched'] != true ||
       sample['caretIdentityMatched'] != true ||
       sample['selectionIdentityMatched'] != true) {
@@ -2686,7 +2769,14 @@ void _validateSample(
   if (orderedPaints.isEmpty) {
     blockers.add('$prefix has no raw paint observation');
   } else {
+    if (supersededBeforeFrame &&
+        orderedPaints.any((paint) => paint['sourceGeneration'] == generation)) {
+      blockers.add('$prefix claims supersession for a generation that painted');
+    }
     for (final acceptedGeneration in acceptedGenerations) {
+      if (supersededBeforeFrame && acceptedGeneration == generation) {
+        continue;
+      }
       if (allowIntermediatePaintCoalescing &&
           acceptedGeneration != generation) {
         continue;
@@ -2708,7 +2798,7 @@ void _validateSample(
       }
     }
     final finalPaints = orderedPaints
-        .where((paint) => paint['sourceGeneration'] == generation)
+        .where((paint) => paint['sourceGeneration'] == paintedGeneration)
         .toList();
     if (finalPaints.isEmpty) {
       blockers.add('$prefix has no final-generation paint observation');
@@ -2738,6 +2828,9 @@ void _validateSample(
     final acceptanceByGeneration = <int, int>{
       for (final input in presentInputs)
         input['sourceGeneration']! as int: input['acceptedMicros']! as int,
+      if (supersedingInput != null)
+        supersedingInput['sourceGeneration']! as int:
+            supersedingInput['acceptedMicros']! as int,
     };
     for (
       var paintIndex = 0;
@@ -2754,7 +2847,8 @@ void _validateSample(
       final paintAccepted = acceptanceByGeneration[paint['sourceGeneration']];
       if (paintAccepted == null ||
           timestamp < paintAccepted ||
-          (nextAcceptedMicros != null && timestamp >= nextAcceptedMicros)) {
+          (paintIntervalEndMicros != null &&
+              timestamp >= paintIntervalEndMicros)) {
         blockers.add(
           '$prefix contains a paint outside its acceptance interval',
         );
@@ -2812,7 +2906,8 @@ void _validateSample(
       final activeRowVisible = paint['activeRowVisible'] == true;
       final visibleStart = paint['visibleUtf16Start'];
       final visibleLength = paint['visibleUtf16Length'];
-      if (!acceptedGenerations.contains(paint['sourceGeneration']) ||
+      if ((!acceptedGenerations.contains(paint['sourceGeneration']) &&
+              paint['sourceGeneration'] != paintedGeneration) ||
           visibleStart is! int ||
           visibleLength is! int ||
           visibleLength <= 0 ||
@@ -2839,10 +2934,10 @@ void _validateSample(
         '$prefix.rawPaint[$paintIndex].activeNeutralRowCount',
         blockers,
       );
-      if (paint['sourceGeneration'] == generation && neutral > 0) {
+      if (paint['sourceGeneration'] == paintedGeneration && neutral > 0) {
         rawProjectionFrames += 1;
       }
-      if (paint['sourceGeneration'] == generation &&
+      if (paint['sourceGeneration'] == paintedGeneration &&
           paint['semanticsCurrent'] == true) {
         certificationTimestamp ??= timestamp;
       }
@@ -2861,7 +2956,7 @@ void _validateSample(
     }
     if (certificationTimestamp == null) {
       blockers.add('$prefix has no current-semantics paint');
-    } else if (certificationTimestamp - accepted !=
+    } else if (certificationTimestamp - visibilityAccepted !=
         sample['visibleCertificationMicros']) {
       blockers.add('$prefix certification time does not replay');
     }
@@ -2883,25 +2978,20 @@ void _validateSample(
   );
   final expectedStartFrames =
       frames.values
-          .where(
-            (frame) =>
-                _integer(
-                  frame['vsyncMicros'],
-                  '$prefix.frame.vsyncMicros',
-                  blockers,
-                ) >=
-                accepted,
-          )
+          .where((frame) => _frameBuildStartEpochMicros(frame) >= accepted)
           .toList()
         ..sort(
-          (left, right) => (left['vsyncMicros']! as int).compareTo(
-            right['vsyncMicros']! as int,
-          ),
+          (left, right) => _frameBuildStartEpochMicros(
+            left,
+          ).compareTo(_frameBuildStartEpochMicros(right)),
         );
   if (expectedStartFrames.isEmpty) {
     blockers.add('$prefix acceptance has no following frame interval');
   } else if (start != expectedStartFrames.first['ordinal']) {
     blockers.add('$prefix frame interval does not begin at acceptance');
+  }
+  if (supersededBeforeFrame && proving != start) {
+    blockers.add('$prefix superseding source did not paint on the first frame');
   }
   if (start > proving || proving > end) {
     blockers.add('$prefix proving frame is outside its interval');

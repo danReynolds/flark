@@ -358,6 +358,8 @@
       "required": [
         "index",
         "sessionOrdinal",
+        "visibilityDisposition",
+        "supersededBySourceGeneration",
         "acceptedMicros",
         "scheduleAcceptedMicros",
         "sourcePaintMicros",
@@ -386,6 +388,13 @@
       "properties": {
         "index": {"type": "integer", "minimum": 0},
         "sessionOrdinal": {"type": "integer", "minimum": 0},
+        "visibilityDisposition": {
+          "enum": ["painted", "superseded-before-frame"]
+        },
+        "supersededBySourceGeneration": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
         "scheduledMicros": {"type": ["integer", "null"], "minimum": 0},
         "acceptedMicros": {"type": "integer", "minimum": 0},
         "scheduleAcceptedMicros": {"type": "integer", "minimum": 0},
