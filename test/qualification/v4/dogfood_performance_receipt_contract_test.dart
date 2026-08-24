@@ -186,6 +186,24 @@ void main() {
       contains('does not replay its FrameTiming join'),
     );
 
+    final nominalTargetRounded = _copy(sealed);
+    final roundedRun = _firstRun(nominalTargetRounded);
+    final roundedPaint =
+        (roundedRun['paintObservations']! as List).first as Map;
+    roundedPaint['frameStampMicros'] =
+        (roundedPaint['frameStampMicros']! as int) + 60;
+    final roundedResult = await verifyDogfoodPerformanceReceipt(
+      nominalTargetRounded,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      roundedResult.blockers,
+      isEmpty,
+      reason:
+          'the exact monotonic build interval owns the paint even when the '
+          'nominal frame target is independently microsecond-rounded',
+    );
+
     final paintClockTampered = _copy(sealed);
     final paintClockRun = _firstRun(paintClockTampered);
     final clockPaint =

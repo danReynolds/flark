@@ -1675,9 +1675,9 @@ void _validateStructuralPhase({
           frames[frameOrdinal]?['measurementSessionIdentity'] !=
               paint['measurementSessionIdentity'] ||
           frameStamp is! int ||
-          _nearestFrameOrdinal(
-                frameStamp,
-                frames,
+          _frameOrdinalForPaint(
+                paint: paint,
+                frames: frames,
                 framePeriodMicros: framePeriod.round(),
               ) !=
               frameOrdinal ||
@@ -2176,14 +2176,11 @@ void _validateOpenObservation(
     blockers.add('$prefix has no raw generation-zero proving paint');
   } else {
     final rawPaint = qualifyingPaints.first;
-    final rawStamp = rawPaint['frameStampMicros'];
-    final replayedFrame = rawStamp is int
-        ? _nearestFrameOrdinal(
-            rawStamp,
-            frames,
-            framePeriodMicros: framePeriod.round(),
-          )
-        : null;
+    final replayedFrame = _frameOrdinalForPaint(
+      paint: rawPaint,
+      frames: frames,
+      framePeriodMicros: framePeriod.round(),
+    );
     final replayedFrameValue = replayedFrame == null
         ? null
         : frames[replayedFrame];
@@ -2781,14 +2778,14 @@ void _validateSample(
             '$prefix raw paint $paintIndex joined a foreign-session frame',
           );
         }
-        final frameStamp = _integer(
+        _integer(
           paint['frameStampMicros'],
           '$prefix.rawPaint[$paintIndex].frameStampMicros',
           blockers,
         );
-        final expectedFrame = _nearestFrameOrdinal(
-          frameStamp,
-          frames,
+        final expectedFrame = _frameOrdinalForPaint(
+          paint: paint,
+          frames: frames,
           framePeriodMicros: framePeriod.round(),
         );
         if (expectedFrame != frameOrdinal) {
@@ -2993,23 +2990,38 @@ void _validateSample(
   }
 }
 
-int? _nearestFrameOrdinal(
-  int paintTargetStamp,
-  Map<int, Map<String, Object?>> frames, {
+int? _frameOrdinalForPaint({
+  required Map<String, Object?> paint,
+  required Map<int, Map<String, Object?>> frames,
   required int framePeriodMicros,
 }) {
-  int? bestOrdinal;
-  var bestDistance = 33;
+  final paintMonotonic = paint['paintMonotonicMicros'];
+  final frameStamp = paint['frameStampMicros'];
+  if (paintMonotonic is! int || frameStamp is! int) return null;
+  final containing = <MapEntry<int, Map<String, Object?>>>[];
   for (final entry in frames.entries) {
-    final vsync = entry.value['monotonicVsyncMicros'];
-    if (vsync is! int) continue;
-    final distance = (vsync + framePeriodMicros - paintTargetStamp).abs();
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestOrdinal = entry.key;
+    final start = entry.value['buildStartMonotonicMicros'];
+    final finish = entry.value['buildFinishMonotonicMicros'];
+    if (start is! int || finish is! int) continue;
+    if (paintMonotonic >= start && paintMonotonic <= finish) {
+      containing.add(entry);
     }
   }
-  return bestOrdinal;
+  final ranked = <({int distance, int ordinal})>[];
+  for (final entry in containing) {
+    final vsync = entry.value['monotonicVsyncMicros'];
+    if (vsync is! int) continue;
+    final distance = (vsync + framePeriodMicros - frameStamp).abs();
+    if (distance <= framePeriodMicros ~/ 8) {
+      ranked.add((distance: distance, ordinal: entry.key));
+    }
+  }
+  ranked.sort((left, right) => left.distance.compareTo(right.distance));
+  if (ranked.isEmpty ||
+      (ranked.length > 1 && ranked[0].distance == ranked[1].distance)) {
+    return null;
+  }
+  return ranked.first.ordinal;
 }
 
 void _validateCadence(

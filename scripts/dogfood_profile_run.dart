@@ -1190,9 +1190,10 @@ Map<String, Object?> _buildMeasuredRun({
     final expectation = expectedByGeneration[generation];
     if (expectation == null) continue;
     final stamp = paint['frameStampMicros']! as int;
-    final frameOrdinal = _nearestFrameOrdinal(
-      stamp,
-      frameOrdinalByStamp,
+    final frameOrdinal = _frameOrdinalForPaint(
+      paintMonotonicMicros: paint['paintMonotonicMicros']! as int,
+      frameStampMicros: stamp,
+      frames: frames,
       framePeriodMicros: framePeriodMicros,
     );
     final nearestFrameDistanceMicros = frameOrdinalByStamp.keys.isEmpty
@@ -1298,9 +1299,10 @@ Map<String, Object?> _buildMeasuredRun({
           (rawPaint['paintEpochMicros']! as int) < openAcceptedMicros) {
         continue;
       }
-      final frameOrdinal = _nearestFrameOrdinal(
-        rawPaint['frameStampMicros']! as int,
-        frameOrdinalByStamp,
+      final frameOrdinal = _frameOrdinalForPaint(
+        paintMonotonicMicros: rawPaint['paintMonotonicMicros']! as int,
+        frameStampMicros: rawPaint['frameStampMicros']! as int,
+        frames: frames,
         framePeriodMicros: framePeriodMicros,
       );
       if (frameOrdinal == null) continue;
@@ -1672,24 +1674,40 @@ String _utf16Slice(String source, int start, int length) {
 
 String _sha(String source) => sha256.convert(utf8.encode(source)).toString();
 
-int? _nearestFrameOrdinal(
-  int paintTargetStamp,
-  Map<int, int> ordinalsByVsyncStart, {
+int? _frameOrdinalForPaint({
+  required int paintMonotonicMicros,
+  required int frameStampMicros,
+  required List<Map<String, Object?>> frames,
   required int framePeriodMicros,
 }) {
-  int? bestOrdinal;
-  // Flutter's onBeginFrame receives the engine's frame target time, which is
-  // what currentSystemFrameTimeStamp exposes during paint. FrameTiming records
-  // the same frame's vsync start. On macOS the target is one nominal display
-  // period after that start; both values are independently microsecond-rounded.
-  // A 32 us tolerance is still over 250x narrower than one 120 Hz frame.
-  var bestDistance = 33;
-  for (final entry in ordinalsByVsyncStart.entries) {
-    final distance = (entry.key + framePeriodMicros - paintTargetStamp).abs();
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestOrdinal = entry.value;
+  final containing = frames
+      .where((frame) {
+        final start = frame['buildStartMonotonicMicros'];
+        final finish = frame['buildFinishMonotonicMicros'];
+        return start is int &&
+            finish is int &&
+            paintMonotonicMicros >= start &&
+            paintMonotonicMicros <= finish;
+      })
+      .toList(growable: false);
+  // currentSystemFrameTimeStamp is the engine's nominal target time. Keep it
+  // as a bounded independent guard and, if synthetic/test intervals overlap,
+  // as the disambiguator. Every candidate must still contain the exact paint
+  // clock; nominal-period arithmetic is never sufficient by itself.
+  final ranked = <({int distance, int ordinal})>[];
+  for (final frame in containing) {
+    final vsync = frame['monotonicVsyncMicros'];
+    final ordinal = frame['ordinal'];
+    if (vsync is! int || ordinal is! int) continue;
+    final distance = (vsync + framePeriodMicros - frameStampMicros).abs();
+    if (distance <= framePeriodMicros ~/ 8) {
+      ranked.add((distance: distance, ordinal: ordinal));
     }
   }
-  return bestOrdinal;
+  ranked.sort((left, right) => left.distance.compareTo(right.distance));
+  if (ranked.isEmpty ||
+      (ranked.length > 1 && ranked[0].distance == ranked[1].distance)) {
+    return null;
+  }
+  return ranked.first.ordinal;
 }
