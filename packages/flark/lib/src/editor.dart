@@ -122,7 +122,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   final GlobalKey _surfaceKey = GlobalKey();
   FocusNode? _ownedFocusNode;
   TextInputConnection? _connection;
-  TextEditingValue? _lastSentValue;
+  TextEditingValue? _lastKnownPlatformValue;
   FlarkSurfaceHit? _pendingTapHit;
   double? _preferredVerticalNavigationX;
   bool _verticalPageNavigationPending = false;
@@ -155,7 +155,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_controllerChanged);
       widget.controller.addListener(_controllerChanged);
-      _lastSentValue = null;
+      _lastKnownPlatformValue = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.controller.continueParsing();
       });
@@ -177,7 +177,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _focusNode.hasFocus) {
       _connection?.close();
       _connection = null;
-      _lastSentValue = null;
+      _lastKnownPlatformValue = null;
       _openConnection();
     }
   }
@@ -201,7 +201,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       widget.controller.commitActiveComposition();
       _connection?.close();
       _connection = null;
-      _lastSentValue = null;
+      _lastKnownPlatformValue = null;
     }
     setState(() {});
   }
@@ -237,9 +237,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
     final connection = _connection;
     if (connection == null || !connection.attached) return;
     final value = widget.controller.inputValue;
-    if (!force && value == _lastSentValue) return;
+    if (!force && value == _lastKnownPlatformValue) return;
     connection.setEditingState(value);
-    _lastSentValue = value;
+    _lastKnownPlatformValue = value;
   }
 
   RenderFlarkSurface? get _surface =>
@@ -1032,6 +1032,19 @@ final class _FlarkEditorState extends State<FlarkEditor>
   @override
   void updateEditingValueWithDeltas(List<TextEditingDelta> textEditingDeltas) {
     _preferredVerticalNavigationX = null;
+    if (textEditingDeltas.isNotEmpty) {
+      var platformValue = TextEditingValue(
+        text: textEditingDeltas.first.oldText,
+      );
+      for (final delta in textEditingDeltas) {
+        platformValue = delta.apply(platformValue);
+      }
+      // A delta is the platform's declaration of its newly installed local
+      // buffer. Remember it before the controller publishes so an
+      // authoritative semantic receipt can send a corrective state even when
+      // that state happens to equal the value Flutter sent before the key.
+      _lastKnownPlatformValue = platformValue;
+    }
     final observer = widget.debugInputEventObserver;
     final stopwatch = observer == null ? null : (Stopwatch()..start());
     observer?.call(
@@ -1070,6 +1083,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
   @override
   void updateEditingValue(TextEditingValue value) {
     _preferredVerticalNavigationX = null;
+    // Full-value clients have already adopted this value locally. Controller
+    // publications must compare against that platform truth, not a stale
+    // framework-send cache.
+    _lastKnownPlatformValue = value;
     final observer = widget.debugInputEventObserver;
     final stopwatch = observer == null ? null : (Stopwatch()..start());
     observer?.call(
@@ -1310,7 +1327,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       connection!.connectionClosedReceived();
     }
     _connection = null;
-    _lastSentValue = null;
+    _lastKnownPlatformValue = null;
     if (_focusNode.hasFocus) _focusNode.unfocus();
   }
 }

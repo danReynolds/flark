@@ -2075,6 +2075,26 @@ void main() {
   );
 
   testWidgets(
+    'repeated macOS Return callbacks resynchronize an identical blank input window',
+    (tester) => _expectRepeatedReturnPlatformLiveness(
+      tester,
+      libraryPath!,
+      useDeltas: true,
+    ),
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'repeated full-value Return callbacks resynchronize an identical blank input window',
+    (tester) => _expectRepeatedReturnPlatformLiveness(
+      tester,
+      libraryPath!,
+      useDeltas: false,
+    ),
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'macOS newline delta plus action commits exactly once',
     (tester) async {
       final controller = (await tester.runAsync(
@@ -2128,6 +2148,110 @@ void main() {
     },
     skip: libraryPath == null,
   );
+}
+
+Future<void> _expectRepeatedReturnPlatformLiveness(
+  WidgetTester tester,
+  String libraryPath, {
+  required bool useDeltas,
+}) async {
+  final controller = (await tester.runAsync(
+    () => FlarkEditorController.open('fff', libraryPath: libraryPath),
+  ))!;
+  await tester.runAsync(controller.continueParsing);
+
+  await tester.pumpWidget(
+    Directionality(
+      textDirection: TextDirection.ltr,
+      child: SizedBox.expand(
+        child: FlarkEditor(controller: controller, autofocus: true),
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump();
+  final row = controller.rows.single;
+  await tester.runAsync(() async {
+    controller.activateRow(row, row.editableUtf16!.end);
+    await controller.resolveCanonicalSelection();
+  });
+  await tester.pump();
+  expect(tester.testTextInput.hasAnyClients, isTrue);
+  final dynamic state = tester.state(find.byType(FlarkEditor));
+  var platformValue = TextEditingValue.fromJSON(
+    tester.testTextInput.editingState!,
+  );
+
+  for (var index = 0; index < 3; index += 1) {
+    final before = platformValue;
+    final offset = before.selection.extentOffset;
+    final delta = TextEditingDeltaInsertion(
+      oldText: before.text,
+      textInserted: '\n',
+      insertionOffset: offset,
+      selection: TextSelection.collapsed(offset: offset + 1),
+      composing: TextRange.empty,
+    );
+    platformValue = delta.apply(before);
+    tester.testTextInput.log.clear();
+    if (useDeltas) {
+      state.updateEditingValueWithDeltas([delta]);
+    } else {
+      state.updateEditingValue(platformValue);
+    }
+    state.performAction(TextInputAction.newline);
+    await _pumpUntilTransactions(tester, controller);
+    await tester.pump();
+
+    final synchronizations = tester.testTextInput.log
+        .where((call) => call.method == 'TextInput.setEditingState')
+        .toList(growable: false);
+    if (controller.inputValue != platformValue) {
+      expect(
+        synchronizations,
+        isNotEmpty,
+        reason:
+            'Return ${index + 1} left the platform provisional newline '
+            'installed even though the controller had adopted a new '
+            'authoritative input window',
+      );
+    }
+    if (synchronizations.isNotEmpty) {
+      platformValue = TextEditingValue.fromJSON(
+        synchronizations.last.arguments as Map<String, dynamic>,
+      );
+    }
+    expect(platformValue, controller.inputValue);
+  }
+
+  final sourceBeforeTyping = await tester.runAsync(controller.readSource);
+  final caretBeforeTyping = controller.globalSelectionExtent;
+  final localCaret = platformValue.selection.extentOffset;
+  final insertion = TextEditingDeltaInsertion(
+    oldText: platformValue.text,
+    textInserted: 'x',
+    insertionOffset: localCaret,
+    selection: TextSelection.collapsed(offset: localCaret + 1),
+    composing: TextRange.empty,
+  );
+  platformValue = insertion.apply(platformValue);
+  if (useDeltas) {
+    state.updateEditingValueWithDeltas([insertion]);
+  } else {
+    state.updateEditingValue(platformValue);
+  }
+  await _pumpUntilTransactions(tester, controller);
+  await tester.pump();
+
+  expect(
+    await tester.runAsync(controller.readSource),
+    sourceBeforeTyping!.replaceRange(caretBeforeTyping, caretBeforeTyping, 'x'),
+  );
+  expect(controller.globalSelectionExtent, caretBeforeTyping + 1);
+  expect(controller.lastError, isNull);
+
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.runAsync(controller.close);
 }
 
 void _expectListActionPaints(

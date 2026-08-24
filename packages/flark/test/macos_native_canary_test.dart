@@ -65,6 +65,33 @@ void main() {
       expect(backspace.selectionBaseUtf16, firstReturn.selectionBaseUtf16);
       expect(backspace.selectionExtentUtf16, firstReturn.selectionExtentUtf16);
 
+      const repeatedReturnSource = 'fff';
+      await driver.reset(
+        id: 'repeated-return-successor-liveness',
+        source: repeatedReturnSource,
+      );
+      await driver.activateAtUtf16(repeatedReturnSource.length);
+      for (var index = 0; index < 3; index += 1) {
+        await driver.pressKey('enter');
+        await driver.settle();
+      }
+      final afterReturns = await driver.settle();
+      await driver.typeText('x');
+      final repeatedReturn = await driver.settle();
+      _expectHealthy(repeatedReturn, driver);
+      expect(
+        repeatedReturn.source,
+        afterReturns.source.replaceRange(
+          afterReturns.selectionExtentUtf16,
+          afterReturns.selectionExtentUtf16,
+          'x',
+        ),
+      );
+      expect(
+        repeatedReturn.selectionExtentUtf16,
+        afterReturns.selectionExtentUtf16 + 1,
+      );
+
       const clipboardSource = 'alpha beta\n';
       await driver.reset(
         id: 'pointer-clipboard-history-routing',
