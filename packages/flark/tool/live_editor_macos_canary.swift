@@ -47,6 +47,12 @@ func readJSON(_ path: String) throws -> [String: Any] {
   return try dictionary(JSONSerialization.jsonObject(with: data), "JSON document")
 }
 
+func readJSONForPolling(_ path: String) -> [String: Any]? {
+  autoreleasepool {
+    try? readJSON(path)
+  }
+}
+
 func waitUntil(
   _ label: String,
   timeoutSeconds: TimeInterval = 12,
@@ -211,12 +217,20 @@ func focusedAccessibilityTarget() -> (pid: pid_t, role: String, subrole: String)
   )
 }
 
-/// Confirms that the activation/click which established the editor's input
-/// connection is still authoritative. Do not raise or refocus the window here:
-/// doing so can replace the editor first responder immediately before input.
-func requireDogfoodApplicationFocus(pid: pid_t) throws {
-  try waitUntil("focused dogfood input target", timeoutSeconds: 2) {
-    focusedAccessibilityTarget().pid == pid
+/// Preserves the editor first responder while recovering from another app
+/// becoming frontmost during a long native input batch. Activating the app does
+/// not rewrite AX window focus; delivery resumes only when its text area is the
+/// focused accessibility target again.
+func ensureDogfoodEditorFocus(pid: pid_t) throws {
+  let focused = focusedAccessibilityTarget()
+  if focused.pid != pid || focused.role != kAXTextAreaRole {
+    NSRunningApplication(processIdentifier: pid)?.activate(
+      options: [.activateAllWindows]
+    )
+  }
+  try waitUntil("focused dogfood editor", timeoutSeconds: 2) {
+    let candidate = focusedAccessibilityTarget()
+    return candidate.pid == pid && candidate.role == kAXTextAreaRole
   }
 }
 
@@ -327,10 +341,11 @@ func scrollDown(deltaY: Int, in window: (origin: CGPoint, size: CGSize, number: 
   pause(milliseconds: 100)
 }
 
-func typeText(_ value: String, intervalMicros: Int) {
+func typeText(_ value: String, intervalMicros: Int, pid: pid_t) throws {
   let started = DispatchTime.now().uptimeNanoseconds
   for (index, character) in value.enumerated() {
     waitForSchedule(started: started, index: index, intervalMicros: intervalMicros)
+    try ensureDogfoodEditorFocus(pid: pid)
     var units = Array(String(character).utf16)
     let down = CGEvent(
       keyboardEventSource: eventSource,
@@ -374,20 +389,31 @@ func waitForSchedule(
   }
 }
 
-func repeatKey(_ name: String, count: Int, intervalMicros: Int) throws {
+func repeatKey(
+  _ name: String,
+  count: Int,
+  intervalMicros: Int,
+  pid: pid_t
+) throws {
   let started = DispatchTime.now().uptimeNanoseconds
   for index in 0..<count {
     waitForSchedule(started: started, index: index, intervalMicros: intervalMicros)
+    try ensureDogfoodEditorFocus(pid: pid)
     try postKey(named: name)
   }
 }
 
-func typeStructuralBursts(count: Int, intervalMicros: Int) throws {
+func typeStructuralBursts(
+  count: Int,
+  intervalMicros: Int,
+  pid: pid_t
+) throws {
   let started = DispatchTime.now().uptimeNanoseconds
   for index in 0..<count {
     waitForSchedule(started: started, index: index, intervalMicros: intervalMicros)
+    try ensureDogfoodEditorFocus(pid: pid)
     try postKey(named: "enter")
-    typeText("x", intervalMicros: 0)
+    try typeText("x", intervalMicros: 0, pid: pid)
   }
 }
 
@@ -552,7 +578,7 @@ appProcess.standardError = FileHandle.standardError
 try appProcess.run()
 let appPID = appProcess.processIdentifier
 try waitUntil("initial app harness receipt") {
-  guard let receipt = try? readJSON(receiptPath) else { return false }
+  guard let receipt = readJSONForPolling(receiptPath) else { return false }
   return receipt["commandSequence"] as? Int == 0 &&
     receipt["pendingEdits"] as? Int == 0
 }
@@ -573,7 +599,7 @@ func appRequest(
   try data.write(to: URL(fileURLWithPath: commandPath), options: .atomic)
   var receipt: [String: Any] = [:]
   try waitUntil("app receipt for request \(sequence)") {
-    guard let candidate = try? readJSON(receiptPath),
+    guard let candidate = readJSONForPolling(receiptPath),
       candidate["commandSequence"] as? Int == sequence
     else { return false }
     receipt = candidate
@@ -629,11 +655,6 @@ func inputDeliveryAcknowledgement(
     return nil
   }
   let firstRetainedOrdinal = candidateOrdinal - events.count + 1
-  guard baselineOrdinal >= firstRetainedOrdinal - 1 else {
-    throw ActuatorFailure.message(
-      "\(operation) input events rolled over before acknowledgement"
-    )
-  }
   let firstNewIndex = max(0, baselineOrdinal + 1 - firstRetainedOrdinal)
   let newEvents = events.enumerated().dropFirst(firstNewIndex)
   let targetGeneration = baselineGeneration + expectedGenerationAdvance
@@ -729,6 +750,24 @@ func runInputDeliverySelfTest() throws {
   else {
     throw ActuatorFailure.message("terminal batch was not acknowledged")
   }
+  let rolledOver: [String: Any] = [
+    "inputEventOrdinal": 2000,
+    "sourceGeneration": 6,
+    "inputEvents": [
+      "1999:accepted-deltas:generation=6",
+      "2000:key-up",
+    ],
+  ]
+  let rolloverAcknowledgement = try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: rolledOver,
+    operation: "rolled-over-batch",
+    expectedGenerationAdvance: 2
+  )
+  guard rolloverAcknowledgement?["terminalInputEventOrdinal"] as? Int == 1999
+  else {
+    throw ActuatorFailure.message("retained terminal event was not acknowledged")
+  }
   let copied: [String: Any] = [
     "inputEventOrdinal": 11,
     "sourceGeneration": 4,
@@ -770,7 +809,7 @@ func waitForInputDelivery(
   var acknowledgement: [String: Any]?
   do {
     try waitUntil("app input delivery for \(operation)") {
-      guard let receipt = try? readJSON(receiptPath) else { return false }
+      guard let receipt = readJSONForPolling(receiptPath) else { return false }
       acknowledgement = try inputDeliveryAcknowledgement(
         baselineReceipt: baselineReceipt,
         candidateReceipt: receipt,
@@ -781,7 +820,7 @@ func waitForInputDelivery(
       return acknowledgement != nil
     }
   } catch {
-    let latest = try? readJSON(receiptPath)
+    let latest = readJSONForPolling(receiptPath)
     let baselineOrdinal = baselineReceipt["inputEventOrdinal"] as? Int
     let baselineGeneration = baselineReceipt["sourceGeneration"] as? Int
     let latestOrdinal = latest?["inputEventOrdinal"] as? Int
@@ -849,7 +888,7 @@ func taskCheckboxScreenPoint(
 }
 
 var shouldStop = false
-while !shouldStop, let line = readLine() {
+func handleActuatorRequest(_ line: String) {
   var sequence = 0
   do {
     let data = Data(line.utf8)
@@ -938,14 +977,15 @@ while !shouldStop, let line = readLine() {
       )
       drag(from: basePoint, to: extentPoint)
     case "insertText":
-      try requireDogfoodApplicationFocus(pid: appPID)
+      try ensureDogfoodEditorFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
-      typeText(
+      try typeText(
         try string(arguments["text"], "text"),
         intervalMicros: try integer(
           arguments["cadenceMicros"],
           "cadenceMicros"
-        )
+        ),
+        pid: appPID
       )
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
@@ -955,7 +995,7 @@ while !shouldStop, let line = readLine() {
     case "closeSession":
       response["snapshot"] = try appRequest(operation: "closeSession")
     case "repeatKey":
-      try requireDogfoodApplicationFocus(pid: appPID)
+      try ensureDogfoodEditorFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       try repeatKey(
         try string(arguments["key"], "key"),
@@ -963,7 +1003,8 @@ while !shouldStop, let line = readLine() {
         intervalMicros: try integer(
           arguments["cadenceMicros"],
           "cadenceMicros"
-        )
+        ),
+        pid: appPID
       )
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
@@ -971,14 +1012,15 @@ while !shouldStop, let line = readLine() {
         expectedGenerationAdvance: try integer(arguments["count"], "count")
       )
     case "structuralBursts":
-      try requireDogfoodApplicationFocus(pid: appPID)
+      try ensureDogfoodEditorFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       try typeStructuralBursts(
         count: try integer(arguments["count"], "count"),
         intervalMicros: try integer(
           arguments["cadenceMicros"],
           "cadenceMicros"
-        )
+        ),
+        pid: appPID
       )
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
@@ -987,10 +1029,11 @@ while !shouldStop, let line = readLine() {
           try integer(arguments["count"], "count") * 2
       )
     case "key":
-      try requireDogfoodApplicationFocus(pid: appPID)
+      try ensureDogfoodEditorFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       let key = try string(arguments["key"], "key")
       let pasteboardChange = NSPasteboard.general.changeCount
+      try ensureDogfoodEditorFocus(pid: appPID)
       try postKey(named: key)
       if key == "copy" || key == "cut" {
         try waitUntil("macOS pasteboard (key)") {
@@ -1017,13 +1060,14 @@ while !shouldStop, let line = readLine() {
         terminalEventPrefix: terminalPrefix
       )
     case "pasteText":
-      try requireDogfoodApplicationFocus(pid: appPID)
+      try ensureDogfoodEditorFocus(pid: appPID)
       let baselineReceipt = try verifyExpectedSelection(arguments)
       let text = try string(arguments["text"], "text")
       NSPasteboard.general.clearContents()
       guard NSPasteboard.general.setString(text, forType: .string) else {
         throw ActuatorFailure.message("could not set the macOS pasteboard")
       }
+      try ensureDogfoodEditorFocus(pid: appPID)
       pressCommandShortcut(9)
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
@@ -1065,6 +1109,12 @@ while !shouldStop, let line = readLine() {
       "appPid": Int(appPID),
       "platform": "macos",
     ])
+  }
+}
+
+while !shouldStop, let line = readLine() {
+  autoreleasepool {
+    handleActuatorRequest(line)
   }
 }
 
