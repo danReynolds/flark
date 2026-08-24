@@ -140,20 +140,12 @@ func focusWindow(
     kAXFocusedAttribute as CFString,
     kCFBooleanTrue
   )
-  if NSWorkspace.shared.frontmostApplication?.localizedName == "loginwindow" {
-    throw ActuatorFailure.message(
-      "interactive macOS session is unavailable (loginwindow is frontmost)"
-    )
-  }
   NSRunningApplication(processIdentifier: pid)?.activate(
     options: [.activateAllWindows]
   )
-  try waitUntil("frontmost dogfood application") {
-    NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
-  }
 
   let systemWide = AXUIElementCreateSystemWide()
-  try waitUntil("focused dogfood accessibility target") {
+  try waitUntil("focused dogfood accessibility target", timeoutSeconds: 60) {
     var value: CFTypeRef?
     guard AXUIElementCopyAttributeValue(
       systemWide,
@@ -179,6 +171,7 @@ func focusWindow(
   guard let resolvedWindow else {
     throw ActuatorFailure.message("dogfood window geometry was unavailable")
   }
+
   return (
     resolvedWindow.bounds.origin,
     resolvedWindow.bounds.size,

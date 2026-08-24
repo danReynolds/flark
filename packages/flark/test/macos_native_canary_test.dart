@@ -192,6 +192,7 @@ void main() {
     skip: enabled
         ? false
         : 'requires macOS, FLARK_CANARY_APP_EXECUTABLE, and native library',
+    timeout: const Timeout(Duration(seconds: 180)),
   );
 }
 

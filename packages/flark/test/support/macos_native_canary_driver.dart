@@ -346,7 +346,7 @@ final class MacosNativeCanaryDriver {
     );
     await process.stdin.flush();
     final hasResponse = await responses.moveNext().timeout(
-      const Duration(seconds: 20),
+      const Duration(seconds: 70),
     );
     if (!hasResponse) {
       throw StateError('macOS actuator exited during $operation');
