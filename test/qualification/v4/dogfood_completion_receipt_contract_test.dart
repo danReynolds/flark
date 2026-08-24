@@ -14,30 +14,43 @@ import '../../../scripts/verify_v4_dogfood_receipt.dart';
 import 'dogfood_performance_receipt_contract_test.dart' as performance_fixture;
 
 void main() {
-  test('completion binds every D0 lane to one exact candidate app', () async {
-    final fixture = await _CompletionFixture.create();
-    addTearDown(fixture.dispose);
+  const completionFixtureTimeout = Timeout(Duration(minutes: 2));
 
-    final receipt = await fixture.build();
-    expect(receipt['schema'], 'dogfood_completion_v1');
-    expect((receipt['assessment']! as Map)['result'], 'PASS');
-    expect((receipt['candidate']! as Map)['commit'], fixture.head);
-    expect(((receipt['gates']! as Map)['nativeCanary']! as Map)['skipped'], 0);
-  });
+  test(
+    'completion binds every D0 lane to one exact candidate app',
+    () async {
+      final fixture = await _CompletionFixture.create();
+      addTearDown(fixture.dispose);
 
-  test('completion rejects stale CI and changed review evidence', () async {
-    final fixture = await _CompletionFixture.create();
-    addTearDown(fixture.dispose);
+      final receipt = await fixture.build();
+      expect(receipt['schema'], 'dogfood_completion_v1');
+      expect((receipt['assessment']! as Map)['result'], 'PASS');
+      expect((receipt['candidate']! as Map)['commit'], fixture.head);
+      expect(
+        ((receipt['gates']! as Map)['nativeCanary']! as Map)['skipped'],
+        0,
+      );
+    },
+    timeout: completionFixtureTimeout,
+  );
 
-    final stale = jsonDecode(await fixture.evidence.readAsString()) as Map;
-    (stale['ci']! as Map)['headSha'] = List.filled(40, 'f').join();
-    await fixture.evidence.writeAsString(jsonEncode(stale));
-    await expectLater(fixture.build(), throwsStateError);
+  test(
+    'completion rejects stale CI and changed review evidence',
+    () async {
+      final fixture = await _CompletionFixture.create();
+      addTearDown(fixture.dispose);
 
-    await fixture.writeEvidence();
-    await fixture.architectureReview.writeAsString('changed\n');
-    await expectLater(fixture.build(), throwsStateError);
-  });
+      final stale = jsonDecode(await fixture.evidence.readAsString()) as Map;
+      (stale['ci']! as Map)['headSha'] = List.filled(40, 'f').join();
+      await fixture.evidence.writeAsString(jsonEncode(stale));
+      await expectLater(fixture.build(), throwsStateError);
+
+      await fixture.writeEvidence();
+      await fixture.architectureReview.writeAsString('changed\n');
+      await expectLater(fixture.build(), throwsStateError);
+    },
+    timeout: completionFixtureTimeout,
+  );
 
   test(
     'completion replays gates, native machine output, CI, and app path',
@@ -134,100 +147,105 @@ void main() {
       await fixture.evidence.writeAsString(jsonEncode(evidence));
       await expectLater(fixture.build(), throwsStateError);
     },
+    timeout: completionFixtureTimeout,
   );
 
-  test('gate execution and native test identity cannot be attested', () async {
-    final fixture = await _CompletionFixture.create();
-    addTearDown(fixture.dispose);
+  test(
+    'gate execution and native test identity cannot be attested',
+    () async {
+      final fixture = await _CompletionFixture.create();
+      addTearDown(fixture.dispose);
 
-    final failingRepository = Directory('${fixture.base.path}/failing-repo')
-      ..createSync();
-    await _git(failingRepository, const ['init']);
-    await _git(failingRepository, const [
-      'config',
-      'user.email',
-      'test@example.com',
-    ]);
-    await _git(failingRepository, const [
-      'config',
-      'user.name',
-      'Receipt Test',
-    ]);
-    File('${failingRepository.path}/scripts/verify_v4.sh')
-      ..createSync(recursive: true)
-      ..writeAsStringSync(
-        '#!/usr/bin/env bash\n'
-        "echo 'verify_v4: active rust + dart + flutter v4 suites executed and passed.'\n"
-        "echo 'verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes.'\n"
-        'exit 1\n',
+      final failingRepository = Directory('${fixture.base.path}/failing-repo')
+        ..createSync();
+      await _git(failingRepository, const ['init']);
+      await _git(failingRepository, const [
+        'config',
+        'user.email',
+        'test@example.com',
+      ]);
+      await _git(failingRepository, const [
+        'config',
+        'user.name',
+        'Receipt Test',
+      ]);
+      File('${failingRepository.path}/scripts/verify_v4.sh')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          '#!/usr/bin/env bash\n'
+          "echo 'verify_v4: active rust + dart + flutter v4 suites executed and passed.'\n"
+          "echo 'verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes.'\n"
+          'exit 1\n',
+        );
+      await _git(failingRepository, const ['add', '.']);
+      await _git(failingRepository, const ['commit', '-m', 'failing gate']);
+      final failedLog = File('${fixture.base.path}/failed-default.log');
+      await expectLater(
+        runDogfoodGate(
+          repository: failingRepository,
+          lane: 'default',
+          log: failedLog,
+        ),
+        throwsStateError,
       );
-    await _git(failingRepository, const ['add', '.']);
-    await _git(failingRepository, const ['commit', '-m', 'failing gate']);
-    final failedLog = File('${fixture.base.path}/failed-default.log');
-    await expectLater(
-      runDogfoodGate(
-        repository: failingRepository,
-        lane: 'default',
-        log: failedLog,
-      ),
-      throwsStateError,
-    );
 
-    final sanitized = dogfoodGateProcessEnvironment({
-      'PATH': '/fake/bin',
-      'HOME': '/safe/home',
-      'FLARK_V4_FEATURES': 'opening-session',
-      'FLARK_V4_PROFILE': 'release',
-      'RUSTFLAGS': '-Cinstrument-coverage',
-      'BASH_ENV': '/tmp/inject-success.sh',
-    });
-    expect(sanitized, {'PATH': '/fake/bin', 'HOME': '/safe/home'});
+      final sanitized = dogfoodGateProcessEnvironment({
+        'PATH': '/fake/bin',
+        'HOME': '/safe/home',
+        'FLARK_V4_FEATURES': 'opening-session',
+        'FLARK_V4_PROFILE': 'release',
+        'RUSTFLAGS': '-Cinstrument-coverage',
+        'BASH_ENV': '/tmp/inject-success.sh',
+      });
+      expect(sanitized, {'PATH': '/fake/bin', 'HOME': '/safe/home'});
 
-    final paintReceipt =
-        jsonDecode(await fixture.actualPaintReceipt.readAsString()) as Map;
-    final originalPaintReceipt = jsonEncode(paintReceipt);
-    ((paintReceipt['environment']! as Map)['overrides']!
-            as Map)['FLARK_V4_LIBRARY_PATH'] =
-        '${fixture.base.path}/different-abi.dylib';
-    await fixture.actualPaintReceipt.writeAsString(jsonEncode(paintReceipt));
-    await expectLater(fixture.build(), throwsStateError);
-    await fixture.actualPaintReceipt.writeAsString(originalPaintReceipt);
+      final paintReceipt =
+          jsonDecode(await fixture.actualPaintReceipt.readAsString()) as Map;
+      final originalPaintReceipt = jsonEncode(paintReceipt);
+      ((paintReceipt['environment']! as Map)['overrides']!
+              as Map)['FLARK_V4_LIBRARY_PATH'] =
+          '${fixture.base.path}/different-abi.dylib';
+      await fixture.actualPaintReceipt.writeAsString(jsonEncode(paintReceipt));
+      await expectLater(fixture.build(), throwsStateError);
+      await fixture.actualPaintReceipt.writeAsString(originalPaintReceipt);
 
-    final shimReceipt =
-        jsonDecode(await fixture.actualPaintReceipt.readAsString()) as Map;
-    final shimIdentity = ((shimReceipt['toolchain']! as List).single as Map);
-    final shim = await _writeExecutable(
-      File('${fixture.base.path}/untrusted-flutter'),
-      '#!/bin/sh\nexit 0\n',
-    );
-    final shimFileIdentity = await _identity(shim);
-    shimIdentity
-      ..['path'] = shimFileIdentity['path']
-      ..['bytes'] = shimFileIdentity['bytes']
-      ..['sha256'] = shimFileIdentity['sha256'];
-    (shimReceipt['command']! as List).first = shim.absolute.path;
-    await fixture.actualPaintReceipt.writeAsString(jsonEncode(shimReceipt));
-    await expectLater(fixture.build(), throwsStateError);
-    await fixture.actualPaintReceipt.writeAsString(originalPaintReceipt);
+      final shimReceipt =
+          jsonDecode(await fixture.actualPaintReceipt.readAsString()) as Map;
+      final shimIdentity = ((shimReceipt['toolchain']! as List).single as Map);
+      final shim = await _writeExecutable(
+        File('${fixture.base.path}/untrusted-flutter'),
+        '#!/bin/sh\nexit 0\n',
+      );
+      final shimFileIdentity = await _identity(shim);
+      shimIdentity
+        ..['path'] = shimFileIdentity['path']
+        ..['bytes'] = shimFileIdentity['bytes']
+        ..['sha256'] = shimFileIdentity['sha256'];
+      (shimReceipt['command']! as List).first = shim.absolute.path;
+      await fixture.actualPaintReceipt.writeAsString(jsonEncode(shimReceipt));
+      await expectLater(fixture.build(), throwsStateError);
+      await fixture.actualPaintReceipt.writeAsString(originalPaintReceipt);
 
-    await fixture.machineLog.writeAsString(
-      '${jsonEncode({
-        'type': 'testStart',
-        'test': {'id': 1, 'name': 'an unrelated successful Flutter test'},
-      })}\n'
-      '${jsonEncode({'type': 'testDone', 'testID': 1, 'result': 'success', 'skipped': false})}\n'
-      '${jsonEncode({'type': 'done', 'success': true})}\n',
-    );
-    final native =
-        jsonDecode(await fixture.nativeReceipt.readAsString()) as Map;
-    (native['nativeCanary']! as Map)['name'] =
-        'an unrelated successful Flutter test';
-    (native['nativeCanary']! as Map)['machineLog'] = await _identity(
-      fixture.machineLog,
-    );
-    await fixture.nativeReceipt.writeAsString(jsonEncode(native));
-    await expectLater(fixture.build(), throwsStateError);
-  });
+      await fixture.machineLog.writeAsString(
+        '${jsonEncode({
+          'type': 'testStart',
+          'test': {'id': 1, 'name': 'an unrelated successful Flutter test'},
+        })}\n'
+        '${jsonEncode({'type': 'testDone', 'testID': 1, 'result': 'success', 'skipped': false})}\n'
+        '${jsonEncode({'type': 'done', 'success': true})}\n',
+      );
+      final native =
+          jsonDecode(await fixture.nativeReceipt.readAsString()) as Map;
+      (native['nativeCanary']! as Map)['name'] =
+          'an unrelated successful Flutter test';
+      (native['nativeCanary']! as Map)['machineLog'] = await _identity(
+        fixture.machineLog,
+      );
+      await fixture.nativeReceipt.writeAsString(jsonEncode(native));
+      await expectLater(fixture.build(), throwsStateError);
+    },
+    timeout: completionFixtureTimeout,
+  );
 
   test('candidate evidence schema is strict and versioned', () {
     final schema =
