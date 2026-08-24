@@ -46,6 +46,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   DogfoodNativeCanaryReceiptWriter? _canaryReceiptWriter;
   DogfoodNativeCanaryCommandMailbox? _canaryCommandMailbox;
   final FlarkEditorDebugHandle _canaryDebugHandle = FlarkEditorDebugHandle();
+  final GlobalKey _canaryEditorSurfaceKey = GlobalKey();
 
   bool get _loading => _loadingPreset != null;
 
@@ -177,6 +178,12 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         if (controller == null) throw StateError('canary has no controller');
         writer.beginCanary('profile-observation');
         await _settleCanaryController(controller);
+        final surface = _canaryEditorSurfaceKey.currentContext
+            ?.findRenderObject();
+        if (surface == null) {
+          throw StateError('canary has no mounted editor surface');
+        }
+        dogfoodRequestSurfacePaint(surface);
         await _awaitCanaryFrame();
         await writer.writeNow(commandSequence: command.sequence);
         return;
@@ -366,6 +373,9 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
                   children: [
                     if (controller != null && !_readOnly)
                       ColoredBox(
+                        key: _canaryReceiptWriter == null
+                            ? null
+                            : _canaryEditorSurfaceKey,
                         color: const Color(0xfffffefa),
                         child: FlarkEditor(
                           key: ValueKey(controller),

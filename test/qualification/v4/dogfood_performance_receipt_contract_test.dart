@@ -149,6 +149,39 @@ void main() {
     );
   });
 
+  test('replay rejects forged clock mapping and paint frame joins', () async {
+    final sealed = await sealDogfoodPerformanceReceipt(
+      validRawDogfoodPerformanceReceiptForTest(),
+      verifyArtifactFiles: false,
+    );
+
+    final clockTampered = _copy(sealed);
+    final clockRun = _firstRun(clockTampered);
+    final clockFrame = (clockRun['frames']! as List).first as Map;
+    clockFrame['vsyncMicros'] = (clockFrame['vsyncMicros']! as int) + 1;
+    final clockResult = await verifyDogfoodPerformanceReceipt(
+      clockTampered,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      clockResult.blockers.join('\n'),
+      contains('epoch timestamp does not replay its clock'),
+    );
+
+    final joinTampered = _copy(sealed);
+    final joinRun = _firstRun(joinTampered);
+    final paint = (joinRun['paintObservations']! as List).first as Map;
+    paint['frameStampMicros'] = 0;
+    final joinResult = await verifyDogfoodPerformanceReceipt(
+      joinTampered,
+      verifyArtifactFiles: false,
+    );
+    expect(
+      joinResult.blockers.join('\n'),
+      contains('does not replay its FrameTiming join'),
+    );
+  });
+
   test(
     'budgets are enforced per workload rather than diluted globally',
     () async {
@@ -708,15 +741,22 @@ Map<String, Object?> _frame(
   int ordinal,
   int accepted, {
   int paintDelayMicros = 500,
-}) => {
-  'ordinal': ordinal,
-  'vsyncMicros': accepted + paintDelayMicros,
-  'buildMicros': 1000,
-  'rasterMicros': 1000,
-  'editorSyncMicros': 100,
-  'editorAttributed': true,
-  'missed': false,
-};
+}) {
+  final vsync = accepted + paintDelayMicros;
+  return {
+    'ordinal': ordinal,
+    'vsyncMicros': vsync,
+    'monotonicVsyncMicros': vsync,
+    'clockAnchorEpochBeforeMicros': 0,
+    'clockAnchorEpochAfterMicros': 0,
+    'clockAnchorMonotonicMicros': 0,
+    'buildMicros': 1000,
+    'rasterMicros': 1000,
+    'editorSyncMicros': 100,
+    'editorAttributed': true,
+    'missed': false,
+  };
+}
 
 void _addRawObservations({
   required List<Map<String, Object?>> inputObservations,
@@ -742,6 +782,7 @@ void _addRawObservations({
   paintObservations.add({
     'sessionOrdinal': sessionOrdinal,
     'timestampMicros': paintTimestamp,
+    'frameStampMicros': paintTimestamp + 16667,
     'frameOrdinal': frameOrdinal,
     'sourceGeneration': sourceGeneration,
     'visibleSourceSha256': _hash('b'),

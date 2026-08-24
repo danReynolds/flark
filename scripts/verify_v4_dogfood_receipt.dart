@@ -1130,6 +1130,7 @@ Map<int, Map<String, Object?>> _frames(
   final values = _list(value, '$prefix.frames', blockers);
   final result = <int, Map<String, Object?>>{};
   var previousVsync = -1;
+  var previousMonotonicVsync = -1;
   for (var index = 0; index < values.length; index += 1) {
     final frame = _map(values[index], '$prefix.frames[$index]', blockers);
     final ordinal = _integer(
@@ -1149,6 +1150,38 @@ Map<int, Map<String, Object?>> _frames(
       blockers.add('$prefix frame vsync timestamps are not increasing');
     }
     previousVsync = vsync;
+    final monotonicVsync = _integer(
+      frame['monotonicVsyncMicros'],
+      'frame.monotonicVsyncMicros',
+      blockers,
+    );
+    if (monotonicVsync <= previousMonotonicVsync) {
+      blockers.add('$prefix frame monotonic timestamps are not increasing');
+    }
+    previousMonotonicVsync = monotonicVsync;
+    final anchorBefore = _integer(
+      frame['clockAnchorEpochBeforeMicros'],
+      'frame.clockAnchorEpochBeforeMicros',
+      blockers,
+    );
+    final anchorAfter = _integer(
+      frame['clockAnchorEpochAfterMicros'],
+      'frame.clockAnchorEpochAfterMicros',
+      blockers,
+    );
+    final anchorMonotonic = _integer(
+      frame['clockAnchorMonotonicMicros'],
+      'frame.clockAnchorMonotonicMicros',
+      blockers,
+    );
+    if (anchorAfter < anchorBefore || anchorAfter - anchorBefore >= 1000) {
+      blockers.add('$prefix frame clock anchor is not a tight bracket');
+    }
+    final mappedBefore = anchorBefore + monotonicVsync - anchorMonotonic;
+    final mappedAfter = anchorAfter + monotonicVsync - anchorMonotonic;
+    if (vsync < mappedBefore || vsync > mappedAfter) {
+      blockers.add('$prefix frame epoch timestamp does not replay its clock');
+    }
     final build = _integer(frame['buildMicros'], 'frame.buildMicros', blockers);
     final raster = _integer(
       frame['rasterMicros'],
@@ -1387,6 +1420,21 @@ void _validateSample(
             '$prefix raw paint references missing frame $frameOrdinal',
           );
         }
+        final frameStamp = _integer(
+          paint['frameStampMicros'],
+          '$prefix.rawPaint[$paintIndex].frameStampMicros',
+          blockers,
+        );
+        final expectedFrame = _nearestFrameOrdinal(
+          frameStamp,
+          frames,
+          framePeriodMicros: framePeriod.round(),
+        );
+        if (expectedFrame != frameOrdinal) {
+          blockers.add(
+            '$prefix raw paint $paintIndex does not replay its FrameTiming join',
+          );
+        }
         if (collectMetrics && requiresInput) {
           measuredFrameOrdinals.add(frameOrdinal);
         }
@@ -1563,6 +1611,25 @@ void _validateSample(
       if (live[name] != 0) blockers.add('$prefix leaked native $name');
     }
   }
+}
+
+int? _nearestFrameOrdinal(
+  int paintTargetStamp,
+  Map<int, Map<String, Object?>> frames, {
+  required int framePeriodMicros,
+}) {
+  int? bestOrdinal;
+  var bestDistance = 33;
+  for (final entry in frames.entries) {
+    final vsync = entry.value['monotonicVsyncMicros'];
+    if (vsync is! int) continue;
+    final distance = (vsync + framePeriodMicros - paintTargetStamp).abs();
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestOrdinal = entry.key;
+    }
+  }
+  return bestOrdinal;
 }
 
 void _validateCadence(

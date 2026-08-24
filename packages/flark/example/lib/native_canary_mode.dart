@@ -1,10 +1,26 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:ui' show FramePhase, FrameTiming;
 
 import 'package:flark/flark.dart';
 import 'package:flutter/widgets.dart';
+
+void dogfoodRequestSurfacePaint(RenderObject surface) {
+  surface.markNeedsPaint();
+}
+
+Map<String, int> dogfoodFrameClockAnchor() {
+  final epochBeforeMicros = DateTime.now().microsecondsSinceEpoch;
+  final monotonicMicros = developer.Timeline.now;
+  final epochAfterMicros = DateTime.now().microsecondsSinceEpoch;
+  return {
+    'epochBeforeMicros': epochBeforeMicros,
+    'monotonicMicros': monotonicMicros,
+    'epochAfterMicros': epochAfterMicros,
+  };
+}
 
 @visibleForTesting
 bool dogfoodPaintSelectionIdentityMatches({
@@ -556,10 +572,12 @@ final class DogfoodNativeCanaryReceiptWriter {
     }
     final geometry = _sourcePointGeometry;
     final taskGeometry = _taskActionGeometry;
+    final frameClockAnchor = dogfoodFrameClockAnchor();
     final receipt = <String, Object?>{
       'schemaVersion': 5,
       'receiptEpochMicros': DateTime.now().microsecondsSinceEpoch,
       'processLaunchEpochMicros': mode.processLaunchEpochMicros,
+      'frameClockAnchor': frameClockAnchor,
       'canaryId': _canaryId,
       'commandSequence': _commandSequence,
       'commandError': _commandError?.toString(),

@@ -191,13 +191,16 @@ Future<_ProfileRunResult> _runCell({
       'packages/flark/tool/live_editor_macos_canary.swift',
     ).absolute.path,
     initialPresetName: initialPreset.name,
+    initialWindowWidth: _windowWidth,
+    initialWindowHeight: _windowHeight,
   );
   try {
-    await driver.start();
-    final launched = await driver.prepareObservationWindow(
-      windowWidth: _windowWidth,
-      windowHeight: _windowHeight,
-    );
+    final launched = cellId == 'product-tour-cold-launch'
+        ? await driver.start()
+        : await driver.prepareObservationWindow(
+            windowWidth: _windowWidth,
+            windowHeight: _windowHeight,
+          );
     if (launched.source != initialSource) {
       throw StateError('$cellId opened a source different from its preset');
     }
@@ -921,13 +924,23 @@ Map<String, Object?> _buildMeasuredRun({
     );
   final frameOrdinalByStamp = <int, int>{};
   final frames = <Map<String, Object?>>[];
+  final clockAnchor = settled.frameClockAnchor;
+  final anchorEpochBefore = clockAnchor['epochBeforeMicros']!;
+  final anchorEpochAfter = clockAnchor['epochAfterMicros']!;
+  final anchorMonotonic = clockAnchor['monotonicMicros']!;
+  final anchorEpochMidpoint =
+      anchorEpochBefore + ((anchorEpochAfter - anchorEpochBefore) ~/ 2);
   for (var index = 0; index < orderedTimings.length; index += 1) {
     final timing = orderedTimings[index];
     final stamp = timing['vsyncStartMicros']! as int;
     frameOrdinalByStamp[stamp] = index;
     frames.add({
       'ordinal': index,
-      'vsyncMicros': stamp,
+      'vsyncMicros': anchorEpochMidpoint + stamp - anchorMonotonic,
+      'monotonicVsyncMicros': stamp,
+      'clockAnchorEpochBeforeMicros': anchorEpochBefore,
+      'clockAnchorEpochAfterMicros': anchorEpochAfter,
+      'clockAnchorMonotonicMicros': anchorMonotonic,
       'buildMicros': timing['buildMicros']! as int,
       'rasterMicros': timing['rasterMicros']! as int,
       'editorSyncMicros': 0,
@@ -969,6 +982,7 @@ Map<String, Object?> _buildMeasuredRun({
     paintObservations.add({
       'sessionOrdinal': sessionOrdinal,
       'timestampMicros': paint['paintEpochMicros']! as int,
+      'frameStampMicros': stamp,
       'frameOrdinal': frameOrdinal,
       'sourceGeneration': generation,
       'visibleSourceSha256': paint['visibleSourceSha256']! as String,

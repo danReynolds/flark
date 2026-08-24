@@ -334,6 +334,16 @@ Latency start/end events cannot exclude inconvenient work:
   process, while the 100 lifecycle cycles are explicit controller/session
   cycles within the named warmed process.
 
+The profile app launches at the frozen 1569-by-906 window geometry, and the
+cold-launch cell retains the initial engine paint stream rather than clearing it
+and forcing a later observer-only repaint. Accepted input and process-launch
+times use wall-clock epoch microseconds, while Flutter `FrameTiming` and paint
+frame stamps use the engine's monotonic clock. Every raw frame therefore carries
+a tight epoch/monotonic clock anchor, and the validator replays both that mapping
+and each paint-to-`FrameTiming` join before applying any latency or frame budget.
+Directly comparing the two clock domains, or trusting a prejoined ordinal, is
+invalid D0 evidence.
+
 Every lifecycle sample uses Product Tour, activates immediately after
 `locally.`, inserts `x`, undoes it, closes the session, and records a global-zero
 native state before the next cycle or process exits. The ten process samples

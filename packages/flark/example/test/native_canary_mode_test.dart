@@ -2,9 +2,46 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flark_example/native_canary_mode.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('explicit observation marks the mounted surface for paint', (
+    tester,
+  ) async {
+    final key = GlobalKey();
+    await tester.pumpWidget(
+      ColoredBox(key: key, color: const Color(0xff000000)),
+    );
+    final surface = key.currentContext!.findRenderObject()!;
+    expect(surface.debugNeedsPaint, isFalse);
+
+    dogfoodRequestSurfacePaint(surface);
+
+    expect(surface.debugNeedsPaint, isTrue);
+    await tester.pump();
+    expect(surface.debugNeedsPaint, isFalse);
+  });
+
+  test('frame clock anchor brackets one monotonic observation', () {
+    final anchor = dogfoodFrameClockAnchor();
+
+    expect(anchor.keys, {
+      'epochBeforeMicros',
+      'monotonicMicros',
+      'epochAfterMicros',
+    });
+    expect(
+      anchor['epochAfterMicros']!,
+      greaterThanOrEqualTo(anchor['epochBeforeMicros']!),
+    );
+    expect(
+      anchor['epochAfterMicros']! - anchor['epochBeforeMicros']!,
+      lessThan(1000),
+    );
+    expect(anchor['monotonicMicros'], greaterThan(0));
+  });
+
   test('paint identity distinguishes collapsed and ranged selections', () {
     expect(
       dogfoodPaintSelectionIdentityMatches(

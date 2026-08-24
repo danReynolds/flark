@@ -36,6 +36,7 @@ final class MacosNativeCanarySnapshot {
     required this.display,
     required this.appProcessId,
     required this.receiptEpochMicros,
+    required this.frameClockAnchor,
   });
 
   final String source;
@@ -70,6 +71,7 @@ final class MacosNativeCanarySnapshot {
   final Map<String, Object?> display;
   final int appProcessId;
   final int receiptEpochMicros;
+  final Map<String, int> frameClockAnchor;
 }
 
 /// Thin actuator for the few macOS facts that headless Flutter cannot prove:
@@ -81,12 +83,16 @@ final class MacosNativeCanaryDriver {
     required this.libraryPath,
     required this.actuatorScript,
     this.initialPresetName,
+    this.initialWindowWidth,
+    this.initialWindowHeight,
   });
 
   final String appExecutable;
   final String libraryPath;
   final String actuatorScript;
   final String? initialPresetName;
+  final int? initialWindowWidth;
+  final int? initialWindowHeight;
   Process? _process;
   StreamIterator<String>? _responses;
   int _sequence = 0;
@@ -159,12 +165,16 @@ final class MacosNativeCanaryDriver {
   }
 
   Future<void> _startActuator() async {
-    final process = await Process.start('swift', [
-      actuatorScript,
-      appExecutable,
-      libraryPath,
-      ?initialPresetName,
-    ]);
+    final process = await Process.start(
+      'swift',
+      [actuatorScript, appExecutable, libraryPath, ?initialPresetName],
+      environment: {
+        if (initialWindowWidth != null)
+          'FLARK_CANARY_INITIAL_WINDOW_WIDTH': '$initialWindowWidth',
+        if (initialWindowHeight != null)
+          'FLARK_CANARY_INITIAL_WINDOW_HEIGHT': '$initialWindowHeight',
+      },
+    );
     _process = process;
     _responses = StreamIterator(
       process.stdout.transform(utf8.decoder).transform(const LineSplitter()),
@@ -293,6 +303,8 @@ final class MacosNativeCanaryDriver {
         const Duration(seconds: 2),
         onTimeout: () => -1,
       );
+    } finally {
+      await responses?.cancel();
     }
   }
 
@@ -432,6 +444,9 @@ final class MacosNativeCanaryDriver {
       ),
       appProcessId: response['appPid']! as int,
       receiptEpochMicros: json['receiptEpochMicros']! as int,
+      frameClockAnchor: Map<String, int>.unmodifiable(
+        (json['frameClockAnchor']! as Map).cast<String, int>(),
+      ),
     );
   }
 

@@ -232,10 +232,11 @@
     "paintObservation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionOrdinal", "timestampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount", "activeRowVisible"],
+      "required": ["sessionOrdinal", "timestampMicros", "frameStampMicros", "frameOrdinal", "sourceGeneration", "visibleSourceSha256", "expectedVisibleSourceSha256", "canonicalSelectionBaseUtf16", "canonicalSelectionExtentUtf16", "expectedSelectionBaseUtf16", "expectedSelectionExtentUtf16", "caretSourceUtf16", "caretDisplayUtf16", "semanticsCurrent", "activeNeutralRowCount", "activeRowVisible"],
       "properties": {
         "sessionOrdinal": {"type": "integer", "minimum": 0},
         "timestampMicros": {"type": "integer", "minimum": 0},
+        "frameStampMicros": {"type": "integer", "minimum": 0},
         "frameOrdinal": {"type": ["integer", "null"], "minimum": 0},
         "sourceGeneration": {"type": "integer", "minimum": 0},
         "visibleSourceSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -350,10 +351,14 @@
     "frame": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ordinal", "vsyncMicros", "buildMicros", "rasterMicros", "editorSyncMicros", "editorAttributed", "missed"],
+      "required": ["ordinal", "vsyncMicros", "monotonicVsyncMicros", "clockAnchorEpochBeforeMicros", "clockAnchorEpochAfterMicros", "clockAnchorMonotonicMicros", "buildMicros", "rasterMicros", "editorSyncMicros", "editorAttributed", "missed"],
       "properties": {
         "ordinal": {"type": "integer", "minimum": 0},
         "vsyncMicros": {"type": "integer", "minimum": 0},
+        "monotonicVsyncMicros": {"type": "integer", "minimum": 0},
+        "clockAnchorEpochBeforeMicros": {"type": "integer", "minimum": 0},
+        "clockAnchorEpochAfterMicros": {"type": "integer", "minimum": 0},
+        "clockAnchorMonotonicMicros": {"type": "integer", "minimum": 0},
         "buildMicros": {"type": "integer", "minimum": 0},
         "rasterMicros": {"type": "integer", "minimum": 0},
         "editorSyncMicros": {"type": "integer", "minimum": 0},
