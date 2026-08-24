@@ -6,6 +6,52 @@ import 'dart:ui' show FramePhase, FrameTiming;
 import 'package:flark/flark.dart';
 import 'package:flutter/widgets.dart';
 
+@visibleForTesting
+bool dogfoodPaintSelectionIdentityMatches({
+  required bool activeRowVisible,
+  required int selectionBaseUtf16,
+  required int selectionExtentUtf16,
+  required int? caretSourceUtf16,
+  required int? caretDisplayUtf16,
+  required int selectionRectCount,
+}) {
+  if (!activeRowVisible) {
+    return caretSourceUtf16 == null && caretDisplayUtf16 == null;
+  }
+  if (selectionBaseUtf16 != selectionExtentUtf16) {
+    return caretSourceUtf16 == null &&
+        caretDisplayUtf16 == null &&
+        selectionRectCount > 0;
+  }
+  return caretSourceUtf16 != null &&
+      caretDisplayUtf16 != null &&
+      caretSourceUtf16 == selectionExtentUtf16;
+}
+
+@visibleForTesting
+final class DogfoodCanaryReceiptFileWriter {
+  DogfoodCanaryReceiptFileWriter(this.path);
+
+  final String path;
+  Future<void> _tail = Future<void>.value();
+
+  Future<void> write(Map<String, Object?> receipt) {
+    final result = _tail.then<void>(
+      (_) => _write(receipt),
+      onError: (Object _, StackTrace _) => _write(receipt),
+    );
+    _tail = result;
+    return result;
+  }
+
+  Future<void> _write(Map<String, Object?> receipt) async {
+    final destination = File(path);
+    final temporary = File('$path.tmp');
+    await temporary.writeAsString(jsonEncode(receipt), flush: true);
+    await temporary.rename(destination.path);
+  }
+}
+
 final class DogfoodNativeCanaryMode {
   const DogfoodNativeCanaryMode({
     required this.receiptPath,
@@ -114,11 +160,13 @@ final class DogfoodNativeCanaryCommandMailbox {
 /// bounded observations in memory and publishes atomic receipts outside the
 /// product input callback itself.
 final class DogfoodNativeCanaryReceiptWriter {
-  DogfoodNativeCanaryReceiptWriter(this.mode) {
+  DogfoodNativeCanaryReceiptWriter(this.mode)
+    : _receiptFileWriter = DogfoodCanaryReceiptFileWriter(mode.receiptPath) {
     WidgetsBinding.instance.addTimingsCallback(_recordFrameTimings);
   }
 
   final DogfoodNativeCanaryMode mode;
+  final DogfoodCanaryReceiptFileWriter _receiptFileWriter;
   final List<String> _surfaceFrames = [];
   final List<int> _surfaceFrameHashes = [];
   final List<int> _surfaceVisualStateHashes = [];
@@ -150,6 +198,9 @@ final class DogfoodNativeCanaryReceiptWriter {
   double _lastScrollOffset = 0;
 
   void beginCanary(String id) {
+    _timer?.cancel();
+    _timer = null;
+    _writeGeneration += 1;
     _canaryId = id;
     _surfaceFrames.clear();
     _surfaceFrameHashes.clear();
@@ -313,15 +364,15 @@ final class DogfoodNativeCanaryReceiptWriter {
       _surfaceFrames.add(surface);
       _surfaceFrameHashes.add(observation.renderPlanHash);
       _surfaceVisualStateHashes.add(observation.visualStateHash);
-      final hasVisibleActiveRow = observation.rows.any((row) => row.active);
       _surfaceCaretIdentities.add(
-        (!hasVisibleActiveRow &&
-                observation.caretSourceUtf16 == null &&
-                observation.caretDisplayUtf16 == null) ||
-            (observation.caretSourceUtf16 != null &&
-                observation.caretDisplayUtf16 != null &&
-                observation.caretSourceUtf16 ==
-                    observation.canonicalSelectionExtentUtf16),
+        dogfoodPaintSelectionIdentityMatches(
+          activeRowVisible: observation.rows.any((row) => row.active),
+          selectionBaseUtf16: observation.canonicalSelectionBaseUtf16,
+          selectionExtentUtf16: observation.canonicalSelectionExtentUtf16,
+          caretSourceUtf16: observation.caretSourceUtf16,
+          caretDisplayUtf16: observation.caretDisplayUtf16,
+          selectionRectCount: observation.selectionRects.length,
+        ),
       );
       _surfaceSourceGenerations.add(observation.sourceGeneration);
       _surfaceSelectionBases.add(observation.canonicalSelectionBaseUtf16);
@@ -421,6 +472,7 @@ final class DogfoodNativeCanaryReceiptWriter {
   }) async {
     _timer?.cancel();
     _timer = null;
+    _writeGeneration += 1;
     _commandSequence = commandSequence;
     _commandError = null;
     final receipt = <String, Object?>{
@@ -610,10 +662,7 @@ final class DogfoodNativeCanaryReceiptWriter {
   }
 
   Future<void> _writeReceipt(Map<String, Object?> receipt) async {
-    final destination = File(mode.receiptPath);
-    final temporary = File('${mode.receiptPath}.tmp');
-    await temporary.writeAsString(jsonEncode(receipt), flush: true);
-    await temporary.rename(destination.path);
+    await _receiptFileWriter.write(receipt);
   }
 
   Map<String, Object> _displayReceipt() {

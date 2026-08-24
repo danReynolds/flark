@@ -127,15 +127,10 @@ void main() {
       expect(wrapped.selectionBaseUtf16, wrappedCaret + successor.length);
       expect(wrapped.selectionExtentUtf16, wrappedCaret + successor.length);
       expect(wrapped.paintedSourceGenerations, isNotEmpty);
-      final renderedInsertion =
-          prepared.settledPresentation.indexOf('locally.') + 'locally.'.length;
       for (var index = 0; index < successor.length; index += 1) {
         final generation = wrappedStart.sourceGeneration + index + 1;
-        final expectedPresentation = prepared.settledPresentation.replaceRange(
-          renderedInsertion,
-          renderedInsertion,
-          successor.substring(0, index + 1),
-        );
+        final expectedLocalPresentation =
+            'locally.${successor.substring(0, index + 1)}';
         final frames = <int>[
           for (
             var frame = 0;
@@ -152,8 +147,18 @@ void main() {
         for (final frame in frames) {
           expect(
             wrapped.paintedPresentations[frame],
-            expectedPresentation,
-            reason: 'generation $generation painted the wrong presentation',
+            contains(expectedLocalPresentation),
+            reason:
+                'generation $generation did not paint its accepted local text',
+          );
+          expect(
+            wrapped.paintedPresentations[frame],
+            allOf(
+              startsWith('Flark dogfood\nkeepwhat\n'),
+              contains('GFM projection'),
+              contains('Surface │ Authority │ State'),
+            ),
+            reason: 'generation $generation omitted a visible projected anchor',
           );
           expect(
             wrapped.paintedSelectionBases[frame],
