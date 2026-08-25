@@ -227,6 +227,48 @@ void main() {
     },
   );
 
+  test(
+    'parser-proven heading split retains rendered heading and plain successor',
+    () {
+      final active = _row(
+        ordinal: 4,
+        sourceStart: 0,
+        sourceEnd: 7,
+        globalStart: 3,
+        text: 'Head',
+        kind: 12,
+        headingLevel: 2,
+        runs: const [
+          FlarkCorePresentationRun(
+            text: 'Head',
+            sourceUtf16Start: 3,
+            sourceUtf16End: 7,
+            sourceExact: true,
+            styles: {},
+          ),
+        ],
+      );
+      final transition = frontend.adopt(
+        receipt: _receipt(
+          transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+          baseStart: 7,
+          baseEnd: 7,
+          replacement: '\n\n',
+          presentationProven: true,
+        ),
+        activeOrdinal: 4,
+        active: active,
+      );
+
+      expect(transition?.surfaces, hasLength(2));
+      expect(transition?.surfaces.first.presentation.text, 'Head');
+      expect(transition?.surfaces.first.presentation.headingLevel, 2);
+      expect(transition?.surfaces.first.projectionCurrent, isTrue);
+      expect(transition?.surfaces.last.presentation.kind, 5);
+      expect(transition?.surfaces.last.presentation.text, isEmpty);
+    },
+  );
+
   test('a carried successor cannot authorize another structural split', () {
     final successor = _row(
       ordinal: 7,
@@ -813,6 +855,7 @@ FlarkCorePresentationRow _row({
   required List<FlarkCorePresentationRun> runs,
   String leadingText = '',
   int kind = 5,
+  int? headingLevel,
   int? globalStart,
   int? blockQuoteDepth,
   FlarkCodeBlockPresentation? codeBlock,
@@ -823,7 +866,7 @@ FlarkCorePresentationRow _row({
   text: text,
   globalUtf16Start: globalStart ?? sourceStart,
   kind: kind,
-  headingLevel: null,
+  headingLevel: headingLevel,
   blockQuoteDepth: blockQuoteDepth,
   codeBlock: codeBlock,
   thematicBreak: thematicBreak,

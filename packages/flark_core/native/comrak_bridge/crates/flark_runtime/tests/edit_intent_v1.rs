@@ -42,6 +42,42 @@ fn structural_presentation_proof_is_parser_bounded_and_fails_closed() {
     assert!(split_receipt.presentation_proven);
     split.close().expect("close split fixture");
 
+    let mut heading = DocumentSession::begin("## Head").expect("begin heading split fixture");
+    pump_ready(&mut heading);
+    let heading_receipt = heading
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "## Head".len(),
+            false,
+        )
+        .expect("split heading");
+    assert_eq!(
+        heading_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::SplitParagraph
+    );
+    assert!(heading_receipt.presentation_proven);
+    heading.close().expect("close heading split fixture");
+
+    for source in ["## Head ##", "## Head   "] {
+        let mut suffixed = DocumentSession::begin(source).expect("begin suffixed heading");
+        pump_ready(&mut suffixed);
+        let receipt = suffixed
+            .try_apply_edit_intent_v1(
+                1,
+                DocumentEditIntentV1::InsertParagraphBreak,
+                "## Head".len(),
+                false,
+            )
+            .expect("split suffixed heading");
+        assert_eq!(
+            receipt.presentation_transition,
+            DocumentEditPresentationTransitionV1::SplitParagraph
+        );
+        assert!(!receipt.presentation_proven, "{source:?}");
+        suffixed.close().expect("close suffixed heading");
+    }
+
     let merge_source = "Before **bold**.\n\nAfter.\n";
     let mut merge = DocumentSession::begin(merge_source).expect("begin merge fixture");
     pump_ready(&mut merge);
@@ -827,6 +863,37 @@ fn blank_paragraph_returns_and_backspaces_one_editor_row_per_command() {
     assert_eq!(remove_first.result_selection_utf16, 5);
     assert_eq!(source(&document), initial);
     document.close().expect("close paragraph gap");
+}
+
+#[test]
+fn parsed_terminal_gap_remains_semantic_after_literal_extension() {
+    let mut document = DocumentSession::begin("fff").expect("begin terminal paragraph");
+    pump_ready(&mut document);
+
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 3, false)
+        .expect("split terminal paragraph");
+    assert_eq!(first.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(first.result_selection_utf16, 5);
+    assert_eq!(source(&document), "fff\n\n");
+    pump_ready(&mut document);
+
+    document
+        .apply_edit(2, 5..5, "\n")
+        .expect("literal terminal gap extension");
+    assert_eq!(source(&document), "fff\n\n\n");
+    pump_ready(&mut document);
+
+    let extended = document
+        .try_apply_edit_intent_v1(3, DocumentEditIntentV1::InsertParagraphBreak, 6, false)
+        .expect("semantic terminal gap extension");
+    assert_eq!(
+        extended.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(extended.result_selection_utf16, 7);
+    assert_eq!(source(&document), "fff\n\n\n\n");
+    document.close().expect("close terminal paragraph");
 }
 
 #[test]

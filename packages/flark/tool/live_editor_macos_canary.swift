@@ -658,13 +658,18 @@ func inputDeliveryAcknowledgement(
   let firstNewIndex = max(0, baselineOrdinal + 1 - firstRetainedOrdinal)
   let newEvents = events.enumerated().dropFirst(firstNewIndex)
   let targetGeneration = baselineGeneration + expectedGenerationAdvance
-  guard candidateGeneration == targetGeneration else { return nil }
+  // A semantic edit can publish a provisional source generation and then its
+  // certified successor before this polling process observes the receipt.
+  // Treat the requested advance as a delivery floor; final source/revision
+  // assertions in the Dart journey own the exact logical-edit contract.
+  guard candidateGeneration >= targetGeneration else { return nil }
   guard let terminal = newEvents.last(where: { _, event in
-    guard event.contains("generation=\(targetGeneration)") else {
-      return false
+    if let terminalEventPrefix {
+      guard event.contains(":\(terminalEventPrefix):") else { return false }
+      return expectedGenerationAdvance == 0 ||
+        event.contains("generation=\(candidateGeneration)")
     }
-    guard let terminalEventPrefix else { return true }
-    return event.contains(":\(terminalEventPrefix):")
+    return event.contains("generation=\(candidateGeneration)")
   }) else {
     return nil
   }
@@ -768,6 +773,29 @@ func runInputDeliverySelfTest() throws {
   else {
     throw ActuatorFailure.message("retained terminal event was not acknowledged")
   }
+  let certifiedAfterProvisional: [String: Any] = [
+    "inputEventOrdinal": 14,
+    "sourceGeneration": 7,
+    "inputEvents": [
+      "100:accepted-deltas:generation=4",
+      "110:accepted-deltas:generation=5",
+      "120:controller-generation:generation=6",
+      "130:controller-generation:generation=7",
+    ],
+  ]
+  let certifiedAcknowledgement = try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: certifiedAfterProvisional,
+    operation: "certified-after-provisional",
+    expectedGenerationAdvance: 2
+  )
+  guard certifiedAcknowledgement?["terminalSourceGeneration"] as? Int == 7,
+    certifiedAcknowledgement?["terminalInputEventOrdinal"] as? Int == 14
+  else {
+    throw ActuatorFailure.message(
+      "a certified generation after the delivery floor was not acknowledged"
+    )
+  }
   let copied: [String: Any] = [
     "inputEventOrdinal": 11,
     "sourceGeneration": 4,
@@ -784,6 +812,24 @@ func runInputDeliverySelfTest() throws {
     terminalEventPrefix: "completed-copy"
   ) != nil else {
     throw ActuatorFailure.message("nonmutating terminal event was not acknowledged")
+  }
+  let navigated: [String: Any] = [
+    "inputEventOrdinal": 12,
+    "sourceGeneration": 4,
+    "inputEvents": [
+      "100:accepted-deltas:generation=4",
+      "110:key:KeyDownEvent:Arrow Left:meta=false",
+      "120:key:KeyUpEvent:Arrow Left:meta=false",
+    ],
+  ]
+  guard try inputDeliveryAcknowledgement(
+    baselineReceipt: baseline,
+    candidateReceipt: navigated,
+    operation: "navigate",
+    expectedGenerationAdvance: 0,
+    terminalEventPrefix: "key:KeyUpEvent:Arrow Left"
+  ) != nil else {
+    throw ActuatorFailure.message("navigation key-up was not acknowledged")
   }
   do {
     _ = try inputDeliveryAcknowledgement(
@@ -1050,7 +1096,8 @@ func handleActuatorRequest(_ line: String) {
       case "paste": "completed-paste"
       case "undo": "completed-undo"
       case "redo": "completed-redo"
-      case "left", "right": "completed-navigation"
+      case "left": "key:KeyUpEvent:Arrow Left"
+      case "right": "key:KeyUpEvent:Arrow Right"
       default: nil
       }
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(

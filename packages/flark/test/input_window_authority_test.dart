@@ -285,6 +285,68 @@ void main() {
   );
 
   test(
+    'settled terminal paragraph Returns retain canonical gap selection',
+    () async {
+      final controller = await open('fff');
+      addTearDown(controller.close);
+      controller.activateRow(controller.rows.single, 3);
+      await controller.resolveCanonicalSelection();
+
+      const expectedSources = <String>['fff\n\n', 'fff\n\n\n', 'fff\n\n\n\n'];
+      const expectedCarets = <int>[5, 6, 7];
+      for (var index = 0; index < expectedSources.length; index += 1) {
+        final before = controller.inputValue;
+        final beforeShadow = controller.inputWindowShadow;
+        final beforeGeneration = controller.sourceGeneration;
+        final beforeResyncCount = controller.resyncCount;
+        final beforeSemanticReceipts =
+            controller.semanticEditPerformanceReceipts.length;
+        final beforeSourceReceipts =
+            controller.sourceEditPerformanceReceipts.length;
+        controller.applyDeltas([
+          insertion(before, before.selection.extentOffset, '\n'),
+        ]);
+        await controller.debugWaitForPresentationSettled();
+        controller.observePlatformNewlineAction(
+          textObservationAlreadyApplied: true,
+        );
+        await controller.debugWaitForPresentationSettled();
+
+        expect(
+          await controller.readSource(),
+          expectedSources[index],
+          reason:
+              'Return ${index + 1}: beforeWindow='
+              '${beforeShadow.globalUtf16Start}+'
+              '${beforeShadow.windowUtf16Length}, beforeSelection='
+              '${before.selection.baseOffset}..${before.selection.extentOffset}, '
+              'generation=$beforeGeneration->${controller.sourceGeneration}, '
+              'semanticReceipts=$beforeSemanticReceipts->'
+              '${controller.semanticEditPerformanceReceipts.length}, '
+              'sourceReceipts=$beforeSourceReceipts->'
+              '${controller.sourceEditPerformanceReceipts.length}, '
+              'resync=$beforeResyncCount->${controller.resyncCount}:'
+              '${controller.lastResyncReason.name}',
+        );
+        final selection = await controller.resolveCanonicalSelection();
+        final context =
+            'Return ${index + 1}: beforeWindow='
+            '${beforeShadow.globalUtf16Start}+'
+            '${beforeShadow.windowUtf16Length}, beforeSelection='
+            '${before.selection.baseOffset}..${before.selection.extentOffset}, '
+            'controllerGlobal=${controller.globalSelectionBase}..'
+            '${controller.globalSelectionExtent}, afterWindow='
+            '${controller.inputWindowShadow.globalUtf16Start}+'
+            '${controller.inputWindowShadow.windowUtf16Length}';
+        expect(selection!.base, expectedCarets[index], reason: context);
+        expect(selection.extent, expectedCarets[index], reason: context);
+        expect(controller.resyncCount, 0);
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'action-only Return keeps rapid successors across input-window refresh timing',
     () async {
       const source = '''# Flark dogfood

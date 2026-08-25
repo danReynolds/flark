@@ -133,6 +133,12 @@ final class MacosNativeCanaryDriver {
   String get debugLastReceipt =>
       const JsonEncoder.withIndent('  ').convert(_lastRawSnapshot);
 
+  String get debugLastInputEvents {
+    final events = _lastRawSnapshot?['inputEvents'];
+    if (events is! List) return 'no input events';
+    return events.skip(events.length > 24 ? events.length - 24 : 0).join('\n');
+  }
+
   Future<MacosNativeCanarySnapshot> start() async {
     if (_process == null) await _startActuator();
     return _snapshot(await _request('settle'));

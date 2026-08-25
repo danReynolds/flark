@@ -2160,11 +2160,17 @@ Future<void> _expectRepeatedReturnPlatformLiveness(
   ))!;
   await tester.runAsync(controller.continueParsing);
 
+  final inputEvents = <String>[];
+
   await tester.pumpWidget(
     Directionality(
       textDirection: TextDirection.ltr,
       child: SizedBox.expand(
-        child: FlarkEditor(controller: controller, autofocus: true),
+        child: FlarkEditor(
+          controller: controller,
+          autofocus: true,
+          debugInputEventObserver: inputEvents.add,
+        ),
       ),
     ),
   );
@@ -2181,9 +2187,12 @@ Future<void> _expectRepeatedReturnPlatformLiveness(
   var platformValue = TextEditingValue.fromJSON(
     tester.testTextInput.editingState!,
   );
+  const expectedSources = <String>['fff\n\n', 'fff\n\n\n', 'fff\n\n\n\n'];
+  const expectedCarets = <int>[5, 6, 7];
 
   for (var index = 0; index < 3; index += 1) {
     final before = platformValue;
+    inputEvents.clear();
     final offset = before.selection.extentOffset;
     final delta = TextEditingDeltaInsertion(
       oldText: before.text,
@@ -2222,6 +2231,30 @@ Future<void> _expectRepeatedReturnPlatformLiveness(
       );
     }
     expect(platformValue, controller.inputValue);
+    await tester.runAsync(controller.continueParsing);
+    await tester.pump();
+    final settledSynchronizations = tester.testTextInput.log
+        .where((call) => call.method == 'TextInput.setEditingState')
+        .toList(growable: false);
+    if (settledSynchronizations.isNotEmpty) {
+      platformValue = TextEditingValue.fromJSON(
+        settledSynchronizations.last.arguments as Map<String, dynamic>,
+      );
+    }
+    expect(platformValue, controller.inputValue);
+    expect(
+      await tester.runAsync(controller.readSource),
+      expectedSources[index],
+      reason:
+          'Return ${index + 1} must extend the active paragraph gap once; '
+          'before=$before; controller=${controller.inputValue}; '
+          'events=$inputEvents',
+    );
+    final canonicalSelection = await tester.runAsync(
+      controller.resolveCanonicalSelection,
+    );
+    expect(canonicalSelection!.base, expectedCarets[index]);
+    expect(canonicalSelection.extent, expectedCarets[index]);
   }
 
   final sourceBeforeTyping = await tester.runAsync(controller.readSource);

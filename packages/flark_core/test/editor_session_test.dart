@@ -576,6 +576,82 @@ void main() {
       );
 
       test(
+        'terminal paragraph Returns extend one canonical gap after each parse',
+        () async {
+          await open('fff');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await session.setSelectionUtf16(3, 3);
+
+          const expectedSources = <String>[
+            'fff\n\n',
+            'fff\n\n\n',
+            'fff\n\n\n\n',
+          ];
+          const expectedCarets = <int>[5, 6, 7];
+          for (var index = 0; index < expectedSources.length; index += 1) {
+            final receipt = await session.applyEditIntentV1(
+              FlarkCoreEditIntentV1.insertParagraphBreak,
+              compositionActive: false,
+            );
+            expect(
+              receipt.disposition,
+              FlarkCoreEditIntentDispositionV1.applied,
+            );
+            expect(receipt.resultSelectionUtf16, expectedCarets[index]);
+            expect(await document.readSource(), expectedSources[index]);
+            expect(
+              (await session.resolveSelection())!.extent,
+              expectedCarets[index],
+            );
+            await document.pumpUntilReady();
+          }
+        },
+      );
+
+      test(
+        'terminal paragraph gap remains semantic after one literal extension',
+        () async {
+          await open('fff');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await session.setSelectionUtf16(3, 3);
+          final split = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: false,
+          );
+          expect(split.hasCommit, isTrue);
+          await document.pumpUntilReady();
+
+          await session.applyEditUtf16(
+            5,
+            5,
+            '\n',
+            beforeSelection: caret(5),
+            afterSelection: caret(6),
+          );
+          await document.pumpUntilReady();
+          expect(await document.readSource(), 'fff\n\n\n');
+          expect((await session.resolveSelection())!.extent, 6);
+
+          final extended = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: false,
+          );
+          expect(
+            extended.disposition,
+            FlarkCoreEditIntentDispositionV1.applied,
+          );
+          expect(extended.resultSelectionUtf16, 7);
+          expect(await document.readSource(), 'fff\n\n\n\n');
+        },
+      );
+
+      test(
         'a queued semantic successor uses exact pending lineage without a pump',
         () async {
           await open('9) alpha\n');

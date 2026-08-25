@@ -959,6 +959,62 @@ This was¦ the real **Rust → Dart → Flutter** editor path.
     skip: libraryPath == null,
     timeout: const Timeout(Duration(minutes: 2)),
   );
+
+  testWidgets(
+    'heading Return paints the rendered heading with one successor caret',
+    (tester) async {
+      const initial = '## Head¦';
+      const expectedSource = '## Head\n\n';
+      const expectedCaret = 9;
+      final probe = (await tester.runAsync(
+        () =>
+            LiveEditorTransitionProbe.open(initial, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(tester, probe);
+      try {
+        final paintStart = mounted.paints.length;
+        final expectedGeneration = probe.controller.sourceGeneration + 1;
+        await mounted.pressReturn();
+        await _pumpUntilGeneration(
+          tester,
+          mounted,
+          expectedGeneration,
+          paintStart,
+        );
+        final paints = mounted.paints
+            .skip(paintStart)
+            .where((paint) => paint.sourceGeneration == expectedGeneration)
+            .toList();
+        _expectHeadingExitPaints(
+          paints,
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: expectedCaret,
+          expectedPresentation: 'Head\n',
+          operation: 'heading Return',
+        );
+        final settleStart = mounted.paints.length;
+        await mounted.pumpPresentationSettled();
+        _expectHeadingExitPaints(
+          mounted.paints.skip(settleStart).toList(),
+          expectedSource: expectedSource,
+          expectedGeneration: expectedGeneration,
+          expectedCaret: expectedCaret,
+          expectedPresentation: 'Head',
+          operation: 'heading Return settle',
+          allowEmpty: true,
+        );
+        await tester.runAsync(() => probe.expectSourceAndCaret('## Head\n\n¦'));
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 }
 
 Future<void> _pumpUntilGeneration(
@@ -1031,6 +1087,61 @@ void _expectStructuralPaints(
       isTrue,
       reason: '$operation: predecessor Strong styling was lost',
     );
+  }
+}
+
+void _expectHeadingExitPaints(
+  List<FlarkSurfacePaintObservation> paints, {
+  required String expectedSource,
+  required int expectedGeneration,
+  required int expectedCaret,
+  required String expectedPresentation,
+  required String operation,
+  bool allowEmpty = false,
+}) {
+  if (!allowEmpty) expect(paints, isNotEmpty, reason: operation);
+  for (final paint in paints) {
+    expect(paint.sourceGeneration, expectedGeneration, reason: operation);
+    expect(paint.visibleSource, expectedSource, reason: operation);
+    expect(paint.canonicalSelectionBaseUtf16, expectedCaret, reason: operation);
+    expect(
+      paint.canonicalSelectionExtentUtf16,
+      expectedCaret,
+      reason: operation,
+    );
+    expect(paint.caretRect, isNotNull, reason: operation);
+    expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
+    expect(paint.presentation, expectedPresentation, reason: operation);
+    expect(paint.presentation, isNot(contains('##')), reason: operation);
+
+    final headingRows = paint.rows
+        .where((row) => row.headingLevel == 2)
+        .toList();
+    expect(headingRows, hasLength(1), reason: operation);
+    expect(headingRows.single.neutral, isFalse, reason: operation);
+    expect(headingRows.single.kind, 12, reason: operation);
+    expect(headingRows.single.text, 'Head', reason: operation);
+
+    final activeRows = paint.rows.where((row) => row.active).toList();
+    final rowSummary = paint.rows
+        .map(
+          (row) =>
+              '${row.ordinal}:${row.kind}:${row.headingLevel}:${row.active}:${row.text}',
+        )
+        .join(' | ');
+    expect(activeRows, hasLength(1), reason: '$operation: $rowSummary');
+    expect(
+      activeRows.single.kind,
+      anyOf(0, 5, 12),
+      reason: '$operation: $rowSummary',
+    );
+    if (activeRows.single.kind == 12) {
+      expect(activeRows.single.headingLevel, 2, reason: operation);
+      expect(activeRows.single.text, 'Head', reason: operation);
+    } else {
+      expect(activeRows.single.headingLevel, isNull, reason: operation);
+      expect(activeRows.single.text, anyOf('', '\n'), reason: operation);
+    }
   }
 }
 

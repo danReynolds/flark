@@ -2580,8 +2580,11 @@ final class FlarkEditorController extends ChangeNotifier {
 
   /// Adopts a platform action only when no preceding text observation already
   /// carried the newline. macOS deliberately emits both for one Return.
-  void observePlatformNewlineAction() {
-    if (_platformNewlineMutationAwaitingAction) {
+  void observePlatformNewlineAction({
+    bool textObservationAlreadyApplied = false,
+  }) {
+    if (textObservationAlreadyApplied ||
+        _platformNewlineMutationAwaitingAction) {
       _platformNewlineMutationAwaitingAction = false;
       return;
     }
@@ -3811,6 +3814,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void _restoreCollapsedInputWindow(int caret, {int? preferredOrdinal}) {
+    if (_restoreCommittedParagraphGapInputWindow(caret)) return;
     FlarkViewportRow? row;
     if (preferredOrdinal != null) {
       for (final candidate in _cachedRows) {
@@ -3832,7 +3836,10 @@ final class FlarkEditorController extends ChangeNotifier {
     if (row != null) {
       final range = _mapViewportRange(_activationRange(row));
       final visibleEnd = _visibleUtf16Start + _visibleSource.length;
-      if (range.start >= _visibleUtf16Start && range.end <= visibleEnd) {
+      if (range.start >= _visibleUtf16Start &&
+          range.end <= visibleEnd &&
+          range.start <= caret &&
+          caret <= range.end) {
         _activateWindowWithoutNotification(
           text: _sliceVisibleUtf16(range.start, range.end),
           sourceStart: range.start,
@@ -6549,16 +6556,27 @@ final class FlarkEditorController extends ChangeNotifier {
       _restoreSelectionSnapshot(_selectionSnapshot());
       return;
     }
+    if (_restoreCommittedParagraphGapInputWindow(_globalSelectionExtent)) {
+      return;
+    }
     if ((_activeOrdinal ?? 0) < 0) {
       _restoreNeutralInputWindow(_globalSelectionExtent);
       return;
     }
     if (_cachedRows.isNotEmpty) {
       final caret = _globalSelectionExtent.clamp(0, sourceUtf16Length);
-      final row = _cachedRows.cast<FlarkViewportRow?>().firstWhere((candidate) {
-        final range = _activationRange(candidate!);
-        return range.start <= caret && caret <= range.end;
-      }, orElse: () => _cachedRows.first)!;
+      FlarkViewportRow? row;
+      for (final candidate in _cachedRows) {
+        final range = _activationRange(candidate);
+        if (range.start <= caret && caret <= range.end) {
+          row = candidate;
+          break;
+        }
+      }
+      if (row == null) {
+        _restoreNeutralInputWindow(caret);
+        return;
+      }
       final activationRange = _activationRange(row);
       final text = _sliceVisibleUtf16(
         activationRange.start,
@@ -6581,6 +6599,17 @@ final class FlarkEditorController extends ChangeNotifier {
       caret: _globalSelectionExtent.clamp(_visibleUtf16Start, visibleEnd),
       ordinal: -1,
     );
+  }
+
+  bool _restoreCommittedParagraphGapInputWindow(int caret) {
+    final gap = _pendingPresentation.paragraphGap;
+    if (gap == null ||
+        caret < gap.rowEndUtf16 ||
+        caret > _committedGapEnd(gap)) {
+      return false;
+    }
+    _restoreNeutralInputWindow(caret);
+    return true;
   }
 
   void _restoreNeutralInputWindow(int caret) {

@@ -130,14 +130,15 @@ a hard-break or indentation transition from being mistaken for literal
 continuity.
 
 Structural continuity is tested at three distinct boundaries. Rust proves the
-receipt flag only for a Ready, bounded Plain split/merge and rejects a
-delimiter-crossing merge plus pending authority. Core tests the resulting
-typed transitional surfaces and successor edit cell. The mounted matrix then
-observes every actual paint for standalone Return, rapid Return-plus-typing,
-and Backspace merge. It requires exact current source/caret, exactly one active
-successor caret after Return, retained Strong style, no delimiter flash, and
-clean-rebuild convergence. A final state or controller publication alone is
-not accepted as evidence for this class of dogfood bug.
+receipt flag only for a Ready, bounded Plain split/merge or a terminal split of
+a nonempty ATX heading, and rejects a delimiter-crossing merge plus pending
+authority. Core tests the resulting typed transitional surfaces and successor
+edit cell. The mounted matrix then observes every actual paint for standalone
+Return, rapid Return-plus-typing, heading exit, and Backspace merge. It requires
+exact current source/caret, exactly one active successor caret after Return,
+retained rendered block/inline styling, no delimiter flash, and clean-rebuild
+convergence. A final state or controller publication alone is not accepted as
+evidence for this class of dogfood bug.
 
 ## What stays an ordinary test
 
@@ -177,15 +178,20 @@ punctuation mark.
 ## Native canaries
 
 Native canaries deliberately do not replay the semantic suite. The macOS pack
-reuses one app process and checks five routing boundaries:
+reuses one app process and checks six routing boundaries:
 
 1. real character input, including syntax punctuation, reaches the intended
    source position without a raw-projection flash;
-2. real Return and Backspace route once and preserve exact source/selection;
-3. pointer selection plus cut/undo uses the real AppKit paths;
-4. wheel scrolling changes scroll position without changing selection.
-5. sustained human-cadence editing across wrapped Markdown and internal layout
-   fragments never rehomes the visible caret.
+2. repeated, rapid, and structural Return/Backspace routes preserve exact
+   source and selection without duplicate platform actions;
+3. real arrow navigation moves once and subsequent typing uses that caret;
+4. pointer selection, replacement, Unicode paste, cut, undo, and redo use the
+   real AppKit paths;
+5. wheel scrolling crosses viewport pages, reverses, and never changes the
+   selection;
+6. sustained human- and zero-cadence editing across wrapped Markdown and
+   internal layout fragments never rehomes the visible caret or exposes
+   certified markers.
 
 Before sending native input, the actuator requires the exact dogfood PID to be
 frontmost and accessibility-focused, waits for requested window geometry to

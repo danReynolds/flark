@@ -123,6 +123,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   FocusNode? _ownedFocusNode;
   TextInputConnection? _connection;
   TextEditingValue? _lastKnownPlatformValue;
+  bool _platformNewlineObservationAwaitingAction = false;
   FlarkSurfaceHit? _pendingTapHit;
   double? _preferredVerticalNavigationX;
   bool _verticalPageNavigationPending = false;
@@ -156,6 +157,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       oldWidget.controller.removeListener(_controllerChanged);
       widget.controller.addListener(_controllerChanged);
       _lastKnownPlatformValue = null;
+      _platformNewlineObservationAwaitingAction = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.controller.continueParsing();
       });
@@ -178,6 +180,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       _connection?.close();
       _connection = null;
       _lastKnownPlatformValue = null;
+      _platformNewlineObservationAwaitingAction = false;
       _openConnection();
     }
   }
@@ -202,6 +205,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       _connection?.close();
       _connection = null;
       _lastKnownPlatformValue = null;
+      _platformNewlineObservationAwaitingAction = false;
     }
     setState(() {});
   }
@@ -1044,6 +1048,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
       // authoritative semantic receipt can send a corrective state even when
       // that state happens to equal the value Flutter sent before the key.
       _lastKnownPlatformValue = platformValue;
+      _platformNewlineObservationAwaitingAction = _isPlatformNewlineObservation(
+        widget.controller.inputValue,
+        platformValue,
+      );
     }
     final observer = widget.debugInputEventObserver;
     final stopwatch = observer == null ? null : (Stopwatch()..start());
@@ -1083,6 +1091,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
   @override
   void updateEditingValue(TextEditingValue value) {
     _preferredVerticalNavigationX = null;
+    _platformNewlineObservationAwaitingAction = _isPlatformNewlineObservation(
+      widget.controller.inputValue,
+      value,
+    );
     // Full-value clients have already adopted this value locally. Controller
     // publications must compare against that platform truth, not a stale
     // framework-send cache.
@@ -1106,8 +1118,33 @@ final class _FlarkEditorState extends State<FlarkEditor>
     _preferredVerticalNavigationX = null;
     widget.debugInputEventObserver?.call('action:$action');
     if (action == TextInputAction.newline) {
-      widget.controller.observePlatformNewlineAction();
+      final textObservationAlreadyApplied =
+          _platformNewlineObservationAwaitingAction;
+      _platformNewlineObservationAwaitingAction = false;
+      widget.controller.observePlatformNewlineAction(
+        textObservationAlreadyApplied: textObservationAlreadyApplied,
+      );
     }
+  }
+
+  bool _isPlatformNewlineObservation(
+    TextEditingValue before,
+    TextEditingValue after,
+  ) {
+    if (before.composing != TextRange.empty ||
+        after.composing != TextRange.empty ||
+        !before.selection.isValid) {
+      return false;
+    }
+    final start = math.min(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    final end = math.max(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    return before.text.replaceRange(start, end, '\n') == after.text;
   }
 
   @override

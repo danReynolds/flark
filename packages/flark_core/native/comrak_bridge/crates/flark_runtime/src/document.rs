@@ -1547,7 +1547,7 @@ impl DocumentSession {
         };
         match resolved.presentation_transition {
             DocumentEditPresentationTransitionV1::SplitParagraph
-                if matches!(context.row, DocumentSimpleEditRow::Plain)
+                if structural_split_row_is_provable(context)
                     && splice.base_byte_range.is_empty()
                     && splice.base_byte_range.start == context.editable_bytes.end
                     && splice.base_utf16_range.start == context.editable_utf16.end =>
@@ -2485,7 +2485,7 @@ impl DocumentSession {
             flark_parser::M11LineEnding::Eof => self.fallback_line_ending,
         };
         let (row, editable_bytes) = match classified.kind {
-            M11SimpleEditLineKind::Plain => (
+            M11SimpleEditLineKind::Plain | M11SimpleEditLineKind::Blank => (
                 DocumentSimpleEditRow::Plain,
                 line_start..line_start + classified.content_end,
             ),
@@ -2755,6 +2755,9 @@ impl DocumentSession {
         let classified = classify_m11_simple_edit_line(&source, line_start == 0);
         match (&context.row, classified.kind) {
             (DocumentSimpleEditRow::Plain, M11SimpleEditLineKind::Plain) => true,
+            (DocumentSimpleEditRow::Plain, M11SimpleEditLineKind::Blank) => {
+                context.editable_bytes.is_empty()
+            }
             (
                 DocumentSimpleEditRow::ListItem {
                     marker,
@@ -3402,7 +3405,7 @@ fn exact_plain_paragraph_merge(
     if !matches!(
         classify_m11_simple_edit_line(previous_source, window_start + previous_line_start == 0)
             .kind,
-        M11SimpleEditLineKind::Plain
+        M11SimpleEditLineKind::Plain | M11SimpleEditLineKind::Blank
     ) {
         return None;
     }
@@ -3445,7 +3448,7 @@ fn exact_empty_plain_backspace(
             window_start + previous_line_start == 0,
         )
         .kind,
-        M11SimpleEditLineKind::Plain
+        M11SimpleEditLineKind::Plain | M11SimpleEditLineKind::Blank
     ) {
         return None;
     }
@@ -3539,6 +3542,18 @@ fn trim_structural_line_endings(mut source: &[u8]) -> &[u8] {
         source = &source[..source.len() - 1];
     }
     source
+}
+
+fn structural_split_row_is_provable(context: &DocumentSimpleEditContext) -> bool {
+    match context.row {
+        DocumentSimpleEditRow::Plain => true,
+        DocumentSimpleEditRow::AtxHeading { empty: false, .. } => context
+            .source_bytes
+            .end
+            .checked_sub(context.editable_bytes.end)
+            .is_some_and(|suffix| suffix == 0 || suffix == context.ending.text().len()),
+        _ => false,
+    }
 }
 
 fn structural_inline_source_is_bounded(source: &[u8]) -> bool {
@@ -3766,6 +3781,10 @@ fn document_marker_from_parser(marker: M11SimpleEditListMarker) -> DocumentListM
 mod tests {
     use super::*;
 
+    fn pump_ready(document: &mut DocumentSession) {
+        while document.pump(512).expect("pump document").phase != DocumentSessionPhase::Ready {}
+    }
+
     fn ready_viewport_rows(
         source: &str,
         requested_range: Range<usize>,
@@ -3781,6 +3800,32 @@ mod tests {
             .rows;
         document.close().expect("close viewport oracle");
         rows
+    }
+
+    #[test]
+    fn terminal_gap_exact_context_survives_literal_extension() {
+        let mut document = DocumentSession::begin("fff").expect("begin terminal paragraph");
+        pump_ready(&mut document);
+        document
+            .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 3, false)
+            .expect("split paragraph");
+        pump_ready(&mut document);
+        document
+            .apply_edit(2, 5..5, "\n")
+            .expect("literal gap extension");
+        pump_ready(&mut document);
+
+        let exact = document
+            .capture_exact_edit_context(6)
+            .expect("terminal empty row exact context");
+        assert_eq!(exact.source_bytes, 6..6);
+        assert_eq!(exact.editable_bytes, 6..6);
+        assert!(matches!(exact.row, DocumentSimpleEditRow::Plain));
+        assert!(
+            document.capture_ready_edit_context(6, false).is_some(),
+            "parser-ready context admits the exact terminal empty row"
+        );
+        document.close().expect("close terminal paragraph");
     }
 
     #[test]

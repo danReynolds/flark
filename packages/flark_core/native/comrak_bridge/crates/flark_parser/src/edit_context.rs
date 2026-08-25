@@ -31,6 +31,7 @@ pub enum M11SimpleEditListMarker {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum M11SimpleEditLineKind {
     Plain,
+    Blank,
     ListItem {
         marker: M11SimpleEditListMarker,
         prefix: Range<usize>,
@@ -315,8 +316,7 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
         }
     }
 
-    let starts_contextual_block = facts.blank
-        || facts.indent >= 4
+    let starts_contextual_block = facts.indent >= 4
         || facts.block_quote
         || facts.atx_heading.is_some()
         || facts.fence.opener_valid
@@ -328,7 +328,9 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
         || facts.table_delimiter_candidate
         || facts.first_significant_byte == Some(b'[');
     M11SimpleEditLine {
-        kind: if starts_contextual_block {
+        kind: if facts.blank {
+            M11SimpleEditLineKind::Blank
+        } else if starts_contextual_block {
             M11SimpleEditLineKind::Unsupported
         } else {
             M11SimpleEditLineKind::Plain
@@ -529,6 +531,7 @@ fn simple_block_transition_presentation(
 ) -> Option<(M11SimpleBlockTransitionPresentation, usize)> {
     match kind {
         M11SimpleEditLineKind::Plain => Some((M11SimpleBlockTransitionPresentation::Plain, 0)),
+        M11SimpleEditLineKind::Blank => None,
         M11SimpleEditLineKind::AtxHeading {
             level,
             prefix,
@@ -780,6 +783,14 @@ mod tests {
             let line = classify_m11_simple_edit_line(source.as_bytes(), false);
             assert_eq!(line.kind, M11SimpleEditLineKind::Plain, "{source:?}");
             assert_eq!(line.ending, ending, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn blank_lines_are_explicit_parser_facts() {
+        for source in ["", "\n", "\r\n", "  \n"] {
+            let line = classify_m11_simple_edit_line(source.as_bytes(), false);
+            assert_eq!(line.kind, M11SimpleEditLineKind::Blank, "{source:?}");
         }
     }
 }
