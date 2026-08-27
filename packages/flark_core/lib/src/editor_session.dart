@@ -196,6 +196,7 @@ final class FlarkCoreEditorSession {
   int _nextCompositionGroup = 0;
   _CompositionScope? _compositionScope;
   Future<void> _commandTail = Future<void>.value();
+  int _pendingCommandCount = 0;
   int _nextLogicalEditId = 0;
   int _pendingTerminalLogicalEditId = 0;
   int _nextNativeTypingHistoryGroup = 0;
@@ -277,6 +278,7 @@ final class FlarkCoreEditorSession {
     bool compositionFinal = false,
   }) {
     final queuedAt = _clockMicros();
+    final admittedTypingEpoch = _typingEpoch;
     return _serializeCommand(
       () => _applyEditUtf16(
         start,
@@ -287,6 +289,8 @@ final class FlarkCoreEditorSession {
         coalesceTyping: coalesceTyping,
         compositionGroup: compositionGroup,
         compositionFinal: compositionFinal,
+        typingAtMicros: queuedAt,
+        typingEpoch: admittedTypingEpoch,
         coreQueueMicros: _clockMicros() - queuedAt,
       ),
     );
@@ -301,6 +305,8 @@ final class FlarkCoreEditorSession {
     bool coalesceTyping = false,
     int? compositionGroup,
     bool compositionFinal = false,
+    required int typingAtMicros,
+    required int typingEpoch,
     required int coreQueueMicros,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
@@ -341,6 +347,8 @@ final class FlarkCoreEditorSession {
           coalesceTyping: coalesceTyping,
           compositionGroup: compositionGroup,
           compositionFinal: compositionFinal,
+          typingAtMicros: typingAtMicros,
+          typingEpoch: typingEpoch,
           coreQueueMicros: coreQueueMicros,
         );
       }
@@ -353,6 +361,8 @@ final class FlarkCoreEditorSession {
         coalesceTyping: coalesceTyping,
         compositionGroup: compositionGroup,
         compositionFinal: compositionFinal,
+        typingAtMicros: typingAtMicros,
+        typingEpoch: typingEpoch,
       );
     }
     final startAnchor = _selectionStart!;
@@ -369,6 +379,8 @@ final class FlarkCoreEditorSession {
             replacement: replacement,
             beforeSelection: beforeSelection,
             afterSelection: afterSelection,
+            atMicros: typingAtMicros,
+            epoch: typingEpoch,
           )
         : null;
     final previous = _undoUnits.isEmpty ? null : _undoUnits.last;
@@ -489,6 +501,8 @@ final class FlarkCoreEditorSession {
     required bool coalesceTyping,
     required int? compositionGroup,
     required bool compositionFinal,
+    required int typingAtMicros,
+    required int typingEpoch,
     required int coreQueueMicros,
   }) async {
     final startAnchor = _selectionStart!;
@@ -505,6 +519,8 @@ final class FlarkCoreEditorSession {
             replacement: replacement,
             beforeSelection: beforeSelection,
             afterSelection: afterSelection,
+            atMicros: typingAtMicros,
+            epoch: typingEpoch,
           )
         : null;
     final requestDigest = _sourceTransactionDigest(
@@ -601,6 +617,8 @@ final class FlarkCoreEditorSession {
     required bool coalesceTyping,
     required int? compositionGroup,
     required bool compositionFinal,
+    required int typingAtMicros,
+    required int typingEpoch,
   }) async {
     final typing = coalesceTyping && compositionGroup == null
         ? _typingEvent(
@@ -609,6 +627,8 @@ final class FlarkCoreEditorSession {
             replacement: replacement,
             beforeSelection: beforeSelection,
             afterSelection: afterSelection,
+            atMicros: typingAtMicros,
+            epoch: typingEpoch,
           )
         : null;
     late final FlarkCoreEditReceipt receipt;
@@ -1099,12 +1119,14 @@ final class FlarkCoreEditorSession {
     }
   }
 
-  ({int end, int atMicros})? _typingEvent({
+  ({int end, int atMicros, int epoch})? _typingEvent({
     required int start,
     required int end,
     required String replacement,
     required FlarkCoreSelectionSnapshot beforeSelection,
     required FlarkCoreSelectionSnapshot afterSelection,
+    required int atMicros,
+    required int epoch,
   }) {
     if (start != end ||
         replacement.contains('\n') ||
@@ -1116,7 +1138,7 @@ final class FlarkCoreEditorSession {
         afterSelection.extent != start + replacement.length) {
       return null;
     }
-    return (end: start + replacement.length, atMicros: _clockMicros());
+    return (end: start + replacement.length, atMicros: atMicros, epoch: epoch);
   }
 
   int? _compositionGroupForMutation(bool composingActive) {
@@ -1131,7 +1153,7 @@ final class FlarkCoreEditorSession {
     FlarkCoreEditReceipt receipt, {
     required FlarkCoreSelectionSnapshot beforeSelection,
     required FlarkCoreSelectionSnapshot afterSelection,
-    required ({int end, int atMicros})? typing,
+    required ({int end, int atMicros, int epoch})? typing,
     required int? compositionGroup,
     required int nativeHistoryGroupId,
     bool historyCompositeExtended = false,
@@ -1184,7 +1206,7 @@ final class FlarkCoreEditorSession {
         afterSelection: afterSelection,
         typingEnd: typing.end,
         typingAtMicros: typing.atMicros,
-        typingEpoch: _typingEpoch,
+        typingEpoch: typing.epoch,
         nativeHistoryGroupId: nativeHistoryGroupId,
         nativeHistoryStepCount: previous.nativeHistoryStepCount + 1,
       );
@@ -1200,7 +1222,7 @@ final class FlarkCoreEditorSession {
         afterSelection: afterSelection,
         typingEnd: typing?.end,
         typingAtMicros: typing?.atMicros,
-        typingEpoch: typing == null ? null : _typingEpoch,
+        typingEpoch: typing?.epoch,
         compositionGroup: compositionGroup,
         nativeHistoryGroupId: nativeHistoryGroupId,
       ),
@@ -1209,14 +1231,14 @@ final class FlarkCoreEditorSession {
 
   bool _typingCoalesces(
     _HistoryUnit previous,
-    ({int end, int atMicros}) typing,
+    ({int end, int atMicros, int epoch}) typing,
     FlarkCoreSelectionSnapshot beforeSelection,
   ) =>
       previous.typingEnd == beforeSelection.extent &&
       previous.nativeHistoryStepCount < _maximumNativeCompositeHistorySteps &&
       previous.typingAtMicros != null &&
       typing.atMicros - previous.typingAtMicros! <= _typingIdleMicros &&
-      previous.typingEpoch == _typingEpoch;
+      previous.typingEpoch == typing.epoch;
 
   Future<FlarkCoreHistoryOutcome?> _replayDirection({
     required bool undo,
@@ -1358,7 +1380,24 @@ final class FlarkCoreEditorSession {
   }
 
   Future<T> _serializeCommand<T>(Future<T> Function() command) {
-    final result = _commandTail.then((_) => command());
+    final hasPredecessor = _pendingCommandCount != 0;
+    final prior = _commandTail;
+    _pendingCommandCount += 1;
+    Future<T> run() async {
+      try {
+        if (hasPredecessor) await prior;
+        return await command();
+      } finally {
+        _pendingCommandCount -= 1;
+      }
+    }
+
+    // Start the async gate immediately in the caller's active zone. Adding an
+    // idle microtask here can strand a command queued from Flutter's fake
+    // async callback zone when its completion is awaited from a real-async
+    // barrier before another frame pump. A queued command still suspends on
+    // its captured predecessor, preserving strict ordering.
+    final result = run();
     _commandTail = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},

@@ -6,6 +6,7 @@ use flark_runtime::{
     DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
     DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_PREFIX_PLAN_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS,
+    DOCUMENT_PROJECTION_EDIT_CELL_EMPTY_LITERAL_RESULT,
     DOCUMENT_PROJECTION_EDIT_CELL_EXACT_SCALAR_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
     DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
@@ -381,6 +382,9 @@ fn assert_block_transition_matches_clean(
                 ..
             }
         )),
+        DocumentProjectionResultBlockShell::Removed => {
+            panic!("removed blocks use the dedicated zero-row assertion")
+        }
     }
     clean.close().expect("close clean block-shell oracle");
 }
@@ -1111,6 +1115,20 @@ fn fenced_code_body_word_cell_retains_the_code_shell_and_matches_clean_parse() {
             && cell.trigger_range == (23..24)
             && cell.trigger_utf16_range == (23..24)
     }));
+    assert!(row.projection_edit_cells.iter().any(|cell| {
+        cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+            && cell.source_range == (8..26)
+            && cell.source_utf16_range == (8..26)
+            && cell.trigger_range == (23..24)
+            && cell.trigger_utf16_range == (23..24)
+    }));
+    assert!(row.projection_edit_cells.iter().any(|cell| {
+        cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS
+            && cell.source_range == (8..26)
+            && cell.source_utf16_range == (8..26)
+            && cell.trigger_range == (26..26)
+            && cell.trigger_utf16_range == (26..26)
+    }));
 
     document
         .apply_edit(1, 24..24, "x")
@@ -1128,6 +1146,43 @@ fn fenced_code_body_word_cell_retains_the_code_shell_and_matches_clean_parse() {
         }
     ));
     document.close().expect("close fenced code cell source");
+}
+
+#[test]
+fn fenced_code_single_literal_delete_cell_is_emitted_only_when_the_result_stays_code() {
+    let safe_source = "```dart\nx\n```\n";
+    let mut safe = DocumentSession::begin(safe_source).expect("begin safe fenced literal");
+    pump_ready(&mut safe);
+    let safe_viewport = safe
+        .query_viewport(1, 0..safe_source.len(), 16)
+        .expect("safe fenced literal viewport");
+    assert!(safe_viewport.rows[0]
+        .projection_edit_cells
+        .iter()
+        .any(|cell| {
+            cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+                && cell.source_range == (8..9)
+                && cell.trigger_range == (8..9)
+        }));
+    safe.close().expect("close safe fenced literal");
+
+    let unsafe_source = "`````\n`````x\n`````\n";
+    let mut unsafe_document =
+        DocumentSession::begin(unsafe_source).expect("begin unsafe fenced literal");
+    pump_ready(&mut unsafe_document);
+    let unsafe_viewport = unsafe_document
+        .query_viewport(1, 0..unsafe_source.len(), 16)
+        .expect("unsafe fenced literal viewport");
+    assert!(!unsafe_viewport.rows[0]
+        .projection_edit_cells
+        .iter()
+        .any(|cell| {
+            cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+                && cell.trigger_range == (11..12)
+        }));
+    unsafe_document
+        .close()
+        .expect("close unsafe fenced literal");
 }
 
 #[test]
@@ -1201,6 +1256,11 @@ fn viewport_carries_complete_parser_authored_inline_geometry_or_fails_closed() {
         vec![
             flark_runtime::DocumentLiteralSafeEnvelope {
                 edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+                source_range: 1..5,
+                source_utf16_range: 1..5,
+            },
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::SingleAsciiLiteralUnitDeletion,
                 source_range: 1..5,
                 source_utf16_range: 1..5,
             },
@@ -1820,6 +1880,68 @@ fn flat_strong_asterisk_envelope_preserves_the_certified_fact() {
 }
 
 #[test]
+fn inline_code_word_publishes_one_shot_deletion_authority() {
+    let source = "Before `code`, after.\n";
+    let mut document = DocumentSession::begin(source).expect("begin inline code deletion");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("inline code deletion viewport");
+    let row = &viewport.rows[0];
+    let matching = row
+        .literal_safe_envelopes
+        .iter()
+        .filter(|envelope| envelope.source_range == (8..12))
+        .map(|envelope| envelope.edit_class)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matching,
+        vec![
+            DocumentLiteralEditClass::AsciiWordInsertion,
+            DocumentLiteralEditClass::SingleAsciiLiteralUnitDeletion,
+        ]
+    );
+    assert!(row.literal_safe_envelopes.iter().any(|envelope| {
+        envelope.edit_class == DocumentLiteralEditClass::SingleAsciiLiteralUnitDeletion
+            && envelope.source_range == (13..14)
+            && envelope.source_utf16_range == (13..14)
+    }));
+
+    document
+        .apply_edit(1, 11..12, "")
+        .expect("delete one inline code word unit");
+    pump_ready(&mut document);
+    assert_current_rows_match_clean(&mut document, 2, "Before `cod`, after.\n");
+    assert!(document
+        .query_viewport(2, 0..source.len() - 1, 8)
+        .expect("edited inline code viewport")
+        .rows[0]
+        .inline_facts
+        .as_ref()
+        .expect("edited inline facts")
+        .iter()
+        .any(|fact| fact.kind == DocumentInlineFactKind::Code));
+    document.close().expect("close inline code deletion");
+}
+
+#[test]
+fn sole_line_punctuation_withholds_literal_deletion_authority() {
+    let source = "1. outer\n   - inne\n.\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(source).expect("begin continuation punctuation");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("continuation punctuation viewport");
+    assert!(viewport.rows.iter().all(|row| {
+        row.literal_safe_envelopes.iter().all(|envelope| {
+            envelope.edit_class != DocumentLiteralEditClass::SingleAsciiLiteralUnitDeletion
+                || envelope.source_range != (19..20)
+        })
+    }));
+    document.close().expect("close continuation punctuation");
+}
+
+#[test]
 fn literal_safe_word_envelopes_are_bounded_without_dropping_inline_facts() {
     let content = std::iter::repeat("a")
         .take(200)
@@ -1942,6 +2064,27 @@ fn plain_literal_segments_publish_chainable_splice_and_one_shot_delete_cells() {
         " editor path."
     );
     document.close().expect("close dogfood paragraph");
+}
+
+#[test]
+fn deleting_the_only_plain_literal_unit_publishes_removed_block_shell() {
+    let source = "x\n\nnext\n";
+    let mut document = DocumentSession::begin(source).expect("begin one-unit paragraph");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("one-unit paragraph viewport");
+    let row = &viewport.rows[0];
+    assert_eq!(row.presentation, DocumentViewportRowPresentation::Plain);
+    assert!(row.projection_edit_cells.iter().any(|cell| {
+        cell.source_range == (0..1)
+            && cell.source_utf16_range == (0..1)
+            && cell.trigger_range == (0..1)
+            && cell.trigger_utf16_range == (0..1)
+            && cell.flags == DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS
+            && cell.result_block_shell == Some(DocumentProjectionResultBlockShell::Removed)
+    }));
+    document.close().expect("close one-unit paragraph");
 }
 
 #[test]
@@ -2652,6 +2795,119 @@ fn plain_table_cell_publishes_a_literal_word_edit_cell() {
 }
 
 #[test]
+fn single_character_table_cell_authorizes_an_empty_result_cell() {
+    let source = "| a | b |\n| --- | --- |\n";
+    let mut document = DocumentSession::begin(source).expect("begin one-character table");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("one-character table viewport");
+    let row = viewport
+        .rows
+        .iter()
+        .find(|row| row.presentation == DocumentViewportRowPresentation::Table)
+        .expect("table row");
+    assert!(row.projection_edit_cells.iter().any(|cell| {
+        cell.source_range == (2..3)
+            && cell.source_utf16_range == (2..3)
+            && cell.flags
+                == DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+                    | DOCUMENT_PROJECTION_EDIT_CELL_EMPTY_LITERAL_RESULT
+            && cell.replacement_first == 1
+            && cell.replacement_second == 0
+    }));
+
+    document
+        .apply_edit(1, 2..3, "")
+        .expect("empty the one-character cell");
+    pump_ready(&mut document);
+    assert_current_rows_match_clean(&mut document, 2, "|  | b |\n| --- | --- |\n");
+    document.close().expect("close one-character table");
+}
+
+#[test]
+fn burst_table_to_plain_transition_drops_stale_table_facts() {
+    let source = "| a | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(source).expect("begin transition table");
+    pump_ready(&mut document);
+
+    document
+        .apply_edit(1, 3..3, "\n")
+        .expect("split the first table row");
+    pump_ready(&mut document);
+    document
+        .apply_edit(2, 4..4, "*")
+        .expect("start a block transition");
+    document
+        .apply_edit(3, 5..5, "\n")
+        .expect("interrupt the block transition before parsing settles");
+    pump_ready(&mut document);
+
+    let expected = "| a\n*\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+    assert_current_rows_match_clean(&mut document, 4, expected);
+    let viewport = document
+        .query_viewport(4, 0..expected.len(), 32)
+        .expect("transition result viewport");
+    for row in viewport.rows {
+        let table_facts = row
+            .inline_facts
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .filter(|fact| fact.kind == DocumentInlineFactKind::TableCell)
+            .count();
+        assert_eq!(
+            row.presentation == DocumentViewportRowPresentation::Table,
+            table_facts > 0,
+            "table presentation and fact authority must agree for {row:#?}"
+        );
+    }
+    document.close().expect("close transition table");
+}
+
+#[test]
+fn paragraph_break_then_delimiters_publish_nested_list_table_facts() {
+    let source = "| a | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(source).expect("begin delimiter transition table");
+    pump_ready(&mut document);
+
+    document
+        .apply_edit(1, 3..3, "\n")
+        .expect("split the first table row");
+    document
+        .apply_edit(2, 4..4, "*")
+        .expect("start delimiter row while parser is pending");
+    pump_ready(&mut document);
+    document
+        .apply_edit(3, 6..6, "]")
+        .expect("extend delimiter row after the first result settles");
+    pump_ready(&mut document);
+
+    let expected = "| a\n* ]| b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+    assert_current_rows_match_clean(&mut document, 4, expected);
+    let viewport = document
+        .query_viewport(4, 0..expected.len(), 32)
+        .expect("delimiter transition viewport");
+    let nested = viewport
+        .rows
+        .iter()
+        .find(|row| {
+            matches!(
+                row.presentation,
+                DocumentViewportRowPresentation::ListItem { .. }
+            )
+        })
+        .expect("nested list/table row");
+    assert!(nested
+        .inline_facts
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .any(|fact| fact.kind == DocumentInlineFactKind::TableCell));
+    document.close().expect("close delimiter transition table");
+}
+
+#[test]
 fn literal_word_cells_fail_closed_for_lexical_and_dependency_boundaries() {
     for source in [
         "&am; **bold** tail\n",
@@ -2866,11 +3122,18 @@ fn plain_atx_projection_edit_cells_fail_closed_around_unsupported_rows() {
     );
     assert_eq!(
         row.literal_safe_envelopes,
-        vec![flark_runtime::DocumentLiteralSafeEnvelope {
-            edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
-            source_range: 8..10,
-            source_utf16_range: 8..10,
-        }],
+        vec![
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
+                source_range: 8..10,
+                source_utf16_range: 8..10,
+            },
+            flark_runtime::DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::SingleAsciiLiteralUnitDeletion,
+                source_range: 8..10,
+                source_utf16_range: 8..10,
+            },
+        ],
         "inline facts may retain narrow authority, never whole-heading authority"
     );
     inline.close().expect("close inline ATX heading");

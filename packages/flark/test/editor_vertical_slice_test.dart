@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flark/flark.dart';
@@ -248,7 +249,7 @@ void main() {
             'x',
           ),
           selection: TextSelection.collapsed(offset: headingCaret + 1),
-          composing: TextRange(start: headingCaret, end: headingCaret + 1),
+          composing: TextRange.empty,
         ),
       );
       await _pumpUntilTransactions(tester, headingController);
@@ -318,7 +319,7 @@ void main() {
         TextEditingValue(
           text: pendingTaskInput,
           selection: TextSelection.collapsed(offset: taskCaret + 1),
-          composing: TextRange(start: taskCaret, end: taskCaret + 1),
+          composing: TextRange.empty,
         ),
       );
       await _pumpUntilTransactions(tester, taskController);
@@ -547,7 +548,7 @@ void main() {
         TextEditingValue(
           text: before.text.replaceRange(caret, caret, 'x'),
           selection: TextSelection.collapsed(offset: caret + 1),
-          composing: TextRange(start: caret, end: caret + 1),
+          composing: TextRange.empty,
         ),
       );
       await _pumpUntilTransactions(tester, controller);
@@ -1226,7 +1227,7 @@ void main() {
         tester,
         () =>
             controller.globalCaretOffset == pageOneCaret &&
-            controller.canonicalSelectionGeneration > selectionGeneration,
+            controller.canonicalSelectionGeneration >= selectionGeneration + 3,
       );
       expect(controller.globalCaretOffset, pageOneCaret);
       expect(controller.globalSelectionBase, controller.globalSelectionExtent);
@@ -1710,11 +1711,17 @@ void main() {
         5,
         activeOrdinal: controller.rows.first.ordinal,
       );
+      final events = <String>[];
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              debugInputEventObserver: events.add,
+            ),
+          ),
         ),
       );
       final dynamic state = tester.state(find.byType(FlarkEditor));
@@ -1724,6 +1731,10 @@ void main() {
       expect(clipboardText, 'alpha');
 
       state.performSelector('cut:');
+      await _pumpUntil(
+        tester,
+        () => events.any((event) => event.startsWith('completed-cut:')),
+      );
       await _pumpUntil(tester, () => controller.visibleSource == ' beta\n');
       await _pumpUntilTransactions(tester, controller);
       expect(clipboardText, 'alpha');
@@ -1731,6 +1742,10 @@ void main() {
 
       clipboardText = 'pasted';
       state.performSelector('paste:');
+      await _pumpUntil(
+        tester,
+        () => events.any((event) => event.startsWith('completed-paste:')),
+      );
       await _pumpUntil(
         tester,
         () => controller.visibleSource == 'pasted beta\n',
@@ -2070,6 +2085,153 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'selected-text Backspace delta plus selector deletes exactly once',
+    (tester) async {
+      const source = 'alpha beta\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      final paints = <FlarkSurfacePaintObservation>[];
+      try {
+        await tester.runAsync(controller.continueParsing);
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox.expand(
+              child: FlarkEditor(
+                controller: controller,
+                autofocus: true,
+                debugPaintObserver: paints.add,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        final dynamic state = tester.state(find.byType(FlarkEditor));
+        await tester.runAsync(() async {
+          controller.activateRow(controller.rows.single, 10);
+          await controller.resolveCanonicalSelection();
+        });
+        await tester.pump();
+
+        final selected = controller.inputValue.copyWith(
+          selection: const TextSelection(
+            baseOffset: 6,
+            extentOffset: 10,
+            isDirectional: true,
+          ),
+        );
+        state.updateEditingValue(selected);
+        await tester.pump();
+        final revision = controller.revision;
+        paints.clear();
+        final delta = TextEditingDeltaDeletion(
+          oldText: selected.text,
+          deletedRange: const TextRange(start: 6, end: 10),
+          selection: const TextSelection.collapsed(offset: 6),
+          composing: TextRange.empty,
+        );
+        state.updateEditingValueWithDeltas([delta]);
+        state.performSelector('deleteBackward:');
+        await _pumpUntilTransactions(tester, controller);
+        await tester.runAsync(controller.continueParsing);
+        await tester.pump();
+
+        expect(await tester.runAsync(controller.readSource), 'alpha \n');
+        expect(controller.revision, revision + 1);
+        expect(controller.resyncCount, 0);
+        expect(paints, isNotEmpty);
+        expect(
+          paints.map((paint) => paint.presentation),
+          everyElement(anyOf('alpha beta', 'alpha ')),
+        );
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(controller.close);
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'projection-collapsed selection types at one rendered caret every frame',
+    (tester) async {
+      const source = '## Heading\n\n**sentinel**\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      final paints = <FlarkSurfacePaintObservation>[];
+      try {
+        await tester.runAsync(controller.continueParsing);
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox.expand(
+              child: FlarkEditor(
+                controller: controller,
+                autofocus: true,
+                debugPaintObserver: paints.add,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        final dynamic state = tester.state(find.byType(FlarkEditor));
+        await tester.runAsync(() async {
+          controller.activateRow(controller.rows.first, 10);
+          await controller.resolveCanonicalSelection();
+        });
+        await tester.pump();
+
+        final selected = controller.inputValue.copyWith(
+          selection: const TextSelection(
+            baseOffset: 10,
+            extentOffset: 11,
+            isDirectional: true,
+          ),
+        );
+        state.updateEditingValue(selected);
+        await tester.pump();
+        expect(
+          controller.inputValue.selection,
+          const TextSelection.collapsed(offset: 10),
+        );
+        paints.clear();
+        final before = controller.inputValue;
+        final delta = TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: '*',
+          insertionOffset: 10,
+          selection: const TextSelection.collapsed(offset: 11),
+          composing: TextRange.empty,
+        );
+        state.updateEditingValueWithDeltas([delta]);
+        await _pumpUntilTransactions(tester, controller);
+        await tester.runAsync(controller.continueParsing);
+        await tester.pump();
+
+        expect(
+          await tester.runAsync(controller.readSource),
+          '## Heading*\n\n**sentinel**\n',
+        );
+        expect(controller.resyncCount, 0);
+        expect(controller.lastError, isNull);
+        expect(paints, isNotEmpty);
+        expect(
+          paints.map((paint) => paint.presentation),
+          everyElement(anyOf('Heading\nsentinel', 'Heading*\nsentinel')),
+        );
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(controller.close);
+      }
     },
     skip: libraryPath == null,
   );
@@ -2432,7 +2594,23 @@ Future<void> _pumpUntilTransactions(
   WidgetTester tester,
   FlarkEditorController controller,
 ) async {
-  await _pumpUntil(tester, () => controller.pendingEdits == 0);
+  var settled = false;
+  Object? settlementError;
+  StackTrace? settlementStackTrace;
+  unawaited(
+    controller.debugWaitForMutationSettled().then<void>(
+      (_) => settled = true,
+      onError: (Object error, StackTrace stackTrace) {
+        settlementError = error;
+        settlementStackTrace = stackTrace;
+        settled = true;
+      },
+    ),
+  );
+  await _pumpUntil(tester, () => controller.pendingEdits == 0 && settled);
+  if (settlementError case final error?) {
+    Error.throwWithStackTrace(error, settlementStackTrace!);
+  }
   expect(
     controller.pendingEdits,
     0,

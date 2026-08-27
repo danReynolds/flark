@@ -2,6 +2,14 @@
 
 **Status:** ACCEPTED FOR IMPLEMENTATION. 2026-08-11.
 
+**Reading rule:** this RFC records the architectural decision and its history.
+Current product principles live in [NORTH_STAR.md](../../../NORTH_STAR.md),
+editing behavior in
+[edit_profile_v1.md](../v4/contracts/edit_profile_v1.md), and test policy in
+[live_editor_test_strategy.md](../../testing/live_editor_test_strategy.md).
+Those active documents take precedence over duplicated product or test wording
+below.
+
 **Amends:** [RFC 026](rfc_026_flark_v4_product_architecture.md).
 
 **Execution contract:**

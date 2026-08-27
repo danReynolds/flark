@@ -24,6 +24,401 @@ fn source(document: &DocumentSession) -> String {
 }
 
 #[test]
+fn deleting_the_final_rendered_inline_grapheme_removes_its_parser_owned_closure() {
+    let cases = [
+        (
+            "emphasis Backspace",
+            "A *t* Z",
+            4,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "emphasis Delete",
+            "A *t* Z",
+            3,
+            DocumentEditIntentV1::DeleteForward,
+        ),
+        (
+            "strong Backspace",
+            "A **t** Z",
+            5,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "strike Backspace",
+            "A ~~t~~ Z",
+            5,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "code Backspace",
+            "A `t` Z",
+            4,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "nested Backspace",
+            "A ***t*** Z",
+            6,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "extended grapheme Backspace",
+            "A *e\u{301}* Z",
+            5,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "escaped literal Backspace",
+            "A \\* Z",
+            4,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+    ];
+
+    for (label, initial, selection_utf16, intent) in cases {
+        let mut document = DocumentSession::begin(initial).expect(label);
+        pump_ready(&mut document);
+        let receipt = document
+            .try_apply_edit_intent_v1(1, intent, selection_utf16, false)
+            .expect(label);
+        assert_eq!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::Applied,
+            "{label}"
+        );
+        assert_eq!(receipt.result_selection_utf16, 2, "{label}");
+        assert_eq!(source(&document), "A  Z", "{label}");
+        document.close().expect(label);
+    }
+}
+
+#[test]
+fn inline_delete_to_empty_proof_does_not_claim_a_multi_grapheme_owner() {
+    let mut document = DocumentSession::begin("A *ab* Z").expect("begin emphasis control");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 5, false)
+        .expect("resolve ordinary interior Backspace");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::NotApplicable
+    );
+    assert_eq!(source(&document), "A *ab* Z");
+    document.close().expect("close emphasis control");
+}
+
+#[test]
+fn fenced_code_return_retains_presentation_only_when_the_new_suffix_cannot_close() {
+    let mut terminal =
+        DocumentSession::begin("```dart\nfinal value = 1;\n```\n").expect("begin fenced code");
+    pump_ready(&mut terminal);
+    let terminal_receipt = terminal
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 24, false)
+        .expect("split terminal code line");
+    assert_eq!(
+        terminal_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::SplitParagraph
+    );
+    assert!(terminal_receipt.presentation_proven);
+    assert_eq!(terminal_receipt.result_selection_utf16, 25);
+    assert_eq!(source(&terminal), "```dart\nfinal value = 1;\n\n```\n");
+    pump_ready(&mut terminal);
+    let join_receipt = terminal
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::DeleteBackward, 25, false)
+        .expect("join empty fenced line");
+    assert_eq!(
+        join_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::JoinFencedCode
+    );
+    assert!(join_receipt.presentation_proven);
+    assert_eq!(join_receipt.result_selection_utf16, 24);
+    assert_eq!(source(&terminal), "```dart\nfinal value = 1;\n```\n");
+    terminal.close().expect("close fenced code");
+
+    let mut unsafe_suffix =
+        DocumentSession::begin("```\nabc```\n```\n").expect("begin fence-like suffix");
+    pump_ready(&mut unsafe_suffix);
+    let unsafe_receipt = unsafe_suffix
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 7, false)
+        .expect("split before fence-like suffix");
+    assert_eq!(
+        unsafe_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::SplitParagraph
+    );
+    assert!(!unsafe_receipt.presentation_proven);
+    assert_eq!(source(&unsafe_suffix), "```\nabc\n```\n```\n");
+    unsafe_suffix.close().expect("close unsafe suffix");
+}
+
+#[test]
+fn pending_fenced_context_follows_an_edit_back_to_the_predecessor_line() {
+    let initial = "```dart\nfinal value = 1;\n```\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin fenced predecessor edit");
+    pump_ready(&mut document);
+
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 24, false)
+        .expect("split fenced line");
+    assert_eq!(first.result_selection_utf16, 25);
+    document
+        .apply_edit(first.result_revision, 24..24, "[")
+        .expect("edit the known predecessor without pumping");
+    document
+        .apply_edit(3, 25..25, " ")
+        .expect("continue typing on the predecessor without pumping");
+
+    let second = document
+        .try_apply_edit_intent_v1(4, DocumentEditIntentV1::InsertParagraphBreak, 26, false)
+        .expect("split the edited predecessor without pumping");
+    assert_eq!(
+        second
+            .committed_splice
+            .expect("fenced split splice")
+            .replacement,
+        "\n"
+    );
+    assert_eq!(
+        source(&document),
+        "```dart\nfinal value = 1;[ \n\n\n```\n\n**sentinel**\n"
+    );
+    document.close().expect("close fenced predecessor edit");
+}
+
+#[test]
+fn repeated_paragraph_breaks_are_parser_timing_independent() {
+    let initial = "| a\n\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+    let expected = "| a\n\n\n\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+
+    for settle_between in [false, true] {
+        let mut document = DocumentSession::begin(initial).expect("begin repeated breaks");
+        pump_ready(&mut document);
+        document
+            .apply_edit(1, 5..5, "\n")
+            .expect("third literal paragraph break");
+        if settle_between {
+            pump_ready(&mut document);
+        }
+        let fourth = document
+            .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 6, false)
+            .expect("fourth paragraph break");
+        if let Some(splice) = fourth.committed_splice {
+            assert_eq!(splice.replacement, "\n", "settle_between={settle_between}");
+        } else {
+            document
+                .apply_edit(2, 6..6, "\n")
+                .expect("fourth literal fallback");
+        }
+        assert_eq!(
+            source(&document),
+            expected,
+            "settle_between={settle_between}"
+        );
+        document.close().expect("close repeated breaks");
+    }
+}
+
+#[test]
+fn settled_multi_row_gap_return_adds_one_editor_row() {
+    let initial = "alpha\n\n\nnext\n";
+    let expected = "alpha\n\n\n\nnext\n";
+    let mut document = DocumentSession::begin(initial).expect("begin multi-row gap");
+    pump_ready(&mut document);
+
+    let inserted = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 8, false)
+        .expect("insert one row at settled successor start");
+    assert_eq!(
+        inserted.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(
+        inserted
+            .committed_splice
+            .as_ref()
+            .map(|splice| splice.replacement.as_str()),
+        Some("\n")
+    );
+    assert_eq!(inserted.result_selection_utf16, 9);
+    assert_eq!(source(&document), expected);
+    document.close().expect("close multi-row gap");
+}
+
+#[test]
+fn pending_multi_row_gap_backspace_removes_one_editor_row() {
+    let initial = "alpha\n\n next\n";
+    let pending = "alpha\n\n\nnext\n";
+    let expected = "alpha\n\nnext\n";
+    let mut document = DocumentSession::begin(initial).expect("begin pending multi-row gap");
+    pump_ready(&mut document);
+    document
+        .apply_edit(1, 7..8, "\n")
+        .expect("replace successor prefix with a newline");
+    assert_eq!(source(&document), pending);
+    assert_eq!(document.phase(), DocumentSessionPhase::Building);
+
+    let removed = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::DeleteBackward, 8, false)
+        .expect("remove only the nearest pending editor row");
+    assert_eq!(
+        removed.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(removed.result_selection_utf16, 7);
+    assert_eq!(source(&document), expected);
+    document.close().expect("close pending multi-row gap");
+}
+
+#[test]
+fn pending_bare_list_marker_return_exits_the_list() {
+    let initial = "Plain text.\n\n\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin paragraph gap");
+    pump_ready(&mut document);
+    document
+        .apply_edit(1, 13..13, "*")
+        .expect("insert bare list marker");
+    assert_eq!(document.phase(), DocumentSessionPhase::Building);
+
+    let receipt = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 14, false)
+        .expect("Return on pending bare list marker");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::ExitList
+    );
+    assert_eq!(source(&document), initial);
+    document.close().expect("close paragraph gap");
+}
+
+#[test]
+fn settled_gap_backspace_reverses_one_added_paragraph_row() {
+    let split_row = "| a\n | b |\n| --- | --- |\n| c | d |\n";
+    let with_gap = "| a\n\n | b |\n| --- | --- |\n| c | d |\n";
+    let mut document = DocumentSession::begin(with_gap).expect("begin split table gap");
+    pump_ready(&mut document);
+
+    let removed = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 5, false)
+        .expect("remove the added paragraph row");
+    assert_eq!(
+        removed.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), split_row);
+    document.close().expect("close split table row");
+}
+
+#[test]
+fn pending_gap_return_after_semantic_backspace_adds_one_editor_row() {
+    let split_row = "| a\n | b |\n| --- | --- |\n| c | d |\n";
+    let with_gap = "| a\n\n | b |\n| --- | --- |\n| c | d |\n";
+    let mut document = DocumentSession::begin(with_gap).expect("begin split table gap");
+    pump_ready(&mut document);
+
+    let removed = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 5, false)
+        .expect("remove the added paragraph row");
+    assert_eq!(
+        removed.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(removed.result_selection_utf16, 4);
+    assert_eq!(source(&document), split_row);
+    assert_eq!(document.phase(), DocumentSessionPhase::Building);
+
+    let restored = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 4, false)
+        .expect("restore one row before parser recertification");
+    assert_eq!(
+        restored.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(restored.result_selection_utf16, 5);
+    assert_eq!(source(&document), with_gap);
+    document.close().expect("close split table row");
+}
+
+#[test]
+fn settled_multiple_gap_backspace_removes_one_editor_row() {
+    let initial = "- list item\n\n\n\n\n**sentinel**\n";
+    let expected = "- list item\n\n\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin repeated list gap");
+    pump_ready(&mut document);
+
+    let removed = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 14, false)
+        .expect("remove one unrepresented blank row");
+    assert_eq!(
+        removed.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(removed.result_selection_utf16, 13);
+    assert_eq!(source(&document), expected);
+    document.close().expect("close repeated list gap");
+}
+
+#[test]
+fn pending_whitespace_only_successor_return_adds_one_row() {
+    let initial = "## Heading\n\n**sentinel**\n";
+    let after_heading_return = "## Heading\n\n\n\n**sentinel**\n";
+    let after_space = "## Heading\n\n \n\n**sentinel**\n";
+    let expected = "## Heading\n\n \n\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin heading");
+    pump_ready(&mut document);
+
+    let heading_return = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 10, false)
+        .expect("split heading");
+    assert_eq!(
+        heading_return.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), after_heading_return);
+
+    document
+        .apply_edit(2, 12..12, " ")
+        .expect("type whitespace in pending successor");
+    assert_eq!(source(&document), after_space);
+    assert_eq!(document.phase(), DocumentSessionPhase::Building);
+
+    let blank_return = document
+        .try_apply_edit_intent_v1(3, DocumentEditIntentV1::InsertParagraphBreak, 13, false)
+        .expect("Return on whitespace-only successor");
+    assert_eq!(
+        blank_return.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(blank_return.result_selection_utf16, 14);
+    assert_eq!(source(&document), expected);
+    document.close().expect("close whitespace successor");
+}
+
+#[test]
+fn pending_heading_trailing_whitespace_does_not_extend_editable_context() {
+    let mut document =
+        DocumentSession::begin("## Heading\n\n**sentinel**\n").expect("begin heading");
+    pump_ready(&mut document);
+
+    document
+        .apply_edit(1, 10..10, " ")
+        .expect("append heading whitespace");
+    assert_eq!(document.phase(), DocumentSessionPhase::Building);
+    let receipt = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 11, false)
+        .expect("classify Return after trailing whitespace");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::NeedsCurrentSemantics
+    );
+    assert_eq!(source(&document), "## Heading \n\n**sentinel**\n");
+    document.close().expect("close trailing whitespace heading");
+}
+
+#[test]
 fn structural_presentation_proof_is_parser_bounded_and_fails_closed() {
     let mut split = DocumentSession::begin("Before **bold**.\n").expect("begin split fixture");
     pump_ready(&mut split);
@@ -58,6 +453,74 @@ fn structural_presentation_proof_is_parser_bounded_and_fails_closed() {
     );
     assert!(heading_receipt.presentation_proven);
     heading.close().expect("close heading split fixture");
+
+    let mut continuation =
+        DocumentSession::begin("- list item\n").expect("begin terminal list continuation fixture");
+    pump_ready(&mut continuation);
+    let continuation_receipt = continuation
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "- list item".len(),
+            false,
+        )
+        .expect("continue terminal list item");
+    assert_eq!(
+        continuation_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueList
+    );
+    assert!(continuation_receipt.presentation_proven);
+    continuation
+        .close()
+        .expect("close terminal list continuation fixture");
+
+    let mut exit = DocumentSession::begin("- one\n- \n").expect("begin list exit fixture");
+    pump_ready(&mut exit);
+    let exit_receipt = exit
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "- one\n- ".len(),
+            false,
+        )
+        .expect("exit empty list item");
+    assert_eq!(
+        exit_receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::ExitList
+    );
+    assert!(exit_receipt.presentation_proven);
+    exit.close().expect("close list exit fixture");
+
+    let mut quote = DocumentSession::begin("> quote\n").expect("begin quote fixture");
+    pump_ready(&mut quote);
+    let quote_continuation = quote
+        .try_apply_edit_intent_v1(
+            1,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "> quote".len(),
+            false,
+        )
+        .expect("continue quote");
+    assert_eq!(
+        quote_continuation.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueBlockQuote
+    );
+    assert!(quote_continuation.presentation_proven);
+    pump_ready(&mut quote);
+    let quote_exit = quote
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            "> quote\n> ".len(),
+            false,
+        )
+        .expect("exit empty quote");
+    assert_eq!(
+        quote_exit.presentation_transition,
+        DocumentEditPresentationTransitionV1::ExitBlockQuote
+    );
+    assert!(quote_exit.presentation_proven);
+    quote.close().expect("close quote fixture");
 
     for source in ["## Head ##", "## Head   "] {
         let mut suffixed = DocumentSession::begin(source).expect("begin suffixed heading");
@@ -150,6 +613,31 @@ fn structural_presentation_proof_is_parser_bounded_and_fails_closed() {
         .expect("pending list indent");
     assert!(!pending_list_receipt.presentation_proven);
     pending_list.close().expect("close pending list fixture");
+}
+
+#[test]
+fn return_at_embedded_plain_line_start_uses_one_typed_split() {
+    let initial = "| a\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin multiline paragraph fixture");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 4, false)
+        .expect("split at embedded physical line start");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::SplitParagraph
+    );
+    assert!(receipt.presentation_proven);
+    assert_eq!(receipt.committed_splice.as_ref().unwrap().replacement, "\n");
+    assert_eq!(
+        source(&document),
+        "| a\n\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n"
+    );
+    document.close().expect("close multiline paragraph fixture");
 }
 
 #[derive(Clone, Copy)]
@@ -252,8 +740,8 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             initial: "> first\n> \n",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
             selection_utf16: 10,
-            expected: "> first\n\n",
-            expected_selection_utf16: 8,
+            expected: "> first\n\n\n",
+            expected_selection_utf16: 9,
             expected_transition: DocumentEditPresentationTransitionV1::ExitBlockQuote,
         },
         IntentCase {
@@ -261,8 +749,8 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             initial: "> first\r\n> \r\n",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
             selection_utf16: 11,
-            expected: "> first\r\n\r\n",
-            expected_selection_utf16: 9,
+            expected: "> first\r\n\r\n\r\n",
+            expected_selection_utf16: 11,
             expected_transition: DocumentEditPresentationTransitionV1::ExitBlockQuote,
         },
         IntentCase {
@@ -894,6 +1382,260 @@ fn parsed_terminal_gap_remains_semantic_after_literal_extension() {
     assert_eq!(extended.result_selection_utf16, 7);
     assert_eq!(source(&document), "fff\n\n\n\n");
     document.close().expect("close terminal paragraph");
+}
+
+#[test]
+fn generated_list_context_survives_immediate_literal_typing_and_return() {
+    let initial = "- list item\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin list sequence");
+    pump_ready(&mut document);
+
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 11, false)
+        .expect("continue list");
+    assert_eq!(
+        continued.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), "- list item\n- \n\n**sentinel**\n");
+
+    document
+        .apply_edit(continued.result_revision, 14..14, "[")
+        .expect("type into generated item");
+    assert_eq!(source(&document), "- list item\n- [\n\n**sentinel**\n");
+
+    let second = document
+        .try_apply_edit_intent_v1(3, DocumentEditIntentV1::InsertParagraphBreak, 15, false)
+        .expect("continue generated item before parser recertification");
+    assert_eq!(second.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(source(&document), "- list item\n- [\n- \n\n**sentinel**\n");
+    document.close().expect("close list sequence");
+}
+
+#[test]
+fn current_parser_context_supersedes_same_family_retained_list_geometry() {
+    let initial = "1. outer\n   - inner\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin nested list sequence");
+    pump_ready(&mut document);
+
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 19, false)
+        .expect("continue nested list");
+    assert_eq!(continued.result_selection_utf16, 25);
+    document
+        .apply_edit(continued.result_revision, 25..25, " ")
+        .expect("insert blank list content");
+    document
+        .apply_edit(3, 26..26, "x")
+        .expect("insert temporary list content");
+    document
+        .apply_edit(4, 26..27, "")
+        .expect("remove temporary list content");
+    pump_ready(&mut document);
+
+    let outdented = document
+        .try_apply_edit_intent_v1(5, DocumentEditIntentV1::InsertParagraphBreak, 26, false)
+        .expect("outdent parser-certified blank nested item");
+    assert_eq!(
+        outdented.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList
+    );
+    let splice = outdented
+        .committed_splice
+        .as_ref()
+        .expect("committed nested-list outdent");
+    assert_eq!(splice.base_utf16_range, 20..23);
+    assert_eq!(splice.replacement, "");
+    assert_eq!(outdented.result_selection_utf16, 23);
+    assert_eq!(
+        source(&document),
+        "1. outer\n   - inner\n-  \n\n**sentinel**\n"
+    );
+    document.close().expect("close nested list sequence");
+}
+
+#[test]
+fn terminated_list_context_survives_immediate_literal_typing_and_return() {
+    let initial = "- list item\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin list termination sequence");
+    pump_ready(&mut document);
+
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 11, false)
+        .expect("continue list");
+    let terminated = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("terminate empty generated list item");
+    assert_eq!(
+        terminated.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), "- list item\n\n\n\n**sentinel**\n");
+
+    document
+        .apply_edit(
+            terminated.result_revision,
+            terminated.result_selection_byte..terminated.result_selection_byte,
+            "[",
+        )
+        .expect("type after terminated list");
+    let split = document
+        .try_apply_edit_intent_v1(
+            4,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            terminated.result_selection_utf16 + 1,
+            false,
+        )
+        .expect("split literal paragraph before parser recertification");
+    assert_eq!(split.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(source(&document), "- list item\n\n[\n\n\n\n**sentinel**\n");
+    document.close().expect("close list termination sequence");
+}
+
+#[test]
+fn terminated_list_gap_backspaces_before_parser_recertification() {
+    let initial = "- list item\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin list gap sequence");
+    pump_ready(&mut document);
+
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 11, false)
+        .expect("continue list");
+    let terminated = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("terminate generated list item");
+    assert_eq!(source(&document), "- list item\n\n\n\n**sentinel**\n");
+
+    let removed = document
+        .try_apply_edit_intent_v1(
+            terminated.result_revision,
+            DocumentEditIntentV1::DeleteBackward,
+            terminated.result_selection_utf16,
+            false,
+        )
+        .expect("remove exited list gap before recertification");
+    assert_eq!(
+        removed.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(removed.result_selection_utf16, 12);
+    assert_eq!(source(&document), "- list item\n\n\n**sentinel**\n");
+    document.close().expect("close list gap sequence");
+}
+
+#[test]
+fn settled_empty_list_backspace_carries_proven_plain_row_geometry() {
+    let initial = "- list item\n- \n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin settled empty list");
+    pump_ready(&mut document);
+
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 14, false)
+        .expect("lift settled empty list item");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::LiftList
+    );
+    assert!(receipt.presentation_proven);
+    let splice = receipt
+        .committed_splice
+        .as_ref()
+        .expect("committed list lift");
+    assert_eq!(splice.base_utf16_range, 12..14);
+    assert_eq!(splice.replacement, "\n");
+    assert_eq!(splice.result_utf16_range, 12..13);
+    assert_eq!(receipt.result_selection_utf16, 13);
+    assert_eq!(source(&document), "- list item\n\n\n\n**sentinel**\n");
+    document.close().expect("close settled empty list");
+}
+
+#[test]
+fn paragraph_break_at_a_parser_owned_list_marker_boundary_reuses_its_padding() {
+    let initial = "| a\n* | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin marker-boundary list");
+    pump_ready(&mut document);
+
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 5, false)
+        .expect("split at marker boundary");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueList
+    );
+    assert_eq!(receipt.result_selection_utf16, 8);
+    assert_eq!(
+        source(&document),
+        "| a\n* \n* | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n"
+    );
+    document.close().expect("close marker-boundary list");
+}
+
+#[test]
+fn collapsed_terminated_list_gap_retains_lazy_continuation_semantics() {
+    let initial = "- list item\n\n**sentinel**\n";
+    let mut document = DocumentSession::begin(initial).expect("begin lazy list sequence");
+    pump_ready(&mut document);
+
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 11, false)
+        .expect("continue list");
+    let terminated = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("terminate generated list item");
+    let removed = document
+        .try_apply_edit_intent_v1(
+            terminated.result_revision,
+            DocumentEditIntentV1::DeleteBackward,
+            terminated.result_selection_utf16,
+            false,
+        )
+        .expect("collapse one exited list gap");
+    document
+        .apply_edit(
+            removed.result_revision,
+            removed.result_selection_byte..removed.result_selection_byte,
+            ".",
+        )
+        .expect("type a lazy continuation before parser recertification");
+
+    let split = document
+        .try_apply_edit_intent_v1(
+            5,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            removed.result_selection_utf16 + 1,
+            false,
+        )
+        .expect("continue the parser-owned list before recertification");
+    assert_eq!(split.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(
+        split.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueList
+    );
+    assert_eq!(source(&document), "- list item\n.\n- \n\n**sentinel**\n");
+    document.close().expect("close lazy list sequence");
 }
 
 #[test]

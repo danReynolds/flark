@@ -22,6 +22,11 @@ enum FlarkLiteralEditClass {
   asciiWordInsertion,
   singleAsciiSpaceInsertion,
   singleAsciiAsteriskInsertion,
+
+  /// One parser-certified ASCII unit deletion. Its result carries one
+  /// zero-width [asciiWordInsertion] replacement point at the deletion
+  /// position unless a transformed word envelope already covers that point.
+  singleAsciiLiteralUnitDeletion,
 }
 
 /// Parser-authored matcher for one bounded projection edit cell.
@@ -59,7 +64,13 @@ enum FlarkProjectionEditMatcher {
   simpleBlockPrefixPlan,
 }
 
-enum FlarkProjectionResultBlockKind { plain, atxHeading, blockQuote, listItem }
+enum FlarkProjectionResultBlockKind {
+  plain,
+  atxHeading,
+  blockQuote,
+  listItem,
+  removed,
+}
 
 /// Parser-authored result shell for one bounded pre-edit transition.
 final class FlarkProjectionResultBlockShell {
@@ -597,6 +608,8 @@ final class FlarkProjectionEditCell {
     required this.presentClosureExact,
     required this.chainResultCell,
     this.terminalSpaceAvailable = false,
+    this.allowsEmptyLiteralResult = false,
+    this.resultCaretForwardUtf16 = 0,
     this.exactScalar,
     this.resultBlockShell,
     this.blockPrefixPlan,
@@ -613,6 +626,8 @@ final class FlarkProjectionEditCell {
   final bool presentClosureExact;
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
+  final bool allowsEmptyLiteralResult;
+  final int resultCaretForwardUtf16;
   final int? exactScalar;
   final FlarkProjectionResultBlockShell? resultBlockShell;
   final String? blockPrefixPlan;
@@ -629,43 +644,48 @@ final class FlarkProjectionEditCell {
     'presentClosureExact': presentClosureExact,
     'chainResultCell': chainResultCell,
     'terminalSpaceAvailable': terminalSpaceAvailable,
+    'allowsEmptyLiteralResult': allowsEmptyLiteralResult,
+    'resultCaretForwardUtf16': resultCaretForwardUtf16,
     'exactScalar': exactScalar,
     'resultBlockShell': resultBlockShell?.toMessage(),
     'blockPrefixPlan': blockPrefixPlan,
     'blockPrefixActivationUtf16Length': blockPrefixActivationUtf16Length,
   };
 
-  static FlarkProjectionEditCell fromMessage(Map<Object?, Object?> message) =>
-      FlarkProjectionEditCell(
-        matcher: FlarkProjectionEditMatcher.values[message['matcher']! as int],
-        affectedBytes: FlarkSourceRange.fromMessage(
-          message['affectedBytes']! as Map<Object?, Object?>,
-        ),
-        affectedUtf16: FlarkSourceRange.fromMessage(
-          message['affectedUtf16']! as Map<Object?, Object?>,
-        ),
-        triggerBytes: FlarkSourceRange.fromMessage(
-          message['triggerBytes']! as Map<Object?, Object?>,
-        ),
-        triggerUtf16: FlarkSourceRange.fromMessage(
-          message['triggerUtf16']! as Map<Object?, Object?>,
-        ),
-        retainBlockShell: message['retainBlockShell']! as bool,
-        retainOutsideClosure: message['retainOutsideClosure']! as bool,
-        presentClosureExact: message['presentClosureExact']! as bool,
-        chainResultCell: message['chainResultCell']! as bool,
-        terminalSpaceAvailable:
-            message['terminalSpaceAvailable'] as bool? ?? false,
-        exactScalar: message['exactScalar'] as int?,
-        resultBlockShell: switch (message['resultBlockShell']) {
-          final Map<Object?, Object?> value =>
-            FlarkProjectionResultBlockShell.fromMessage(value),
-          _ => null,
-        },
-        blockPrefixPlan: message['blockPrefixPlan'] as String?,
-        blockPrefixActivationUtf16Length:
-            message['blockPrefixActivationUtf16Length'] as int?,
-      );
+  static FlarkProjectionEditCell fromMessage(
+    Map<Object?, Object?> message,
+  ) => FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.values[message['matcher']! as int],
+    affectedBytes: FlarkSourceRange.fromMessage(
+      message['affectedBytes']! as Map<Object?, Object?>,
+    ),
+    affectedUtf16: FlarkSourceRange.fromMessage(
+      message['affectedUtf16']! as Map<Object?, Object?>,
+    ),
+    triggerBytes: FlarkSourceRange.fromMessage(
+      message['triggerBytes']! as Map<Object?, Object?>,
+    ),
+    triggerUtf16: FlarkSourceRange.fromMessage(
+      message['triggerUtf16']! as Map<Object?, Object?>,
+    ),
+    retainBlockShell: message['retainBlockShell']! as bool,
+    retainOutsideClosure: message['retainOutsideClosure']! as bool,
+    presentClosureExact: message['presentClosureExact']! as bool,
+    chainResultCell: message['chainResultCell']! as bool,
+    terminalSpaceAvailable: message['terminalSpaceAvailable'] as bool? ?? false,
+    allowsEmptyLiteralResult:
+        message['allowsEmptyLiteralResult'] as bool? ?? false,
+    resultCaretForwardUtf16: message['resultCaretForwardUtf16'] as int? ?? 0,
+    exactScalar: message['exactScalar'] as int?,
+    resultBlockShell: switch (message['resultBlockShell']) {
+      final Map<Object?, Object?> value =>
+        FlarkProjectionResultBlockShell.fromMessage(value),
+      _ => null,
+    },
+    blockPrefixPlan: message['blockPrefixPlan'] as String?,
+    blockPrefixActivationUtf16Length:
+        message['blockPrefixActivationUtf16Length'] as int?,
+  );
 }
 
 final class FlarkViewportRow {

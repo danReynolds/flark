@@ -27,8 +27,13 @@ void main() {
             candidate.editableUtf16!.start <= caret &&
             caret <= candidate.editableUtf16!.end,
       );
-      controller.activateRow(row, caret);
-      await tester.runAsync(controller.debugWaitForMutationSettled);
+      // Activation and its serialized selection wait must share one async
+      // zone. Splitting them across Flutter's fake-async test body and
+      // runAsync strands the command continuation in the originating zone.
+      await tester.runAsync(() async {
+        controller.activateRow(row, caret);
+        await controller.debugWaitForMutationSettled();
+      });
       await tester.binding.setSurfaceSize(const Size(900, 700));
 
       final firstEditPaints = <FlarkSurfacePaintObservation>[];

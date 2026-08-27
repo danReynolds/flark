@@ -128,6 +128,9 @@ final class FlarkProjectionEditCellReceipt
     required this.presentClosureExact,
     required this.chainResultCell,
     required this.terminalSpaceAvailable,
+    required this.allowsEmptyLiteralResult,
+    required this.resultCaretForwardUtf16,
+    required this.resultCaretUtf16,
     required this.exactScalar,
     required this.resultBlockShell,
     required FlarkProjectionResultBlockShell? targetBlockShell,
@@ -152,6 +155,9 @@ final class FlarkProjectionEditCellReceipt
   final bool presentClosureExact;
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
+  final bool allowsEmptyLiteralResult;
+  final int resultCaretForwardUtf16;
+  final int? resultCaretUtf16;
   final int? exactScalar;
   final FlarkProjectionResultBlockShell? resultBlockShell;
   final FlarkProjectionResultBlockShell? _targetBlockShell;
@@ -185,6 +191,8 @@ final class FlarkProjectionEditCellReceipt
         presentClosureExact: presentClosureExact,
         chainResultCell: chainResultCell,
         terminalSpaceAvailable: terminalSpaceAvailable,
+        allowsEmptyLiteralResult: allowsEmptyLiteralResult,
+        resultCaretForwardUtf16: resultCaretForwardUtf16,
         exactScalar: exactScalar,
         resultBlockShell: _targetBlockShell,
         blockPrefixPlan: blockPrefixPlan,
@@ -208,6 +216,8 @@ final class _CurrentProjectionEditCell {
     required this.presentClosureExact,
     required this.chainResultCell,
     required this.terminalSpaceAvailable,
+    required this.allowsEmptyLiteralResult,
+    required this.resultCaretForwardUtf16,
     required this.exactScalar,
     required this.resultBlockShell,
     required this.blockPrefixPlan,
@@ -223,6 +233,8 @@ final class _CurrentProjectionEditCell {
   final bool presentClosureExact;
   final bool chainResultCell;
   final bool terminalSpaceAvailable;
+  final bool allowsEmptyLiteralResult;
+  final int resultCaretForwardUtf16;
   final int? exactScalar;
   final FlarkProjectionResultBlockShell? resultBlockShell;
   final String? blockPrefixPlan;
@@ -256,7 +268,19 @@ FlarkProjectionEditCellReceipt? authorizeProjectionEditCell({
             cell.affectedUtf16.start < authority.start ||
             cell.affectedUtf16.end > authority.end ||
             cell.triggerUtf16.start < cell.affectedUtf16.start ||
-            cell.triggerUtf16.end > cell.affectedUtf16.end;
+            cell.triggerUtf16.end > cell.affectedUtf16.end ||
+            cell.resultCaretForwardUtf16 < 0 ||
+            (cell.allowsEmptyLiteralResult &&
+                (cell.matcher !=
+                        FlarkProjectionEditMatcher
+                            .deleteOneAsciiUnitInLiteral ||
+                    cell.affectedUtf16.start != cell.triggerUtf16.start ||
+                    cell.affectedUtf16.end != cell.triggerUtf16.end ||
+                    cell.triggerUtf16.length != 1 ||
+                    cell.triggerUtf16.start + cell.resultCaretForwardUtf16 >=
+                        blockAuthority.end)) ||
+            (!cell.allowsEmptyLiteralResult &&
+                cell.resultCaretForwardUtf16 != 0);
       })) {
     return null;
   }
@@ -274,6 +298,8 @@ FlarkProjectionEditCellReceipt? authorizeProjectionEditCell({
               cell.matcher ==
                   FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
               cell.terminalSpaceAvailable,
+          allowsEmptyLiteralResult: cell.allowsEmptyLiteralResult,
+          resultCaretForwardUtf16: cell.resultCaretForwardUtf16,
           exactScalar: cell.exactScalar,
           resultBlockShell: cell.resultBlockShell,
           blockPrefixPlan: cell.blockPrefixPlan,
@@ -290,8 +316,18 @@ FlarkProjectionEditCellReceipt? authorizeProjectionEditCell({
             _projectionEditCellMatches(cell, startUtf16, endUtf16, replacement),
       )
       .toList(growable: false);
+  final appendMatches = matches
+      .where(
+        (cell) =>
+            cell.matcher ==
+                FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
+            _projectionEditCellMatches(cell, startUtf16, endUtf16, replacement),
+      )
+      .toList(growable: false);
   final admitted = planMatches.isNotEmpty
       ? planMatches
+      : appendMatches.isNotEmpty
+      ? appendMatches
       : matches
             .where(
               (cell) => _projectionEditCellMatches(
@@ -375,6 +411,18 @@ FlarkProjectionEditCellReceipt? _authorizeCurrentProjectionEditCell({
         cell.matcher ==
             FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
         replacement != ' ',
+    allowsEmptyLiteralResult: cell.allowsEmptyLiteralResult,
+    resultCaretForwardUtf16: cell.resultCaretForwardUtf16,
+    // Every admitted source transaction owns its immediate result caret.
+    // Preserve that exact stop while predecessor syntax is still projected;
+    // otherwise an ambiguous hidden-delimiter boundary can normalize the
+    // caret across the delimiter and make the next keystroke timing-dependent.
+    // Empty literal cells add the parser-authored forward distance needed to
+    // cross retained block padding.
+    resultCaretUtf16:
+        startUtf16 +
+        replacement.length +
+        (cell.allowsEmptyLiteralResult ? cell.resultCaretForwardUtf16 : 0),
     exactScalar: cell.exactScalar,
     resultBlockShell: currentResultBlockShell,
     targetBlockShell: cell.resultBlockShell,
@@ -551,7 +599,7 @@ final class FlarkProjectionContinuityReceipt
   /// carried proof set; Core never reclassifies Markdown itself.
   final List<FlarkLiteralSafeEnvelope> literalSafeEnvelopes;
 
-  /// Binds one successor insertion to the still-live parser proof set.
+  /// Binds one successor edit to the still-live parser proof set.
   ///
   /// Non-empty envelopes are closed over their declared insertion class and
   /// grow with a matching edit; non-empty parser proofs with identical byte
@@ -559,7 +607,9 @@ final class FlarkProjectionContinuityReceipt
   /// open at both boundaries; only a parser-published zero-width proof can
   /// authorize either exact point, and the matched point is consumed. Thus a
   /// single trailing space cannot authorize a second edit without fresh
-  /// parser certification.
+  /// parser certification. A safe literal deletion may carry one zero-width
+  /// ASCII-word replacement point into its result revision; that point is
+  /// likewise consumed by the matching insertion.
   @override
   FlarkSourceRange get affectedUtf16 => authorizedContentUtf16;
 
@@ -634,7 +684,7 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
 }) {
   if (revision <= 0 ||
       authorizedContentUtf16.start > authorizedContentUtf16.end ||
-      startUtf16 != endUtf16 ||
+      startUtf16 > endUtf16 ||
       envelopes.any(
         (envelope) =>
             envelope.sourceUtf16.start > envelope.sourceUtf16.end ||
@@ -642,6 +692,16 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
             envelope.sourceUtf16.end > authorizedContentUtf16.end,
       )) {
     return null;
+  }
+  if (startUtf16 != endUtf16) {
+    return _authorizeRowProjectionDeletion(
+      revision: revision,
+      envelopes: envelopes,
+      authorizedContentUtf16: authorizedContentUtf16,
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+      replacement: replacement,
+    );
   }
   final matchingIndexes = <int>[];
   int? startByte;
@@ -738,6 +798,110 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
   );
 }
 
+FlarkProjectionContinuityReceipt? _authorizeRowProjectionDeletion({
+  required int revision,
+  required List<FlarkLiteralSafeEnvelope> envelopes,
+  required FlarkSourceRange authorizedContentUtf16,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) {
+  if (replacement.isNotEmpty || endUtf16 != startUtf16 + 1) return null;
+  final matching = envelopes.indexed
+      .where(
+        (entry) =>
+            entry.$2.editClass ==
+                FlarkLiteralEditClass.singleAsciiLiteralUnitDeletion &&
+            entry.$2.sourceUtf16.start <= startUtf16 &&
+            endUtf16 <= entry.$2.sourceUtf16.end &&
+            entry.$2.sourceUtf16.length >= 1 &&
+            entry.$2.sourceBytes.length == entry.$2.sourceUtf16.length,
+      )
+      .toList(growable: false);
+  if (matching.isEmpty) return null;
+  final proof = matching.first.$2;
+  if (matching.any((entry) => !_sameEnvelopeGeometry(entry.$2, proof))) {
+    return null;
+  }
+  final startByte =
+      proof.sourceBytes.start + (startUtf16 - proof.sourceUtf16.start);
+  final matchingIndexes = matching.map((entry) => entry.$1).toSet();
+  final transformedEnvelopes = <FlarkLiteralSafeEnvelope>[];
+  for (var index = 0; index < envelopes.length; index += 1) {
+    final envelope = envelopes[index];
+    if (matchingIndexes.contains(index)) continue;
+    final sameGeometry = _sameEnvelopeGeometry(envelope, proof);
+    final bytes = _transformDeletionRange(
+      envelope.sourceBytes,
+      startByte,
+      sameGeometry: sameGeometry,
+    );
+    final utf16 = _transformDeletionRange(
+      envelope.sourceUtf16,
+      startUtf16,
+      sameGeometry: sameGeometry,
+    );
+    if (bytes == null || utf16 == null) continue;
+    transformedEnvelopes.add(
+      FlarkLiteralSafeEnvelope(
+        editClass: envelope.editClass,
+        sourceBytes: bytes,
+        sourceUtf16: utf16,
+      ),
+    );
+  }
+  final replacementPointAlreadyCovered = transformedEnvelopes.any(
+    (envelope) =>
+        envelope.editClass == FlarkLiteralEditClass.asciiWordInsertion &&
+        envelope.sourceUtf16.start <= startUtf16 &&
+        startUtf16 <= envelope.sourceUtf16.end,
+  );
+  if (!replacementPointAlreadyCovered) {
+    // The parser-selected deletion vocabulary certifies one literal unit,
+    // not merely an untyped source splice. Carry exactly one alphanumeric
+    // replacement point into the result revision so ordinary Backspace-then-
+    // type input retains the certified projection. A zero-width envelope is
+    // consumed by the matching insertion and cannot authorize a second edit.
+    transformedEnvelopes.add(
+      FlarkLiteralSafeEnvelope(
+        editClass: FlarkLiteralEditClass.asciiWordInsertion,
+        sourceBytes: FlarkSourceRange(startByte, startByte),
+        sourceUtf16: FlarkSourceRange(startUtf16, startUtf16),
+      ),
+    );
+  }
+  return FlarkProjectionContinuityReceipt._(
+    baseRevision: revision,
+    resultRevision: revision + 1,
+    authorizedContentUtf16: FlarkSourceRange(
+      authorizedContentUtf16.start,
+      authorizedContentUtf16.end - 1,
+    ),
+    editStartUtf16: startUtf16,
+    editEndUtf16: endUtf16,
+    replacement: '',
+    literalSafeEnvelopes: transformedEnvelopes,
+  );
+}
+
+FlarkSourceRange? _transformDeletionRange(
+  FlarkSourceRange range,
+  int deletionStart, {
+  required bool sameGeometry,
+}) {
+  final deletionEnd = deletionStart + 1;
+  if (range.end <= deletionStart) return range;
+  if (range.start >= deletionEnd) {
+    return FlarkSourceRange(range.start - 1, range.end - 1);
+  }
+  if (sameGeometry &&
+      range.start <= deletionStart &&
+      deletionEnd <= range.end) {
+    return FlarkSourceRange(range.start, range.end - 1);
+  }
+  return null;
+}
+
 bool _matchesEnvelope(
   FlarkLiteralSafeEnvelope envelope,
   int startUtf16,
@@ -752,6 +916,7 @@ bool _matchesEnvelope(
     FlarkLiteralEditClass.singleAsciiAsteriskInsertion =>
       envelope.sourceUtf16.start < startUtf16 &&
           startUtf16 < envelope.sourceUtf16.end,
+    FlarkLiteralEditClass.singleAsciiLiteralUnitDeletion => false,
     FlarkLiteralEditClass.asciiWordInsertion => true,
   };
 }
@@ -806,4 +971,5 @@ bool _matchesEditClass(FlarkLiteralEditClass editClass, String replacement) =>
             ),
       FlarkLiteralEditClass.singleAsciiSpaceInsertion => replacement == ' ',
       FlarkLiteralEditClass.singleAsciiAsteriskInsertion => replacement == '*',
+      FlarkLiteralEditClass.singleAsciiLiteralUnitDeletion => false,
     };

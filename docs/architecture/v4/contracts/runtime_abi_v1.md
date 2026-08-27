@@ -34,7 +34,7 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 34. `NEGOTIATE` is the only ordinary operation
+The direct ABI is major 4, minor 37. `NEGOTIATE` is the only ordinary operation
 permitted without a session. ABI 4.32 also permits the explicitly flagged
 process-global `SESSION_INSPECT` form without a session so post-close lifecycle
 evidence cannot depend on a consumed handle. The host supplies its requested
@@ -66,6 +66,26 @@ contract, not an alias for whatever options a parser dependency happens to
 enable. CommonMark-only operation is explicit code 1. Zero or an unknown code
 returns `INVALID_ARGUMENT`; a runtime that negotiated no matching profile bit
 returns `UNSUPPORTED_CAPABILITY`.
+
+The draft [rendered-editing profile](edit_profile_v1.md) selects
+`flark-gfm-0.29-v2` and requires explicit edit-profile/support-envelope
+negotiation. ABI 4.37 does not provide either. A future exact minor must assign
+a new parser-profile code rather than rename code 2, and must append the edit
+identity fields behind a new capability. Until then, ABI 4.37 cannot claim a
+`flark-edit-v1` support envelope even when an individual semantic command is
+implemented.
+
+That future minor is allocated only after the contract freeze; this document
+does not preassign a number. Its negotiation must bind the new parser-profile
+code, edit-profile ID/digest, closed support-domain ID/digest and hard caps,
+finite rendered-command capability set, caret-context topology capability,
+complete result-presentation proof capability, and fresh history-intent
+reauthorization. A session advertising rendered cut must additionally negotiate
+the closed single-use prepared-cut token capability required to order native
+prevalidation, the external clipboard write, and source commit; this does not
+create a general prepare/commit API. A partial subset remains explicitly named
+and cannot advertise the complete profile. No existing reserved field or ABI
+4.36 capability is reinterpreted to carry any of these records.
 
 ## 3. Handles, ownership, and call discipline
 
@@ -506,7 +526,7 @@ supersede this authority over the prefix-inclusive physical range. The exact
 splice form is one-shot; the prefix-plan form expires when the finite sequence
 is complete or any different edit arrives.
 
-The final D0 ABI 4.34 adds capability
+ABI 4.34 adds capability
 `BOUNDED_PENDING_PRESENTATION_PLANS_V1` and inline-record kinds 17 `PLAN`, 18
 `STEP`, and 19 `ROW`, all carried only by query kind 6. The new vocabulary
 represents one bounded exact insertion sequence together with a complete clean
@@ -541,6 +561,54 @@ any mismatch, ambiguity, stale revision, malformed geometry, truncation, or
 out-of-window source. The initial emitter covers only the frozen D0 opening
 journey (three backticks, `dart`, Return) and closing journey (Return, three
 backticks); other fenced construction remains fail-closed.
+
+ABI 4.35 adds capability `PROJECTION_EDIT_CELLS_V5` on existing query kind 6
+and projection-edit-cell record kind 16. State flag `EMPTY_LITERAL_RESULT`
+(`0x4000`) may accompany a one-shot `DELETE_ONE_ASCII_UNIT_IN_LITERAL` cell
+only when deleting its exact one-UTF-16-unit trigger preserves the declared
+projection even though the literal result becomes empty. `replacement_first`
+carries the parser-authored nonnegative UTF-16 caret advance from the ordinary
+collapsed deletion result; `replacement_second` is zero. Trigger and affected
+closure are the same unit, and the result caret remains inside the parser-
+authorized block range. The initial emitter covers the final ASCII-alphanumeric
+unit in a parser-certified table cell, including parser-owned trailing padding.
+Core forwards the typed caret result; hosts do not infer table syntax or
+padding. V5 also assigns result-shell kind 5, `REMOVED`, only to the parser-
+certified exact deletion of the sole ASCII-alphanumeric unit in a Plain row
+whose result has no block shell. Its prefix and parameter fields are zero;
+hosts do not infer row removal.
+
+ABI 4.36 adds capability `LITERAL_SAFE_ENVELOPES_V3` on existing query kind 6
+and literal-safe-envelope record kind 15. Edit class 4,
+`SINGLE_ASCII_LITERAL_UNIT_DELETION`, authorizes one-shot deletion of exactly
+one ASCII unit. The parser may emit it for an ASCII letter or digit inside a
+certified inline word containing at least two units, or for parser-declared
+safe punctuation outside every inline fact when deletion leaves another non-
+whitespace unit on the same physical editable line. Core matches the exact
+one-unit deletion, consumes the proof, transforms only same-geometry insertion
+envelopes, and retains the parser-authored rendered run while the result
+revision is pending. Hosts do not infer Markdown or widen the declared range.
+
+Exact ABI 4.36 also assigns edit-presentation transition code 20,
+`JOIN_FENCED_CODE`, under `EDIT_INTENTS_V1` and
+`STRUCTURAL_PRESENTATION_PROOFS_V1`. It is returned only when Backspace at the
+start of a noninitial physical line in a parser-certified closed fenced-code
+body deletes exactly the preceding LF, CR, or CRLF, Rust proves the joined
+content cannot form a closing fence, and the result retains the same fence kind
+and minimum closing length. The host consumes this typed transition and does
+not infer fence grammar.
+
+Exact ABI 4.37 assigns edit-presentation transition code 21,
+`DELETE_INLINE_OWNER`, under `EDIT_INTENTS_V1`. For collapsed Backspace or
+Delete at the sole rendered grapheme of a parser-authored Emphasis, Strong,
+Strikethrough, Inline Code, nested supported wrapper, or BackslashEscape
+owner, Rust deletes the complete parser-authored source closure in one
+transaction. Unicode extended grapheme segmentation determines sole-content
+eligibility. Dart may route from parser-published inline boundaries but does
+not scan delimiters or widen the closure. The transition drops only rendered
+runs wholly contained by the committed closure and shifts unaffected runs
+while current-revision parsing catches up; ambiguous, stale, unsupported,
+partially overlapping, and multi-grapheme cases fail closed.
 
 Exact ABI 4.32 also maps maximal ASCII-word triggers inside each physical line
 of a parser-certified closed fenced-code body. The affected closure is that

@@ -37,6 +37,7 @@ use flark_parser::{
     M11_INLINE_EDIT_COMPONENTS_MAX, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
     M11_SIMPLE_EDIT_LINE_MAX_BYTES,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 #[cfg(feature = "opening-session")]
 use flark_parser::{
@@ -44,9 +45,11 @@ use flark_parser::{
 };
 
 use crate::edit_intent::{
+    document_edit_context_admits_target, document_list_marker_text_len,
     resolve_document_edit_intent_v1, DocumentBlockQuoteOutdent, DocumentEditLineEnding,
-    DocumentListIndent, DocumentListOutdent, DocumentParagraphMerge, DocumentSimpleEditContext,
-    DocumentSimpleEditRow, DocumentTaskCheck, ResolvedDocumentEditIntentV1,
+    DocumentInlineEmptyOwnerDelete, DocumentListIndent, DocumentListOutdent,
+    DocumentParagraphMerge, DocumentSimpleEditContext, DocumentSimpleEditRow, DocumentTaskCheck,
+    ResolvedDocumentEditIntentV1,
 };
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
@@ -124,6 +127,12 @@ pub enum DocumentLiteralEditClass {
     /// One U+002A insertion inside a parser-proved isolated flat Strong
     /// content range. The proof is consumed by the matching edit.
     SingleAsciiAsteriskInsertion,
+    /// One ASCII literal deletion from a parser-proved inline word or from a
+    /// safe punctuation point outside every inline fact. The deletion proof
+    /// is consumed by the edit; its result carries one zero-width ASCII-word
+    /// replacement point unless transformed word authority already covers
+    /// that position.
+    SingleAsciiLiteralUnitDeletion,
 }
 
 /// Parser-authored positional proof that one declared literal edit class
@@ -151,7 +160,8 @@ pub const DOCUMENT_PROJECTION_EDIT_CELL_CHAIN_RESULT: u32 = 0x0800;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_RETENTION_MASK: u32 = 0x0f00;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_TERMINAL_SPACE_BLOCKED: u32 = 0x1000;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_REPLACE_BLOCK_SHELL: u32 = 0x2000;
-pub const DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK: u32 = 0x3fff;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_EMPTY_LITERAL_RESULT: u32 = 0x4000;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_KNOWN_FLAGS_MASK: u32 = 0x7fff;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_PLAIN_ATX_FLAGS: u32 =
     DOCUMENT_PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
@@ -168,6 +178,9 @@ pub const DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS: u32 =
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_OUTSIDE
         | DOCUMENT_PROJECTION_EDIT_CELL_PRESENT_EXACT;
+pub const DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_EMPTY_DELETE_FLAGS: u32 =
+    DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+        | DOCUMENT_PROJECTION_EDIT_CELL_EMPTY_LITERAL_RESULT;
 pub const DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS: u32 =
     DOCUMENT_PROJECTION_EDIT_CELL_MATCH_APPEND_ASCII_LITERAL_AT_LINE_END
         | DOCUMENT_PROJECTION_EDIT_CELL_RETAIN_BLOCK_SHELL
@@ -202,6 +215,7 @@ pub enum DocumentProjectionResultBlockShell {
     AtxHeading { level: u8, prefix_utf16_len: u8 },
     BlockQuote { depth: u8, prefix_utf16_len: u8 },
     ListItem { prefix_utf16_len: u8 },
+    Removed,
 }
 
 /// Parser-authored pre-edit geometry for one bounded projection edit cell.
@@ -1064,17 +1078,22 @@ impl DocumentSession {
                 )
             });
         let parser_is_ready = matches!(&self.parser, ParseState::Ready(_));
-        let base_edit_context = self
+        let retained_edit_context = self
             .edit_context
             .as_ref()
             .filter(|context| context.revision == expected_revision)
-            .cloned()
-            .or_else(|| self.capture_ready_edit_context(range.start, false))
-            .or_else(|| {
-                (!parser_is_ready)
-                    .then(|| self.capture_exact_edit_context(range.start))
-                    .flatten()
-            });
+            .cloned();
+        let ready_edit_context = parser_is_ready
+            .then(|| self.capture_ready_edit_context(range.start, None))
+            .flatten();
+        let base_edit_context =
+            reconcile_retained_edit_context(retained_edit_context, ready_edit_context).or_else(
+                || {
+                    (!parser_is_ready)
+                        .then(|| self.capture_exact_edit_context(range.start))
+                        .flatten()
+                },
+            );
         let state = mem::replace(&mut self.parser, ParseState::Transition);
         let result = match state {
             ParseState::Ready(base) => {
@@ -1413,13 +1432,17 @@ impl DocumentSession {
         }
 
         let parser_is_ready = matches!(&self.parser, ParseState::Ready(_));
-        let context = self
+        let retained_context = self
             .edit_context
             .as_ref()
             .filter(|context| {
                 context.revision == expected_revision
-                    && target_byte >= context.editable_bytes.start
-                    && target_byte <= context.editable_bytes.end
+                    && document_edit_context_admits_target(
+                        intent,
+                        target_byte,
+                        target_utf16,
+                        context,
+                    )
                     && (intent != DocumentEditIntentV1::IndentListItem
                         || matches!(
                             context.row,
@@ -1432,14 +1455,12 @@ impl DocumentSession {
                             }
                         ))
             })
-            .cloned()
-            .or_else(|| {
-                self.capture_ready_edit_context(
-                    target_byte,
-                    intent == DocumentEditIntentV1::IndentListItem,
-                )
-            })
-            .or_else(|| {
+            .cloned();
+        let ready_context = parser_is_ready
+            .then(|| self.capture_ready_edit_context(target_byte, Some(intent)))
+            .flatten();
+        let context =
+            reconcile_retained_edit_context(retained_context, ready_context).or_else(|| {
                 (!parser_is_ready)
                     .then(|| self.capture_exact_edit_context(target_byte))
                     .flatten()
@@ -1547,6 +1568,17 @@ impl DocumentSession {
         };
         match resolved.presentation_transition {
             DocumentEditPresentationTransitionV1::SplitParagraph
+                if matches!(
+                    context.row,
+                    DocumentSimpleEditRow::FencedCode { closed: true, .. }
+                ) && splice.base_byte_range.is_empty()
+                    && splice.base_utf16_range.is_empty()
+                    && splice.replacement == context.ending.text()
+                    && fenced_code_split_is_provable(self, context, resolved) =>
+            {
+                Ok(true)
+            }
+            DocumentEditPresentationTransitionV1::SplitParagraph
                 if structural_split_row_is_provable(context)
                     && splice.base_byte_range.is_empty()
                     && splice.base_byte_range.start == context.editable_bytes.end
@@ -1558,6 +1590,141 @@ impl DocumentSession {
                         .last()
                         .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\\' | b'\r' | b'\n'))
                     && structural_inline_tokens(&content).is_some())
+            }
+            DocumentEditPresentationTransitionV1::SplitParagraph
+                if matches!(context.row, DocumentSimpleEditRow::Plain)
+                    && context.paragraph_merge.as_ref().is_some_and(|merge| {
+                        merge.separator_bytes.end == context.editable_bytes.start
+                            && merge.separator_bytes.len() == context.ending.text().len()
+                            && merge.separator_utf16.end == context.editable_utf16.start
+                            && merge.separator_utf16.len()
+                                == context.ending.text().encode_utf16().count()
+                    })
+                    && splice.base_byte_range.is_empty()
+                    && splice.base_utf16_range.is_empty()
+                    && splice.base_byte_range.start == context.editable_bytes.start
+                    && splice.base_utf16_range.start == context.editable_utf16.start
+                    && splice.replacement == context.ending.text() =>
+            {
+                let content = self.source_bytes(context.editable_bytes.clone())?;
+                Ok(content.first() == Some(&b' ')
+                    && content
+                        .get(1)
+                        .is_some_and(|byte| !matches!(byte, b' ' | b'\t'))
+                    && structural_inline_source_is_bounded(&content[1..])
+                    && structural_inline_tokens(&content[1..]).is_some())
+            }
+            DocumentEditPresentationTransitionV1::ContinueList
+                if matches!(
+                    &context.row,
+                    DocumentSimpleEditRow::ListItem { empty: false, .. }
+                ) && resolved.result_context.as_ref().is_some_and(|result| {
+                    matches!(
+                        &result.row,
+                        DocumentSimpleEditRow::ListItem { empty: true, .. }
+                    )
+                }) && splice.base_byte_range.is_empty()
+                    && splice.base_utf16_range.is_empty()
+                    && splice.base_byte_range.start == context.editable_bytes.end
+                    && splice.base_utf16_range.start == context.editable_utf16.end =>
+            {
+                let ending = context.ending.text().as_bytes();
+                let replacement = splice.replacement.as_bytes();
+                if !replacement.starts_with(ending)
+                    || replacement.len() == ending.len()
+                    || replacement.len().saturating_sub(ending.len()) > 14
+                    || replacement[ending.len()..]
+                        .iter()
+                        .any(|byte| matches!(byte, b'\r' | b'\n') || !byte.is_ascii())
+                {
+                    return Ok(false);
+                }
+                let content = self.source_bytes(context.editable_bytes.clone())?;
+                Ok(structural_inline_source_is_bounded(&content)
+                    && structural_inline_tokens(&content).is_some())
+            }
+            DocumentEditPresentationTransitionV1::ContinueBlockQuote
+                if matches!(
+                    &context.row,
+                    DocumentSimpleEditRow::BlockQuote { empty: false, .. }
+                ) && resolved.result_context.as_ref().is_some_and(|result| {
+                    matches!(
+                        &result.row,
+                        DocumentSimpleEditRow::BlockQuote { empty: true, .. }
+                    )
+                }) && splice.base_byte_range.is_empty()
+                    && splice.base_utf16_range.is_empty()
+                    && splice.base_byte_range.start == context.editable_bytes.end
+                    && splice.base_utf16_range.start == context.editable_utf16.end =>
+            {
+                let ending = context.ending.text().as_bytes();
+                let replacement = splice.replacement.as_bytes();
+                if !replacement.starts_with(ending)
+                    || replacement.len() == ending.len()
+                    || replacement.len().saturating_sub(ending.len()) > 14
+                    || replacement[ending.len()..]
+                        .iter()
+                        .any(|byte| matches!(byte, b'\r' | b'\n') || !byte.is_ascii())
+                {
+                    return Ok(false);
+                }
+                let content = self.source_bytes(context.editable_bytes.clone())?;
+                Ok(structural_inline_source_is_bounded(&content)
+                    && structural_inline_tokens(&content).is_some())
+            }
+            DocumentEditPresentationTransitionV1::ExitList
+            | DocumentEditPresentationTransitionV1::LiftList => {
+                let DocumentSimpleEditRow::ListItem {
+                    prefix_bytes,
+                    prefix_utf16,
+                    empty: true,
+                    ..
+                } = &context.row
+                else {
+                    return Ok(false);
+                };
+                let result_is_empty_plain =
+                    resolved.result_context.as_ref().is_some_and(|result| {
+                        matches!(result.row, DocumentSimpleEditRow::Plain)
+                            && result.content_is_blank
+                            && result.editable_bytes.is_empty()
+                            && result.editable_utf16.is_empty()
+                    });
+                let replacement_is_line_ending =
+                    splice.replacement.is_empty() || splice.replacement == context.ending.text();
+                Ok(result_is_empty_plain
+                    && context.editable_bytes.is_empty()
+                    && context.editable_utf16.is_empty()
+                    && splice.base_byte_range == *prefix_bytes
+                    && splice.base_utf16_range == *prefix_utf16
+                    && replacement_is_line_ending)
+            }
+            DocumentEditPresentationTransitionV1::ExitBlockQuote
+            | DocumentEditPresentationTransitionV1::LiftBlockQuote => {
+                let DocumentSimpleEditRow::BlockQuote {
+                    prefix_bytes,
+                    prefix_utf16,
+                    empty: true,
+                    ..
+                } = &context.row
+                else {
+                    return Ok(false);
+                };
+                let result_is_empty_plain =
+                    resolved.result_context.as_ref().is_some_and(|result| {
+                        matches!(result.row, DocumentSimpleEditRow::Plain)
+                            && result.content_is_blank
+                            && result.editable_bytes.is_empty()
+                            && result.editable_utf16.is_empty()
+                    });
+                let replacement_is_line_ending =
+                    splice.replacement.is_empty() || splice.replacement == context.ending.text();
+                Ok(result_is_empty_plain
+                    && context.editable_bytes.is_empty()
+                    && context.editable_utf16.is_empty()
+                    && splice.base_byte_range == *prefix_bytes
+                    && splice.base_utf16_range == *prefix_utf16
+                    && replacement_is_line_ending)
             }
             DocumentEditPresentationTransitionV1::MergeParagraph
                 if matches!(context.row, DocumentSimpleEditRow::Plain) =>
@@ -1603,18 +1770,107 @@ impl DocumentSession {
                     .iter()
                     .all(|byte| *byte == b' '))
             }
+            DocumentEditPresentationTransitionV1::JoinFencedCode
+                if fenced_code_join_is_provable(self, context, resolved) =>
+            {
+                Ok(true)
+            }
             _ => Ok(false),
         }
+    }
+
+    fn capture_inline_empty_owner_delete(
+        &self,
+        intent: Option<DocumentEditIntentV1>,
+        selection_byte: usize,
+        editable_bytes: &Range<usize>,
+        facts: Option<&[DocumentInlineFact]>,
+    ) -> Option<DocumentInlineEmptyOwnerDelete> {
+        let intent = intent?;
+        if !matches!(
+            intent,
+            DocumentEditIntentV1::DeleteBackward | DocumentEditIntentV1::DeleteForward
+        ) {
+            return None;
+        }
+        let facts = facts?;
+        let supports_owner = |kind: DocumentInlineFactKind| {
+            matches!(
+                kind,
+                DocumentInlineFactKind::Emphasis
+                    | DocumentInlineFactKind::Strong
+                    | DocumentInlineFactKind::Code
+                    | DocumentInlineFactKind::Strikethrough
+                    | DocumentInlineFactKind::BackslashEscape
+            )
+        };
+        let mut closures = Vec::new();
+        for fact in facts.iter().filter(|fact| supports_owner(fact.kind)) {
+            let at_visible_boundary = match intent {
+                DocumentEditIntentV1::DeleteBackward => {
+                    usize::try_from(fact.content_range.end).ok() == Some(selection_byte)
+                }
+                DocumentEditIntentV1::DeleteForward => {
+                    usize::try_from(fact.content_range.start).ok() == Some(selection_byte)
+                }
+                _ => false,
+            };
+            if !at_visible_boundary {
+                continue;
+            }
+            let content = u64_range_to_usize(&fact.content_range)?;
+            let bytes = self.source_bytes(content).ok()?;
+            let text = std::str::from_utf8(&bytes).ok()?;
+            if text.graphemes(true).count() != 1 {
+                continue;
+            }
+
+            let mut source = fact.source_range.clone();
+            let mut source_utf16 = fact.source_utf16_range.clone();
+            loop {
+                let parent = facts.iter().find(|candidate| {
+                    supports_owner(candidate.kind)
+                        && candidate.content_range == source
+                        && candidate.content_utf16_range == source_utf16
+                });
+                let Some(parent) = parent else {
+                    break;
+                };
+                if parent.source_range == source {
+                    return None;
+                }
+                source = parent.source_range.clone();
+                source_utf16 = parent.source_utf16_range.clone();
+            }
+            closures.push((source, source_utf16));
+        }
+        closures.sort_by_key(|(source, _)| (source.start, std::cmp::Reverse(source.end)));
+        closures.dedup();
+        if closures.len() != 1 {
+            return None;
+        }
+        let (source, source_utf16) = closures.pop()?;
+        let source_bytes = u64_range_to_usize(&source)?;
+        let source_utf16 = u64_range_to_usize(&source_utf16)?;
+        if source_bytes.start < editable_bytes.start || source_bytes.end > editable_bytes.end {
+            return None;
+        }
+        Some(DocumentInlineEmptyOwnerDelete {
+            source_bytes,
+            source_utf16,
+        })
     }
 
     fn capture_ready_edit_context(
         &mut self,
         selection_byte: usize,
-        include_list_indent: bool,
+        intent: Option<DocumentEditIntentV1>,
     ) -> Option<DocumentSimpleEditContext> {
         if selection_byte > self.source_byte_len() {
             return None;
         }
+        let include_list_indent = intent == Some(DocumentEditIntentV1::IndentListItem);
+        let allow_list_marker_boundary = intent == Some(DocumentEditIntentV1::InsertParagraphBreak);
         let ordinary_requested_start = self
             .snapped_to_scalar_boundary(selection_byte.saturating_sub(16))
             .ok()?;
@@ -1650,20 +1906,105 @@ impl DocumentSession {
             .rows
             .iter()
             .find(|row| {
-                row.editable_range.as_ref().is_some_and(|range| {
+                let inside_editable = row.editable_range.as_ref().is_some_and(|range| {
                     selection_byte >= range.start as usize && selection_byte <= range.end as usize
-                })
+                });
+                let at_list_marker_boundary = allow_list_marker_boundary
+                    && matches!(
+                        row.presentation,
+                        DocumentViewportRowPresentation::ListItem {
+                            marker,
+                            prefix_start_byte,
+                            marker_offset,
+                            simple_continuation: true,
+                            ..
+                        } if usize::try_from(prefix_start_byte).ok().is_some_and(|prefix_start| {
+                            selection_byte
+                                == prefix_start
+                                    + usize::from(marker_offset)
+                                    + document_list_marker_text_len(marker)
+                        })
+                    );
+                inside_editable || at_list_marker_boundary
             })
             .cloned();
         let Some(current) = current else {
             // Empty structural markers may have no renderable certified row.
-            // Admit only an exact, isolated empty construct in that case.
+            // A neutral editor row may likewise sit in the source gap before
+            // the parser's next editable row. Admit only an exact, bounded
+            // construct in either case.
+            let selection_u64 = u64::try_from(selection_byte).ok()?;
+            let embedded_plain_owner = {
+                let mut owners = viewport.rows.iter().filter(|row| {
+                    row.kind == 5
+                        && row.presentation == DocumentViewportRowPresentation::Plain
+                        && row.source_range.start < selection_u64
+                        && selection_u64 < row.source_range.end
+                });
+                let first = owners.next().cloned();
+                if owners.next().is_some() {
+                    None
+                } else {
+                    first
+                }
+            };
             let mut exact = self.capture_exact_edit_context(selection_byte)?;
+            if matches!(exact.row, DocumentSimpleEditRow::Plain)
+                && selection_byte == exact.editable_bytes.start
+                && exact.paragraph_merge.is_none()
+            {
+                if let Some(owner) = embedded_plain_owner {
+                    let ending = self.edit_line_ending_at(selection_byte)?;
+                    let separator_start = selection_byte.checked_sub(ending.text().len())?;
+                    let owner_bytes = u64_range_to_usize(&owner.source_range)?;
+                    let owner_utf16 = u64_range_to_usize(&owner.source_utf16_range)?;
+                    if separator_start < owner_bytes.start
+                        || exact.source_bytes.end > owner_bytes.end
+                    {
+                        return None;
+                    }
+                    let lease = self.runtime.snapshot_current_source().ok()?;
+                    let separator_start_utf16 =
+                        lease.utf16_offset_for_byte(separator_start).ok()?;
+                    let selection_utf16 = lease.utf16_offset_for_byte(selection_byte).ok()?;
+                    exact.paragraph_merge = Some(DocumentParagraphMerge {
+                        previous_source_bytes: owner_bytes.start..separator_start,
+                        previous_source_utf16: owner_utf16.start..separator_start_utf16,
+                        separator_bytes: separator_start..selection_byte,
+                        separator_utf16: separator_start_utf16..selection_utf16,
+                        restore_context: None,
+                    });
+                }
+            }
             if matches!(
                 exact.row,
                 DocumentSimpleEditRow::ListItem { empty: true, .. }
             ) {
                 self.certify_absent_empty_list(&mut exact, &viewport.rows)?;
+            }
+            if matches!(exact.row, DocumentSimpleEditRow::Plain)
+                && selection_byte == exact.editable_bytes.start
+                && exact.paragraph_merge.is_some()
+            {
+                // The parser intentionally publishes no row for the blank
+                // editor line between these two rows. Backspace at that
+                // neutral caret reverses one physical Return; it must not use
+                // the ordinary paragraph-start merge that removes both line
+                // endings and joins the surrounding text.
+                let ending = self.edit_line_ending_at(selection_byte)?;
+                let separator_start = selection_byte.checked_sub(ending.text().len())?;
+                let merge = exact.paragraph_merge.as_mut()?;
+                if merge.separator_bytes.end != selection_byte
+                    || separator_start < merge.separator_bytes.start
+                {
+                    return None;
+                }
+                if separator_start > merge.separator_bytes.start {
+                    let lease = self.runtime.snapshot_current_source().ok()?;
+                    merge.separator_bytes = separator_start..selection_byte;
+                    merge.separator_utf16 = lease.utf16_offset_for_byte(separator_start).ok()?
+                        ..lease.utf16_offset_for_byte(selection_byte).ok()?;
+                }
             }
             return Some(exact).filter(|context| {
                 matches!(
@@ -1672,8 +2013,9 @@ impl DocumentSession {
                         | DocumentSimpleEditRow::BlockQuote { empty: true, .. }
                         | DocumentSimpleEditRow::ListItem { empty: true, .. }
                 ) || (matches!(context.row, DocumentSimpleEditRow::Plain)
-                    && context.editable_bytes.is_empty()
-                    && context.paragraph_merge.is_some())
+                    && context.paragraph_merge.is_some()
+                    && (context.editable_bytes.is_empty()
+                        || selection_byte == context.editable_bytes.start))
             });
         };
         if matches!(
@@ -1705,6 +2047,27 @@ impl DocumentSession {
                 viewport.revision,
             );
         }
+        if let DocumentViewportRowPresentation::CodeBlock {
+            style:
+                DocumentCodeBlockStyle::Fenced {
+                    fence,
+                    minimum_closing_length,
+                    closed: true,
+                    ..
+                },
+        } = current.presentation
+        {
+            if current.edit_capability == DocumentViewportRowEditCapability::Unavailable {
+                return None;
+            }
+            return self.capture_fenced_code_edit_context(
+                &current,
+                selection_byte,
+                viewport.revision,
+                fence,
+                minimum_closing_length,
+            );
+        }
         if current.presentation == DocumentViewportRowPresentation::ThematicBreak
             && current.path_depth == 1
         {
@@ -1731,7 +2094,9 @@ impl DocumentSession {
                     atom_bytes,
                     atom_utf16,
                 },
+                content_is_blank: true,
                 paragraph_merge: None,
+                inline_empty_owner_delete: None,
             });
         }
         if matches!(
@@ -1755,6 +2120,12 @@ impl DocumentSession {
         let ending = self
             .edit_line_ending_at(source_bytes.end)
             .unwrap_or(self.fallback_line_ending);
+        let inline_empty_owner_delete = self.capture_inline_empty_owner_delete(
+            intent,
+            selection_byte,
+            &editable_bytes,
+            current.inline_facts.as_deref(),
+        );
 
         let row = match current.presentation {
             DocumentViewportRowPresentation::Plain if current.kind == 5 => {
@@ -1884,15 +2255,126 @@ impl DocumentSession {
                 self.capture_plain_paragraph_merge(&viewport.rows, current.ordinal, &source_bytes)
             })
             .flatten();
+        let content_is_blank = self
+            .source_bytes(editable_bytes.clone())
+            .ok()?
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
         Some(DocumentSimpleEditContext {
             revision: viewport.revision,
+            source_bytes,
+            source_utf16,
+            editable_bytes: editable_bytes.clone(),
+            editable_utf16,
+            ending,
+            row,
+            content_is_blank,
+            paragraph_merge,
+            inline_empty_owner_delete,
+        })
+    }
+
+    fn capture_fenced_code_edit_context(
+        &self,
+        row: &DocumentViewportRow,
+        selection_byte: usize,
+        revision: u64,
+        fence: DocumentFenceCharacter,
+        minimum_closing_length: u32,
+    ) -> Option<DocumentSimpleEditContext> {
+        let source_bytes = u64_range_to_usize(&row.source_range)?;
+        let source_utf16 = u64_range_to_usize(&row.source_utf16_range)?;
+        let editable_bytes = u64_range_to_usize(row.editable_range.as_ref()?)?;
+        let editable_utf16 = u64_range_to_usize(row.editable_utf16_range.as_ref()?)?;
+        if selection_byte < editable_bytes.start || selection_byte >= editable_bytes.end {
+            return None;
+        }
+        let window_start = self
+            .snapped_to_scalar_boundary(
+                selection_byte.saturating_sub(M11_SIMPLE_EDIT_LINE_MAX_BYTES),
+            )
+            .ok()?;
+        let window_end = self
+            .snapped_to_scalar_boundary(
+                selection_byte
+                    .saturating_add(M11_SIMPLE_EDIT_LINE_MAX_BYTES)
+                    .min(self.source_byte_len()),
+            )
+            .ok()?;
+        let window = self.source_bytes(window_start..window_end).ok()?;
+        let local_selection = selection_byte.checked_sub(window_start)?;
+        let local_line_start = line_start_in_window(&window, local_selection)?;
+        if local_line_start == 0 && window_start != 0 {
+            return None;
+        }
+        let local_line_end = line_end_in_window(&window, local_selection);
+        if local_line_end == window.len() && window_end != self.source_byte_len() {
+            return None;
+        }
+        let line_start = window_start + local_line_start;
+        let line_end = window_start + local_line_end;
+        let ending = self.edit_line_ending_at(line_end)?;
+        let line_content_end = line_end.checked_sub(ending.text().len())?;
+        if line_start < editable_bytes.start
+            || line_end > editable_bytes.end
+            || selection_byte > line_content_end
+        {
+            return None;
+        }
+        let lease = self.runtime.snapshot_current_source().ok()?;
+        let line_content_utf16 = lease.utf16_offset_for_byte(line_start).ok()?
+            ..lease.utf16_offset_for_byte(line_content_end).ok()?;
+        let (join_bytes, join_utf16, previous_line_content_bytes, previous_line_content_utf16) =
+            if selection_byte == line_start && line_start > editable_bytes.start {
+                let preceding_ending = self.edit_line_ending_at(line_start)?;
+                let join_start = line_start.checked_sub(preceding_ending.text().len())?;
+                if join_start < editable_bytes.start {
+                    return None;
+                }
+                let local_join_start = join_start.checked_sub(window_start)?;
+                let local_previous_start = line_start_in_window(&window, local_join_start)?;
+                if local_previous_start == 0 && window_start != editable_bytes.start {
+                    return None;
+                }
+                let previous_start = window_start + local_previous_start;
+                let join_utf16_start = lease.utf16_offset_for_byte(join_start).ok()?;
+                let line_start_utf16 = lease.utf16_offset_for_byte(line_start).ok()?;
+                let previous_start_utf16 = lease.utf16_offset_for_byte(previous_start).ok()?;
+                (
+                    Some(join_start..line_start),
+                    Some(join_utf16_start..line_start_utf16),
+                    Some(previous_start..join_start),
+                    Some(previous_start_utf16..join_utf16_start),
+                )
+            } else {
+                (None, None, None, None)
+            };
+        let content_is_blank = self
+            .source_bytes(line_start..line_content_end)
+            .ok()?
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
+        Some(DocumentSimpleEditContext {
+            revision,
             source_bytes,
             source_utf16,
             editable_bytes,
             editable_utf16,
             ending,
-            row,
-            paragraph_merge,
+            row: DocumentSimpleEditRow::FencedCode {
+                fence,
+                minimum_closing_length,
+                closed: true,
+                line_content_bytes: line_start..line_content_end,
+                line_content_utf16,
+                join_bytes,
+                join_utf16,
+                previous_line_content_bytes,
+                previous_line_content_utf16,
+            },
+            content_is_blank,
+            paragraph_merge: None,
+            inline_empty_owner_delete: None,
         })
     }
 
@@ -2081,7 +2563,7 @@ impl DocumentSession {
             revision,
             source_bytes: physical_start..physical_end,
             source_utf16: physical_start_utf16..physical_end_utf16,
-            editable_bytes,
+            editable_bytes: editable_bytes.clone(),
             editable_utf16: editable_start_utf16..editable_end_utf16,
             ending,
             row: DocumentSimpleEditRow::BlockQuote {
@@ -2095,7 +2577,13 @@ impl DocumentSession {
                 empty: editable_start_utf16 == editable_end_utf16,
                 outdent,
             },
+            content_is_blank: self
+                .source_bytes(editable_bytes.clone())
+                .ok()?
+                .iter()
+                .all(|byte| matches!(byte, b' ' | b'\t')),
             paragraph_merge: None,
+            inline_empty_owner_delete: None,
         })
     }
 
@@ -2128,7 +2616,7 @@ impl DocumentSession {
                 revision,
                 source_bytes,
                 source_utf16,
-                editable_bytes,
+                editable_bytes: editable_bytes.clone(),
                 editable_utf16,
                 ending,
                 row: DocumentSimpleEditRow::IndentedCode {
@@ -2138,7 +2626,13 @@ impl DocumentSession {
                     join_bytes: None,
                     join_utf16: None,
                 },
+                content_is_blank: self
+                    .source_bytes(editable_bytes.clone())
+                    .ok()?
+                    .iter()
+                    .all(|byte| matches!(byte, b' ' | b'\t')),
                 paragraph_merge: None,
+                inline_empty_owner_delete: None,
             });
         };
         let (segment_index, segment) = segments.iter().enumerate().find(|(_, segment)| {
@@ -2199,7 +2693,7 @@ impl DocumentSession {
             revision,
             source_bytes: physical_start..physical_end,
             source_utf16: physical_start_utf16..physical_end_utf16,
-            editable_bytes,
+            editable_bytes: editable_bytes.clone(),
             editable_utf16: editable_start_utf16..editable_end_utf16,
             ending,
             row: DocumentSimpleEditRow::IndentedCode {
@@ -2209,7 +2703,13 @@ impl DocumentSession {
                 join_bytes,
                 join_utf16,
             },
+            content_is_blank: self
+                .source_bytes(editable_bytes.clone())
+                .ok()?
+                .iter()
+                .all(|byte| matches!(byte, b' ' | b'\t')),
             paragraph_merge: None,
+            inline_empty_owner_delete: None,
         })
     }
 
@@ -2611,6 +3111,11 @@ impl DocumentSession {
                     })
             })
             .flatten();
+        let content_is_blank = self
+            .source_bytes(editable_bytes.clone())
+            .ok()?
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
         Some(DocumentSimpleEditContext {
             revision: self.revision(),
             source_bytes: line_start..line_end,
@@ -2619,7 +3124,9 @@ impl DocumentSession {
             editable_utf16,
             ending,
             row,
+            content_is_blank,
             paragraph_merge,
+            inline_empty_owner_delete: None,
         })
     }
 
@@ -2648,10 +3155,20 @@ impl DocumentSession {
         if previous_content_end > current_source.start {
             return None;
         }
-        let separator_bytes = previous_content_end..current_source.start;
+        let mut separator_bytes = previous_content_end..current_source.start;
         let separator = self.source_bytes(separator_bytes.clone()).ok()?;
-        if !contains_exactly_two_line_endings(&separator) {
+        let ending_count = line_ending_count(&separator)?;
+        if ending_count < 2 {
             return None;
+        }
+        if ending_count > 2 {
+            // Extra physical endings are editor-owned blank rows. The
+            // paragraph-start fact remains useful for Return, but Backspace
+            // must reverse only the final row rather than deleting the whole
+            // Markdown paragraph separator.
+            let final_ending = self.edit_line_ending_at(current_source.start)?;
+            separator_bytes =
+                current_source.start - final_ending.text().len()..current_source.start;
         }
         let lease = self.runtime.snapshot_current_source().ok()?;
         let separator_utf16 = lease.utf16_offset_for_byte(separator_bytes.start).ok()?
@@ -2716,6 +3233,11 @@ impl DocumentSession {
         context.source_utf16.end = add_signed(context.source_utf16.end, utf16_delta)?;
         context.editable_bytes.end = add_signed(context.editable_bytes.end, byte_delta)?;
         context.editable_utf16.end = add_signed(context.editable_utf16.end, utf16_delta)?;
+        context.content_is_blank = self
+            .source_bytes(context.editable_bytes.clone())
+            .ok()?
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t'));
         match &mut context.row {
             DocumentSimpleEditRow::ListItem { empty, .. }
             | DocumentSimpleEditRow::AtxHeading { empty, .. }
@@ -2725,12 +3247,73 @@ impl DocumentSession {
             DocumentSimpleEditRow::Plain
             | DocumentSimpleEditRow::IndentedCode { .. }
             | DocumentSimpleEditRow::ThematicBreak { .. } => {}
+            DocumentSimpleEditRow::FencedCode {
+                line_content_bytes,
+                line_content_utf16,
+                join_bytes,
+                join_utf16,
+                previous_line_content_bytes,
+                previous_line_content_utf16,
+                ..
+            } => {
+                let edits_current_line = base_bytes.start >= line_content_bytes.start
+                    && base_bytes.end <= line_content_bytes.end
+                    && base_utf16.start >= line_content_utf16.start
+                    && base_utf16.end <= line_content_utf16.end;
+                let edits_known_previous_line = previous_line_content_bytes
+                    .as_ref()
+                    .zip(previous_line_content_utf16.as_ref())
+                    .is_some_and(|(previous_bytes, previous_utf16)| {
+                        base_bytes.start >= previous_bytes.start
+                            && base_bytes.end <= previous_bytes.end
+                            && base_utf16.start >= previous_utf16.start
+                            && base_utf16.end <= previous_utf16.end
+                    });
+                if !edits_current_line && !edits_known_previous_line {
+                    return None;
+                }
+                if edits_known_previous_line {
+                    let previous_bytes = previous_line_content_bytes.take()?;
+                    let previous_utf16 = previous_line_content_utf16.take()?;
+                    *line_content_bytes =
+                        previous_bytes.start..add_signed(previous_bytes.end, byte_delta)?;
+                    *line_content_utf16 =
+                        previous_utf16.start..add_signed(previous_utf16.end, utf16_delta)?;
+                    *join_bytes = None;
+                    *join_utf16 = None;
+                } else {
+                    line_content_bytes.end = add_signed(line_content_bytes.end, byte_delta)?;
+                    line_content_utf16.end = add_signed(line_content_utf16.end, utf16_delta)?;
+                }
+            }
         }
         self.validate_transformed_edit_context(&context)
             .then_some(context)
     }
 
     fn validate_transformed_edit_context(&self, context: &DocumentSimpleEditContext) -> bool {
+        if let DocumentSimpleEditRow::FencedCode {
+            closed,
+            line_content_bytes,
+            line_content_utf16,
+            ..
+        } = &context.row
+        {
+            if !closed
+                || line_content_bytes.start < context.editable_bytes.start
+                || line_content_bytes.end > context.editable_bytes.end
+                || line_content_utf16.start < context.editable_utf16.start
+                || line_content_utf16.end > context.editable_utf16.end
+            {
+                return false;
+            }
+            let ending = context.ending.text().as_bytes();
+            return self
+                .source_bytes(
+                    line_content_bytes.end..line_content_bytes.end.saturating_add(ending.len()),
+                )
+                .is_ok_and(|source| source == ending);
+        }
         let line_start = match &context.row {
             DocumentSimpleEditRow::Plain => context.source_bytes.start,
             DocumentSimpleEditRow::ListItem { prefix_bytes, .. }
@@ -2738,6 +3321,7 @@ impl DocumentSession {
             | DocumentSimpleEditRow::BlockQuote { prefix_bytes, .. }
             | DocumentSimpleEditRow::IndentedCode { prefix_bytes, .. } => prefix_bytes.start,
             DocumentSimpleEditRow::ThematicBreak { atom_bytes, .. } => atom_bytes.start,
+            DocumentSimpleEditRow::FencedCode { .. } => unreachable!(),
         };
         if line_start > context.source_bytes.end {
             return false;
@@ -2753,10 +3337,34 @@ impl DocumentSession {
             return false;
         };
         let classified = classify_m11_simple_edit_line(&source, line_start == 0);
+        let classified_content_end = classified.content_end;
         match (&context.row, classified.kind) {
-            (DocumentSimpleEditRow::Plain, M11SimpleEditLineKind::Plain) => true,
+            (DocumentSimpleEditRow::Plain, M11SimpleEditLineKind::Plain) => {
+                context.editable_bytes == (line_start..line_start + classified_content_end)
+            }
             (DocumentSimpleEditRow::Plain, M11SimpleEditLineKind::Blank) => {
-                context.editable_bytes.is_empty()
+                context.content_is_blank
+                    && context.editable_bytes == (line_start..line_start + classified_content_end)
+            }
+            (
+                DocumentSimpleEditRow::ListItem {
+                    prefix_bytes,
+                    prefix_utf16,
+                    starts_list: false,
+                    task_check: None,
+                    ..
+                },
+                M11SimpleEditLineKind::Plain,
+            ) => {
+                // A parser-authored lazy list continuation has no physical
+                // marker to classify on this line. Its retained ancestry is
+                // valid only for the exact zero-prefix editable row.
+                prefix_bytes.is_empty()
+                    && prefix_utf16.is_empty()
+                    && prefix_bytes.start == context.source_bytes.start
+                    && prefix_utf16.start == context.source_utf16.start
+                    && context.editable_bytes == context.source_bytes
+                    && context.editable_utf16 == context.source_utf16
             }
             (
                 DocumentSimpleEditRow::ListItem {
@@ -2769,6 +3377,7 @@ impl DocumentSession {
                 M11SimpleEditLineKind::ListItem {
                     marker: classified_marker,
                     prefix,
+                    content,
                     marker_offset: classified_offset,
                     task_checked: classified_task_checked,
                     ..
@@ -2776,22 +3385,34 @@ impl DocumentSession {
             ) => {
                 document_marker_matches_parser(*marker, classified_marker)
                     && prefix.end == prefix_bytes.end.saturating_sub(line_start)
+                    && context.editable_bytes
+                        == (line_start + content.start..line_start + content.end)
                     && classified_offset == *marker_offset
                     && classified_task_checked == *task_checked
             }
             (
                 DocumentSimpleEditRow::AtxHeading { prefix_bytes, .. },
-                M11SimpleEditLineKind::AtxHeading { prefix, .. },
-            ) => prefix.end == prefix_bytes.end.saturating_sub(line_start),
+                M11SimpleEditLineKind::AtxHeading {
+                    prefix, content, ..
+                },
+            ) => {
+                prefix.end == prefix_bytes.end.saturating_sub(line_start)
+                    && context.editable_bytes
+                        == (line_start + content.start..line_start + content.end)
+            }
             (
                 DocumentSimpleEditRow::BlockQuote {
                     prefix_bytes,
                     prefix_text,
                     ..
                 },
-                M11SimpleEditLineKind::BlockQuote { prefix, .. },
+                M11SimpleEditLineKind::BlockQuote {
+                    prefix, content, ..
+                },
             ) => {
                 prefix.end == prefix_bytes.end.saturating_sub(line_start)
+                    && context.editable_bytes
+                        == (line_start + content.start..line_start + content.end)
                     && source
                         .get(prefix)
                         .is_some_and(|bytes| bytes == prefix_text.as_bytes())
@@ -3276,7 +3897,7 @@ fn dominant_edit_line_ending(source: &[u8]) -> DocumentEditLineEnding {
     }
 }
 
-fn contains_exactly_two_line_endings(source: &[u8]) -> bool {
+fn line_ending_count(source: &[u8]) -> Option<usize> {
     let mut endings = 0;
     let mut index = 0;
     while index < source.len() {
@@ -3289,10 +3910,10 @@ fn contains_exactly_two_line_endings(source: &[u8]) -> bool {
                 endings += 1;
                 index += 1;
             }
-            _ => return false,
+            _ => return None,
         }
     }
-    endings == 2
+    Some(endings)
 }
 
 fn line_start_in_window(source: &[u8], selection: usize) -> Option<usize> {
@@ -3402,15 +4023,25 @@ fn exact_plain_paragraph_merge(
         return None;
     }
     let previous_source = &window[previous_line_start..last_ending];
-    if !matches!(
+    let previous_kind =
         classify_m11_simple_edit_line(previous_source, window_start + previous_line_start == 0)
-            .kind,
+            .kind;
+    if !matches!(
+        previous_kind,
         M11SimpleEditLineKind::Plain | M11SimpleEditLineKind::Blank
     ) {
         return None;
     }
     let previous_source_bytes = window_start + previous_line_start..window_start + last_ending;
-    let separator_bytes = window_start + previous_ending..window_start + current_line_start;
+    let separator_start = if previous_kind == M11SimpleEditLineKind::Blank {
+        // More than the Markdown paragraph separator is present. The final
+        // ending owns the nearest editor blank row; Backspace reverses that
+        // row while Return still sees start-of-paragraph authority.
+        last_ending
+    } else {
+        previous_ending
+    };
+    let separator_bytes = window_start + separator_start..window_start + current_line_start;
     let previous_source_utf16 = lease
         .utf16_offset_for_byte(previous_source_bytes.start)
         .ok()?
@@ -3554,6 +4185,158 @@ fn structural_split_row_is_provable(context: &DocumentSimpleEditContext) -> bool
             .is_some_and(|suffix| suffix == 0 || suffix == context.ending.text().len()),
         _ => false,
     }
+}
+
+fn fenced_code_split_is_provable(
+    document: &DocumentSession,
+    context: &DocumentSimpleEditContext,
+    resolved: &ResolvedDocumentEditIntentV1,
+) -> bool {
+    let DocumentSimpleEditRow::FencedCode {
+        fence,
+        minimum_closing_length,
+        closed: true,
+        line_content_bytes,
+        line_content_utf16,
+        ..
+    } = &context.row
+    else {
+        return false;
+    };
+    let Some(splice) = resolved.splice.as_ref() else {
+        return false;
+    };
+    if splice.base_byte_range.start < line_content_bytes.start
+        || splice.base_byte_range.start > line_content_bytes.end
+        || splice.base_utf16_range.start < line_content_utf16.start
+        || splice.base_utf16_range.start > line_content_utf16.end
+        || !document
+            .source_bytes(
+                line_content_bytes.end
+                    ..line_content_bytes
+                        .end
+                        .saturating_add(context.ending.text().len()),
+            )
+            .is_ok_and(|source| source == context.ending.text().as_bytes())
+    {
+        return false;
+    }
+    let Ok(suffix) = document.source_bytes(splice.base_byte_range.start..line_content_bytes.end)
+    else {
+        return false;
+    };
+    !fenced_code_suffix_can_close(&suffix, *fence, *minimum_closing_length)
+        && resolved.result_context.as_ref().is_some_and(|result| {
+            matches!(
+                result.row,
+                DocumentSimpleEditRow::FencedCode {
+                    fence: result_fence,
+                    minimum_closing_length: result_minimum,
+                    closed: true,
+                    ..
+                } if result_fence == *fence && result_minimum == *minimum_closing_length
+            )
+        })
+}
+
+/// Reconciles transaction-carried command lineage with a fresh parse.
+///
+/// Once a current parse is available it is the sole authority for structural
+/// command classification. The retained context remains useful only while a
+/// result revision is still parsing; preferring it after readiness can retain
+/// stale container geometry across an otherwise current edit.
+fn reconcile_retained_edit_context(
+    retained: Option<DocumentSimpleEditContext>,
+    ready: Option<DocumentSimpleEditContext>,
+) -> Option<DocumentSimpleEditContext> {
+    match (retained, ready) {
+        (_, Some(ready)) => Some(ready),
+        (Some(retained), _) => Some(retained),
+        (None, None) => None,
+    }
+}
+
+fn fenced_code_join_is_provable(
+    document: &DocumentSession,
+    context: &DocumentSimpleEditContext,
+    resolved: &ResolvedDocumentEditIntentV1,
+) -> bool {
+    let DocumentSimpleEditRow::FencedCode {
+        fence,
+        minimum_closing_length,
+        closed: true,
+        line_content_bytes,
+        join_bytes: Some(join_bytes),
+        join_utf16: Some(join_utf16),
+        previous_line_content_bytes: Some(previous_line_content_bytes),
+        previous_line_content_utf16: Some(previous_line_content_utf16),
+        ..
+    } = &context.row
+    else {
+        return false;
+    };
+    let Some(splice) = resolved.splice.as_ref() else {
+        return false;
+    };
+    if !splice.replacement.is_empty()
+        || splice.base_byte_range != *join_bytes
+        || splice.base_utf16_range != *join_utf16
+        || previous_line_content_bytes.end != join_bytes.start
+        || previous_line_content_utf16.end != join_utf16.start
+        || join_bytes.end != line_content_bytes.start
+        || !document
+            .source_bytes(join_bytes.clone())
+            .is_ok_and(|source| matches!(source.as_slice(), b"\n" | b"\r" | b"\r\n"))
+    {
+        return false;
+    }
+    let Ok(previous) = document.source_bytes(previous_line_content_bytes.clone()) else {
+        return false;
+    };
+    let Ok(current) = document.source_bytes(line_content_bytes.clone()) else {
+        return false;
+    };
+    let mut joined = Vec::with_capacity(previous.len().saturating_add(current.len()));
+    joined.extend_from_slice(&previous);
+    joined.extend_from_slice(&current);
+    !fenced_code_suffix_can_close(&joined, *fence, *minimum_closing_length)
+        && resolved.result_context.as_ref().is_some_and(|result| {
+            matches!(
+                result.row,
+                DocumentSimpleEditRow::FencedCode {
+                    fence: result_fence,
+                    minimum_closing_length: result_minimum,
+                    closed: true,
+                    ..
+                } if result_fence == *fence && result_minimum == *minimum_closing_length
+            )
+        })
+}
+
+fn fenced_code_suffix_can_close(
+    suffix: &[u8],
+    fence: DocumentFenceCharacter,
+    minimum_closing_length: u32,
+) -> bool {
+    let mut cursor = 0;
+    while cursor < suffix.len() && cursor < 4 && suffix[cursor] == b' ' {
+        cursor += 1;
+    }
+    if cursor > 3 {
+        return false;
+    }
+    let fence_byte = match fence {
+        DocumentFenceCharacter::Backtick => b'`',
+        DocumentFenceCharacter::Tilde => b'~',
+    };
+    let fence_start = cursor;
+    while cursor < suffix.len() && suffix[cursor] == fence_byte {
+        cursor += 1;
+    }
+    cursor - fence_start >= minimum_closing_length as usize
+        && suffix[cursor..]
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t'))
 }
 
 fn structural_inline_source_is_bounded(source: &[u8]) -> bool {
@@ -3822,10 +4605,51 @@ mod tests {
         assert_eq!(exact.editable_bytes, 6..6);
         assert!(matches!(exact.row, DocumentSimpleEditRow::Plain));
         assert!(
-            document.capture_ready_edit_context(6, false).is_some(),
+            document.capture_ready_edit_context(6, None).is_some(),
             "parser-ready context admits the exact terminal empty row"
         );
         document.close().expect("close terminal paragraph");
+    }
+
+    #[test]
+    fn settled_fenced_row_supersedes_a_retained_plain_context() {
+        let source = "```dart\nfinal value = 1;\n```\n\n**sentinel**\n";
+        let punctuation = source.find(';').expect("fenced punctuation");
+        let mut document = DocumentSession::begin(source).expect("begin fenced document");
+        pump_ready(&mut document);
+
+        document
+            .apply_edit(1, punctuation..punctuation + 1, "\n")
+            .expect("replace selected punctuation with Return observation");
+        pump_ready(&mut document);
+        assert!(matches!(
+            document
+                .capture_ready_edit_context(punctuation + 1, None)
+                .map(|context| context.row),
+            Some(DocumentSimpleEditRow::FencedCode { .. })
+        ));
+
+        document
+            .apply_edit(2, punctuation + 1..punctuation + 1, "~")
+            .expect("type on the parser-certified fenced line");
+        pump_ready(&mut document);
+
+        let receipt = document
+            .try_apply_edit_intent_v1(
+                3,
+                DocumentEditIntentV1::InsertParagraphBreak,
+                punctuation + 2,
+                false,
+            )
+            .expect("split the fenced line");
+        assert_eq!(
+            receipt
+                .committed_splice
+                .as_ref()
+                .map(|splice| splice.replacement.as_str()),
+            Some("\n")
+        );
+        document.close().expect("close fenced document");
     }
 
     #[test]
@@ -5054,16 +5878,22 @@ fn document_projection_edit_cells(
     let Some(suffix) = row_source.get(editable_end..) else {
         return Ok(Vec::new());
     };
-    if matches!(
-        presentation,
-        DocumentViewportRowPresentation::CodeBlock {
-            style: DocumentCodeBlockStyle::Fenced { closed: true, .. },
-        }
-    ) {
+    if let DocumentViewportRowPresentation::CodeBlock {
+        style:
+            DocumentCodeBlockStyle::Fenced {
+                fence,
+                minimum_closing_length,
+                closed: true,
+                ..
+            },
+    } = presentation
+    {
         return Ok(document_fenced_code_literal_word_edit_cells(
             content,
             editable,
             editable_utf16,
+            fence,
+            minimum_closing_length,
         ));
     }
     let Some(facts) = facts else {
@@ -5361,14 +6191,19 @@ fn document_simple_block_transition_cells(
 
 /// Maps the parser-certified body of a closed fenced code block into bounded
 /// literal edit cells. Code contents have no inline Markdown projection; an
-/// ASCII word edit therefore retains only the parser-authored code shell and
-/// paints its physical line as exact current source. The trigger never covers
-/// a line ending or fence source, so Core cannot widen this into a structural
-/// code-block edit.
+/// ASCII word edit, guarded one-unit deletion, or frozen-vocabulary append
+/// therefore retains only the parser-authored code shell and paints its
+/// physical line as exact current source. No trigger ever covers a line ending
+/// or fence source, so Core cannot widen this into a structural code-block
+/// edit. A deletion cell is emitted only when another alphanumeric unit remains
+/// on the line, which proves that deleting one trigger unit cannot create a
+/// closing fence.
 fn document_fenced_code_literal_word_edit_cells(
     editable_source: &str,
     editable: &Range<u64>,
     editable_utf16: &Range<u64>,
+    fence: DocumentFenceCharacter,
+    minimum_closing_length: u32,
 ) -> Vec<DocumentProjectionEditCell> {
     if editable_source.len() as u64 != editable.end.saturating_sub(editable.start)
         || editable_source.encode_utf16().count() as u64
@@ -5393,9 +6228,37 @@ fn document_fenced_code_literal_word_edit_cells(
             line_break_start
         };
         let line_utf16_len = editable_source[line_start..line_end].encode_utf16().count() as u64;
+        let alphanumeric_positions = bytes[line_start..line_end]
+            .iter()
+            .enumerate()
+            .filter_map(|(offset, byte)| byte.is_ascii_alphanumeric().then_some(offset))
+            .take(2)
+            .collect::<Vec<_>>();
+        let deletion_guarded = alphanumeric_positions.len() >= 2
+            || alphanumeric_positions.first().is_some_and(|only| {
+                let only = line_start + *only;
+                let mut result = Vec::with_capacity(line_end - line_start - 1);
+                result.extend_from_slice(&bytes[line_start..only]);
+                result.extend_from_slice(&bytes[only + 1..line_end]);
+                !fenced_code_suffix_can_close(&result, fence, minimum_closing_length)
+            });
         let affected_bytes = editable.start + line_start as u64..editable.start + line_end as u64;
         let affected_utf16 = editable_utf16.start + line_utf16_start
             ..editable_utf16.start + line_utf16_start + line_utf16_len;
+
+        if affected_bytes.start < affected_bytes.end && cells.len() < M11_INLINE_EDIT_COMPONENTS_MAX
+        {
+            cells.push(DocumentProjectionEditCell {
+                source_range: affected_bytes.clone(),
+                source_utf16_range: affected_utf16.clone(),
+                trigger_range: affected_bytes.end..affected_bytes.end,
+                trigger_utf16_range: affected_utf16.end..affected_utf16.end,
+                flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_APPEND_FLAGS,
+                replacement_first: 0,
+                replacement_second: 0,
+                result_block_shell: None,
+            });
+        }
 
         let mut cursor = line_start;
         let mut cursor_utf16 = line_utf16_start;
@@ -5426,6 +6289,20 @@ fn document_fenced_code_literal_word_edit_cells(
                 replacement_second: 0,
                 result_block_shell: None,
             });
+            if deletion_guarded && cells.len() < M11_INLINE_EDIT_COMPONENTS_MAX {
+                cells.push(DocumentProjectionEditCell {
+                    source_range: affected_bytes.clone(),
+                    source_utf16_range: affected_utf16.clone(),
+                    trigger_range: editable.start + word_start as u64
+                        ..editable.start + word_end as u64,
+                    trigger_utf16_range: editable_utf16.start + word_utf16_start
+                        ..editable_utf16.start + cursor_utf16,
+                    flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
+                    replacement_first: 0,
+                    replacement_second: 0,
+                    result_block_shell: None,
+                });
+            }
         }
 
         let Some(newline) = newline else {
@@ -5495,6 +6372,10 @@ fn document_table_literal_word_edit_cells(
                 cell.content_utf16_range.clone(),
                 source.bytes().filter(u8::is_ascii_alphanumeric).count(),
                 true,
+                Some(
+                    u32::try_from(cell.source_utf16_range.end - cell.content_utf16_range.end)
+                        .ok()?,
+                ),
             ))
         })
         .flatten()
@@ -5508,6 +6389,7 @@ fn document_literal_word_edit_cells(
     trigger_utf16_range: Range<u64>,
     ascii_alphanumeric_count: usize,
     allow_one_unit_delete: bool,
+    empty_result_caret_forward_utf16: Option<u32>,
 ) -> Vec<DocumentProjectionEditCell> {
     let mut cells = vec![DocumentProjectionEditCell {
         source_range: source_range.clone(),
@@ -5519,17 +6401,33 @@ fn document_literal_word_edit_cells(
         replacement_second: 0,
         result_block_shell: None,
     }];
-    // A one-unit deletion is safe only when every admitted deletion leaves at
-    // least one alphanumeric source unit in the cell. It remains one-shot so
-    // the host never infers that this count survived another deletion.
-    if allow_one_unit_delete && ascii_alphanumeric_count >= 2 {
+    // Ordinary prose requires every admitted deletion to leave at least one
+    // alphanumeric source unit. A parser-certified table cell may become
+    // empty without changing its table shell, so that caller can authorize
+    // the final unit too. Either form remains one-shot; the host never infers
+    // that this count survived another deletion.
+    let minimum_count = if empty_result_caret_forward_utf16.is_some() {
+        1
+    } else {
+        2
+    };
+    if allow_one_unit_delete && ascii_alphanumeric_count >= minimum_count {
+        let empties_literal = ascii_alphanumeric_count == 1;
         cells.push(DocumentProjectionEditCell {
             source_range,
             source_utf16_range,
             trigger_range,
             trigger_utf16_range,
-            flags: DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS,
-            replacement_first: 0,
+            flags: if empties_literal {
+                DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_EMPTY_DELETE_FLAGS
+            } else {
+                DOCUMENT_PROJECTION_EDIT_CELL_LITERAL_DELETE_ONE_FLAGS
+            },
+            replacement_first: if empties_literal {
+                empty_result_caret_forward_utf16.unwrap_or(0)
+            } else {
+                0
+            },
             replacement_second: 0,
             result_block_shell: None,
         });
@@ -5542,7 +6440,7 @@ fn document_plain_literal_word_edit_cells(
     editable: &Range<u64>,
     editable_utf16: &Range<u64>,
     facts: &[DocumentInlineFact],
-    allow_terminal_append: bool,
+    plain_block_shell: bool,
 ) -> Vec<DocumentProjectionEditCell> {
     let mut occupied = facts
         .iter()
@@ -5613,7 +6511,7 @@ fn document_plain_literal_word_edit_cells(
             )
         })
         .collect::<Vec<_>>();
-    if allow_terminal_append {
+    if plain_block_shell {
         if let Some((bytes, utf16, _, true)) = gaps.last() {
             if let Some(cell) =
                 document_terminal_literal_append_cell(editable_source, editable, bytes, utf16)
@@ -5621,6 +6519,24 @@ fn document_plain_literal_word_edit_cells(
                 cells.push(cell);
             }
         }
+    }
+    if plain_block_shell
+        && facts.is_empty()
+        && editable_source.len() == 1
+        && editable_source.as_bytes()[0].is_ascii_alphanumeric()
+        && editable.end == editable.start.saturating_add(1)
+        && editable_utf16.end == editable_utf16.start.saturating_add(1)
+    {
+        cells.push(DocumentProjectionEditCell {
+            source_range: editable.clone(),
+            source_utf16_range: editable_utf16.clone(),
+            trigger_range: editable.clone(),
+            trigger_utf16_range: editable_utf16.clone(),
+            flags: DOCUMENT_PROJECTION_EDIT_CELL_BLOCK_TRANSITION_FLAGS,
+            replacement_first: 0,
+            replacement_second: 0,
+            result_block_shell: Some(DocumentProjectionResultBlockShell::Removed),
+        });
     }
     cells
 }
@@ -5829,6 +6745,7 @@ fn document_ascii_line_literal_cells(
                     source.bytes().filter(u8::is_ascii_alphanumeric).count(),
                     !(starts_physical_line && leading_spaces > 0)
                         && !(ends_physical_line && trailing_spaces > 0),
+                    None,
                 ));
             }
         }
@@ -6614,13 +7531,73 @@ fn document_literal_safe_envelopes(
             if utf16_end > fact.content_utf16_range.end || content_utf16_len == 0 {
                 continue;
             }
+            let word_bytes = source_range.clone();
+            let word_utf16 = utf16_start..utf16_end;
             envelopes.push(DocumentLiteralSafeEnvelope {
                 edit_class: DocumentLiteralEditClass::AsciiWordInsertion,
-                source_range,
-                source_utf16_range: utf16_start..utf16_end,
+                source_range: word_bytes.clone(),
+                source_utf16_range: word_utf16.clone(),
             });
+            if end_usize - start_usize >= 2
+                && envelopes.len() < VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX
+            {
+                envelopes.push(DocumentLiteralSafeEnvelope {
+                    edit_class: DocumentLiteralEditClass::SingleAsciiLiteralUnitDeletion,
+                    source_range: word_bytes,
+                    source_utf16_range: word_utf16,
+                });
+            }
             if envelopes.len() >= VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX {
                 break 'facts;
+            }
+        }
+    }
+
+    // Punctuation outside every parser-authored inline fact belongs to an
+    // exact plain run. This deliberately small vocabulary excludes every
+    // CommonMark/GFM delimiter byte; consuming one unit therefore preserves
+    // the complete certified inline projection while the next parse runs.
+    if envelopes.len() < VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX {
+        let editable_source = read_utf8_source_range(runtime, editable)?;
+        for (relative, byte) in editable_source.bytes().enumerate() {
+            if !matches!(byte, b',' | b'.' | b';' | b':' | b'?') {
+                continue;
+            }
+            let line_start = editable_source[..relative]
+                .rfind('\n')
+                .map_or(0, |newline| newline + 1);
+            let line_end = editable_source[relative + 1..]
+                .find('\n')
+                .map_or(editable_source.len(), |newline| relative + 1 + newline);
+            let deletion_preserves_non_whitespace_line_content = editable_source.as_bytes()
+                [line_start..relative]
+                .iter()
+                .chain(editable_source.as_bytes()[relative + 1..line_end].iter())
+                .any(|other| !matches!(other, b' ' | b'\t' | b'\r'));
+            if !deletion_preserves_non_whitespace_line_content {
+                // Inline vocabulary alone is insufficient authority when the
+                // deletion empties a physical line: the clean parser can then
+                // shrink the owning block and expose an editor-owned blank
+                // row. Withhold continuity so the frontend keeps the edit
+                // atomic through fresh block-partition certification.
+                continue;
+            }
+            let byte_start = editable.start + relative as u64;
+            let byte_end = byte_start + 1;
+            if facts.iter().any(|fact| {
+                fact.source_range.start < byte_end && byte_start < fact.source_range.end
+            }) {
+                continue;
+            }
+            let utf16_prefix = editable_source[..relative].encode_utf16().count() as u64;
+            let utf16_start = editable_utf16.start + utf16_prefix;
+            envelopes.push(DocumentLiteralSafeEnvelope {
+                edit_class: DocumentLiteralEditClass::SingleAsciiLiteralUnitDeletion,
+                source_range: byte_start..byte_end,
+                source_utf16_range: utf16_start..utf16_start + 1,
+            });
+            if envelopes.len() >= VIEWPORT_LITERAL_SAFE_ENVELOPES_PER_ROW_MAX {
+                break;
             }
         }
     }

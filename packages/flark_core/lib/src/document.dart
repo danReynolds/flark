@@ -56,6 +56,8 @@ enum FlarkCoreEditPresentationTransitionV1 {
   toggleTaskChecked,
   indentList,
   retainParagraphGap,
+  joinFencedCode,
+  deleteInlineOwner,
 }
 
 /// An opaque, one-shot handle to inverse source retained by the native core.

@@ -70,6 +70,7 @@ export 'src/projection_continuity.dart'
         authorizeRowProjectionContinuity;
 export 'src/pending_presentation.dart'
     show
+        FlarkPendingCaretBoundary,
         FlarkPendingDependencyPresentation,
         materializeBoundedPendingPresentationPlan,
         FlarkPendingPresentationSnapshot,
@@ -78,6 +79,7 @@ export 'src/pending_presentation.dart'
 export 'src/presentation.dart'
     show
         FlarkCoreCommittedPresentationGapV1,
+        FlarkCoreCommittedPresentationSurfaceRole,
         FlarkCoreCommittedPresentationSurfaceV1,
         FlarkCoreCommittedPresentationTransitionV1,
         FlarkCorePresentationInlineStyle,

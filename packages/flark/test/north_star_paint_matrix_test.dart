@@ -811,7 +811,7 @@ This was¦ the real **Rust → Dart → Flutter** editor path.
           expectedGeneration: expectedGeneration,
           expectedCaret: 'Before **bold**.\n\n'.length,
           expectedActiveText: '',
-          expectedFullText: 'Before bold.\n',
+          expectedFullText: 'Before bold.\n\n',
           operation: 'standalone Return',
         );
         final settleStart = mounted.paints.length;
@@ -990,7 +990,7 @@ This was¦ the real **Rust → Dart → Flutter** editor path.
           expectedSource: expectedSource,
           expectedGeneration: expectedGeneration,
           expectedCaret: expectedCaret,
-          expectedPresentation: 'Head\n',
+          expectedPresentation: 'Head\n\n',
           operation: 'heading Return',
         );
         final settleStart = mounted.paints.length;
@@ -1000,7 +1000,7 @@ This was¦ the real **Rust → Dart → Flutter** editor path.
           expectedSource: expectedSource,
           expectedGeneration: expectedGeneration,
           expectedCaret: expectedCaret,
-          expectedPresentation: 'Head',
+          expectedPresentation: 'Head\n',
           operation: 'heading Return settle',
           allowEmpty: true,
         );
@@ -1057,24 +1057,43 @@ void _expectStructuralPaints(
       expectedCaret,
       reason: operation,
     );
-    expect(paint.caretRect, isNotNull, reason: operation);
+    final geometrySummary = paint.rows
+        .map(
+          (row) =>
+              '${row.ordinal}:${row.kind}:${row.headingLevel}:${row.active}:${row.text}',
+        )
+        .join(' | ');
+    expect(paint.caretRect, isNotNull, reason: '$operation: $geometrySummary');
     expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
     expect(paint.presentation, expectedFullText, reason: operation);
     expect(paint.presentation, isNot(contains('**')), reason: operation);
     final activeRows = paint.rows.where((row) => row.active).toList();
-    expect(activeRows, hasLength(1), reason: operation);
-    expect(
-      activeRows.single.kind,
-      expectedActiveText.isEmpty ? anyOf(0, 5) : 5,
-      reason:
-          '$operation: an exact empty successor is visually identical to a certified empty paragraph',
-    );
-    expect(
-      activeRows.single.text,
-      expectedActiveText.isEmpty ? anyOf('', '\n') : expectedActiveText,
-      reason:
-          '$operation: an exact line ending and an empty paragraph paint the same blank successor',
-    );
+    if (expectedActiveText.isEmpty) {
+      expect(activeRows, isNotEmpty, reason: operation);
+      expect(
+        activeRows.map((row) => row.ordinal).toSet(),
+        hasLength(1),
+        reason: '$operation: active fragments must share one logical row',
+      );
+      for (final row in activeRows) {
+        expect(
+          row.kind,
+          anyOf(0, 5),
+          reason:
+              '$operation: an exact empty successor is visually identical to a certified empty paragraph',
+        );
+        expect(
+          row.text,
+          anyOf('', '\n'),
+          reason:
+              '$operation: an exact line ending and an empty paragraph paint the same blank successor',
+        );
+      }
+    } else {
+      expect(activeRows, hasLength(1), reason: operation);
+      expect(activeRows.single.kind, 5, reason: operation);
+      expect(activeRows.single.text, expectedActiveText, reason: operation);
+    }
     expect(
       paint.rows.any(
         (row) => row.runs.any(
@@ -1109,7 +1128,13 @@ void _expectHeadingExitPaints(
       expectedCaret,
       reason: operation,
     );
-    expect(paint.caretRect, isNotNull, reason: operation);
+    final geometrySummary = paint.rows
+        .map(
+          (row) =>
+              '${row.ordinal}:${row.kind}:${row.headingLevel}:${row.active}:${row.text}',
+        )
+        .join(' | ');
+    expect(paint.caretRect, isNotNull, reason: '$operation: $geometrySummary');
     expect(paint.caretSourceUtf16, expectedCaret, reason: operation);
     expect(paint.presentation, expectedPresentation, reason: operation);
     expect(paint.presentation, isNot(contains('##')), reason: operation);
@@ -1129,18 +1154,21 @@ void _expectHeadingExitPaints(
               '${row.ordinal}:${row.kind}:${row.headingLevel}:${row.active}:${row.text}',
         )
         .join(' | ');
-    expect(activeRows, hasLength(1), reason: '$operation: $rowSummary');
+    expect(activeRows, isNotEmpty, reason: '$operation: $rowSummary');
     expect(
-      activeRows.single.kind,
-      anyOf(0, 5, 12),
-      reason: '$operation: $rowSummary',
+      activeRows.map((row) => row.ordinal).toSet(),
+      hasLength(1),
+      reason: '$operation: active fragments must share one logical row',
     );
-    if (activeRows.single.kind == 12) {
-      expect(activeRows.single.headingLevel, 2, reason: operation);
-      expect(activeRows.single.text, 'Head', reason: operation);
-    } else {
-      expect(activeRows.single.headingLevel, isNull, reason: operation);
-      expect(activeRows.single.text, anyOf('', '\n'), reason: operation);
+    for (final row in activeRows) {
+      expect(row.kind, anyOf(0, 5, 12), reason: '$operation: $rowSummary');
+      if (row.kind == 12) {
+        expect(row.headingLevel, 2, reason: operation);
+        expect(row.text, 'Head', reason: operation);
+      } else {
+        expect(row.headingLevel, isNull, reason: operation);
+        expect(row.text, anyOf('', '\n'), reason: operation);
+      }
     }
   }
 }

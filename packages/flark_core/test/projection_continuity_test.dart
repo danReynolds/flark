@@ -13,6 +13,16 @@ void main() {
     sourceBytes: FlarkSourceRange(8, 8),
     sourceUtf16: FlarkSourceRange(8, 8),
   );
+  const wordDeletion = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.singleAsciiLiteralUnitDeletion,
+    sourceBytes: FlarkSourceRange(2, 6),
+    sourceUtf16: FlarkSourceRange(2, 6),
+  );
+  const punctuationDeletion = FlarkLiteralSafeEnvelope(
+    editClass: FlarkLiteralEditClass.singleAsciiLiteralUnitDeletion,
+    sourceBytes: FlarkSourceRange(7, 8),
+    sourceUtf16: FlarkSourceRange(7, 8),
+  );
   const headingWord = FlarkLiteralSafeEnvelope(
     editClass: FlarkLiteralEditClass.asciiWordInsertion,
     sourceBytes: FlarkSourceRange(2, 9),
@@ -76,6 +86,19 @@ void main() {
     retainOutsideClosure: true,
     presentClosureExact: true,
     chainResultCell: false,
+  );
+  const emptyTableCell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral,
+    affectedBytes: FlarkSourceRange(2, 3),
+    affectedUtf16: FlarkSourceRange(2, 3),
+    triggerBytes: FlarkSourceRange(2, 3),
+    triggerUtf16: FlarkSourceRange(2, 3),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: false,
+    allowsEmptyLiteralResult: true,
+    resultCaretForwardUtf16: 1,
   );
   const terminalLiteralAppendCell = FlarkProjectionEditCell(
     matcher: FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
@@ -191,6 +214,84 @@ void main() {
         ),
       ),
       [(2, 9, 2, 9)],
+    );
+  });
+
+  test(
+    'parser word deletion preserves projection once and transforms peers',
+    () {
+      final receipt = authorizeRowProjectionContinuity(
+        revision: 4,
+        envelopes: const [word, wordDeletion, trailingSpace],
+        authorizedContentUtf16: const FlarkSourceRange(0, 10),
+        startUtf16: 5,
+        endUtf16: 6,
+        replacement: '',
+      );
+
+      expect(receipt, isNotNull);
+      expect(receipt!.authorizedContentUtf16.start, 0);
+      expect(receipt.authorizedContentUtf16.end, 9);
+      expect(receipt.editStartUtf16, 5);
+      expect(receipt.editEndUtf16, 6);
+      expect(
+        receipt.literalSafeEnvelopes.map(
+          (envelope) => (
+            envelope.editClass,
+            envelope.sourceBytes.start,
+            envelope.sourceBytes.end,
+            envelope.sourceUtf16.start,
+            envelope.sourceUtf16.end,
+          ),
+        ),
+        [
+          (FlarkLiteralEditClass.asciiWordInsertion, 2, 5, 2, 5),
+          (FlarkLiteralEditClass.singleAsciiSpaceInsertion, 7, 7, 7, 7),
+        ],
+      );
+      expect(
+        receipt.continueWith(startUtf16: 4, endUtf16: 5, replacement: ''),
+        isNull,
+        reason: 'the parser-authored deletion proof is one-shot',
+      );
+    },
+  );
+
+  test('parser punctuation deletion preserves the certified projection', () {
+    final receipt = authorizeRowProjectionContinuity(
+      revision: 5,
+      envelopes: const [punctuationDeletion],
+      authorizedContentUtf16: const FlarkSourceRange(0, 10),
+      startUtf16: 7,
+      endUtf16: 8,
+      replacement: '',
+    );
+
+    expect(receipt, isNotNull);
+    expect(receipt!.authorizedContentUtf16.end, 9);
+    expect(
+      receipt.literalSafeEnvelopes.map(
+        (envelope) => (
+          envelope.editClass,
+          envelope.sourceBytes.start,
+          envelope.sourceBytes.end,
+          envelope.sourceUtf16.start,
+          envelope.sourceUtf16.end,
+        ),
+      ),
+      [(FlarkLiteralEditClass.asciiWordInsertion, 7, 7, 7, 7)],
+    );
+    final replacement = receipt.continueWith(
+      startUtf16: 7,
+      endUtf16: 7,
+      replacement: 'x',
+    );
+    expect(replacement, isNotNull);
+    expect(replacement!.literalSafeEnvelopes, isEmpty);
+    expect(
+      replacement.continueWith(startUtf16: 8, endUtf16: 8, replacement: 'y'),
+      isNull,
+      reason: 'the replacement point is consumed after one successor',
     );
   });
 
@@ -652,6 +753,78 @@ void main() {
     }
   });
 
+  test('specific line-end append wins an overlapping literal word cell', () {
+    const append = FlarkProjectionEditCell(
+      matcher: FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+      affectedBytes: FlarkSourceRange(0, 16),
+      affectedUtf16: FlarkSourceRange(0, 16),
+      triggerBytes: FlarkSourceRange(16, 16),
+      triggerUtf16: FlarkSourceRange(16, 16),
+      retainBlockShell: true,
+      retainOutsideClosure: true,
+      presentClosureExact: true,
+      chainResultCell: true,
+      terminalSpaceAvailable: true,
+    );
+    final receipt = authorizeProjectionEditCell(
+      revision: 20,
+      cells: const [literalWordCell, append],
+      authorizedContentUtf16: const FlarkSourceRange(0, 17),
+      startUtf16: 16,
+      endUtf16: 16,
+      replacement: 'x',
+    );
+
+    expect(receipt, isNotNull);
+    expect(
+      receipt!.matcher,
+      FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+    );
+    expect(receipt.resultCaretUtf16, 17);
+  });
+
+  test('one-shot complete cell admits one splice but cannot chain', () {
+    const cell = FlarkProjectionEditCell(
+      matcher: FlarkProjectionEditMatcher.anyNoCrLfSplice,
+      affectedBytes: FlarkSourceRange(5, 6),
+      affectedUtf16: FlarkSourceRange(5, 6),
+      triggerBytes: FlarkSourceRange(6, 6),
+      triggerUtf16: FlarkSourceRange(6, 6),
+      retainBlockShell: true,
+      retainOutsideClosure: true,
+      presentClosureExact: true,
+      chainResultCell: false,
+    );
+    final receipt = authorizeProjectionEditCell(
+      revision: 20,
+      cells: const [cell],
+      authorizedContentUtf16: const FlarkSourceRange(5, 36),
+      startUtf16: 6,
+      endUtf16: 6,
+      replacement: 'x',
+    );
+
+    expect(receipt, isNotNull);
+    expect(receipt!.resultCaretUtf16, 7);
+    expect(receipt.chainResultCell, isFalse);
+    expect(
+      receipt.continueWith(startUtf16: 7, endUtf16: 7, replacement: 'y'),
+      isNull,
+      reason: 'fresh parser authority is required after the admitted splice',
+    );
+    expect(
+      authorizeProjectionEditCell(
+        revision: 20,
+        cells: const [cell],
+        authorizedContentUtf16: const FlarkSourceRange(5, 36),
+        startUtf16: 6,
+        endUtf16: 6,
+        replacement: '\n',
+      ),
+      isNull,
+    );
+  });
+
   test('local dependency cell admits one exact space and is consumed', () {
     final receipt = authorizeProjectionEditCell(
       revision: 30,
@@ -704,6 +877,7 @@ void main() {
     expect(receipt, isNotNull);
     expect((receipt!.affectedUtf16.start, receipt.affectedUtf16.end), (7, 16));
     expect(receipt.exactScalar, 0x5b);
+    expect(receipt.resultCaretUtf16, 12);
     expect(
       receipt.continueWith(startUtf16: 12, endUtf16: 12, replacement: '['),
       isNull,
@@ -1044,6 +1218,7 @@ void main() {
     expect(receipt, isNotNull);
     expect((receipt!.affectedUtf16.start, receipt.affectedUtf16.end), (0, 16));
     expect(receipt.resultRevision, 51);
+    expect(receipt.resultCaretUtf16, 3);
     expect(
       receipt.continueWith(startUtf16: 2, endUtf16: 3, replacement: ''),
       isNull,
@@ -1066,6 +1241,25 @@ void main() {
         reason: '$edit',
       );
     }
+  });
+
+  test('empty literal deletion forwards the parser-authored result caret', () {
+    final receipt = authorizeProjectionEditCell(
+      revision: 50,
+      cells: const [emptyTableCell],
+      authorizedContentUtf16: const FlarkSourceRange(2, 3),
+      authorizedBlockUtf16: const FlarkSourceRange(0, 10),
+      startUtf16: 2,
+      endUtf16: 3,
+      replacement: '',
+    );
+    expect(receipt, isNotNull);
+    expect(receipt!.allowsEmptyLiteralResult, isTrue);
+    expect(receipt.resultCaretUtf16, 3);
+    expect(
+      receipt.continueWith(startUtf16: 3, endUtf16: 3, replacement: '\n'),
+      isNull,
+    );
   });
 
   test('terminal literal append chains words but never two spaces', () {

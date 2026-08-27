@@ -775,6 +775,38 @@ void main() {
   );
 
   test(
+    'one-unit paragraph deletion carries a removed-block shell to Dart',
+    () async {
+      final document = await FlarkCoreDocument.open(
+        'x\n\nnext\n',
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.first;
+      final removal = row.projectionEditCells.singleWhere(
+        (cell) =>
+            cell.matcher ==
+                FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell &&
+            cell.resultBlockShell?.kind ==
+                FlarkProjectionResultBlockKind.removed,
+      );
+      expect((removal.affectedUtf16.start, removal.affectedUtf16.end), (0, 1));
+      expect((removal.triggerUtf16.start, removal.triggerUtf16.end), (0, 1));
+      expect(removal.retainBlockShell, isFalse);
+      expect(removal.retainOutsideClosure, isTrue);
+      expect(removal.presentClosureExact, isTrue);
+      expect(removal.chainResultCell, isFalse);
+      expect(removal.resultBlockShell?.prefixUtf16Length, 0);
+      expect(removal.resultBlockShell?.parameter, 0);
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'multiline dogfood terminal append cell crosses the Dart worker boundary',
     () async {
       const source =
@@ -1271,7 +1303,14 @@ void main() {
       );
       expect(
         row.literalSafeEnvelopes.map((envelope) => envelope.editClass.name),
-        ['asciiWordInsertion', 'asciiWordInsertion', 'asciiWordInsertion'],
+        [
+          'asciiWordInsertion',
+          'singleAsciiLiteralUnitDeletion',
+          'asciiWordInsertion',
+          'singleAsciiLiteralUnitDeletion',
+          'asciiWordInsertion',
+          'singleAsciiLiteralUnitDeletion',
+        ],
       );
       expect(
         row.literalSafeEnvelopes.map(
@@ -1280,7 +1319,7 @@ void main() {
             envelope.sourceUtf16.end,
           ),
         ),
-        ['strong', 'code', 'link'],
+        ['strong', 'strong', 'code', 'code', 'link', 'link'],
       );
       final emojiOffset = source.indexOf('🌍');
       expect(
@@ -1349,6 +1388,67 @@ void main() {
         ),
         isFalse,
       );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'nested list table crosses as composite Dart presentation',
+    () async {
+      const source =
+          '| a\n* ]| b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final nested = (await document.queryViewport(
+        maxRows: 8,
+      )).rows.singleWhere((row) => row.listItem != null);
+      expect(nested.listItem, isNotNull);
+      expect(nested.table, isNotNull);
+      expect(nested.table!.rows, hasLength(2));
+      expect(nested.table!.columnCount, 2);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'empty table-cell authority carries its parser-authored result caret',
+    () async {
+      const source = '| a | b |\n| --- | --- |\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport(maxRows: 8)).rows.single;
+      final matching = row.projectionEditCells
+          .where(
+            (candidate) =>
+                candidate.matcher ==
+                    FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral &&
+                candidate.triggerUtf16.start == 2 &&
+                candidate.triggerUtf16.end == 3,
+          )
+          .toList(growable: false);
+      expect(
+        matching,
+        hasLength(1),
+        reason: row.projectionEditCells
+            .map(
+              (candidate) =>
+                  '${candidate.matcher.name}:${candidate.triggerUtf16.start}-${candidate.triggerUtf16.end} empty=${candidate.allowsEmptyLiteralResult} forward=${candidate.resultCaretForwardUtf16}',
+            )
+            .join(', '),
+      );
+      final cell = matching.single;
+      expect(cell.allowsEmptyLiteralResult, isTrue);
+      expect(cell.resultCaretForwardUtf16, 1);
     },
     skip: libraryPath == null,
   );

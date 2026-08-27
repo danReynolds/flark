@@ -132,7 +132,7 @@ void main() {
   );
 
   test(
-    'deferred structural command retains its platform callback timing',
+    'deferred structural command retains callback timing across edit lanes',
     () async {
       final probe = await LiveEditorTransitionProbe.open(
         '- parent\n  - child¦',
@@ -144,14 +144,21 @@ void main() {
         probe.pressReturn();
         final successorCallbackReturned = DateTime.now().microsecondsSinceEpoch;
         await probe.expectSourceAndCaret('- parent\n  - child\n- ¦');
-        final receipts = probe.controller.semanticEditPerformanceReceipts;
-        expect(receipts, hasLength(2));
-        final successor = receipts.last;
+        final semanticReceipts =
+            probe.controller.semanticEditPerformanceReceipts;
+        final sourceReceipts = probe.controller.sourceEditPerformanceReceipts;
+        expect(semanticReceipts.length + sourceReceipts.length, 2);
+        final successorAcceptedAt = semanticReceipts.length == 2
+            ? semanticReceipts.last.acceptedAtEpochMicros
+            : sourceReceipts.last.acceptedAtEpochMicros;
+        final successorCallbackMicros = semanticReceipts.length == 2
+            ? semanticReceipts.last.platformCallbackMicros
+            : sourceReceipts.last.editorSyncMicros;
         expect(
-          successor.acceptedAtEpochMicros,
+          successorAcceptedAt,
           inInclusiveRange(successorCallbackStarted, successorCallbackReturned),
         );
-        expect(successor.platformCallbackMicros, greaterThanOrEqualTo(0));
+        expect(successorCallbackMicros, greaterThanOrEqualTo(0));
         await probe.expectHealthy();
         await probe.expectConvergesWithCleanRebuild();
       } finally {

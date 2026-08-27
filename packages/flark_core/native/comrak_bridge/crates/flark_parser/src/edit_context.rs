@@ -179,6 +179,14 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
     if facts.indent < 4 {
         if let Some(item) = facts.list_item {
             let child = item.child;
+            let task_start = item.content.start;
+            let incomplete_task_candidate = source
+                .get(task_start..content_end)
+                .is_some_and(|candidate| matches!(candidate, b"[" | b"[ " | b"[x" | b"[X"));
+            let reference_definition_candidate = child.potential_reference_definition
+                && source
+                    .get(task_start..content_end)
+                    .is_some_and(has_reference_label_colon);
             let simple_child = !child.block_quote
                 && !child.atx_heading
                 && !child.fence
@@ -188,7 +196,7 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                 && !child.thematic_break
                 && !child.list
                 && !child.table_delimiter_candidate
-                && (!child.potential_reference_definition || child.task);
+                && (!reference_definition_candidate || child.task);
             if item.opening_indent <= 3 && !item.tab_padded && simple_child {
                 let marker = match item.marker {
                     SegmentedListMarker::Bullet(byte) => {
@@ -211,8 +219,9 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                         M11SimpleEditListMarker::Ordered { value, delimiter }
                     }
                 };
-                let (prefix_end, content_start, task_checked) = if child.task {
-                    let task_start = item.content.start;
+                let (prefix_end, content_start, task_checked) = if child.task
+                    && !incomplete_task_candidate
+                {
                     let Some(marker) = source.get(task_start..task_start.saturating_add(3)) else {
                         return unsupported(ending, content_end);
                     };
@@ -245,9 +254,21 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                     .continuation_prefix
                     .end
                     .saturating_sub(item.opening_indent);
-                let Ok(item_padding) = u8::try_from(item_padding) else {
+                let Ok(mut item_padding) = u8::try_from(item_padding) else {
                     return unsupported(ending, content_end);
                 };
+                // CommonMark admits a marker immediately followed by EOL as
+                // an empty list item. Its donor continuation width can be one
+                // byte (`*\n`), but E1 only needs this exact shape to remove
+                // the marker on Return. Normalize the unused continuation
+                // width so every retained list context keeps the 2..=14
+                // invariant required by actual continuation commands.
+                let bare_empty_marker = empty
+                    && item.hidden_prefix.end == content_end
+                    && item.content.start == content_end;
+                if bare_empty_marker {
+                    item_padding = item_padding.max(2);
+                }
                 if !(2..=14).contains(&item_padding) {
                     return unsupported(ending, content_end);
                 }
@@ -285,6 +306,10 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
 
         if let Some(quote) = facts.block_quote_source {
             let residual = quote.residual;
+            let reference_definition_candidate = residual.potential_reference_definition
+                && source
+                    .get(quote.content.start..quote.line_ending.start)
+                    .is_some_and(has_reference_label_colon);
             let simple_child = !residual.block_quote
                 && !residual.atx_heading
                 && !residual.fence
@@ -296,7 +321,7 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                 && !residual.list
                 && !residual.interrupting_list
                 && !residual.table_delimiter_candidate
-                && !residual.potential_reference_definition;
+                && !reference_definition_candidate;
             if simple_child {
                 let content = quote.content.start..quote.line_ending.start;
                 let empty = residual.blank
@@ -326,7 +351,8 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
         || facts.thematic_break.is_some()
         || facts.list
         || facts.table_delimiter_candidate
-        || facts.first_significant_byte == Some(b'[');
+        || (facts.first_significant_byte == Some(b'[')
+            && has_reference_label_colon(&source[..content_end]));
     M11SimpleEditLine {
         kind: if facts.blank {
             M11SimpleEditLineKind::Blank
@@ -574,6 +600,15 @@ fn physical_line_ending(source: &[u8]) -> (usize, M11LineEnding) {
     }
 }
 
+/// A CommonMark reference definition must move directly from its closing
+/// label bracket to `:`. The shared scanner intentionally reports every line
+/// beginning with `[` as only *potentially* a definition. Absence of this
+/// necessary boundary therefore proves the current physical line is ordinary
+/// paragraph content without duplicating destination or title grammar here.
+fn has_reference_label_colon(source: &[u8]) -> bool {
+    source.windows(2).any(|pair| pair == b"]:")
+}
+
 fn unsupported(ending: M11LineEnding, content_end: usize) -> M11SimpleEditLine {
     M11SimpleEditLine {
         kind: M11SimpleEditLineKind::Unsupported,
@@ -593,9 +628,15 @@ mod tests {
             ("  + alpha\r\n", false),
             ("9) alpha", false),
             ("42. \n", true),
+            ("*\n", true),
+            ("-\n", true),
+            ("+\n", true),
+            ("1.\n", true),
             ("- [ ] task\n", false),
             ("- [x] \n", true),
             ("- [ ]   \n", true),
+            ("- [\n", false),
+            ("- [x\n", false),
         ];
         for (source, empty) in cases {
             let line = classify_m11_simple_edit_line(source.as_bytes(), false);
@@ -618,6 +659,24 @@ mod tests {
             "| --- |\n",
             "    code\n",
         ] {
+            assert_eq!(
+                classify_m11_simple_edit_line(source.as_bytes(), false).kind,
+                M11SimpleEditLineKind::Unsupported,
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn incomplete_reference_prefixes_remain_simple_paragraph_content() {
+        for source in ["[\n", "[label\n", "[label]\n", "[label](url)\n"] {
+            assert_eq!(
+                classify_m11_simple_edit_line(source.as_bytes(), false).kind,
+                M11SimpleEditLineKind::Plain,
+                "{source:?}"
+            );
+        }
+        for source in ["[label]:\n", "[label]: /url\n"] {
             assert_eq!(
                 classify_m11_simple_edit_line(source.as_bytes(), false).kind,
                 M11SimpleEditLineKind::Unsupported,

@@ -89,7 +89,10 @@ fn admitted_prefix_edit_and_later_stream_append_are_separate_axes() {
 
     assert_eq!(edited.load(), first.load());
     assert_eq!(edited.revision(), SourceRevision::new(9));
-    assert_eq!(opening.authority().document(), before_edit_authority.document());
+    assert_eq!(
+        opening.authority().document(),
+        before_edit_authority.document()
+    );
     assert_ne!(opening.authority(), before_edit_authority);
     assert_eq!(edited.generation(), 2);
     assert_eq!(edited.admitted_input_utf16(), 6);
@@ -190,7 +193,9 @@ fn a_trailing_bare_cr_is_not_an_unsealed_frontier() {
         .current_admits_unsealed_line_frontier()
         .expect("proof frontier"));
 
-    let _ = opening.append_page(first, 7..9, "\nz").expect("second page");
+    let _ = opening
+        .append_page(first, 7..9, "\nz")
+        .expect("second page");
     let joined = opening.snapshot().into_source_lease();
     // The LF arrived: the pair is one CRLF ending, and the old frontier is
     // now interior to it under both interpretations.
@@ -222,7 +227,9 @@ fn the_last_unsealed_frontier_skips_ambiguous_tails_and_unknown_lengths_seal() {
         Some(9)
     );
     assert_eq!(
-        lease.last_unsealed_physical_line_frontier(9).expect("floor"),
+        lease
+            .last_unsealed_physical_line_frontier(9)
+            .expect("floor"),
         None
     );
 
@@ -265,11 +272,7 @@ fn runtime_replica_advances_only_through_store_minted_append_lineage() {
         .append_page(first, 6..12, "second")
         .expect("second page");
     let receipt = runtime
-        .adopt_opening_append(
-            opening
-                .prove_append_since(first)
-                .expect("append proof"),
-        )
+        .adopt_opening_append(opening.prove_append_since(first).expect("append proof"))
         .expect("adopt append");
 
     assert_eq!(receipt.authority(), authority);
@@ -278,7 +281,10 @@ fn runtime_replica_advances_only_through_store_minted_append_lineage() {
     assert_eq!(receipt.unchanged_prefix_bytes(), 6);
     assert_eq!(receipt.current_generation(), second.generation());
     assert_eq!(runtime.current_source_version(), Some(receipt.current()));
-    assert_eq!(read_source(runtime.snapshot_current_source().unwrap()), b"first\nsecond");
+    assert_eq!(
+        read_source(runtime.snapshot_current_source().unwrap()),
+        b"first\nsecond"
+    );
     assert_eq!(runtime.poll_retirement(1).released_source_leases, 1);
     close_runtime(runtime);
 }

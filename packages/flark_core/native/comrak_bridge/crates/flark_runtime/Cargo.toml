@@ -16,6 +16,7 @@ opening-session = ["flark-parser/m11-compact-probe"]
 [dependencies]
 flark-engine = { path = "../flark_engine", features = ["parser-internal"] }
 flark-parser = { path = "../flark_parser" }
+unicode-segmentation = "1.13.3"
 
 [dev-dependencies]
 flark-parser = { path = "../flark_parser", features = ["m11-compact-probe"] }

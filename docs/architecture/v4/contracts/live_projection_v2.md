@@ -2,14 +2,18 @@
 
 **Profile ID:** `flark-live-v2`  
 **Semantic profile:** `flark-gfm-0.29-v2`  
+**Edit profile:** [flark-edit-v1](edit_profile_v1.md)
+
 **Owner:** [RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md)  
 **Status:** normative executable contract; T1 and T2 product checkpoint implemented.
 
 ## 1. Scope
 
-This contract defines how exact Markdown source is presented and edited while
+This contract defines what every visible frame may show while exact Markdown
 source, parser certification, platform input, selection, and viewport state
-change. It does not change any GFM parse result.
+change. [The rendered-editing profile](edit_profile_v1.md) separately defines
+what logical editing commands mean. This contract does not change any GFM
+parse result or invent source-edit semantics.
 
 The v2 product has two Flutter consumers:
 
@@ -42,10 +46,10 @@ Every visible source-owned range is in exactly one state:
 
 | State | Authority | Presentation |
 | --- | --- | --- |
-| `certified_projected` | Current-revision certified semantic facts | Rendered runs with parser-owned markers hidden or replaced |
+| `certified_projected` | Current-revision certified semantic facts or an unexpired transaction-bound result-presentation proof for that exact result revision/range | Rendered runs with parser-owned markers hidden or replaced |
 | `certified_literal` | Current-revision proof that source is literal or editor source-material | Exact source with intentional literal styling |
 | `pending_exact` | Current source, no current semantic proof | Neutral exact source for the authenticated pending range |
-| `composition_exact` | Current source transaction plus the platform composing value/range | Exact active-row source while composition is pending, except for a matching parser-authored edit cell's retained shell/outside runs; unaffected certified rows remain projected |
+| `composition_exact` | Current source transaction plus a bounded parser-authored composition result proof and the platform composing value/range | Exact composing payload only in its active mapped range; the proof retains the surrounding owner shell/runs and hidden delimiters, and unaffected facts remain projected |
 | `source_gap_exact` | Exact source is available but a projection query cannot cover it | Neutral exact source within the bounded gap |
 | `fault_exact` | Session retains readable source after a typed semantic fault | Exact source plus surfaced fault state; no semantic facts from the faulted range |
 
@@ -63,8 +67,9 @@ corresponding source grapheme boundary.
 ### 4.2 Marker cut
 
 A parser-owned delimiter or structural marker is hidden. Its source range maps
-to one or two boundary caret stops with explicit affinity. No interior marker
-offset is reachable through ordinary display navigation.
+to legal boundary affinity at one or both ends. No interior marker offset is
+reachable through ordinary display navigation, and the marker does not add an
+otherwise motionless navigation step.
 
 ### 4.3 Replacement run
 
@@ -108,6 +113,27 @@ not advertise Markdown styling that lacks current authority.
    a source transaction.
 8. Mapping and shaping are capped to the requested viewport/fragment budget.
 
+### 5.1 Caret-context topology
+
+Every writable projected caret stop publishes a bounded set of parser-authored
+`CaretContextAuthority` alternatives. Each alternative is stop-specific and
+binds the current revision, support domain, topology and stop identities, one
+exact source anchor, rendered edit side, and adjacent visible/object targets.
+It references a shareable opaque `ContextPlanAuthority` for the ordered
+existing semantic-owner path and insertion plan. Stops may share that plan but
+never their stop ID, anchor, side, or adjacent targets. Neither record contains
+a recipe for an owner that does not exist in this projection.
+
+Hit testing and navigation return one alternative identity; Core may adopt that
+exact identity for its new selection generation but cannot synthesize, widen,
+or combine alternatives. The geometry may be shared by inside and outside
+sides while their authority remains distinct. A styled side with no current
+alternative cannot be published as writable: adoption fails without moving the
+canonical selection, or the surface is explicitly read-only/no-target. Baseline
+caret alternatives outrank optional projection facts under output caps. Their
+absence is never permission to label a stop plain, infer context from painted
+styles, or accept a caret whose next ordinary insertion cannot be authorized.
+
 ## 6. Focus and selection rules
 
 ### LP2-FOCUS-STABILITY-001
@@ -124,9 +150,9 @@ canonical source anchors.
 ### LP2-HIDDEN-BOUNDARY-001
 
 At a display boundary shared by hidden syntax and visible content, the caret
-topology distinguishes inside/outside affinity. Mouse/touch placement chooses
-the documented default; arrow navigation preserves the directionally adjacent
-stop.
+topology distinguishes inside/outside affinity without exposing the marker as
+an extra caret step. Mouse/touch placement and arrow navigation choose the
+construct default and directional context defined by `flark-edit-v1`.
 
 ### LP2-CROSS-RANGE-001
 
@@ -145,8 +171,11 @@ paint deadline. A focus-triggered or row-wide raw transition is forbidden.
 ### LP2-INCOMPLETE-COMPLETE-001
 
 Incomplete Markdown remains literal current source. When a committed edit
-creates a valid, current-certified construct, the affected range becomes
-projected without changing canonical selection or source.
+creates a valid construct and returns either current certification or the
+transaction-bound result-presentation proof defined below, the affected range
+becomes projected without changing canonical selection or source. A completed
+construct does not wait in `pending_exact` merely because background
+certification has not caught up.
 
 ### LP2-COMPLETE-INCOMPLETE-001
 
@@ -157,15 +186,18 @@ Unrelated certified presentation remains.
 ### LP2-REPLACE-CONTENT-001
 
 Replacing selected visible content inside a semantic span preserves only the
-source syntax outside the resolved source selection. Flutter does not expand
-or repair Markdown delimiters on its own.
+source syntax required by the `flark-edit-v1` result and semantic closure.
+Flutter does not expand, dissolve, or repair Markdown delimiters on its own.
 
 ### LP2-DELETE-BOUNDARY-001
 
 Backspace/Delete traverse legal visible caret stops. A hidden marker is not
 deleted as an invisible character. Boundary edits that require structural
-behavior use a parser-authored edit recipe or perform the literal source edit
-defined by the canonical selection.
+behavior use the current-revision semantic result defined by `flark-edit-v1`
+and proved by a parser-authored edit recipe. Literal source mechanics apply
+inside a current authenticated exact/literal island using its canonical
+mapping even when richer semantics are pending; they do not claim hidden-owner
+traversal or closure.
 
 ### LP2-ARROW-BOUNDARY-001
 
@@ -184,9 +216,13 @@ offset never becomes a display caret or edit origin.
 
 ### LP2-UNDO-PROJECTION-001
 
-Undo/redo restores exact source and canonical selection snapshots. Projection
-is recomputed/certified at the resulting revision; presentation state is not an
-independent history entry.
+Undo/redo restores exact source and the complete interaction state required by
+`flark-edit-v1`, including selection/affinity and Core-owned `TypingContext`.
+Projection is recomputed/certified at the resulting revision; presentation
+state is not an independent history entry. History restores semantic typing
+intent, while the native history transaction emits a fresh context directive
+and recipe bound to the new result revision; an old authority token is never
+replayed.
 
 ## 8. Immediate visibility and certification
 
@@ -195,17 +231,46 @@ rendered frame under RFC 026's performance contract.
 
 For semantic presentation, the surface may use only:
 
-1. facts certified at the committed revision and range; or
-2. a transaction-bound Rust continuity receipt that explicitly authorizes the
-   retained presentation and mapping.
+1. facts certified at the committed revision and range;
+2. a one-shot parser-authored literal-safe envelope for a literal edit that
+   cannot change the retained semantic facts; or
+3. a transaction-bound semantic result-presentation proof required by
+   [EP1-RESULT-PRESENTATION-001](edit_profile_v1.md#ep1-result-presentation-001).
 
-The initial T2 spike attempted bounded commit, pump, and query with the existing
-protocol. The Mac profile trace demonstrated missing active projection on all
-120 measured ordinary edits despite sub-budget editor work, so the runtime now
-publishes a typed continuity policy. `flark_core` turns it into an exact
-transaction/revision receipt; Flutter may update only the authorized visible
-content run. The receipt remains live until a certified viewport at or after
-its result revision covers the authorized content range.
+### LP2-SEMANTIC-EDIT-RESULT-001
+
+A semantic result-presentation proof is part of the same logical receipt as
+the committed edit. It binds the predecessor publication, exact result
+revision, base/result closure transform, and a complete affected partition of
+row shells, rendered runs and owner/style paths, source/display mapping, legal
+caret-context topology, semantic objects, and action authority. Unchanged
+partitions are retained only by exact predecessor fact identity plus bounded
+range transforms. Result anchors, semantic typing intent, fresh caret/empty-
+owner directive, and history identity join the same result.
+
+The affected and retained partitions must cover the complete command surface
+without overlap or an unexplained gap. Required proof data is never truncated;
+cap exhaustion fails before mutation. The proof may describe created, changed,
+or removed inline facts because Rust resolved the semantic command or
+recognized a completed construction; literal-safe envelopes may not.
+
+Core validates and publishes the proof atomically through the existing
+immutable pending-presentation slot and lifecycle. It does not introduce a
+second result cache or third controller semantic state. Flutter does not
+extend, merge, or infer it, and the proof expires when current certification
+covers the closure. Without current certification or this complete proof, the
+semantic command must fail before mutation rather than expose raw syntax in a
+waiting frame.
+
+The initial T2 spike attempted bounded commit, pump, and query with the older
+continuity protocol. The following paragraphs preserve that experiment's
+history; they are not authority for `flark-edit-v1` semantic deletion. The Mac
+profile trace demonstrated missing active projection on all 120 measured
+ordinary edits despite sub-budget editor work, so the runtime then published a
+typed continuity policy. `flark_core` turned it into an exact
+transaction/revision receipt; Flutter could update only the authorized visible
+content run. The receipt remained live until a certified viewport at or after
+its result revision covered the authorized content range.
 
 Continuity is currently authorized for conservative plain-text edits to
 emphasis, strong, strikethrough, code-span, and direct-link label content, plus
@@ -427,32 +492,30 @@ edit or another list action.
 ### LP2-COMPOSITION-BEGIN-001
 
 The input connection retains the exact source window. Beginning composition
-creates a `composition_exact` island for the active source row. When a current
-ABI edit cell matches the composition delta, its declared block shell and
-independent outside runs may remain projected while the affected cell is exact.
-Without that parser-authored proof the complete row is exact because the
-runtime has no result-revision proof that the composition delta leaves its
-other inline facts unchanged. Markers in that row may therefore be visible
-while composition is pending; unrelated certified rows remain projected.
+captures the active range and starting semantic intent. Each source-mutating
+update must return a parser-authored composition result proof that confines
+`composition_exact` to the mapped composing payload and retains the complete
+surrounding shell/runs, including hidden delimiters. The proof may not be
+reconstructed from predecessor facts plus a splice.
 
-A generally available composing-range island, with other facts in the active
-row retained, is still pending parser-authored result-revision/dependency
-authority. The bounded edit cells do not authorize any range or edit they did
-not declare. Authority must not be reconstructed from predecessor facts plus a
-source splice and remains a T3 input-truth item in
-[RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md).
+Without that proof the update fails typed before mutation; broadening the
+complete row to exact source and revealing its markers is not a
+`flark-edit-v1` fallback. ABI 4.36 lacks this general capability, so native
+composition remains outside the current dogfood support domain rather than
+claiming profile conformance through the older row-wide exact behavior.
 
 ### LP2-COMPOSITION-UPDATE-001
 
-Every delta updates exact source, composing range, canonical selection, and
-candidate/prompt geometry in order. Repeated updates do not duplicate,
-normalize, or reorder text.
+Every accepted delta updates exact source, composing range, canonical
+selection, bounded composition proof, and candidate/prompt geometry in order.
+Repeated updates do not duplicate, normalize, or reorder text.
 
 ### LP2-COMPOSITION-COMMIT-001
 
-Commit/cancel closes the island. Current-certified syntax projects; incomplete
-or pending syntax remains exact. The input connection is not restarted solely
-for a presentation change.
+Commit applies `EP1-ATOMIC-TEXT-BOUNDARY-001`, publishes its complete result
+proof, and closes the island. Cancel restores exact precomposition source and
+intent with fresh authority. The input connection is not restarted solely for
+a presentation change.
 
 ### LP2-INPUT-RESYNC-001
 
@@ -508,14 +571,28 @@ old behavior of revealing any active row.
 
 Initial v2 behavior is intentionally narrow:
 
-- editor copy/cut uses exact source corresponding to the canonical source
-  selection;
-- editor paste inserts the received plain text exactly;
+- ordinary rendered-mode editor copy/cut exports the selected visible payload
+  as `text/plain`, omitting hidden delimiters and metadata. Exact/literal
+  islands contribute their visibly displayed source characters and atomic
+  objects contribute their declared plain-text representation. Exact Markdown
+  export requires a separately named future command/MIME type;
+- cut follows the prepared-deletion ordering in `EP1-COPY-CUT-001`: native
+  range deletion and its complete result are validated and reserved before the
+  external clipboard write, then the same single-use operation is committed
+  under the unchanged command gate. Clipboard state is not falsely claimed as
+  rollbackable with source;
+- editor paste preserves the received plain text as exact source bytes only at
+  a plain/exterior or authenticated exact/literal target; inside an existing
+  semantic owner or range longest-common path, it preserves the exact visible
+  clipboard payload while Rust escapes/re-delimits source according to
+  `EP1-PASTE-001`;
 - read-only copy uses selected visible text; and
 - no rich or multi-MIME preservation claim is made.
 
 Marker-inclusive selection expansion, rich HTML, `text/markdown`, images, and
 cross-application formatting are separately versioned future capabilities.
+These choices are governed by `POL-CLIPBOARD-PROJECTION`, not inferred from
+Markdown grammar or platform callback shape.
 
 ## 13. Read-only widget contract
 

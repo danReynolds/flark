@@ -510,13 +510,14 @@ cells or envelopes, preventing proof-heavy early rows from forcing later rows
 to exact source. Oversized baseline groups retain the ABI's existing complete-
 group fail-closed behavior.
 
-ABI 4.34 is the final frozen D0 minor. ABI 4.32 added one process-global live-state
-inspection mode to the existing fixed inspection record so close/lifecycle
-qualification can prove zero sessions, transactions, continuations, anchors,
-and histories after the last session handle has been consumed. Before any
-downstream Phase-2 receipt was frozen, the same draft minor was explicitly
-reopened and refrozen with `PROJECTION_EDIT_CELLS_V3`. That capability keeps
-kind 16 and adds a generic one-shot exact-scalar matcher parameterized by Rust.
+ABI 4.34 was the former frozen D0 minor; that freeze is now invalid. ABI 4.32
+added one process-global live-state inspection mode to the existing fixed
+inspection record so close/lifecycle qualification can prove zero sessions,
+transactions, continuations, anchors, and histories after the last session
+handle has been consumed. Before any downstream Phase-2 receipt was frozen,
+the same draft minor was explicitly reopened and refrozen with
+`PROJECTION_EDIT_CELLS_V3`. That capability keeps kind 16 and adds a generic
+one-shot exact-scalar matcher parameterized by Rust.
 The first parser emitter closes the D0 `[`-inside-Strong case on one
 single-physical-line Plain row with a complete Strong dependency closure and
 zero-width guarded trigger; Core compares only
@@ -533,16 +534,26 @@ mechanically. This replaces the observed Plain-shell flash for bounded heading,
 quote, and list construction at human cadence and before one vsync
 without adding a Dart marker rule or a parallel authority state.
 
-The frozen fenced-code construction/removal journey then demonstrated that a
+The fenced-code construction/removal journey then demonstrated that a
 single changed row shell was still insufficient: one admitted prefix can
 replace several predecessor rows and produce several clean result rows. The
-final ABI 4.34 `BOUNDED_PENDING_PRESENTATION_PLANS_V1` contract therefore
+ABI 4.34 `BOUNDED_PENDING_PRESENTATION_PLANS_V1` contract therefore
 carries one bounded exact insertion sequence and the complete clean parser
 result for every prefix. Core validates and materializes that parser-owned
 snapshot into the existing pending-presentation slot. It adds neither host
-fence recognition nor a second continuity lifecycle. This is the final
-planned general-authority revision; another ABI change before D0 invalidates
-the architecture-freeze exit and requires explicit re-review.
+fence recognition nor a second continuity lifecycle.
+
+That architecture-freeze exit was explicitly reopened for ABI 4.35 and 4.36.
+ABI 4.35 added `PROJECTION_EDIT_CELLS_V5`, including the typed empty-literal
+caret consequence and `REMOVED` result shell. ABI 4.36 added
+`LITERAL_SAFE_ENVELOPES_V3` and the parser-proved `JOIN_FENCED_CODE`
+presentation transition. Review found both to remain inside the parser-owned
+authority and unified pending-presentation lifecycle, but the changes still
+invalidate the 4.34 Phase-1 exit and every downstream receipt under the freeze
+rule. The D0 ABI freeze is open. Implementing `flark-edit-v1` requires a future
+exact minor with explicit profile/envelope negotiation and the complete result-
+presentation proof; that minor must receive architecture re-review before new
+D0 receipts are run or accepted.
 
 The frozen 4.32 structural receipt contract also proves simple-list indent and
 outdent presentation when the Ready parser context and typed resolver certify

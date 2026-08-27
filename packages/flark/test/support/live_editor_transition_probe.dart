@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flark/flark.dart';
@@ -43,19 +44,293 @@ typedef SurfaceRowSample = ({
   int kind,
   int? headingLevel,
   int? quoteDepth,
+  bool codeBlock,
+  bool thematicBreak,
+  bool listItem,
+  bool neutral,
   String leadingText,
   String text,
   List<SurfaceRunSample> runs,
 });
 
-SurfaceRowSample _captureRow(FlarkSurfaceRow row) => (
+SurfaceRowSample _captureRow(FlarkSurfaceRow row, {bool neutral = false}) => (
   ordinal: row.ordinal,
   kind: row.kind,
   headingLevel: row.headingLevel,
   quoteDepth: row.blockQuoteDepth,
+  codeBlock: row.codeBlock != null,
+  thematicBreak: row.thematicBreak,
+  listItem: row.listItem,
+  neutral: neutral,
   leadingText: row.leadingText,
   text: row.text,
   runs: row.runs.map(_captureRun).toList(growable: false),
+);
+
+/// Captures the complete framework-neutral row plan visited by the production
+/// render surface, including editor-owned neutral rows between parser rows.
+/// A pending structural receipt and its settled parse can encode the same
+/// visible blank line differently; comparing this paint plan keeps temporal
+/// tests focused on visible equivalence instead of parser representation.
+List<SurfaceRowSample> captureControllerSurfaceRows(
+  FlarkEditorController controller, {
+  bool includeEditingState = true,
+}) {
+  final captured = <SurfaceRowSample>[];
+  final rows = controller.rows;
+  if (rows.isEmpty) {
+    final source = controller.visibleSource;
+    var cursor = 0;
+    var ordinal = 0;
+    while (cursor <= source.length) {
+      final newline = source.indexOf('\n', cursor);
+      final end = newline == -1 ? source.length : newline + 1;
+      captured.add(
+        _captureRow(
+          controller.neutralSurfaceRow(
+            globalUtf16Start: controller.visibleUtf16Start + cursor,
+            text: source.substring(cursor, end),
+            ordinal: ordinal,
+            includeEditingState: includeEditingState,
+          ),
+          neutral: true,
+        ),
+      );
+      if (newline == -1) break;
+      cursor = end;
+      ordinal += 1;
+    }
+    return List.unmodifiable(captured);
+  }
+
+  var sourceCursor = controller.visibleUtf16Start;
+  var precedingOwnsEditorBlockBoundary = false;
+  for (final row in rows) {
+    final range = controller.surfaceSourceRange(row);
+    final presentations = controller.surfaceRowsFor(
+      row,
+      includeEditingState: includeEditingState,
+    );
+    if (presentations.isEmpty) continue;
+    if (range.start > sourceCursor) {
+      captured.addAll(
+        _captureNeutralGapRows(
+          controller,
+          sourceCursor,
+          range.start,
+          hasPrecedingRow: sourceCursor > controller.visibleUtf16Start,
+          precedingOwnsEditorBlockBoundary: precedingOwnsEditorBlockBoundary,
+          hasFollowingRow: true,
+          includeEditingState: includeEditingState,
+        ),
+      );
+    }
+    captured.addAll(presentations.map(_captureRow));
+    precedingOwnsEditorBlockBoundary =
+        presentations.length > 1 ||
+        (presentations.isNotEmpty &&
+            presentations.last.text.isEmpty &&
+            presentations.last.leadingText.isEmpty &&
+            presentations.last.kind == 5);
+    if (range.end > sourceCursor) sourceCursor = range.end;
+  }
+  final visibleEnd =
+      controller.visibleUtf16Start + controller.visibleSource.length;
+  if (sourceCursor < visibleEnd) {
+    captured.addAll(
+      _captureNeutralGapRows(
+        controller,
+        sourceCursor,
+        visibleEnd,
+        hasPrecedingRow: true,
+        precedingOwnsEditorBlockBoundary: precedingOwnsEditorBlockBoundary,
+        hasFollowingRow: false,
+        includeEditingState: includeEditingState,
+      ),
+    );
+  }
+  return List.unmodifiable(captured);
+}
+
+Iterable<SurfaceRowSample> _captureNeutralGapRows(
+  FlarkEditorController controller,
+  int globalStart,
+  int globalEnd, {
+  required bool hasPrecedingRow,
+  required bool precedingOwnsEditorBlockBoundary,
+  required bool hasFollowingRow,
+  required bool includeEditingState,
+}) sync* {
+  final source = controller.visibleSource;
+  final visibleStart = controller.visibleUtf16Start;
+  final localStart = (globalStart - visibleStart).clamp(0, source.length);
+  final localEnd = (globalEnd - visibleStart).clamp(localStart, source.length);
+  final lines = <({int start, int end})>[];
+  var cursor = localStart;
+  while (cursor < localEnd) {
+    final newline = source.indexOf('\n', cursor);
+    final end = newline == -1 || newline >= localEnd ? localEnd : newline + 1;
+    lines.add((start: cursor, end: end));
+    cursor = end;
+  }
+  assert(!hasPrecedingRow || globalStart >= visibleStart);
+  bool isWhitespaceLine(int index) {
+    final line = lines[index];
+    return source.substring(line.start, line.end).trim().isEmpty;
+  }
+
+  final emitted = List<bool>.filled(lines.length, true);
+  if (hasPrecedingRow &&
+      precedingOwnsEditorBlockBoundary &&
+      lines.isNotEmpty &&
+      isWhitespaceLine(0)) {
+    emitted[0] = false;
+  }
+  if (hasFollowingRow &&
+      lines.isNotEmpty &&
+      isWhitespaceLine(lines.length - 1)) {
+    emitted[lines.length - 1] = false;
+  }
+  for (var index = 1; index < lines.length; index += 1) {
+    if (!isWhitespaceLine(index) && isWhitespaceLine(index - 1)) {
+      emitted[index - 1] = false;
+    }
+  }
+  for (var index = 0; index < lines.length; index += 1) {
+    if (!emitted[index]) continue;
+    final line = lines[index];
+    var ordinal = 0;
+    for (var offset = 0; offset < line.start; offset += 1) {
+      if (source.codeUnitAt(offset) == 0x0a) ordinal += 1;
+    }
+    yield _captureRow(
+      controller.neutralSurfaceRow(
+        globalUtf16Start: visibleStart + line.start,
+        text: source.substring(line.start, line.end),
+        ordinal: ordinal,
+        includeEditingState: includeEditingState,
+      ),
+      neutral: true,
+    );
+  }
+}
+
+String _withoutTerminalLineEnding(String text) {
+  if (text.endsWith('\r\n')) {
+    return text.substring(0, text.length - 2);
+  }
+  if (text.endsWith('\n') || text.endsWith('\r')) {
+    return text.substring(0, text.length - 1);
+  }
+  return text;
+}
+
+String captureSurfaceRowsPresentation(Iterable<SurfaceRowSample> rows) => rows
+    .map((row) => '${row.leadingText}${_withoutTerminalLineEnding(row.text)}')
+    .join('\n');
+
+String captureSurfaceRowsVisualManifest(Iterable<SurfaceRowSample> rows) =>
+    jsonEncode(
+      rows
+          .map((row) {
+            final visibleText = _withoutTerminalLineEnding(row.text);
+            final runs = <Map<String, Object?>>[];
+            String? precedingStyleKey;
+            for (var index = 0; index < row.runs.length; index += 1) {
+              final run = row.runs[index];
+              final text = index == row.runs.length - 1
+                  ? _withoutTerminalLineEnding(run.text)
+                  : run.text;
+              if (text.isEmpty && run.styles.isEmpty) continue;
+              final styles = run.styles.toList()..sort();
+              final styleKey = styles.join('\u0000');
+              if (runs.isNotEmpty && styleKey == precedingStyleKey) {
+                runs.last['text'] = '${runs.last['text']}$text';
+              } else {
+                runs.add({'text': text, 'styles': styles});
+                precedingStyleKey = styleKey;
+              }
+            }
+            if ((row.listItem || row.kind == 14) &&
+                row.headingLevel == null &&
+                !row.codeBlock &&
+                !row.thematicBreak) {
+              // The mounted list Return lane proves parser Item (kind 14)
+              // and its receipt-backed content surface (kind 5) resolve to
+              // identical text style and geometry. The mounted empty-list
+              // Backspace lane additionally proves a top-level unstyled list
+              // and its exact fallback paint the same combined marker text,
+              // rectangles, and block style.
+              if (row.quoteDepth == null &&
+                  runs.every(
+                    (run) => (run['styles']! as List<Object?>).isEmpty,
+                  )) {
+                return <String, Object?>{
+                  'plainBlock': '${row.leadingText}$visibleText',
+                };
+              }
+              // Nested/quoted or styled list rows retain their semantic
+              // identity because that can materially change paint.
+              return <String, Object?>{
+                'listBlock': true,
+                'quoteDepth': row.quoteDepth,
+                'leadingText': row.leadingText,
+                'text': visibleText,
+                'runs': runs,
+              };
+            }
+            final plainUnstyledBlock =
+                (row.kind == 0 || row.kind == 5) &&
+                row.headingLevel == null &&
+                row.quoteDepth == null &&
+                !row.codeBlock &&
+                !row.thematicBreak &&
+                !row.listItem &&
+                row.runs.every((run) => run.styles.isEmpty);
+            if (plainUnstyledBlock) {
+              // The mounted geometry lane proves exact-source fallback and a
+              // plain Paragraph resolve to the same block style and geometry.
+              // Mapping-run segmentation and the parser's neutral flag are
+              // not visible; authored marker text remains visible and still
+              // differs from a projected styled result.
+              return <String, Object?>{
+                'plainBlock': '${row.leadingText}$visibleText',
+              };
+            }
+            return <String, Object?>{
+              'kind': row.kind,
+              'headingLevel': row.headingLevel,
+              'quoteDepth': row.quoteDepth,
+              'codeBlock': row.codeBlock,
+              'thematicBreak': row.thematicBreak,
+              'listItem': row.listItem,
+              'neutral': row.neutral,
+              'leadingText': row.leadingText,
+              'text': visibleText,
+              'runs': runs,
+            };
+          })
+          .toList(growable: false),
+    );
+
+String captureControllerPresentation(
+  FlarkEditorController controller, {
+  bool includeEditingState = true,
+}) => captureSurfaceRowsPresentation(
+  captureControllerSurfaceRows(
+    controller,
+    includeEditingState: includeEditingState,
+  ),
+);
+
+String captureControllerVisualManifest(
+  FlarkEditorController controller, {
+  bool includeEditingState = true,
+}) => captureSurfaceRowsVisualManifest(
+  captureControllerSurfaceRows(
+    controller,
+    includeEditingState: includeEditingState,
+  ),
 );
 
 String _rowManifest(SurfaceRowSample row) => <Object?>[
@@ -63,6 +338,10 @@ String _rowManifest(SurfaceRowSample row) => <Object?>[
   row.kind,
   row.headingLevel,
   row.quoteDepth,
+  row.codeBlock,
+  row.thematicBreak,
+  row.listItem,
+  row.neutral,
   row.leadingText,
   row.text,
   row.runs
@@ -85,11 +364,16 @@ final class PublicationSample {
     required this.status,
     required this.pendingEdits,
     required this.semanticsCurrent,
+    required this.projectionContinuityActive,
+    required this.structuralSurfaceCount,
+    required this.structuralSurfaceContinuityActive,
+    required this.publicationCertificationBarrierActive,
     required this.visibleSource,
     required this.visibleStart,
     required this.sourceUtf16Length,
     required this.inputGlobalStart,
     required this.inputValue,
+    required this.inputWindowTextSha256,
     required this.globalSelectionBase,
     required this.globalSelectionExtent,
     required this.hasOversizedSelection,
@@ -107,20 +391,24 @@ final class PublicationSample {
     status: controller.status,
     pendingEdits: controller.pendingEdits,
     semanticsCurrent: controller.semanticsCurrent,
+    projectionContinuityActive: controller.debugProjectionContinuityActive,
+    structuralSurfaceCount: controller.debugStructuralSurfaceCount,
+    structuralSurfaceContinuityActive:
+        controller.debugStructuralSurfaceContinuityActive,
+    publicationCertificationBarrierActive:
+        controller.debugPublicationCertificationBarrierActive,
     visibleSource: controller.visibleSource,
     visibleStart: controller.visibleUtf16Start,
     sourceUtf16Length: controller.sourceUtf16Length,
     inputGlobalStart: controller.inputWindowShadow.globalUtf16Start,
     inputValue: controller.inputValue,
+    inputWindowTextSha256: controller.inputWindowShadow.windowTextSha256,
     globalSelectionBase: controller.globalSelectionBase,
     globalSelectionExtent: controller.globalSelectionExtent,
     hasOversizedSelection: controller.hasOversizedSelection,
     resyncCount: controller.resyncCount,
     lastError: controller.lastError,
-    rows: controller.rows
-        .map(controller.surfaceRow)
-        .map(_captureRow)
-        .toList(growable: false),
+    rows: captureControllerSurfaceRows(controller),
   );
 
   final int sequence;
@@ -128,11 +416,16 @@ final class PublicationSample {
   final FlarkEditorStatus status;
   final int pendingEdits;
   final bool semanticsCurrent;
+  final bool projectionContinuityActive;
+  final int structuralSurfaceCount;
+  final bool structuralSurfaceContinuityActive;
+  final bool publicationCertificationBarrierActive;
   final String visibleSource;
   final int visibleStart;
   final int sourceUtf16Length;
   final int inputGlobalStart;
   final TextEditingValue inputValue;
+  final String inputWindowTextSha256;
   final int globalSelectionBase;
   final int globalSelectionExtent;
   final bool hasOversizedSelection;
@@ -140,10 +433,11 @@ final class PublicationSample {
   final Object? lastError;
   final List<SurfaceRowSample> rows;
 
-  String get presentation =>
-      rows.map((row) => '${row.leadingText}${row.text}').join('\n');
+  String get presentation => captureSurfaceRowsPresentation(rows);
 
-  void expectMechanicallyValid() {
+  String get visualManifest => captureSurfaceRowsVisualManifest(rows);
+
+  void expectMechanicallyValid({bool requirePublishedShadowMatch = true}) {
     // This validator also runs synchronously from a ChangeNotifier listener.
     // `expectSync` preserves immediate failure without entering Flutter's
     // guarded async API while a pump is delivering a native completion.
@@ -151,6 +445,15 @@ final class PublicationSample {
     expectSync(status, isNot(FlarkEditorStatus.faulted));
     expectSync(lastError, isNull);
     expectSync(resyncCount, 0);
+    if (requirePublishedShadowMatch) {
+      expectSync(
+        inputWindowTextSha256,
+        flarkWindowTextSha256(inputValue.text),
+        reason:
+            'an observable publication must reconcile the platform shadow '
+            'with the exposed input text',
+      );
+    }
     final projectedUtf16Length = <int>[
       sourceUtf16Length,
       visibleStart + visibleSource.length,
@@ -280,14 +583,20 @@ final class LiveEditorTransitionProbe {
 
   ActionTrace observe(void Function() action) {
     final before = PublicationSample.capture(controller, _sampleSequence++);
-    before.expectMechanicallyValid();
+    // This is a synchronous sampling point, not a controller publication. A
+    // same-burst callback can begin while the platform shadow is already one
+    // provisional value ahead of the last exposed controller window.
+    before.expectMechanicallyValid(requirePublishedShadowMatch: false);
     final publicationStart = publications.length;
     action();
     final callbackReturn = PublicationSample.capture(
       controller,
       _sampleSequence++,
     );
-    callbackReturn.expectMechanicallyValid();
+    // Callback return is intentionally not an observable publication. While
+    // parser certification is in flight, the text service may own a newer
+    // provisional value than the controller is allowed to expose or paint.
+    callbackReturn.expectMechanicallyValid(requirePublishedShadowMatch: false);
     return ActionTrace(
       before: before,
       publications: List.unmodifiable(publications.skip(publicationStart)),
@@ -297,14 +606,14 @@ final class LiveEditorTransitionProbe {
 
   Future<ActionTrace> observeAsync(Future<void> Function() action) async {
     final before = PublicationSample.capture(controller, _sampleSequence++);
-    before.expectMechanicallyValid();
+    before.expectMechanicallyValid(requirePublishedShadowMatch: false);
     final publicationStart = publications.length;
     await action();
     final callbackReturn = PublicationSample.capture(
       controller,
       _sampleSequence++,
     );
-    callbackReturn.expectMechanicallyValid();
+    callbackReturn.expectMechanicallyValid(requirePublishedShadowMatch: false);
     return ActionTrace(
       before: before,
       publications: List.unmodifiable(publications.skip(publicationStart)),

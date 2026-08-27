@@ -103,6 +103,7 @@ const _pendingRowFactCountShift = 16;
 const _literalEditClassAsciiWordInsertion = 1;
 const _literalEditClassSingleAsciiSpaceInsertion = 2;
 const _literalEditClassSingleAsciiAsteriskInsertion = 3;
+const _literalEditClassSingleAsciiLiteralUnitDeletion = 4;
 const _projectionEditMatcherMask = 0xff;
 const _projectionEditMatcherAnyNoCrLfSplice = 1;
 const _projectionEditMatcherAsciiLiteralSpliceInLiteral = 2;
@@ -120,7 +121,8 @@ const _projectionEditPresentClosureExact = 0x400;
 const _projectionEditChainResultCell = 0x800;
 const _projectionEditTerminalSpaceBlocked = 0x1000;
 const _projectionEditReplaceBlockShell = 0x2000;
-const _knownProjectionEditCellFlags = 0x3fff;
+const _projectionEditEmptyLiteralResult = 0x4000;
+const _knownProjectionEditCellFlags = 0x7fff;
 const _projectionEditResultShellKindMask = 0x0f;
 const _projectionEditResultShellPrefixShift = 4;
 const _projectionEditResultShellPrefixMask = 0x0ff0;
@@ -129,6 +131,7 @@ const _projectionEditResultShellPlain = 1;
 const _projectionEditResultShellAtxHeading = 2;
 const _projectionEditResultShellBlockQuote = 3;
 const _projectionEditResultShellListItem = 4;
+const _projectionEditResultShellRemoved = 5;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
@@ -184,6 +187,8 @@ const _editPresentationOutdentBlockQuote = 16;
 const _editPresentationToggleTaskChecked = 17;
 const _editPresentationIndentList = 18;
 const _editPresentationRetainParagraphGap = 19;
+const _editPresentationJoinFencedCode = 20;
+const _editPresentationDeleteInlineOwner = 21;
 const _bulkCommitWorkUnits = 1;
 // CreateRequest.flags bit selecting the RFC 029 progressive opening-query
 // mode. Only honored by runtimes built with the `opening-session` cargo
@@ -207,13 +212,13 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 34;
+const _abiMinor = 37;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0xfffffffff;
+const _requiredCapabilityBits = 0x3fffffffff;
 const _inspectGlobalLiveState = 1;
 
 /// Whether a runtime version can satisfy this stateless Dart ABI client.
@@ -301,6 +306,8 @@ enum FlarkNativeEditPresentationTransitionV1 {
   toggleTaskChecked,
   indentList,
   retainParagraphGap,
+  joinFencedCode,
+  deleteInlineOwner,
 }
 
 final class FlarkNativeEditIntentReceiptV1 {
@@ -1531,6 +1538,10 @@ final class FlarkNativeDocument {
           FlarkNativeEditPresentationTransitionV1.indentList,
         _editPresentationRetainParagraphGap =>
           FlarkNativeEditPresentationTransitionV1.retainParagraphGap,
+        _editPresentationJoinFencedCode =>
+          FlarkNativeEditPresentationTransitionV1.joinFencedCode,
+        _editPresentationDeleteInlineOwner =>
+          FlarkNativeEditPresentationTransitionV1.deleteInlineOwner,
         _ => throw FlarkNativeException(
           'edit_intent_v1',
           _internalFault,
@@ -2745,14 +2756,12 @@ final class FlarkNativeDocument {
       final tableFacts = decodedFacts
           ?.where((fact) => fact.kind == FlarkInlineFactKind.tableCell)
           .toList(growable: false);
-      if (hasTablePresentation) {
+      // Table cells may be owned by a paragraph nested inside a list item or
+      // block quote. In those composite rows the semantic variant carries the
+      // container shell, so the parser-authored cell facts are the table
+      // presentation authority instead of the plain-row table bit.
+      if (hasTablePresentation || (tableFacts?.isNotEmpty ?? false)) {
         table = _decodeTablePresentation(tableFacts ?? const []);
-      } else if (tableFacts?.isNotEmpty ?? false) {
-        throw FlarkNativeException(
-          'decode_viewport',
-          _notCertified,
-          _inlineFactTableCell,
-        );
       }
       final inlineFacts = decodedFacts
           ?.where((fact) => fact.kind != FlarkInlineFactKind.tableCell)
@@ -3128,6 +3137,8 @@ final class FlarkNativeDocument {
         FlarkLiteralEditClass.singleAsciiSpaceInsertion,
       _literalEditClassSingleAsciiAsteriskInsertion =>
         FlarkLiteralEditClass.singleAsciiAsteriskInsertion,
+      _literalEditClassSingleAsciiLiteralUnitDeletion =>
+        FlarkLiteralEditClass.singleAsciiLiteralUnitDeletion,
       _ => throw FlarkNativeException(
         'decode_viewport',
         _notCertified,
@@ -3146,6 +3157,8 @@ final class FlarkNativeDocument {
         empty || (byteStart < byteEnd && utf16Start < utf16End),
       FlarkLiteralEditClass.singleAsciiAsteriskInsertion =>
         byteStart < byteEnd && utf16Start < utf16End,
+      FlarkLiteralEditClass.singleAsciiLiteralUnitDeletion =>
+        byteEnd >= byteStart + 1 && utf16End >= utf16Start + 1,
     };
     if (editableBytes == null ||
         editableUtf16 == null ||
@@ -3230,6 +3243,8 @@ final class FlarkNativeDocument {
     final presentClosureExact =
         record.flags & _projectionEditPresentClosureExact != 0;
     final chainResultCell = record.flags & _projectionEditChainResultCell != 0;
+    final allowsEmptyLiteralResult =
+        record.flags & _projectionEditEmptyLiteralResult != 0;
     final replacesBlockShell =
         record.flags & _projectionEditReplaceBlockShell != 0;
     final replacesShell =
@@ -3260,7 +3275,8 @@ final class FlarkNativeDocument {
         _projectionEditMatcherDeleteOneAsciiUnitInLiteral |
             _projectionEditRetainBlockShell |
             _projectionEditRetainOutsideClosure |
-            _projectionEditPresentClosureExact,
+            _projectionEditPresentClosureExact |
+            (record.flags & _projectionEditEmptyLiteralResult),
       FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint =>
         _projectionEditMatcherInsertSingleAsciiSpaceAtPoint |
             _projectionEditRetainBlockShell |
@@ -3327,6 +3343,18 @@ final class FlarkNativeDocument {
             !literalWordShape) ||
         (matcher == FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral &&
             !literalWordShape) ||
+        (allowsEmptyLiteralResult &&
+            (matcher !=
+                    FlarkProjectionEditMatcher.deleteOneAsciiUnitInLiteral ||
+                affectedBytes.start != triggerBytes.start ||
+                affectedBytes.end != triggerBytes.end ||
+                affectedUtf16.start != triggerUtf16.start ||
+                affectedUtf16.end != triggerUtf16.end ||
+                triggerBytes.length != 1 ||
+                triggerUtf16.length != 1 ||
+                record.replacementSecond != 0 ||
+                triggerUtf16.start + record.replacementFirst >=
+                    blockAuthorityUtf16.end)) ||
         (matcher == FlarkProjectionEditMatcher.insertSingleAsciiSpaceAtPoint &&
             !pointShape) ||
         (matcher == FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
@@ -3366,6 +3394,7 @@ final class FlarkNativeDocument {
             matcher !=
                 FlarkProjectionEditMatcher.exactSpliceReplaceBlockShell &&
             matcher != FlarkProjectionEditMatcher.simpleBlockPrefixPlan &&
+            !allowsEmptyLiteralResult &&
             (record.replacementFirst != 0 || record.replacementSecond != 0))) {
       throw FlarkNativeException('decode_viewport', _notCertified, record.kind);
     }
@@ -3382,6 +3411,10 @@ final class FlarkNativeDocument {
       terminalSpaceAvailable:
           matcher == FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd &&
           record.flags & _projectionEditTerminalSpaceBlocked == 0,
+      allowsEmptyLiteralResult: allowsEmptyLiteralResult,
+      resultCaretForwardUtf16: allowsEmptyLiteralResult
+          ? record.replacementFirst
+          : 0,
       exactScalar:
           matcher == FlarkProjectionEditMatcher.insertExactScalarAtPoint ||
               (matcher ==
@@ -3431,6 +3464,8 @@ final class FlarkNativeDocument {
         FlarkProjectionResultBlockKind.blockQuote,
       _projectionEditResultShellListItem =>
         FlarkProjectionResultBlockKind.listItem,
+      _projectionEditResultShellRemoved =>
+        FlarkProjectionResultBlockKind.removed,
       _ => null,
     };
     if (kind == null ||
@@ -3443,6 +3478,8 @@ final class FlarkNativeDocument {
             prefix == 0 || parameter < 1 || parameter > 32,
           FlarkProjectionResultBlockKind.listItem =>
             prefix == 0 || parameter != 0,
+          FlarkProjectionResultBlockKind.removed =>
+            prefix != 0 || parameter != 0,
         }) {
       return null;
     }

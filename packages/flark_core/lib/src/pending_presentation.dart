@@ -6,6 +6,7 @@ import 'projection_continuity.dart';
 enum FlarkPendingPresentationPart {
   dependency,
   paragraphGap,
+  caretBoundary,
   structuralSurfaces,
   taskChecks,
 }
@@ -20,6 +21,7 @@ final class FlarkPendingDependencyPresentation {
     required this.rowOrdinal,
     required this.authority,
     required FlarkCorePresentationRow presentation,
+    this.removesOwnerRow = false,
   }) : presentations = List.unmodifiable([presentation]),
        replacedRowOrdinals = Set.unmodifiable({rowOrdinal});
 
@@ -28,6 +30,7 @@ final class FlarkPendingDependencyPresentation {
     required this.authority,
     required List<FlarkCorePresentationRow> presentations,
     required Set<int> replacedRowOrdinals,
+    this.removesOwnerRow = false,
   }) : assert(presentations.isNotEmpty),
        assert(replacedRowOrdinals.contains(rowOrdinal)),
        presentations = List.unmodifiable(presentations),
@@ -41,6 +44,11 @@ final class FlarkPendingDependencyPresentation {
   /// ordinal remains the stable publication anchor even when a result merges
   /// or splits the parser's prior row partition.
   final Set<int> replacedRowOrdinals;
+
+  /// The parser proved that the result closure no longer has a rendered
+  /// block. [presentations] retains a zero-width source/caret anchor for input
+  /// reconciliation, while frontends omit the replaced cached row.
+  final bool removesOwnerRow;
 
   /// Compatibility view for existing one-row dependency authorities.
   FlarkCorePresentationRow get presentation => presentations.single;
@@ -270,6 +278,30 @@ final class FlarkPendingStructuralSurface {
   final FlarkProjectionEditCellReceipt? continuity;
 }
 
+/// Editor-owned caret boundary that remains after its temporary visual gap
+/// has been superseded by certified parser rows.
+///
+/// Markdown has no AST row for this blank interaction island. Keeping the
+/// boundary distinct from [FlarkCoreCommittedPresentationGapV1] prevents it
+/// from affecting certified layout while still protecting hidden successor
+/// syntax from a Delete issued at the shared source offset.
+final class FlarkPendingCaretBoundary {
+  const FlarkPendingCaretBoundary({
+    required this.rowOrdinal,
+    required this.rowEndUtf16,
+  });
+
+  factory FlarkPendingCaretBoundary.fromGap(
+    FlarkCoreCommittedPresentationGapV1 gap,
+  ) => FlarkPendingCaretBoundary(
+    rowOrdinal: gap.rowOrdinal,
+    rowEndUtf16: gap.rowEndUtf16,
+  );
+
+  final int rowOrdinal;
+  final int rowEndUtf16;
+}
+
 /// The only host-visible pending-presentation authority state.
 ///
 /// Pre-edit dependency proofs and committed structural receipts remain typed
@@ -280,6 +312,7 @@ final class FlarkPendingPresentationSnapshot {
   FlarkPendingPresentationSnapshot({
     this.dependency,
     this.paragraphGap,
+    this.caretBoundary,
     List<FlarkPendingStructuralSurface> structuralSurfaces = const [],
     Map<int, bool> taskChecks = const {},
   }) : structuralSurfaces = List.unmodifiable(structuralSurfaces),
@@ -288,17 +321,20 @@ final class FlarkPendingPresentationSnapshot {
   const FlarkPendingPresentationSnapshot.empty()
     : dependency = null,
       paragraphGap = null,
+      caretBoundary = null,
       structuralSurfaces = const [],
       taskChecks = const {};
 
   final FlarkPendingDependencyPresentation? dependency;
   final FlarkCoreCommittedPresentationGapV1? paragraphGap;
+  final FlarkPendingCaretBoundary? caretBoundary;
   final List<FlarkPendingStructuralSurface> structuralSurfaces;
   final Map<int, bool> taskChecks;
 
   bool get isEmpty =>
       dependency == null &&
       paragraphGap == null &&
+      caretBoundary == null &&
       structuralSurfaces.isEmpty &&
       taskChecks.isEmpty;
 
@@ -312,6 +348,7 @@ final class FlarkPendingPresentationSnapshot {
   ) => FlarkPendingPresentationSnapshot(
     dependency: value,
     paragraphGap: paragraphGap,
+    caretBoundary: caretBoundary,
     structuralSurfaces: structuralSurfaces,
     taskChecks: taskChecks,
   );
@@ -321,6 +358,17 @@ final class FlarkPendingPresentationSnapshot {
   ) => FlarkPendingPresentationSnapshot(
     dependency: dependency,
     paragraphGap: value,
+    caretBoundary: caretBoundary,
+    structuralSurfaces: structuralSurfaces,
+    taskChecks: taskChecks,
+  );
+
+  FlarkPendingPresentationSnapshot withCaretBoundary(
+    FlarkPendingCaretBoundary? value,
+  ) => FlarkPendingPresentationSnapshot(
+    dependency: dependency,
+    paragraphGap: paragraphGap,
+    caretBoundary: value,
     structuralSurfaces: structuralSurfaces,
     taskChecks: taskChecks,
   );
@@ -330,6 +378,7 @@ final class FlarkPendingPresentationSnapshot {
   ) => FlarkPendingPresentationSnapshot(
     dependency: dependency,
     paragraphGap: paragraphGap,
+    caretBoundary: caretBoundary,
     structuralSurfaces: value,
     taskChecks: taskChecks,
   );
@@ -340,6 +389,7 @@ final class FlarkPendingPresentationSnapshot {
   ) => FlarkPendingPresentationSnapshot(
     dependency: dependency,
     paragraphGap: paragraphGap,
+    caretBoundary: caretBoundary,
     structuralSurfaces: structuralSurfaces,
     taskChecks: {...taskChecks, rowOrdinal: checked},
   );
@@ -356,6 +406,9 @@ final class FlarkPendingPresentationSnapshot {
       paragraphGap: parts.contains(FlarkPendingPresentationPart.paragraphGap)
           ? null
           : paragraphGap,
+      caretBoundary: parts.contains(FlarkPendingPresentationPart.caretBoundary)
+          ? null
+          : caretBoundary,
       structuralSurfaces:
           parts.contains(FlarkPendingPresentationPart.structuralSurfaces)
           ? const []

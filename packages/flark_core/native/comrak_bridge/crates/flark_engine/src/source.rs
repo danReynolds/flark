@@ -896,8 +896,7 @@ impl SourceSeedBuilder {
             return Err(SourceEditError::MetricOverflow);
         }
         let id = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
-        let document =
-            SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let document = SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
         Ok(SourceStore {
             document,
             revision: self.revision,
@@ -1144,9 +1143,9 @@ impl fmt::Display for OpeningSourceError {
 impl std::error::Error for OpeningSourceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::StaleVersion { .. }
-            | Self::NotAppendLineage { .. }
-            | Self::ForeignAuthority => None,
+            Self::StaleVersion { .. } | Self::NotAppendLineage { .. } | Self::ForeignAuthority => {
+                None
+            }
             Self::Source(error) => Some(error),
         }
     }
@@ -1199,8 +1198,7 @@ impl OpeningSourceStore {
         expected_input_utf16: Option<usize>,
     ) -> Result<Self, OpeningSourceError> {
         let load = SourceLoadId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
-        let document =
-            SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let document = SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
         let root = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
         Ok(Self {
             load,
@@ -1739,8 +1737,7 @@ impl SourceStore {
     /// Creates revision zero from UTF-8 source text.
     pub fn new(text: &str) -> Result<Self, SourceEditError> {
         let id = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
-        let document =
-            SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let document = SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
         Ok(Self {
             document,
             revision: SourceRevision::ZERO,

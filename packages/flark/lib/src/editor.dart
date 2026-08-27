@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flark_core/flark_core.dart' show FlarkViewportRow;
+import 'package:flark_core/flark_core.dart'
+    show FlarkCoreGraphemePolicy, FlarkViewportRow;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' as material;
@@ -124,6 +125,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   TextInputConnection? _connection;
   TextEditingValue? _lastKnownPlatformValue;
   bool _platformNewlineObservationAwaitingAction = false;
+  bool _platformDeleteBackwardObservationAwaitingSelector = false;
   FlarkSurfaceHit? _pendingTapHit;
   double? _preferredVerticalNavigationX;
   bool _verticalPageNavigationPending = false;
@@ -139,6 +141,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (widget.focusNode == null) _ownedFocusNode = FocusNode();
     _focusNode.addListener(_focusChanged);
     widget.controller.addListener(_controllerChanged);
+    widget.controller.addInputStateListener(_inputStateChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.controller.continueParsing();
     });
@@ -155,9 +158,12 @@ final class _FlarkEditorState extends State<FlarkEditor>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_controllerChanged);
+      oldWidget.controller.removeInputStateListener(_inputStateChanged);
       widget.controller.addListener(_controllerChanged);
+      widget.controller.addInputStateListener(_inputStateChanged);
       _lastKnownPlatformValue = null;
       _platformNewlineObservationAwaitingAction = false;
+      _platformDeleteBackwardObservationAwaitingSelector = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.controller.continueParsing();
       });
@@ -181,6 +187,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       _connection = null;
       _lastKnownPlatformValue = null;
       _platformNewlineObservationAwaitingAction = false;
+      _platformDeleteBackwardObservationAwaitingSelector = false;
       _openConnection();
     }
   }
@@ -189,6 +196,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   void dispose() {
     widget.debugHandle?._detach(_surface);
     widget.controller.removeListener(_controllerChanged);
+    widget.controller.removeInputStateListener(_inputStateChanged);
     _focusNode.removeListener(_focusChanged);
     widget.controller.commitActiveComposition();
     _contextMenuController.remove();
@@ -206,6 +214,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       _connection = null;
       _lastKnownPlatformValue = null;
       _platformNewlineObservationAwaitingAction = false;
+      _platformDeleteBackwardObservationAwaitingSelector = false;
     }
     setState(() {});
   }
@@ -236,6 +245,8 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   void _controllerChanged() => _sendEditingState();
+
+  void _inputStateChanged() => _sendEditingState();
 
   void _sendEditingState({bool force = false}) {
     final connection = _connection;
@@ -1052,6 +1063,11 @@ final class _FlarkEditorState extends State<FlarkEditor>
         widget.controller.inputValue,
         platformValue,
       );
+      _platformDeleteBackwardObservationAwaitingSelector =
+          _isPlatformDeleteBackwardObservation(
+            widget.controller.inputValue,
+            platformValue,
+          );
     }
     final observer = widget.debugInputEventObserver;
     final stopwatch = observer == null ? null : (Stopwatch()..start());
@@ -1095,6 +1111,11 @@ final class _FlarkEditorState extends State<FlarkEditor>
       widget.controller.inputValue,
       value,
     );
+    _platformDeleteBackwardObservationAwaitingSelector =
+        _isPlatformDeleteBackwardObservation(
+          widget.controller.inputValue,
+          value,
+        );
     // Full-value clients have already adopted this value locally. Controller
     // publications must compare against that platform truth, not a stale
     // framework-send cache.
@@ -1147,6 +1168,32 @@ final class _FlarkEditorState extends State<FlarkEditor>
     return before.text.replaceRange(start, end, '\n') == after.text;
   }
 
+  bool _isPlatformDeleteBackwardObservation(
+    TextEditingValue before,
+    TextEditingValue after,
+  ) {
+    if (before.composing != TextRange.empty ||
+        after.composing != TextRange.empty ||
+        !before.selection.isValid) {
+      return false;
+    }
+    if (!before.selection.isCollapsed) {
+      final start = before.selection.start;
+      final end = before.selection.end;
+      return before.text.replaceRange(start, end, '') == after.text &&
+          after.selection.isCollapsed &&
+          after.selection.extentOffset == start;
+    }
+    final previous = FlarkCoreGraphemePolicy.previousClusterRange(
+      before.text,
+      before.selection.extentOffset,
+    );
+    return previous != null &&
+        before.text.replaceRange(previous.$1, previous.$2, '') == after.text &&
+        after.selection.isCollapsed &&
+        after.selection.extentOffset == previous.$1;
+  }
+
   @override
   void performSelector(String selectorName) {
     widget.debugInputEventObserver?.call('selector:$selectorName');
@@ -1161,7 +1208,12 @@ final class _FlarkEditorState extends State<FlarkEditor>
         unawaited(_selectAll());
       case 'deleteBackward:':
         _preferredVerticalNavigationX = null;
-        widget.controller.observePlatformDeleteBackwardAction();
+        final textObservationAlreadyApplied =
+            _platformDeleteBackwardObservationAwaitingSelector;
+        _platformDeleteBackwardObservationAwaitingSelector = false;
+        widget.controller.observePlatformDeleteBackwardAction(
+          textObservationAlreadyApplied: textObservationAlreadyApplied,
+        );
         widget.debugInputEventObserver?.call(
           'accepted-selector:delete-backward:'
           'generation=${widget.controller.sourceGeneration}',

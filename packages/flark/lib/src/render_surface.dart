@@ -29,6 +29,7 @@ const _layoutOverscanPx = 400.0;
 /// paint, bounded to visible rows rather than the complete document.
 final class FlarkSurfacePaintObservation {
   const FlarkSurfacePaintObservation({
+    required this.publicationSequence,
     required this.revision,
     required this.sourceGeneration,
     required this.semanticsCurrent,
@@ -64,6 +65,9 @@ final class FlarkSurfacePaintObservation {
     required this.composingSourceUtf16End,
   });
 
+  /// Immutable controller publication used for both this frame's layout and
+  /// paint receipt.
+  final int publicationSequence;
   final int revision;
 
   /// Controller source generation represented by this exact paint.
@@ -266,7 +270,7 @@ final class _PaintedRow {
     required this.layoutMaxWidth,
     this.ownsSemanticSourceStart = false,
     this.ownsSemanticSourceEnd = false,
-    this.row,
+    this.publicationRow,
     this.neutralText,
     this.neutralUtf16Start,
   });
@@ -296,7 +300,8 @@ final class _PaintedRow {
   final bool ownsSemanticSourceStart;
   final bool ownsSemanticSourceEnd;
 
-  final FlarkViewportRow? row;
+  final FlarkSurfacePublicationRow? publicationRow;
+  FlarkViewportRow? get row => publicationRow?.row;
   final String? neutralText;
   final int? neutralUtf16Start;
 }
@@ -379,6 +384,8 @@ final class RenderFlarkSurface extends RenderBox {
     ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver,
     required TextDirection textDirection,
   }) : _controller = controller,
+       _pendingPublication = controller.surfacePublication,
+       _layoutPublication = controller.surfacePublication,
        _textStyle = textStyle,
        _padding = padding,
        _caretColor = caretColor,
@@ -389,6 +396,8 @@ final class RenderFlarkSurface extends RenderBox {
        _textDirection = textDirection;
 
   FlarkEditorController _controller;
+  FlarkSurfacePublication _pendingPublication;
+  FlarkSurfacePublication _layoutPublication;
   TextStyle _textStyle;
   EdgeInsets _padding;
   Color _caretColor;
@@ -522,6 +531,7 @@ final class RenderFlarkSurface extends RenderBox {
     if (identical(value, _controller)) return;
     if (attached) _controller.removeListener(_changed);
     _controller = value;
+    _pendingPublication = value.surfacePublication;
     if (attached) _controller.addListener(_changed);
     markNeedsLayout();
     markNeedsSemanticsUpdate();
@@ -588,6 +598,7 @@ final class RenderFlarkSurface extends RenderBox {
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
+    _pendingPublication = _controller.surfacePublication;
     _controller.addListener(_changed);
   }
 
@@ -612,6 +623,7 @@ final class RenderFlarkSurface extends RenderBox {
   }
 
   void _changed() {
+    _pendingPublication = _controller.surfacePublication;
     markNeedsLayout();
     markNeedsSemanticsUpdate();
   }
@@ -629,9 +641,11 @@ final class RenderFlarkSurface extends RenderBox {
 
   @override
   void performLayout() {
+    final publication = _pendingPublication;
+    _layoutPublication = publication;
     size = computeDryLayout(constraints);
     final previousPage = _laidOutPageIndex;
-    final nextPage = _controller.viewportPageIndex;
+    final nextPage = publication.viewportPageIndex;
     if (nextPage > previousPage) {
       _scrollOffset = 0;
     }
@@ -665,9 +679,13 @@ final class RenderFlarkSurface extends RenderBox {
       }
     }
     if (delta > 0 && _scrollOffset >= _maximumScrollOffset) {
-      unawaited(_controller.nextViewportPage());
+      if (_layoutPublication.canPageForward) {
+        unawaited(_controller.nextViewportPage());
+      }
     } else if (delta < 0 && _scrollOffset <= 0) {
-      unawaited(_controller.previousViewportPage());
+      if (_layoutPublication.canPageBackward) {
+        unawaited(_controller.previousViewportPage());
+      }
     }
   }
 
@@ -699,6 +717,7 @@ final class RenderFlarkSurface extends RenderBox {
   }
 
   void _buildVisibleLayoutsBody() {
+    final publication = _layoutPublication;
     _laidOutRowCount = 0;
     _skippedRowCount = 0;
     _skippedFragmentCount = 0;
@@ -707,32 +726,44 @@ final class RenderFlarkSurface extends RenderBox {
     _reusedPainterCount = 0;
     final maxWidth = math.max(0.0, size.width - _padding.horizontal);
     var top = _padding.top;
-    final rows = _controller.rows;
+    final rows = publication.rows;
     if (rows.isNotEmpty) {
       var skippedEstimate = 0.0;
-      var sourceCursor = _controller.visibleUtf16Start;
-      for (final row in rows) {
-        final sourceRange = _controller.surfaceSourceRange(row);
+      var sourceCursor = publication.visibleUtf16Start;
+      var precedingOwnsEditorBlockBoundary = false;
+      for (final publicationRow in rows) {
+        final sourceRange = publicationRow.sourceUtf16;
+        final presentations = publicationRow.presentations(
+          includeEditingState: _includeEditingState,
+        );
+        // A parser-authored removed-row dependency keeps a zero-width input
+        // anchor but contributes no paint surface. Do not split the surrounding
+        // source gap at that anchor: doing so would consume one Markdown block
+        // separator on each side and collapse a real editor-owned blank row.
+        if (presentations.isEmpty) continue;
         if (sourceRange.start > sourceCursor) {
           top = _emitNeutralGap(
             globalStart: sourceCursor,
             globalEnd: sourceRange.start,
-            hasPrecedingRow: sourceCursor > _controller.visibleUtf16Start,
+            hasPrecedingRow: sourceCursor > publication.visibleUtf16Start,
+            precedingOwnsEditorBlockBoundary: precedingOwnsEditorBlockBoundary,
             hasFollowingRow: true,
             top: top,
             maxWidth: maxWidth,
           );
         }
+        precedingOwnsEditorBlockBoundary =
+            presentations.length > 1 ||
+            (presentations.isNotEmpty &&
+                presentations.last.text.isEmpty &&
+                presentations.last.leadingText.isEmpty &&
+                presentations.last.kind == 5);
         if (top > _layoutBudgetBottom) {
           _skippedRowCount += 1;
           skippedEstimate += _estimatedRowHeight + 6;
           sourceCursor = math.max(sourceCursor, sourceRange.end);
           continue;
         }
-        final presentations = _controller.surfaceRowsFor(
-          row,
-          includeEditingState: _includeEditingState,
-        );
         for (
           var presentationIndex = 0;
           presentationIndex < presentations.length;
@@ -749,7 +780,7 @@ final class RenderFlarkSurface extends RenderBox {
             ordinal: presentation.ordinal,
             top: top,
             maxWidth: maxWidth,
-            row: row,
+            publicationRow: publicationRow,
             ownsSemanticSourceStart: presentationIndex == 0,
             ownsSemanticSourceEnd:
                 presentationIndex == presentations.length - 1,
@@ -761,12 +792,13 @@ final class RenderFlarkSurface extends RenderBox {
         sourceCursor = math.max(sourceCursor, sourceRange.end);
       }
       final visibleEnd =
-          _controller.visibleUtf16Start + _controller.visibleSource.length;
+          publication.visibleUtf16Start + publication.visibleSource.length;
       if (sourceCursor < visibleEnd) {
         top = _emitNeutralGap(
           globalStart: sourceCursor,
           globalEnd: visibleEnd,
           hasPrecedingRow: true,
+          precedingOwnsEditorBlockBoundary: precedingOwnsEditorBlockBoundary,
           hasFollowingRow: false,
           top: top,
           maxWidth: maxWidth,
@@ -777,7 +809,7 @@ final class RenderFlarkSurface extends RenderBox {
       return;
     }
 
-    final source = _controller.visibleSource;
+    final source = publication.visibleSource;
     final ranges = <({int start, int end})>[];
     var sourceOffset = 0;
     while (sourceOffset <= source.length) {
@@ -788,7 +820,7 @@ final class RenderFlarkSurface extends RenderBox {
       sourceOffset = end;
     }
     final caret =
-        (_controller.globalCaretOffset - _controller.visibleUtf16Start).clamp(
+        (publication.canonicalCaretUtf16 - publication.visibleUtf16Start).clamp(
           0,
           source.length,
         );
@@ -820,8 +852,8 @@ final class RenderFlarkSurface extends RenderBox {
       sourceOffset = range.start;
       final end = range.end;
       final text = source.substring(sourceOffset, end);
-      final presentation = _controller.neutralSurfaceRow(
-        globalUtf16Start: _controller.visibleUtf16Start + sourceOffset,
+      final presentation = publication.neutralSurfaceRow(
+        globalUtf16Start: publication.visibleUtf16Start + sourceOffset,
         text: text,
         ordinal: ordinal,
         includeEditingState: _includeEditingState,
@@ -832,7 +864,7 @@ final class RenderFlarkSurface extends RenderBox {
         top: top,
         maxWidth: maxWidth,
         neutralText: text,
-        neutralUtf16Start: _controller.visibleUtf16Start + sourceOffset,
+        neutralUtf16Start: publication.visibleUtf16Start + sourceOffset,
       );
       _laidOutRowCount += 1;
     }
@@ -844,12 +876,14 @@ final class RenderFlarkSurface extends RenderBox {
     required int globalStart,
     required int globalEnd,
     required bool hasPrecedingRow,
+    required bool precedingOwnsEditorBlockBoundary,
     required bool hasFollowingRow,
     required double top,
     required double maxWidth,
   }) {
-    final visibleStart = _controller.visibleUtf16Start;
-    final source = _controller.visibleSource;
+    final publication = _layoutPublication;
+    final visibleStart = publication.visibleUtf16Start;
+    final source = publication.visibleSource;
     final localStart = (globalStart - visibleStart).clamp(0, source.length);
     final localEnd = (globalEnd - visibleStart).clamp(
       localStart,
@@ -864,15 +898,62 @@ final class RenderFlarkSurface extends RenderBox {
       cursor = end;
     }
 
-    // The outer blank lines are Markdown separators owned by the surrounding
-    // semantic rows. Interior lines are editor-owned empty blocks and need a
-    // caret-bearing row even though the parser intentionally omits them.
-    final firstEmitted = hasPrecedingRow ? 1 : 0;
-    final endEmitted = math.max(
-      firstEmitted,
-      lines.length - (hasFollowingRow ? 1 : 0),
-    );
-    for (var index = firstEmitted; index < endEmitted; index += 1) {
+    // A parser row normally owns its terminating line ending. When additional
+    // editor-owned blank source reaches EOF, the active input window instead
+    // owns the zero-width line after the final newline. Represent that caret
+    // line in place of the last whitespace separator: it preserves the same
+    // blank-row geometry while giving paint and hit testing the canonical EOF
+    // anchor that `_restoreNeutralInputWindow` publishes.
+    if (_includeEditingState &&
+        !publication.crossRowSelection &&
+        !hasFollowingRow &&
+        localEnd == source.length &&
+        publication.canonicalSelectionBaseUtf16 ==
+            publication.canonicalSelectionExtentUtf16 &&
+        publication.canonicalCaretUtf16 == visibleStart + localEnd &&
+        lines.isNotEmpty &&
+        source.substring(lines.last.start, lines.last.end).trim().isEmpty) {
+      var terminalLineOrdinal = 0;
+      for (var offset = 0; offset < localEnd; offset += 1) {
+        if (source.codeUnitAt(offset) == 0x0a) terminalLineOrdinal += 1;
+      }
+      if (publication.activeOrdinal == -terminalLineOrdinal - 1) {
+        lines[lines.length - 1] = (start: localEnd, end: localEnd);
+      }
+    }
+
+    // A whitespace line immediately before a content line is that block's
+    // Markdown separator, just as the final whitespace line before a known
+    // semantic row is its separator. During an optimistic edit the content
+    // line itself may still live in this neutral gap; suppressing only the
+    // final separator would briefly paint an extra blank row until parsing
+    // promotes the content line. Earlier whitespace remains editor-owned and
+    // visible. A transitional predecessor may already own the first boundary.
+    assert(!hasPrecedingRow || globalStart >= visibleStart);
+    bool isWhitespaceLine(int index) {
+      final line = lines[index];
+      return source.substring(line.start, line.end).trim().isEmpty;
+    }
+
+    final emitted = List<bool>.filled(lines.length, true);
+    if (hasPrecedingRow &&
+        precedingOwnsEditorBlockBoundary &&
+        lines.isNotEmpty &&
+        isWhitespaceLine(0)) {
+      emitted[0] = false;
+    }
+    if (hasFollowingRow &&
+        lines.isNotEmpty &&
+        isWhitespaceLine(lines.length - 1)) {
+      emitted[lines.length - 1] = false;
+    }
+    for (var index = 1; index < lines.length; index += 1) {
+      if (!isWhitespaceLine(index) && isWhitespaceLine(index - 1)) {
+        emitted[index - 1] = false;
+      }
+    }
+    for (var index = 0; index < lines.length; index += 1) {
+      if (!emitted[index]) continue;
       final line = lines[index];
       if (top > _layoutBudgetBottom) {
         _skippedRowCount += 1;
@@ -883,7 +964,7 @@ final class RenderFlarkSurface extends RenderBox {
         if (source.codeUnitAt(offset) == 0x0a) ordinal += 1;
       }
       final text = source.substring(line.start, line.end);
-      final presentation = _controller.neutralSurfaceRow(
+      final presentation = publication.neutralSurfaceRow(
         globalUtf16Start: visibleStart + line.start,
         text: text,
         ordinal: ordinal,
@@ -897,6 +978,7 @@ final class RenderFlarkSurface extends RenderBox {
         neutralText: text,
         neutralUtf16Start: visibleStart + line.start,
       );
+      if (presentation.text.isNotEmpty) top += 6;
       _laidOutRowCount += 1;
     }
     return top;
@@ -910,7 +992,7 @@ final class RenderFlarkSurface extends RenderBox {
     required int ordinal,
     required double top,
     required double maxWidth,
-    FlarkViewportRow? row,
+    FlarkSurfacePublicationRow? publicationRow,
     bool ownsSemanticSourceStart = false,
     bool ownsSemanticSourceEnd = false,
     String? neutralText,
@@ -957,7 +1039,7 @@ final class RenderFlarkSurface extends RenderBox {
         layoutMaxWidth: maxWidth,
         ownsSemanticSourceStart: ownsSemanticSourceStart,
         ownsSemanticSourceEnd: ownsSemanticSourceEnd,
-        row: row,
+        publicationRow: publicationRow,
         neutralText: neutralText,
         neutralUtf16Start: neutralUtf16Start,
       );
@@ -1329,9 +1411,15 @@ final class RenderFlarkSurface extends RenderBox {
     bool includeSemanticOwnership = true,
   }) {
     if (row.neutralUtf16Start case final neutralStart?) {
+      final visualEnd = neutralStart + row.fragmentEnd;
+      final ownedEnd =
+          includeSemanticOwnership &&
+              row.fragmentEnd == row.presentation.text.length
+          ? neutralStart + (row.neutralText?.length ?? row.fragmentEnd)
+          : visualEnd;
       return (
         start: neutralStart + row.fragmentStart,
-        end: neutralStart + row.fragmentEnd,
+        end: math.max(visualEnd, ownedEnd),
       );
     }
     int? start;
@@ -1372,9 +1460,9 @@ final class RenderFlarkSurface extends RenderBox {
           row.fragmentEnd,
           affinity: TextAffinity.upstream,
         );
-    final semanticRow = row.row;
-    if (includeSemanticOwnership && semanticRow != null) {
-      final owned = _controller.surfaceSourceRange(semanticRow);
+    final publicationRow = row.publicationRow;
+    if (includeSemanticOwnership && publicationRow != null) {
+      final owned = publicationRow.sourceUtf16;
       if (row.ownsSemanticSourceStart && row.fragmentStart == 0) {
         sourceStart = math.min(sourceStart, owned.start);
       }
@@ -1645,7 +1733,7 @@ final class RenderFlarkSurface extends RenderBox {
 
   ({_PaintedRow row, List<FlarkTableCellPresentation> cells, int index})?
   _tableCellPosition(int offset) {
-    if (_controller.pendingTableNavigationLocked) return null;
+    if (_layoutPublication.pendingTableNavigationLocked) return null;
     final row = _logicalRowForSourceUtf16(offset);
     if (row == null || row.presentation.kind == 0) return null;
     final table = row.row?.table;
@@ -1795,7 +1883,7 @@ final class RenderFlarkSurface extends RenderBox {
         row.fragmentStart != 0 ||
         row.leadingLength == 0 ||
         row.row?.listItem?.taskChecked == null ||
-        !_controller.canToggleTaskChecked(row.row!)) {
+        row.publicationRow?.taskToggleable != true) {
       return null;
     }
     final leading = row.presentation.leadingText;
@@ -1903,12 +1991,12 @@ final class RenderFlarkSurface extends RenderBox {
       ..identifier = _includeEditingState
           ? 'flark-markdown-editor'
           : 'flark-markdown-view';
-    if (maximumScrollOffset > 0 || _controller.canPageForward) {
+    if (maximumScrollOffset > 0 || _layoutPublication.canPageForward) {
       config.onScrollUp = () {
         if (hasSize) scrollBy(size.height * 0.8);
       };
     }
-    if (_scrollOffset > 0 || _controller.canPageBackward) {
+    if (_scrollOffset > 0 || _layoutPublication.canPageBackward) {
       config.onScrollDown = () {
         if (hasSize) scrollBy(-size.height * 0.8);
       };
@@ -2007,8 +2095,8 @@ final class RenderFlarkSurface extends RenderBox {
             rowConfig.textSelection = selection;
           }
         }
-        if (_controller.globalSelectionBase !=
-            _controller.globalSelectionExtent) {
+        if (_layoutPublication.canonicalSelectionBaseUtf16 !=
+            _layoutPublication.canonicalSelectionExtentUtf16) {
           rowConfig
             ..onCopy = actions.onCopy
             ..onCut = actions.onCut;
@@ -2021,7 +2109,7 @@ final class RenderFlarkSurface extends RenderBox {
       final task =
           row.presentation.kind == 0 ||
               taskRow == null ||
-              !_controller.canToggleTaskChecked(taskRow)
+              row.publicationRow?.taskToggleable != true
           ? null
           : taskRow.listItem?.taskChecked;
       if (task != null) {
@@ -2064,6 +2152,7 @@ final class RenderFlarkSurface extends RenderBox {
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    final publication = _layoutPublication;
     final canvas = context.canvas;
     final paintObserver = debugPaintObserver;
     final observedRows = paintObserver == null ? null : <String>[];
@@ -2250,7 +2339,7 @@ final class RenderFlarkSurface extends RenderBox {
             // authoritative source identity when the painted display position
             // is exactly its projection; only reverse-map when the painted
             // caret is genuinely somewhere else.
-            final canonicalSource = _controller.globalSelectionExtent;
+            final canonicalSource = publication.canonicalSelectionExtentUtf16;
             final canonicalDisplay = row.presentation.textOffsetForSourceOffset(
               canonicalSource,
               affinity: selection.affinity,
@@ -2268,13 +2357,13 @@ final class RenderFlarkSurface extends RenderBox {
     }
     canvas.restore();
     if (paintObserver == null) return;
-    final inputValue = _controller.inputValue;
+    final inputValue = publication.inputValue;
     final composing = inputValue.composing;
     final composingStart = composing.isValid && !composing.isCollapsed
-        ? _controller.inputWindowShadow.globalUtf16Start + composing.start
+        ? publication.inputGlobalUtf16Start + composing.start
         : null;
     final composingEnd = composing.isValid && !composing.isCollapsed
-        ? _controller.inputWindowShadow.globalUtf16Start + composing.end
+        ? publication.inputGlobalUtf16Start + composing.end
         : null;
     final paintedSourceUtf16Start = observedFragments!.isEmpty
         ? null
@@ -2315,12 +2404,13 @@ final class RenderFlarkSurface extends RenderBox {
         visiblePlusOverscanBounds.end >= requiredVisibleBounds.end;
     paintObserver(
       FlarkSurfacePaintObservation(
-        revision: _controller.revision,
-        sourceGeneration: _controller.sourceGeneration,
-        semanticsCurrent: _controller.semanticsCurrent,
-        viewportPageIndex: _controller.viewportPageIndex,
-        visibleUtf16Start: _controller.visibleUtf16Start,
-        visibleUtf16Length: _controller.visibleSource.length,
+        publicationSequence: publication.sequence,
+        revision: publication.revision,
+        sourceGeneration: publication.sourceGeneration,
+        semanticsCurrent: publication.semanticsCurrent,
+        viewportPageIndex: publication.viewportPageIndex,
+        visibleUtf16Start: publication.visibleUtf16Start,
+        visibleUtf16Length: publication.visibleSource.length,
         completeVisibleSurface: completeVisibleSurface,
         completeVisiblePlusOverscanSurface: completeVisiblePlusOverscanSurface,
         requiredVisibleFragments: List.unmodifiable(requiredVisibleFragments),
@@ -2343,9 +2433,10 @@ final class RenderFlarkSurface extends RenderBox {
         caretRect: observedCaretRect,
         caretSourceUtf16: observedCaretSourceUtf16,
         caretDisplayUtf16: observedCaretDisplayUtf16,
-        visibleSource: _controller.visibleSource,
-        canonicalSelectionBaseUtf16: _controller.globalSelectionBase,
-        canonicalSelectionExtentUtf16: _controller.globalSelectionExtent,
+        visibleSource: publication.visibleSource,
+        canonicalSelectionBaseUtf16: publication.canonicalSelectionBaseUtf16,
+        canonicalSelectionExtentUtf16:
+            publication.canonicalSelectionExtentUtf16,
         canonicalSelectionAffinity: inputValue.selection.affinity,
         canonicalSelectionIsDirectional: inputValue.selection.isDirectional,
         composingSourceUtf16Start: composingStart,

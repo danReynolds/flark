@@ -133,9 +133,12 @@ void main() {
       typeAt(controller, ' ');
       final second = activeSurface(controller);
       expect(second.kind, 0);
-      expect(second.text, '*test*  \n');
-      expect(second.runs, hasLength(1));
-      expect(second.runs.single.sourceExact, isTrue);
+      expect(second.text, '*test*  ');
+      expect(second.runs, hasLength(2));
+      expect(second.runs.first.text, '*test*  ');
+      expect(second.runs.first.sourceExact, isTrue);
+      expect(second.runs.last.text, isEmpty);
+      expect(second.runs.last.sourceExact, isFalse);
       expect(controller.visibleSource, '*test*  \n');
     },
     timeout: const Timeout(Duration(minutes: 2)),
@@ -281,8 +284,11 @@ void main() {
       final selection = immediate.selection!;
 
       expect(immediate.text, contains('*a x_b_ c*'));
-      expect(immediate.runs, hasLength(1));
-      expect(immediate.runs.single.sourceExact, isTrue);
+      expect(immediate.runs, hasLength(2));
+      expect(immediate.runs.first.text, contains('*a x_b_ c*'));
+      expect(immediate.runs.first.sourceExact, isTrue);
+      expect(immediate.runs.last.text, isEmpty);
+      expect(immediate.runs.last.sourceExact, isFalse);
       expect(controller.inputValue.text, contains('*a x_b_ c*'));
       expect(controller.globalCaretOffset, nestedOpening + 1);
       expect(

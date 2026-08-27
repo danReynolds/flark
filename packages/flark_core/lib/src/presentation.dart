@@ -66,8 +66,12 @@ final class FlarkCorePresentationRow {
   final List<FlarkCorePresentationRun> runs;
 }
 
-/// Receipt-backed neutral gap introduced while a paragraph/list split awaits
-/// parser certification.
+/// Receipt-backed neutral gap introduced by a paragraph/list split.
+///
+/// Fresh parser rows supersede its temporary visual partition, but the gap
+/// continues to identify an editor-owned caret boundary that the Markdown AST
+/// cannot represent. That interaction authority lives until a later edit or
+/// explicit row activation leaves the gap.
 final class FlarkCoreCommittedPresentationGapV1 {
   const FlarkCoreCommittedPresentationGapV1({
     required this.rowOrdinal,
@@ -76,6 +80,18 @@ final class FlarkCoreCommittedPresentationGapV1 {
 
   final int rowOrdinal;
   final int rowEndUtf16;
+}
+
+/// The parser-owned function of one row in a temporary structural lineage.
+///
+/// A block separator remains source-owned while its following successor is
+/// empty, but must stop painting once that successor contains text. Keeping
+/// that distinction typed avoids asking the Flutter adapter to infer
+/// Markdown ownership from an empty row's shape.
+enum FlarkCoreCommittedPresentationSurfaceRole {
+  content,
+  blockSeparator,
+  editableSuccessor,
 }
 
 /// Receipt-backed surface assembled only from source-mapped runs that remain
@@ -88,6 +104,7 @@ final class FlarkCoreCommittedPresentationSurfaceV1 {
     this.removedRowOrdinal,
     this.projectionCurrent = false,
     this.projectionEditCells = const [],
+    this.role = FlarkCoreCommittedPresentationSurfaceRole.content,
   });
 
   final int rowOrdinal;
@@ -96,6 +113,7 @@ final class FlarkCoreCommittedPresentationSurfaceV1 {
   final int? removedRowOrdinal;
   final bool projectionCurrent;
   final List<FlarkProjectionEditCell> projectionEditCells;
+  final FlarkCoreCommittedPresentationSurfaceRole role;
 }
 
 /// Complete framework-neutral transitional presentation for one authoritative
@@ -146,6 +164,7 @@ resolveCommittedPresentationTransitionV1({
   required FlarkCorePresentationRow? activeRow,
   required FlarkCorePresentationRow? precedingRow,
   required bool priorGapPending,
+  bool activeRowTransitional = false,
 }) {
   if (!receipt.hasCommit) return null;
   switch (receipt.presentationTransition) {
@@ -155,9 +174,33 @@ resolveCommittedPresentationTransitionV1({
     case FlarkCoreEditPresentationTransitionV1.continueIndentedCode:
       if (receipt.presentationTransition ==
               FlarkCoreEditPresentationTransitionV1.splitParagraph &&
+          activeRow != null) {
+        if (receipt.presentationProven) {
+          final fenced = _splitProvenFencedCode(activeRow, receipt);
+          if (fenced != null) return fenced;
+          final projected = _splitProvenParagraph(activeRow, receipt);
+          if (projected != null) return projected;
+        }
+        // An unproved carried surface is result presentation, not fresh parser
+        // authority. It may remain painted, but cannot recursively authorize
+        // another structural partition before certification catches up.
+        if (!activeRowTransitional) {
+          final exact = _splitExactParagraphFallback(activeRow, receipt);
+          if (exact != null) return exact;
+        }
+      }
+      if (receipt.presentationTransition ==
+              FlarkCoreEditPresentationTransitionV1.continueList &&
           receipt.presentationProven &&
           activeRow != null) {
-        final projected = _splitProvenParagraph(activeRow, receipt);
+        final projected = _continueProvenTerminalList(activeRow, receipt);
+        if (projected != null) return projected;
+      }
+      if (receipt.presentationTransition ==
+              FlarkCoreEditPresentationTransitionV1.continueBlockQuote &&
+          receipt.presentationProven &&
+          activeRow != null) {
+        final projected = _continueProvenTerminalBlockQuote(activeRow, receipt);
         if (projected != null) return projected;
       }
       if ((receipt.presentationTransition ==
@@ -333,6 +376,12 @@ resolveCommittedPresentationTransitionV1({
         return null;
       }
       return _joinProjectedIndentedCode(activeRow, receipt);
+    case FlarkCoreEditPresentationTransitionV1.joinFencedCode:
+      if (activeRow == null || !receipt.presentationProven) return null;
+      return _joinProvenFencedCode(activeRow, receipt);
+    case FlarkCoreEditPresentationTransitionV1.deleteInlineOwner:
+      if (activeRow == null) return null;
+      return _deleteInlineOwner(activeRow, receipt);
     case FlarkCoreEditPresentationTransitionV1.deleteThematicBreak:
       if (activeRow == null ||
           !activeRow.thematicBreak ||
@@ -353,6 +402,19 @@ resolveCommittedPresentationTransitionV1({
     case FlarkCoreEditPresentationTransitionV1.exitHeading:
     case FlarkCoreEditPresentationTransitionV1.liftHeading:
     case FlarkCoreEditPresentationTransitionV1.liftIndentedCode:
+      if ((receipt.presentationTransition ==
+                  FlarkCoreEditPresentationTransitionV1.exitList ||
+              receipt.presentationTransition ==
+                  FlarkCoreEditPresentationTransitionV1.liftList ||
+              receipt.presentationTransition ==
+                  FlarkCoreEditPresentationTransitionV1.exitBlockQuote ||
+              receipt.presentationTransition ==
+                  FlarkCoreEditPresentationTransitionV1.liftBlockQuote) &&
+          receipt.presentationProven &&
+          activeRow != null) {
+        final projected = _exitProvenEmptyPrefixedRow(activeRow, receipt);
+        if (projected != null) return projected;
+      }
       if (activeRow == null || _hasUncertifiedInlineProjection(activeRow)) {
         return null;
       }
@@ -397,6 +459,318 @@ resolveCommittedPresentationTransitionV1({
   }
 }
 
+FlarkCoreCommittedPresentationTransitionV1? _deleteInlineOwner(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  if (receipt.replacement.isNotEmpty ||
+      receipt.baseUtf16Start >= receipt.baseUtf16End ||
+      receipt.baseUtf16Start < row.sourceUtf16.start ||
+      receipt.baseUtf16End > row.sourceUtf16.end) {
+    return null;
+  }
+  final runs = <FlarkCorePresentationRun>[];
+  final delta = _utf16Delta(receipt);
+  for (final run in row.runs) {
+    if (run.sourceUtf16End <= receipt.baseUtf16Start) {
+      runs.add(run);
+      continue;
+    }
+    if (run.sourceUtf16Start >= receipt.baseUtf16End) {
+      runs.add(
+        FlarkCorePresentationRun(
+          text: run.text,
+          sourceUtf16Start: run.sourceUtf16Start + delta,
+          sourceUtf16End: run.sourceUtf16End + delta,
+          sourceExact: run.sourceExact,
+          styles: run.styles,
+        ),
+      );
+      continue;
+    }
+    if (run.sourceUtf16Start < receipt.baseUtf16Start ||
+        run.sourceUtf16End > receipt.baseUtf16End) {
+      return null;
+    }
+  }
+  final resultSource = FlarkSourceRange(
+    row.sourceUtf16.start,
+    row.sourceUtf16.end + delta,
+  );
+  if (resultSource.end < resultSource.start) return null;
+  final mappedRuns = List<FlarkCorePresentationRun>.unmodifiable(runs);
+  return FlarkCoreCommittedPresentationTransitionV1(
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: resultSource,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: resultSource,
+          leadingText: row.leadingText,
+          text: mappedRuns.map((run) => run.text).join(),
+          globalUtf16Start: mappedRuns.isEmpty
+              ? resultSource.start
+              : mappedRuns.first.sourceUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: row.codeBlock,
+          thematicBreak: row.thematicBreak,
+          listItem: row.listItem,
+          ordinal: row.ordinal,
+          runs: mappedRuns,
+        ),
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _splitExactParagraphFallback(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  final endingLength = _paragraphSplitRowExtension(receipt.replacement);
+  if (endingLength == null ||
+      receipt.baseUtf16Start != receipt.baseUtf16End ||
+      receipt.baseUtf16Start < row.sourceUtf16.start ||
+      receipt.baseUtf16Start > row.sourceUtf16.end) {
+    return null;
+  }
+  final predecessorSource = FlarkSourceRange(
+    row.sourceUtf16.start,
+    receipt.baseUtf16Start + endingLength,
+  );
+  final resultEnd = row.sourceUtf16.end + _utf16Delta(receipt);
+  if (resultEnd < receipt.resultSelectionUtf16) return null;
+  final successorSource = FlarkSourceRange(
+    receipt.resultSelectionUtf16,
+    resultEnd,
+  );
+
+  FlarkCoreCommittedPresentationSurfaceV1 exactSurface(
+    FlarkSourceRange source, {
+    FlarkCoreCommittedPresentationSurfaceRole role =
+        FlarkCoreCommittedPresentationSurfaceRole.content,
+  }) => FlarkCoreCommittedPresentationSurfaceV1(
+    rowOrdinal: row.ordinal,
+    sourceUtf16: source,
+    role: role,
+    presentation: FlarkCorePresentationRow(
+      sourceUtf16: source,
+      leadingText: '',
+      text: '',
+      globalUtf16Start: source.start,
+      kind: 0,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: null,
+      thematicBreak: false,
+      ordinal: row.ordinal,
+      runs: const [],
+    ),
+  );
+
+  return FlarkCoreCommittedPresentationTransitionV1(
+    clearPriorGap: true,
+    surfaces: [
+      exactSurface(predecessorSource),
+      exactSurface(
+        successorSource,
+        role: FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor,
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _exitProvenEmptyPrefixedRow(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  final typedBlockMatches = switch (receipt.presentationTransition) {
+    FlarkCoreEditPresentationTransitionV1.exitList ||
+    FlarkCoreEditPresentationTransitionV1.liftList => row.listItem,
+    FlarkCoreEditPresentationTransitionV1.exitBlockQuote ||
+    FlarkCoreEditPresentationTransitionV1.liftBlockQuote =>
+      row.blockQuoteDepth != null && row.blockQuoteDepth! > 0,
+    _ => false,
+  };
+  final replacementIsLineEnding =
+      receipt.replacement.isEmpty ||
+      receipt.replacement == '\n' ||
+      receipt.replacement == '\r' ||
+      receipt.replacement == '\r\n';
+  if (!typedBlockMatches ||
+      row.text.isNotEmpty ||
+      row.leadingText.isEmpty ||
+      !replacementIsLineEnding ||
+      receipt.baseUtf16Start != row.sourceUtf16.start ||
+      receipt.baseUtf16End != row.globalUtf16Start ||
+      receipt.resultSelectionUtf16 != receipt.resultUtf16End) {
+    return null;
+  }
+  final resultEnd = row.sourceUtf16.end + _utf16Delta(receipt);
+  if (resultEnd < receipt.resultUtf16End) return null;
+  final source = FlarkSourceRange(receipt.resultUtf16End, resultEnd);
+  final separatorSource = FlarkSourceRange(
+    receipt.resultUtf16Start,
+    receipt.resultUtf16End,
+  );
+  if (separatorSource.length == 0) return null;
+  final insertionPoint = FlarkSourceRange(
+    receipt.resultUtf16End,
+    receipt.resultUtf16End,
+  );
+  final byteInsertionPoint = FlarkSourceRange(
+    receipt.resultByteEnd,
+    receipt.resultByteEnd,
+  );
+  final cell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+    affectedBytes: byteInsertionPoint,
+    affectedUtf16: insertionPoint,
+    triggerBytes: byteInsertionPoint,
+    triggerUtf16: insertionPoint,
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: true,
+  );
+  return FlarkCoreCommittedPresentationTransitionV1(
+    clearPriorGap: true,
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: separatorSource,
+        projectionCurrent: true,
+        role: FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: separatorSource,
+          leadingText: '',
+          text: '',
+          globalUtf16Start: separatorSource.start,
+          kind: 0,
+          headingLevel: null,
+          blockQuoteDepth: null,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: const [],
+        ),
+      ),
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: source,
+        projectionCurrent: true,
+        projectionEditCells: [cell],
+        role: FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: source,
+          leadingText: '',
+          text: '',
+          globalUtf16Start: receipt.resultUtf16End,
+          kind: 5,
+          headingLevel: null,
+          blockQuoteDepth: null,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: const [],
+        ),
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _continueProvenTerminalBlockQuote(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  final endingLength = _leadingLineEndingLength(receipt.replacement);
+  if (endingLength == null ||
+      row.blockQuoteDepth == null ||
+      row.blockQuoteDepth! <= 0 ||
+      row.leadingText.isEmpty ||
+      _hasUncertifiedInlineProjection(row) ||
+      row.runs.isEmpty ||
+      receipt.baseUtf16Start != receipt.baseUtf16End ||
+      receipt.baseUtf16Start != row.runs.last.sourceUtf16End ||
+      receipt.resultSelectionUtf16 !=
+          receipt.baseUtf16Start + receipt.replacement.length) {
+    return null;
+  }
+  final prefix = receipt.replacement.substring(endingLength);
+  if (prefix.isEmpty || prefix.contains('\n') || prefix.contains('\r')) {
+    return null;
+  }
+  final runs = _mapRunsThroughCommittedSplice(row.runs, receipt);
+  if (runs == null) return null;
+  final prefixStart = receipt.baseUtf16Start + endingLength;
+  final successorStart = receipt.resultSelectionUtf16;
+  final predecessorSource = FlarkSourceRange(
+    row.sourceUtf16.start,
+    prefixStart,
+  );
+  final successorSource = FlarkSourceRange(prefixStart, successorStart);
+  final insertionPoint = FlarkSourceRange(successorStart, successorStart);
+  final byteInsertionPoint = FlarkSourceRange(
+    receipt.resultByteEnd,
+    receipt.resultByteEnd,
+  );
+  final cell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+    affectedBytes: byteInsertionPoint,
+    affectedUtf16: insertionPoint,
+    triggerBytes: byteInsertionPoint,
+    triggerUtf16: insertionPoint,
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: true,
+  );
+  return FlarkCoreCommittedPresentationTransitionV1(
+    clearPriorGap: true,
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: predecessorSource,
+        projectionCurrent: true,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: predecessorSource,
+          leadingText: row.leadingText,
+          text: row.text,
+          globalUtf16Start: row.globalUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: row.codeBlock,
+          thematicBreak: row.thematicBreak,
+          ordinal: row.ordinal,
+          runs: runs,
+        ),
+      ),
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: successorSource,
+        projectionCurrent: true,
+        projectionEditCells: [cell],
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: successorSource,
+          leadingText: row.leadingText,
+          text: '',
+          globalUtf16Start: successorStart,
+          kind: 15,
+          headingLevel: null,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: const [],
+        ),
+      ),
+    ],
+  );
+}
+
 FlarkCoreCommittedPresentationTransitionV1? _splitProvenParagraph(
   FlarkCorePresentationRow row,
   FlarkCoreEditIntentReceiptV1 receipt,
@@ -405,8 +779,12 @@ FlarkCoreCommittedPresentationTransitionV1? _splitProvenParagraph(
   if (endingLength == null ||
       receipt.baseUtf16Start != receipt.baseUtf16End ||
       receipt.baseUtf16Start < row.globalUtf16Start ||
-      receipt.baseUtf16Start > row.sourceUtf16.end) {
+      receipt.baseUtf16Start > row.sourceUtf16.end ||
+      row.runs.isEmpty) {
     return null;
+  }
+  if (receipt.baseUtf16Start != row.runs.last.sourceUtf16End) {
+    return _splitProvenEmbeddedPlainLine(row, receipt, endingLength);
   }
   final runs = _mapRunsThroughCommittedSplice(row.runs, receipt);
   if (runs == null) return null;
@@ -416,6 +794,8 @@ FlarkCoreCommittedPresentationTransitionV1? _splitProvenParagraph(
   );
   final successorStart = receipt.resultSelectionUtf16;
   final successorSource = FlarkSourceRange(successorStart, successorStart);
+  final neutralSource = FlarkSourceRange(predecessorSource.end, successorStart);
+  if (neutralSource.length == 0) return null;
   final cell = FlarkProjectionEditCell(
     matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
     affectedBytes: FlarkSourceRange(
@@ -456,9 +836,29 @@ FlarkCoreCommittedPresentationTransitionV1? _splitProvenParagraph(
       ),
       FlarkCoreCommittedPresentationSurfaceV1(
         rowOrdinal: row.ordinal,
+        sourceUtf16: neutralSource,
+        projectionCurrent: true,
+        role: FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: neutralSource,
+          leadingText: '',
+          text: '',
+          globalUtf16Start: neutralSource.start,
+          kind: 0,
+          headingLevel: null,
+          blockQuoteDepth: null,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: const [],
+        ),
+      ),
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
         sourceUtf16: successorSource,
         projectionCurrent: true,
         projectionEditCells: [cell],
+        role: FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor,
         presentation: FlarkCorePresentationRow(
           sourceUtf16: successorSource,
           leadingText: '',
@@ -469,6 +869,429 @@ FlarkCoreCommittedPresentationTransitionV1? _splitProvenParagraph(
           blockQuoteDepth: null,
           codeBlock: null,
           thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: const [],
+        ),
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _splitProvenFencedCode(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  final codeBlock = row.codeBlock;
+  if (codeBlock == null ||
+      !codeBlock.isFenced ||
+      !codeBlock.closed ||
+      _leadingLineEndingLength(receipt.replacement) !=
+          receipt.replacement.length ||
+      receipt.baseUtf16Start != receipt.baseUtf16End ||
+      row.runs.length != 1) {
+    return null;
+  }
+  final run = row.runs.single;
+  if (!run.sourceExact ||
+      run.styles.isNotEmpty ||
+      receipt.baseUtf16Start < run.sourceUtf16Start ||
+      receipt.baseUtf16Start >= run.sourceUtf16End) {
+    return null;
+  }
+  final split = receipt.baseUtf16Start - run.sourceUtf16Start;
+  final text = run.text.replaceRange(split, split, receipt.replacement);
+  final delta = _utf16Delta(receipt);
+  final source = FlarkSourceRange(
+    row.sourceUtf16.start,
+    row.sourceUtf16.end + delta,
+  );
+  final mappedRun = FlarkCorePresentationRun(
+    text: text,
+    sourceUtf16Start: run.sourceUtf16Start,
+    sourceUtf16End: run.sourceUtf16End + delta,
+    sourceExact: true,
+    styles: const {},
+  );
+  final insertionPoint = FlarkSourceRange(
+    receipt.resultSelectionUtf16,
+    receipt.resultSelectionUtf16,
+  );
+  final cell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+    affectedBytes: FlarkSourceRange(
+      receipt.resultByteEnd,
+      receipt.resultByteEnd,
+    ),
+    affectedUtf16: insertionPoint,
+    triggerBytes: FlarkSourceRange(
+      receipt.resultByteEnd,
+      receipt.resultByteEnd,
+    ),
+    triggerUtf16: insertionPoint,
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    // The semantic receipt proves a new physical code-line boundary. The
+    // append vocabulary excludes both fence characters, so a first literal
+    // unit and its same-line successors cannot expose a closing fence.
+    chainResultCell: true,
+    terminalSpaceAvailable: true,
+  );
+  return FlarkCoreCommittedPresentationTransitionV1(
+    clearPriorGap: true,
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: source,
+        projectionCurrent: true,
+        projectionEditCells: [cell],
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: source,
+          leadingText: row.leadingText,
+          text: text,
+          globalUtf16Start: row.globalUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: codeBlock,
+          thematicBreak: row.thematicBreak,
+          ordinal: row.ordinal,
+          runs: [mappedRun],
+        ),
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _joinProvenFencedCode(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  final codeBlock = row.codeBlock;
+  if (codeBlock == null ||
+      !codeBlock.isFenced ||
+      !codeBlock.closed ||
+      receipt.replacement.isNotEmpty ||
+      receipt.baseUtf16Start >= receipt.baseUtf16End ||
+      row.runs.length != 1) {
+    return null;
+  }
+  final run = row.runs.single;
+  if (!run.sourceExact ||
+      run.styles.isNotEmpty ||
+      receipt.baseUtf16Start < run.sourceUtf16Start ||
+      receipt.baseUtf16End > run.sourceUtf16End) {
+    return null;
+  }
+  final start = receipt.baseUtf16Start - run.sourceUtf16Start;
+  final end = receipt.baseUtf16End - run.sourceUtf16Start;
+  final removed = run.text.substring(start, end);
+  if (removed != '\n' && removed != '\r' && removed != '\r\n') return null;
+  final text = run.text.replaceRange(start, end, '');
+  final delta = _utf16Delta(receipt);
+  final source = FlarkSourceRange(
+    row.sourceUtf16.start,
+    row.sourceUtf16.end + delta,
+  );
+  final mappedRun = FlarkCorePresentationRun(
+    text: text,
+    sourceUtf16Start: run.sourceUtf16Start,
+    sourceUtf16End: run.sourceUtf16End + delta,
+    sourceExact: true,
+    styles: const {},
+  );
+  final joinedAtEmptyLine =
+      _leadingLineEndingLength(run.text.substring(end)) != null;
+  final insertionPoint = FlarkSourceRange(
+    receipt.resultSelectionUtf16,
+    receipt.resultSelectionUtf16,
+  );
+  final cells = joinedAtEmptyLine
+      ? [
+          FlarkProjectionEditCell(
+            matcher: FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+            affectedBytes: FlarkSourceRange(
+              receipt.resultByteEnd,
+              receipt.resultByteEnd,
+            ),
+            affectedUtf16: insertionPoint,
+            triggerBytes: FlarkSourceRange(
+              receipt.resultByteEnd,
+              receipt.resultByteEnd,
+            ),
+            triggerUtf16: insertionPoint,
+            retainBlockShell: true,
+            retainOutsideClosure: true,
+            presentClosureExact: true,
+            chainResultCell: true,
+            terminalSpaceAvailable: true,
+          ),
+        ]
+      : const <FlarkProjectionEditCell>[];
+  return FlarkCoreCommittedPresentationTransitionV1(
+    clearPriorGap: true,
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: source,
+        projectionCurrent: true,
+        projectionEditCells: cells,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: source,
+          leadingText: row.leadingText,
+          text: text,
+          globalUtf16Start: row.globalUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: codeBlock,
+          thematicBreak: row.thematicBreak,
+          ordinal: row.ordinal,
+          runs: [mappedRun],
+        ),
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _splitProvenEmbeddedPlainLine(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+  int endingLength,
+) {
+  if (endingLength != 0 ||
+      receipt.replacement.length != 1 ||
+      row.leadingText.isNotEmpty ||
+      row.kind != 5 ||
+      row.runs.length != 1) {
+    return null;
+  }
+  final run = row.runs.single;
+  if (!run.sourceExact ||
+      run.styles.isNotEmpty ||
+      receipt.baseUtf16Start < run.sourceUtf16Start ||
+      receipt.baseUtf16Start >= run.sourceUtf16End) {
+    return null;
+  }
+  final split = receipt.baseUtf16Start - run.sourceUtf16Start;
+  if (split < 0 ||
+      split + 1 >= run.text.length ||
+      run.text.codeUnitAt(split) != 0x20 ||
+      run.text.codeUnitAt(split + 1) == 0x20 ||
+      run.text.codeUnitAt(split + 1) == 0x09) {
+    return null;
+  }
+  final predecessorVisible = _withoutTrailingLineEnding(
+    run.text.substring(0, split),
+  );
+  final successorVisible = _withoutTrailingLineEnding(
+    run.text.substring(split + 1),
+  );
+  final predecessorSource = FlarkSourceRange(
+    row.sourceUtf16.start,
+    receipt.baseUtf16Start,
+  );
+  final resultEnd = row.sourceUtf16.end + _utf16Delta(receipt);
+  final successorSource = FlarkSourceRange(
+    receipt.resultSelectionUtf16,
+    resultEnd,
+  );
+  final neutralSource = FlarkSourceRange(
+    predecessorSource.end,
+    successorSource.start,
+  );
+  if (neutralSource.length == 0) return null;
+  final successorVisibleStart = receipt.resultSelectionUtf16 + 1;
+  final cell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.anyNoCrLfSplice,
+    affectedBytes: FlarkSourceRange(
+      receipt.resultByteEnd,
+      receipt.resultByteEnd + 1,
+    ),
+    affectedUtf16: FlarkSourceRange(
+      receipt.resultUtf16End,
+      receipt.resultUtf16End + 1,
+    ),
+    triggerBytes: FlarkSourceRange(
+      receipt.resultByteEnd + 1,
+      receipt.resultByteEnd + 1,
+    ),
+    triggerUtf16: FlarkSourceRange(
+      receipt.resultUtf16End + 1,
+      receipt.resultUtf16End + 1,
+    ),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    // The split itself proves this projection, but an edit at the visible
+    // successor start can change the remaining lines into a different block
+    // (for example a table). Admit one exact non-newline splice through the
+    // cell, then require fresh parser certification before publication.
+    chainResultCell: false,
+  );
+  return FlarkCoreCommittedPresentationTransitionV1(
+    clearPriorGap: true,
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: predecessorSource,
+        projectionCurrent: true,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: predecessorSource,
+          leadingText: '',
+          text: predecessorVisible,
+          globalUtf16Start: run.sourceUtf16Start,
+          kind: 5,
+          headingLevel: null,
+          blockQuoteDepth: null,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: [
+            FlarkCorePresentationRun(
+              text: predecessorVisible,
+              sourceUtf16Start: run.sourceUtf16Start,
+              sourceUtf16End: run.sourceUtf16Start + predecessorVisible.length,
+              sourceExact: true,
+              styles: const {},
+            ),
+          ],
+        ),
+      ),
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: neutralSource,
+        projectionCurrent: true,
+        role: FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: neutralSource,
+          leadingText: '',
+          text: '',
+          globalUtf16Start: neutralSource.start,
+          kind: 0,
+          headingLevel: null,
+          blockQuoteDepth: null,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: const [],
+        ),
+      ),
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: successorSource,
+        projectionCurrent: true,
+        projectionEditCells: [cell],
+        role: FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: successorSource,
+          leadingText: '',
+          text: successorVisible,
+          globalUtf16Start: successorVisibleStart,
+          kind: 5,
+          headingLevel: null,
+          blockQuoteDepth: null,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: [
+            FlarkCorePresentationRun(
+              text: successorVisible,
+              sourceUtf16Start: successorVisibleStart,
+              sourceUtf16End: successorVisibleStart + successorVisible.length,
+              sourceExact: true,
+              styles: const {},
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _continueProvenTerminalList(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  final endingLength = _leadingLineEndingLength(receipt.replacement);
+  if (endingLength == null ||
+      !row.listItem ||
+      _hasUncertifiedInlineProjection(row) ||
+      row.runs.isEmpty ||
+      receipt.baseUtf16Start != receipt.baseUtf16End ||
+      receipt.baseUtf16Start != row.runs.last.sourceUtf16End ||
+      receipt.resultSelectionUtf16 !=
+          receipt.baseUtf16Start + receipt.replacement.length) {
+    return null;
+  }
+  final prefix = receipt.replacement.substring(endingLength);
+  if (prefix.isEmpty || prefix.contains('\n') || prefix.contains('\r')) {
+    return null;
+  }
+  final runs = _mapRunsThroughCommittedSplice(row.runs, receipt);
+  if (runs == null) return null;
+  final prefixStart = receipt.baseUtf16Start + endingLength;
+  final successorStart = receipt.resultSelectionUtf16;
+  final predecessorSource = FlarkSourceRange(
+    row.sourceUtf16.start,
+    prefixStart,
+  );
+  final successorSource = FlarkSourceRange(prefixStart, successorStart);
+  final cell = FlarkProjectionEditCell(
+    matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
+    affectedBytes: FlarkSourceRange(
+      receipt.resultByteEnd,
+      receipt.resultByteEnd,
+    ),
+    affectedUtf16: FlarkSourceRange(successorStart, successorStart),
+    triggerBytes: FlarkSourceRange(
+      receipt.resultByteEnd,
+      receipt.resultByteEnd,
+    ),
+    triggerUtf16: FlarkSourceRange(successorStart, successorStart),
+    retainBlockShell: true,
+    retainOutsideClosure: true,
+    presentClosureExact: true,
+    chainResultCell: true,
+  );
+  return FlarkCoreCommittedPresentationTransitionV1(
+    clearPriorGap: true,
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: predecessorSource,
+        projectionCurrent: true,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: predecessorSource,
+          leadingText: row.leadingText,
+          text: row.text,
+          globalUtf16Start: row.globalUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: row.codeBlock,
+          thematicBreak: row.thematicBreak,
+          listItem: true,
+          ordinal: row.ordinal,
+          runs: runs,
+        ),
+      ),
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: successorSource,
+        projectionCurrent: true,
+        projectionEditCells: [cell],
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: successorSource,
+          leadingText: prefix,
+          text: '',
+          globalUtf16Start: successorStart,
+          kind: row.kind,
+          headingLevel: null,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: null,
+          thematicBreak: false,
+          listItem: true,
           ordinal: row.ordinal,
           runs: const [],
         ),
@@ -955,6 +1778,14 @@ List<FlarkCorePresentationRun>? _mapRunsThroughCommittedSplice(
 int _utf16Delta(FlarkCoreEditIntentReceiptV1 receipt) =>
     receipt.replacement.length -
     (receipt.baseUtf16End - receipt.baseUtf16Start);
+
+String _withoutTrailingLineEnding(String text) {
+  if (text.endsWith('\r\n')) return text.substring(0, text.length - 2);
+  if (text.endsWith('\n') || text.endsWith('\r')) {
+    return text.substring(0, text.length - 1);
+  }
+  return text;
+}
 
 int? _paragraphSplitRowExtension(String replacement) => switch (replacement) {
   '\n' || '\r' || '\r\n' => 0,

@@ -139,6 +139,29 @@ void main() {
       );
 
       test(
+        'typing queued before a history break keeps its admitted group',
+        () async {
+          await open('base\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+
+          await type(0, '_');
+          final second = type(1, '`');
+          // Undo is admitted synchronously after the second character. Its
+          // group break must affect later input, not retroactively split the
+          // already accepted character while that edit awaits the actor.
+          session.breakTypingGroup();
+          await second;
+
+          expect(await document.readSource(), '_`base\n');
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'base\n');
+        },
+      );
+
+      test(
         'typing starts a new atomic unit at the native composite cap',
         () async {
           await open('base\n');
@@ -529,6 +552,43 @@ void main() {
       );
 
       test(
+        'semantic Backspace removes the final emphasized grapheme owner',
+        () async {
+          await open('A *t* Z');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await document.pumpUntilReady();
+          await session.setSelectionUtf16(4, 4);
+
+          final receipt = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.deleteBackward,
+            compositionActive: false,
+          );
+
+          expect(receipt.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(receipt.baseUtf16Start, 2);
+          expect(receipt.baseUtf16End, 5);
+          expect(receipt.resultSelectionUtf16, 2);
+          expect(
+            receipt.presentationTransition,
+            FlarkCoreEditPresentationTransitionV1.deleteInlineOwner,
+          );
+          expect(await document.readSource(), 'A  Z');
+          expect((await session.resolveSelection())!.extent, 2);
+
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'A *t* Z');
+          expect((await session.resolveSelection())!.extent, 4);
+
+          expect(await session.redo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'A  Z');
+          expect((await session.resolveSelection())!.extent, 2);
+        },
+      );
+
+      test(
         'semantic Return commits from canonical anchors and remains one undo unit',
         () async {
           await open('- one\n- two\n');
@@ -648,6 +708,33 @@ void main() {
           );
           expect(extended.resultSelectionUtf16, 7);
           expect(await document.readSource(), 'fff\n\n\n\n');
+        },
+      );
+
+      test(
+        'embedded physical-line Return carries its presentation proof',
+        () async {
+          await open('| a\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await document.pumpUntilReady();
+          await session.setSelectionUtf16(4, 4);
+
+          final receipt = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: false,
+          );
+
+          expect(receipt.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(
+            receipt.presentationTransition,
+            FlarkCoreEditPresentationTransitionV1.splitParagraph,
+          );
+          expect(receipt.presentationProven, isTrue);
+          expect(receipt.baseUtf16Start, 4);
+          expect(receipt.replacement, '\n');
         },
       );
 

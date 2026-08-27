@@ -206,9 +206,7 @@ Future<void> main(List<String> arguments) async {
         abiEntry.sha256 != abiIdentity['sha256']) {
       throw StateError('profile artifacts disagree with the bundle manifest');
     }
-    final ledger = File(
-      '${repository.path}/docs/testing/dogfood_scenario_v1.md',
-    );
+    final ledger = File('${repository.path}/DOGFOOD_MILESTONE.md');
     final harness = File('${repository.path}/scripts/dogfood_profile_run.dart');
     final raw = <String, Object?>{
       'schema': 'dogfood_performance_v1',

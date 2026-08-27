@@ -362,7 +362,7 @@ void main() {
   );
 
   test(
-    'list lift is exact while pending and projects after certification',
+    'list lift stays rendered through parser certification',
     () async {
       final controller = await FlarkEditorController.open(
         '- first\n- **bold**\n',
@@ -394,8 +394,8 @@ void main() {
       expect(frames.where((frame) => frame.isEmpty), isEmpty);
       expect(
         frames.where((frame) => frame.contains('**')),
-        isNotEmpty,
-        reason: 'the affected structural row never failed closed: $frames',
+        isEmpty,
+        reason: 'the receipt-backed list lift exposed Strong markers: $frames',
       );
       final lifted = controller.rows.last;
       final presentation = controller.surfaceRow(lifted);
@@ -477,7 +477,7 @@ void main() {
   );
 
   test(
-    'multiline block quote typing is exact until recertification',
+    'multiline block quote typing never publishes markers',
     () async {
       final controller = await FlarkEditorController.open(
         '> first\n> second\n',
@@ -502,7 +502,15 @@ void main() {
       );
 
       final frames = <String>[];
-      void capture() => frames.add(controller.surfaceRow(row).text);
+      void capture() {
+        final index = controller.rows.indexWhere(
+          (candidate) => candidate.ordinal == row.ordinal,
+        );
+        if (index >= 0) {
+          frames.add(controller.surfaceRow(controller.rows[index]).text);
+        }
+      }
+
       controller.addListener(capture);
       addTearDown(() => controller.removeListener(capture));
       controller.activateRow(row, 10);
@@ -510,10 +518,14 @@ void main() {
       expect(controller.visibleSource, '> first\n> Xsecond\n');
       final pending = controller.surfaceRow(row);
       expect(pending.kind, 0);
-      expect(pending.text, 'first\n> Xsecond\n');
-      expect(pending.runs, hasLength(1));
-      expect(pending.runs.single.sourceExact, isTrue);
-      expect(pending.runs.single.styles, isEmpty);
+      expect(pending.text, 'first\n> Xsecond');
+      expect(
+        pending.runs
+            .where((run) => run.text.isNotEmpty)
+            .every((run) => run.sourceExact),
+        isTrue,
+      );
+      expect(pending.runs.every((run) => run.styles.isEmpty), isTrue);
       await _settle(controller);
 
       expect(controller.lastError, isNull);
@@ -524,15 +536,23 @@ void main() {
       expect(frames, isNotEmpty);
       expect(
         frames.where((frame) => frame.contains('>')),
-        isNotEmpty,
-        reason: 'the touched quote row never failed closed: $frames',
+        isEmpty,
+        reason: 'an unproven quote edit published raw markers: $frames',
+      );
+      expect(
+        frames.every(
+          (frame) => frame == 'first\nsecond' || frame == 'first\nXsecond',
+        ),
+        isTrue,
+        reason:
+            'quote publication was neither complete predecessor nor result: $frames',
       );
     },
     skip: libraryPath == null,
   );
 
   test(
-    'multiline block quote Return is exact until certification',
+    'multiline block quote Return stays rendered through certification',
     () async {
       final controller = await FlarkEditorController.open(
         '> first\n> second\n',
@@ -564,8 +584,8 @@ void main() {
       expect(controller.surfaceRow(row).text, 'first\nsec\nond');
       expect(
         frames.where((frame) => frame.contains('>')),
-        isNotEmpty,
-        reason: 'the structural quote transition never failed closed: $frames',
+        isEmpty,
+        reason: 'the receipt-backed quote Return exposed markers: $frames',
       );
 
       final sourceBeforeBoundaryBackspace = controller.visibleSource;
@@ -610,7 +630,7 @@ void main() {
       await _settle(controller);
 
       expect(controller.lastError, isNull);
-      expect(controller.visibleSource, '> first\n\n');
+      expect(controller.visibleSource, '> first\n\n\n');
       expect(frames, isNotEmpty);
       expect(
         frames.where((frame) => frame.contains('>')),
@@ -622,7 +642,7 @@ void main() {
   );
 
   test(
-    'multiline block quote Backspace is exact until certification',
+    'multiline block quote Backspace stays rendered through certification',
     () async {
       final controller = await FlarkEditorController.open(
         '> first\n> second\n',
@@ -667,13 +687,8 @@ void main() {
       expect(controller.visibleSource, '> first\n\nXsecond\n');
       expect(
         frames.where((frame) => frame.contains('>')),
-        isNotEmpty,
-        reason: 'the structural quote transition never failed closed: $frames',
-      );
-      expect(
-        frames,
-        contains('> first\n\nXsecond\n'),
-        reason: 'the exact current structural source was never published',
+        isEmpty,
+        reason: 'the receipt-backed quote Backspace exposed markers: $frames',
       );
       final settled = controller.rows
           .expand(controller.surfaceRowsFor)
@@ -869,10 +884,17 @@ void main() {
       const insertedTableSource =
           '| f\\|oXo | bar |\n| :--- | ---: |\n| `x\\|y` | **baz** |\n';
       expect(optimistic.kind, 0);
-      expect(optimistic.text, insertedTableSource);
-      expect(optimistic.runs, hasLength(1));
-      expect(optimistic.runs.single.sourceExact, isTrue);
-      expect(optimistic.runs.single.styles, isEmpty);
+      expect(
+        optimistic.text,
+        insertedTableSource.substring(0, insertedTableSource.length - 1),
+      );
+      expect(
+        optimistic.runs
+            .where((run) => run.text.isNotEmpty)
+            .every((run) => run.sourceExact),
+        isTrue,
+      );
+      expect(optimistic.runs.every((run) => run.styles.isEmpty), isTrue);
 
       await _settle(controller);
       final settled = controller.rows.firstWhere((row) => row.table != null);
@@ -886,16 +908,70 @@ void main() {
       controller.deleteBackward();
       final deletionPending = controller.surfaceRow(settled);
       expect(deletionPending.kind, 0);
-      expect(deletionPending.text, tableSource);
+      expect(
+        deletionPending.text,
+        tableSource.substring(0, tableSource.length - 1),
+      );
       await _settle(controller);
       expect(controller.visibleSource, source);
       final restored = controller.rows.firstWhere((row) => row.table != null);
       expect(controller.surfaceRow(restored).text, passive.text);
       expect(
         frames.where((frame) => frame.contains(':---')),
-        isNotEmpty,
-        reason: 'the touched table never failed closed: $frames',
+        isEmpty,
+        reason: 'an unproven table edit published raw table source: $frames',
       );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'typing that reinterprets a multiline exact island waits for certification',
+    () async {
+      const source =
+          '| a | b |\n'
+          '| --- | --- |\n'
+          '| c | d |\n'
+          '\n'
+          '**sentinel**\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+      controller.activateRow(controller.rows.first, 3);
+
+      controller.insertNewline();
+      await _settle(controller);
+      controller.insertNewline();
+      await _settle(controller);
+      expect(
+        controller.visibleSource,
+        '| a\n\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n',
+      );
+
+      final frames = <String>[];
+      controller.addListener(() {
+        frames.add(
+          controller.rows
+              .expand(controller.surfaceRowsFor)
+              .map((row) => '${row.leadingText}${row.text}')
+              .join('\n'),
+        );
+      });
+      controller.replaceSelection('x');
+      await _settle(controller);
+
+      expect(controller.visibleSource, contains('\n x| b |\n| --- | --- |'));
+      expect(
+        frames.where((frame) => frame.contains('| --- | --- |')),
+        isEmpty,
+        reason:
+            'a no-proof multiline fallback exposed table source before '
+            'certification: $frames',
+      );
+      expect(frames.last, contains('x │ b'));
     },
     skip: libraryPath == null,
   );

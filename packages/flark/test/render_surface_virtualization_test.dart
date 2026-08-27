@@ -271,7 +271,7 @@ void main() {
   );
 
   testWidgets(
-    'mixed quote and plain transition lays out one exact pending surface',
+    'mixed quote transition lays out one truthful pending or certified surface',
     (tester) async {
       final controller = (await tester.runAsync(
         () => FlarkEditorController.open(
@@ -316,17 +316,37 @@ void main() {
       final presentations = surface.debugPaintedPlan
           .where((entry) => entry.ordinal == row.ordinal)
           .toList(growable: false);
-      expect(controller.semanticsCurrent, isFalse);
-      expect(controller.surfaceRowsFor(row), hasLength(1));
-      final pending = controller.surfaceRowsFor(row).single;
-      expect(pending.kind, 0);
-      expect(pending.leadingText, '> ');
-      expect(pending.text, 'first\n\nsecond\n');
-      expect(pending.runs, hasLength(1));
-      expect(pending.runs.single.sourceExact, isTrue);
-      expect(presentations, hasLength(1));
-      expect(presentations.single.text, 'first\n\nsecond\n');
-      expect(presentations.single.active, isTrue);
+      if (!controller.semanticsCurrent) {
+        expect(controller.surfaceRowsFor(row), hasLength(1));
+        final pending = controller.surfaceRowsFor(row).single;
+        expect(pending.kind, 0);
+        expect(pending.leadingText, '> ');
+        expect(pending.text, 'first\n\nsecond\n');
+        expect(pending.runs, hasLength(1));
+        expect(pending.runs.single.sourceExact, isTrue);
+        expect(presentations, hasLength(1));
+        expect(presentations.single.text, 'first\n\nsecond\n');
+        expect(presentations.single.active, isTrue);
+      } else {
+        // Fast parser convergence may supersede the transitional surface
+        // before Flutter receives a frame. In that case the only valid paint
+        // is the atomic certified partition; the test must not require the
+        // renderer to expose an obsolete pending publication merely to make
+        // its timing deterministic.
+        expect(controller.rows, hasLength(2));
+        expect(
+          surface.debugPaintedPlan.map((entry) => entry.text),
+          orderedEquals(const ['first', 'second']),
+        );
+        expect(
+          surface.debugPaintedPlan.where((entry) => entry.active),
+          hasLength(1),
+        );
+        expect(
+          surface.debugPaintedPlan.singleWhere((entry) => entry.active).text,
+          'second',
+        );
+      }
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);

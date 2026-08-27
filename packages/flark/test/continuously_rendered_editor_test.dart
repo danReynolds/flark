@@ -90,11 +90,277 @@ void main() {
       controller.deleteBackward();
       expect(controller.visibleSource, source);
 
-      controller.activateRow(row, boldStart + 1);
+      controller.activateRow(row, boldStart + 'bold'.length);
       controller.deleteBackward();
-      expect(controller.visibleSource, '**old** after\n');
+      expect(controller.visibleSource, '**bol** after\n');
       await _settle(controller);
-      expect(controller.surfaceRow(controller.rows.first).text, 'old after');
+
+      controller.activateRow(controller.rows.first, boldStart + 1);
+      controller.deleteBackward();
+      expect(controller.visibleSource, '**ol** after\n');
+      await _settle(controller);
+      expect(controller.surfaceRow(controller.rows.first).text, 'ol after');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'whitespace-only neutral rows keep their source mapping but paint empty',
+    () async {
+      const source = ' \t\nnext\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final surface = controller.neutralSurfaceRow(
+        globalUtf16Start: 0,
+        text: ' \t\n',
+        ordinal: 0,
+        includeEditingState: false,
+      );
+      expect(surface.text, isEmpty);
+      expect(surface.runs.first.text, isEmpty);
+      expect(surface.runs.first.sourceUtf16Start, 0);
+      expect(surface.runs.first.sourceUtf16End, 2);
+      expect(surface.runs.first.sourceExact, isFalse);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'fenced Return delta and action never publish the raw fence shell',
+    () async {
+      const source = '```dart\nfinal value = 1;\n```\n\n**sentinel**\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final code = controller.rows.firstWhere(
+        (row) => row.codeBlock?.style == FlarkCodeBlockStyle.fencedBacktick,
+      );
+      final caret = source.indexOf('\n', source.indexOf('final value'));
+      controller.activateRow(code, caret);
+      await controller.resolveCanonicalSelection();
+      final published = <String>[];
+      void capture() {
+        published.add(
+          controller.rows.map((row) {
+            final surface = controller.surfaceRow(row);
+            return '${surface.leadingText}${surface.text}';
+          }).join(),
+        );
+      }
+
+      controller.addListener(capture);
+      final before = controller.inputValue;
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: '\n',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+      controller.observePlatformNewlineAction(
+        textObservationAlreadyApplied: true,
+      );
+      await _settle(controller);
+      controller.removeListener(capture);
+
+      expect(
+        controller.visibleSource,
+        '```dart\nfinal value = 1;\n\n```\n\n**sentinel**\n',
+      );
+      expect(published, isNotEmpty);
+      expect(
+        published.every((frame) => !frame.contains('```')),
+        isTrue,
+        reason: '$published',
+      );
+      expect(
+        published.every((frame) => frame.contains('final value = 1;\n\n')),
+        isTrue,
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'settled fenced Return starts a fresh rapid Return and typing barrier',
+    () async {
+      const source = '```dart\nfinal value = 1;\n```\n\n**sentinel**\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final code = controller.rows.firstWhere(
+        (row) => row.codeBlock?.style == FlarkCodeBlockStyle.fencedBacktick,
+      );
+      final caret = source.indexOf('\n', source.indexOf('final value'));
+      controller.activateRow(code, caret);
+      await controller.resolveCanonicalSelection();
+
+      void deliverNewline() {
+        final before = controller.inputValue;
+        controller.applyDeltas([
+          TextEditingDeltaInsertion(
+            oldText: before.text,
+            textInserted: '\n',
+            insertionOffset: before.selection.extentOffset,
+            selection: TextSelection.collapsed(
+              offset: before.selection.extentOffset + 1,
+            ),
+            composing: TextRange.empty,
+          ),
+        ]);
+        controller.observePlatformNewlineAction(
+          textObservationAlreadyApplied: true,
+        );
+      }
+
+      deliverNewline();
+      await _settle(controller);
+      final beforeSecond = controller.inputValue;
+      final published = <String>[];
+      void capture() {
+        published.add(
+          controller.rows.map((row) => controller.surfaceRow(row).text).join(),
+        );
+      }
+
+      controller.addListener(capture);
+      final provisionalSecond = beforeSecond.copyWith(
+        text: beforeSecond.text.replaceRange(
+          beforeSecond.selection.extentOffset,
+          beforeSecond.selection.extentOffset,
+          '\n',
+        ),
+        selection: TextSelection.collapsed(
+          offset: beforeSecond.selection.extentOffset + 1,
+        ),
+      );
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: beforeSecond.text,
+          textInserted: '\n',
+          insertionOffset: beforeSecond.selection.extentOffset,
+          selection: provisionalSecond.selection,
+          composing: TextRange.empty,
+        ),
+      ]);
+      controller.observePlatformNewlineAction(
+        textObservationAlreadyApplied: true,
+      );
+      controller.updateEditingValue(
+        provisionalSecond.copyWith(
+          text: provisionalSecond.text.replaceRange(
+            provisionalSecond.selection.extentOffset,
+            provisionalSecond.selection.extentOffset,
+            'x',
+          ),
+          selection: TextSelection.collapsed(
+            offset: provisionalSecond.selection.extentOffset + 1,
+          ),
+        ),
+      );
+      await _settle(controller);
+      controller.removeListener(capture);
+
+      expect(
+        controller.visibleSource,
+        '```dart\nfinal value = 1;\n\nx\n```\n\n**sentinel**\n',
+      );
+      expect(published, isNotEmpty);
+      expect(published.every((frame) => !frame.contains('```')), isTrue);
+      expect(controller.resyncCount, 0);
+      expect(
+        controller.rows.map((row) => controller.surfaceRow(row).text).join(),
+        isNot(contains('```')),
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'settled fenced Backspace joins code lines without a raw frame',
+    () async {
+      const source = '```dart\nfinal value = 1;\n```\n\n**sentinel**\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final code = controller.rows.firstWhere(
+        (row) => row.codeBlock?.style == FlarkCodeBlockStyle.fencedBacktick,
+      );
+      final caret = source.indexOf('\n', source.indexOf('final value'));
+      controller.activateRow(code, caret);
+      await controller.resolveCanonicalSelection();
+      final beforeReturn = controller.inputValue;
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: beforeReturn.text,
+          textInserted: '\n',
+          insertionOffset: beforeReturn.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: beforeReturn.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+      controller.observePlatformNewlineAction(
+        textObservationAlreadyApplied: true,
+      );
+      await _settle(controller);
+
+      final published = <String>[];
+      void capture() {
+        published.add(
+          controller.rows.map((row) => controller.surfaceRow(row).text).join(),
+        );
+      }
+
+      controller.addListener(capture);
+      final beforeBackspace = controller.inputValue;
+      final backspaceCaret = beforeBackspace.selection.extentOffset;
+      controller.applyDeltas([
+        TextEditingDeltaDeletion(
+          oldText: beforeBackspace.text,
+          deletedRange: TextRange(
+            start: backspaceCaret - 1,
+            end: backspaceCaret,
+          ),
+          selection: TextSelection.collapsed(offset: backspaceCaret - 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      controller.observePlatformDeleteBackwardAction();
+      await _settle(controller);
+      controller.removeListener(capture);
+
+      expect(controller.visibleSource, source);
+      expect(published, isNotEmpty);
+      expect(
+        published.every((frame) => !frame.contains('```')),
+        isTrue,
+        reason: '$published',
+      );
+      expect(
+        published.every((frame) => frame.contains('final value = 1;\n')),
+        isTrue,
+      );
+      expect(controller.resyncCount, 0);
     },
     skip: libraryPath == null,
   );
@@ -128,6 +394,45 @@ void main() {
       expect(controller.lastError, isNull);
       expect(controller.visibleSource, '- one\n- \n');
       expect(controller.status, isNot(FlarkEditorStatus.faulted));
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'embedded physical-line Return never paints a parser-trimmed space',
+    () async {
+      const source = '| a\n | b |\n| --- | --- |\n| c | d |\n\n**sentinel**\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      final passive = controller.surfaceRow(row, includeEditingState: false);
+      expect(passive.kind, 5);
+      expect(passive.globalUtf16Start, 0);
+      expect(passive.runs, hasLength(1));
+      expect(passive.runs.single.sourceExact, isTrue);
+      expect(passive.runs.single.sourceUtf16Start, 0);
+      expect(passive.runs.single.sourceUtf16End, 35);
+      expect(row.editableUtf16, isNull);
+
+      controller.activateRow(row, 4);
+      controller.insertNewline();
+      await controller.debugWaitForMutationSettled();
+
+      final presentation = controller.rows
+          .expand(
+            (candidate) => controller.surfaceRowsFor(
+              candidate,
+              includeEditingState: false,
+            ),
+          )
+          .map((surface) => surface.text)
+          .join('\n');
+      expect(presentation, '| a\n\n| b |\n| --- | --- |\n| c | d |\nsentinel');
+      expect(presentation, isNot(contains('\n | b |')));
     },
     skip: libraryPath == null,
   );
@@ -633,7 +938,7 @@ void main() {
   );
 
   test(
-    'composition inside strong text is exact while pending and undoes as one unit',
+    'composition inside strong text is exact locally and undoes as one unit',
     () async {
       const source = 'Before **β😀** and _em_.\n';
       final controller = await FlarkEditorController.open(
@@ -677,10 +982,14 @@ void main() {
       );
       final composingSurface = controller.surfaceRow(row);
       expect(composingSurface.kind, 0);
-      expect(composingSurface.text, 'Before **βに😀** and _em_.\n');
-      expect(composingSurface.runs, hasLength(1));
-      expect(composingSurface.runs.single.sourceExact, isTrue);
-      expect(composingSurface.runs.single.styles, isEmpty);
+      expect(composingSurface.text, 'Before **βに😀** and _em_.');
+      expect(composingSurface.text, isNot(contains('�')));
+      final composingVisibleRuns = composingSurface.runs
+          .where((run) => run.text.isNotEmpty)
+          .toList(growable: false);
+      expect(composingVisibleRuns, hasLength(1));
+      expect(composingVisibleRuns.single.sourceExact, isTrue);
+      expect(composingSurface.runs.every((run) => run.styles.isEmpty), isTrue);
 
       controller.updateEditingValue(
         controller.inputValue.copyWith(composing: TextRange.empty),
@@ -766,10 +1075,13 @@ void main() {
 
       final pending = controller.surfaceRow(row);
       expect(pending.kind, 0);
-      expect(pending.text, 'Before **bXd** after.\n');
-      expect(pending.runs, hasLength(1));
-      expect(pending.runs.single.sourceExact, isTrue);
-      expect(pending.runs.single.styles, isEmpty);
+      expect(pending.text, 'Before **bXd** after.');
+      final pendingVisibleRuns = pending.runs
+          .where((run) => run.text.isNotEmpty)
+          .toList(growable: false);
+      expect(pendingVisibleRuns, hasLength(1));
+      expect(pendingVisibleRuns.single.sourceExact, isTrue);
+      expect(pending.runs.every((run) => run.styles.isEmpty), isTrue);
       await _settle(controller);
       expect(controller.visibleSource, 'Before **bXd** after.\n');
       final recertified = controller.surfaceRow(controller.rows.first);
@@ -930,7 +1242,7 @@ void main() {
   );
 
   test(
-    'plain paragraph backspace fails closed locally and preserves its sibling',
+    'plain paragraph backspace stays rendered and preserves its sibling',
     () async {
       const source = 'Plain paragraph.\n\n## Sibling\n';
       final controller = await FlarkEditorController.open(
@@ -960,7 +1272,7 @@ void main() {
 
       expect(observed, isNotEmpty);
       expect(observed.every((state) => state.siblingKind == 12), isTrue);
-      expect(observed.any((state) => state.paragraphKind == 0), isTrue);
+      expect(observed.every((state) => state.paragraphKind == 5), isTrue);
       expect(controller.surfaceRow(controller.rows.first).kind, 5);
       expect(controller.visibleSource, startsWith('Plain paragraph\n'));
     },
@@ -1031,7 +1343,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       RenderFlarkSurface surface() =>
           tester.renderObject(find.byType(FlarkRenderSurfaceWidget));
       expect(controller.rows.map((row) => controller.surfaceRow(row).kind), [
-        0,
+        5,
         12,
         5,
       ]);
@@ -1039,7 +1351,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         (entry) =>
             entry.neutral && entry.sourceStart == controller.globalCaretOffset,
       );
-      expect(emptyBlock.text, '\n');
+      expect(emptyBlock.text, isEmpty);
       expect(emptyBlock.active, isTrue);
 
       await tester.runAsync(controller.continueParsing);
@@ -1053,7 +1365,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         (entry) =>
             entry.neutral && entry.sourceStart == controller.globalCaretOffset,
       );
-      expect(emptyBlock.text, '\n');
+      expect(emptyBlock.text, isEmpty);
       expect(emptyBlock.active, isTrue);
       expect(controller.inputValue.text, '\n');
       expect(controller.inputValue.selection.extentOffset, 0);
@@ -1109,7 +1421,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       final pendingTextBlock = surface().debugPaintedPlan.singleWhere(
         (entry) => entry.neutral && entry.active,
       );
-      expect(pendingTextBlock.text, 'x\n');
+      expect(pendingTextBlock.text, 'x');
 
       await settleEdits();
       await tester.runAsync(controller.continueParsing);

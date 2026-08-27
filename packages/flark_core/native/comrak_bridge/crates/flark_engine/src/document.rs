@@ -11,14 +11,14 @@ use crate::candidate_manifest::{
 use crate::identity::{CandidateGeneration, SourceRevision};
 use crate::measured_sequence::SequenceInspectionReceipt;
 use crate::reference_root::ReferenceRootLimits;
+#[cfg(feature = "progressive-source-probe")]
+use crate::source::{
+    OpeningSourceAppendProof, OpeningSourceError, OpeningSourceSnapshot, SourceAppendReceipt,
+};
 use crate::source::{
     SourceBoundaryAffinity, SourceEditError, SourceEditIntentReceipt, SourceEditLineage,
     SourceEditLineageError, SourceEditReceipt, SourceSnapshotLease, SourceStore,
     SourceUtf16Operation, SourceVersion, SOURCE_CURSOR_WINDOW_BYTES,
-};
-#[cfg(feature = "progressive-source-probe")]
-use crate::source::{
-    OpeningSourceAppendProof, OpeningSourceError, OpeningSourceSnapshot, SourceAppendReceipt,
 };
 use crate::source_facts::{
     splice_persistent_source_facts_atomic_with_receipt, CertifiedSource, ParserProfileId,
@@ -1038,9 +1038,9 @@ impl fmt::Display for DocumentRuntimeError {
             ),
             Self::IdentityExhausted => formatter.write_str("candidate identity space is exhausted"),
             #[cfg(feature = "progressive-source-probe")]
-            Self::OpeningAppendBusy => formatter.write_str(
-                "opening append cannot cross an active root-bound runtime job",
-            ),
+            Self::OpeningAppendBusy => {
+                formatter.write_str("opening append cannot cross an active root-bound runtime job")
+            }
             #[cfg(feature = "progressive-source-probe")]
             Self::OpeningSource(error) => {
                 write!(formatter, "opening source transition failed: {error}")

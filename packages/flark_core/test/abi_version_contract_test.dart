@@ -6,7 +6,10 @@ import 'package:test/test.dart';
 
 void main() {
   test('Dart ABI negotiation requires the exact current minor', () {
-    expect(flarkV4AbiVersionIsCompatible(4, 34), isTrue);
+    expect(flarkV4AbiVersionIsCompatible(4, 37), isTrue);
+    expect(flarkV4AbiVersionIsCompatible(4, 36), isFalse);
+    expect(flarkV4AbiVersionIsCompatible(4, 35), isFalse);
+    expect(flarkV4AbiVersionIsCompatible(4, 34), isFalse);
     expect(flarkV4AbiVersionIsCompatible(4, 33), isFalse);
     expect(flarkV4AbiVersionIsCompatible(4, 32), isFalse);
     expect(flarkV4AbiVersionIsCompatible(4, 31), isFalse);
@@ -14,7 +17,7 @@ void main() {
     expect(flarkV4AbiVersionIsCompatible(4, 28), isFalse);
     expect(flarkV4AbiVersionIsCompatible(4, 27), isFalse);
     expect(flarkV4AbiVersionIsCompatible(4, 29), isFalse);
-    expect(flarkV4AbiVersionIsCompatible(5, 34), isFalse);
+    expect(flarkV4AbiVersionIsCompatible(5, 37), isFalse);
   });
 
   test('Dart exact-minor expectation agrees with the machine contract', () {
@@ -25,7 +28,7 @@ void main() {
             as Map<String, Object?>;
     final abi = manifest['abi']! as Map<String, Object?>;
     expect(abi['major'], 4);
-    expect(abi['minor'], 34);
+    expect(abi['minor'], 37);
     expect(
       flarkV4AbiVersionIsCompatible(abi['major']! as int, abi['minor']! as int),
       isTrue,

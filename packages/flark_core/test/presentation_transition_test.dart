@@ -51,6 +51,64 @@ void main() {
     expect(transition?.clearPriorGap, isFalse);
   });
 
+  test(
+    'inline-owner deletion removes its styled run without exposing markers',
+    () {
+      final row = _row(
+        ordinal: 3,
+        sourceStart: 0,
+        sourceEnd: 7,
+        text: 'A t Z',
+        runs: const [
+          FlarkCorePresentationRun(
+            text: 'A ',
+            sourceUtf16Start: 0,
+            sourceUtf16End: 2,
+            sourceExact: true,
+            styles: {},
+          ),
+          FlarkCorePresentationRun(
+            text: 't',
+            sourceUtf16Start: 3,
+            sourceUtf16End: 4,
+            sourceExact: true,
+            styles: {FlarkCorePresentationInlineStyle.emphasis},
+          ),
+          FlarkCorePresentationRun(
+            text: ' Z',
+            sourceUtf16Start: 5,
+            sourceUtf16End: 7,
+            sourceExact: true,
+            styles: {},
+          ),
+        ],
+      );
+
+      final transition = frontend.adopt(
+        receipt: _receipt(
+          transition: FlarkCoreEditPresentationTransitionV1.deleteInlineOwner,
+          baseStart: 2,
+          baseEnd: 5,
+          replacement: '',
+        ),
+        activeOrdinal: 3,
+        active: row,
+      );
+
+      final surface = transition!.surfaces.single;
+      expect(surface.sourceUtf16.start, 0);
+      expect(surface.sourceUtf16.end, 4);
+      expect(surface.presentation.text, 'A  Z');
+      expect(surface.presentation.runs, hasLength(2));
+      expect(surface.presentation.runs.last.sourceUtf16Start, 2);
+      expect(surface.presentation.runs.last.sourceUtf16End, 4);
+      expect(
+        surface.presentation.runs.expand((run) => run.styles),
+        isNot(contains(FlarkCorePresentationInlineStyle.emphasis)),
+      );
+    },
+  );
+
   test('paragraph merge fails closed around predecessor inline styling', () {
     final left = _row(
       ordinal: 4,
@@ -210,9 +268,13 @@ void main() {
       );
 
       expect(transition?.gap, isNull);
-      expect(transition?.surfaces, hasLength(2));
+      expect(transition?.surfaces, hasLength(3));
       expect(transition?.surfaces.first.presentation.text, 'Before bold.');
       expect(transition?.surfaces.first.projectionCurrent, isTrue);
+      expect(transition?.surfaces[1].presentation.text, isEmpty);
+      expect(transition?.surfaces[1].presentation.kind, 0);
+      expect(transition?.surfaces[1].sourceUtf16.start, 17);
+      expect(transition?.surfaces[1].sourceUtf16.end, 18);
       expect(transition?.surfaces.last.presentation.kind, 5);
       expect(transition?.surfaces.last.projectionEditCells, hasLength(1));
       expect(
@@ -226,6 +288,227 @@ void main() {
       expect(cell.affectedUtf16.end, 18);
     },
   );
+
+  test('unproven inline split retains an exact two-row partition', () {
+    final active = _row(
+      ordinal: 7,
+      sourceStart: 0,
+      sourceEnd: 17,
+      text: 'Before bold.',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'Before ',
+          sourceUtf16Start: 0,
+          sourceUtf16End: 7,
+          sourceExact: true,
+          styles: {},
+        ),
+        FlarkCorePresentationRun(
+          text: 'bold',
+          sourceUtf16Start: 9,
+          sourceUtf16End: 13,
+          sourceExact: true,
+          styles: {FlarkCorePresentationInlineStyle.strong},
+        ),
+        FlarkCorePresentationRun(
+          text: '.',
+          sourceUtf16Start: 15,
+          sourceUtf16End: 16,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+        baseStart: 13,
+        baseEnd: 13,
+        replacement: '\n\n',
+      ),
+      activeOrdinal: 7,
+      active: active,
+    );
+
+    expect(transition?.gap, isNull);
+    expect(transition?.surfaces, hasLength(2));
+    expect(transition?.surfaces.first.sourceUtf16.start, 0);
+    expect(transition?.surfaces.first.sourceUtf16.end, 14);
+    expect(transition?.surfaces.last.sourceUtf16.start, 15);
+    expect(transition?.surfaces.last.sourceUtf16.end, 19);
+    expect(
+      transition?.surfaces.every((surface) => !surface.projectionCurrent),
+      isTrue,
+    );
+  });
+
+  test('parser-proven embedded split trims one leading source space', () {
+    final active = _row(
+      ordinal: 7,
+      sourceStart: 0,
+      sourceEnd: 16,
+      text: '| a\n | b |\nmore\n',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: '| a\n | b |\nmore\n',
+          sourceUtf16Start: 0,
+          sourceUtf16End: 16,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+        baseStart: 4,
+        baseEnd: 4,
+        replacement: '\n',
+        presentationProven: true,
+      ),
+      activeOrdinal: 7,
+      active: active,
+    );
+
+    expect(transition?.gap, isNull);
+    expect(transition?.surfaces, hasLength(3));
+    expect(transition?.surfaces.first.presentation.text, '| a');
+    final neutral = transition!.surfaces[1];
+    expect(
+      neutral.role,
+      FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+    );
+    expect(neutral.sourceUtf16.start, 4);
+    expect(neutral.sourceUtf16.end, 5);
+    expect(neutral.presentation.text, isEmpty);
+    expect(neutral.projectionCurrent, isTrue);
+    final successor = transition.surfaces.last;
+    expect(
+      successor.role,
+      FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor,
+    );
+    expect(successor.sourceUtf16.start, 5);
+    expect(successor.presentation.globalUtf16Start, 6);
+    expect(successor.presentation.text, '| b |\nmore');
+    expect(successor.projectionEditCells, hasLength(1));
+    final cell = successor.projectionEditCells.single;
+    expect(cell.matcher, FlarkProjectionEditMatcher.anyNoCrLfSplice);
+    expect(cell.affectedUtf16.start, 5);
+    expect(cell.affectedUtf16.end, 6);
+    expect(cell.triggerUtf16.start, 6);
+    expect(cell.triggerUtf16.end, 6);
+    expect(cell.chainResultCell, isFalse);
+  });
+
+  test('parser-proven fenced split retains one rendered code surface', () {
+    const active = FlarkCorePresentationRow(
+      sourceUtf16: FlarkSourceRange(0, 29),
+      leadingText: '',
+      text: 'final value = 1;\n',
+      globalUtf16Start: 8,
+      kind: 7,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: FlarkCodeBlockPresentation(
+        style: FlarkCodeBlockStyle.fencedBacktick,
+        minimumClosingLength: 3,
+        fenceOffset: 0,
+        closed: true,
+      ),
+      thematicBreak: false,
+      ordinal: 7,
+      runs: [
+        FlarkCorePresentationRun(
+          text: 'final value = 1;\n',
+          sourceUtf16Start: 8,
+          sourceUtf16End: 25,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+        baseStart: 24,
+        baseEnd: 24,
+        replacement: '\n',
+        presentationProven: true,
+      ),
+      activeOrdinal: 7,
+      active: active,
+    );
+
+    expect(transition?.surfaces, hasLength(1));
+    final surface = transition!.surfaces.single;
+    expect(surface.projectionCurrent, isTrue);
+    expect(surface.sourceUtf16.start, 0);
+    expect(surface.sourceUtf16.end, 30);
+    expect(surface.presentation.text, 'final value = 1;\n\n');
+    expect(surface.presentation.codeBlock?.closed, isTrue);
+    expect(surface.projectionEditCells, hasLength(1));
+    final cell = surface.projectionEditCells.single;
+    expect(
+      cell.matcher,
+      FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+    );
+    expect(cell.affectedUtf16.start, 25);
+    expect(cell.affectedUtf16.end, 25);
+    expect(cell.chainResultCell, isTrue);
+  });
+
+  test('parser-proven fenced join removes only the visible line ending', () {
+    const active = FlarkCorePresentationRow(
+      sourceUtf16: FlarkSourceRange(0, 30),
+      leadingText: '',
+      text: 'final value = 1;\n\n',
+      globalUtf16Start: 8,
+      kind: 7,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: FlarkCodeBlockPresentation(
+        style: FlarkCodeBlockStyle.fencedBacktick,
+        minimumClosingLength: 3,
+        fenceOffset: 0,
+        closed: true,
+      ),
+      thematicBreak: false,
+      ordinal: 7,
+      runs: [
+        FlarkCorePresentationRun(
+          text: 'final value = 1;\n\n',
+          sourceUtf16Start: 8,
+          sourceUtf16End: 26,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.joinFencedCode,
+        baseStart: 24,
+        baseEnd: 25,
+        replacement: '',
+        presentationProven: true,
+      ),
+      activeOrdinal: 7,
+      active: active,
+    );
+
+    final surface = transition?.surfaces.single;
+    expect(surface?.projectionCurrent, isTrue);
+    expect(surface?.sourceUtf16.start, 0);
+    expect(surface?.sourceUtf16.end, 29);
+    expect(surface?.presentation.text, 'final value = 1;\n');
+    expect(surface?.presentation.codeBlock?.closed, isTrue);
+    expect(surface?.projectionEditCells, hasLength(1));
+    expect(
+      surface?.projectionEditCells.single.matcher,
+      FlarkProjectionEditMatcher.appendAsciiLiteralAtLineEnd,
+    );
+    expect(surface?.projectionEditCells.single.affectedUtf16.start, 24);
+  });
 
   test(
     'parser-proven heading split retains rendered heading and plain successor',
@@ -260,12 +543,166 @@ void main() {
         active: active,
       );
 
-      expect(transition?.surfaces, hasLength(2));
+      expect(transition?.gap, isNull);
+      expect(transition?.surfaces, hasLength(3));
       expect(transition?.surfaces.first.presentation.text, 'Head');
       expect(transition?.surfaces.first.presentation.headingLevel, 2);
       expect(transition?.surfaces.first.projectionCurrent, isTrue);
+      expect(
+        transition?.surfaces[1].role,
+        FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+      );
       expect(transition?.surfaces.last.presentation.kind, 5);
       expect(transition?.surfaces.last.presentation.text, isEmpty);
+    },
+  );
+
+  test(
+    'parser-proven terminal list continuation publishes one empty successor',
+    () {
+      final active = _row(
+        ordinal: 4,
+        sourceStart: 0,
+        sourceEnd: 12,
+        globalStart: 2,
+        leadingText: '- ',
+        text: 'list item',
+        listItem: true,
+        runs: const [
+          FlarkCorePresentationRun(
+            text: 'list item',
+            sourceUtf16Start: 2,
+            sourceUtf16End: 11,
+            sourceExact: true,
+            styles: {},
+          ),
+        ],
+      );
+      final transition = frontend.adopt(
+        receipt: _receipt(
+          transition: FlarkCoreEditPresentationTransitionV1.continueList,
+          baseStart: 11,
+          baseEnd: 11,
+          replacement: '\n- ',
+          presentationProven: true,
+        ),
+        activeOrdinal: 4,
+        active: active,
+      );
+
+      expect(transition?.surfaces, hasLength(2));
+      expect(transition?.surfaces.first.presentation.leadingText, '- ');
+      expect(transition?.surfaces.first.presentation.text, 'list item');
+      expect(transition?.surfaces.last.sourceUtf16.start, 12);
+      expect(transition?.surfaces.last.sourceUtf16.end, 14);
+      expect(transition?.surfaces.last.presentation.leadingText, '- ');
+      expect(transition?.surfaces.last.presentation.text, isEmpty);
+      expect(transition?.surfaces.last.presentation.listItem, isTrue);
+      expect(
+        transition?.surfaces.last.projectionEditCells.single.affectedUtf16,
+        isA<FlarkSourceRange>(),
+      );
+      expect(
+        transition!
+            .surfaces
+            .last
+            .projectionEditCells
+            .single
+            .affectedUtf16
+            .start,
+        14,
+      );
+    },
+  );
+
+  test('parser-proven empty list exit authors a plain insertion cell', () {
+    final active = _row(
+      ordinal: 4,
+      sourceStart: 6,
+      sourceEnd: 9,
+      globalStart: 8,
+      leadingText: '- ',
+      text: '',
+      listItem: true,
+      runs: const [],
+    );
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.exitList,
+        baseStart: 6,
+        baseEnd: 8,
+        replacement: '\n',
+        presentationProven: true,
+      ),
+      activeOrdinal: 4,
+      active: active,
+    );
+
+    expect(transition?.clearPriorGap, isTrue);
+    expect(transition?.surfaces, hasLength(2));
+    expect(
+      transition?.surfaces.first.role,
+      FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+    );
+    expect(transition?.surfaces.first.sourceUtf16.start, 6);
+    expect(transition?.surfaces.first.sourceUtf16.end, 7);
+    final surface = transition!.surfaces.last;
+    expect(surface.sourceUtf16.start, 7);
+    expect(surface.sourceUtf16.end, 8);
+    expect(surface.projectionCurrent, isTrue);
+    expect(
+      surface.role,
+      FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor,
+    );
+    expect(surface.presentation.leadingText, isEmpty);
+    expect(surface.presentation.text, isEmpty);
+    expect(surface.presentation.listItem, isFalse);
+    expect(surface.projectionEditCells, hasLength(1));
+    expect(surface.projectionEditCells.single.affectedUtf16.start, 7);
+  });
+
+  test(
+    'parser-proven terminal quote continuation authors a rendered successor',
+    () {
+      final active = _row(
+        ordinal: 4,
+        sourceStart: 0,
+        sourceEnd: 14,
+        globalStart: 2,
+        leadingText: '│ ',
+        text: 'quoted text',
+        blockQuoteDepth: 1,
+        runs: const [
+          FlarkCorePresentationRun(
+            text: 'quoted text',
+            sourceUtf16Start: 2,
+            sourceUtf16End: 13,
+            sourceExact: true,
+            styles: {},
+          ),
+        ],
+      );
+      final transition = frontend.adopt(
+        receipt: _receipt(
+          transition: FlarkCoreEditPresentationTransitionV1.continueBlockQuote,
+          baseStart: 13,
+          baseEnd: 13,
+          replacement: '\n> ',
+          presentationProven: true,
+        ),
+        activeOrdinal: 4,
+        active: active,
+      );
+
+      expect(transition?.surfaces, hasLength(2));
+      expect(transition?.surfaces.first.presentation.text, 'quoted text');
+      final successor = transition!.surfaces.last;
+      expect(successor.sourceUtf16.start, 14);
+      expect(successor.sourceUtf16.end, 16);
+      expect(successor.presentation.leadingText, '│ ');
+      expect(successor.presentation.text, isEmpty);
+      expect(successor.presentation.blockQuoteDepth, 1);
+      expect(successor.projectionEditCells.single.affectedUtf16.start, 16);
     },
   );
 
@@ -296,6 +733,7 @@ void main() {
       activeRow: successor,
       precedingRow: null,
       priorGapPending: false,
+      activeRowTransitional: true,
     );
 
     expect(transition?.surfaces, isEmpty);
@@ -860,6 +1298,7 @@ FlarkCorePresentationRow _row({
   int? blockQuoteDepth,
   FlarkCodeBlockPresentation? codeBlock,
   bool thematicBreak = false,
+  bool listItem = false,
 }) => FlarkCorePresentationRow(
   sourceUtf16: FlarkSourceRange(sourceStart, sourceEnd),
   leadingText: leadingText,
@@ -870,6 +1309,7 @@ FlarkCorePresentationRow _row({
   blockQuoteDepth: blockQuoteDepth,
   codeBlock: codeBlock,
   thematicBreak: thematicBreak,
+  listItem: listItem,
   ordinal: ordinal,
   runs: runs,
 );

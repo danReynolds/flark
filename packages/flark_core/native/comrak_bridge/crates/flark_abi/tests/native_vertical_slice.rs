@@ -13,12 +13,14 @@ use flark_abi::{
     INLINE_FACT_LITERAL_SAFE_ENVELOPE, INLINE_FACT_PENDING_PRESENTATION_PLAN,
     INLINE_FACT_PENDING_PRESENTATION_ROW, INLINE_FACT_PENDING_PRESENTATION_STEP,
     INLINE_FACT_PROJECTION_EDIT_CELL, INLINE_FACT_TABLE_CELL, INSPECT_FLAG_GLOBAL_LIVE_STATE,
-    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
+    LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION, LITERAL_EDIT_CLASS_SINGLE_ASCII_LITERAL_UNIT_DELETION,
+    LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION,
     PENDING_PRESENTATION_PLAN_REPLACED_ROW_COUNT_SHIFT,
     PENDING_PRESENTATION_PLAN_SEQUENCE_LENGTH_MASK, PENDING_PRESENTATION_PLAN_STEP_COUNT_SHIFT,
     PENDING_PRESENTATION_ROW_FACT_COUNT_SHIFT, PENDING_PRESENTATION_STEP_PREFIX_LENGTH_MASK,
     PENDING_PRESENTATION_STEP_ROW_COUNT_SHIFT, PROJECTION_EDIT_CELL_CHAIN_RESULT,
-    PROJECTION_EDIT_CELL_MATCHER_MASK, PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
+    PROJECTION_EDIT_CELL_EMPTY_LITERAL_RESULT, PROJECTION_EDIT_CELL_MATCHER_MASK,
+    PROJECTION_EDIT_CELL_MATCH_ANY_NO_CRLF_SPLICE,
     PROJECTION_EDIT_CELL_MATCH_ASCII_LITERAL_SPLICE_IN_LITERAL,
     PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL,
     PROJECTION_EDIT_CELL_MATCH_EXACT_SPLICE_REPLACE_BLOCK_SHELL,
@@ -74,8 +76,8 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         "the stateless ABI must reject a preceding minor it cannot tailor"
     );
     let subsequent_minor = NegotiateRequest {
-        requested_minor: 35,
-        required_capability_bits: (1_u64 << 36) - 1,
+        requested_minor: ABI_MINOR + 1,
+        required_capability_bits: (1_u64 << 38) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -85,7 +87,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     );
     let negotiate = NegotiateRequest {
         requested_minor: ABI_MINOR,
-        required_capability_bits: (1_u64 << 36) - 1,
+        required_capability_bits: (1_u64 << 38) - 1,
         ..preceding_minor
     };
     assert_eq!(
@@ -93,7 +95,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         StatusCode::Ok as u32
     );
     assert_eq!(info.abi_minor, ABI_MINOR);
-    assert_eq!(info.capability_bits, (1_u64 << 36) - 1);
+    assert_eq!(info.capability_bits, (1_u64 << 38) - 1);
 
     let base_source = concat!(
         "# *Flark*\n\n",
@@ -243,17 +245,28 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(inline.source_end_byte, 9);
     assert_eq!(inline.content_start_byte, 3);
     assert_eq!(inline.content_end_byte, 8);
-    let word_envelope = &inline_facts[1];
-    assert_eq!(word_envelope.kind, INLINE_FACT_LITERAL_SAFE_ENVELOPE);
-    assert_eq!(word_envelope.flags, LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION);
+    let word_envelope = inline_facts
+        .iter()
+        .find(|fact| {
+            fact.kind == INLINE_FACT_LITERAL_SAFE_ENVELOPE
+                && fact.flags == LITERAL_EDIT_CLASS_ASCII_WORD_INSERTION
+        })
+        .expect("word insertion envelope");
     assert_eq!(word_envelope.source_start_utf16, 3);
     assert_eq!(word_envelope.source_end_utf16, 8);
-    let space_envelope = &inline_facts[2];
-    assert_eq!(space_envelope.kind, INLINE_FACT_LITERAL_SAFE_ENVELOPE);
-    assert_eq!(
-        space_envelope.flags,
-        LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION
-    );
+    let space_envelope = inline_facts
+        .iter()
+        .find(|fact| {
+            fact.kind == INLINE_FACT_LITERAL_SAFE_ENVELOPE
+                && fact.flags == LITERAL_EDIT_CLASS_SINGLE_ASCII_SPACE_INSERTION
+        })
+        .expect("space insertion envelope");
+    assert!(inline_facts.iter().any(|fact| {
+        fact.kind == INLINE_FACT_LITERAL_SAFE_ENVELOPE
+            && fact.flags == LITERAL_EDIT_CLASS_SINGLE_ASCII_LITERAL_UNIT_DELETION
+            && 3 <= fact.source_start_utf16
+            && fact.source_end_utf16 <= 8
+    }));
     assert!(inline_facts.iter().any(|fact| {
         fact.kind == INLINE_FACT_PROJECTION_EDIT_CELL
             && fact.flags & PROJECTION_EDIT_CELL_MATCHER_MASK
@@ -573,7 +586,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_ne!(table.semantic_variant & VIEWPORT_ROW_TABLE_PRESENTATION, 0);
     assert_ne!(table.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, 0);
     let table_fact_count = table.inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK;
-    assert_eq!(table_fact_count, 10);
+    assert_eq!(table_fact_count, 12);
     let table_facts = unsafe {
         std::slice::from_raw_parts(
             page.as_ptr()
@@ -591,7 +604,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         .iter()
         .filter(|fact| fact.kind == INLINE_FACT_PROJECTION_EDIT_CELL)
         .collect::<Vec<_>>();
-    assert_eq!(edit_cells.len(), 6);
+    assert_eq!(edit_cells.len(), 8);
     assert_eq!(
         edit_cells
             .iter()
@@ -610,6 +623,13 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
                     == PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL
             })
             .count(),
+        4
+    );
+    assert_eq!(
+        edit_cells
+            .iter()
+            .filter(|fact| fact.flags & PROJECTION_EDIT_CELL_EMPTY_LITERAL_RESULT != 0)
+            .count(),
         2
     );
     for fact in edit_cells {
@@ -619,7 +639,15 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
         assert!(fact.source_start_byte < fact.source_end_byte);
         assert!(fact.content_start_byte >= fact.source_start_byte);
         assert!(fact.content_end_byte <= fact.source_end_byte);
-        assert_eq!(fact.replacement_first, 0);
+        if fact.flags & PROJECTION_EDIT_CELL_EMPTY_LITERAL_RESULT != 0 {
+            assert_eq!(
+                fact.flags & PROJECTION_EDIT_CELL_MATCHER_MASK,
+                PROJECTION_EDIT_CELL_MATCH_DELETE_ONE_ASCII_UNIT_IN_LITERAL
+            );
+            assert_eq!(fact.replacement_first, 1);
+        } else {
+            assert_eq!(fact.replacement_first, 0);
+        }
         assert_eq!(fact.replacement_second, 0);
     }
 

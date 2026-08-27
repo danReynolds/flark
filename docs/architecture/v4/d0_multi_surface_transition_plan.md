@@ -119,5 +119,7 @@ The implementation is complete only when:
 5. the existing simple-prefix, structural-Return, paging, and dense-document
    suites remain green.
 
-The ABI minor carrying this general plan is the final D0 ABI. Any later ABI
-change invalidates downstream D0 receipts and reopens architecture review.
+ABI 4.34 was frozen as final when this plan landed. The later 4.35/4.36 changes
+therefore invalidated its downstream D0 receipts and reopened architecture
+review; the current D0 ABI freeze remains open pending the rendered-editing
+profile boundary described in the build plan.
