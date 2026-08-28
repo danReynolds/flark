@@ -36,8 +36,10 @@ if [[ -e "$OUT_DIR" ]]; then
   exit 1
 fi
 
+console_state="$(ioreg -n Root -d1 2>/dev/null || true)"
 frontmost="$({ osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'; } 2>/dev/null || true)"
-if [[ "$frontmost" == "loginwindow" || "$frontmost" == "LoginWindow" ]]; then
+if [[ "$console_state" == *'"CGSSessionScreenIsLocked"=Yes'* ||
+      "$frontmost" == "loginwindow" || "$frontmost" == "LoginWindow" ]]; then
   echo 'verify-v4-dogfood-ready: unlock the interactive macOS session first' >&2
   exit 1
 fi
