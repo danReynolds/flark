@@ -43,3 +43,6 @@ Application code owns values, layout, focus placement, and visible error UI.
 Rust owns canonical source, GFM grammar, source-to-projection identity,
 certification, and semantic mutation receipts. Dart and Flutter do not infer
 Markdown syntax to authorize projected edits.
+
+The internal ownership and dependency rules are recorded in
+[Flutter editor runtime boundaries](architecture/v4/flutter_runtime_boundaries.md).
