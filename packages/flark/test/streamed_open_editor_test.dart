@@ -67,6 +67,12 @@ void main() {
     }
   }
 
+  Future<T> waitForStage<T>(String stage, Future<T> future) => future.timeout(
+    const Duration(seconds: 45),
+    onTimeout: () =>
+        throw TimeoutException('$stage did not complete within 45 seconds'),
+  );
+
   test(
     'a streamed open publishes the certified head, reports streaming, and '
     'converges to ready',
@@ -97,7 +103,8 @@ void main() {
       expect(
         controller.lastError,
         isNull,
-        reason: 'status=${controller.status} rows=${controller.rows.length} '
+        reason:
+            'status=${controller.status} rows=${controller.rows.length} '
             'bytes=${controller.sourceByteLength}',
       );
       expect(controller.status, FlarkEditorStatus.streaming);
@@ -114,15 +121,18 @@ void main() {
       // Seal the stream and converge through the ordinary ready flow.
       feedRange(chunks, bytes, fed, bytes.length);
       await chunks.close();
-      await parseTask;
+      await waitForStage('sealed-stream parser convergence', parseTask);
       expect(controller.status, FlarkEditorStatus.ready);
       expect(controller.lastError, isNull);
       expect(controller.sourceByteLength, bytes.length);
       expect(controller.sourceUtf16Length, source.length);
-      expect(statuses, containsAll(<FlarkEditorStatus>{
-        FlarkEditorStatus.streaming,
-        FlarkEditorStatus.ready,
-      }));
+      expect(
+        statuses,
+        containsAll(<FlarkEditorStatus>{
+          FlarkEditorStatus.streaming,
+          FlarkEditorStatus.ready,
+        }),
+      );
     },
     skip: libraryPath == null ? _librarySkipMessage : false,
     timeout: const Timeout(Duration(minutes: 4)),
@@ -173,8 +183,14 @@ void main() {
           ),
         ),
       );
-      await controller.debugWaitForMutationSettled();
-      await controller.debugWaitForPresentationSettled();
+      await waitForStage(
+        'streamed-open edit mutation publication',
+        controller.debugWaitForMutationSettled(),
+      );
+      await waitForStage(
+        'streamed-open edit presentation publication',
+        controller.debugWaitForPresentationSettled(),
+      );
 
       expect(
         controller.resyncCount,
@@ -186,7 +202,7 @@ void main() {
 
       feedRange(chunks, bytes, fed, bytes.length);
       await chunks.close();
-      await parseTask;
+      await waitForStage('post-edit stream seal', parseTask);
       expect(controller.status, FlarkEditorStatus.ready);
       expect(await controller.readSource(), contains('Z'));
     },
@@ -203,11 +219,100 @@ void main() {
         libraryPath: libraryPath,
       );
       addTearDown(controller.close);
-      await controller.continueParsing();
+      await waitForStage(
+        'openStreaming parser convergence',
+        controller.continueParsing(),
+      );
       expect(controller.status, FlarkEditorStatus.ready);
       expect(controller.sourceUtf16Length, source.length);
       expect(await controller.readSource(), source);
       expect(controller.rows, isNotEmpty);
+    },
+    skip: libraryPath == null ? _librarySkipMessage : false,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  test(
+    'deleting the admitted source to empty settles before stream seal',
+    () async {
+      final source = buildSource(32);
+      final chunks = StreamController<Uint8List>();
+      final controller = await FlarkEditorController.openUtf8Stream(
+        chunks.stream,
+        libraryPath: libraryPath,
+      );
+      addTearDown(controller.close);
+      final parseTask = controller.continueParsing();
+      chunks.add(Uint8List.fromList(utf8.encode(source)));
+      await waitUntil(
+        () => controller.firstCertifiedPublicationEpochMicros != null,
+        reason: 'no certified head to delete',
+      );
+
+      await controller.selectOversizedRangeUtf16(
+        0,
+        controller.sourceUtf16Length,
+      );
+      controller.replaceSelection('');
+      await waitForStage(
+        'empty streamed-open mutation publication',
+        controller.debugWaitForMutationSettled(),
+      );
+      await waitForStage(
+        'empty streamed-open presentation publication',
+        controller.debugWaitForPresentationSettled(),
+      );
+
+      expect(controller.status, FlarkEditorStatus.streaming);
+      expect(await controller.readSource(), isEmpty);
+      expect(controller.rows, isEmpty);
+      expect(controller.visibleSource, isEmpty);
+      expect(controller.inputValue.text, isEmpty);
+      expect(controller.inputValue.selection.extentOffset, 0);
+
+      controller.replaceSelection('x');
+      await waitForStage(
+        'unsealed plain mutation publication',
+        controller.debugWaitForMutationSettled(),
+      );
+      await waitForStage(
+        'unsealed plain presentation publication',
+        controller.debugWaitForPresentationSettled(),
+      );
+      expect(controller.status, FlarkEditorStatus.streaming);
+      expect(await controller.readSource(), 'x');
+      expect(controller.visibleSource, 'x');
+      expect(controller.inputValue.text, 'x');
+
+      controller.replaceSelection('y');
+      await waitForStage(
+        'second unsealed plain mutation publication',
+        controller.debugWaitForMutationSettled(),
+      );
+      await waitForStage(
+        'second unsealed plain presentation publication',
+        controller.debugWaitForPresentationSettled(),
+      );
+      expect(await controller.readSource(), 'xy');
+
+      await chunks.close();
+      await waitForStage('post-empty stream seal', parseTask);
+      await waitForStage(
+        'post-empty stream convergence',
+        controller.continueParsing(),
+      );
+      await waitForStage(
+        'post-empty typed mutation publication',
+        controller.debugWaitForMutationSettled(),
+      );
+      await waitForStage(
+        'post-empty typed presentation publication',
+        controller.debugWaitForPresentationSettled(),
+      );
+
+      expect(controller.status, FlarkEditorStatus.ready);
+      expect(await controller.readSource(), 'xy');
+      expect(controller.surfaceRow(controller.rows.single).text, 'xy');
     },
     skip: libraryPath == null ? _librarySkipMessage : false,
     timeout: const Timeout(Duration(minutes: 4)),

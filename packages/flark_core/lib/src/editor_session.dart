@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:characters/characters.dart';
 
 import 'document.dart';
+import 'markdown_scalar_tables.dart';
 
 /// Which splice edge a caret or selection endpoint follows when an edit lands
 /// exactly on it.
@@ -61,88 +62,6 @@ abstract final class FlarkCoreGraphemePolicy {
   }
 }
 
-/// One source-mapped visible run supplied to Core before a semantic command.
-/// The frontend maps its presentation model into this scalar-only context;
-/// Core uses it only after Rust has committed and authenticated the exact
-/// delete-to-empty owner closure.
-final class FlarkCoreInlineContinuationRunV1 {
-  const FlarkCoreInlineContinuationRunV1({
-    required this.text,
-    required this.sourceUtf16Start,
-    required this.sourceUtf16End,
-    required this.semanticallyStyled,
-  });
-
-  final String text;
-  final int sourceUtf16Start;
-  final int sourceUtf16End;
-  final bool semanticallyStyled;
-}
-
-/// Bounded pre-command evidence from the current parser-authored row.
-///
-/// This is not command authority: Rust still decides whether the semantic
-/// deletion applies. It merely gives Core enough immutable context to derive
-/// the next writable intent inside the same serialized command, before the
-/// history unit is recorded.
-final class FlarkCoreInlineContinuationContextV1 {
-  FlarkCoreInlineContinuationContextV1({
-    required this.revision,
-    required this.sourceUtf16Start,
-    required this.source,
-    required List<FlarkCoreInlineContinuationRunV1> runs,
-  }) : runs = List.unmodifiable(runs);
-
-  final int revision;
-  final int sourceUtf16Start;
-  final String source;
-  final List<FlarkCoreInlineContinuationRunV1> runs;
-
-  FlarkCoreInlineContinuationV1? resolve(FlarkCoreEditIntentReceiptV1 receipt) {
-    if (!receipt.hasCommit ||
-        receipt.baseRevision != revision ||
-        receipt.presentationTransition !=
-            FlarkCoreEditPresentationTransitionV1.deleteInlineOwner ||
-        receipt.replacement.isNotEmpty ||
-        receipt.baseUtf16Start >= receipt.baseUtf16End) {
-      return null;
-    }
-    final localStart = receipt.baseUtf16Start - sourceUtf16Start;
-    final localEnd = receipt.baseUtf16End - sourceUtf16Start;
-    if (localStart < 0 || localEnd > source.length) return null;
-    final deletedSource = source.substring(localStart, localEnd);
-    final deletedRuns = runs
-        .where(
-          (run) =>
-              receipt.baseUtf16Start <= run.sourceUtf16Start &&
-              run.sourceUtf16End <= receipt.baseUtf16End &&
-              run.text.isNotEmpty,
-        )
-        .toList(growable: false);
-    final visible = deletedRuns.map((run) => run.text).join();
-    if (deletedRuns.isEmpty ||
-        deletedRuns.any((run) => !run.semanticallyStyled) ||
-        !FlarkCoreGraphemePolicy.isSingleCluster(visible)) {
-      return null;
-    }
-    final prefixEnd =
-        deletedRuns.first.sourceUtf16Start - receipt.baseUtf16Start;
-    final suffixStart =
-        deletedRuns.last.sourceUtf16End - receipt.baseUtf16Start;
-    if (prefixEnd <= 0 ||
-        prefixEnd > suffixStart ||
-        suffixStart >= deletedSource.length) {
-      return null;
-    }
-    return FlarkCoreInlineContinuationV1(
-      revision: receipt.resultRevision,
-      caretUtf16: receipt.resultSelectionUtf16,
-      prefix: deletedSource.substring(0, prefixEnd),
-      suffix: deletedSource.substring(suffixStart),
-    );
-  }
-}
-
 /// Typed next-write intent left by deleting the final visible grapheme from a
 /// supported inline owner. It is recorded atomically with source, selection,
 /// and history by [FlarkCoreEditorSession].
@@ -152,43 +71,54 @@ final class FlarkCoreInlineContinuationV1 {
     required this.caretUtf16,
     required this.prefix,
     required this.suffix,
+    required this.collisionScalars,
+    required this.scalarPolicy,
+    this.ownerMaterialized = false,
   });
 
   final int revision;
   final int caretUtf16;
   final String prefix;
   final String suffix;
+  final String collisionScalars;
+  final FlarkCoreInlineContinuationScalarPolicyV1 scalarPolicy;
+  final bool ownerMaterialized;
 
-  /// The bounded D0 continuation vocabulary. Batches of ordinary prose are
-  /// equivalent to sequential key delivery. Whitespace and Markdown-active
-  /// ASCII punctuation leave the emptied owner rather than blindly forming a
-  /// delimiter collision.
-  bool acceptsReplacement(String value) {
-    if (value.isEmpty) return false;
+  /// Rewrites the maximal safe prefix of [value] through the exact parser
+  /// recipe. Whitespace and parser-declared delimiter collisions end the
+  /// owner; any remaining batch suffix lands outside it, matching sequential
+  /// scalar delivery without a frontend Markdown allowlist.
+  FlarkCoreInlineContinuationRewriteV1? rewriteReplacement(String value) {
+    if (value.isEmpty) return null;
+    var safeUtf16 = 0;
     for (final rune in value.runes) {
       final scalar = String.fromCharCode(rune);
-      if (scalar.trim().isEmpty) return false;
-      if (rune > 0x7f) continue;
-      final alphanumeric =
-          (0x30 <= rune && rune <= 0x39) ||
-          (0x41 <= rune && rune <= 0x5a) ||
-          (0x61 <= rune && rune <= 0x7a);
-      const safeProse = <int>{
-        0x21,
-        0x22,
-        0x27,
-        0x28,
-        0x29,
-        0x2c,
-        0x2d,
-        0x2e,
-        0x3a,
-        0x3b,
-        0x3f,
-      };
-      if (!alphanumeric && !safeProse.contains(rune)) return false;
+      if (FlarkCoreMarkdownScalarTables.isWhitespace(rune) ||
+          collisionScalars.contains(scalar) ||
+          (scalarPolicy ==
+                  FlarkCoreInlineContinuationScalarPolicyV1
+                      .commonMarkOrdinaryOnly &&
+              FlarkCoreMarkdownScalarTables.isPunctuationOrSymbol(rune))) {
+        break;
+      }
+      safeUtf16 += scalar.length;
     }
-    return true;
+    final continued = value.substring(0, safeUtf16);
+    final exited = value.substring(safeUtf16);
+    if (continued.isEmpty && !ownerMaterialized) return null;
+    final replacement = ownerMaterialized
+        ? '$continued$suffix$exited'
+        : '$prefix$continued$suffix$exited';
+    return FlarkCoreInlineContinuationRewriteV1(
+      replacement: replacement,
+      caretUtf16Offset: exited.isEmpty
+          ? (ownerMaterialized
+                ? continued.length
+                : prefix.length + continued.length)
+          : replacement.length,
+      replacedSuffixUtf16: ownerMaterialized ? suffix.length : 0,
+      continuesOwner: exited.isEmpty,
+    );
   }
 
   FlarkCoreInlineContinuationV1 atRevision(int nextRevision, int caret) =>
@@ -197,7 +127,43 @@ final class FlarkCoreInlineContinuationV1 {
         caretUtf16: caret,
         prefix: prefix,
         suffix: suffix,
+        collisionScalars: collisionScalars,
+        scalarPolicy: scalarPolicy,
+        ownerMaterialized: ownerMaterialized,
       );
+
+  FlarkCoreInlineContinuationV1 materializedAtRevision(
+    int nextRevision,
+    int caret,
+  ) => FlarkCoreInlineContinuationV1(
+    revision: nextRevision,
+    caretUtf16: caret,
+    prefix: prefix,
+    suffix: suffix,
+    collisionScalars: collisionScalars,
+    scalarPolicy: scalarPolicy,
+    ownerMaterialized: true,
+  );
+
+  bool hasSameRecipe(FlarkCoreInlineContinuationV1 other) =>
+      prefix == other.prefix &&
+      suffix == other.suffix &&
+      collisionScalars == other.collisionScalars &&
+      scalarPolicy == other.scalarPolicy;
+}
+
+final class FlarkCoreInlineContinuationRewriteV1 {
+  const FlarkCoreInlineContinuationRewriteV1({
+    required this.replacement,
+    required this.caretUtf16Offset,
+    required this.replacedSuffixUtf16,
+    required this.continuesOwner,
+  });
+
+  final String replacement;
+  final int caretUtf16Offset;
+  final int replacedSuffixUtf16;
+  final bool continuesOwner;
 }
 
 final class FlarkCoreEditIntentOutcomeV1 {
@@ -851,7 +817,6 @@ final class FlarkCoreEditorSession {
   Future<FlarkCoreEditIntentOutcomeV1> applyEditIntentOutcomeV1(
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
-    FlarkCoreInlineContinuationContextV1? inlineContinuationContext,
   }) {
     if (intent == FlarkCoreEditIntentV1.toggleTaskChecked) {
       throw ArgumentError(
@@ -864,7 +829,6 @@ final class FlarkCoreEditorSession {
         intent,
         compositionActive: compositionActive,
         coreQueueMicros: _clockMicros() - queuedAt,
-        inlineContinuationContext: inlineContinuationContext,
       ),
     );
   }
@@ -907,7 +871,6 @@ final class FlarkCoreEditorSession {
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
     required int coreQueueMicros,
-    FlarkCoreInlineContinuationContextV1? inlineContinuationContext,
     FlarkCoreAnchor? targetAnchor,
     int? targetUtf16,
     bool preserveSelection = false,
@@ -993,9 +956,19 @@ final class FlarkCoreEditorSession {
       _selectionBaseUtf16 = receipt.resultSelectionUtf16;
       _selectionExtentUtf16 = receipt.resultSelectionUtf16;
     }
+    final recipe = receipt.inlineContinuationRecipe;
     final inlineContinuation = preserveSelection
         ? _selectionInlineContinuation
-        : inlineContinuationContext?.resolve(receipt);
+        : recipe == null
+        ? null
+        : FlarkCoreInlineContinuationV1(
+            revision: receipt.resultRevision,
+            caretUtf16: receipt.resultSelectionUtf16,
+            prefix: recipe.prefix,
+            suffix: recipe.suffix,
+            collisionScalars: recipe.collisionScalars,
+            scalarPolicy: recipe.scalarPolicy,
+          );
     _selectionInlineContinuation = inlineContinuation;
     final afterGeneration = ++_selectionGeneration;
     final after = FlarkCoreSelectionSnapshot(
@@ -1320,17 +1293,74 @@ final class FlarkCoreEditorSession {
     required int atMicros,
     required int epoch,
   }) {
-    if (start != end ||
-        replacement.contains('\n') ||
-        replacement.contains('\r') ||
-        !FlarkCoreGraphemePolicy.isSingleCluster(replacement) ||
+    final logicalReplacement = _logicalTypingReplacement(
+      start: start,
+      end: end,
+      replacement: replacement,
+      beforeSelection: beforeSelection,
+      afterSelection: afterSelection,
+    );
+    if (logicalReplacement == null ||
+        logicalReplacement.contains('\n') ||
+        logicalReplacement.contains('\r') ||
+        !FlarkCoreGraphemePolicy.isSingleCluster(logicalReplacement) ||
         !beforeSelection.isCollapsed ||
-        beforeSelection.extent != start ||
-        !afterSelection.isCollapsed ||
-        afterSelection.extent != start + replacement.length) {
+        !afterSelection.isCollapsed) {
       return null;
     }
-    return (end: start + replacement.length, atMicros: atMicros, epoch: epoch);
+    return (end: afterSelection.extent, atMicros: atMicros, epoch: epoch);
+  }
+
+  String? _logicalTypingReplacement({
+    required int start,
+    required int end,
+    required String replacement,
+    required FlarkCoreSelectionSnapshot beforeSelection,
+    required FlarkCoreSelectionSnapshot afterSelection,
+  }) {
+    final ordinaryInsertion =
+        start == end &&
+        beforeSelection.extent == start &&
+        afterSelection.extent == start + replacement.length;
+    if (ordinaryInsertion) return replacement;
+
+    final before = beforeSelection.inlineContinuation;
+    if (before == null ||
+        !beforeSelection.isCollapsed ||
+        beforeSelection.extent != start ||
+        before.caretUtf16 != start ||
+        !afterSelection.isCollapsed) {
+      return null;
+    }
+    final after = afterSelection.inlineContinuation;
+    final suffixStart = replacement.indexOf(
+      before.suffix,
+      before.ownerMaterialized ? 0 : before.prefix.length,
+    );
+    if (suffixStart < 0 ||
+        (before.ownerMaterialized
+            ? end != start + before.suffix.length
+            : start != end || !replacement.startsWith(before.prefix))) {
+      return null;
+    }
+    final suffixEnd = suffixStart + before.suffix.length;
+    final logical = before.ownerMaterialized
+        ? '${replacement.substring(0, suffixStart)}'
+              '${replacement.substring(suffixEnd)}'
+        : '${replacement.substring(before.prefix.length, suffixStart)}'
+              '${replacement.substring(suffixEnd)}';
+    if (after == null) {
+      return afterSelection.extent == start + replacement.length
+          ? logical
+          : null;
+    }
+    if (!after.ownerMaterialized ||
+        !before.hasSameRecipe(after) ||
+        suffixEnd != replacement.length ||
+        afterSelection.extent != start + suffixStart) {
+      return null;
+    }
+    return logical;
   }
 
   int? _compositionGroupForMutation(bool composingActive) {

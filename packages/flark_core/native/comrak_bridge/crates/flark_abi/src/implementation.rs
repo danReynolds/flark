@@ -10,12 +10,13 @@ use flark_runtime::{
     Affinity, AnchorHandle, CertificationState, ContinuationHandle, CoordinateKind, DocumentActor,
     DocumentActorError, DocumentBulletMarker, DocumentCodeBlockStyle,
     DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
-    DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
-    DocumentListDelimiter, DocumentListMarker, DocumentLiteralEditClass,
-    DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan, DocumentPendingPresentationPlan,
-    DocumentProjectionEditCell, DocumentProjectionResultBlockShell, DocumentProjectionSegment,
-    DocumentSemanticTargetKind, DocumentSemanticTargetSyntax, DocumentSessionError,
-    DocumentSessionPhase, DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
+    DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineContinuationScalarPolicyV1,
+    DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker,
+    DocumentLiteralEditClass, DocumentLiteralSafeEnvelope, DocumentLiveViewportSpan,
+    DocumentPendingPresentationPlan, DocumentProjectionEditCell,
+    DocumentProjectionResultBlockShell, DocumentProjectionSegment, DocumentSemanticTargetKind,
+    DocumentSemanticTargetSyntax, DocumentSessionError, DocumentSessionPhase,
+    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
     GlobalLiveStateInspectionReceipt, HistoryDisposition, HistoryToken, OperationCode,
     OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, QueryKind,
     ResultPageReceipt, ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt,
@@ -37,19 +38,22 @@ use crate::{
     EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE, EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS,
     EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INDENT_LIST_ITEM,
     EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_OUTDENT_LIST_ITEM,
-    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
-    EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
-    EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE,
-    EDIT_PRESENTATION_CONTINUE_INDENTED_CODE, EDIT_PRESENTATION_CONTINUE_LIST,
-    EDIT_PRESENTATION_DELETE_INLINE_OWNER, EDIT_PRESENTATION_DELETE_THEMATIC_BREAK,
-    EDIT_PRESENTATION_EXIT_BLOCK_QUOTE, EDIT_PRESENTATION_EXIT_HEADING,
-    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_INDENT_LIST, EDIT_PRESENTATION_JOIN_FENCED_CODE,
-    EDIT_PRESENTATION_JOIN_INDENTED_CODE, EDIT_PRESENTATION_LIFT_BLOCK_QUOTE,
-    EDIT_PRESENTATION_LIFT_HEADING, EDIT_PRESENTATION_LIFT_INDENTED_CODE,
-    EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
+    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION,
+    EDIT_INTENT_RECEIPT_PARSER_PENDING, EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN,
+    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_INTENT_TOGGLE_TASK_CHECKED,
+    EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE, EDIT_PRESENTATION_CONTINUE_INDENTED_CODE,
+    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_DELETE_INLINE_OWNER,
+    EDIT_PRESENTATION_DELETE_THEMATIC_BREAK, EDIT_PRESENTATION_EXIT_BLOCK_QUOTE,
+    EDIT_PRESENTATION_EXIT_HEADING, EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_INDENT_LIST,
+    EDIT_PRESENTATION_JOIN_FENCED_CODE, EDIT_PRESENTATION_JOIN_INDENTED_CODE,
+    EDIT_PRESENTATION_LIFT_BLOCK_QUOTE, EDIT_PRESENTATION_LIFT_HEADING,
+    EDIT_PRESENTATION_LIFT_INDENTED_CODE, EDIT_PRESENTATION_LIFT_LIST,
+    EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
     EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE, EDIT_PRESENTATION_OUTDENT_LIST,
     EDIT_PRESENTATION_RETAIN_PARAGRAPH_GAP, EDIT_PRESENTATION_SPLIT_PARAGRAPH,
-    EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL,
+    EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1,
+    INLINE_CONTINUATION_RECIPE_VERSION_V1, INLINE_CONTINUATION_SCALAR_COMMONMARK_ORDINARY_ONLY,
+    INLINE_CONTINUATION_SCALAR_STABLE_NON_WHITESPACE, INLINE_FACT_AUTOLINK_EMAIL,
     INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
     INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
     INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_LITERAL_SAFE_ENVELOPE,
@@ -287,6 +291,9 @@ struct StoredHistory {
 struct StoredEditIntentTerminal {
     receipt: EditIntentReceiptV1,
     replacement: Vec<u8>,
+    continuation_prefix: Vec<u8>,
+    continuation_suffix: Vec<u8>,
+    continuation_collisions: Vec<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -1087,16 +1094,39 @@ fn edit_intent_output_requirement() -> u64 {
 unsafe fn write_edit_intent_terminal(terminal: &StoredEditIntentTerminal, output: *mut u8) {
     unsafe {
         ptr::write_unaligned(output.cast::<EditIntentReceiptV1>(), terminal.receipt);
+        let mut cursor = size_of::<EditIntentReceiptV1>();
         ptr::copy_nonoverlapping(
             terminal.replacement.as_ptr(),
-            output.add(size_of::<EditIntentReceiptV1>()),
+            output.add(cursor),
             terminal.replacement.len(),
+        );
+        cursor += terminal.replacement.len();
+        ptr::copy_nonoverlapping(
+            terminal.continuation_prefix.as_ptr(),
+            output.add(cursor),
+            terminal.continuation_prefix.len(),
+        );
+        cursor += terminal.continuation_prefix.len();
+        ptr::copy_nonoverlapping(
+            terminal.continuation_suffix.as_ptr(),
+            output.add(cursor),
+            terminal.continuation_suffix.len(),
+        );
+        cursor += terminal.continuation_suffix.len();
+        ptr::copy_nonoverlapping(
+            terminal.continuation_collisions.as_ptr(),
+            output.add(cursor),
+            terminal.continuation_collisions.len(),
         );
     }
 }
 
 fn edit_intent_terminal_outcome(terminal: &StoredEditIntentTerminal) -> RuntimeOutcome {
-    let written = size_of::<EditIntentReceiptV1>() as u64 + terminal.replacement.len() as u64;
+    let written = size_of::<EditIntentReceiptV1>() as u64
+        + terminal.replacement.len() as u64
+        + terminal.continuation_prefix.len() as u64
+        + terminal.continuation_suffix.len() as u64
+        + terminal.continuation_collisions.len() as u64;
     let has_commit = terminal.receipt.flags & EDIT_INTENT_RECEIPT_HAS_COMMIT != 0;
     RuntimeOutcome {
         operation: OperationCode::EditIntentV1,
@@ -2410,6 +2440,9 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                     ..EditIntentReceiptV1::default()
                 },
                 replacement: Vec::new(),
+                continuation_prefix: Vec::new(),
+                continuation_suffix: Vec::new(),
+                continuation_collisions: Vec::new(),
             };
             let outcome = edit_intent_terminal_outcome(&terminal);
             let entry = session_entry(&mut registry, request.session)?;
@@ -2480,6 +2513,48 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             .continuations
             .retain(|_, continuation| continuation.session != request.session.session);
 
+        let (
+            continuation_prefix,
+            continuation_suffix,
+            continuation_collisions,
+            continuation_scalar_policy,
+        ) = receipt
+            .inline_continuation
+            .map(|recipe| {
+                (
+                    recipe.prefix.into_bytes(),
+                    recipe.suffix.into_bytes(),
+                    recipe.collision_scalars.into_bytes(),
+                    match recipe.scalar_policy {
+                        DocumentInlineContinuationScalarPolicyV1::StableNonWhitespace => {
+                            INLINE_CONTINUATION_SCALAR_STABLE_NON_WHITESPACE
+                        }
+                        DocumentInlineContinuationScalarPolicyV1::CommonMarkOrdinaryOnly => {
+                            INLINE_CONTINUATION_SCALAR_COMMONMARK_ORDINARY_ONLY
+                        }
+                    },
+                )
+            })
+            .unwrap_or((Vec::new(), Vec::new(), Vec::new(), 0));
+        let continuation_payload_bytes = continuation_prefix
+            .len()
+            .checked_add(continuation_suffix.len())
+            .and_then(|length| length.checked_add(continuation_collisions.len()))
+            .expect("bounded continuation payload length");
+        assert!(
+            replacement.len() + continuation_payload_bytes <= MAX_SMALL_EDIT_BYTES as usize,
+            "parser-authored continuation must fit the semantic payload envelope"
+        );
+        assert!(
+            continuation_prefix.len() <= u16::MAX as usize
+                && continuation_suffix.len() <= u16::MAX as usize
+                && continuation_collisions.len() <= u16::MAX as usize,
+            "continuation length packing must be lossless"
+        );
+        let continuation_lengths = continuation_prefix.len() as u64
+            | (continuation_suffix.len() as u64) << 16
+            | (continuation_collisions.len() as u64) << 32;
+        let has_inline_continuation = continuation_payload_bytes != 0;
         let terminal = StoredEditIntentTerminal {
             receipt: EditIntentReceiptV1 {
                 struct_size: size_of::<EditIntentReceiptV1>() as u32,
@@ -2494,6 +2569,11 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                     }
                     | if receipt.presentation_proven {
                         EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN
+                    } else {
+                        0
+                    }
+                    | if has_inline_continuation {
+                        EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION
                     } else {
                         0
                     },
@@ -2529,9 +2609,20 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                 history_token,
                 replacement_bytes: replacement.len() as u32,
                 presentation_transition,
-                reserved: [0; 2],
+                reserved: if has_inline_continuation {
+                    [
+                        continuation_lengths,
+                        u64::from(INLINE_CONTINUATION_RECIPE_VERSION_V1)
+                            | (u64::from(continuation_scalar_policy) << 16),
+                    ]
+                } else {
+                    [0; 2]
+                },
             },
             replacement,
+            continuation_prefix,
+            continuation_suffix,
+            continuation_collisions,
         };
         let outcome = edit_intent_terminal_outcome(&terminal);
         let entry = registry

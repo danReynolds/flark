@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 enum FlarkCertification { pendingNeutral, currentCertified, mixedCurrent }
 
 enum FlarkHeadingStyle { atx, setext }
@@ -1022,6 +1024,84 @@ final class FlarkViewport {
   final List<FlarkCertificationRange> certificationRanges;
 
   bool get isCertified => certification == FlarkCertification.currentCertified;
+
+  /// Whether this query is an exact current-revision proof that the complete
+  /// document is empty. An empty document has no semantic row or nonempty
+  /// certification range for the parser to publish, so consumers must not
+  /// confuse the absence of rows with an uncertified nonempty source.
+  bool provesExactEmptyDocument({
+    required int documentRevision,
+    required int documentSourceByteLength,
+    required int documentSourceUtf16Length,
+  }) =>
+      documentSourceByteLength == 0 &&
+      documentSourceUtf16Length == 0 &&
+      revision == documentRevision &&
+      isCertified &&
+      requestedBytes.start == 0 &&
+      requestedBytes.end == 0 &&
+      coveredBytes.start == 0 &&
+      coveredBytes.end == 0 &&
+      coveredUtf16.start == 0 &&
+      coveredUtf16.end == 0 &&
+      rows.isEmpty &&
+      neutralSource == '' &&
+      certificationRanges.isEmpty &&
+      continuation == 0;
+
+  /// Whether a pending-neutral query carries the complete exact source for
+  /// the current document revision. This is a publication proof, not parser
+  /// semantics: it lets an editor with no older semantic surface remain live
+  /// while an unsealed stream ends in an incomplete block.
+  bool provesExactPendingDocument({
+    required int documentRevision,
+    required int documentSourceByteLength,
+    required int documentSourceUtf16Length,
+  }) =>
+      certification == FlarkCertification.pendingNeutral &&
+      documentSourceByteLength > 0 &&
+      revision == documentRevision &&
+      requestedBytes.start == 0 &&
+      requestedBytes.end == documentSourceByteLength &&
+      coveredBytes.start == 0 &&
+      coveredBytes.end == documentSourceByteLength &&
+      coveredUtf16.start == 0 &&
+      coveredUtf16.end == documentSourceUtf16Length &&
+      rows.isEmpty &&
+      neutralSource != null &&
+      neutralSource!.length == documentSourceUtf16Length &&
+      utf8.encode(neutralSource!).length == documentSourceByteLength &&
+      continuation == 0;
+
+  /// Whether this installed viewport can complete one atomic edit
+  /// publication. A streamed-open controller may opt into complete exact
+  /// pending source while it has no older semantic surface. After the stream
+  /// seals, publication also requires [documentReady], and pending source is
+  /// rejected regardless of [allowExactPending].
+  bool provesEditPublication({
+    required int documentRevision,
+    required int documentSourceByteLength,
+    required int documentSourceUtf16Length,
+    required bool documentOpening,
+    required bool documentReady,
+    required bool allowExactPending,
+  }) =>
+      (documentOpening || documentReady) &&
+      revision == documentRevision &&
+      ((documentReady && isCertified) ||
+          (documentOpening && isCertified && rows.isNotEmpty) ||
+          provesExactEmptyDocument(
+            documentRevision: documentRevision,
+            documentSourceByteLength: documentSourceByteLength,
+            documentSourceUtf16Length: documentSourceUtf16Length,
+          ) ||
+          (documentOpening &&
+              allowExactPending &&
+              provesExactPendingDocument(
+                documentRevision: documentRevision,
+                documentSourceByteLength: documentSourceByteLength,
+                documentSourceUtf16Length: documentSourceUtf16Length,
+              )));
 
   Map<String, Object?> toMessage() => {
     'revision': revision,

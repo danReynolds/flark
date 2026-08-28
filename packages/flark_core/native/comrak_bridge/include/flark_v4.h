@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(37)
+#define FLARK_V4_ABI_MINOR UINT16_C(38)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -258,6 +258,10 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_EDIT_INTENT_RECEIPT_PARSER_PENDING UINT32_C(0x2)
 #define FLARK_V4_EDIT_INTENT_RECEIPT_SEMANTIC_BYTES UINT32_C(0x4)
 #define FLARK_V4_EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN UINT32_C(0x8)
+#define FLARK_V4_EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION UINT32_C(0x10)
+#define FLARK_V4_INLINE_CONTINUATION_RECIPE_VERSION_V1 UINT16_C(1)
+#define FLARK_V4_INLINE_CONTINUATION_SCALAR_STABLE_NON_WHITESPACE UINT16_C(1)
+#define FLARK_V4_INLINE_CONTINUATION_SCALAR_COMMONMARK_ORDINARY_ONLY UINT16_C(2)
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT UINT32_C(0x1)
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING UINT32_C(0x2)
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES UINT32_C(0x4)
@@ -672,7 +676,17 @@ typedef struct FlarkV4EditIntentReceiptV1 {
   uint32_t presentation_transition;
   uint64_t reserved[2];
 } FlarkV4EditIntentReceiptV1;
-/* The replacement payload begins immediately after the fixed receipt.
+/* The replacement payload begins immediately after the fixed receipt. When
+ * HAS_INLINE_CONTINUATION is set, parser-authored prefix, suffix, and
+ * collision-scalar UTF-8 payloads follow it in that order. reserved[0] packs
+ * their byte lengths in bits 0..15, 16..31, and 32..47. reserved[1] packs
+ * recipe version 1 in bits 0..15 and the parser-authored scalar policy in
+ * bits 16..31; higher bits are zero. Their combined payload remains inside
+ * MAX_SMALL_EDIT_BYTES. STABLE_NON_WHITESPACE admits every non-whitespace,
+ * non-colliding scalar. COMMONMARK_ORDINARY_ONLY additionally exits before a
+ * Unicode punctuation or symbol scalar would change delimiter flanking. ABI
+ * 4.38 pins those categories to finl_unicode 1.4.0 / Unicode 17; Core's
+ * generated range table is exhaustively checked against the parser classifier.
  * Selection-bound keyboard intents require two collapsed downstream anchors
  * at the same current byte and target_anchor zero. Selection-independent
  * semantic actions require an owned target_anchor in the certified row and

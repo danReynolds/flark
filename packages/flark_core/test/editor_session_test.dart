@@ -603,31 +603,6 @@ void main() {
           final outcome = await session.applyEditIntentOutcomeV1(
             FlarkCoreEditIntentV1.deleteBackward,
             compositionActive: false,
-            inlineContinuationContext: FlarkCoreInlineContinuationContextV1(
-              revision: document.revision,
-              sourceUtf16Start: 0,
-              source: source,
-              runs: const [
-                FlarkCoreInlineContinuationRunV1(
-                  text: 'A ',
-                  sourceUtf16Start: 0,
-                  sourceUtf16End: 2,
-                  semanticallyStyled: false,
-                ),
-                FlarkCoreInlineContinuationRunV1(
-                  text: 't',
-                  sourceUtf16Start: 3,
-                  sourceUtf16End: 4,
-                  semanticallyStyled: true,
-                ),
-                FlarkCoreInlineContinuationRunV1(
-                  text: ' Z',
-                  sourceUtf16Start: 5,
-                  sourceUtf16End: 7,
-                  semanticallyStyled: false,
-                ),
-              ],
-            ),
           );
 
           final continuation = outcome.inlineContinuation;
@@ -636,11 +611,30 @@ void main() {
           expect(continuation.caretUtf16, 2);
           expect(continuation.prefix, '*');
           expect(continuation.suffix, '*');
-          expect(continuation.acceptsReplacement('xy'), isTrue);
-          expect(continuation.acceptsReplacement('é'), isTrue);
-          expect(continuation.acceptsReplacement('*'), isFalse);
-          expect(continuation.acceptsReplacement('`'), isFalse);
-          expect(continuation.acceptsReplacement(' '), isFalse);
+          expect(continuation.collisionScalars, '*\\');
+          expect(
+            continuation.scalarPolicy,
+            FlarkCoreInlineContinuationScalarPolicyV1.stableNonWhitespace,
+          );
+          expect(continuation.rewriteReplacement('xy')?.replacement, '*xy*');
+          expect(continuation.rewriteReplacement('é')?.replacement, '*é*');
+          expect(continuation.rewriteReplacement('*'), isNull);
+          expect(
+            continuation.rewriteReplacement(r'$%@^{}')?.replacement,
+            r'*$%@^{}*',
+          );
+          expect(
+            continuation.rewriteReplacement('xy z')?.replacement,
+            '*xy* z',
+          );
+          expect(continuation.rewriteReplacement(' '), isNull);
+          expect(continuation.rewriteReplacement('\\'), isNull);
+          final materialized = continuation.materializedAtRevision(3, 4);
+          expect(materialized.rewriteReplacement('y')?.replacement, 'y*');
+          expect(materialized.rewriteReplacement('y')?.replacedSuffixUtf16, 1);
+          expect(materialized.rewriteReplacement('y')?.continuesOwner, isTrue);
+          expect(materialized.rewriteReplacement(' ')?.replacement, '* ');
+          expect(materialized.rewriteReplacement(' ')?.continuesOwner, isFalse);
           expect(
             (await session.resolveSelection())!.inlineContinuation,
             same(continuation),
@@ -666,10 +660,155 @@ void main() {
           expect(restored.caretUtf16, 2);
           expect(restored.prefix, '*');
           expect(restored.suffix, '*');
+          expect(restored.collisionScalars, '*\\');
+          expect(
+            restored.scalarPolicy,
+            FlarkCoreInlineContinuationScalarPolicyV1.stableNonWhitespace,
+          );
           expect(
             (await session.resolveSelection())!.inlineContinuation?.revision,
             document.revision,
           );
+        },
+      );
+
+      test(
+        'escape deletion does not invent a persistent inline mode',
+        () async {
+          await open(r'A \* Z');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await document.pumpUntilReady();
+          await session.setSelectionUtf16(4, 4);
+
+          final outcome = await session.applyEditIntentOutcomeV1(
+            FlarkCoreEditIntentV1.deleteBackward,
+            compositionActive: false,
+          );
+
+          expect(
+            outcome.receipt.disposition,
+            FlarkCoreEditIntentDispositionV1.applied,
+          );
+          expect(outcome.inlineContinuation, isNull);
+          expect(
+            (await session.resolveSelection())!.inlineContinuation,
+            isNull,
+          );
+          expect(await document.readSource(), 'A  Z');
+        },
+      );
+
+      test(
+        'intraword continuation admits ordinary Unicode but exits punctuation',
+        () async {
+          await open('A*t*Z');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await document.pumpUntilReady();
+          await session.setSelectionUtf16(3, 3);
+
+          final outcome = await session.applyEditIntentOutcomeV1(
+            FlarkCoreEditIntentV1.deleteBackward,
+            compositionActive: false,
+          );
+          final continuation = outcome.inlineContinuation!;
+          expect(
+            continuation.scalarPolicy,
+            FlarkCoreInlineContinuationScalarPolicyV1.commonMarkOrdinaryOnly,
+          );
+          expect(continuation.collisionScalars, '*\\');
+          expect(continuation.rewriteReplacement('x')?.replacement, '*x*');
+          expect(continuation.rewriteReplacement('é')?.replacement, '*é*');
+          expect(continuation.rewriteReplacement('中')?.replacement, '*中*');
+          expect(continuation.rewriteReplacement('!'), isNull);
+          expect(continuation.rewriteReplacement('—'), isNull);
+          expect(continuation.rewriteReplacement('🌍'), isNull);
+          expect(
+            continuation.rewriteReplacement(String.fromCharCode(0x20c1)),
+            isNull,
+            reason:
+                'Core must use the parser-pinned Unicode table, not the '
+                'older host RegExp table',
+          );
+          expect(
+            continuation.rewriteReplacement(String.fromCharCode(0x85)),
+            isNull,
+          );
+          expect(continuation.rewriteReplacement('\\'), isNull);
+        },
+      );
+
+      test(
+        'continued inline scalars retain ordinary typing history semantics',
+        () async {
+          await open('A *t* Z');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await document.pumpUntilReady();
+          await session.setSelectionUtf16(4, 4);
+
+          final deletion = await session.applyEditIntentOutcomeV1(
+            FlarkCoreEditIntentV1.deleteBackward,
+            compositionActive: false,
+          );
+          final emptyOwner = deletion.inlineContinuation!;
+
+          final xRewrite = emptyOwner.rewriteReplacement('x')!;
+          final xCaret = emptyOwner.caretUtf16 + xRewrite.caretUtf16Offset;
+          final xContinuation = emptyOwner.materializedAtRevision(
+            document.revision + 1,
+            xCaret,
+          );
+          final beforeX = (await session.resolveSelection())!;
+          await session.applyEditUtf16(
+            emptyOwner.caretUtf16,
+            emptyOwner.caretUtf16,
+            xRewrite.replacement,
+            beforeSelection: beforeX,
+            afterSelection: FlarkCoreSelectionSnapshot(
+              base: xCaret,
+              extent: xCaret,
+              revision: document.revision + 1,
+              inlineContinuation: xContinuation,
+            ),
+            coalesceTyping: true,
+          );
+
+          clockMicros += 400000;
+          final yRewrite = xContinuation.rewriteReplacement('y')!;
+          final yCaret = xContinuation.caretUtf16 + yRewrite.caretUtf16Offset;
+          final beforeY = (await session.resolveSelection())!;
+          await session.applyEditUtf16(
+            xContinuation.caretUtf16,
+            xContinuation.caretUtf16 + yRewrite.replacedSuffixUtf16,
+            yRewrite.replacement,
+            beforeSelection: beforeY,
+            afterSelection: FlarkCoreSelectionSnapshot(
+              base: yCaret,
+              extent: yCaret,
+              revision: document.revision + 1,
+              inlineContinuation: xContinuation.materializedAtRevision(
+                document.revision + 1,
+                yCaret,
+              ),
+            ),
+            coalesceTyping: true,
+          );
+
+          expect(await document.readSource(), 'A *xy* Z');
+          expect((await document.inspectSession()).liveHistoryTokens, 2);
+          final undone = await session.undo();
+          expect(undone, isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'A  Z');
+          expect(undone!.restoreSelection.extent, emptyOwner.caretUtf16);
+          expect(undone.restoreSelection.inlineContinuation, isNotNull);
         },
       );
 

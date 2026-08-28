@@ -870,6 +870,8 @@ void main() {
       await _settle(controller);
       expect(controller.lastError, isNull);
       expect(controller.visibleSource, '\n');
+      expect(controller.status, FlarkEditorStatus.ready);
+      expect(controller.semanticsCurrent, isTrue);
     },
     skip: libraryPath == null,
   );

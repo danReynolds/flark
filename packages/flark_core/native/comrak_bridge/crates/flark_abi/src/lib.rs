@@ -26,7 +26,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 37;
+pub const ABI_MINOR: u16 = 38;
 
 /// Requests process-global registry counts from `SESSION_INSPECT`. This mode
 /// requires a zero session reference and capability
@@ -533,6 +533,10 @@ pub const EDIT_INTENT_RECEIPT_HAS_COMMIT: u32 = 1 << 0;
 pub const EDIT_INTENT_RECEIPT_PARSER_PENDING: u32 = 1 << 1;
 pub const EDIT_INTENT_RECEIPT_SEMANTIC_BYTES: u32 = 1 << 2;
 pub const EDIT_INTENT_RECEIPT_PRESENTATION_PROVEN: u32 = 1 << 3;
+pub const EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION: u32 = 1 << 4;
+pub const INLINE_CONTINUATION_RECIPE_VERSION_V1: u16 = 1;
+pub const INLINE_CONTINUATION_SCALAR_STABLE_NON_WHITESPACE: u16 = 1;
+pub const INLINE_CONTINUATION_SCALAR_COMMONMARK_ORDINARY_ONLY: u16 = 2;
 pub const EDIT_PRESENTATION_NONE: u32 = 0;
 pub const EDIT_PRESENTATION_SPLIT_PARAGRAPH: u32 = 1;
 pub const EDIT_PRESENTATION_CONTINUE_LIST: u32 = 2;

@@ -15,13 +15,14 @@ enum FlarkCorePresentationInlineStyle {
 
 /// One source-mapped run in a framework-neutral rendered row.
 final class FlarkCorePresentationRun {
-  const FlarkCorePresentationRun({
+  FlarkCorePresentationRun({
     required this.text,
     required this.sourceUtf16Start,
     required this.sourceUtf16End,
     required this.sourceExact,
-    required this.styles,
-  }) : assert(sourceUtf16Start >= 0),
+    required Set<FlarkCorePresentationInlineStyle> styles,
+  }) : styles = Set.unmodifiable(styles),
+       assert(sourceUtf16Start >= 0),
        assert(sourceUtf16End >= sourceUtf16Start),
        assert(!sourceExact || sourceUtf16End - sourceUtf16Start == text.length);
 
@@ -37,7 +38,7 @@ final class FlarkCorePresentationRun {
 /// Selection, hit testing, layout, and paint objects deliberately stay in the
 /// frontend adapter. Source mapping and semantic style roles do not.
 final class FlarkCorePresentationRow {
-  const FlarkCorePresentationRow({
+  FlarkCorePresentationRow({
     required this.sourceUtf16,
     required this.leadingText,
     required this.text,
@@ -49,8 +50,8 @@ final class FlarkCorePresentationRow {
     required this.thematicBreak,
     this.listItem = false,
     required this.ordinal,
-    required this.runs,
-  });
+    required List<FlarkCorePresentationRun> runs,
+  }) : runs = List.unmodifiable(runs);
 
   final FlarkSourceRange sourceUtf16;
   final String leadingText;

@@ -11,6 +11,8 @@ export 'src/document.dart'
         FlarkCoreEditIntentReceiptV1,
         FlarkCoreEditIntentTelemetryV1,
         FlarkCoreEditIntentV1,
+        FlarkCoreInlineContinuationRecipeV1,
+        FlarkCoreInlineContinuationScalarPolicyV1,
         FlarkCoreHistoryDisposition,
         FlarkCoreHistoryToken,
         FlarkCoreNativeException,
@@ -26,8 +28,7 @@ export 'src/editor_session.dart'
         FlarkCoreHistoryDropped,
         FlarkCoreHistoryOutcome,
         FlarkCoreHistoryReplayed,
-        FlarkCoreInlineContinuationContextV1,
-        FlarkCoreInlineContinuationRunV1,
+        FlarkCoreInlineContinuationRewriteV1,
         FlarkCoreInlineContinuationV1,
         FlarkCoreSelectionSnapshot,
         FlarkCoreSemanticActionV1;

@@ -245,7 +245,7 @@ final class FlarkSurfaceSelection {
 }
 
 typedef FlarkSurfaceSemanticsSelectionCallback =
-    void Function(FlarkViewportRow row, int baseUtf16, int extentUtf16);
+    void Function(FlarkSurfaceSelection selection);
 
 typedef FlarkSurfaceSemanticsCursorCallback =
     void Function({
@@ -1331,7 +1331,9 @@ final class RenderFlarkSurface extends RenderBox {
     int textOffset, {
     required TextAffinity affinity,
     FlarkSurfaceAction? action,
+    FlarkSurfacePublication? publication,
   }) {
+    final authority = publication ?? _layoutPublication;
     final globalUtf16Offset = row.presentation.sourceOffsetForTextOffset(
       textOffset,
       affinity: affinity,
@@ -1341,10 +1343,10 @@ final class RenderFlarkSurface extends RenderBox {
       globalUtf16Offset,
     );
     return FlarkSurfaceHit(
-      publicationSequence: _layoutPublication.sequence,
-      interactionGeneration: _layoutPublication.interactionGeneration,
-      revision: _layoutPublication.revision,
-      sourceGeneration: _layoutPublication.sourceGeneration,
+      publicationSequence: authority.sequence,
+      interactionGeneration: authority.interactionGeneration,
+      revision: authority.revision,
+      sourceGeneration: authority.sourceGeneration,
       globalUtf16Offset: globalUtf16Offset,
       ordinal: row.ordinal,
       affinity: affinity,
@@ -2039,24 +2041,31 @@ final class RenderFlarkSurface extends RenderBox {
     _PaintedRow row,
     TextSelection selection,
     FlarkSurfaceSemanticsActions actions,
+    FlarkSurfacePublication publication,
   ) {
-    final sourceRow = row.row;
-    if (sourceRow == null) return;
+    if (row.row == null) return;
     final textLength = row.presentation.text.length;
     final base = selection.baseOffset.clamp(0, textLength);
     final extent = selection.extentOffset.clamp(0, textLength);
     final collapsed = base == extent;
-    final baseSource = row.presentation.sourceOffsetForTextOffset(
-      base,
-      affinity: TextAffinity.downstream,
+    actions.onSetSelection(
+      FlarkSurfaceSelection(
+        base: _hitForTextOffset(
+          row,
+          base,
+          affinity: TextAffinity.downstream,
+          publication: publication,
+        ),
+        extent: _hitForTextOffset(
+          row,
+          extent,
+          affinity: collapsed || extent < base
+              ? TextAffinity.downstream
+              : TextAffinity.upstream,
+          publication: publication,
+        ),
+      ),
     );
-    final extentSource = row.presentation.sourceOffsetForTextOffset(
-      extent,
-      affinity: collapsed || extent < base
-          ? TextAffinity.downstream
-          : TextAffinity.upstream,
-    );
-    actions.onSetSelection(sourceRow, baseSource, extentSource);
   }
 
   @override
@@ -2078,14 +2087,19 @@ final class RenderFlarkSurface extends RenderBox {
         ..textDirection = _textDirection;
       final actions = _includeEditingState ? _semanticsActions : null;
       if (actions != null && row.row != null) {
+        final semanticsPublication = _layoutPublication;
         rowConfig
           ..value = row.presentation.text
           ..isTextField = true
           ..isReadOnly = false
           ..isMultiline = row.presentation.text.contains('\n')
           ..isFocused = row.presentation.active;
-        rowConfig.onSetSelection = (selection) =>
-            _setSemanticSelection(row, selection, actions);
+        rowConfig.onSetSelection = (selection) => _setSemanticSelection(
+          row,
+          selection,
+          actions,
+          semanticsPublication,
+        );
         rowConfig.onMoveCursorForwardByCharacter = (extend) =>
             actions.onMoveCursor(
               forward: true,

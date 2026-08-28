@@ -261,6 +261,7 @@ final class FlarkCoreEditIntentReceiptV1 {
     required this.requestDigest,
     required this.telemetry,
     required this.presentationTransition,
+    this.inlineContinuationRecipe,
   });
 
   final FlarkCoreEditIntentDispositionV1 disposition;
@@ -285,6 +286,7 @@ final class FlarkCoreEditIntentReceiptV1 {
   final int requestDigest;
   final FlarkCoreEditIntentTelemetryV1 telemetry;
   final FlarkCoreEditPresentationTransitionV1 presentationTransition;
+  final FlarkCoreInlineContinuationRecipeV1? inlineContinuationRecipe;
 
   bool get hasCommit => disposition == FlarkCoreEditIntentDispositionV1.applied;
 
@@ -317,7 +319,29 @@ final class FlarkCoreEditIntentReceiptV1 {
       coreAdoptionMicros: coreAdoptionMicros,
     ),
     presentationTransition: presentationTransition,
+    inlineContinuationRecipe: inlineContinuationRecipe,
   );
+}
+
+/// Exact one-shot inline continuation spelling and collision policy authored
+/// by the parser that authenticated the delete-to-empty command.
+final class FlarkCoreInlineContinuationRecipeV1 {
+  const FlarkCoreInlineContinuationRecipeV1({
+    required this.prefix,
+    required this.suffix,
+    required this.collisionScalars,
+    required this.scalarPolicy,
+  });
+
+  final String prefix;
+  final String suffix;
+  final String collisionScalars;
+  final FlarkCoreInlineContinuationScalarPolicyV1 scalarPolicy;
+}
+
+enum FlarkCoreInlineContinuationScalarPolicyV1 {
+  stableNonWhitespace,
+  commonMarkOrdinaryOnly,
 }
 
 /// Causal durations for one semantic command. These are diagnostic timings,
@@ -980,6 +1004,17 @@ final class FlarkCoreDocument {
       ),
       presentationTransition: FlarkCoreEditPresentationTransitionV1
           .values[result['presentationTransition']! as int],
+      inlineContinuationRecipe: switch (result['inlineContinuation']) {
+        final Map<Object?, Object?> recipe =>
+          FlarkCoreInlineContinuationRecipeV1(
+            prefix: recipe['prefix']! as String,
+            suffix: recipe['suffix']! as String,
+            collisionScalars: recipe['collisionScalars']! as String,
+            scalarPolicy: FlarkCoreInlineContinuationScalarPolicyV1
+                .values[recipe['scalarPolicy']! as int],
+          ),
+        _ => null,
+      },
     );
   }
 
@@ -1509,6 +1544,16 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'logicalEditId': receipt.logicalEditId,
               'requestDigest': receipt.requestDigest,
               'presentationTransition': receipt.presentationTransition.index,
+              'inlineContinuation': receipt.inlineContinuation == null
+                  ? null
+                  : <Object?, Object?>{
+                      'prefix': receipt.inlineContinuation!.prefix,
+                      'suffix': receipt.inlineContinuation!.suffix,
+                      'collisionScalars':
+                          receipt.inlineContinuation!.collisionScalars,
+                      'scalarPolicy':
+                          receipt.inlineContinuation!.scalarPolicy.index,
+                    },
               'workerQueueMicros': math.max(
                 0,
                 workerReceivedEpochMicros -

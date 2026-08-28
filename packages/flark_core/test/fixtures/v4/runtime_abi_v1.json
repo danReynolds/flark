@@ -4,7 +4,7 @@
   "status": "implemented-direct-v4-boundary",
   "abi": {
     "major": 4,
-    "minor": 37,
+    "minor": 38,
     "minorRule": "NEGOTIATE requires the exact current minor; any major or minor mismatch returns UNSUPPORTED_ABI_VERSION because the runtime retains no per-client negotiation state",
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
@@ -510,6 +510,13 @@
     },
     "rule": "For collapsed Backspace or Delete at the sole rendered grapheme of a parser-authored Emphasis, Strong, Strikethrough, Inline Code, nested supported wrapper, or BackslashEscape owner, Rust deletes the complete parser-authored source closure in one edit-intent transaction and returns DELETE_INLINE_OWNER. Unicode extended grapheme segmentation determines sole-content eligibility. Dart may route only from parser-published inline boundaries; it does not scan delimiters. The transition removes only painted runs wholly contained by the committed closure and shifts unaffected runs while current-revision parsing catches up. Ambiguous, stale, unsupported, partially overlapping, or multi-grapheme owners fail closed."
   },
+  "inlineOwnerContinuationV1": {
+    "abiMinor": 38,
+    "receiptFlag": {"HAS_INLINE_CONTINUATION": 16},
+    "recipeVersion": 1,
+    "scalarPolicies": {"STABLE_NON_WHITESPACE": 1, "COMMONMARK_ORDINARY_ONLY": 2},
+    "rule": "A continuable applied DELETE_INLINE_OWNER receipt carries the parser-authored one-shot continuation prefix, suffix, delimiter-collision scalars, and scalar policy after the replacement payload. reserved[0] packs the UTF-8 byte lengths in 16-bit fields and bits 48..63 are zero; reserved[1] packs recipe version 1 in bits 0..15 and scalar policy in bits 16..31, with higher bits zero. Core wraps the maximal admitted prefix of the next insertion and places the remaining batch suffix outside the owner, so batch delivery matches scalar delivery without a frontend Markdown allowlist. STABLE_NON_WHITESPACE admits every non-whitespace, non-colliding scalar. COMMONMARK_ORDINARY_ONLY additionally exits before Unicode punctuation or symbols would change delimiter flanking. ABI 4.38 pins those categories to finl_unicode 1.4.0 / Unicode 17 and Core's generated scalar ranges are exhaustively checked against the Rust classifier. Delimiter-backed recipes classify backslash as a collision because it can escape the reconstructed closer; inline code may admit it literally. BackslashEscape deletion omits the flag because an escape atom is not a persistent inline mode; the next insertion is plain source. An absent flag grants no continuation authority, while malformed, stale, oversized, or non-delete flagged recipes fail closed."
+  },
   "snapshotLifetime": {
     "ownership": "NON_OWNING_EPOCH",
     "rule": "A SnapshotId is an immutable epoch identifier, not a live handle and not independently released. It remains queryable only while its revision is current and the runtime still has that epoch; otherwise the result is STALE_SNAPSHOT. Only a nonzero continuation retains page-generation state and must be released. Releasing the last continuation permits immediate epoch reclamation."
@@ -575,7 +582,7 @@
     "Input pointers are optional only when input_len is zero and are borrowed for that call only.",
     "Output pointers and capacities are caller-owned for the entire call; the runtime writes at most capacity and reports written_bytes.",
     "Every SOURCE_READ, QUERY_VIEWPORT, and CONTINUATION_NEXT output begins with a 96-byte RESULT_PAGE_HEADER; payload begins at struct_size and written_bytes includes header plus payload.",
-    "EDIT_INTENT_V1 requires capacity for its 192-byte receipt plus MAX_SMALL_EDIT_BYTES before admission. Its exact replacement payload begins at byte 192, and written_bytes includes both receipt and payload.",
+    "EDIT_INTENT_V1 requires capacity for its 192-byte receipt plus MAX_SMALL_EDIT_BYTES before admission. Its exact replacement payload begins at byte 192; an optional parser-authored inline-continuation recipe follows inside the same bounded payload, and written_bytes includes the receipt and every payload segment.",
     "SOURCE_TRANSACTION_V1 requires capacity for its 200-byte receipt before admission. Replacement bytes are borrowed caller input and are not copied back in the receipt.",
     "STAGED_SOURCE_TRANSACTION_V1 resumes the BULK_BEGIN/BULK_APPEND staging transaction and requires capacity for the same 200-byte source transaction receipt. Its v1 result selection is one collapsed downstream caret at the inserted range end.",
     "A successful create/bulk append copies bytes into runtime-owned staging; commit or abort releases the staging transaction.",

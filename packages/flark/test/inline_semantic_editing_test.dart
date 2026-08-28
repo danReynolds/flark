@@ -103,19 +103,61 @@ void main() {
   );
 
   test(
-    'batched continuation matches sequential typing and syntax exits safely',
+    'explicit selection adoption retires delete-to-empty continuation',
     () async {
-      Future<({String source, int caret, String presentation})> run(
-        List<String> inserts,
-      ) async {
+      Future<String> run(List<int> selectedCarets) async {
         final probe = await LiveEditorTransitionProbe.open(
           'A *t¦* Z',
           libraryPath: libraryPath!,
         );
         try {
           probe.pressBackspace();
+          await probe.presentationSettled();
+          for (final caret in selectedCarets) {
+            probe.moveCaret(caret);
+          }
+          probe.typeText('x');
+          await probe.presentationSettled();
+          await probe.expectConvergesWithCleanRebuild();
+          return probe.controller.readSource();
+        } finally {
+          await probe.close();
+        }
+      }
+
+      expect(
+        await run(const [2]),
+        'A x Z',
+        reason:
+            'clicking the same plain gap selects plain context instead of '
+            'reusing the deleted emphasis owner',
+      );
+      expect(
+        await run(const [1, 2]),
+        'A x Z',
+        reason: 'navigation away and back selects the target context anew',
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'batched continuation matches sequential typing and syntax exits safely',
+    () async {
+      Future<({String source, int caret, String presentation})> run(
+        List<String> inserts, {
+        String initial = 'A *t¦* Z',
+        bool settleEach = false,
+      }) async {
+        final probe = await LiveEditorTransitionProbe.open(
+          initial,
+          libraryPath: libraryPath!,
+        );
+        try {
+          probe.pressBackspace();
           for (final insert in inserts) {
-            probe.typeText(insert);
+            probe.replaceSelection(insert);
+            if (settleEach) await probe.presentationSettled();
           }
           await probe.presentationSettled();
           return (
@@ -131,6 +173,30 @@ void main() {
       }
 
       expect(await run(['xy']), await run(['x', 'y']));
+      expect(await run(['xy z']), await run(['x', 'y', ' ', 'z']));
+      expect(
+        await run(['xy z']),
+        await run(['x', 'y', ' ', 'z'], settleEach: true),
+      );
+      expect(await run(['xy*z']), await run(['x', 'y', '*', 'z']));
+      expect(await run(['x\\z']), await run(['x', '\\', 'z']));
+      expect(
+        await run(['\\'], initial: 'A `t¦` Z'),
+        (source: 'A `\\` Z', caret: 4, presentation: 'A \\ Z'),
+        reason: 'backslash is literal inside an inline-code owner',
+      );
+      final nestedEscapeBatch = await run(['xy z'], initial: r'A *\*¦* Z');
+      expect(
+        nestedEscapeBatch,
+        await run(['x', 'y', ' ', 'z'], initial: r'A *\*¦* Z'),
+      );
+      expect(
+        nestedEscapeBatch,
+        (source: 'A *xy* z Z', caret: 8, presentation: 'A xy z Z'),
+        reason:
+            'an atomic escape nested inside emphasis must be deleted without '
+            'leaking its backslash into the continued persistent owner',
+      );
       expect(
         await run(['*']),
         (source: 'A * Z', caret: 3, presentation: 'A * Z'),
@@ -138,6 +204,54 @@ void main() {
             'Markdown-active punctuation must leave the emptied owner rather '
             'than being blindly wrapped into a new delimiter pair',
       );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'intraword owners continue ordinary text and exit punctuation',
+    () async {
+      Future<({String source, int caret, String presentation})> run(
+        List<String> inserts, {
+        bool forward = false,
+      }) async {
+        final probe = await LiveEditorTransitionProbe.open(
+          forward ? 'A*¦t*Z' : 'A*t¦*Z',
+          libraryPath: libraryPath!,
+        );
+        try {
+          if (forward) {
+            probe.pressDelete();
+          } else {
+            probe.pressBackspace();
+          }
+          for (final insert in inserts) {
+            probe.replaceSelection(insert);
+          }
+          await probe.presentationSettled();
+          await probe.expectConvergesWithCleanRebuild();
+          return (
+            source: await probe.controller.readSource(),
+            caret: probe.controller.globalCaretOffset,
+            presentation: captureControllerSurfaceRows(
+              probe.controller,
+            ).map((row) => row.text).join(),
+          );
+        } finally {
+          await probe.close();
+        }
+      }
+
+      const continued = (source: 'A*x*Z', caret: 3, presentation: 'AxZ');
+      expect(await run(['x']), continued);
+      expect(await run(['x'], forward: true), continued);
+      expect(await run(['!']), (source: 'A!Z', caret: 2, presentation: 'A!Z'));
+      expect(await run(['x!y']), await run(['x', '!', 'y']));
+      expect(await run(['x!y']), (
+        source: 'A*x*!yZ',
+        caret: 6,
+        presentation: 'Ax!yZ',
+      ));
     },
     skip: libraryPath == null,
   );
@@ -213,6 +327,31 @@ void main() {
         probe.typeText('y');
         await probe.presentationSettled();
         await probe.expectSourceAndCaret('A *y¦* Z');
+      } finally {
+        await probe.close();
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'rapid continuation typing remains one reversible history group',
+    () async {
+      final probe = await LiveEditorTransitionProbe.open(
+        'A *t¦* Z',
+        libraryPath: libraryPath!,
+      );
+      try {
+        probe.pressBackspace();
+        probe.typeText('xy');
+        await probe.presentationSettled();
+        await probe.expectSourceAndCaret('A *xy¦* Z');
+
+        await probe.undo();
+        await probe.expectSourceAndCaret('A ¦ Z');
+        probe.typeText('z');
+        await probe.presentationSettled();
+        await probe.expectSourceAndCaret('A *z¦* Z');
       } finally {
         await probe.close();
       }

@@ -81,6 +81,34 @@ pub struct DocumentEditIntentReceiptV1 {
     /// The runtime compared the bounded result inline projection with the
     /// predecessor partition and proved this transitional presentation current.
     pub presentation_proven: bool,
+    /// Parser-authored one-shot recipe for the next insertion after deleting
+    /// the final rendered grapheme of a continuable inline owner. The strings
+    /// are exact source spelling, while `collision_scalars` names delimiter
+    /// scalars that end the continuation instead of being wrapped and
+    /// `scalar_policy` states which Unicode scalar classes preserve the
+    /// parser-proven delimiter flanking. Atomic non-mode owners such as
+    /// BackslashEscape deliberately omit this value.
+    pub inline_continuation: Option<DocumentInlineContinuationRecipeV1>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+pub enum DocumentInlineContinuationScalarPolicyV1 {
+    /// Every non-whitespace, non-colliding scalar preserves the owner.
+    StableNonWhitespace = 1,
+    /// Unicode punctuation and symbols would change outer delimiter flanking;
+    /// only ordinary non-whitespace scalars preserve the owner. ABI 4.38 pins
+    /// this to finl_unicode 1.4.0 / Unicode 17, with exhaustive generated-table
+    /// parity at the Rust/Core boundary.
+    CommonMarkOrdinaryOnly = 2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentInlineContinuationRecipeV1 {
+    pub prefix: String,
+    pub suffix: String,
+    pub collision_scalars: String,
+    pub scalar_policy: DocumentInlineContinuationScalarPolicyV1,
 }
 
 /// Result of one literal source transaction. The caller already knows the
@@ -275,6 +303,7 @@ pub(crate) struct DocumentSimpleEditContext {
 pub(crate) struct DocumentInlineEmptyOwnerDelete {
     pub(crate) source_bytes: Range<usize>,
     pub(crate) source_utf16: Range<usize>,
+    pub(crate) continuation: Option<DocumentInlineContinuationRecipeV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

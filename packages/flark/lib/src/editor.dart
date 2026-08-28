@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flark_core/flark_core.dart'
-    show FlarkCoreGraphemePolicy, FlarkViewportRow;
+import 'package:flark_core/flark_core.dart' show FlarkCoreGraphemePolicy;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' as material;
@@ -273,14 +272,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (mounted) widget.debugHandle?._attach(_surface);
   }
 
-  void _activate(Offset localPosition, {bool extend = false}) {
+  bool _activate(Offset localPosition, {bool extend = false}) {
     final hit = _surface?.positionForOffset(localPosition);
-    if (hit == null) return;
-    _activateHit(hit, extend: extend);
+    if (hit == null) return false;
+    return _activateHit(hit, extend: extend);
   }
 
-  void _activateHit(FlarkSurfaceHit hit, {bool extend = false}) {
-    if (!_hitBelongsToCurrentInteraction(hit)) return;
+  bool _activateHit(FlarkSurfaceHit hit, {bool extend = false}) {
+    if (!_hitBelongsToCurrentInteraction(hit)) return false;
     _preferredVerticalNavigationX = null;
     if (extend) {
       widget.controller.extendSelectionTo(
@@ -305,6 +304,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
     _focusNode.requestFocus();
     _openConnection();
     _sendEditingState(force: true);
+    return true;
   }
 
   void _handleTapDown(TapDownDetails details) {
@@ -341,15 +341,44 @@ final class _FlarkEditorState extends State<FlarkEditor>
     _sendEditingState(force: true);
   }
 
-  void _setSemanticsSelection(
-    FlarkViewportRow row,
-    int baseUtf16,
-    int extentUtf16,
-  ) {
-    widget.controller.activateRow(row, baseUtf16, selectionExtent: extentUtf16);
+  bool _adoptSurfaceSelection(FlarkSurfaceSelection selection) {
+    final base = selection.base;
+    final extent = selection.extent;
+    if (!_hitBelongsToCurrentInteraction(base) ||
+        !_hitBelongsToCurrentInteraction(extent) ||
+        base.ordinal != extent.ordinal) {
+      return false;
+    }
+    if (base.row case final row?) {
+      if (!identical(row, extent.row)) return false;
+      widget.controller.activateRow(
+        row,
+        base.globalUtf16Offset,
+        selectionExtent: extent.globalUtf16Offset,
+        affinity: base.affinity,
+      );
+    } else {
+      if (extent.row != null ||
+          base.neutralUtf16Start != extent.neutralUtf16Start) {
+        return false;
+      }
+      widget.controller.activateNeutralLine(
+        text: base.neutralText ?? '',
+        globalUtf16Start: base.neutralUtf16Start ?? 0,
+        globalUtf16Offset: base.globalUtf16Offset,
+        selectionExtent: extent.globalUtf16Offset,
+        ordinal: base.ordinal,
+        affinity: base.affinity,
+      );
+    }
     _focusNode.requestFocus();
     _openConnection();
     _sendEditingState(force: true);
+    return true;
+  }
+
+  void _setSemanticsSelection(FlarkSurfaceSelection selection) {
+    _adoptSurfaceSelection(selection);
   }
 
   void _moveSemanticsCursor({
@@ -708,7 +737,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (!widget.enableTextDrop || details.data.isEmpty) return;
     final surface = _surface;
     if (surface == null) return;
-    _activate(surface.globalToLocal(details.offset));
+    final hit = surface.positionForOffset(
+      surface.globalToLocal(details.offset),
+    );
+    if (hit == null || !_activateHit(hit)) return;
     widget.controller.replaceSelection(details.data);
     widget.debugInputEventObserver?.call('drop:text');
   }
@@ -717,28 +749,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
     _pendingTapHit = null;
     final selection = _surface?.wordSelectionForOffset(localPosition);
     if (selection == null) return;
-    final base = selection.base;
-    final extent = selection.extent;
-    if (base.row case final row?) {
-      widget.controller.activateRow(
-        row,
-        base.globalUtf16Offset,
-        selectionExtent: extent.globalUtf16Offset,
-        affinity: base.affinity,
-      );
-    } else {
-      widget.controller.activateNeutralLine(
-        text: base.neutralText ?? '',
-        globalUtf16Start: base.neutralUtf16Start ?? 0,
-        globalUtf16Offset: base.globalUtf16Offset,
-        selectionExtent: extent.globalUtf16Offset,
-        ordinal: base.ordinal,
-        affinity: base.affinity,
-      );
-    }
-    _focusNode.requestFocus();
-    _openConnection();
-    _sendEditingState(force: true);
+    _adoptSurfaceSelection(selection);
   }
 
   Map<Type, GestureRecognizerFactory> get _gestureRecognizers => {

@@ -48,7 +48,8 @@ pub use document::{
 };
 pub use edit_intent::{
     DocumentCommittedSpliceV1, DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1,
-    DocumentEditIntentV1, DocumentEditPresentationTransitionV1, DocumentSourceTransactionReceiptV1,
+    DocumentEditIntentV1, DocumentEditPresentationTransitionV1, DocumentInlineContinuationRecipeV1,
+    DocumentInlineContinuationScalarPolicyV1, DocumentSourceTransactionReceiptV1,
     DocumentStagedSourceTransactionReceiptV1,
 };
 

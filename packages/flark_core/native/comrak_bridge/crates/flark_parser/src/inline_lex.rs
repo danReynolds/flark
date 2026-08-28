@@ -1023,8 +1023,8 @@ const fn run_marker(kind: RunKind) -> char {
 fn classify_emphasis(marker: u8, before: Option<char>, after: Option<char>) -> (bool, bool) {
     let before_whitespace = before.is_none_or(char::is_whitespace);
     let after_whitespace = after.is_none_or(char::is_whitespace);
-    let before_punctuation = before.is_some_and(is_markdown_punctuation);
-    let after_punctuation = after.is_some_and(is_markdown_punctuation);
+    let before_punctuation = before.is_some_and(m11_is_markdown_punctuation);
+    let after_punctuation = after.is_some_and(m11_is_markdown_punctuation);
     let left_flanking =
         !after_whitespace && (!after_punctuation || before_whitespace || before_punctuation);
     let right_flanking =
@@ -1034,7 +1034,9 @@ fn classify_emphasis(marker: u8, before: Option<char>, after: Option<char>) -> (
     (can_open, can_close)
 }
 
-fn is_markdown_punctuation(value: char) -> bool {
+/// CommonMark punctuation classification shared with consumers that must
+/// conservatively preserve an already parser-authenticated delimiter run.
+pub fn m11_is_markdown_punctuation(value: char) -> bool {
     value.is_punctuation() || value.is_symbol()
 }
 

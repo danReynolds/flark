@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use flark_runtime::{
     DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
-    DocumentSession, DocumentSessionPhase,
+    DocumentInlineContinuationScalarPolicyV1, DocumentSession, DocumentSessionPhase,
 };
 
 fn pump_ready(document: &mut DocumentSession) {
@@ -110,6 +110,30 @@ fn deleting_the_final_rendered_inline_grapheme_removes_its_parser_owned_closure(
             3,
             DocumentEditIntentV1::DeleteForward,
         ),
+        (
+            "nested escaped emphasis Backspace",
+            "A *\\** Z",
+            5,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "nested escaped emphasis Delete",
+            "A *\\** Z",
+            4,
+            DocumentEditIntentV1::DeleteForward,
+        ),
+        (
+            "nested escaped strong Backspace",
+            "A **\\*** Z",
+            6,
+            DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "nested escaped strong Delete",
+            "A **\\*** Z",
+            5,
+            DocumentEditIntentV1::DeleteForward,
+        ),
     ];
 
     for (label, initial, selection_utf16, intent) in cases {
@@ -124,6 +148,42 @@ fn deleting_the_final_rendered_inline_grapheme_removes_its_parser_owned_closure(
             "{label}"
         );
         assert_eq!(receipt.result_selection_utf16, 2, "{label}");
+        if label.starts_with("escaped") {
+            assert_eq!(
+                receipt.inline_continuation, None,
+                "an escape atom is not a persistent inline mode: {label}"
+            );
+            assert_eq!(source(&document), "A  Z", "{label}");
+            document.close().expect(label);
+            continue;
+        }
+        let recipe = receipt
+            .inline_continuation
+            .as_ref()
+            .expect("continuable delete-to-empty carries parser authority");
+        let (prefix, suffix, collisions) = if label.starts_with("nested escaped strong") {
+            ("**", "**", "*\\")
+        } else if label.starts_with("nested escaped emphasis") {
+            ("*", "*", "*\\")
+        } else if label.starts_with("strong") {
+            ("**", "**", "*\\")
+        } else if label.starts_with("strike") {
+            ("~~", "~~", "\\~")
+        } else if label.starts_with("code") {
+            ("`", "`", "`")
+        } else if label.starts_with("nested") {
+            ("***", "***", "*\\")
+        } else {
+            ("*", "*", "*\\")
+        };
+        assert_eq!(recipe.prefix, prefix, "{label}");
+        assert_eq!(recipe.suffix, suffix, "{label}");
+        assert_eq!(recipe.collision_scalars, collisions, "{label}");
+        assert_eq!(
+            recipe.scalar_policy,
+            DocumentInlineContinuationScalarPolicyV1::StableNonWhitespace,
+            "{label}"
+        );
         assert_eq!(source(&document), "A  Z", "{label}");
         document.close().expect(label);
     }
@@ -142,6 +202,54 @@ fn inline_delete_to_empty_never_partially_removes_a_link_owner() {
     );
     assert_eq!(source(&document), "A [*t*](url) Z");
     document.close().expect("close nested link");
+}
+
+#[test]
+fn inline_continuation_distinguishes_ordinary_from_punctuation_flanking() {
+    let mut document = DocumentSession::begin("A*t*Z").expect("begin intraword emphasis");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 3, false)
+        .expect("delete intraword emphasis owner");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(receipt.result_selection_utf16, 1);
+    let recipe = receipt
+        .inline_continuation
+        .as_ref()
+        .expect("intraword emphasis continues only ordinary scalars");
+    assert_eq!(recipe.prefix, "*");
+    assert_eq!(recipe.suffix, "*");
+    assert_eq!(recipe.collision_scalars, "*\\");
+    assert_eq!(
+        recipe.scalar_policy,
+        DocumentInlineContinuationScalarPolicyV1::CommonMarkOrdinaryOnly
+    );
+    assert_eq!(source(&document), "AZ");
+    document.close().expect("close intraword emphasis");
+
+    let mut punctuated = DocumentSession::begin("A(*t*)Z").expect("begin punctuated emphasis");
+    pump_ready(&mut punctuated);
+    let receipt = punctuated
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 4, false)
+        .expect("delete punctuation-bounded emphasis owner");
+    assert_eq!(
+        receipt
+            .inline_continuation
+            .as_ref()
+            .map(|recipe| (recipe.prefix.as_str(), recipe.suffix.as_str())),
+        Some(("*", "*"))
+    );
+    assert_eq!(
+        receipt
+            .inline_continuation
+            .as_ref()
+            .map(|recipe| recipe.scalar_policy),
+        Some(DocumentInlineContinuationScalarPolicyV1::StableNonWhitespace)
+    );
+    punctuated.close().expect("close punctuated emphasis");
 }
 
 #[test]

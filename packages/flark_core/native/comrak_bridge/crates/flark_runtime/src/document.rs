@@ -25,10 +25,10 @@ use flark_parser::{
     },
     classify_m11_simple_edit_line, derive_m11_pending_presentation_plan_seed,
     derive_m11_simple_block_prefix_plans, derive_m11_simple_block_transitions,
-    project_m11_gfm_inline, project_m11_gfm_table, M11GfmInlineNode, M11GfmInlineOptions,
-    M11GfmTableAlignment, M11InlineEditComponent, M11InlineEditComponentMatcher,
-    M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPollStatus,
-    M11ParserBinding, M11PersistentRecursiveGreenAdoption,
+    m11_is_markdown_punctuation, project_m11_gfm_inline, project_m11_gfm_table, M11GfmInlineNode,
+    M11GfmInlineOptions, M11GfmTableAlignment, M11InlineEditComponent,
+    M11InlineEditComponentMatcher, M11InlineProjectionJob, M11InlineProjectionJobError,
+    M11InlineProjectionJobPollStatus, M11ParserBinding, M11PersistentRecursiveGreenAdoption,
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
@@ -47,6 +47,7 @@ use flark_parser::{
 use crate::edit_intent::{
     document_edit_context_admits_target, document_list_marker_text_len,
     resolve_document_edit_intent_v1, DocumentBlockQuoteOutdent, DocumentEditLineEnding,
+    DocumentInlineContinuationRecipeV1, DocumentInlineContinuationScalarPolicyV1,
     DocumentInlineEmptyOwnerDelete, DocumentListIndent, DocumentListOutdent,
     DocumentParagraphMerge, DocumentSimpleEditContext, DocumentSimpleEditRow, DocumentTaskCheck,
     ResolvedDocumentEditIntentV1,
@@ -1455,6 +1456,7 @@ impl DocumentSession {
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
                 presentation_proven: false,
+                inline_continuation: None,
             });
         }
 
@@ -1506,6 +1508,7 @@ impl DocumentSession {
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
                 presentation_proven: false,
+                inline_continuation: None,
             });
         };
         let resolved = resolve_document_edit_intent_v1(intent, target_byte, target_utf16, &context);
@@ -1523,6 +1526,7 @@ impl DocumentSession {
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
                 presentation_proven: false,
+                inline_continuation: None,
             });
         };
         let expected_result_selection_utf16 = transformed_collapsed_selection(
@@ -1558,6 +1562,15 @@ impl DocumentSession {
         }
         let presentation_proven =
             parser_is_ready && self.proves_bounded_structural_presentation(&context, &resolved)?;
+        let inline_continuation = (resolved.presentation_transition
+            == DocumentEditPresentationTransitionV1::DeleteInlineOwner)
+            .then(|| {
+                context
+                    .inline_empty_owner_delete
+                    .as_ref()
+                    .and_then(|owner| owner.continuation.clone())
+            })
+            .flatten();
         // Reuse the context already resolved above. Without this handoff the
         // generic one-splice commit path performs a redundant current-row
         // query before applying the exact semantic splice.
@@ -1582,6 +1595,7 @@ impl DocumentSession {
             parser_pending: edit.parser_pending,
             presentation_transition: resolved.presentation_transition,
             presentation_proven,
+            inline_continuation,
         })
     }
 
@@ -1806,6 +1820,34 @@ impl DocumentSession {
         }
     }
 
+    fn source_scalar_before(&self, offset: usize) -> Option<Option<char>> {
+        if offset == 0 {
+            return Some(None);
+        }
+        let start = self
+            .snapped_to_scalar_boundary(offset.saturating_sub(4))
+            .ok()?;
+        let bytes = self.source_bytes(start..offset).ok()?;
+        Some(std::str::from_utf8(&bytes).ok()?.chars().next_back())
+    }
+
+    fn source_scalar_after(&self, offset: usize) -> Option<Option<char>> {
+        let length = self.source_byte_len();
+        if offset == length {
+            return Some(None);
+        }
+        let lease = self.runtime.snapshot_current_source().ok()?;
+        let maximum = offset.saturating_add(4).min(length);
+        for end in offset + 1..=maximum {
+            if lease.utf16_offset_for_byte(end).is_err() {
+                continue;
+            }
+            let bytes = self.source_bytes(offset..end).ok()?;
+            return Some(std::str::from_utf8(&bytes).ok()?.chars().next());
+        }
+        None
+    }
+
     fn capture_inline_empty_owner_delete(
         &self,
         intent: Option<DocumentEditIntentV1>,
@@ -1847,6 +1889,20 @@ impl DocumentSession {
 
             let mut source = fact.source_range.clone();
             let mut source_utf16 = fact.source_utf16_range.clone();
+            // Build continuation spelling from persistent ownership layers,
+            // not from the complete outer closure around the innermost
+            // visible content. Atomic layers such as BackslashEscape are
+            // deleted with that closure but must not leak their source marker
+            // into the next persistent owner (for example `*\\**` -> `*x*`).
+            let mut continuation_layers = Vec::new();
+            let mut outer_continuation_kind = None;
+            if fact.kind != DocumentInlineFactKind::BackslashEscape {
+                continuation_layers.push((
+                    fact.source_range.start..fact.content_range.start,
+                    fact.content_range.end..fact.source_range.end,
+                ));
+                outer_continuation_kind = Some(fact.kind);
+            }
             loop {
                 if facts.iter().any(|candidate| {
                     inline_fact_encloses_empty_owner_delete(candidate.kind)
@@ -1872,26 +1928,110 @@ impl DocumentSession {
                 }
                 source = parent.source_range.clone();
                 source_utf16 = parent.source_utf16_range.clone();
+                if parent.kind != DocumentInlineFactKind::BackslashEscape {
+                    continuation_layers.push((
+                        parent.source_range.start..parent.content_range.start,
+                        parent.content_range.end..parent.source_range.end,
+                    ));
+                    outer_continuation_kind = Some(parent.kind);
+                }
             }
             if source.is_empty() {
                 continue;
             }
-            closures.push((source, source_utf16));
+            closures.push((
+                source,
+                source_utf16,
+                fact.content_range.clone(),
+                fact.content_utf16_range.clone(),
+                continuation_layers,
+                outer_continuation_kind,
+            ));
         }
-        closures.sort_by_key(|(source, _)| (source.start, std::cmp::Reverse(source.end)));
-        closures.dedup();
+        closures.sort_by_key(|(source, _, content, _, _, _)| {
+            (
+                source.start,
+                std::cmp::Reverse(source.end),
+                content.start,
+                std::cmp::Reverse(content.end),
+            )
+        });
+        closures.dedup_by(|left, right| {
+            left.0 == right.0 && left.1 == right.1 && left.2 == right.2 && left.3 == right.3
+        });
         if closures.len() != 1 {
             return None;
         }
-        let (source, source_utf16) = closures.pop()?;
+        let (source, source_utf16, _, _, continuation_layers, outer_continuation_kind) =
+            closures.pop()?;
         let source_bytes = u64_range_to_usize(&source)?;
         let source_utf16 = u64_range_to_usize(&source_utf16)?;
         if source_bytes.start < editable_bytes.start || source_bytes.end > editable_bytes.end {
             return None;
         }
+        let punctuation_context_stable = outer_continuation_kind
+            == Some(DocumentInlineFactKind::Code)
+            || (self
+                .source_scalar_before(source_bytes.start)?
+                .is_none_or(|scalar| {
+                    scalar.is_whitespace() || m11_is_markdown_punctuation(scalar)
+                })
+                && self
+                    .source_scalar_after(source_bytes.end)?
+                    .is_none_or(|scalar| {
+                        scalar.is_whitespace() || m11_is_markdown_punctuation(scalar)
+                    }));
+        let continuation = if continuation_layers.is_empty() {
+            // Backslash escapes are atoms, not a persistent inline mode:
+            // `\\x` does not escape an ordinary letter. Preserve the atomic
+            // deletion but let the next insertion land as plain source.
+            None
+        } else {
+            let mut prefix = String::new();
+            for (opening, _) in continuation_layers.iter().rev() {
+                prefix.push_str(
+                    std::str::from_utf8(&self.source_bytes(u64_range_to_usize(opening)?).ok()?)
+                        .ok()?,
+                );
+            }
+            let mut suffix = String::new();
+            for (_, closing) in &continuation_layers {
+                suffix.push_str(
+                    std::str::from_utf8(&self.source_bytes(u64_range_to_usize(closing)?).ok()?)
+                        .ok()?,
+                );
+            }
+            if prefix.is_empty() && suffix.is_empty() {
+                return None;
+            }
+            let mut collisions = prefix
+                .chars()
+                .chain(suffix.chars())
+                .filter(|scalar| !scalar.is_whitespace())
+                .collect::<Vec<_>>();
+            if outer_continuation_kind != Some(DocumentInlineFactKind::Code) {
+                // A backslash immediately before a reconstructed emphasis or
+                // strikethrough closer escapes its first delimiter. Inline
+                // code treats backslash literally and needs no such exit.
+                collisions.push('\\');
+            }
+            collisions.sort_unstable();
+            collisions.dedup();
+            Some(DocumentInlineContinuationRecipeV1 {
+                prefix,
+                suffix,
+                collision_scalars: collisions.into_iter().collect(),
+                scalar_policy: if punctuation_context_stable {
+                    DocumentInlineContinuationScalarPolicyV1::StableNonWhitespace
+                } else {
+                    DocumentInlineContinuationScalarPolicyV1::CommonMarkOrdinaryOnly
+                },
+            })
+        };
         Some(DocumentInlineEmptyOwnerDelete {
             source_bytes,
             source_utf16,
+            continuation,
         })
     }
 

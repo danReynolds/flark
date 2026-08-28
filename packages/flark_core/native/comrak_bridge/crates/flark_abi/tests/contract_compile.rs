@@ -11,10 +11,13 @@ use flark_abi::{
     EditIntentRequestV1, InlineFactRecord, Outcome, QueryRequest, RequestFieldRuleKind,
     ResultPageHeader, SessionInspection, SmallEditRequest, StagedSourceTransactionRequestV1,
     ABI_MAJOR, ABI_MINOR, AFFINITIES, CAPABILITY_BITS, CERTIFICATION_STATES, COORDINATE_KINDS,
-    EDIT_PRESENTATION_DELETE_INLINE_OWNER, EDIT_PRESENTATION_JOIN_FENCED_CODE, HANDLE_KINDS,
-    HISTORY_DISPOSITIONS, OPERATION_CODES, OWNERSHIP_KINDS, PARSER_PROFILES, PROGRESS_STATES,
-    PROJECTION_EDIT_CELL_RESULT_SHELL_REMOVED, QUERY_KINDS, RECORD_LAYOUTS, REQUEST_FIELD_RULES,
-    RESULT_RECORD_KINDS, SESSION_STATES, STATUS_CODES, TRANSACTION_STATES,
+    EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION, EDIT_PRESENTATION_DELETE_INLINE_OWNER,
+    EDIT_PRESENTATION_JOIN_FENCED_CODE, HANDLE_KINDS, HISTORY_DISPOSITIONS,
+    INLINE_CONTINUATION_RECIPE_VERSION_V1, INLINE_CONTINUATION_SCALAR_COMMONMARK_ORDINARY_ONLY,
+    INLINE_CONTINUATION_SCALAR_STABLE_NON_WHITESPACE, OPERATION_CODES, OWNERSHIP_KINDS,
+    PARSER_PROFILES, PROGRESS_STATES, PROJECTION_EDIT_CELL_RESULT_SHELL_REMOVED, QUERY_KINDS,
+    RECORD_LAYOUTS, REQUEST_FIELD_RULES, RESULT_RECORD_KINDS, SESSION_STATES, STATUS_CODES,
+    TRANSACTION_STATES,
 };
 use flark_runtime::{
     AnchorHandle, CertificationState, ContinuationHandle, CoordinateKind, HistoryDisposition,
@@ -705,7 +708,7 @@ fn parameterized_projection_edit_cell_vocabulary_is_bound_to_minor_32() {
 fn result_block_shell_projection_edit_cell_is_bound_to_minor_33() {
     let manifest = manifest();
     let cells = &manifest["viewportProjectionEditCellsV4"];
-    assert_eq!(ABI_MINOR, 37);
+    assert_eq!(ABI_MINOR, 38);
     assert_eq!(cells["abiMinor"].as_u64(), Some(33));
     assert_eq!(
         cells["capability"].as_str(),
@@ -730,7 +733,7 @@ fn result_block_shell_projection_edit_cell_is_bound_to_minor_33() {
 fn empty_literal_projection_edit_cell_is_bound_to_minor_35() {
     let manifest = manifest();
     let cells = &manifest["viewportProjectionEditCellsV5"];
-    assert_eq!(ABI_MINOR, 37);
+    assert_eq!(ABI_MINOR, 38);
     assert_eq!(cells["abiMinor"].as_u64(), Some(35));
     assert_eq!(
         cells["capability"].as_str(),
@@ -756,7 +759,7 @@ fn empty_literal_projection_edit_cell_is_bound_to_minor_35() {
 fn bounded_pending_presentation_plan_is_bound_to_minor_34() {
     let manifest = manifest();
     let plans = &manifest["boundedPendingPresentationPlansV1"];
-    assert_eq!(ABI_MINOR, 37);
+    assert_eq!(ABI_MINOR, 38);
     assert_eq!(plans["abiMinor"].as_u64(), Some(34));
     assert_eq!(
         plans["capability"].as_str(),
@@ -797,7 +800,7 @@ fn literal_safe_envelope_v2_remains_bound_to_minor_30() {
 fn literal_safe_deletion_envelope_is_bound_to_minor_36() {
     let manifest = manifest();
     let envelopes = &manifest["viewportLiteralSafeEnvelopesV3"];
-    assert_eq!(ABI_MINOR, 37);
+    assert_eq!(ABI_MINOR, 38);
     assert_eq!(envelopes["abiMinor"].as_u64(), Some(36));
     assert_eq!(
         envelopes["capability"].as_str(),
@@ -815,7 +818,7 @@ fn literal_safe_deletion_envelope_is_bound_to_minor_36() {
 fn structural_presentation_proof_is_bound_to_minor_31() {
     let manifest = manifest();
     let proof = &manifest["structuralPresentationProofsV1"];
-    assert_eq!(ABI_MINOR, 37);
+    assert_eq!(ABI_MINOR, 38);
     assert_eq!(proof["abiMinor"].as_u64(), Some(31));
     assert_eq!(
         proof["capability"].as_str(),
@@ -848,7 +851,7 @@ fn fenced_code_join_presentation_is_bound_to_minor_36() {
 fn inline_owner_deletion_is_bound_to_minor_37() {
     let manifest = manifest();
     let extension = &manifest["inlineOwnerDeletionV1"];
-    assert_eq!(ABI_MINOR, 37);
+    assert_eq!(ABI_MINOR, 38);
     assert_eq!(extension["abiMinor"].as_u64(), Some(37));
     assert_eq!(
         extension["presentationTransition"]["DELETE_INLINE_OWNER"].as_u64(),
@@ -861,10 +864,42 @@ fn inline_owner_deletion_is_bound_to_minor_37() {
 }
 
 #[test]
+fn inline_owner_continuation_is_bound_to_minor_38() {
+    let manifest = manifest();
+    let extension = &manifest["inlineOwnerContinuationV1"];
+    assert_eq!(ABI_MINOR, 38);
+    assert_eq!(extension["abiMinor"].as_u64(), Some(38));
+    assert_eq!(
+        extension["receiptFlag"]["HAS_INLINE_CONTINUATION"].as_u64(),
+        Some(u64::from(EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION))
+    );
+    assert_eq!(extension["recipeVersion"].as_u64(), Some(1));
+    assert_eq!(
+        extension["scalarPolicies"]["STABLE_NON_WHITESPACE"].as_u64(),
+        Some(u64::from(INLINE_CONTINUATION_SCALAR_STABLE_NON_WHITESPACE))
+    );
+    assert_eq!(
+        extension["scalarPolicies"]["COMMONMARK_ORDINARY_ONLY"].as_u64(),
+        Some(u64::from(
+            INLINE_CONTINUATION_SCALAR_COMMONMARK_ORDINARY_ONLY
+        ))
+    );
+    assert_eq!(INLINE_CONTINUATION_RECIPE_VERSION_V1, 1);
+    assert_eq!(
+        header_macro("FLARK_V4_EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION"),
+        u64::from(EDIT_INTENT_RECEIPT_HAS_INLINE_CONTINUATION)
+    );
+    assert_eq!(
+        header_macro("FLARK_V4_INLINE_CONTINUATION_RECIPE_VERSION_V1"),
+        u64::from(INLINE_CONTINUATION_RECIPE_VERSION_V1)
+    );
+}
+
+#[test]
 fn global_live_state_inspection_is_bound_to_minor_32() {
     let manifest = manifest();
     let inspection = &manifest["globalLiveStateInspectionV1"];
-    assert_eq!(ABI_MINOR, 37);
+    assert_eq!(ABI_MINOR, 38);
     assert_eq!(inspection["abiMinor"].as_u64(), Some(32));
     assert_eq!(
         inspection["capability"].as_str(),

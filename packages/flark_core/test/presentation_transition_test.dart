@@ -59,7 +59,7 @@ void main() {
         sourceStart: 0,
         sourceEnd: 7,
         text: 'A t Z',
-        runs: const [
+        runs: [
           FlarkCorePresentationRun(
             text: 'A ',
             sourceUtf16Start: 0,
@@ -115,7 +115,7 @@ void main() {
       sourceStart: 0,
       sourceEnd: 14,
       text: 'left bold',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'left ',
           sourceUtf16Start: 0,
@@ -137,7 +137,7 @@ void main() {
       sourceStart: 14,
       sourceEnd: 19,
       text: 'right',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'right',
           sourceUtf16Start: 14,
@@ -170,7 +170,7 @@ void main() {
       sourceStart: 0,
       sourceEnd: 14,
       text: 'left bold',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'left ',
           sourceUtf16Start: 0,
@@ -192,7 +192,7 @@ void main() {
       sourceStart: 14,
       sourceEnd: 19,
       text: 'right',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'right',
           sourceUtf16Start: 14,
@@ -231,7 +231,7 @@ void main() {
         sourceStart: 0,
         sourceEnd: 17,
         text: 'Before bold.',
-        runs: const [
+        runs: [
           FlarkCorePresentationRun(
             text: 'Before ',
             sourceUtf16Start: 0,
@@ -295,7 +295,7 @@ void main() {
       sourceStart: 0,
       sourceEnd: 17,
       text: 'Before bold.',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'Before ',
           sourceUtf16Start: 0,
@@ -348,7 +348,7 @@ void main() {
       sourceStart: 0,
       sourceEnd: 16,
       text: '| a\n | b |\nmore\n',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: '| a\n | b |\nmore\n',
           sourceUtf16Start: 0,
@@ -401,7 +401,7 @@ void main() {
   });
 
   test('parser-proven fenced split retains one rendered code surface', () {
-    const active = FlarkCorePresentationRow(
+    final active = FlarkCorePresentationRow(
       sourceUtf16: FlarkSourceRange(0, 29),
       leadingText: '',
       text: 'final value = 1;\n',
@@ -458,7 +458,7 @@ void main() {
   });
 
   test('parser-proven fenced join removes only the visible line ending', () {
-    const active = FlarkCorePresentationRow(
+    final active = FlarkCorePresentationRow(
       sourceUtf16: FlarkSourceRange(0, 30),
       leadingText: '',
       text: 'final value = 1;\n\n',
@@ -521,7 +521,7 @@ void main() {
         text: 'Head',
         kind: 12,
         headingLevel: 2,
-        runs: const [
+        runs: [
           FlarkCorePresentationRun(
             text: 'Head',
             sourceUtf16Start: 3,
@@ -568,7 +568,7 @@ void main() {
         leadingText: '- ',
         text: 'list item',
         listItem: true,
-        runs: const [
+        runs: [
           FlarkCorePresentationRun(
             text: 'list item',
             sourceUtf16Start: 2,
@@ -672,7 +672,7 @@ void main() {
         leadingText: '│ ',
         text: 'quoted text',
         blockQuoteDepth: 1,
-        runs: const [
+        runs: [
           FlarkCorePresentationRun(
             text: 'quoted text',
             sourceUtf16Start: 2,
@@ -712,7 +712,7 @@ void main() {
       sourceStart: 18,
       sourceEnd: 19,
       text: 'x',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'x',
           sourceUtf16Start: 18,
@@ -746,7 +746,7 @@ void main() {
       sourceStart: 0,
       sourceEnd: 12,
       text: 'foo',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'foo',
           sourceUtf16Start: 2,
@@ -761,7 +761,7 @@ void main() {
       sourceStart: 12,
       sourceEnd: 17,
       text: 'right',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'right',
           sourceUtf16Start: 12,
@@ -797,7 +797,7 @@ void main() {
       text: 'first\nfoo',
       leadingText: '│ ',
       blockQuoteDepth: 1,
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'first\n',
           sourceUtf16Start: 2,
@@ -843,7 +843,7 @@ void main() {
       sourceStart: 7,
       sourceEnd: 12,
       text: 'right',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'right',
           sourceUtf16Start: 7,
@@ -879,7 +879,7 @@ void main() {
       text: 'item',
       leadingText: '- ',
       kind: 12,
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'item',
           sourceUtf16Start: 2,
@@ -917,7 +917,7 @@ void main() {
       globalStart: 4,
       text: 'child',
       leadingText: '  - ',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'child',
           sourceUtf16Start: 4,
@@ -956,7 +956,7 @@ void main() {
       globalStart: 2,
       text: 'child',
       leadingText: '- ',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'child',
           sourceUtf16Start: 2,
@@ -994,7 +994,7 @@ void main() {
       sourceEnd: 12,
       text: 'leaf',
       leadingText: '    - ',
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'leaf',
           sourceUtf16Start: 6,
@@ -1030,7 +1030,7 @@ void main() {
       text: 'first\nsecond',
       leadingText: '│ ',
       blockQuoteDepth: 1,
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'first\n',
           sourceUtf16Start: 2,
@@ -1073,7 +1073,7 @@ void main() {
       text: 'first\nsecond',
       leadingText: '│ ',
       blockQuoteDepth: 1,
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'first\n',
           sourceUtf16Start: 2,
@@ -1118,7 +1118,7 @@ void main() {
         fenceOffset: 0,
         closed: false,
       ),
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'one\n',
           sourceUtf16Start: 4,
@@ -1165,7 +1165,7 @@ void main() {
         fenceOffset: 0,
         closed: false,
       ),
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'one\n',
           sourceUtf16Start: 4,
@@ -1232,7 +1232,7 @@ void main() {
       text: 'first\nsecond',
       leadingText: '│ │ ',
       blockQuoteDepth: 2,
-      runs: const [
+      runs: [
         FlarkCorePresentationRun(
           text: 'first\n',
           sourceUtf16Start: 4,

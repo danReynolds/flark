@@ -117,9 +117,9 @@ pub use inline_edit_component::{
     M11_INLINE_EDIT_COMPONENT_SOURCE_MAX_BYTES,
 };
 pub use inline_lex::{
-    M11InlineLexError, M11InlineLexEvent, M11InlineLexEventKind, M11InlineLexHazardKind,
-    M11InlineLexPoll, M11InlineLexPollStatus, M11InlineLexReceipt, M11InlineLexScanner,
-    M11_INLINE_LEX_MAX_POLL_TRANSITIONS,
+    m11_is_markdown_punctuation, M11InlineLexError, M11InlineLexEvent, M11InlineLexEventKind,
+    M11InlineLexHazardKind, M11InlineLexPoll, M11InlineLexPollStatus, M11InlineLexReceipt,
+    M11InlineLexScanner, M11_INLINE_LEX_MAX_POLL_TRANSITIONS,
 };
 pub use inline_projection_job::{
     M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPoll,

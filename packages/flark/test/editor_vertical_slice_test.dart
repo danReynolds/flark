@@ -430,6 +430,55 @@ void main() {
   );
 
   testWidgets(
+    'stale semantics geometry cannot retarget a newer edit',
+    (tester) async {
+      const source = '**alpha beta**\n';
+      final semantics = tester.ensureSemantics();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      await tester.runAsync(() async {
+        controller.activateRow(row, row.editableUtf16!.start);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+        ),
+      );
+      await tester.pump();
+      final staleEditable = find.semantics.byValue('alpha beta');
+      expect(staleEditable, findsOne);
+
+      final insertionOffset = controller.globalCaretOffset;
+      controller.replaceSelection('x');
+      final admittedSelection = controller.inputValue.selection;
+
+      tester.semantics.performAction(
+        staleEditable,
+        SemanticsAction.setSelection,
+        args: <String, int>{'base': 0, 'extent': 5},
+      );
+      expect(controller.inputValue.selection, admittedSelection);
+      await _pumpUntilTransactions(tester, controller);
+
+      expect(controller.globalCaretOffset, insertionOffset + 1);
+      expect(
+        controller.visibleSource,
+        source.replaceRange(insertionOffset, insertionOffset, 'x'),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+      semantics.dispose();
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'Tab and Shift-Tab route list indentation through authoritative receipts',
     (tester) async {
       const initial = '- parent\n- child\n';
@@ -1060,6 +1109,64 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(controller.close);
   }, skip: libraryPath == null);
+
+  testWidgets(
+    'stale double-tap geometry cannot select a newer source',
+    (tester) async {
+      const source = 'Tap **this** word\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final debugHandle = FlarkEditorDebugHandle();
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              debugHandle: debugHandle,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final target = debugHandle.geometryForSourceUtf16(
+        source.indexOf('this') + 1,
+      )!;
+
+      final firstTap = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await firstTap.down(target.globalPosition);
+      await firstTap.up();
+      await tester.pump(kDoubleTapMinTime + const Duration(milliseconds: 25));
+      final insertionOffset = source.indexOf('this') + 1;
+      expect(controller.globalCaretOffset, insertionOffset);
+
+      controller.replaceSelection('x');
+      final admittedSelection = controller.inputValue.selection;
+
+      final secondTap = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await secondTap.down(target.globalPosition);
+      await secondTap.up();
+      expect(controller.inputValue.selection, admittedSelection);
+      await _pumpUntilTransactions(tester, controller);
+
+      expect(controller.globalCaretOffset, insertionOffset + 1);
+      expect(
+        controller.visibleSource,
+        source.replaceRange(insertionOffset, insertionOffset, 'x'),
+      );
+
+      await tester.pump(kDoubleTapTimeout);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
 
   testWidgets(
     'keyboard selectors navigate rendered graphemes and preserve source selection',
@@ -1808,6 +1915,60 @@ void main() {
       expect(controller.globalCaretOffset, dropOffset + 1);
       expect(events, contains('drop:text'));
       expect(controller.lastError, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'text drops abort when their mounted geometry is stale',
+    (tester) async {
+      const source = 'alpha beta\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      final debugHandle = FlarkEditorDebugHandle();
+      await tester.runAsync(() async {
+        controller.activateRow(row, 0);
+        await controller.resolveCanonicalSelection();
+      });
+      final events = <String>[];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              debugHandle: debugHandle,
+              debugInputEventObserver: events.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final geometry = debugHandle.geometryForSourceUtf16(
+        source.indexOf('beta') + 4,
+      )!;
+      final staleTarget = tester.widget<DragTarget<String>>(
+        find.byType(DragTarget<String>),
+      );
+
+      controller.replaceSelection('x');
+      final admittedSelection = controller.inputValue.selection;
+
+      staleTarget.onAcceptWithDetails!(
+        DragTargetDetails<String>(data: '!', offset: geometry.globalPosition),
+      );
+      expect(controller.inputValue.selection, admittedSelection);
+      await _pumpUntilTransactions(tester, controller);
+
+      expect(controller.globalCaretOffset, 1);
+      expect(controller.visibleSource, 'xalpha beta\n');
+      expect(events, isNot(contains('drop:text')));
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);

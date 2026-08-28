@@ -163,6 +163,10 @@ const _editIntentHasCommit = 1;
 const _editIntentParserPending = 2;
 const _editIntentSemanticBytes = 4;
 const _editIntentPresentationProven = 8;
+const _editIntentHasInlineContinuation = 16;
+const _inlineContinuationRecipeVersionV1 = 1;
+const _inlineContinuationScalarStableNonWhitespace = 1;
+const _inlineContinuationScalarCommonMarkOrdinaryOnly = 2;
 const _sourceTransactionHasCommit = 1;
 const _sourceTransactionParserPending = 2;
 const _sourceTransactionCallerKnownBytes = 4;
@@ -213,7 +217,7 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 37;
+const _abiMinor = 38;
 const _semanticTargetRecord = 4;
 const _semanticTargetQuery = 5;
 const _literalSafeProjectedQuery = 6;
@@ -228,6 +232,31 @@ const _inspectGlobalLiveState = 1;
 /// regression-tested without constructing a fake dynamic library.
 bool flarkV4AbiVersionIsCompatible(int major, int minor) =>
     major == _abiMajor && minor == _abiMinor;
+
+/// Pure package-internal validation for ABI 4.38 continuation metadata.
+/// Kept separate from FFI decoding so every reserved-bit rule is directly
+/// regression-tested without a corrupt native library.
+bool flarkV4InlineContinuationMetadataIsCanonical({
+  required bool hasInlineContinuation,
+  required int packedLengths,
+  required int packedPolicy,
+}) {
+  if (!hasInlineContinuation) {
+    return packedLengths == 0 && packedPolicy == 0;
+  }
+  final payloadBytes =
+      (packedLengths & 0xffff) +
+      ((packedLengths >> 16) & 0xffff) +
+      ((packedLengths >> 32) & 0xffff);
+  final recipeVersion = packedPolicy & 0xffff;
+  final scalarPolicy = (packedPolicy >> 16) & 0xffff;
+  return packedLengths >> 48 == 0 &&
+      packedPolicy >> 32 == 0 &&
+      payloadBytes != 0 &&
+      recipeVersion == _inlineContinuationRecipeVersionV1 &&
+      (scalarPolicy == _inlineContinuationScalarStableNonWhitespace ||
+          scalarPolicy == _inlineContinuationScalarCommonMarkOrdinaryOnly);
+}
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -334,6 +363,7 @@ final class FlarkNativeEditIntentReceiptV1 {
     required this.logicalEditId,
     required this.requestDigest,
     required this.presentationTransition,
+    required this.inlineContinuation,
   });
 
   final FlarkNativeEditIntentDispositionV1 disposition;
@@ -357,9 +387,29 @@ final class FlarkNativeEditIntentReceiptV1 {
   final int logicalEditId;
   final int requestDigest;
   final FlarkNativeEditPresentationTransitionV1 presentationTransition;
+  final FlarkNativeInlineContinuationRecipeV1? inlineContinuation;
 
   bool get hasCommit =>
       disposition == FlarkNativeEditIntentDispositionV1.applied;
+}
+
+final class FlarkNativeInlineContinuationRecipeV1 {
+  const FlarkNativeInlineContinuationRecipeV1({
+    required this.prefix,
+    required this.suffix,
+    required this.collisionScalars,
+    required this.scalarPolicy,
+  });
+
+  final String prefix;
+  final String suffix;
+  final String collisionScalars;
+  final FlarkNativeInlineContinuationScalarPolicyV1 scalarPolicy;
+}
+
+enum FlarkNativeInlineContinuationScalarPolicyV1 {
+  stableNonWhitespace,
+  commonMarkOrdinaryOnly,
 }
 
 final class FlarkNativeSourceTransactionReceiptV1 {
@@ -1476,12 +1526,33 @@ final class FlarkNativeDocument {
       }
       _requireStatus('edit_intent_v1', status, outcome.ref, {_ok});
       final native = output.cast<FlarkV4EditIntentReceiptV1>().ref;
+      final hasInlineContinuation =
+          native.flags & _editIntentHasInlineContinuation != 0;
+      final packedContinuationLengths = native.reserved[0];
+      final continuationPrefixBytes = packedContinuationLengths & 0xffff;
+      final continuationSuffixBytes =
+          (packedContinuationLengths >> 16) & 0xffff;
+      final continuationCollisionBytes =
+          (packedContinuationLengths >> 32) & 0xffff;
+      final packedContinuationPolicy = native.reserved[1];
+      final continuationScalarPolicy =
+          (packedContinuationPolicy >> 16) & 0xffff;
+      final continuationPayloadBytes =
+          continuationPrefixBytes +
+          continuationSuffixBytes +
+          continuationCollisionBytes;
+      final payloadBytes = native.replacementBytes + continuationPayloadBytes;
       if (native.structSize != sizeOf<FlarkV4EditIntentReceiptV1>() ||
           native.logicalEditId != logicalEditId ||
           native.requestDigest != requestDigest ||
-          native.replacementBytes > _maximumSmallEditBytes ||
+          payloadBytes > _maximumSmallEditBytes ||
+          !flarkV4InlineContinuationMetadataIsCanonical(
+            hasInlineContinuation: hasInlineContinuation,
+            packedLengths: packedContinuationLengths,
+            packedPolicy: packedContinuationPolicy,
+          ) ||
           outcome.ref.writtenBytes !=
-              sizeOf<FlarkV4EditIntentReceiptV1>() + native.replacementBytes) {
+              sizeOf<FlarkV4EditIntentReceiptV1>() + payloadBytes) {
         throw const FlarkNativeException('edit_intent_v1', _internalFault, 1);
       }
       final disposition = switch (native.semanticDisposition) {
@@ -1565,12 +1636,54 @@ final class FlarkNativeDocument {
                       FlarkNativeEditPresentationTransitionV1.none)) ||
           (hasCommit &&
               presentationTransition ==
-                  FlarkNativeEditPresentationTransitionV1.none)) {
+                  FlarkNativeEditPresentationTransitionV1.none) ||
+          (hasInlineContinuation &&
+              (!hasCommit ||
+                  presentationTransition !=
+                      FlarkNativeEditPresentationTransitionV1
+                          .deleteInlineOwner))) {
         throw const FlarkNativeException('edit_intent_v1', _internalFault, 2);
       }
-      final replacementBytes = (output + sizeOf<FlarkV4EditIntentReceiptV1>())
-          .asTypedList(native.replacementBytes);
+      var payloadOffset = sizeOf<FlarkV4EditIntentReceiptV1>();
+      final replacementBytes = (output + payloadOffset).asTypedList(
+        native.replacementBytes,
+      );
       final replacement = utf8.decode(replacementBytes);
+      payloadOffset += native.replacementBytes;
+      FlarkNativeInlineContinuationRecipeV1? inlineContinuation;
+      if (hasInlineContinuation) {
+        final prefix = utf8.decode(
+          (output + payloadOffset).asTypedList(continuationPrefixBytes),
+        );
+        payloadOffset += continuationPrefixBytes;
+        final suffix = utf8.decode(
+          (output + payloadOffset).asTypedList(continuationSuffixBytes),
+        );
+        payloadOffset += continuationSuffixBytes;
+        final collisions = utf8.decode(
+          (output + payloadOffset).asTypedList(continuationCollisionBytes),
+        );
+        if ((prefix.isEmpty && suffix.isEmpty) || collisions.isEmpty) {
+          throw const FlarkNativeException('edit_intent_v1', _internalFault, 3);
+        }
+        inlineContinuation = FlarkNativeInlineContinuationRecipeV1(
+          prefix: prefix,
+          suffix: suffix,
+          collisionScalars: collisions,
+          scalarPolicy: switch (continuationScalarPolicy) {
+            _inlineContinuationScalarStableNonWhitespace =>
+              FlarkNativeInlineContinuationScalarPolicyV1.stableNonWhitespace,
+            _inlineContinuationScalarCommonMarkOrdinaryOnly =>
+              FlarkNativeInlineContinuationScalarPolicyV1
+                  .commonMarkOrdinaryOnly,
+            _ => throw const FlarkNativeException(
+              'edit_intent_v1',
+              _internalFault,
+              4,
+            ),
+          },
+        );
+      }
       if (hasCommit) {
         _revision = native.resultRevision;
         _sourceByteLength = native.resultSourceByteLength;
@@ -1613,6 +1726,7 @@ final class FlarkNativeDocument {
         logicalEditId: native.logicalEditId,
         requestDigest: native.requestDigest,
         presentationTransition: presentationTransition,
+        inlineContinuation: inlineContinuation,
       );
     } finally {
       calloc

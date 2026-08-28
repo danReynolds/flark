@@ -2517,6 +2517,10 @@ final class FlarkEditorController extends ChangeNotifier {
     int? selectionExtent,
     TextAffinity affinity = TextAffinity.downstream,
   }) {
+    // A pointer/navigation selection is a new editing-context decision even
+    // when it resolves to the same numeric caret. Do not let one-shot
+    // delete-to-empty continuation authority survive that explicit choice.
+    _inlineContinuation = null;
     _semanticEditV1Active = _supportsSemanticEditV1(row);
     _pendingPresentation = _pendingPresentation.retire(const {
       FlarkPendingPresentationPart.dependency,
@@ -2551,6 +2555,7 @@ final class FlarkEditorController extends ChangeNotifier {
     int? selectionExtent,
     TextAffinity affinity = TextAffinity.downstream,
   }) {
+    _inlineContinuation = null;
     _semanticEditV1Active = false;
     _pendingPresentation = _pendingPresentation.retire(const {
       FlarkPendingPresentationPart.dependency,
@@ -2574,6 +2579,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void extendSelectionTo(int globalUtf16Offset, {int? activeOrdinal}) {
+    _inlineContinuation = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     final local = globalUtf16Offset - _inputGlobalUtf16Start;
@@ -3127,6 +3133,7 @@ final class FlarkEditorController extends ChangeNotifier {
   /// surrogate; typing, paste, or deletion against it replaces the complete
   /// exact global selection atomically through the anchor-resolved range.
   Future<int> selectOversizedRangeUtf16(int base, int extent) async {
+    _inlineContinuation = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     final length = sourceUtf16Length;
@@ -3220,6 +3227,157 @@ final class FlarkEditorController extends ChangeNotifier {
     final pageTask = _pageTask;
     if (pageTask != null) await pageTask;
     await _waitForMutationTail();
+  }
+
+  /// Waits for parser authority that can safely complete one atomic edit
+  /// publication at [generation]. A buffered document converges to Ready.
+  /// A streamed-open document cannot do that until transport ends, so it
+  /// instead waits for the current revision's certified head: every editable
+  /// opening row is drawn from that same bounded head window.
+  ///
+  /// Keeping this distinction in one helper prevents command completion,
+  /// history, and composition paths from accidentally turning "recertify the
+  /// edited row" into "wait for the user to finish loading the document".
+  Future<void> _awaitEditPublicationCertification(
+    int generation, {
+    required bool allowExactPending,
+  }) async {
+    while (_document.isOpening &&
+        generation == _editGeneration &&
+        !_closed &&
+        !_session.compositionActive) {
+      await _document.pump(workUnits: 512);
+      if (!_document.isOpening ||
+          generation != _editGeneration ||
+          _closed ||
+          _session.compositionActive) {
+        break;
+      }
+      final probe = await _document.queryViewport(
+        endByte: math.min(sourceByteLength, _openingHeadProbeBytes),
+        maxRows: _viewportRowsPerPage,
+      );
+      final exactPendingWithoutPriorSemantics =
+          allowExactPending &&
+          probe.provesExactPendingDocument(
+            documentRevision: revision,
+            documentSourceByteLength: sourceByteLength,
+            documentSourceUtf16Length: sourceUtf16Length,
+          );
+      final certified =
+          probe.revision == revision &&
+          ((probe.isCertified && probe.rows.isNotEmpty) ||
+              probe.provesExactEmptyDocument(
+                documentRevision: revision,
+                documentSourceByteLength: sourceByteLength,
+                documentSourceUtf16Length: sourceUtf16Length,
+              ) ||
+              exactPendingWithoutPriorSemantics);
+      if (probe.continuation != 0) {
+        await _document.releaseViewportContinuation(probe);
+      }
+      if (certified) return;
+    }
+    while (!_document.isReady &&
+        generation == _editGeneration &&
+        !_closed &&
+        !_session.compositionActive) {
+      await _document.pump(workUnits: 512);
+    }
+  }
+
+  /// Installs the authority admitted by
+  /// [_awaitEditPublicationCertification], then revalidates the installed
+  /// viewport against the source that exists after the refresh. Opening
+  /// appends intentionally preserve the edit revision, so generation and
+  /// revision checks alone cannot prove that a pre-refresh pending viewport
+  /// still covers the complete source.
+  Future<void> _refreshEditPublicationAfterCertification(
+    int generation, {
+    required bool restoreInputWindow,
+    Future<void> Function()? prepareForRefresh,
+  }) async {
+    final hadNoPriorSemanticRows = _cachedRows.isEmpty;
+    while (generation == _editGeneration && !_closed) {
+      await _awaitEditPublicationCertification(
+        generation,
+        allowExactPending: hadNoPriorSemanticRows,
+      );
+      if (generation != _editGeneration || _closed) return;
+
+      final prepare = prepareForRefresh;
+      if (prepare != null) await prepare();
+      if (generation != _editGeneration || _closed) return;
+
+      await _refreshViewport(
+        restoreInputWindow: restoreInputWindow,
+        expectedEditGeneration: generation,
+        ensureActiveInputVisible: true,
+        publish: false,
+      );
+      if (generation != _editGeneration || _closed) return;
+      if (_document.isOpening &&
+          _recordOpeningExactPublicationIfProven(
+            hadNoPriorSemanticRows: hadNoPriorSemanticRows,
+          )) {
+        return;
+      }
+      if (!_document.isOpening &&
+          _document.isReady &&
+          _installedViewportProvesEditPublication(allowExactPending: false)) {
+        return;
+      }
+      // No await may separate either proof above from its phase decision. A
+      // streamed append can preserve revision while invalidating exact
+      // pending coverage, and a stream seal can make a pending result
+      // inadmissible even if the document becomes Ready immediately after the
+      // query that produced it. In either case, loop through the new phase and
+      // install fresh authority.
+    }
+  }
+
+  /// Records a controller-owned refresh as the current streamed publication.
+  /// The long-lived opening parse task deliberately refuses to publish while
+  /// an edit is pending; the completing edit therefore owns this bookkeeping.
+  void _recordOpeningEditPublication() {
+    if (!_document.isOpening) return;
+    _openingPublishedRevision = revision;
+    _openingPublication?.complete();
+    _openingPublication = null;
+  }
+
+  /// Records a streamed publication only when the installed viewport proves
+  /// the current source. Pending-neutral source may do so solely when the
+  /// editor had no older semantic rows to retain; this prevents a live tail
+  /// from replacing rendered Markdown with raw source while still keeping an
+  /// initially empty document writable before transport seals.
+  bool _recordOpeningExactPublicationIfProven({
+    required bool hadNoPriorSemanticRows,
+  }) {
+    if (!_document.isOpening) return false;
+    final proven = _installedViewportProvesEditPublication(
+      allowExactPending: hadNoPriorSemanticRows,
+    );
+    if (proven) _recordOpeningEditPublication();
+    return proven;
+  }
+
+  /// Whether the viewport actually installed in the controller proves a safe
+  /// edit publication for the document's current phase and source lengths.
+  /// Pending-neutral source is never authority after a stream seals.
+  bool _installedViewportProvesEditPublication({
+    required bool allowExactPending,
+  }) {
+    final viewport = _viewport;
+    if (viewport == null) return false;
+    return viewport.provesEditPublication(
+      documentRevision: revision,
+      documentSourceByteLength: sourceByteLength,
+      documentSourceUtf16Length: sourceUtf16Length,
+      documentOpening: _document.isOpening,
+      documentReady: _document.isReady,
+      allowExactPending: allowExactPending,
+    );
   }
 
   Future<FlarkSemanticTarget?> querySemanticTarget(FlarkInlineFact fact) =>
@@ -4697,27 +4855,43 @@ final class FlarkEditorController extends ChangeNotifier {
         selection.extentOffset ==
             mutation.start + mutation.replacement.length &&
         !composing.isValid;
-    if (insertsAtContinuation &&
-        continuation.acceptsReplacement(mutation.replacement)) {
+    final candidateContinuationRewrite =
+        continuation != null && insertsAtContinuation
+        ? continuation.rewriteReplacement(mutation.replacement)
+        : null;
+    final continuationRewriteEnd = candidateContinuationRewrite == null
+        ? mutation.end
+        : mutation.end + candidateContinuationRewrite.replacedSuffixUtf16;
+    final continuationRewrite =
+        candidateContinuationRewrite != null &&
+            (candidateContinuationRewrite.replacedSuffixUtf16 == 0 ||
+                (continuationRewriteEnd <= source.length &&
+                    source.substring(mutation.end, continuationRewriteEnd) ==
+                        continuation!.suffix))
+        ? candidateContinuationRewrite
+        : null;
+    if (continuationRewrite != null) {
       effectiveMutation = _TextMutation(
         mutation.start,
-        mutation.end,
-        '${continuation.prefix}${mutation.replacement}${continuation.suffix}',
+        continuationRewriteEnd,
+        continuationRewrite.replacement,
       );
       effectiveSelection = TextSelection.collapsed(
-        offset:
-            mutation.start +
-            continuation.prefix.length +
-            mutation.replacement.length,
+        offset: mutation.start + continuationRewrite.caretUtf16Offset,
         affinity: selection.affinity,
       );
       effectiveComposing = TextRange.empty;
       effectiveFullValue = null;
-      // The recipe is parser-derived, but its successor projection is not
+      // The recipe is parser-authored, but its successor projection is not
       // certified until Rust parses the wrapped source. Hold the prior atomic
       // frame rather than flashing delimiters or plain styling.
       _publicationCertificationBarrierActive = true;
-      _inlineContinuation = null;
+      _inlineContinuation = continuationRewrite.continuesOwner
+          ? continuation!.materializedAtRevision(
+              continuation.revision + 1,
+              _inputGlobalUtf16Start + effectiveSelection.extentOffset,
+            )
+          : null;
     } else if (continuation != null &&
         (insertsAtContinuation ||
             mutation.start != mutation.end ||
@@ -5258,7 +5432,15 @@ final class FlarkEditorController extends ChangeNotifier {
     ),
     _activeOrdinal,
     inlineContinuation:
-        _inlineContinuation?.revision == _document.revision &&
+        _inlineContinuation != null &&
+            // A rapid platform successor is admitted before its preceding
+            // source transaction reaches the worker. Continuation authority
+            // may therefore name one revision per already-pending edit plus
+            // the edit currently being accepted, but never an arbitrary
+            // future revision.
+            _document.revision <= _inlineContinuation!.revision &&
+            _inlineContinuation!.revision <=
+                _document.revision + _pendingEdits + 1 &&
             _globalSelectionBase == _globalSelectionExtent &&
             _inlineContinuation?.caretUtf16 == _globalSelectionExtent
         ? _inlineContinuation
@@ -6101,14 +6283,12 @@ final class FlarkEditorController extends ChangeNotifier {
     _parseTimer?.cancel();
     _parseTimer = null;
     final generation = _admitEditingCommand();
-    final inlineContinuationContext = _inlineContinuationContextFor(intent);
     _pendingEdits += 1;
     _status = FlarkEditorStatus.editing;
     final operation = _editTail.then(
       (_) => _session.applyEditIntentOutcomeV1(
         intent,
         compositionActive: _session.compositionActive,
-        inlineContinuationContext: inlineContinuationContext,
       ),
     );
     final completion = _completeSemanticEdit(
@@ -6415,24 +6595,17 @@ final class FlarkEditorController extends ChangeNotifier {
         // flash an extra or missing blank line. Complete the bounded parser
         // handoff off-callback, then publish source, rows, and selection as
         // one transaction.
-        while (!_document.isReady &&
-            generation == _editGeneration &&
-            !_closed) {
-          await _document.pump(workUnits: 512);
-        }
+        await _refreshEditPublicationAfterCertification(
+          generation,
+          // This is the terminal atomic handoff for a semantic edit whose
+          // provisional input could not safely publish. Fresh certified rows
+          // must also canonicalize the platform window; otherwise an
+          // interleaved delta can leave the entire predecessor viewport as
+          // the input surrogate even after the caret moves to a successor
+          // row, with no later parse task left to repair it.
+          restoreInputWindow: true,
+        );
         if (generation == _editGeneration && !_closed) {
-          await _refreshViewport(
-            // This is the terminal atomic handoff for a semantic edit whose
-            // provisional input could not safely publish. Fresh certified
-            // rows must also canonicalize the platform window; otherwise an
-            // interleaved delta can leave the entire predecessor viewport as
-            // the input surrogate even after the caret moves to a successor
-            // row, with no later parse task left to repair it.
-            restoreInputWindow: true,
-            expectedEditGeneration: generation,
-            ensureActiveInputVisible: true,
-            publish: false,
-          );
           _publicationCertificationBarrierActive = false;
         }
         // Successors observed behind a receipt with no safe result surface
@@ -6652,42 +6825,6 @@ final class FlarkEditorController extends ChangeNotifier {
       precedingRow: coreRowAt(activeIndex - 1),
       priorGapPending: _pendingPresentation.paragraphGap != null,
       activeRowTransitional: structural != null,
-    );
-  }
-
-  FlarkCoreInlineContinuationContextV1? _inlineContinuationContextFor(
-    FlarkCoreEditIntentV1 intent,
-  ) {
-    if (intent != FlarkCoreEditIntentV1.deleteBackward &&
-        intent != FlarkCoreEditIntentV1.deleteForward) {
-      return null;
-    }
-    final row = _activeCachedRow();
-    if (row == null) return null;
-    final sourceRange = surfaceSourceRange(row);
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
-    if (sourceRange.start < _visibleUtf16Start ||
-        sourceRange.end > visibleEnd) {
-      return null;
-    }
-    final presentation = _corePresentationRow(
-      surfaceRow(row, includeEditingState: false),
-      sourceRange,
-    );
-    return FlarkCoreInlineContinuationContextV1(
-      revision: _document.revision,
-      sourceUtf16Start: sourceRange.start,
-      source: _sliceVisibleUtf16(sourceRange.start, sourceRange.end),
-      runs: presentation.runs
-          .map(
-            (run) => FlarkCoreInlineContinuationRunV1(
-              text: run.text,
-              sourceUtf16Start: run.sourceUtf16Start,
-              sourceUtf16End: run.sourceUtf16End,
-              semanticallyStyled: run.styles.isNotEmpty,
-            ),
-          )
-          .toList(growable: false),
     );
   }
 
@@ -7041,12 +7178,39 @@ final class FlarkEditorController extends ChangeNotifier {
         mutation.end,
         downstream: true,
       );
-      final acceptance = mappedStart == null || mappedEnd == null
+      final continuation = _inlineContinuation;
+      final continuationLocalCaret = continuation == null
+          ? null
+          : continuation.caretUtf16 - _inputGlobalUtf16Start;
+      final continuesAtCanonicalCaret =
+          continuationLocalCaret != null &&
+          batch.typingInput &&
+          mutation.start == mutation.end &&
+          batch.after.selection.isCollapsed &&
+          !batch.after.composing.isValid &&
+          0 <= continuationLocalCaret &&
+          continuationLocalCaret <= _inputValue.text.length;
+      final promotedStart = continuesAtCanonicalCaret
+          ? continuationLocalCaret
+          : mappedStart;
+      final promotedEnd = continuesAtCanonicalCaret
+          ? continuationLocalCaret
+          : mappedEnd;
+      final promotedSelection = continuesAtCanonicalCaret
+          ? TextSelection.collapsed(
+              offset: continuationLocalCaret + mutation.replacement.length,
+              affinity: selection.affinity,
+            )
+          : selection;
+      final promotedComposing = continuesAtCanonicalCaret
+          ? TextRange.empty
+          : composing;
+      final acceptance = promotedStart == null || promotedEnd == null
           ? null
           : _acceptMutation(
-              _TextMutation(mappedStart, mappedEnd, mutation.replacement),
-              selection: selection,
-              composing: composing,
+              _TextMutation(promotedStart, promotedEnd, mutation.replacement),
+              selection: promotedSelection,
+              composing: promotedComposing,
               typingInput: batch.typingInput,
               platformTiming: batch.platformTiming,
             );
@@ -7798,22 +7962,15 @@ final class FlarkEditorController extends ChangeNotifier {
           // but explicitly does not prove result block presentation. Drain the
           // bounded parser actor without publishing pending exact rows, then
           // install and publish the certified result atomically.
-          while (!_document.isReady &&
-              generation == _editGeneration &&
-              !_closed) {
-            await _document.pump(workUnits: 512);
-          }
+          await _refreshEditPublicationAfterCertification(
+            generation,
+            // Certification is the terminal publication for this edit.
+            // Canonicalize the platform surrogate in the same transaction as
+            // source and rows so delivery order cannot determine which row
+            // remains editable after convergence.
+            restoreInputWindow: true,
+          );
           if (generation == _editGeneration && !_closed) {
-            await _refreshViewport(
-              // Certification is the terminal publication for this edit.
-              // Canonicalize the platform surrogate in the same transaction
-              // as source and rows so delivery order cannot determine which
-              // row remains editable after convergence.
-              restoreInputWindow: true,
-              expectedEditGeneration: generation,
-              ensureActiveInputVisible: true,
-              publish: false,
-            );
             _publicationCertificationBarrierActive = false;
           }
           if (generation == _editGeneration &&
@@ -7854,12 +8011,21 @@ final class FlarkEditorController extends ChangeNotifier {
             // it; unchanged rows retain only mapped predecessor facts.
             _scheduleParsingAfterInput(immediate: true);
           } else {
+            final hadNoPriorSemanticRows = _cachedRows.isEmpty;
             await _refreshViewport(
               restoreInputWindow: false,
               expectedEditGeneration: generation,
               ensureActiveInputVisible: true,
             );
             if (generation == _editGeneration) {
+              // A streamed-open refresh can legitimately publish an exact
+              // pending-neutral row when no older semantic surface exists
+              // (notably typing into a document just deleted to empty). That
+              // is a current-revision presentation even though the unsealed
+              // final paragraph is not yet parser-certified.
+              _recordOpeningExactPublicationIfProven(
+                hadNoPriorSemanticRows: hadNoPriorSemanticRows,
+              );
               _scheduleParsingAfterInput();
             }
           }
@@ -7941,15 +8107,10 @@ final class FlarkEditorController extends ChangeNotifier {
         final restore = _adapterSnapshot(outcome.restoreSelection);
         _optimisticViewportEdits.clear();
         _clearPendingTaskChecks();
-        while (!_document.isReady && !_closed) {
-          await _document.pump(workUnits: 512);
-        }
-        await _restoreHistorySelection(restore);
-        await _refreshViewport(
+        await _refreshEditPublicationAfterCertification(
+          generation,
           restoreInputWindow: false,
-          expectedEditGeneration: generation,
-          ensureActiveInputVisible: true,
-          publish: false,
+          prepareForRefresh: () => _restoreHistorySelection(restore),
         );
         // The pre-query restore supplies the exact deep source/byte anchor.
         // Reapply the same canonical selection after fresh rows install so
@@ -8199,18 +8360,13 @@ final class FlarkEditorController extends ChangeNotifier {
       // its parser-certified result; retain the prior frame while bounded
       // parsing catches up, then adopt source, projection, and selection
       // together.
-      while (!_document.isReady && !_closed) {
-        await _document.pump(workUnits: 512);
-      }
-      await _restoreHistorySelection(restore);
-      await _refreshViewport(
+      await _refreshEditPublicationAfterCertification(
+        generation,
         // Fresh rows own both the rendered caret stops and the platform
         // window. Restore them together so a downstream boundary
         // normalization cannot be followed by a stale history surrogate.
         restoreInputWindow: true,
-        expectedEditGeneration: generation,
-        ensureActiveInputVisible: true,
-        publish: false,
+        prepareForRefresh: () => _restoreHistorySelection(restore),
       );
       if (!restore.selection.isCollapsed) {
         // Installing certified rows may normalize a platform selection to its
@@ -8914,6 +9070,11 @@ final class FlarkEditorController extends ChangeNotifier {
         sourceFitsViewport &&
         _rowsFitViewport(viewport) &&
         !retainsExistingSurface;
+    final installsCertifiedSurface =
+        viewport.isCertified &&
+        sourceFitsViewport &&
+        _rowsFitViewport(viewport) &&
+        !retainsExistingSurface;
     if (!retainsExistingSurface) {
       // Async parsing, paging, and history restoration can replace source
       // mapping without admitting a new key command. Invalidate hits from the
@@ -8945,7 +9106,7 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _certificationRanges = viewport.certificationRanges;
     _certificationRevisionCurrent = viewport.certificationRanges.isNotEmpty;
-    if (installsFreshRows) {
+    if (installsCertifiedSurface) {
       _optimisticViewportEdits.clear();
       if (viewport.coveredUtf16.start <= _globalSelectionExtent &&
           _globalSelectionExtent <= viewport.coveredUtf16.end) {
@@ -8964,7 +9125,7 @@ final class FlarkEditorController extends ChangeNotifier {
         utf16: viewport.coveredUtf16.start,
       );
     }
-    _semanticViewportCurrent = viewport.isCertified && installsFreshRows;
+    _semanticViewportCurrent = installsCertifiedSurface;
     // A streamed open's head page is typically mixed — certified head rows
     // ahead of pending-exact tail — so the first-certified receipt keys on
     // published rows inside any certified range, not on the whole-viewport

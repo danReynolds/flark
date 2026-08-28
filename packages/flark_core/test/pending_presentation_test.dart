@@ -19,8 +19,247 @@ void main() {
     sourceUtf16: FlarkSourceRange(0, 4),
   );
 
+  FlarkViewport exactEmptyViewport({
+    int revision = 7,
+    FlarkCertification certification = FlarkCertification.currentCertified,
+    FlarkSourceRange requestedBytes = const FlarkSourceRange(0, 0),
+    FlarkSourceRange coveredBytes = const FlarkSourceRange(0, 0),
+    FlarkSourceRange coveredUtf16 = const FlarkSourceRange(0, 0),
+    String? neutralSource = '',
+    int continuation = 0,
+    List<FlarkCertificationRange> certificationRanges = const [],
+  }) => FlarkViewport(
+    revision: revision,
+    snapshot: 1,
+    requestedBytes: requestedBytes,
+    coveredBytes: coveredBytes,
+    coveredUtf16: coveredUtf16,
+    certification: certification,
+    rows: const [],
+    neutralSource: neutralSource,
+    continuation: continuation,
+    certificationRanges: certificationRanges,
+  );
+
+  FlarkViewport exactPendingViewport({
+    int revision = 7,
+    FlarkCertification certification = FlarkCertification.pendingNeutral,
+    FlarkSourceRange requestedBytes = const FlarkSourceRange(0, 3),
+    FlarkSourceRange coveredBytes = const FlarkSourceRange(0, 3),
+    FlarkSourceRange coveredUtf16 = const FlarkSourceRange(0, 2),
+    String? neutralSource = 'éx',
+    int continuation = 0,
+    List<FlarkCertificationRange> certificationRanges = const [],
+  }) => FlarkViewport(
+    revision: revision,
+    snapshot: 1,
+    requestedBytes: requestedBytes,
+    coveredBytes: coveredBytes,
+    coveredUtf16: coveredUtf16,
+    certification: certification,
+    rows: const [],
+    neutralSource: neutralSource,
+    continuation: continuation,
+    certificationRanges: certificationRanges,
+  );
+
+  FlarkViewport certifiedRowViewport({int revision = 7}) => FlarkViewport(
+    revision: revision,
+    snapshot: 1,
+    requestedBytes: const FlarkSourceRange(0, 1),
+    coveredBytes: const FlarkSourceRange(0, 1),
+    coveredUtf16: const FlarkSourceRange(0, 1),
+    certification: FlarkCertification.currentCertified,
+    rows: [
+      FlarkViewportRow(
+        ordinal: 0,
+        kind: 5,
+        sourceBytes: const FlarkSourceRange(0, 1),
+        sourceUtf16: const FlarkSourceRange(0, 1),
+        editableBytes: const FlarkSourceRange(0, 1),
+        editableUtf16: const FlarkSourceRange(0, 1),
+        editCapability: FlarkViewportRowEditCapability.contiguous,
+        headingLevel: null,
+        headingStyle: null,
+        listItem: null,
+        blockQuote: null,
+        codeBlock: null,
+        thematicBreak: false,
+        pathDepth: 0,
+        inlineFacts: const [],
+      ),
+    ],
+    neutralSource: null,
+    continuation: 0,
+  );
+
+  FlarkViewport readyBlankViewport() => FlarkViewport(
+    revision: 7,
+    snapshot: 1,
+    requestedBytes: const FlarkSourceRange(0, 1),
+    coveredBytes: const FlarkSourceRange(0, 1),
+    coveredUtf16: const FlarkSourceRange(0, 1),
+    certification: FlarkCertification.currentCertified,
+    rows: const [],
+    neutralSource: '\n',
+    continuation: 0,
+  );
+
+  test('edit publication proof is phase-bound to installed authority', () {
+    bool proves(
+      FlarkViewport viewport, {
+      required bool opening,
+      bool? ready,
+      int revision = 7,
+      int bytes = 3,
+      int utf16 = 2,
+    }) => viewport.provesEditPublication(
+      documentRevision: revision,
+      documentSourceByteLength: bytes,
+      documentSourceUtf16Length: utf16,
+      documentOpening: opening,
+      documentReady: ready ?? !opening,
+      allowExactPending: opening,
+    );
+
+    expect(
+      proves(certifiedRowViewport(), opening: true, bytes: 1, utf16: 1),
+      isTrue,
+    );
+    expect(
+      proves(certifiedRowViewport(), opening: false, bytes: 1, utf16: 1),
+      isTrue,
+    );
+    expect(
+      proves(
+        certifiedRowViewport(),
+        opening: false,
+        ready: false,
+        bytes: 1,
+        utf16: 1,
+      ),
+      isFalse,
+      reason: 'a sealed parser cannot report ready before convergence',
+    );
+    expect(
+      proves(readyBlankViewport(), opening: false, bytes: 1, utf16: 1),
+      isTrue,
+      reason: 'a Ready blank document is safe despite having no semantic row',
+    );
+    expect(
+      proves(readyBlankViewport(), opening: true, bytes: 1, utf16: 1),
+      isFalse,
+      reason: 'the same blank viewport is not certified opening authority',
+    );
+    expect(
+      proves(exactEmptyViewport(), opening: true, bytes: 0, utf16: 0),
+      isTrue,
+    );
+    expect(
+      proves(exactEmptyViewport(), opening: false, bytes: 0, utf16: 0),
+      isTrue,
+    );
+    expect(proves(exactPendingViewport(), opening: true), isTrue);
+    expect(proves(exactPendingViewport(), opening: false), isFalse);
+    expect(
+      proves(exactPendingViewport(), opening: true, bytes: 4, utf16: 3),
+      isFalse,
+      reason:
+          'same-revision stream growth invalidates complete pending coverage',
+    );
+    expect(proves(certifiedRowViewport(revision: 6), opening: false), isFalse);
+  });
+
+  test('exact empty viewport proof rejects every stale shape sampled', () {
+    bool proves(FlarkViewport viewport, {int revision = 7}) =>
+        viewport.provesExactEmptyDocument(
+          documentRevision: revision,
+          documentSourceByteLength: 0,
+          documentSourceUtf16Length: 0,
+        );
+
+    expect(proves(exactEmptyViewport()), isTrue);
+    expect(proves(exactEmptyViewport(revision: 6)), isFalse);
+    expect(
+      proves(
+        exactEmptyViewport(certification: FlarkCertification.pendingNeutral),
+      ),
+      isFalse,
+    );
+    expect(
+      proves(exactEmptyViewport(requestedBytes: const FlarkSourceRange(0, 1))),
+      isFalse,
+    );
+    expect(proves(exactEmptyViewport(neutralSource: null)), isFalse);
+    expect(proves(exactEmptyViewport(continuation: 1)), isFalse);
+    expect(
+      proves(
+        exactEmptyViewport(
+          certificationRanges: const [
+            FlarkCertificationRange(
+              certification: FlarkCertification.currentCertified,
+              sourceBytes: FlarkSourceRange(0, 0),
+              sourceUtf16: FlarkSourceRange(0, 0),
+            ),
+          ],
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  test('exact pending viewport proof rejects partial or mixed authority', () {
+    bool proves(FlarkViewport viewport, {int bytes = 3, int utf16 = 2}) =>
+        viewport.provesExactPendingDocument(
+          documentRevision: 7,
+          documentSourceByteLength: bytes,
+          documentSourceUtf16Length: utf16,
+        );
+
+    expect(proves(exactPendingViewport()), isTrue);
+    expect(proves(exactPendingViewport(revision: 6)), isFalse);
+    expect(
+      proves(
+        exactPendingViewport(
+          certification: FlarkCertification.currentCertified,
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      proves(
+        exactPendingViewport(requestedBytes: const FlarkSourceRange(0, 2)),
+      ),
+      isFalse,
+    );
+    expect(
+      proves(exactPendingViewport(coveredBytes: const FlarkSourceRange(0, 2))),
+      isFalse,
+    );
+    expect(
+      proves(exactPendingViewport(coveredUtf16: const FlarkSourceRange(0, 1))),
+      isFalse,
+    );
+    expect(proves(exactPendingViewport(neutralSource: 'xx')), isFalse);
+    expect(proves(exactPendingViewport(continuation: 1)), isFalse);
+    // A stream append can preserve revision while making an earlier exact
+    // pending query partial. Document lengths are therefore part of proof.
+    expect(proves(exactPendingViewport(), bytes: 4, utf16: 3), isFalse);
+  });
+
   test('published structural and table collections own their snapshots', () {
-    const presentation = FlarkCorePresentationRow(
+    final styles = <FlarkCorePresentationInlineStyle>{
+      FlarkCorePresentationInlineStyle.emphasis,
+    };
+    final run = FlarkCorePresentationRun(
+      text: 'x',
+      sourceUtf16Start: 0,
+      sourceUtf16End: 1,
+      sourceExact: true,
+      styles: styles,
+    );
+    final runs = <FlarkCorePresentationRun>[run];
+    final presentation = FlarkCorePresentationRow(
       sourceUtf16: FlarkSourceRange(0, 1),
       leadingText: '',
       text: 'x',
@@ -31,15 +270,19 @@ void main() {
       codeBlock: null,
       thematicBreak: false,
       ordinal: 0,
-      runs: [
-        FlarkCorePresentationRun(
-          text: 'x',
-          sourceUtf16Start: 0,
-          sourceUtf16End: 1,
-          sourceExact: true,
-          styles: {},
-        ),
-      ],
+      runs: runs,
+    );
+    styles.clear();
+    runs.clear();
+
+    expect(presentation.runs, [run]);
+    expect(presentation.runs.single.styles, {
+      FlarkCorePresentationInlineStyle.emphasis,
+    });
+    expect(() => presentation.runs.clear(), throwsUnsupportedError);
+    expect(
+      () => presentation.runs.single.styles.clear(),
+      throwsUnsupportedError,
     );
     final projectionCells = <FlarkProjectionEditCell>[cell];
     final surface = FlarkCoreCommittedPresentationSurfaceV1(
@@ -123,7 +366,7 @@ void main() {
       endUtf16: 2,
       replacement: 'x',
     )!;
-    const presentation = FlarkCorePresentationRow(
+    final presentation = FlarkCorePresentationRow(
       sourceUtf16: FlarkSourceRange(0, 5),
       leadingText: '',
       text: 'abxcd',
@@ -218,7 +461,7 @@ void main() {
       endUtf16: 2,
       replacement: 'x',
     )!;
-    const first = FlarkCorePresentationRow(
+    final first = FlarkCorePresentationRow(
       sourceUtf16: FlarkSourceRange(0, 5),
       leadingText: '',
       text: 'code\n',
@@ -244,7 +487,7 @@ void main() {
         ),
       ],
     );
-    const second = FlarkCorePresentationRow(
+    final second = FlarkCorePresentationRow(
       sourceUtf16: FlarkSourceRange(5, 13),
       leadingText: '',
       text: 'sentinel',
@@ -268,11 +511,11 @@ void main() {
     final dependency = FlarkPendingDependencyPresentation.multi(
       rowOrdinal: 3,
       authority: authority,
-      presentations: const [first, second],
+      presentations: [first, second],
       replacedRowOrdinals: const {3, 4},
     );
 
-    expect(dependency.presentations, const [first, second]);
+    expect(dependency.presentations, [first, second]);
     expect(dependency.replacedRowOrdinals, const {3, 4});
     expect(dependency.sourceUtf16.start, 0);
     expect(dependency.sourceUtf16.end, 13);

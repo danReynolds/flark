@@ -154,8 +154,10 @@ void main() {
     // Nothing admitted yet: the empty-range query answers without rows
     // and without an exception (an empty range is vacuously certified).
     final empty = await document.queryViewport();
+    expect(empty.isCertified, isTrue);
     expect(empty.rows, isEmpty);
     expect(empty.coveredBytes.length, 0);
+    expect(empty.neutralSource, '');
 
     // A partial unsealed line can never certify; the answer stays the
     // familiar pending-neutral shape while the parser waits for source.
