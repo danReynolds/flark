@@ -132,6 +132,29 @@ void main() {
   );
 
   test(
+    'three unpumped Returns plus typing remain one live successor lineage',
+    () async {
+      final probe = await LiveEditorTransitionProbe.open(
+        'fff¦',
+        libraryPath: libraryPath!,
+      );
+      try {
+        probe.pressReturn();
+        probe.pressReturn();
+        probe.pressReturn();
+        probe.typeText('x');
+
+        await probe.expectSourceAndCaret('fff\n\n\n\nx¦');
+        await probe.expectHealthy();
+        await probe.expectConvergesWithCleanRebuild();
+      } finally {
+        await probe.close();
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'deferred structural command retains callback timing across edit lanes',
     () async {
       final probe = await LiveEditorTransitionProbe.open(

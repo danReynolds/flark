@@ -1216,6 +1216,7 @@ void main() {
         await mounted.pressReturn();
         await mounted.pumpPresentationSettled();
         final beforeDelete = await tester.runAsync(probe.controller.readSource);
+        expect(probe.controller.debugCaretBoundaryActive, isTrue);
         mounted.paints.clear();
 
         await mounted.pressDelete();

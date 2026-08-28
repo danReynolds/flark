@@ -199,6 +199,10 @@ enum FlarkSurfaceAction { toggleTaskChecked }
 
 final class FlarkSurfaceHit {
   const FlarkSurfaceHit({
+    required this.publicationSequence,
+    required this.interactionGeneration,
+    required this.revision,
+    required this.sourceGeneration,
     required this.globalUtf16Offset,
     required this.ordinal,
     required this.affinity,
@@ -209,6 +213,10 @@ final class FlarkSurfaceHit {
     this.semanticTargetFact,
   });
 
+  final int publicationSequence;
+  final int interactionGeneration;
+  final int revision;
+  final int sourceGeneration;
   final int globalUtf16Offset;
   final int ordinal;
   final TextAffinity affinity;
@@ -217,6 +225,16 @@ final class FlarkSurfaceHit {
   final int? neutralUtf16Start;
   final FlarkSurfaceAction? action;
   final FlarkInlineFact? semanticTargetFact;
+
+  bool belongsTo(
+    FlarkSurfacePublication publication, {
+    required int liveInteractionGeneration,
+  }) =>
+      publicationSequence == publication.sequence &&
+      interactionGeneration == publication.interactionGeneration &&
+      interactionGeneration == liveInteractionGeneration &&
+      revision == publication.revision &&
+      sourceGeneration == publication.sourceGeneration;
 }
 
 final class FlarkSurfaceSelection {
@@ -527,6 +545,7 @@ final class RenderFlarkSurface extends RenderBox {
   );
 
   FlarkEditorController get controller => _controller;
+  FlarkSurfacePublication get layoutPublication => _layoutPublication;
   set controller(FlarkEditorController value) {
     if (identical(value, _controller)) return;
     if (attached) _controller.removeListener(_changed);
@@ -1322,6 +1341,10 @@ final class RenderFlarkSurface extends RenderBox {
       globalUtf16Offset,
     );
     return FlarkSurfaceHit(
+      publicationSequence: _layoutPublication.sequence,
+      interactionGeneration: _layoutPublication.interactionGeneration,
+      revision: _layoutPublication.revision,
+      sourceGeneration: _layoutPublication.sourceGeneration,
       globalUtf16Offset: globalUtf16Offset,
       ordinal: row.ordinal,
       affinity: affinity,

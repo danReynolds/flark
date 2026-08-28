@@ -61,6 +61,155 @@ abstract final class FlarkCoreGraphemePolicy {
   }
 }
 
+/// One source-mapped visible run supplied to Core before a semantic command.
+/// The frontend maps its presentation model into this scalar-only context;
+/// Core uses it only after Rust has committed and authenticated the exact
+/// delete-to-empty owner closure.
+final class FlarkCoreInlineContinuationRunV1 {
+  const FlarkCoreInlineContinuationRunV1({
+    required this.text,
+    required this.sourceUtf16Start,
+    required this.sourceUtf16End,
+    required this.semanticallyStyled,
+  });
+
+  final String text;
+  final int sourceUtf16Start;
+  final int sourceUtf16End;
+  final bool semanticallyStyled;
+}
+
+/// Bounded pre-command evidence from the current parser-authored row.
+///
+/// This is not command authority: Rust still decides whether the semantic
+/// deletion applies. It merely gives Core enough immutable context to derive
+/// the next writable intent inside the same serialized command, before the
+/// history unit is recorded.
+final class FlarkCoreInlineContinuationContextV1 {
+  FlarkCoreInlineContinuationContextV1({
+    required this.revision,
+    required this.sourceUtf16Start,
+    required this.source,
+    required List<FlarkCoreInlineContinuationRunV1> runs,
+  }) : runs = List.unmodifiable(runs);
+
+  final int revision;
+  final int sourceUtf16Start;
+  final String source;
+  final List<FlarkCoreInlineContinuationRunV1> runs;
+
+  FlarkCoreInlineContinuationV1? resolve(FlarkCoreEditIntentReceiptV1 receipt) {
+    if (!receipt.hasCommit ||
+        receipt.baseRevision != revision ||
+        receipt.presentationTransition !=
+            FlarkCoreEditPresentationTransitionV1.deleteInlineOwner ||
+        receipt.replacement.isNotEmpty ||
+        receipt.baseUtf16Start >= receipt.baseUtf16End) {
+      return null;
+    }
+    final localStart = receipt.baseUtf16Start - sourceUtf16Start;
+    final localEnd = receipt.baseUtf16End - sourceUtf16Start;
+    if (localStart < 0 || localEnd > source.length) return null;
+    final deletedSource = source.substring(localStart, localEnd);
+    final deletedRuns = runs
+        .where(
+          (run) =>
+              receipt.baseUtf16Start <= run.sourceUtf16Start &&
+              run.sourceUtf16End <= receipt.baseUtf16End &&
+              run.text.isNotEmpty,
+        )
+        .toList(growable: false);
+    final visible = deletedRuns.map((run) => run.text).join();
+    if (deletedRuns.isEmpty ||
+        deletedRuns.any((run) => !run.semanticallyStyled) ||
+        !FlarkCoreGraphemePolicy.isSingleCluster(visible)) {
+      return null;
+    }
+    final prefixEnd =
+        deletedRuns.first.sourceUtf16Start - receipt.baseUtf16Start;
+    final suffixStart =
+        deletedRuns.last.sourceUtf16End - receipt.baseUtf16Start;
+    if (prefixEnd <= 0 ||
+        prefixEnd > suffixStart ||
+        suffixStart >= deletedSource.length) {
+      return null;
+    }
+    return FlarkCoreInlineContinuationV1(
+      revision: receipt.resultRevision,
+      caretUtf16: receipt.resultSelectionUtf16,
+      prefix: deletedSource.substring(0, prefixEnd),
+      suffix: deletedSource.substring(suffixStart),
+    );
+  }
+}
+
+/// Typed next-write intent left by deleting the final visible grapheme from a
+/// supported inline owner. It is recorded atomically with source, selection,
+/// and history by [FlarkCoreEditorSession].
+final class FlarkCoreInlineContinuationV1 {
+  const FlarkCoreInlineContinuationV1({
+    required this.revision,
+    required this.caretUtf16,
+    required this.prefix,
+    required this.suffix,
+  });
+
+  final int revision;
+  final int caretUtf16;
+  final String prefix;
+  final String suffix;
+
+  /// The bounded D0 continuation vocabulary. Batches of ordinary prose are
+  /// equivalent to sequential key delivery. Whitespace and Markdown-active
+  /// ASCII punctuation leave the emptied owner rather than blindly forming a
+  /// delimiter collision.
+  bool acceptsReplacement(String value) {
+    if (value.isEmpty) return false;
+    for (final rune in value.runes) {
+      final scalar = String.fromCharCode(rune);
+      if (scalar.trim().isEmpty) return false;
+      if (rune > 0x7f) continue;
+      final alphanumeric =
+          (0x30 <= rune && rune <= 0x39) ||
+          (0x41 <= rune && rune <= 0x5a) ||
+          (0x61 <= rune && rune <= 0x7a);
+      const safeProse = <int>{
+        0x21,
+        0x22,
+        0x27,
+        0x28,
+        0x29,
+        0x2c,
+        0x2d,
+        0x2e,
+        0x3a,
+        0x3b,
+        0x3f,
+      };
+      if (!alphanumeric && !safeProse.contains(rune)) return false;
+    }
+    return true;
+  }
+
+  FlarkCoreInlineContinuationV1 atRevision(int nextRevision, int caret) =>
+      FlarkCoreInlineContinuationV1(
+        revision: nextRevision,
+        caretUtf16: caret,
+        prefix: prefix,
+        suffix: suffix,
+      );
+}
+
+final class FlarkCoreEditIntentOutcomeV1 {
+  const FlarkCoreEditIntentOutcomeV1({
+    required this.receipt,
+    this.inlineContinuation,
+  });
+
+  final FlarkCoreEditIntentReceiptV1 receipt;
+  final FlarkCoreInlineContinuationV1? inlineContinuation;
+}
+
 /// A canonical selection observation: plain UTF-16 offsets valid at
 /// [revision], identified by [generation]. [adapterState] carries an opaque
 /// host payload (for example a platform selection object) through history
@@ -73,6 +222,7 @@ final class FlarkCoreSelectionSnapshot {
     this.generation = 0,
     this.revision = 0,
     this.adapterState,
+    this.inlineContinuation,
   });
 
   final int base;
@@ -81,6 +231,7 @@ final class FlarkCoreSelectionSnapshot {
   final int generation;
   final int revision;
   final Object? adapterState;
+  final FlarkCoreInlineContinuationV1? inlineContinuation;
 
   bool get isCollapsed => base == extent;
 }
@@ -207,6 +358,7 @@ final class FlarkCoreEditorSession {
   bool _selectionBaseIsStart = true;
   FlarkCoreAffinity _selectionAffinity = FlarkCoreAffinity.downstream;
   Object? _selectionAdapterState;
+  FlarkCoreInlineContinuationV1? _selectionInlineContinuation;
   int _selectionGeneration = 0;
   int _selectionBaseUtf16 = 0;
   int _selectionExtentUtf16 = 0;
@@ -319,10 +471,12 @@ final class FlarkCoreEditorSession {
         beforeSelection.extent,
         affinity: beforeSelection.affinity,
         adapterState: beforeSelection.adapterState,
+        inlineContinuation: beforeSelection.inlineContinuation,
       );
     } else {
       _selectionAffinity = beforeSelection.affinity;
       _selectionAdapterState = beforeSelection.adapterState;
+      _selectionInlineContinuation = beforeSelection.inlineContinuation;
     }
     if (compositionFinal && compositionGroup == null) {
       throw ArgumentError(
@@ -458,6 +612,7 @@ final class FlarkCoreEditorSession {
     _selectionExtentUtf16 = afterSelection.extent;
     _selectionAffinity = afterSelection.affinity;
     _selectionAdapterState = afterSelection.adapterState;
+    _selectionInlineContinuation = afterSelection.inlineContinuation;
     _selectionGeneration += 1;
     final receipt = FlarkCoreEditReceipt(
       revision: transaction.resultRevision,
@@ -573,6 +728,7 @@ final class FlarkCoreEditorSession {
     _selectionExtentUtf16 = afterSelection.extent;
     _selectionAffinity = afterSelection.affinity;
     _selectionAdapterState = afterSelection.adapterState;
+    _selectionInlineContinuation = afterSelection.inlineContinuation;
     _selectionGeneration += 1;
     final receipt = FlarkCoreEditReceipt(
       revision: transaction.resultRevision,
@@ -658,6 +814,7 @@ final class FlarkCoreEditorSession {
         afterSelection.extent,
         affinity: afterSelection.affinity,
         adapterState: afterSelection.adapterState,
+        inlineContinuation: afterSelection.inlineContinuation,
       );
       if (compositionFinal) {
         await _releaseCompositionScope(compositionGroup!);
@@ -681,6 +838,20 @@ final class FlarkCoreEditorSession {
   Future<FlarkCoreEditIntentReceiptV1> applyEditIntentV1(
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
+  }) async {
+    final outcome = await applyEditIntentOutcomeV1(
+      intent,
+      compositionActive: compositionActive,
+    );
+    return outcome.receipt;
+  }
+
+  /// Applies one semantic command and returns the typed selection intent that
+  /// was recorded atomically with its history result.
+  Future<FlarkCoreEditIntentOutcomeV1> applyEditIntentOutcomeV1(
+    FlarkCoreEditIntentV1 intent, {
+    required bool compositionActive,
+    FlarkCoreInlineContinuationContextV1? inlineContinuationContext,
   }) {
     if (intent == FlarkCoreEditIntentV1.toggleTaskChecked) {
       throw ArgumentError(
@@ -693,6 +864,7 @@ final class FlarkCoreEditorSession {
         intent,
         compositionActive: compositionActive,
         coreQueueMicros: _clockMicros() - queuedAt,
+        inlineContinuationContext: inlineContinuationContext,
       ),
     );
   }
@@ -713,7 +885,7 @@ final class FlarkCoreEditorSession {
         downstream: true,
       );
       try {
-        return await _applyEditIntentV1(
+        final outcome = await _applyEditIntentV1(
           switch (action) {
             FlarkCoreSemanticActionV1.toggleTaskChecked =>
               FlarkCoreEditIntentV1.toggleTaskChecked,
@@ -724,16 +896,18 @@ final class FlarkCoreEditorSession {
           targetUtf16: targetUtf16,
           preserveSelection: true,
         );
+        return outcome.receipt;
       } finally {
         await document.releaseAnchor(target);
       }
     });
   }
 
-  Future<FlarkCoreEditIntentReceiptV1> _applyEditIntentV1(
+  Future<FlarkCoreEditIntentOutcomeV1> _applyEditIntentV1(
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
     required int coreQueueMicros,
+    FlarkCoreInlineContinuationContextV1? inlineContinuationContext,
     FlarkCoreAnchor? targetAnchor,
     int? targetUtf16,
     bool preserveSelection = false,
@@ -768,6 +942,7 @@ final class FlarkCoreEditorSession {
       generation: baseGeneration,
       revision: baseRevision,
       adapterState: _selectionAdapterState,
+      inlineContinuation: _selectionInlineContinuation,
     );
     late final FlarkCoreEditIntentReceiptV1 receipt;
     try {
@@ -801,9 +976,11 @@ final class FlarkCoreEditorSession {
     _pendingTerminalLogicalEditId = logicalEditId;
     if (!receipt.hasCommit) {
       adoptionWatch.stop();
-      return receipt.withCoreTelemetry(
-        coreQueueMicros: coreQueueMicros,
-        coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+      return FlarkCoreEditIntentOutcomeV1(
+        receipt: receipt.withCoreTelemetry(
+          coreQueueMicros: coreQueueMicros,
+          coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+        ),
       );
     }
     final token = receipt.historyToken;
@@ -816,6 +993,10 @@ final class FlarkCoreEditorSession {
       _selectionBaseUtf16 = receipt.resultSelectionUtf16;
       _selectionExtentUtf16 = receipt.resultSelectionUtf16;
     }
+    final inlineContinuation = preserveSelection
+        ? _selectionInlineContinuation
+        : inlineContinuationContext?.resolve(receipt);
+    _selectionInlineContinuation = inlineContinuation;
     final afterGeneration = ++_selectionGeneration;
     final after = FlarkCoreSelectionSnapshot(
       base: _selectionBaseUtf16,
@@ -824,6 +1005,7 @@ final class FlarkCoreEditorSession {
       generation: afterGeneration,
       revision: receipt.resultRevision,
       adapterState: _selectionAdapterState,
+      inlineContinuation: inlineContinuation,
     );
     try {
       await _recordForward(
@@ -845,9 +1027,12 @@ final class FlarkCoreEditorSession {
       rethrow;
     }
     adoptionWatch.stop();
-    return receipt.withCoreTelemetry(
-      coreQueueMicros: coreQueueMicros,
-      coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+    return FlarkCoreEditIntentOutcomeV1(
+      receipt: receipt.withCoreTelemetry(
+        coreQueueMicros: coreQueueMicros,
+        coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+      ),
+      inlineContinuation: inlineContinuation,
     );
   }
 
@@ -927,12 +1112,14 @@ final class FlarkCoreEditorSession {
     int extent, {
     FlarkCoreAffinity affinity = FlarkCoreAffinity.downstream,
     Object? adapterState,
+    FlarkCoreInlineContinuationV1? inlineContinuation,
   }) => _serializeCommand(
     () => _setSelectionUtf16(
       base,
       extent,
       affinity: affinity,
       adapterState: adapterState,
+      inlineContinuation: inlineContinuation,
     ),
   );
 
@@ -941,6 +1128,7 @@ final class FlarkCoreEditorSession {
     int extent, {
     FlarkCoreAffinity affinity = FlarkCoreAffinity.downstream,
     Object? adapterState,
+    FlarkCoreInlineContinuationV1? inlineContinuation,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
     final start = base <= extent ? base : extent;
@@ -960,6 +1148,7 @@ final class FlarkCoreEditorSession {
     _selectionBaseIsStart = base <= extent;
     _selectionAffinity = affinity;
     _selectionAdapterState = adapterState;
+    _selectionInlineContinuation = inlineContinuation;
     _selectionBaseUtf16 = base;
     _selectionExtentUtf16 = extent;
     return ++_selectionGeneration;
@@ -989,6 +1178,7 @@ final class FlarkCoreEditorSession {
       generation: generation,
       revision: document.revision,
       adapterState: _selectionAdapterState,
+      inlineContinuation: _selectionInlineContinuation,
     );
   }
 
@@ -997,6 +1187,7 @@ final class FlarkCoreEditorSession {
   Future<void> _clearSelection() async {
     await _releaseSelectionAnchors();
     _selectionAdapterState = null;
+    _selectionInlineContinuation = null;
     _selectionGeneration += 1;
   }
 
@@ -1078,6 +1269,7 @@ final class FlarkCoreEditorSession {
     _selectionExtentUtf16 = selection.extent;
     _selectionAffinity = selection.affinity;
     _selectionAdapterState = selection.adapterState;
+    _selectionInlineContinuation = selection.inlineContinuation;
     _selectionGeneration += 1;
   }
 
@@ -1258,23 +1450,29 @@ final class FlarkCoreEditorSession {
       await _releaseUnits(stale);
       // Source is unchanged (or rolled back exactly), so the selection to
       // restore is the unit's current-state side, not its replayed side.
-      final restore = undo ? unit.afterSelection : unit.beforeSelection;
+      final restore = _selectionAtCurrentRevision(
+        undo ? unit.afterSelection : unit.beforeSelection,
+      );
       await _setSelectionUtf16(
         restore.base,
         restore.extent,
         affinity: restore.affinity,
         adapterState: restore.adapterState,
+        inlineContinuation: restore.inlineContinuation,
       );
       return FlarkCoreHistoryDropped(restore);
     }
     final adoptionWatch = Stopwatch()..start();
     destination.add(replayed.unit);
-    final restore = undo ? unit.beforeSelection : unit.afterSelection;
+    final restore = _selectionAtCurrentRevision(
+      undo ? unit.beforeSelection : unit.afterSelection,
+    );
     await _setSelectionUtf16(
       restore.base,
       restore.extent,
       affinity: restore.affinity,
       adapterState: restore.adapterState,
+      inlineContinuation: restore.inlineContinuation,
     );
     adoptionWatch.stop();
     final telemetry = replayed.receipt.telemetry;
@@ -1289,6 +1487,23 @@ final class FlarkCoreEditorSession {
           coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
         ),
       ),
+    );
+  }
+
+  FlarkCoreSelectionSnapshot _selectionAtCurrentRevision(
+    FlarkCoreSelectionSnapshot selection,
+  ) {
+    final continuation = selection.inlineContinuation;
+    return FlarkCoreSelectionSnapshot(
+      base: selection.base,
+      extent: selection.extent,
+      affinity: selection.affinity,
+      generation: selection.generation,
+      revision: document.revision,
+      adapterState: selection.adapterState,
+      inlineContinuation: continuation == null || !selection.isCollapsed
+          ? null
+          : continuation.atRevision(document.revision, selection.extent),
     );
   }
 

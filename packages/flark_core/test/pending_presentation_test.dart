@@ -19,6 +19,61 @@ void main() {
     sourceUtf16: FlarkSourceRange(0, 4),
   );
 
+  test('published structural and table collections own their snapshots', () {
+    const presentation = FlarkCorePresentationRow(
+      sourceUtf16: FlarkSourceRange(0, 1),
+      leadingText: '',
+      text: 'x',
+      globalUtf16Start: 0,
+      kind: 5,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: null,
+      thematicBreak: false,
+      ordinal: 0,
+      runs: [
+        FlarkCorePresentationRun(
+          text: 'x',
+          sourceUtf16Start: 0,
+          sourceUtf16End: 1,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+    final projectionCells = <FlarkProjectionEditCell>[cell];
+    final surface = FlarkCoreCommittedPresentationSurfaceV1(
+      rowOrdinal: 0,
+      sourceUtf16: const FlarkSourceRange(0, 1),
+      presentation: presentation,
+      projectionEditCells: projectionCells,
+    );
+    projectionCells.clear();
+
+    expect(surface.projectionEditCells, const [cell]);
+    expect(() => surface.projectionEditCells.clear(), throwsUnsupportedError);
+
+    const tableCell = FlarkTableCellPresentation(
+      alignment: FlarkTableAlignment.left,
+      header: false,
+      autocompleted: false,
+      sourceBytes: FlarkSourceRange(0, 1),
+      sourceUtf16: FlarkSourceRange(0, 1),
+      contentBytes: FlarkSourceRange(0, 1),
+      contentUtf16: FlarkSourceRange(0, 1),
+    );
+    final tableRow = <FlarkTableCellPresentation>[tableCell];
+    final tableRows = <List<FlarkTableCellPresentation>>[tableRow];
+    final table = FlarkTablePresentation(rows: tableRows);
+    tableRow.clear();
+    tableRows.clear();
+
+    expect(table.rows, hasLength(1));
+    expect(table.rows.single, const [tableCell]);
+    expect(() => table.rows.clear(), throwsUnsupportedError);
+    expect(() => table.rows.single.clear(), throwsUnsupportedError);
+  });
+
   test('one binder normalizes edit cells ahead of legacy envelopes', () {
     final authority = bindPendingDependencyAuthority(
       revision: 7,
@@ -89,7 +144,7 @@ void main() {
         ),
       ],
     );
-    const structuralSurface = FlarkCoreCommittedPresentationSurfaceV1(
+    final structuralSurface = FlarkCoreCommittedPresentationSurfaceV1(
       rowOrdinal: 3,
       sourceUtf16: FlarkSourceRange(0, 5),
       presentation: presentation,
@@ -105,7 +160,7 @@ void main() {
         rowOrdinal: 3,
         rowEndUtf16: 5,
       ),
-      structuralSurfaces: const [
+      structuralSurfaces: [
         FlarkPendingStructuralSurface(surface: structuralSurface),
       ],
     ).withTaskCheck(9, true);
@@ -118,7 +173,7 @@ void main() {
     expect(snapshot.taskChecks, {9: true});
     expect(
       () => snapshot.structuralSurfaces.add(
-        const FlarkPendingStructuralSurface(surface: structuralSurface),
+        FlarkPendingStructuralSurface(surface: structuralSurface),
       ),
       throwsUnsupportedError,
     );

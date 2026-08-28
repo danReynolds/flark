@@ -342,7 +342,7 @@ void main() {
     );
   });
 
-  test('parser-proven embedded split trims one leading source space', () {
+  test('parser-proven embedded split publishes one durable blank row', () {
     final active = _row(
       ordinal: 7,
       sourceStart: 0,
@@ -376,7 +376,7 @@ void main() {
     final neutral = transition!.surfaces[1];
     expect(
       neutral.role,
-      FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+      FlarkCoreCommittedPresentationSurfaceRole.visibleBlankSeparator,
     );
     expect(neutral.sourceUtf16.start, 4);
     expect(neutral.sourceUtf16.end, 5);
@@ -550,7 +550,7 @@ void main() {
       expect(transition?.surfaces.first.projectionCurrent, isTrue);
       expect(
         transition?.surfaces[1].role,
-        FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+        FlarkCoreCommittedPresentationSurfaceRole.visibleBlankSeparator,
       );
       expect(transition?.surfaces.last.presentation.kind, 5);
       expect(transition?.surfaces.last.presentation.text, isEmpty);

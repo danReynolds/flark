@@ -1369,6 +1369,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(emptyBlock.active, isTrue);
       expect(controller.inputValue.text, '\n');
       expect(controller.inputValue.selection.extentOffset, 0);
+      expect(controller.debugCaretBoundaryActive, isTrue);
 
       final afterFirstReturn = source.replaceRange(boundary, boundary, '\n\n');
       expect(controller.visibleSource, afterFirstReturn);
@@ -1403,6 +1404,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       );
 
       final beforeTyping = controller.inputValue;
+      expect(controller.debugCaretBoundaryActive, isTrue);
       controller.applyDeltas([
         TextEditingDeltaInsertion(
           oldText: beforeTyping.text,
@@ -1421,7 +1423,18 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       final pendingTextBlock = surface().debugPaintedPlan.singleWhere(
         (entry) => entry.neutral && entry.active,
       );
-      expect(pendingTextBlock.text, 'x');
+      expect(
+        pendingTextBlock.text,
+        'x',
+        reason:
+            'source=${controller.visibleSource}; '
+            'input=${controller.inputValue}; '
+            'caret=${controller.globalCaretOffset}; '
+            'activeOrdinal=${controller.debugActiveOrdinal}; '
+            'barrier=${controller.debugPublicationCertificationBarrierActive}; '
+            'boundary=${controller.debugCaretBoundaryActive}; '
+            'rows=${controller.rows.map((row) => (row.ordinal, controller.surfaceRow(row).text, controller.surfaceRow(row).active)).toList()}',
+      );
 
       await settleEdits();
       await tester.runAsync(controller.continueParsing);

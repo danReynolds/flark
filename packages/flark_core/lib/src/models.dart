@@ -255,7 +255,10 @@ final class FlarkTableCellPresentation {
 }
 
 final class FlarkTablePresentation {
-  const FlarkTablePresentation({required this.rows});
+  FlarkTablePresentation({required List<List<FlarkTableCellPresentation>> rows})
+    : rows = List.unmodifiable(
+        rows.map((row) => List<FlarkTableCellPresentation>.unmodifiable(row)),
+      );
 
   final List<List<FlarkTableCellPresentation>> rows;
 
@@ -497,6 +500,13 @@ final class FlarkInlineFact {
 
   final FlarkInlineFactKind kind;
   final int flags;
+
+  /// Parser-authored routing capability for the final-visible-grapheme
+  /// Backspace/Delete semantic lane. The command is still revision-checked by
+  /// Rust; this bit prevents adapters from reimplementing owner-kind and
+  /// grapheme policy merely to choose between synchronous ordinary deletion
+  /// and the semantic command.
+  bool get supportsEmptyOwnerDelete => flags & 0x80 != 0;
   final FlarkSourceRange sourceBytes;
   final FlarkSourceRange sourceUtf16;
   final FlarkSourceRange contentBytes;
@@ -689,7 +699,7 @@ final class FlarkProjectionEditCell {
 }
 
 final class FlarkViewportRow {
-  const FlarkViewportRow({
+  FlarkViewportRow({
     required this.ordinal,
     required this.kind,
     required this.sourceBytes,
@@ -705,12 +715,20 @@ final class FlarkViewportRow {
     required this.thematicBreak,
     this.table,
     required this.pathDepth,
-    this.inlineFacts,
-    this.literalSafeEnvelopes = const [],
-    this.projectionEditCells = const [],
-    this.pendingPresentationPlans = const [],
-    this.projectionSegments,
-  });
+    List<FlarkInlineFact>? inlineFacts,
+    List<FlarkLiteralSafeEnvelope> literalSafeEnvelopes = const [],
+    List<FlarkProjectionEditCell> projectionEditCells = const [],
+    List<FlarkPendingPresentationPlan> pendingPresentationPlans = const [],
+    List<FlarkProjectionSegment>? projectionSegments,
+  }) : inlineFacts = inlineFacts == null
+           ? null
+           : List.unmodifiable(inlineFacts),
+       literalSafeEnvelopes = List.unmodifiable(literalSafeEnvelopes),
+       projectionEditCells = List.unmodifiable(projectionEditCells),
+       pendingPresentationPlans = List.unmodifiable(pendingPresentationPlans),
+       projectionSegments = projectionSegments == null
+           ? null
+           : List.unmodifiable(projectionSegments);
 
   final int ordinal;
   final int kind;
@@ -978,18 +996,19 @@ final class FlarkPendingPresentationStep {
 }
 
 final class FlarkViewport {
-  const FlarkViewport({
+  FlarkViewport({
     required this.revision,
     required this.snapshot,
     required this.requestedBytes,
     required this.coveredBytes,
     required this.coveredUtf16,
     required this.certification,
-    required this.rows,
+    required List<FlarkViewportRow> rows,
     required this.neutralSource,
     required this.continuation,
-    this.certificationRanges = const [],
-  });
+    List<FlarkCertificationRange> certificationRanges = const [],
+  }) : rows = List.unmodifiable(rows),
+       certificationRanges = List.unmodifiable(certificationRanges);
 
   final int revision;
   final int snapshot;

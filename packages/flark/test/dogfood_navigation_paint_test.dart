@@ -405,6 +405,52 @@ void main() {
   );
 
   testWidgets(
+    'tap-down from pre-command layout cannot retarget a newer edit',
+    (tester) async {
+      final caret = _paragraphStart;
+      final targetOffset = _paragraphStart + 18;
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(
+          _marked(_productTourSource, caret),
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      final mounted = await _MountedEditorPaintRecorder.mount(tester, probe);
+      try {
+        final target = mounted.debugHandle.geometryForSourceUtf16(targetOffset);
+        expect(target, isNotNull);
+        final gesture = await tester.startGesture(
+          target!.globalPosition,
+          kind: PointerDeviceKind.mouse,
+        );
+
+        await mounted.replaceSelection('x');
+        final expectedSource = _productTourSource.replaceRange(
+          caret,
+          caret,
+          'x',
+        );
+        expect(probe.controller.visibleSource, expectedSource);
+        expect(probe.controller.globalCaretOffset, caret + 1);
+
+        await gesture.up();
+        await _waitForMutationCommitted(tester, probe.controller);
+        await tester.pump();
+
+        expect(probe.controller.globalCaretOffset, caret + 1);
+        expect(probe.controller.visibleSource, expectedSource);
+        expect(probe.controller.resyncCount, 0);
+        expect(probe.controller.lastError, isNull);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
     'Product Tour focus reconnect accepts one current rendered edit',
     (tester) async {
       final caret = _productTourSource.indexOf('editor path') + 3;

@@ -417,6 +417,22 @@ func typeStructuralBursts(
   }
 }
 
+func repeatKeyThenText(
+  _ name: String,
+  count: Int,
+  text: String,
+  intervalMicros: Int,
+  pid: pid_t
+) throws {
+  try repeatKey(
+    name,
+    count: count,
+    intervalMicros: intervalMicros,
+    pid: pid
+  )
+  try typeText(text, intervalMicros: intervalMicros, pid: pid)
+}
+
 func pressKey(_ virtualKey: CGKeyCode, flags: CGEventFlags = []) {
   let down = CGEvent(
     keyboardEventSource: eventSource,
@@ -934,6 +950,13 @@ func taskCheckboxScreenPoint(
 }
 
 var shouldStop = false
+func routedOperation(_ operation: String, _ arguments: [String: Any]) -> String {
+  guard let routeId = arguments["routeId"] as? String, !routeId.isEmpty else {
+    return operation
+  }
+  return "\(operation):\(routeId)"
+}
+
 func handleActuatorRequest(_ line: String) {
   var sequence = 0
   do {
@@ -961,6 +984,25 @@ func handleActuatorRequest(_ line: String) {
         height: try integer(arguments["windowHeight"], "windowHeight")
       )
       response["snapshot"] = try appRequest(operation: "beginObservation")
+    case "resizeWindow":
+      _ = try focusWindow(
+        pid: appPID,
+        width: try integer(arguments["width"], "width"),
+        height: try integer(arguments["height"], "height")
+      )
+      response["snapshot"] = try appRequest(operation: "settle")
+    case "refocusEditor":
+      guard let other = NSRunningApplication.runningApplications(
+        withBundleIdentifier: "com.apple.finder"
+      ).first else {
+        throw ActuatorFailure.message("Finder is unavailable for focus cycling")
+      }
+      other.activate(options: [.activateAllWindows])
+      try waitUntil("dogfood editor focus loss", timeoutSeconds: 4) {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier != appPID
+      }
+      try ensureDogfoodEditorFocus(pid: appPID)
+      response["snapshot"] = try appRequest(operation: "settle")
     case "selectPreset":
       response["snapshot"] = try appRequest(
         operation: "selectPreset",
@@ -1035,7 +1077,7 @@ func handleActuatorRequest(_ line: String) {
       )
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "insertText",
+        operation: routedOperation("insertText", arguments),
         expectedGenerationAdvance: try string(arguments["text"], "text").count
       )
     case "closeSession":
@@ -1054,8 +1096,28 @@ func handleActuatorRequest(_ line: String) {
       )
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "repeatKey",
+        operation: routedOperation("repeatKey", arguments),
         expectedGenerationAdvance: try integer(arguments["count"], "count")
+      )
+    case "repeatKeyThenText":
+      try ensureDogfoodEditorFocus(pid: appPID)
+      let baselineReceipt = try verifyExpectedSelection(arguments)
+      let count = try integer(arguments["count"], "count")
+      let text = try string(arguments["text"], "text")
+      try repeatKeyThenText(
+        try string(arguments["key"], "key"),
+        count: count,
+        text: text,
+        intervalMicros: try integer(
+          arguments["cadenceMicros"],
+          "cadenceMicros"
+        ),
+        pid: appPID
+      )
+      response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
+        after: baselineReceipt,
+        operation: routedOperation("repeatKeyThenText", arguments),
+        expectedGenerationAdvance: count + text.count
       )
     case "structuralBursts":
       try ensureDogfoodEditorFocus(pid: appPID)
@@ -1070,7 +1132,7 @@ func handleActuatorRequest(_ line: String) {
       )
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "structuralBursts",
+        operation: routedOperation("structuralBursts", arguments),
         expectedGenerationAdvance:
           try integer(arguments["count"], "count") * 2
       )
@@ -1102,7 +1164,7 @@ func handleActuatorRequest(_ line: String) {
       }
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "key:\(key)",
+        operation: routedOperation("key:\(key)", arguments),
         expectedGenerationAdvance: expectedGenerationAdvance,
         terminalEventPrefix: terminalPrefix
       )
@@ -1118,7 +1180,7 @@ func handleActuatorRequest(_ line: String) {
       pressCommandShortcut(9)
       response["inputDeliveryAcknowledgement"] = try waitForInputDelivery(
         after: baselineReceipt,
-        operation: "pasteText",
+        operation: routedOperation("pasteText", arguments),
         expectedGenerationAdvance: 1,
         terminalEventPrefix: "completed-paste"
       )

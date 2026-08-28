@@ -272,6 +272,19 @@ final class MacosNativeCanaryDriver {
     ..._expectedSelectionArguments(),
   });
 
+  Future<void> repeatKeyThenType(
+    String key, {
+    required int count,
+    required String text,
+    Duration cadence = Duration.zero,
+  }) => _request('repeatKeyThenText', {
+    'key': key,
+    'count': count,
+    'text': text,
+    'cadenceMicros': cadence.inMicroseconds,
+    ..._expectedSelectionArguments(),
+  });
+
   Future<void> typeStructuralBursts({
     required int count,
     required Duration cadence,
@@ -289,8 +302,23 @@ final class MacosNativeCanaryDriver {
       'expectedExtentUtf16': snapshot['selectionExtentUtf16'],
       'windowWidth': _windowWidth,
       'windowHeight': _windowHeight,
+      'routeId': snapshot['canaryId'],
     };
   }
+
+  Future<MacosNativeCanarySnapshot> resizeWindow({
+    required int width,
+    required int height,
+  }) async {
+    _windowWidth = width;
+    _windowHeight = height;
+    return _snapshot(
+      await _request('resizeWindow', {'width': width, 'height': height}),
+    );
+  }
+
+  Future<MacosNativeCanarySnapshot> refocusEditor() async =>
+      _snapshot(await _request('refocusEditor'));
 
   Future<void> selectSourceRange({
     required int base,

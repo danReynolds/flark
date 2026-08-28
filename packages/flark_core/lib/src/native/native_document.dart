@@ -135,6 +135,7 @@ const _projectionEditResultShellRemoved = 5;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
+const _inlineFactEmptyOwnerDeleteCapability = 0x80;
 const _inlineFactTableAlignmentMask = 0x3;
 const _inlineFactTableHeader = 0x4;
 const _inlineFactTableRowStart = 0x8;
@@ -3587,10 +3588,16 @@ final class FlarkNativeDocument {
       FlarkInlineFactKind.code =>
         record.flags &
                 ~(_inlineFactCodeNormalizeLineEndings |
-                    _inlineFactCodeTrimOneSpace) ==
+                    _inlineFactCodeTrimOneSpace |
+                    _inlineFactEmptyOwnerDeleteCapability) ==
             0,
       FlarkInlineFactKind.tableCell =>
         record.flags & ~_knownInlineFactTableFlags == 0,
+      FlarkInlineFactKind.emphasis ||
+      FlarkInlineFactKind.strong ||
+      FlarkInlineFactKind.strikethrough ||
+      FlarkInlineFactKind.backslashEscape =>
+        record.flags & ~_inlineFactEmptyOwnerDeleteCapability == 0,
       _ => record.flags == 0,
     };
     final replacement = kind == FlarkInlineFactKind.replacement

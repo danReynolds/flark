@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 const _actualPaintFiles = {
   'test/north_star_paint_matrix_test.dart',
   'test/inline_dependency_island_paint_acceptance_test.dart',
+  'test/inline_semantic_editing_test.dart',
 };
 const _allowedEnvironmentKeys = {
   'CARGO_HOME',
@@ -210,6 +211,7 @@ Future<_GateRecipe> _gateRecipe(
       'test',
       'test/north_star_paint_matrix_test.dart',
       'test/inline_dependency_island_paint_acceptance_test.dart',
+      'test/inline_semantic_editing_test.dart',
       '--machine',
       '--concurrency=1',
     ],
@@ -314,6 +316,7 @@ Future<void> _verifyFrozenRecipe(
       'test',
       'test/north_star_paint_matrix_test.dart',
       'test/inline_dependency_island_paint_acceptance_test.dart',
+      'test/inline_semantic_editing_test.dart',
       '--machine',
       '--concurrency=1',
     ],

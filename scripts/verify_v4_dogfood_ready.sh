@@ -41,6 +41,16 @@ if [[ "$frontmost" == "loginwindow" || "$frontmost" == "LoginWindow" ]]; then
   echo 'verify-v4-dogfood-ready: unlock the interactive macOS session first' >&2
   exit 1
 fi
+
+# The headless and certification lanes intentionally run before the attended
+# native/profile lanes. Hold the already-unlocked session awake for that whole
+# interval so an unattended qualification run cannot reach native input at the
+# login window. The guard makes this a single re-exec, and caffeinate releases
+# every assertion when the gate exits.
+if [[ "${FLARK_DOGFOOD_CAFFEINATED:-0}" != "1" ]]; then
+  export FLARK_DOGFOOD_CAFFEINATED=1
+  exec /usr/bin/caffeinate -disu /bin/bash "$0" "$@"
+fi
 mkdir -p "$FRAGMENTS"
 
 echo '==> Active functional gate'

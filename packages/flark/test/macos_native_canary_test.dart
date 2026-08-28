@@ -121,6 +121,46 @@ void main() {
       expect(rapidSuccessor.selectionBaseUtf16, 8);
       expect(rapidSuccessor.selectionExtentUtf16, 8);
 
+      await driver.reset(
+        id: 'exact-return-burst-successor-liveness',
+        source: repeatedReturnSource,
+      );
+      await driver.activateAtUtf16(repeatedReturnSource.length);
+      await driver.repeatKeyThenType('enter', count: 3, text: 'x');
+      final exactRapidSuccessor = await driver.settle();
+      _expectHealthy(exactRapidSuccessor, driver);
+      expect(exactRapidSuccessor.source, 'fff\n\n\n\nx');
+      expect(exactRapidSuccessor.selectionBaseUtf16, 8);
+      expect(exactRapidSuccessor.selectionExtentUtf16, 8);
+
+      for (final backward in [true, false]) {
+        final id = backward
+            ? 'inline-owner-backspace-successor'
+            : 'inline-owner-delete-successor';
+        await driver.reset(id: id, source: 'A *t* Z');
+        await driver.activateAtUtf16(backward ? 4 : 3);
+        await driver.repeatKeyThenType(
+          backward ? 'backspace' : 'delete',
+          count: 1,
+          text: 'x',
+        );
+        final inlineSuccessor = await driver.settle();
+        _expectHealthy(inlineSuccessor, driver);
+        expect(inlineSuccessor.source, 'A *x* Z');
+        expect(inlineSuccessor.selectionBaseUtf16, 4);
+        expect(inlineSuccessor.selectionExtentUtf16, 4);
+        expect(
+          inlineSuccessor.paintedPresentations,
+          everyElement('A x Z'),
+          reason: driver.debugLastReceipt,
+        );
+        expect(
+          inlineSuccessor.paintedStyledTexts,
+          everyElement(contains('emphasis:x')),
+          reason: driver.debugLastReceipt,
+        );
+      }
+
       const structuralSource = 'Before **bold**.\n';
       await driver.reset(
         id: 'structural-burst-liveness',
@@ -220,6 +260,29 @@ void main() {
       final redoUnicodePaste = await driver.settle();
       _expectHealthy(redoUnicodePaste, driver);
       expect(redoUnicodePaste.source, 'alpha βeta 👩‍💻\n');
+
+      const focusResizeSource = 'resize and refocus';
+      await driver.reset(
+        id: 'resize-focus-reconnect',
+        source: focusResizeSource,
+      );
+      await driver.activateAtUtf16(focusResizeSource.length);
+      final compact = await driver.resizeWindow(width: 520, height: 420);
+      _expectHealthy(compact, driver);
+      expect(compact.source, focusResizeSource);
+      expect(compact.selectionExtentUtf16, focusResizeSource.length);
+      final expanded = await driver.resizeWindow(width: 1000, height: 720);
+      _expectHealthy(expanded, driver);
+      expect(expanded.source, focusResizeSource);
+      expect(expanded.selectionExtentUtf16, focusResizeSource.length);
+      final refocused = await driver.refocusEditor();
+      _expectHealthy(refocused, driver);
+      expect(refocused.selectionExtentUtf16, focusResizeSource.length);
+      await driver.typeText('x', cadence: Duration.zero);
+      final afterReconnect = await driver.settle();
+      _expectHealthy(afterReconnect, driver);
+      expect(afterReconnect.source, '${focusResizeSource}x');
+      expect(afterReconnect.selectionExtentUtf16, focusResizeSource.length + 1);
 
       final longSource = List.generate(
         80,
@@ -376,7 +439,50 @@ void main() {
 
       final deliveryAcknowledgements = driver
           .inputDeliveryAcknowledgementsSince(0);
-      expect(deliveryAcknowledgements, hasLength(30));
+      final acknowledgedOperations = deliveryAcknowledgements
+          .map((acknowledgement) => acknowledgement['operation']! as String)
+          .toList(growable: false);
+      expect(
+        acknowledgedOperations,
+        const <String>[
+          'insertText:syntax-key-routing',
+          'key:acuteE:dead-key-composition',
+          'key:enter:return-backspace-routing',
+          'key:enter:return-backspace-routing',
+          'key:backspace:return-backspace-routing',
+          'key:enter:repeated-return-successor-liveness',
+          'key:enter:repeated-return-successor-liveness',
+          'key:enter:repeated-return-successor-liveness',
+          'insertText:repeated-return-successor-liveness',
+          'repeatKey:rapid-return-successor-liveness',
+          'insertText:rapid-return-successor-liveness',
+          'repeatKeyThenText:exact-return-burst-successor-liveness',
+          'repeatKeyThenText:inline-owner-backspace-successor',
+          'repeatKeyThenText:inline-owner-delete-successor',
+          'structuralBursts:structural-burst-liveness',
+          'key:left:arrow-then-type-routing',
+          'key:left:arrow-then-type-routing',
+          'insertText:arrow-then-type-routing',
+          'key:copy:pointer-clipboard-history-routing',
+          'key:cut:pointer-clipboard-history-routing',
+          'key:paste:pointer-clipboard-history-routing',
+          'key:undo:pointer-clipboard-history-routing',
+          'key:undo:pointer-clipboard-history-routing',
+          'key:redo:pointer-clipboard-history-routing',
+          'key:redo:pointer-clipboard-history-routing',
+          'insertText:pointer-clipboard-history-routing',
+          'pasteText:pointer-clipboard-history-routing',
+          'key:undo:pointer-clipboard-history-routing',
+          'key:redo:pointer-clipboard-history-routing',
+          'insertText:resize-focus-reconnect',
+          'insertText:wrapped-caret-stability',
+          'key:enter:wrapped-caret-stability',
+          'insertText:wrapped-caret-stability',
+          'insertText:wrapped-caret-stability',
+        ],
+        reason:
+            'every declared native input route must acknowledge exactly once',
+      );
       for (final acknowledgement in deliveryAcknowledgements) {
         final baselineOrdinal =
             acknowledgement['baselineInputEventOrdinal']! as int;

@@ -15,11 +15,17 @@ void main() {
         (source: 'A *t* Z', caret: 4, backward: true),
         (source: 'A *t* Z', caret: 3, backward: false),
         (source: 'A **t** Z', caret: 5, backward: true),
+        (source: 'A **t** Z', caret: 4, backward: false),
         (source: 'A ~~t~~ Z', caret: 5, backward: true),
+        (source: 'A ~~t~~ Z', caret: 4, backward: false),
         (source: 'A `t` Z', caret: 4, backward: true),
+        (source: 'A `t` Z', caret: 3, backward: false),
         (source: 'A ***t*** Z', caret: 6, backward: true),
+        (source: 'A ***t*** Z', caret: 5, backward: false),
         (source: 'A *e\u{301}* Z', caret: 5, backward: true),
+        (source: 'A *e\u{301}* Z', caret: 3, backward: false),
         (source: r'A \* Z', caret: 4, backward: true),
+        (source: r'A \* Z', caret: 3, backward: false),
       ];
       for (final testCase in cases) {
         final controller = await FlarkEditorController.open(
@@ -55,12 +61,19 @@ void main() {
   );
 
   test(
-    'delete-to-empty remains writable for character and whitespace',
+    'delete-to-empty remains writable for character, batch, and whitespace',
     () async {
-      const cases = <({String inserted, String expected, int caret})>[
-        (inserted: 'x', expected: 'A x Z', caret: 3),
-        (inserted: ' ', expected: 'A   Z', caret: 3),
-      ];
+      const cases =
+          <({String inserted, String source, String presentation, int caret})>[
+            (inserted: 'x', source: 'A *x* Z', presentation: 'A x Z', caret: 4),
+            (
+              inserted: 'xy',
+              source: 'A *xy* Z',
+              presentation: 'A xy Z',
+              caret: 5,
+            ),
+            (inserted: ' ', source: 'A   Z', presentation: 'A   Z', caret: 3),
+          ];
       for (final testCase in cases) {
         final probe = await LiveEditorTransitionProbe.open(
           'A *t¦* Z',
@@ -68,17 +81,16 @@ void main() {
         );
         try {
           probe.pressBackspace();
-          await probe.presentationSettled();
           probe.typeText(testCase.inserted);
           await probe.presentationSettled();
 
-          expect(await probe.controller.readSource(), testCase.expected);
+          expect(await probe.controller.readSource(), testCase.source);
           expect(probe.controller.globalCaretOffset, testCase.caret);
           expect(
             captureControllerSurfaceRows(
               probe.controller,
             ).map((row) => row.text).join(),
-            testCase.expected,
+            testCase.presentation,
           );
           await probe.expectHealthy();
           await probe.expectConvergesWithCleanRebuild();
@@ -86,6 +98,46 @@ void main() {
           await probe.close();
         }
       }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'batched continuation matches sequential typing and syntax exits safely',
+    () async {
+      Future<({String source, int caret, String presentation})> run(
+        List<String> inserts,
+      ) async {
+        final probe = await LiveEditorTransitionProbe.open(
+          'A *t¦* Z',
+          libraryPath: libraryPath!,
+        );
+        try {
+          probe.pressBackspace();
+          for (final insert in inserts) {
+            probe.typeText(insert);
+          }
+          await probe.presentationSettled();
+          return (
+            source: await probe.controller.readSource(),
+            caret: probe.controller.globalCaretOffset,
+            presentation: captureControllerSurfaceRows(
+              probe.controller,
+            ).map((row) => row.text).join(),
+          );
+        } finally {
+          await probe.close();
+        }
+      }
+
+      expect(await run(['xy']), await run(['x', 'y']));
+      expect(
+        await run(['*']),
+        (source: 'A * Z', caret: 3, presentation: 'A * Z'),
+        reason:
+            'Markdown-active punctuation must leave the emptied owner rather '
+            'than being blindly wrapped into a new delimiter pair',
+      );
     },
     skip: libraryPath == null,
   );
@@ -109,6 +161,60 @@ void main() {
         expect(controller.lastError, isNull);
       } finally {
         await controller.close();
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'delete-to-empty intent survives ordered undo and redo',
+    () async {
+      final probe = await LiveEditorTransitionProbe.open(
+        'A *t¦* Z',
+        libraryPath: libraryPath!,
+      );
+      try {
+        probe.pressBackspace();
+        probe.typeText('x');
+        await probe.presentationSettled();
+        await probe.expectSourceAndCaret('A *x¦* Z');
+
+        await probe.undo();
+        await probe.expectSourceAndCaret('A ¦ Z');
+        await probe.undo();
+        await probe.expectSourceAndCaret('A *t¦* Z');
+        await probe.redo();
+        await probe.expectSourceAndCaret('A ¦ Z');
+        await probe.redo();
+        await probe.expectSourceAndCaret('A *x¦* Z');
+        await probe.expectHealthy();
+        await probe.expectConvergesWithCleanRebuild();
+      } finally {
+        await probe.close();
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'undoing the continuation insertion restores the semantic typing intent',
+    () async {
+      final probe = await LiveEditorTransitionProbe.open(
+        'A *t¦* Z',
+        libraryPath: libraryPath!,
+      );
+      try {
+        probe.pressBackspace();
+        probe.typeText('x');
+        await probe.presentationSettled();
+        await probe.undo();
+        await probe.expectSourceAndCaret('A ¦ Z');
+
+        probe.typeText('y');
+        await probe.presentationSettled();
+        await probe.expectSourceAndCaret('A *y¦* Z');
+      } finally {
+        await probe.close();
       }
     },
     skip: libraryPath == null,
@@ -139,51 +245,82 @@ void main() {
   );
 
   testWidgets(
-    'final emphasized grapheme deletion never paints Markdown markers',
+    'final emphasized grapheme deletion stays rendered in both directions',
     (tester) async {
-      final probe = (await tester.runAsync(
-        () => LiveEditorTransitionProbe.open(
-          'A *t¦* Z',
-          libraryPath: libraryPath!,
-        ),
-      ))!;
-      final mounted = await MountedTransitionRecorder.mount(tester, probe);
-      try {
-        await mounted.pressBackspace();
-        await mounted.pumpImmediate();
-        await mounted.pumpPresentationSettled();
-
-        expect(mounted.paints, isNotEmpty);
-        expect(
-          mounted.paints,
-          everyElement(
-            isA<FlarkSurfacePaintObservation>()
-                .having((paint) => paint.presentation, 'presentation', 'A  Z')
-                .having((paint) => paint.caretSourceUtf16, 'caret', 2),
+      for (final backward in [true, false]) {
+        final probe = (await tester.runAsync(
+          () => LiveEditorTransitionProbe.open(
+            backward ? 'A *t¦* Z' : 'A *¦t* Z',
+            libraryPath: libraryPath!,
           ),
-        );
-        expect(await tester.runAsync(probe.controller.readSource), 'A  Z');
-        await tester.runAsync(probe.expectHealthy);
-        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+        ))!;
+        final mounted = await MountedTransitionRecorder.mount(tester, probe);
+        try {
+          if (backward) {
+            await mounted.pressBackspace();
+          } else {
+            await mounted.pressDelete();
+          }
+          await mounted.pumpMutationSettled();
+          expect(mounted.paints, isNotEmpty);
+          expect(
+            mounted.paints,
+            everyElement(
+              isA<FlarkSurfacePaintObservation>()
+                  .having(
+                    (paint) => paint.presentation,
+                    'delete-only presentation',
+                    'A  Z',
+                  )
+                  .having(
+                    (paint) => paint.caretSourceUtf16,
+                    'delete-only caret',
+                    2,
+                  ),
+            ),
+          );
+          expect(
+            mounted.paints.every((paint) => !paint.presentation.contains('*')),
+            isTrue,
+          );
 
-        mounted.paints.clear();
-        await mounted.typeText('x');
-        await mounted.pumpImmediate();
-        await mounted.pumpPresentationSettled();
-        expect(
-          mounted.paints,
-          everyElement(
-            isA<FlarkSurfacePaintObservation>()
-                .having((paint) => paint.presentation, 'presentation', 'A x Z')
-                .having((paint) => paint.caretSourceUtf16, 'caret', 3),
-          ),
-        );
-        expect(await tester.runAsync(probe.controller.readSource), 'A x Z');
-        await tester.runAsync(probe.expectHealthy);
-        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
-      } finally {
-        await mounted.close();
-        await tester.runAsync(probe.close);
+          mounted.paints.clear();
+          await mounted.typeText('x');
+          await mounted.pumpImmediate();
+          await mounted.pumpPresentationSettled();
+          expect(mounted.paints, isNotEmpty);
+          expect(
+            mounted.paints,
+            everyElement(
+              isA<FlarkSurfacePaintObservation>().having(
+                (paint) => paint.presentation,
+                'presentation',
+                anyOf('A  Z', 'A x Z'),
+              ),
+            ),
+          );
+          expect(
+            mounted.paints.every((paint) => !paint.presentation.contains('*')),
+            isTrue,
+          );
+          final finalPaint = mounted.paints.last;
+          expect(finalPaint.presentation, 'A x Z');
+          expect(finalPaint.caretSourceUtf16, 4);
+          expect(
+            finalPaint.rows
+                .expand((row) => row.runs)
+                .where((run) => run.text == 'x')
+                .single
+                .styles,
+            contains(FlarkSurfaceInlineStyle.emphasis),
+          );
+          expect(await tester.runAsync(probe.controller.readSource), 'A *x* Z');
+          await tester.runAsync(probe.expectHealthy);
+          await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+        } finally {
+          await mounted.close();
+          await tester.runAsync(probe.close);
+        }
       }
     },
     skip: libraryPath == null,

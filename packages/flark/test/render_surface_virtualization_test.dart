@@ -134,11 +134,30 @@ void main() {
       final deep = surface.positionForOffset(const Offset(10, 4000));
       expect(shallow, isNotNull);
       expect(deep, isNotNull);
-      expect(deep!.globalUtf16Offset, greaterThan(shallow!.globalUtf16Offset));
+      expect(
+        deep!.belongsTo(
+          surface.layoutPublication,
+          liveInteractionGeneration: controller.interactionGeneration,
+        ),
+        isTrue,
+      );
+      expect(deep.globalUtf16Offset, greaterThan(shallow!.globalUtf16Offset));
+
+      final priorHit = deep;
+      controller.activateRow(controller.rows.first, 5000);
+      expect(
+        priorHit.belongsTo(
+          surface.layoutPublication,
+          liveInteractionGeneration: controller.interactionGeneration,
+        ),
+        isTrue,
+        reason:
+            'selection-only publication churn must not invalidate unchanged '
+            'laid-out source geometry',
+      );
 
       // Activating deep inside the giant line places the caret without fault.
       await tester.runAsync(() async {
-        controller.activateRow(controller.rows.first, 5000);
         await controller.resolveCanonicalSelection();
       });
       await tester.pump();

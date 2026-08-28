@@ -92,9 +92,10 @@ A new helper is justified only when it:
 - exposes a production state that ordinary test APIs cannot observe; or
 - owns one cross-cutting invariant such as canonical/display caret identity.
 
-Source-text tests that assert private class names or implementation spelling are
-not architecture tests. Preserve architecture with typed boundaries, behavior
-tests, static analysis, and review.
+Narrow source checks may reject a known forbidden dependency or parallel state
+slot, but private-name assertions are not substitutes for architecture proof.
+Preserve architecture primarily with typed boundaries, behavior tests, static
+analysis, and review.
 
 ## Native and performance scope
 

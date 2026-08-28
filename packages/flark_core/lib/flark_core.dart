@@ -21,10 +21,14 @@ export 'src/editor_session.dart'
     show
         FlarkCoreAffinity,
         FlarkCoreEditorSession,
+        FlarkCoreEditIntentOutcomeV1,
         FlarkCoreGraphemePolicy,
         FlarkCoreHistoryDropped,
         FlarkCoreHistoryOutcome,
         FlarkCoreHistoryReplayed,
+        FlarkCoreInlineContinuationContextV1,
+        FlarkCoreInlineContinuationRunV1,
+        FlarkCoreInlineContinuationV1,
         FlarkCoreSelectionSnapshot,
         FlarkCoreSemanticActionV1;
 export 'src/models.dart'

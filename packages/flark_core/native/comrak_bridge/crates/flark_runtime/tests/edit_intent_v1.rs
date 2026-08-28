@@ -45,10 +45,22 @@ fn deleting_the_final_rendered_inline_grapheme_removes_its_parser_owned_closure(
             DocumentEditIntentV1::DeleteBackward,
         ),
         (
+            "strong Delete",
+            "A **t** Z",
+            4,
+            DocumentEditIntentV1::DeleteForward,
+        ),
+        (
             "strike Backspace",
             "A ~~t~~ Z",
             5,
             DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "strike Delete",
+            "A ~~t~~ Z",
+            4,
+            DocumentEditIntentV1::DeleteForward,
         ),
         (
             "code Backspace",
@@ -57,10 +69,22 @@ fn deleting_the_final_rendered_inline_grapheme_removes_its_parser_owned_closure(
             DocumentEditIntentV1::DeleteBackward,
         ),
         (
+            "code Delete",
+            "A `t` Z",
+            3,
+            DocumentEditIntentV1::DeleteForward,
+        ),
+        (
             "nested Backspace",
             "A ***t*** Z",
             6,
             DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "nested Delete",
+            "A ***t*** Z",
+            5,
+            DocumentEditIntentV1::DeleteForward,
         ),
         (
             "extended grapheme Backspace",
@@ -69,10 +93,22 @@ fn deleting_the_final_rendered_inline_grapheme_removes_its_parser_owned_closure(
             DocumentEditIntentV1::DeleteBackward,
         ),
         (
+            "extended grapheme Delete",
+            "A *e\u{301}* Z",
+            3,
+            DocumentEditIntentV1::DeleteForward,
+        ),
+        (
             "escaped literal Backspace",
             "A \\* Z",
             4,
             DocumentEditIntentV1::DeleteBackward,
+        ),
+        (
+            "escaped literal Delete",
+            "A \\* Z",
+            3,
+            DocumentEditIntentV1::DeleteForward,
         ),
     ];
 
@@ -91,6 +127,21 @@ fn deleting_the_final_rendered_inline_grapheme_removes_its_parser_owned_closure(
         assert_eq!(source(&document), "A  Z", "{label}");
         document.close().expect(label);
     }
+}
+
+#[test]
+fn inline_delete_to_empty_never_partially_removes_a_link_owner() {
+    let mut document = DocumentSession::begin("A [*t*](url) Z").expect("begin nested link");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 5, false)
+        .expect("resolve link-owned emphasis Backspace");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::NotApplicable
+    );
+    assert_eq!(source(&document), "A [*t*](url) Z");
+    document.close().expect("close nested link");
 }
 
 #[test]

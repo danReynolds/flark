@@ -789,6 +789,15 @@ final class LiveEditorTransitionProbe {
     return sample;
   }
 
+  Future<void> mutationSettled() async {
+    await controller.debugWaitForMutationSettled();
+    // A live TextInputConnection receives the controller's authoritative
+    // post-command window before the user's next key. Keep the probe's
+    // simulated platform shadow at that same boundary when a scenario
+    // deliberately pauses between actions.
+    _platformValue = controller.inputValue;
+  }
+
   Future<void> expectSourceAndCaret(String marked) async {
     final expected = MarkedSource.parse(marked);
     await controller.debugWaitForMutationSettled();
@@ -919,6 +928,11 @@ final class MountedTransitionRecorder {
   }
 
   Future<void> pumpImmediate() => tester.pump();
+
+  Future<void> pumpMutationSettled() async {
+    await tester.runAsync(probe.mutationSettled);
+    await tester.pump();
+  }
 
   Future<void> pumpPresentationSettled() async {
     await tester.runAsync(probe.presentationSettled);

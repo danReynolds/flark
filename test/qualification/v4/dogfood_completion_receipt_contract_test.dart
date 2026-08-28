@@ -352,6 +352,7 @@ final class _CompletionFixture {
     for (final path in const [
       'packages/flark/test/north_star_paint_matrix_test.dart',
       'packages/flark/test/inline_dependency_island_paint_acceptance_test.dart',
+      'packages/flark/test/inline_semantic_editing_test.dart',
     ]) {
       File('${repository.path}/$path')
         ..createSync(recursive: true)

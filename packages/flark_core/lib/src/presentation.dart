@@ -84,28 +84,30 @@ final class FlarkCoreCommittedPresentationGapV1 {
 
 /// The parser-owned function of one row in a temporary structural lineage.
 ///
-/// A block separator remains source-owned while its following successor is
-/// empty, but must stop painting once that successor contains text. Keeping
-/// that distinction typed avoids asking the Flutter adapter to infer
-/// Markdown ownership from an empty row's shape.
+/// A transient block separator remains source-owned while its following
+/// successor is empty, but stops painting once that successor contains text.
+/// A visible blank separator represents an additional physical line ending
+/// and remains painted. Keeping that distinction typed avoids asking a
+/// frontend to reinterpret source geometry or Markdown ownership.
 enum FlarkCoreCommittedPresentationSurfaceRole {
   content,
   blockSeparator,
+  visibleBlankSeparator,
   editableSuccessor,
 }
 
 /// Receipt-backed surface assembled only from source-mapped runs that remain
 /// valid across the committed splice.
 final class FlarkCoreCommittedPresentationSurfaceV1 {
-  const FlarkCoreCommittedPresentationSurfaceV1({
+  FlarkCoreCommittedPresentationSurfaceV1({
     required this.rowOrdinal,
     required this.sourceUtf16,
     required this.presentation,
     this.removedRowOrdinal,
     this.projectionCurrent = false,
-    this.projectionEditCells = const [],
+    List<FlarkProjectionEditCell> projectionEditCells = const [],
     this.role = FlarkCoreCommittedPresentationSurfaceRole.content,
-  });
+  }) : projectionEditCells = List.unmodifiable(projectionEditCells);
 
   final int rowOrdinal;
   final FlarkSourceRange sourceUtf16;
@@ -796,6 +798,11 @@ FlarkCoreCommittedPresentationTransitionV1? _splitProvenParagraph(
   final successorSource = FlarkSourceRange(successorStart, successorStart);
   final neutralSource = FlarkSourceRange(predecessorSource.end, successorStart);
   if (neutralSource.length == 0) return null;
+  // A two-ending split assigns its first ending to the predecessor. A split
+  // before source that already follows the visible run does the same. The
+  // neutral ending is therefore an additional, visibly blank row.
+  final predecessorOwnsLineEndingAfterSplice =
+      endingLength > 0 || receipt.baseUtf16Start < row.sourceUtf16.end;
   final cell = FlarkProjectionEditCell(
     matcher: FlarkProjectionEditMatcher.asciiLiteralSpliceInLiteral,
     affectedBytes: FlarkSourceRange(
@@ -838,7 +845,9 @@ FlarkCoreCommittedPresentationTransitionV1? _splitProvenParagraph(
         rowOrdinal: row.ordinal,
         sourceUtf16: neutralSource,
         projectionCurrent: true,
-        role: FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+        role: predecessorOwnsLineEndingAfterSplice
+            ? FlarkCoreCommittedPresentationSurfaceRole.visibleBlankSeparator
+            : FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
         presentation: FlarkCorePresentationRow(
           sourceUtf16: neutralSource,
           leadingText: '',
@@ -1162,7 +1171,11 @@ FlarkCoreCommittedPresentationTransitionV1? _splitProvenEmbeddedPlainLine(
         rowOrdinal: row.ordinal,
         sourceUtf16: neutralSource,
         projectionCurrent: true,
-        role: FlarkCoreCommittedPresentationSurfaceRole.blockSeparator,
+        // This split is inside an existing physical line and its successor
+        // already contains visible text. The inserted line ending therefore
+        // represents a durable blank line, not the transient separator owned
+        // by an empty editable successor.
+        role: FlarkCoreCommittedPresentationSurfaceRole.visibleBlankSeparator,
         presentation: FlarkCorePresentationRow(
           sourceUtf16: neutralSource,
           leadingText: '',

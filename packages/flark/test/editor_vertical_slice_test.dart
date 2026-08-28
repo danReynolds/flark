@@ -1445,6 +1445,7 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       const source = 'one **two** three\n';
+      final inputEvents = <String>[];
       final controller = (await tester.runAsync(
         () => FlarkEditorController.open(source, libraryPath: libraryPath!),
       ))!;
@@ -1457,7 +1458,13 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              autofocus: true,
+              debugInputEventObserver: inputEvents.add,
+            ),
+          ),
         ),
       );
       await tester.pump();
@@ -1507,6 +1514,7 @@ void main() {
       await _pumpUntil(
         tester,
         () => controller.canonicalSelectionGeneration > generation,
+        reason: 'inputEvents=$inputEvents',
       );
       expect(controller.globalCaretOffset, 3);
 
@@ -2645,7 +2653,11 @@ Future<void> _pressKeyAndWait(
   );
 }
 
-Future<void> _pumpUntil(WidgetTester tester, bool Function() predicate) async {
+Future<void> _pumpUntil(
+  WidgetTester tester,
+  bool Function() predicate, {
+  String? reason,
+}) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (!predicate() && DateTime.now().isBefore(deadline)) {
     // Native/isolate replies arrive in real time; controller continuations
@@ -2656,5 +2668,5 @@ Future<void> _pumpUntil(WidgetTester tester, bool Function() predicate) async {
     );
     await tester.pump(const Duration(milliseconds: 1));
   }
-  expect(predicate(), isTrue);
+  expect(predicate(), isTrue, reason: reason);
 }

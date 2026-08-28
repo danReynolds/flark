@@ -589,6 +589,91 @@ void main() {
       );
 
       test(
+        'semantic continuation is recorded atomically with selection history',
+        () async {
+          const source = 'A *t* Z';
+          await open(source);
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await document.pumpUntilReady();
+          await session.setSelectionUtf16(4, 4);
+
+          final outcome = await session.applyEditIntentOutcomeV1(
+            FlarkCoreEditIntentV1.deleteBackward,
+            compositionActive: false,
+            inlineContinuationContext: FlarkCoreInlineContinuationContextV1(
+              revision: document.revision,
+              sourceUtf16Start: 0,
+              source: source,
+              runs: const [
+                FlarkCoreInlineContinuationRunV1(
+                  text: 'A ',
+                  sourceUtf16Start: 0,
+                  sourceUtf16End: 2,
+                  semanticallyStyled: false,
+                ),
+                FlarkCoreInlineContinuationRunV1(
+                  text: 't',
+                  sourceUtf16Start: 3,
+                  sourceUtf16End: 4,
+                  semanticallyStyled: true,
+                ),
+                FlarkCoreInlineContinuationRunV1(
+                  text: ' Z',
+                  sourceUtf16Start: 5,
+                  sourceUtf16End: 7,
+                  semanticallyStyled: false,
+                ),
+              ],
+            ),
+          );
+
+          final continuation = outcome.inlineContinuation;
+          expect(continuation, isNotNull);
+          expect(continuation!.revision, outcome.receipt.resultRevision);
+          expect(continuation.caretUtf16, 2);
+          expect(continuation.prefix, '*');
+          expect(continuation.suffix, '*');
+          expect(continuation.acceptsReplacement('xy'), isTrue);
+          expect(continuation.acceptsReplacement('é'), isTrue);
+          expect(continuation.acceptsReplacement('*'), isFalse);
+          expect(continuation.acceptsReplacement('`'), isFalse);
+          expect(continuation.acceptsReplacement(' '), isFalse);
+          expect(
+            (await session.resolveSelection())!.inlineContinuation,
+            same(continuation),
+          );
+
+          final undone = await session.undo();
+          expect(undone, isA<FlarkCoreHistoryReplayed>());
+          expect(
+            (undone! as FlarkCoreHistoryReplayed)
+                .restoreSelection
+                .inlineContinuation,
+            isNull,
+          );
+          expect(await document.readSource(), source);
+
+          final redone = await session.redo();
+          expect(redone, isA<FlarkCoreHistoryReplayed>());
+          final restored = (redone! as FlarkCoreHistoryReplayed)
+              .restoreSelection
+              .inlineContinuation;
+          expect(restored, isNotNull);
+          expect(restored!.revision, document.revision);
+          expect(restored.caretUtf16, 2);
+          expect(restored.prefix, '*');
+          expect(restored.suffix, '*');
+          expect(
+            (await session.resolveSelection())!.inlineContinuation?.revision,
+            document.revision,
+          );
+        },
+      );
+
+      test(
         'semantic Return commits from canonical anchors and remains one undo unit',
         () async {
           await open('- one\n- two\n');

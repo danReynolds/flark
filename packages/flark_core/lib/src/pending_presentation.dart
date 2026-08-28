@@ -286,20 +286,31 @@ final class FlarkPendingStructuralSurface {
 /// from affecting certified layout while still protecting hidden successor
 /// syntax from a Delete issued at the shared source offset.
 final class FlarkPendingCaretBoundary {
-  const FlarkPendingCaretBoundary({
+  FlarkPendingCaretBoundary({
     required this.rowOrdinal,
     required this.rowEndUtf16,
-  });
+    this.authorizedContentUtf16,
+    List<FlarkProjectionEditCell> projectionEditCells = const [],
+  }) : projectionEditCells = List.unmodifiable(projectionEditCells);
 
   factory FlarkPendingCaretBoundary.fromGap(
-    FlarkCoreCommittedPresentationGapV1 gap,
-  ) => FlarkPendingCaretBoundary(
+    FlarkCoreCommittedPresentationGapV1 gap, {
+    FlarkPendingCaretBoundary? editAuthority,
+  }) => FlarkPendingCaretBoundary(
     rowOrdinal: gap.rowOrdinal,
     rowEndUtf16: gap.rowEndUtf16,
+    authorizedContentUtf16: editAuthority?.authorizedContentUtf16,
+    projectionEditCells:
+        editAuthority?.projectionEditCells ?? const <FlarkProjectionEditCell>[],
   );
 
   final int rowOrdinal;
   final int rowEndUtf16;
+
+  /// Parser-authored first-edit authority retained from the structural
+  /// successor after certified rows supersede its temporary visual surface.
+  final FlarkSourceRange? authorizedContentUtf16;
+  final List<FlarkProjectionEditCell> projectionEditCells;
 }
 
 /// The only host-visible pending-presentation authority state.

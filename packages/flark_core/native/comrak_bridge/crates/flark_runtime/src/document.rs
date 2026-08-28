@@ -307,6 +307,33 @@ pub const DOCUMENT_TABLE_CELL_ALIGNMENT_MASK: u8 = 0x03;
 pub const DOCUMENT_TABLE_CELL_HEADER: u8 = 1 << 2;
 pub const DOCUMENT_TABLE_CELL_ROW_START: u8 = 1 << 3;
 pub const DOCUMENT_TABLE_CELL_AUTOCOMPLETED: u8 = 1 << 4;
+/// The parser has proved that a Backspace at `content_range.end` or Delete at
+/// `content_range.start` may enter the empty-inline-owner semantic lane. Rust
+/// still revalidates the exact command against the current revision before it
+/// commits; this bit only lets adapters avoid speculatively routing ordinary
+/// multi-grapheme deletion through that asynchronous lane.
+pub const DOCUMENT_INLINE_FACT_EMPTY_OWNER_DELETE_CAPABILITY: u8 = 1 << 7;
+
+fn inline_fact_supports_empty_owner_delete(kind: DocumentInlineFactKind) -> bool {
+    matches!(
+        kind,
+        DocumentInlineFactKind::Emphasis
+            | DocumentInlineFactKind::Strong
+            | DocumentInlineFactKind::Code
+            | DocumentInlineFactKind::Strikethrough
+            | DocumentInlineFactKind::BackslashEscape
+    )
+}
+
+fn inline_fact_encloses_empty_owner_delete(kind: DocumentInlineFactKind) -> bool {
+    matches!(
+        kind,
+        DocumentInlineFactKind::DirectLink
+            | DocumentInlineFactKind::ReferenceLink
+            | DocumentInlineFactKind::DirectImage
+            | DocumentInlineFactKind::ReferenceImage
+    )
+}
 /// Parser-cooked visible text replacing one exact source range.
 ///
 /// The selected grammar currently needs at most two Unicode scalar values for
@@ -1794,18 +1821,11 @@ impl DocumentSession {
             return None;
         }
         let facts = facts?;
-        let supports_owner = |kind: DocumentInlineFactKind| {
-            matches!(
-                kind,
-                DocumentInlineFactKind::Emphasis
-                    | DocumentInlineFactKind::Strong
-                    | DocumentInlineFactKind::Code
-                    | DocumentInlineFactKind::Strikethrough
-                    | DocumentInlineFactKind::BackslashEscape
-            )
-        };
         let mut closures = Vec::new();
-        for fact in facts.iter().filter(|fact| supports_owner(fact.kind)) {
+        for fact in facts
+            .iter()
+            .filter(|fact| inline_fact_supports_empty_owner_delete(fact.kind))
+        {
             let at_visible_boundary = match intent {
                 DocumentEditIntentV1::DeleteBackward => {
                     usize::try_from(fact.content_range.end).ok() == Some(selection_byte)
@@ -1828,8 +1848,19 @@ impl DocumentSession {
             let mut source = fact.source_range.clone();
             let mut source_utf16 = fact.source_utf16_range.clone();
             loop {
+                if facts.iter().any(|candidate| {
+                    inline_fact_encloses_empty_owner_delete(candidate.kind)
+                        && candidate.content_range == source
+                        && candidate.content_utf16_range == source_utf16
+                }) {
+                    // A link or object owns the inline closure. D0 does not
+                    // define empty-object editing, so do not partially remove
+                    // a nested style and leave source such as `[](url)`.
+                    source = 0..0;
+                    break;
+                }
                 let parent = facts.iter().find(|candidate| {
-                    supports_owner(candidate.kind)
+                    inline_fact_supports_empty_owner_delete(candidate.kind)
                         && candidate.content_range == source
                         && candidate.content_utf16_range == source_utf16
                 });
@@ -1841,6 +1872,9 @@ impl DocumentSession {
                 }
                 source = parent.source_range.clone();
                 source_utf16 = parent.source_utf16_range.clone();
+            }
+            if source.is_empty() {
+                continue;
             }
             closures.push((source, source_utf16));
         }
@@ -7358,7 +7392,75 @@ fn map_document_inline_facts(
     if mapped.len() > VIEWPORT_INLINE_FACTS_PER_ROW_MAX {
         return Ok(None);
     }
+    mark_empty_inline_owner_delete_capabilities(&mut mapped, inline_source.start, &inline_bytes)?;
     Ok(Some(mapped))
+}
+
+fn mark_empty_inline_owner_delete_capabilities(
+    facts: &mut [DocumentInlineFact],
+    inline_start: u32,
+    inline_bytes: &[u8],
+) -> Result<(), DocumentSessionError> {
+    let inline_start = u64::from(inline_start);
+    let eligible = facts
+        .iter()
+        .map(|fact| {
+            if !inline_fact_supports_empty_owner_delete(fact.kind) {
+                return Ok(false);
+            }
+            let start = usize::try_from(
+                fact.content_range
+                    .start
+                    .checked_sub(inline_start)
+                    .ok_or(DocumentSessionError::Faulted)?,
+            )
+            .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+            let end = usize::try_from(
+                fact.content_range
+                    .end
+                    .checked_sub(inline_start)
+                    .ok_or(DocumentSessionError::Faulted)?,
+            )
+            .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+            let text = std::str::from_utf8(
+                inline_bytes
+                    .get(start..end)
+                    .ok_or(DocumentSessionError::RangeOutOfBounds)?,
+            )
+            .map_err(|_| DocumentSessionError::Faulted)?;
+            if text.graphemes(true).count() != 1 {
+                return Ok(false);
+            }
+
+            let mut closure = fact.source_range.clone();
+            loop {
+                if facts.iter().any(|candidate| {
+                    inline_fact_encloses_empty_owner_delete(candidate.kind)
+                        && candidate.content_range == closure
+                }) {
+                    return Ok(false);
+                }
+                let parent = facts.iter().find(|candidate| {
+                    inline_fact_supports_empty_owner_delete(candidate.kind)
+                        && candidate.content_range == closure
+                });
+                let Some(parent) = parent else {
+                    break;
+                };
+                if parent.source_range == closure {
+                    return Err(DocumentSessionError::Faulted);
+                }
+                closure = parent.source_range.clone();
+            }
+            Ok(true)
+        })
+        .collect::<Result<Vec<_>, DocumentSessionError>>()?;
+    for (fact, eligible) in facts.iter_mut().zip(eligible) {
+        if eligible {
+            fact.flags |= DOCUMENT_INLINE_FACT_EMPTY_OWNER_DELETE_CAPABILITY;
+        }
+    }
+    Ok(())
 }
 
 fn document_literal_safe_envelopes(

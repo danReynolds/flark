@@ -260,6 +260,15 @@ final class _FlarkEditorState extends State<FlarkEditor>
   RenderFlarkSurface? get _surface =>
       _surfaceKey.currentContext?.findRenderObject() as RenderFlarkSurface?;
 
+  bool _hitBelongsToCurrentInteraction(FlarkSurfaceHit hit) {
+    final surface = _surface;
+    return surface != null &&
+        hit.belongsTo(
+          surface.layoutPublication,
+          liveInteractionGeneration: widget.controller.interactionGeneration,
+        );
+  }
+
   void _attachDebugHandle() {
     if (mounted) widget.debugHandle?._attach(_surface);
   }
@@ -271,6 +280,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   void _activateHit(FlarkSurfaceHit hit, {bool extend = false}) {
+    if (!_hitBelongsToCurrentInteraction(hit)) return;
     _preferredVerticalNavigationX = null;
     if (extend) {
       widget.controller.extendSelectionTo(
@@ -317,6 +327,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   void _adoptNavigationHit(FlarkSurfaceHit hit, {required bool modify}) {
+    if (!_hitBelongsToCurrentInteraction(hit)) return;
     if (!modify) {
       _activateHit(hit);
       return;
@@ -611,7 +622,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
   void _handleTap() {
     final hit = _pendingTapHit;
     _pendingTapHit = null;
-    if (hit == null) return;
+    if (hit == null || !_hitBelongsToCurrentInteraction(hit)) {
+      return;
+    }
     if (hit.action == null) {
       _activateHit(hit);
       return;
@@ -834,60 +847,60 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   Widget build(BuildContext context) {
-    final editor = CallbackShortcuts(
-      bindings: _desktopShortcutBindings,
-      child: Focus(
-        focusNode: _focusNode,
-        onKeyEvent: (node, event) {
-          widget.debugInputEventObserver?.call(
-            'key:${event.runtimeType}:${event.logicalKey.keyLabel}'
-            ':meta=${HardwareKeyboard.instance.isMetaPressed}'
-            ':control=${HardwareKeyboard.instance.isControlPressed}'
-            ':shift=${HardwareKeyboard.instance.isShiftPressed}',
-          );
-          if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
-              event.logicalKey == LogicalKeyboardKey.tab &&
-              !HardwareKeyboard.instance.isMetaPressed &&
-              !HardwareKeyboard.instance.isControlPressed &&
-              !HardwareKeyboard.instance.isAltPressed) {
-            if (_handleTab(reverse: HardwareKeyboard.instance.isShiftPressed)) {
-              return KeyEventResult.handled;
-            }
+    final editor = Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
+        widget.debugInputEventObserver?.call(
+          'key:${event.runtimeType}:${event.logicalKey.keyLabel}'
+          ':meta=${HardwareKeyboard.instance.isMetaPressed}'
+          ':control=${HardwareKeyboard.instance.isControlPressed}'
+          ':alt=${HardwareKeyboard.instance.isAltPressed}'
+          ':shift=${HardwareKeyboard.instance.isShiftPressed}',
+        );
+        if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
+            event.logicalKey == LogicalKeyboardKey.tab &&
+            !HardwareKeyboard.instance.isMetaPressed &&
+            !HardwareKeyboard.instance.isControlPressed &&
+            !HardwareKeyboard.instance.isAltPressed) {
+          if (_handleTab(reverse: HardwareKeyboard.instance.isShiftPressed)) {
+            return KeyEventResult.handled;
           }
-          return KeyEventResult.ignored;
-        },
-        child: MouseRegion(
-          cursor: SystemMouseCursors.text,
-          child: Listener(
-            onPointerSignal: (event) {
-              if (event is PointerScrollEvent) {
-                _surface?.scrollBy(event.scrollDelta.dy);
-              }
-            },
-            onPointerPanZoomUpdate: (event) {
-              _surface?.scrollBy(-event.localPanDelta.dy);
-            },
-            child: RawGestureDetector(
-              behavior: HitTestBehavior.opaque,
-              gestures: _gestureRecognizers,
-              child: FlarkRenderSurfaceWidget(
-                key: _surfaceKey,
-                controller: widget.controller,
-                textStyle: widget.textStyle,
-                padding: widget.padding,
-                caretColor: widget.caretColor,
-                selectionColor: widget.selectionColor,
-                includeEditingState: true,
-                semanticsActions: FlarkSurfaceSemanticsActions(
-                  onSetSelection: _setSemanticsSelection,
-                  onMoveCursor: _moveSemanticsCursor,
-                  onCopy: () => unawaited(_copySelection()),
-                  onCut: () => unawaited(_cutSelection()),
-                  onPaste: () => unawaited(_pasteClipboard()),
-                  onShowToolbar: _showToolbar,
-                ),
-                debugPaintObserver: widget.debugPaintObserver,
+        }
+        return _invokeDesktopShortcuts(event)
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.text,
+        child: Listener(
+          onPointerSignal: (event) {
+            if (event is PointerScrollEvent) {
+              _surface?.scrollBy(event.scrollDelta.dy);
+            }
+          },
+          onPointerPanZoomUpdate: (event) {
+            _surface?.scrollBy(-event.localPanDelta.dy);
+          },
+          child: RawGestureDetector(
+            behavior: HitTestBehavior.opaque,
+            gestures: _gestureRecognizers,
+            child: FlarkRenderSurfaceWidget(
+              key: _surfaceKey,
+              controller: widget.controller,
+              textStyle: widget.textStyle,
+              padding: widget.padding,
+              caretColor: widget.caretColor,
+              selectionColor: widget.selectionColor,
+              includeEditingState: true,
+              semanticsActions: FlarkSurfaceSemanticsActions(
+                onSetSelection: _setSemanticsSelection,
+                onMoveCursor: _moveSemanticsCursor,
+                onCopy: () => unawaited(_copySelection()),
+                onCut: () => unawaited(_cutSelection()),
+                onPaste: () => unawaited(_pasteClipboard()),
+                onShowToolbar: _showToolbar,
               ),
+              debugPaintObserver: widget.debugPaintObserver,
             ),
           ),
         ),
@@ -905,6 +918,16 @@ final class _FlarkEditorState extends State<FlarkEditor>
     TargetPlatform.iOS || TargetPlatform.macOS => true,
     _ => false,
   };
+
+  bool _invokeDesktopShortcuts(KeyEvent event) {
+    var handled = false;
+    for (final binding in _desktopShortcutBindings.entries) {
+      if (!binding.key.accepts(event, HardwareKeyboard.instance)) continue;
+      binding.value();
+      handled = true;
+    }
+    return handled;
+  }
 
   Map<ShortcutActivator, VoidCallback> get _desktopShortcutBindings => {
     SingleActivator(LogicalKeyboardKey.arrowLeft): () =>

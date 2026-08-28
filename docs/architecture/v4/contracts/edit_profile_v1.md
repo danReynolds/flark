@@ -1,7 +1,7 @@
 # Rendered editing behavior
 
-**Profile:** `flark-edit-v1`  
-**Status:** draft product contract; implementation coverage is incomplete  
+**Profile:** `flark-edit-v1`
+**Status:** draft product contract; implementation coverage is incomplete
 **Product goal:** [Flark North Star](../../../../NORTH_STAR.md)
 
 ## Purpose
@@ -82,8 +82,8 @@ Code, or another supported inline owner removes that owner from committed
 source. Empty delimiters must not remain visible as literal markers.
 
 The caret lands at the visible deletion point and the editor remains writable.
-The next ordinary character may recreate the previous semantic context when
-the command began inside that context; ordinary whitespace exits it. Escaped or
+The next ordinary character recreates the previous semantic context when the
+command began inside that context; ordinary whitespace exits it. Escaped or
 otherwise literal delimiters remain literal and are deleted as visible
 characters.
 
