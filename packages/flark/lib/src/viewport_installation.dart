@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flark/flark.dart';
+import 'models.dart';
 
 /// Pure decision for atomically adopting one queried viewport.
 ///

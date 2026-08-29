@@ -73,6 +73,14 @@ export 'src/editor_coordinator.dart'
         FlarkPublicationAwaitingCertification,
         FlarkPublicationIdle,
         FlarkPublicationPhase;
+export 'src/optimistic_range_map.dart'
+    show FlarkOptimisticRangeMap, FlarkOptimisticViewportEdit;
+export 'src/viewport_installation.dart' show FlarkViewportInstallationPlan;
+export 'src/viewport_navigation.dart'
+    show
+        FlarkViewportNavigationState,
+        FlarkViewportPageAnchor,
+        FlarkViewportQueryPage;
 export 'src/projection_continuity.dart'
     show
         FlarkPendingDependencyAuthority,

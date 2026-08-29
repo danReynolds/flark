@@ -18,8 +18,8 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
   |-- FlarkInputTransactionState (callback and provisional input lineage)
   |-- FlarkSurfaceProjector (pure source-to-visible publication)
-  |-- FlarkViewportInstallationPlan (pure viewport adoption decision)
-  |-- FlarkViewportNavigationState (page path and refresh origin)
+  |-- FlarkViewportInstallationPlan (`flark` viewport adoption decision)
+  |-- FlarkViewportNavigationState (`flark` page path and refresh origin)
   `-- flark (source, selection, history, Markdown, edit authority)
 ```
 
@@ -42,8 +42,8 @@ permission to preserve the controller's existing method graph.
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
 | Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Visible rows, marker hiding, styles, source/display mapping, selection projection | Surface projector | Documents, timers, queues, or callbacks |
-| Whether a viewport result can atomically replace or certify the current surface | Viewport installation plan | Mutation or asynchronous work |
-| Ordered page path, current page index, and retained refresh origin | Viewport navigation state | Native queries, continuation lifetime, rows, input restoration, or publication |
+| Whether a viewport result can atomically replace or certify the current surface | Viewport installation plan in `flark` | Mutation or asynchronous work |
+| Ordered page path, current page index, and retained refresh origin | Viewport navigation state in `flark` | Native queries, continuation lifetime, rows, input restoration, or publication |
 | Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
 
 ## Rules that prevent the bug classes we have seen
@@ -81,8 +81,9 @@ be extracted by authority, not by file length:
   pending presentation, and asynchronous lineage are now portable, but some
   effect-specific coordination remains in the facade;
 - viewport query/restore orchestration should be split only after its page-path
-  state (now centralized) and surface/input handoff can be expressed as narrow
-  outcomes without controller callbacks; and
+  state and adoption rules (now centralized and tested in `flark`) can join
+  native queries to the surface/input handoff through narrow outcomes without
+  controller callbacks; and
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 

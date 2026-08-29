@@ -1,7 +1,7 @@
 import 'dart:collection';
 import 'dart:math' as math;
 
-import 'package:flark/flark.dart';
+import 'models.dart';
 
 final class FlarkOptimisticViewportEdit {
   const FlarkOptimisticViewportEdit({

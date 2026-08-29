@@ -131,6 +131,10 @@ the renderer consumes a captured snapshot; Core and Flutter suites pass.
 - Migrate literal edits, semantic edits, history, selection, and viewport
   commands onto the same command/receipt cycle.
 
+Portable viewport page history, optimistic range mapping, and atomic viewport
+adoption decisions live in `flark`; Flutter retains only the query-to-input and
+query-to-render handoff until those effects have narrow typed outcomes.
+
 Review gate: each migration removes state and branches from the Flutter
 controller, adds direct coordinator tests, and preserves observable behavior.
 A helper that calls back into the controller does not qualify.

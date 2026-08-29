@@ -1,8 +1,22 @@
 import 'dart:convert';
 
-import 'package:flark/flark.dart';
+import 'models.dart';
 
-import 'editor_transactions.dart';
+final class FlarkViewportPageAnchor {
+  const FlarkViewportPageAnchor({required this.byte, required this.utf16});
+
+  static const zero = FlarkViewportPageAnchor(byte: 0, utf16: 0);
+
+  final int byte;
+  final int utf16;
+}
+
+final class FlarkViewportQueryPage {
+  const FlarkViewportQueryPage({required this.viewport, required this.anchor});
+
+  final FlarkViewport viewport;
+  final FlarkViewportPageAnchor anchor;
+}
 
 /// Owns the ordered page path and retained refresh origin for one viewport.
 ///

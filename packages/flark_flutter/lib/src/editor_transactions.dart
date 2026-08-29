@@ -49,22 +49,6 @@ final class FlarkQueuedMutation extends FlarkMutationAcceptance {
   bool get publishOptimistically => publication.publishesOptimistically;
 }
 
-final class FlarkViewportPageAnchor {
-  const FlarkViewportPageAnchor({required this.byte, required this.utf16});
-
-  static const zero = FlarkViewportPageAnchor(byte: 0, utf16: 0);
-
-  final int byte;
-  final int utf16;
-}
-
-final class FlarkViewportQueryPage {
-  const FlarkViewportQueryPage({required this.viewport, required this.anchor});
-
-  final FlarkViewport viewport;
-  final FlarkViewportPageAnchor anchor;
-}
-
 final class FlarkEditorSelectionSnapshot {
   const FlarkEditorSelectionSnapshot(
     this.selection,

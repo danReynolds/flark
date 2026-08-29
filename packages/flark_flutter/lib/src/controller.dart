@@ -12,12 +12,9 @@ import 'editor_transactions.dart';
 import 'input_transaction_state.dart';
 import 'input_window.dart';
 import 'input_reconciliation.dart';
-import 'optimistic_range_map.dart';
 import 'platform_input_bridge.dart';
 import 'surface_projection.dart';
 import 'surface_projector.dart';
-import 'viewport_installation.dart';
-import 'viewport_navigation_state.dart';
 
 export 'editor_performance.dart'
     show

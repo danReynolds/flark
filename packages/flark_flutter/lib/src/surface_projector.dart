@@ -4,7 +4,6 @@ import 'package:flark/flark.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'optimistic_range_map.dart';
 import 'surface_projection.dart';
 
 /// Immutable inputs for constructing one controller surface publication.
