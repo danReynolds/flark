@@ -9,6 +9,7 @@ import 'package:flark/src/optimistic_range_map.dart';
 import 'package:flark/src/platform_input_bridge.dart';
 import 'package:flark/src/surface_projector.dart';
 import 'package:flark/src/viewport_installation.dart';
+import 'package:flark/src/viewport_navigation_state.dart';
 import 'package:flark_core/flark_core.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -452,6 +453,171 @@ void main() {
       expect(plan.retainsExistingSurface, isTrue);
       expect(plan.installsFreshRows, isFalse);
       expect(plan.installsCertifiedSurface, isFalse);
+    });
+  });
+
+  group('viewport navigation state', () {
+    const pageA = FlarkViewportPageAnchor(byte: 100, utf16: 80);
+    const pageB = FlarkViewportPageAnchor(byte: 220, utf16: 170);
+    const replacementB = FlarkViewportPageAnchor(byte: 210, utf16: 165);
+
+    FlarkViewport viewportAt(FlarkViewportPageAnchor anchor) => FlarkViewport(
+      revision: 1,
+      snapshot: 1,
+      requestedBytes: FlarkSourceRange(anchor.byte, anchor.byte + 10),
+      coveredBytes: FlarkSourceRange(anchor.byte, anchor.byte + 10),
+      coveredUtf16: FlarkSourceRange(anchor.utf16, anchor.utf16 + 10),
+      certification: FlarkCertification.currentCertified,
+      rows: const [],
+      neutralSource: '0123456789',
+      continuation: 0,
+    );
+
+    test('page path and index advance atomically', () {
+      final navigation = FlarkViewportNavigationState();
+
+      navigation.advanceTo(pageA);
+      navigation.advanceTo(pageB);
+
+      expect(navigation.pageIndex, 2);
+      expect(navigation.previousAnchor, pageA);
+      expect(navigation.currentPageMatches(viewportAt(pageB)), isTrue);
+      expect(() => navigation.advanceTo(pageB), throwsStateError);
+    });
+
+    test('backward adoption normalizes a rewound enclosing-row anchor', () {
+      final navigation = FlarkViewportNavigationState()
+        ..advanceTo(pageA)
+        ..advanceTo(pageB);
+
+      navigation.moveBackwardTo(
+        const FlarkViewportPageAnchor(byte: 90, utf16: 70),
+      );
+
+      expect(navigation.pagePath, const [
+        FlarkViewportPageAnchor.zero,
+        FlarkViewportPageAnchor(byte: 90, utf16: 70),
+      ]);
+      expect(navigation.pageIndex, 1);
+    });
+
+    test('refresh path rejects a torn or nonmonotone history', () {
+      final navigation = FlarkViewportNavigationState();
+
+      expect(
+        () => navigation.installRefreshPath(const [pageA]),
+        throwsArgumentError,
+      );
+      expect(
+        () => navigation.installRefreshPath(const [
+          FlarkViewportPageAnchor.zero,
+          pageB,
+          replacementB,
+        ]),
+        throwsArgumentError,
+      );
+    });
+
+    test('new forward navigation replaces abandoned history', () {
+      final navigation = FlarkViewportNavigationState()
+        ..advanceTo(pageA)
+        ..advanceTo(pageB)
+        ..moveBackwardTo(pageA)
+        ..advanceTo(replacementB);
+
+      expect(navigation.pagePath, const [
+        FlarkViewportPageAnchor.zero,
+        pageA,
+        replacementB,
+      ]);
+    });
+
+    test('refresh origin retains the earliest affected edit', () {
+      final navigation = FlarkViewportNavigationState()
+        ..advanceTo(pageA)
+        ..advanceTo(pageB);
+
+      navigation.retainRefreshAnchorForEdit(
+        editStart: 160,
+        deriveFromInput: false,
+        currentViewport: null,
+        inputGlobalUtf16Start: 0,
+        inputText: '',
+      );
+      navigation.retainRefreshAnchorForEdit(
+        editStart: 240,
+        deriveFromInput: false,
+        currentViewport: null,
+        inputGlobalUtf16Start: 0,
+        inputText: '',
+      );
+      expect(navigation.refreshAnchor, pageA);
+
+      navigation.retainRefreshAnchorForEdit(
+        editStart: 60,
+        deriveFromInput: false,
+        currentViewport: null,
+        inputGlobalUtf16Start: 0,
+        inputText: '',
+      );
+      expect(navigation.refreshAnchor, FlarkViewportPageAnchor.zero);
+      expect(
+        navigation.refreshAnchorForCaret(20),
+        FlarkViewportPageAnchor.zero,
+      );
+      navigation.clearRefreshAnchor();
+      expect(navigation.refreshAnchor, isNull);
+    });
+
+    test('refresh origin can rewind through the exact input snapshot', () {
+      final navigation = FlarkViewportNavigationState();
+
+      navigation.retainRefreshAnchorForEdit(
+        editStart: 7,
+        deriveFromInput: true,
+        currentViewport: viewportAt(
+          const FlarkViewportPageAnchor(byte: 10, utf16: 10),
+        ),
+        inputGlobalUtf16Start: 0,
+        inputText: 'aaaa\nbbbb\ncccc',
+      );
+
+      final retained = navigation.refreshAnchor!;
+      expect((retained.byte, retained.utf16), (5, 5));
+    });
+
+    test('caret byte window keeps the preceding newline boundary', () {
+      final navigation = FlarkViewportNavigationState();
+
+      final window = navigation.byteWindowForCaret(
+        origin: FlarkViewportPageAnchor.zero,
+        visibleUtf16Start: 0,
+        visibleSource: 'abc\ndef',
+        caret: 4,
+        sourceByteLength: 7,
+        maximumVisibleBytes: 16,
+      );
+
+      expect(window, isNotNull);
+      expect(
+        (window!.startByte, window.startUtf16, window.caretByte),
+        (0, 0, 4),
+      );
+    });
+
+    test('known edit anchor selects the nearest certified origin', () {
+      final navigation = FlarkViewportNavigationState()
+        ..advanceTo(pageA)
+        ..advanceTo(pageB);
+
+      expect(navigation.knownAnchorFor(160), pageA);
+      final selected = navigation.knownAnchorFor(
+        205,
+        currentViewport: viewportAt(
+          const FlarkViewportPageAnchor(byte: 240, utf16: 190),
+        ),
+      );
+      expect((selected.byte, selected.utf16), (240, 190));
     });
   });
 

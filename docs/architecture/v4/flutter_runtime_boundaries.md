@@ -13,6 +13,7 @@ FlarkEditorController (public facade and UI coordination)
   |-- FlarkInputTransactionState (callback and provisional input lineage)
   |-- FlarkSurfaceProjector (pure source-to-visible publication)
   |-- FlarkViewportInstallationPlan (pure viewport adoption decision)
+  |-- FlarkViewportNavigationState (page path and refresh origin)
   `-- flark_core (source, selection, history, Markdown, edit authority)
 ```
 
@@ -30,6 +31,7 @@ semantics remain in Rust/Core.
 | Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Visible rows, marker hiding, styles, source/display mapping, selection projection | Surface projector | Documents, timers, queues, or callbacks |
 | Whether a viewport result can atomically replace or certify the current surface | Viewport installation plan | Mutation or asynchronous work |
+| Ordered page path, current page index, and retained refresh origin | Viewport navigation state | Native queries, continuation lifetime, rows, input restoration, or publication |
 | Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
 
 ## Rules that prevent the bug classes we have seen
@@ -49,6 +51,8 @@ semantics remain in Rust/Core.
    replacement and certification are separate decisions.
 7. Optimistic source mapping may preserve semantics only where a parser-authored
    edit receipt allows it. It fails closed for structural uncertainty.
+8. Viewport page index is derived from one ordered anchor path. Moving forward,
+   backward, or adopting a refresh replaces that path atomically.
 
 ## Controller reduction policy
 
@@ -58,8 +62,9 @@ be extracted by authority, not by file length:
 - semantic command policy and receipt promotion should become one bounded lane
   with explicit inputs and outcomes; its callback and provisional-lineage state
   is now centralized, but controller/Core coordination remains in the facade;
-- viewport query/restore orchestration should become one coordinator after its
-  current state transitions are fully pinned; and
+- viewport query/restore orchestration should be split only after its page-path
+  state (now centralized) and surface/input handoff can be expressed as narrow
+  outcomes without controller callbacks; and
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 
