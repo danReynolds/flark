@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flark_flutter/src/editor_transactions.dart';
+import 'package:flark_flutter/src/editor_performance.dart';
 import 'package:flark_flutter/src/input_reconciliation.dart';
 import 'package:flark_flutter/src/input_transaction_state.dart';
 import 'package:flark_flutter/src/input_window.dart';
@@ -323,5 +324,45 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  test('performance log bounds diagnostic receipts independently', () {
+    final log = FlarkEditorPerformanceLog(maximumReceipts: 2);
+    for (var generation = 1; generation <= 3; generation += 1) {
+      log.recordSemantic(
+        FlarkSemanticEditPerformance(
+          sourceGeneration: generation,
+          platformCallbackMicros: 0,
+          coreQueueMicros: 0,
+          workerRoundTripMicros: 0,
+          workerQueueMicros: 0,
+          nativeFfiMicros: 0,
+          coreAdoptionMicros: 0,
+          flutterReceiptAdoptionMicros: 0,
+          callbackToReceiptMicros: 0,
+        ),
+      );
+      log.recordSource(
+        FlarkSourceEditPerformance(
+          kind: FlarkSourceEditPerformanceKind.source,
+          sourceGeneration: generation,
+          coreQueueMicros: 0,
+          workerRoundTripMicros: 0,
+          workerQueueMicros: 0,
+          nativeFfiMicros: 0,
+          coreAdoptionMicros: 0,
+          flutterReceiptAdoptionMicros: 0,
+          acceptanceToReceiptMicros: 0,
+        ),
+      );
+    }
+
+    expect(log.semantic.map((receipt) => receipt.sourceGeneration), [2, 3]);
+    expect(log.source.map((receipt) => receipt.sourceGeneration), [2, 3]);
+    expect(log.lastSemantic?.sourceGeneration, 3);
+    expect(
+      () => FlarkEditorPerformanceLog(maximumReceipts: 0),
+      throwsArgumentError,
+    );
   });
 }

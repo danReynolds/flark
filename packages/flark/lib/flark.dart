@@ -83,7 +83,8 @@ export 'src/editor_text.dart'
         FlarkTextRange,
         FlarkTextSelection,
         boundedReplacementWindow,
-        replacementResultLength;
+        replacementResultLength,
+        scalarAlignedUtf16Window;
 export 'src/editor_viewport_state.dart'
     show
         FlarkEditorViewportState,

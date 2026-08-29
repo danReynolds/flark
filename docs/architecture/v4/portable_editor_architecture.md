@@ -186,6 +186,20 @@ complete.
 Review gate: every retained large module is a cohesive deep module with a
 narrow interface. No split shares a controller/state bag.
 
+Current audit:
+
+| Module | Verdict | Reason |
+| --- | --- | --- |
+| Flutter controller | Further boundary work required | It still combines bounded input-window restoration with command-effect choreography. Those are independently owned state transitions, not merely a long facade. |
+| Rust runtime document | Retain while its public surface stays narrow | It is the deep source/parser transaction boundary; edit-intent resolution is already separate. Split only when a codec, parser job, or transaction owner can move without sharing document internals. |
+| Dart native document | Retain pending a codec-sized extraction | Its size comes from one serialized actor plus strict ABI decoding. A split is useful only if a stateless decoder can be tested independently without duplicating FFI lifecycle state. |
+| Flutter render surface | Retain | Layout, paint, hit testing, selection geometry, and semantics are one custom render-object protocol and already consume immutable snapshots. |
+
+The next justified seam is the bounded input-window owner: local value,
+canonical selection mirrors, active row, oversized-selection state, and
+restoration must advance through named atomic transitions. It must not become a
+general controller state bag.
+
 ### M5 — qualification and architecture stop
 
 - Run static analysis, complete native-backed Core and Flutter suites, actual

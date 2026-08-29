@@ -95,6 +95,38 @@ int replacementResultLength({
   required String replacement,
 }) => source.length - (end - start) + replacement.length;
 
+/// Moves UTF-16 window cuts outward from the middle of a surrogate pair.
+///
+/// The returned half-open range is always contained by the requested range;
+/// a scalar intersected by only one cut is excluded rather than split.
+({int start, int end}) scalarAlignedUtf16Window(
+  String text,
+  int start,
+  int end,
+) {
+  if (start < 0 || start > text.length) {
+    throw RangeError.range(start, 0, text.length, 'start');
+  }
+  if (end < start || end > text.length) {
+    throw RangeError.range(end, start, text.length, 'end');
+  }
+  var alignedStart = start;
+  var alignedEnd = end;
+  if (alignedStart > 0 &&
+      alignedStart < text.length &&
+      _isLowSurrogate(text.codeUnitAt(alignedStart)) &&
+      _isHighSurrogate(text.codeUnitAt(alignedStart - 1))) {
+    alignedStart += 1;
+  }
+  if (alignedEnd > alignedStart &&
+      alignedEnd < text.length &&
+      _isLowSurrogate(text.codeUnitAt(alignedEnd)) &&
+      _isHighSurrogate(text.codeUnitAt(alignedEnd - 1))) {
+    alignedEnd -= 1;
+  }
+  return (start: alignedStart, end: math.max(alignedStart, alignedEnd));
+}
+
 /// Returns a bounded, well-formed UTF-16 window around a replacement focus.
 ({int start, String text}) boundedReplacementWindow({
   required String source,

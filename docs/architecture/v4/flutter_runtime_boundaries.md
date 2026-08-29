@@ -51,6 +51,10 @@ permission to preserve the controller's existing method graph.
 | Native viewport queries, continuation lifetime, stale-result rejection, ordered page path, and retained refresh origin | `FlarkEditorViewportPager` in `flark` | Input restoration, publication, Flutter types, or mutable render state |
 | Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
 
+The remaining failed ownership check is the bounded active input window. Its
+value, global origin, selection mirrors, active row, and restoration flags are
+still mutated across controller paths; they are the next state-machine seam.
+
 ## Rules that prevent the bug classes we have seen
 
 1. An asynchronous result carries an identity-checked command ticket and edit

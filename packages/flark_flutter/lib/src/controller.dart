@@ -29,7 +29,6 @@ const _maximumActiveViewportPageHops =
     1;
 const _parseIdleDelay = Duration(milliseconds: 32);
 const _maximumSemanticSuccessors = 7;
-const _maximumPerformanceReceipts = 512;
 // The bounded head window every parse-pending consumer polls during a
 // streamed open: the same 4 KiB certification-probe discipline the core
 // layer applies inside its own opening viewport query.
@@ -73,23 +72,6 @@ final class _AdmissionHost {
     controller.notifyListeners();
   }
 }
-
-typedef _TextMutation = FlarkTextMutation;
-typedef _QueuedEditPublication = FlarkQueuedEditPublication;
-typedef _MutationAcceptance = FlarkMutationAcceptance;
-typedef _RejectedMutation = FlarkRejectedMutation;
-typedef _QueuedMutation = FlarkQueuedMutation;
-typedef _ViewportPageAnchor = FlarkViewportPageAnchor;
-typedef _EditorSelectionSnapshot = FlarkEditorSelectionSnapshot;
-typedef _ProvisionalInputBatch = FlarkProvisionalInputBatch;
-typedef _DeferredInputCommand = FlarkDeferredInputCommand;
-typedef _DeferredInputSuccessor = FlarkDeferredInputSuccessor;
-typedef _DeferredHistorySuccessor = FlarkDeferredHistorySuccessor;
-typedef _PlatformInputTiming = FlarkPlatformInputTiming;
-typedef _PendingSemanticInput = FlarkPendingSemanticInput;
-typedef _LateSemanticInput = FlarkLateSemanticInput;
-
-typedef _InputReconciliationMap = FlarkInputReconciliationMap;
 
 /// UI-isolate state for a bounded viewport and bounded platform input window.
 ///
@@ -150,18 +132,8 @@ final class FlarkEditorController extends ChangeNotifier
   final FlarkInputTransactionState _inputTransactions =
       FlarkInputTransactionState();
 
-  // Transitional private aliases keep the edit coordinator focused on
-  // command sequencing while the bridge exclusively owns platform shadow
-  // state. No caller may assign through these aliases.
-  int get _resyncCount => _platformInput.resyncCount;
-  String? get _shadowText => _platformInput.shadowText;
-  int get _shadowWindowStart => _platformInput.shadowWindowStart;
-  TextSelection? get _shadowSelection => _platformInput.shadowSelection;
   String? _debugLastSemanticReceiptDescription;
-  FlarkSemanticEditPerformance? _lastSemanticEditPerformance;
-  final List<FlarkSemanticEditPerformance> _semanticEditPerformanceReceipts =
-      [];
-  final List<FlarkSourceEditPerformance> _sourceEditPerformanceReceipts = [];
+  final FlarkEditorPerformanceLog _performance = FlarkEditorPerformanceLog();
   final Completer<void> _firstCertifiedPublication = Completer<void>();
   int? _firstCertifiedPublicationEpochMicros;
   // The revision whose certified head the streamed-open loop has published,
@@ -223,7 +195,6 @@ final class FlarkEditorController extends ChangeNotifier
   int get sourceByteLength => _document.sourceByteLength;
   int get sourceUtf16Length => _document.sourceUtf16Length;
   int get pendingEdits => _coordinator.pendingEdits;
-  int get _pendingEdits => _coordinator.pendingEdits;
 
   /// Test-only visibility into whether an optimistic parser proof is still
   /// driving the active presentation.
@@ -274,29 +245,18 @@ final class FlarkEditorController extends ChangeNotifier
   bool get debugSemanticEditV1Active => _semanticEditV1Active;
 
   @visibleForTesting
-  bool get debugPendingSemanticInputActive => _pendingSemanticInput != null;
+  bool get debugPendingSemanticInputActive =>
+      _inputTransactions.pendingSemantic != null;
 
   @visibleForTesting
-  bool get debugLateSemanticInputActive => _lateSemanticInput != null;
-
-  _PendingSemanticInput? get _pendingSemanticInput =>
-      _inputTransactions.pendingSemantic;
-
-  set _pendingSemanticInput(_PendingSemanticInput? value) {
-    _inputTransactions.pendingSemantic = value;
-  }
-
-  _LateSemanticInput? get _lateSemanticInput => _inputTransactions.lateSemantic;
-
-  set _lateSemanticInput(_LateSemanticInput? value) {
-    _inputTransactions.lateSemantic = value;
-  }
+  bool get debugLateSemanticInputActive =>
+      _inputTransactions.lateSemantic != null;
 
   bool get _certificationDeferredInputActive =>
-      _pendingSemanticInput?.certificationPromotion != null;
+      _inputTransactions.pendingSemantic?.certificationPromotion != null;
 
   Completer<void>? get _certificationDeferredInputPromotion =>
-      _pendingSemanticInput?.certificationPromotion;
+      _inputTransactions.pendingSemantic?.certificationPromotion;
 
   @visibleForTesting
   String? get debugLastSemanticReceiptDescription =>
@@ -325,7 +285,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   bool get canUndo =>
       !_coordinator.historyReplayPending &&
-      (_session.canUndo || _pendingEdits > 0);
+      (_session.canUndo || _coordinator.pendingEdits > 0);
   bool get canRedo => !_coordinator.historyReplayPending && _session.canRedo;
 
   FlarkInputWindowState get inputWindowState => _platformInput.state;
@@ -341,11 +301,11 @@ final class FlarkEditorController extends ChangeNotifier
   int get lastSemanticReconciliationMicros =>
       _inputTransactions.lastReconciliationMicros;
   FlarkSemanticEditPerformance? get lastSemanticEditPerformance =>
-      _lastSemanticEditPerformance;
+      _performance.lastSemantic;
   List<FlarkSemanticEditPerformance> get semanticEditPerformanceReceipts =>
-      List.unmodifiable(_semanticEditPerformanceReceipts);
+      _performance.semantic;
   List<FlarkSourceEditPerformance> get sourceEditPerformanceReceipts =>
-      List.unmodifiable(_sourceEditPerformanceReceipts);
+      _performance.source;
 
   /// Completes when this controller first publishes a viewport that carries
   /// parser-certified semantic rows — for a streamed open, the moment the
@@ -427,8 +387,8 @@ final class FlarkEditorController extends ChangeNotifier
     // derive capability from that canonical row instead of callback order.
     // Neutral carets re-enter the lane from geometry on the next structural
     // command.
-    if (_pendingEdits != 0 ||
-        _pendingSemanticInput != null ||
+    if (_coordinator.pendingEdits != 0 ||
+        _inputTransactions.pendingSemantic != null ||
         !_viewportState.semanticCurrent ||
         _session.compositionActive) {
       return;
@@ -489,7 +449,7 @@ final class FlarkEditorController extends ChangeNotifier
   /// retires with a typed reason and the unchanged authoritative window is
   /// re-exposed on a fresh connection epoch.
   void _resynchronize(FlarkInputResyncReason reason) {
-    _lateSemanticInput = null;
+    _inputTransactions.lateSemantic = null;
     if (_certificationDeferredInputActive) {
       _inputTransactions.discardPendingSemantic();
       _cancelCertificationDeferredInput();
@@ -947,7 +907,7 @@ final class FlarkEditorController extends ChangeNotifier
       final platformNewline = _isPlatformNewlineMutation(deltas);
       if (platformNewline &&
           _deferCommandUntilCertification(
-            _DeferredInputCommand.insertNewline,
+            FlarkDeferredInputCommand.insertNewline,
             provisionalAfter: observedValue,
           )) {
         _inputTransactions.markNewlineTextObserved();
@@ -963,9 +923,9 @@ final class FlarkEditorController extends ChangeNotifier
       final platformDeleteBackward = _isPlatformDeleteBackwardMutation(deltas);
       final platformSelectionSupersededByProjection =
           platformDeleteBackward &&
-          _shadowText == _inputValue.text &&
-          _shadowSelection != null &&
-          _shadowSelection != _inputValue.selection;
+          _platformInput.shadowText == _inputValue.text &&
+          _platformInput.shadowSelection != null &&
+          _platformInput.shadowSelection != _inputValue.selection;
       if (platformSelectionSupersededByProjection) {
         // The text service can issue another Backspace before adopting a
         // parser-normalized caret. Its oldText is still current, but its raw
@@ -984,7 +944,7 @@ final class FlarkEditorController extends ChangeNotifier
       }
       if (platformDeleteBackward &&
           _deferCommandUntilCertification(
-            _DeferredInputCommand.deleteBackward,
+            FlarkDeferredInputCommand.deleteBackward,
             provisionalAfter: observedValue,
           )) {
         _inputTransactions.markBackspaceTextObserved();
@@ -1080,7 +1040,7 @@ final class FlarkEditorController extends ChangeNotifier
           _inputTransactions.markBackspaceTextObserved();
           _acceptPlatformWindowShadow(
             finalValue,
-            globalStart: _shadowWindowStart,
+            globalStart: _platformInput.shadowWindowStart,
           );
           _deleteBackward(
             allowSemantic: true,
@@ -1111,7 +1071,10 @@ final class FlarkEditorController extends ChangeNotifier
       // so a same-burst callback is classified in the coordinates it actually
       // used. The next host-originated notification or adopted callback
       // reconciles the two without retiring a live connection.
-      _acceptPlatformWindowShadow(finalValue, globalStart: _shadowWindowStart);
+      _acceptPlatformWindowShadow(
+        finalValue,
+        globalStart: _platformInput.shadowWindowStart,
+      );
     } finally {
       _inputTransactions.endPlatformMutation();
     }
@@ -1137,7 +1100,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     if (_captureSemanticSuccessorValue(value)) return;
     if (_capturePlatformValueBehindCertification(value)) return;
-    if (value.text == _inputValue.text) _lateSemanticInput = null;
+    if (value.text == _inputValue.text) _inputTransactions.lateSemantic = null;
     _inputTransactions.beginPlatformMutation();
     try {
       if (_oversizedSelection) {
@@ -1148,7 +1111,7 @@ final class FlarkEditorController extends ChangeNotifier
       final platformNewline = _isPlatformNewlineValue(value);
       if (platformNewline &&
           _deferCommandUntilCertification(
-            _DeferredInputCommand.insertNewline,
+            FlarkDeferredInputCommand.insertNewline,
             provisionalAfter: value,
           )) {
         _inputTransactions.markNewlineTextObserved();
@@ -1161,7 +1124,7 @@ final class FlarkEditorController extends ChangeNotifier
       final platformDeleteBackward = _isPlatformDeleteBackwardValue(value);
       if (platformDeleteBackward &&
           _deferCommandUntilCertification(
-            _DeferredInputCommand.deleteBackward,
+            FlarkDeferredInputCommand.deleteBackward,
             provisionalAfter: value,
           )) {
         _inputTransactions.markBackspaceTextObserved();
@@ -1247,7 +1210,10 @@ final class FlarkEditorController extends ChangeNotifier
     // the exact selection that produced this full-value callback afterward,
     // because another callback already queued by the text service still uses
     // those provisional coordinates.
-    _acceptPlatformWindowShadow(value, globalStart: _shadowWindowStart);
+    _acceptPlatformWindowShadow(
+      value,
+      globalStart: _platformInput.shadowWindowStart,
+    );
   }
 
   void _applyOversizedPlatformDeltas(List<TextEditingDelta> deltas) {
@@ -1288,7 +1254,7 @@ final class FlarkEditorController extends ChangeNotifier
     _replaceSelection(mutation.replacement, typingInput: false);
   }
 
-  void _markOversizedPlatformCommand(_TextMutation mutation) {
+  void _markOversizedPlatformCommand(FlarkTextMutation mutation) {
     final caret = _inputValue.selection.extentOffset;
     if (mutation.replacement == '\n') {
       _inputTransactions.markNewlineTextObserved();
@@ -1325,7 +1291,7 @@ final class FlarkEditorController extends ChangeNotifier
   void _replaceSelection(
     String replacement, {
     required bool typingInput,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
     bool publish = true,
   }) {
     if (_deferSemanticSuccessor(
@@ -1348,7 +1314,7 @@ final class FlarkEditorController extends ChangeNotifier
     final end = math.max(selection.baseOffset, selection.extentOffset);
     final caret = start + replacement.length;
     final acceptance = _acceptMutation(
-      _TextMutation(start, end, replacement),
+      FlarkTextMutation(start, end, replacement),
       selection: TextSelection.collapsed(offset: caret),
       composing: TextRange.empty,
       typingInput: typingInput,
@@ -1373,7 +1339,7 @@ final class FlarkEditorController extends ChangeNotifier
     final length = sourceUtf16Length;
     final clampedBase = base.clamp(0, length);
     final clampedExtent = extent.clamp(0, length);
-    final exactSelection = _EditorSelectionSnapshot(
+    final exactSelection = FlarkEditorSelectionSnapshot(
       TextSelection(baseOffset: clampedBase, extentOffset: clampedExtent),
       _activeOrdinal,
     );
@@ -1381,7 +1347,7 @@ final class FlarkEditorController extends ChangeNotifier
     _oversizedSelection = true;
     _crossRowSelection = clampedBase != clampedExtent;
     await _restoreHistorySelection(
-      _EditorSelectionSnapshot(
+      FlarkEditorSelectionSnapshot(
         TextSelection.collapsed(offset: clampedExtent),
         null,
       ),
@@ -1407,7 +1373,7 @@ final class FlarkEditorController extends ChangeNotifier
   /// completion.
   Future<void> _waitForMutationTail() async {
     while (true) {
-      if (_pendingEdits == 0 &&
+      if (_coordinator.pendingEdits == 0 &&
           _coordinator.pendingSessionOnlyCommands == 0 &&
           _certificationDeferredInputPromotion == null) {
         return;
@@ -1654,7 +1620,7 @@ final class FlarkEditorController extends ChangeNotifier
       resolved.selection.extentOffset,
     );
     final caret = start + replacement.length;
-    final beforeSelection = _EditorSelectionSnapshot(
+    final beforeSelection = FlarkEditorSelectionSnapshot(
       TextSelection(
         baseOffset: resolved.selection.baseOffset,
         extentOffset: resolved.selection.extentOffset,
@@ -1663,7 +1629,7 @@ final class FlarkEditorController extends ChangeNotifier
       ),
       null,
     );
-    final afterSelection = _EditorSelectionSnapshot(
+    final afterSelection = FlarkEditorSelectionSnapshot(
       TextSelection.collapsed(offset: caret),
       null,
     );
@@ -1673,7 +1639,7 @@ final class FlarkEditorController extends ChangeNotifier
     _crossRowSelection = false;
     _activeOrdinal = _surfaceOrdinalAt(start);
     var windowStart = math.max(0, replacement.length - _maximumInputCodeUnits);
-    final alignedWindow = _scalarAlignedUtf16Window(
+    final alignedWindow = scalarAlignedUtf16Window(
       replacement,
       windowStart,
       replacement.length,
@@ -1701,18 +1667,18 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _deleteBackward({
     required bool allowSemantic,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     if (allowSemantic &&
         _deferSemanticSuccessor(
-          command: _DeferredInputCommand.deleteBackward,
+          command: FlarkDeferredInputCommand.deleteBackward,
           platformTiming: platformTiming,
         )) {
       return;
     }
     if (allowSemantic &&
         _deferCommandUntilCertification(
-          _DeferredInputCommand.deleteBackward,
+          FlarkDeferredInputCommand.deleteBackward,
           platformTiming: platformTiming,
         )) {
       return;
@@ -1763,18 +1729,18 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _deleteForward({
     required bool allowSemantic,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     if (allowSemantic &&
         _deferSemanticSuccessor(
-          command: _DeferredInputCommand.deleteForward,
+          command: FlarkDeferredInputCommand.deleteForward,
           platformTiming: platformTiming,
         )) {
       return;
     }
     if (allowSemantic &&
         _deferCommandUntilCertification(
-          _DeferredInputCommand.deleteForward,
+          FlarkDeferredInputCommand.deleteForward,
           platformTiming: platformTiming,
         )) {
       return;
@@ -1839,12 +1805,12 @@ final class FlarkEditorController extends ChangeNotifier
   void _deleteLiteralCluster(
     int start,
     int end, {
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     final acceptance = _acceptMutation(
-      _TextMutation(start, end, ''),
+      FlarkTextMutation(start, end, ''),
       selection: TextSelection.collapsed(offset: start),
       composing: TextRange.empty,
       typingInput: false,
@@ -1868,18 +1834,18 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _insertNewline({
     required bool allowSemantic,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     if (allowSemantic &&
         _deferSemanticSuccessor(
-          command: _DeferredInputCommand.insertNewline,
+          command: FlarkDeferredInputCommand.insertNewline,
           platformTiming: platformTiming,
         )) {
       return;
     }
     if (allowSemantic &&
         _deferCommandUntilCertification(
-          _DeferredInputCommand.insertNewline,
+          FlarkDeferredInputCommand.insertNewline,
           platformTiming: platformTiming,
         )) {
       return;
@@ -1904,10 +1870,10 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _queuePlatformSemanticNewline(List<TextEditingDelta> deltas) {
-    _lateSemanticInput = null;
+    _inputTransactions.lateSemantic = null;
     final provisionalMutation = _mutationFor(deltas.single)!;
     final provisionalAfter = deltas.single.apply(_inputValue);
-    _pendingSemanticInput = _PendingSemanticInput(
+    _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
       base: _inputValue,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
       initialCallbackStartedEpochMicros:
@@ -1937,14 +1903,14 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _queuePlatformSemanticNewlineValue(TextEditingValue value) {
-    _lateSemanticInput = null;
+    _inputTransactions.lateSemantic = null;
     final selection = _inputValue.selection;
-    final provisionalMutation = _TextMutation(
+    final provisionalMutation = FlarkTextMutation(
       math.min(selection.baseOffset, selection.extentOffset),
       math.max(selection.baseOffset, selection.extentOffset),
       '\n',
     );
-    _pendingSemanticInput = _PendingSemanticInput(
+    _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
       base: _inputValue,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
       initialCallbackStartedEpochMicros:
@@ -1973,7 +1939,7 @@ final class FlarkEditorController extends ChangeNotifier
     );
   }
 
-  bool _isPlatformSelectedDeletion(_TextMutation mutation) {
+  bool _isPlatformSelectedDeletion(FlarkTextMutation mutation) {
     return _platformInput.isSelectedDeletion(
       mutation,
       currentSelection: _inputValue.selection,
@@ -2002,11 +1968,11 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _queueObservedPlatformSemanticDeleteBackward({
-    required _TextMutation provisionalMutation,
+    required FlarkTextMutation provisionalMutation,
     required TextEditingValue provisionalAfter,
   }) {
-    _lateSemanticInput = null;
-    _pendingSemanticInput = _PendingSemanticInput(
+    _inputTransactions.lateSemantic = null;
+    _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
       base: _inputValue,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
       initialCallbackStartedEpochMicros:
@@ -2059,7 +2025,7 @@ final class FlarkEditorController extends ChangeNotifier
     );
   }
 
-  void _runPlatformAction(void Function(_PlatformInputTiming) action) {
+  void _runPlatformAction(void Function(FlarkPlatformInputTiming) action) {
     final timing = _inputTransactions.beginCallback();
     try {
       action(timing);
@@ -2069,7 +2035,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _captureSemanticSuccessors(List<TextEditingDelta> deltas) {
-    final pending = _pendingSemanticInput;
+    final pending = _inputTransactions.pendingSemantic;
     if (pending == null) return false;
     if (!_reserveSemanticSuccessor(pending)) return true;
     final before = pending.provisionalTail;
@@ -2110,13 +2076,13 @@ final class FlarkEditorController extends ChangeNotifier
       return true;
     }
     if (pending.successors.isNotEmpty &&
-        pending.successors.last is _DeferredInputSuccessor) {
+        pending.successors.last is FlarkDeferredInputSuccessor) {
       _inputTransactions.discardPendingSemantic();
       _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
       return true;
     }
     pending.successors.add(
-      _ProvisionalInputBatch(
+      FlarkProvisionalInputBatch(
         before: before,
         after: after,
         typingInput: typingInput,
@@ -2133,14 +2099,14 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _captureLateSemanticSuccessors(List<TextEditingDelta> deltas) {
-    final late = _lateSemanticInput;
+    final late = _inputTransactions.lateSemantic;
     if (late == null) return false;
     if (_platformShadowMatchesCurrentInput) {
       // The text service has adopted the committed source and canonical
       // selection. A later callback with that serialized oldText belongs to
       // the current row, even when the predecessor's provisional tail has the
       // same text but a pre-reconciliation caret.
-      _lateSemanticInput = null;
+      _inputTransactions.lateSemantic = null;
       return false;
     }
     final before = late.provisionalTail;
@@ -2152,7 +2118,7 @@ final class FlarkEditorController extends ChangeNotifier
       // Return look like an old successor and lose its own provisional
       // splice. Rapid typing would then replay that newline after the new
       // semantic receipt. Let the ordinary lane establish a fresh barrier.
-      _lateSemanticInput = null;
+      _inputTransactions.lateSemantic = null;
       return false;
     }
     final rejection = _validateDeltaBatch(
@@ -2163,11 +2129,11 @@ final class FlarkEditorController extends ChangeNotifier
     if (rejection != FlarkInputResyncReason.none) {
       // The platform has adopted the committed window. Let the ordinary lane
       // validate this callback against that current window.
-      _lateSemanticInput = null;
+      _inputTransactions.lateSemantic = null;
       return false;
     }
     if (late.successorCount >= _maximumSemanticSuccessors) {
-      _lateSemanticInput = null;
+      _inputTransactions.lateSemantic = null;
       _resynchronize(FlarkInputResyncReason.successorQueueOverflow);
       return true;
     }
@@ -2184,7 +2150,7 @@ final class FlarkEditorController extends ChangeNotifier
       after,
       observedMutation: deltas.length == 1 ? _mutationFor(deltas.single) : null,
     );
-    final holder = _PendingSemanticInput(
+    final holder = FlarkPendingSemanticInput(
       base: before,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
       initialCallbackStartedEpochMicros:
@@ -2198,7 +2164,7 @@ final class FlarkEditorController extends ChangeNotifier
       _markObservedPlatformCommand(logical);
     } else {
       holder.successors.add(
-        _ProvisionalInputBatch(
+        FlarkProvisionalInputBatch(
           before: before,
           after: after,
           typingInput: typingInput,
@@ -2208,7 +2174,10 @@ final class FlarkEditorController extends ChangeNotifier
     }
     late.provisionalTail = after;
     late.successorCount += 1;
-    _acceptPlatformWindowShadow(after, globalStart: _shadowWindowStart);
+    _acceptPlatformWindowShadow(
+      after,
+      globalStart: _platformInput.shadowWindowStart,
+    );
     final priorGeneration = _editGeneration;
     _inputTransactions.beginPlatformMutation();
     try {
@@ -2221,7 +2190,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _captureSemanticSuccessorValue(TextEditingValue value) {
-    final pending = _pendingSemanticInput;
+    final pending = _inputTransactions.pendingSemantic;
     if (pending == null) return false;
     if (!_reserveSemanticSuccessor(pending)) return true;
     if (!_validObservedValue(value)) {
@@ -2246,13 +2215,13 @@ final class FlarkEditorController extends ChangeNotifier
       return true;
     }
     if (pending.successors.isNotEmpty &&
-        pending.successors.last is _DeferredInputSuccessor) {
+        pending.successors.last is FlarkDeferredInputSuccessor) {
       _inputTransactions.discardPendingSemantic();
       _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
       return true;
     }
     pending.successors.add(
-      _ProvisionalInputBatch(
+      FlarkProvisionalInputBatch(
         before: before,
         after: value,
         typingInput:
@@ -2275,7 +2244,7 @@ final class FlarkEditorController extends ChangeNotifier
     List<TextEditingDelta> deltas,
   ) {
     if (!_publicationCertificationBarrierActive ||
-        _pendingSemanticInput != null ||
+        _inputTransactions.pendingSemantic != null ||
         _platformShadowMatchesCurrentInput) {
       return false;
     }
@@ -2307,10 +2276,10 @@ final class FlarkEditorController extends ChangeNotifier
   bool _capturePlatformValueBehindCertification(
     TextEditingValue value, {
     TextEditingValue? before,
-    _TextMutation? observedMutation,
+    FlarkTextMutation? observedMutation,
   }) {
     if (!_publicationCertificationBarrierActive ||
-        _pendingSemanticInput != null ||
+        _inputTransactions.pendingSemantic != null ||
         _platformShadowMatchesCurrentInput) {
       return false;
     }
@@ -2333,9 +2302,9 @@ final class FlarkEditorController extends ChangeNotifier
       return true;
     }
     final timing = _inputTransactions.activeTiming;
-    final pending = _PendingSemanticInput(
+    final pending = FlarkPendingSemanticInput(
       base: _inputValue,
-      inputGlobalUtf16Start: _shadowWindowStart,
+      inputGlobalUtf16Start: _platformInput.shadowWindowStart,
       initialCallbackStartedEpochMicros:
           timing?.acceptedAtEpochMicros ??
           _inputTransactions.activeCallbackStartedEpochMicros ??
@@ -2346,30 +2315,33 @@ final class FlarkEditorController extends ChangeNotifier
     pending.successors.add(
       _inputTransactions.reclassifyAfterCertification(logical),
     );
-    _pendingSemanticInput = pending;
+    _inputTransactions.pendingSemantic = pending;
     _beginCertificationDeferredInput();
     _markObservedPlatformCommand(logical);
     _inputTransactions.observePendingSuccessors(pending);
-    _acceptPlatformWindowShadow(value, globalStart: _shadowWindowStart);
+    _acceptPlatformWindowShadow(
+      value,
+      globalStart: _platformInput.shadowWindowStart,
+    );
     return true;
   }
 
   TextEditingValue? get _platformShadowValue => _platformInput.shadowValue;
 
   bool _deferCommandUntilCertification(
-    _DeferredInputCommand command, {
+    FlarkDeferredInputCommand command, {
     TextEditingValue? provisionalAfter,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     final staleViewportNeedsCommandCertification =
         !_viewportState.semanticCurrent;
     if ((!_publicationCertificationBarrierActive &&
             !staleViewportNeedsCommandCertification) ||
-        _pendingSemanticInput != null) {
+        _inputTransactions.pendingSemantic != null) {
       return false;
     }
     final timing = platformTiming ?? _inputTransactions.activeTiming;
-    final pending = _PendingSemanticInput(
+    final pending = FlarkPendingSemanticInput(
       base: _inputValue,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
       initialCallbackStartedEpochMicros:
@@ -2380,13 +2352,13 @@ final class FlarkEditorController extends ChangeNotifier
       provisionalAfter: provisionalAfter ?? _inputValue,
     );
     pending.successors.add(
-      _DeferredInputSuccessor(
+      FlarkDeferredInputSuccessor(
         command,
         reclassifyAfterCertification: true,
         platformTiming: timing,
       ),
     );
-    _pendingSemanticInput = pending;
+    _inputTransactions.pendingSemantic = pending;
     _beginCertificationDeferredInput();
     if (staleViewportNeedsCommandCertification) {
       _scheduleParsingAfterInput(immediate: true);
@@ -2402,15 +2374,15 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _deferSemanticSuccessor({
-    _DeferredInputCommand? command,
+    FlarkDeferredInputCommand? command,
     String? replacement,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
-    final pending = _pendingSemanticInput;
+    final pending = _inputTransactions.pendingSemantic;
     if (pending != null) {
       if (!_reserveSemanticSuccessor(pending)) return true;
       pending.successors.add(
-        _DeferredInputSuccessor(
+        FlarkDeferredInputSuccessor(
           command,
           replacement: replacement,
           reclassifyAfterCertification:
@@ -2421,7 +2393,7 @@ final class FlarkEditorController extends ChangeNotifier
       _inputTransactions.observePendingSuccessors(pending);
       return true;
     }
-    final late = _lateSemanticInput;
+    final late = _inputTransactions.lateSemantic;
     if (late == null || command == null || replacement != null) return false;
     if (_platformShadowMatchesCurrentInput) {
       // A committed publication has already replaced the provisional window
@@ -2429,11 +2401,11 @@ final class FlarkEditorController extends ChangeNotifier
       // to that current caret, not to the preceding semantic transaction.
       // Stale deltas remain distinguishable and continue through
       // _captureLateSemanticSuccessors using their explicit oldText.
-      _lateSemanticInput = null;
+      _inputTransactions.lateSemantic = null;
       return false;
     }
     if (late.successorCount >= _maximumSemanticSuccessors) {
-      _lateSemanticInput = null;
+      _inputTransactions.lateSemantic = null;
       _resynchronize(FlarkInputResyncReason.successorQueueOverflow);
       return true;
     }
@@ -2443,7 +2415,7 @@ final class FlarkEditorController extends ChangeNotifier
     // instead of the receipt-backed/still-uncertified Flutter row cache.
     late.successorCount += 1;
     _inputTransactions.observeSuccessorCount(late.successorCount);
-    _lateSemanticInput = null;
+    _inputTransactions.lateSemantic = null;
     _promoteDeferredCommand(
       command,
       semanticAlreadyAttempted: false,
@@ -2453,7 +2425,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _beginCertificationDeferredInput() {
-    final pending = _pendingSemanticInput;
+    final pending = _inputTransactions.pendingSemantic;
     if (pending == null) {
       throw StateError('Certification-deferred input requires live lineage');
     }
@@ -2461,7 +2433,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _promoteCertificationDeferredInput() {
-    final pending = _pendingSemanticInput;
+    final pending = _inputTransactions.pendingSemantic;
     final promotion = pending?.certificationPromotion;
     if (pending != null) pending.certificationPromotion = null;
     try {
@@ -2472,32 +2444,32 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _cancelCertificationDeferredInput() {
-    final pending = _pendingSemanticInput;
+    final pending = _inputTransactions.pendingSemantic;
     final promotion = pending?.certificationPromotion;
     if (pending != null) pending.certificationPromotion = null;
     if (promotion != null && !promotion.isCompleted) promotion.complete();
   }
 
-  _DeferredInputSuccessor? _logicalSemanticSuccessor(
+  FlarkDeferredInputSuccessor? _logicalSemanticSuccessor(
     TextEditingValue before,
     TextEditingValue after, {
-    _TextMutation? observedMutation,
+    FlarkTextMutation? observedMutation,
   }) => _inputTransactions.classifySemanticSuccessor(
     before,
     after,
     mutation: observedMutation ?? _selectionObservedMutation(before, after),
   );
 
-  _TextMutation? _selectionObservedMutation(
+  FlarkTextMutation? _selectionObservedMutation(
     TextEditingValue before,
     TextEditingValue after,
   ) => _platformInput.selectionObservedMutation(before, after);
 
-  void _markObservedPlatformCommand(_DeferredInputSuccessor successor) {
+  void _markObservedPlatformCommand(FlarkDeferredInputSuccessor successor) {
     _inputTransactions.markObservedCommand(successor.command);
   }
 
-  bool _reserveSemanticSuccessor(_PendingSemanticInput pending) {
+  bool _reserveSemanticSuccessor(FlarkPendingSemanticInput pending) {
     if (_inputTransactions.reserveSemanticSuccessor(
       pending,
       maximum: _maximumSemanticSuccessors,
@@ -2671,7 +2643,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   bool _deleteProjectedVisible({
     required bool backward,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     final row = _activeCachedRow();
     if (row == null) return false;
@@ -2716,7 +2688,7 @@ final class FlarkEditorController extends ChangeNotifier
     final localEnd = sourceEnd - _inputGlobalUtf16Start;
     if (localStart < 0 || localEnd > _inputValue.text.length) return false;
     final acceptance = _acceptMutation(
-      _TextMutation(localStart, localEnd, ''),
+      FlarkTextMutation(localStart, localEnd, ''),
       selection: TextSelection.collapsed(offset: localStart),
       composing: TextRange.empty,
       typingInput: false,
@@ -2731,7 +2703,7 @@ final class FlarkEditorController extends ChangeNotifier
     return true;
   }
 
-  bool _mutationTouchesOnlyHiddenProjection(_TextMutation mutation) {
+  bool _mutationTouchesOnlyHiddenProjection(FlarkTextMutation mutation) {
     if (mutation.start == mutation.end) return false;
     final row = _activeCachedRow();
     if (row == null) return false;
@@ -2776,20 +2748,20 @@ final class FlarkEditorController extends ChangeNotifier
     return sourceCursor != activation.end;
   }
 
-  _MutationAcceptance _acceptMutation(
-    _TextMutation mutation, {
+  FlarkMutationAcceptance _acceptMutation(
+    FlarkTextMutation mutation, {
     required TextSelection selection,
     required TextRange composing,
     TextEditingValue? fullValue,
     bool typingInput = false,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
     bool editabilityProven = false,
   }) {
     final source = _inputValue.text;
     if (mutation.start < 0 ||
         mutation.end < mutation.start ||
         mutation.end > source.length) {
-      return const _RejectedMutation();
+      return const FlarkRejectedMutation();
     }
     // A platform composition may temporarily occupy a source position that
     // the last certified projection still describes as a hidden delimiter or
@@ -2804,7 +2776,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (!editabilityProven &&
         !replacesAcceptedComposition &&
         _mutationTouchesOnlyHiddenProjection(mutation)) {
-      return const _RejectedMutation();
+      return const FlarkRejectedMutation();
     }
     final beforeSelection = _selectionSnapshot();
     var effectiveMutation = mutation;
@@ -2836,7 +2808,7 @@ final class FlarkEditorController extends ChangeNotifier
         ? candidateContinuationRewrite
         : null;
     if (continuationRewrite != null) {
-      effectiveMutation = _TextMutation(
+      effectiveMutation = FlarkTextMutation(
         mutation.start,
         continuationRewriteEnd,
         continuationRewrite.replacement,
@@ -2883,7 +2855,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (!effectiveSelection.isValid ||
         effectiveSelection.baseOffset > nextLength ||
         effectiveSelection.extentOffset > nextLength) {
-      return const _RejectedMutation();
+      return const FlarkRejectedMutation();
     }
     final inputStart = _inputGlobalUtf16Start;
     final wasCrossRowSelection = _crossRowSelection;
@@ -2976,28 +2948,29 @@ final class FlarkEditorController extends ChangeNotifier
       requiresStructuralCertification: requiresStructuralCertification,
       platformTiming: platformTiming ?? _inputTransactions.activeTiming,
     );
-    return _QueuedMutation(publication);
+    return FlarkQueuedMutation(publication);
   }
 
-  FlarkCoreSelectionSnapshot _coreSnapshot(_EditorSelectionSnapshot snapshot) =>
-      FlarkCoreSelectionSnapshot(
-        base: snapshot.selection.baseOffset,
-        extent: snapshot.selection.extentOffset,
-        affinity: snapshot.selection.affinity == TextAffinity.upstream
-            ? FlarkCoreAffinity.upstream
-            : FlarkCoreAffinity.downstream,
-        // Adapter history restores only platform-specific visual metadata.
-        // Core owns semantic continuation as a typed part of the canonical
-        // selection and records it in the same history unit as the edit.
-        adapterState: _EditorSelectionSnapshot(
-          snapshot.selection,
-          snapshot.activeOrdinal,
-        ),
-        inlineContinuation: snapshot.inlineContinuation,
-      );
+  FlarkCoreSelectionSnapshot _coreSnapshot(
+    FlarkEditorSelectionSnapshot snapshot,
+  ) => FlarkCoreSelectionSnapshot(
+    base: snapshot.selection.baseOffset,
+    extent: snapshot.selection.extentOffset,
+    affinity: snapshot.selection.affinity == TextAffinity.upstream
+        ? FlarkCoreAffinity.upstream
+        : FlarkCoreAffinity.downstream,
+    // Adapter history restores only platform-specific visual metadata.
+    // Core owns semantic continuation as a typed part of the canonical
+    // selection and records it in the same history unit as the edit.
+    adapterState: FlarkEditorSelectionSnapshot(
+      snapshot.selection,
+      snapshot.activeOrdinal,
+    ),
+    inlineContinuation: snapshot.inlineContinuation,
+  );
 
   Future<int> _installCanonicalSelection(
-    _EditorSelectionSnapshot snapshot, {
+    FlarkEditorSelectionSnapshot snapshot, {
     bool publish = true,
   }) {
     _inlineContinuation = snapshot.inlineContinuation;
@@ -3025,11 +2998,11 @@ final class FlarkEditorController extends ChangeNotifier
     return operation;
   }
 
-  _EditorSelectionSnapshot _adapterSnapshot(
+  FlarkEditorSelectionSnapshot _adapterSnapshot(
     FlarkCoreSelectionSnapshot snapshot,
   ) {
     final adapter = snapshot.adapterState;
-    return _EditorSelectionSnapshot(
+    return FlarkEditorSelectionSnapshot(
       TextSelection(
         baseOffset: snapshot.base,
         extentOffset: snapshot.extent,
@@ -3037,10 +3010,10 @@ final class FlarkEditorController extends ChangeNotifier
             ? TextAffinity.upstream
             : TextAffinity.downstream,
         isDirectional:
-            adapter is _EditorSelectionSnapshot &&
+            adapter is FlarkEditorSelectionSnapshot &&
             adapter.selection.isDirectional,
       ),
-      adapter is _EditorSelectionSnapshot ? adapter.activeOrdinal : null,
+      adapter is FlarkEditorSelectionSnapshot ? adapter.activeOrdinal : null,
       inlineContinuation: snapshot.inlineContinuation,
     );
   }
@@ -3203,7 +3176,7 @@ final class FlarkEditorController extends ChangeNotifier
       }
       windowEnd = windowStart + _maximumInputCodeUnits;
     }
-    final alignedWindow = _scalarAlignedUtf16Window(
+    final alignedWindow = scalarAlignedUtf16Window(
       text,
       windowStart,
       windowEnd,
@@ -3261,29 +3234,30 @@ final class FlarkEditorController extends ChangeNotifier
     }
   }
 
-  _EditorSelectionSnapshot _selectionSnapshot() => _EditorSelectionSnapshot(
-    TextSelection(
-      baseOffset: _globalSelectionBase,
-      extentOffset: _globalSelectionExtent,
-      affinity: _inputValue.selection.affinity,
-      isDirectional: _inputValue.selection.isDirectional,
-    ),
-    _activeOrdinal,
-    inlineContinuation:
-        _inlineContinuation != null &&
-            // A rapid platform successor is admitted before its preceding
-            // source transaction reaches the worker. Continuation authority
-            // may therefore name one revision per already-pending edit plus
-            // the edit currently being accepted, but never an arbitrary
-            // future revision.
-            _document.revision <= _inlineContinuation!.revision &&
-            _inlineContinuation!.revision <=
-                _document.revision + _pendingEdits + 1 &&
-            _globalSelectionBase == _globalSelectionExtent &&
-            _inlineContinuation?.caretUtf16 == _globalSelectionExtent
-        ? _inlineContinuation
-        : null,
-  );
+  FlarkEditorSelectionSnapshot _selectionSnapshot() =>
+      FlarkEditorSelectionSnapshot(
+        TextSelection(
+          baseOffset: _globalSelectionBase,
+          extentOffset: _globalSelectionExtent,
+          affinity: _inputValue.selection.affinity,
+          isDirectional: _inputValue.selection.isDirectional,
+        ),
+        _activeOrdinal,
+        inlineContinuation:
+            _inlineContinuation != null &&
+                // A rapid platform successor is admitted before its preceding
+                // source transaction reaches the worker. Continuation authority
+                // may therefore name one revision per already-pending edit plus
+                // the edit currently being accepted, but never an arbitrary
+                // future revision.
+                _document.revision <= _inlineContinuation!.revision &&
+                _inlineContinuation!.revision <=
+                    _document.revision + _coordinator.pendingEdits + 1 &&
+                _globalSelectionBase == _globalSelectionExtent &&
+                _inlineContinuation?.caretUtf16 == _globalSelectionExtent
+            ? _inlineContinuation
+            : null,
+      );
 
   FlarkSourceRange _mappedExactRowRange(FlarkViewportRow row) =>
       _captureSurfaceProjector().mappedExactRowRange(row);
@@ -3340,7 +3314,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   Future<void> _restoreHistorySelection(
-    _EditorSelectionSnapshot snapshot,
+    FlarkEditorSelectionSnapshot snapshot,
   ) async {
     final selection = snapshot.selection;
     final selectionStart = math
@@ -3383,7 +3357,7 @@ final class FlarkEditorController extends ChangeNotifier
     _restoreSelectionSnapshot(snapshot);
   }
 
-  void _restoreSelectionSnapshot(_EditorSelectionSnapshot snapshot) {
+  void _restoreSelectionSnapshot(FlarkEditorSelectionSnapshot snapshot) {
     _inlineContinuation = snapshot.inlineContinuation;
     final selection = snapshot.selection;
     final start = math.min(selection.baseOffset, selection.extentOffset);
@@ -3509,22 +3483,22 @@ final class FlarkEditorController extends ChangeNotifier
     );
   }
 
-  _TextMutation? _mutationFor(TextEditingDelta delta) =>
+  FlarkTextMutation? _mutationFor(TextEditingDelta delta) =>
       _platformInput.mutationFor(delta);
 
-  _QueuedEditPublication _queueNativeEdit(
+  FlarkQueuedEditPublication _queueNativeEdit(
     int start,
     int end,
     String replacement, {
-    required _EditorSelectionSnapshot beforeSelection,
-    required _EditorSelectionSnapshot afterSelection,
+    required FlarkEditorSelectionSnapshot beforeSelection,
+    required FlarkEditorSelectionSnapshot afterSelection,
     required bool coalesceTyping,
     required int? compositionHistoryGroup,
     bool compositionFinal = false,
     bool recenterAfterOptimisticEdit = false,
     bool restoreSelectionAfterCommit = false,
     bool requiresStructuralCertification = false,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     final acceptanceWatch = Stopwatch()..start();
     final acceptedAtEpochMicros =
@@ -3760,8 +3734,8 @@ final class FlarkEditorController extends ChangeNotifier
             projectionReceipt == null &&
             !editUsesExactFallback);
     final publication = requiresParserCertification
-        ? _QueuedEditPublication.retainPublishedUntilCertified
-        : _QueuedEditPublication.publishOptimistically;
+        ? FlarkQueuedEditPublication.retainPublishedUntilCertified
+        : FlarkQueuedEditPublication.publishOptimistically;
     if (publication.requiresParserCertification) {
       _coordinator.beginPublicationBarrier();
     }
@@ -3780,7 +3754,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   bool _queueSemanticParagraphBreak(
     int localCaret, {
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     if (!_inputValue.selection.isCollapsed ||
         _publicationCertificationBarrierActive) {
@@ -3852,7 +3826,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     _queueSemanticEdit(
       FlarkCoreEditIntentV1.insertParagraphBreak,
-      fallbackWhenNotApplied: _DeferredInputCommand.insertNewline,
+      fallbackWhenNotApplied: FlarkDeferredInputCommand.insertNewline,
       platformTiming: platformTiming,
     );
     return true;
@@ -3860,7 +3834,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   bool _queueSemanticDeleteBackward(
     int localCaret, {
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     if (!_inputValue.selection.isCollapsed ||
         _publicationCertificationBarrierActive) {
@@ -3932,7 +3906,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     _queueSemanticEdit(
       FlarkCoreEditIntentV1.deleteBackward,
-      fallbackWhenNotApplied: _DeferredInputCommand.deleteBackward,
+      fallbackWhenNotApplied: FlarkDeferredInputCommand.deleteBackward,
       platformTiming: platformTiming,
     );
     return true;
@@ -3940,7 +3914,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   bool _queueSemanticDeleteForward(
     int localCaret, {
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     if (!_inputValue.selection.isCollapsed ||
         _publicationCertificationBarrierActive) {
@@ -3966,7 +3940,7 @@ final class FlarkEditorController extends ChangeNotifier
     _semanticEditV1Active = true;
     _queueSemanticEdit(
       FlarkCoreEditIntentV1.deleteForward,
-      fallbackWhenNotApplied: _DeferredInputCommand.deleteForward,
+      fallbackWhenNotApplied: FlarkDeferredInputCommand.deleteForward,
       platformTiming: platformTiming,
     );
     return true;
@@ -4006,11 +3980,11 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _queueSemanticEdit(
     FlarkCoreEditIntentV1 intent, {
-    _DeferredInputCommand? fallbackWhenNotApplied,
-    _PlatformInputTiming? platformTiming,
+    FlarkDeferredInputCommand? fallbackWhenNotApplied,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     _ensureSemanticInputBarrier(platformTiming: platformTiming);
-    final admittedInput = _pendingSemanticInput!;
+    final admittedInput = _inputTransactions.pendingSemantic!;
     admittedInput.fallbackWhenNotApplied = fallbackWhenNotApplied;
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
@@ -4052,7 +4026,7 @@ final class FlarkEditorController extends ChangeNotifier
     // traversal, even while an incompatible composition/selection is active.
     if (!_inputValue.selection.isCollapsed ||
         _session.compositionActive ||
-        _pendingSemanticInput != null ||
+        _inputTransactions.pendingSemantic != null ||
         _pendingPresentation.dependency != null ||
         _pendingPresentation.paragraphGap != null ||
         _pendingPresentation.structuralSurfaces.isNotEmpty) {
@@ -4077,7 +4051,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (_closed ||
         _status == FlarkEditorStatus.faulted ||
         _session.compositionActive ||
-        _pendingSemanticInput != null ||
+        _inputTransactions.pendingSemantic != null ||
         _pendingPresentation.dependency != null ||
         _pendingPresentation.paragraphGap != null ||
         _pendingPresentation.structuralSurfaces.isNotEmpty ||
@@ -4194,11 +4168,11 @@ final class FlarkEditorController extends ChangeNotifier
     }
   }
 
-  void _ensureSemanticInputBarrier({_PlatformInputTiming? platformTiming}) {
-    if (_pendingSemanticInput != null) return;
-    _lateSemanticInput = null;
+  void _ensureSemanticInputBarrier({FlarkPlatformInputTiming? platformTiming}) {
+    if (_inputTransactions.pendingSemantic != null) return;
+    _inputTransactions.lateSemantic = null;
     final timing = platformTiming ?? _inputTransactions.activeTiming;
-    _pendingSemanticInput = _PendingSemanticInput(
+    _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
       base: _inputValue,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
       initialCallbackStartedEpochMicros:
@@ -4209,14 +4183,15 @@ final class FlarkEditorController extends ChangeNotifier
       provisionalAfter: _inputValue,
     );
     if (timing != null) {
-      _pendingSemanticInput!.initialCallbackMicros = timing.editorSyncMicros;
+      _inputTransactions.pendingSemantic!.initialCallbackMicros =
+          timing.editorSyncMicros;
     }
   }
 
   Future<void> _completeSemanticEdit(
     Future<FlarkCoreEditIntentOutcomeV1> operation,
     FlarkEditorCommandTicket command,
-    _PendingSemanticInput admittedInput,
+    FlarkPendingSemanticInput admittedInput,
   ) async {
     final generation = command.generation;
     try {
@@ -4256,7 +4231,7 @@ final class FlarkEditorController extends ChangeNotifier
         }
       } else {
         _semanticEditV1Active = false;
-        final pending = _pendingSemanticInput;
+        final pending = _inputTransactions.pendingSemantic;
         if (pending?.provisionalMutation != null) {
           _promoteUncommittedPlatformMutation();
         } else if (pending != null) {
@@ -4264,7 +4239,7 @@ final class FlarkEditorController extends ChangeNotifier
           if (fallback != null) {
             pending.successors.insert(
               0,
-              _DeferredInputSuccessor(
+              FlarkDeferredInputSuccessor(
                 fallback,
                 semanticAlreadyAttempted: true,
                 platformTiming: pending.platformTiming,
@@ -4295,12 +4270,7 @@ final class FlarkEditorController extends ChangeNotifier
                 admittedInput.initialCallbackStartedEpochMicros,
           ),
         );
-        _lastSemanticEditPerformance = performance;
-        _semanticEditPerformanceReceipts.add(performance);
-        if (_semanticEditPerformanceReceipts.length >
-            _maximumPerformanceReceipts) {
-          _semanticEditPerformanceReceipts.removeAt(0);
-        }
+        _performance.recordSemantic(performance);
       }
       if (generation != _editGeneration) {
         // A same-burst successor already owns the next observable source.
@@ -4396,7 +4366,7 @@ final class FlarkEditorController extends ChangeNotifier
     // that authoritative origin before the optimistic cache update can clear
     // the old viewport; the next query will rewind it to any enclosing row.
     _viewportPager.pinRefreshAnchor(
-      _ViewportPageAnchor(
+      FlarkViewportPageAnchor(
         byte: receipt.resultByteStart,
         utf16: receipt.resultUtf16Start,
       ),
@@ -4434,7 +4404,7 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkCoreEditIntentReceiptV1 receipt,
     int caret,
   ) {
-    final pending = _pendingSemanticInput;
+    final pending = _inputTransactions.pendingSemantic;
     if (pending == null) return false;
     final windowStart = pending.inputGlobalUtf16Start;
     final windowEnd = windowStart + pending.base.text.length;
@@ -4496,7 +4466,7 @@ final class FlarkEditorController extends ChangeNotifier
       if (pending.provisionalMutation == null && pending.successors.isEmpty) {
         return;
       }
-      final reconciliation = _InputReconciliationMap.forSemanticBarrier(
+      final reconciliation = FlarkInputReconciliationMap.forSemanticBarrier(
         pending: pending,
         receipt: receipt,
         canonicalResultSelectionUtf16: _globalSelectionExtent,
@@ -4511,12 +4481,12 @@ final class FlarkEditorController extends ChangeNotifier
         _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
         return;
       }
-      final resyncCount = _resyncCount;
+      final resyncCount = _platformInput.resyncCount;
       _promoteSemanticSuccessorsWithMap(pending, reconciliation);
       if (pending.provisionalMutation != null &&
-          _pendingSemanticInput == null &&
-          _resyncCount == resyncCount) {
-        _lateSemanticInput = _LateSemanticInput(
+          _inputTransactions.pendingSemantic == null &&
+          _platformInput.resyncCount == resyncCount) {
+        _inputTransactions.lateSemantic = FlarkLateSemanticInput(
           provisionalTail: pending.provisionalTail,
           reconciliation: reconciliation,
           successorCount: pending.successors.length,
@@ -4533,12 +4503,12 @@ final class FlarkEditorController extends ChangeNotifier
   void _promoteUncommittedSemanticSuccessors() {
     final stopwatch = Stopwatch()..start();
     final pending = _inputTransactions.takePendingSemantic();
-    _lateSemanticInput = null;
+    _inputTransactions.lateSemantic = null;
     try {
       if (pending == null) return;
       _promoteSemanticSuccessorsWithMap(
         pending,
-        const _InputReconciliationMap(
+        const FlarkInputReconciliationMap(
           fromStart: 0,
           fromEnd: 0,
           toStart: 0,
@@ -4555,7 +4525,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _promoteUncommittedPlatformMutation() {
     final pending = _inputTransactions.takePendingSemantic();
-    _lateSemanticInput = null;
+    _inputTransactions.lateSemantic = null;
     if (pending == null || pending.provisionalMutation == null) return;
     final mutation = pending.provisionalMutation!;
     final provisional = TextEditingValue(
@@ -4591,7 +4561,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     _promoteSemanticSuccessorsWithMap(
       pending,
-      const _InputReconciliationMap(
+      const FlarkInputReconciliationMap(
         fromStart: 0,
         fromEnd: 0,
         toStart: 0,
@@ -4601,12 +4571,12 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _promoteSemanticSuccessorsWithMap(
-    _PendingSemanticInput pending,
-    _InputReconciliationMap reconciliation,
+    FlarkPendingSemanticInput pending,
+    FlarkInputReconciliationMap reconciliation,
   ) {
     for (var index = 0; index < pending.successors.length; index += 1) {
       final successor = pending.successors[index];
-      if (successor is _DeferredHistorySuccessor) {
+      if (successor is FlarkDeferredHistorySuccessor) {
         unawaited(
           _queueHistoryReplay(undoDirection: successor.undoDirection).then(
             (replayed) {
@@ -4620,7 +4590,7 @@ final class FlarkEditorController extends ChangeNotifier
         );
         continue;
       }
-      if (successor case _DeferredInputSuccessor(
+      if (successor case FlarkDeferredInputSuccessor(
         command: final command,
         replacement: final replacement,
         typingInput: final typingInput,
@@ -4656,7 +4626,7 @@ final class FlarkEditorController extends ChangeNotifier
             platformTiming: successor.platformTiming,
           );
         }
-        final nextBarrier = _pendingSemanticInput;
+        final nextBarrier = _inputTransactions.pendingSemantic;
         if (nextBarrier != null) {
           if (index + 1 < pending.successors.length) {
             nextBarrier.successors.addAll(pending.successors.skip(index + 1));
@@ -4667,7 +4637,7 @@ final class FlarkEditorController extends ChangeNotifier
         }
         continue;
       }
-      final batch = successor as _ProvisionalInputBatch;
+      final batch = successor as FlarkProvisionalInputBatch;
       final selection = _mapProvisionalSelection(
         reconciliation,
         batch.after.selection,
@@ -4734,7 +4704,11 @@ final class FlarkEditorController extends ChangeNotifier
       final acceptance = promotedStart == null || promotedEnd == null
           ? null
           : _acceptMutation(
-              _TextMutation(promotedStart, promotedEnd, mutation.replacement),
+              FlarkTextMutation(
+                promotedStart,
+                promotedEnd,
+                mutation.replacement,
+              ),
               selection: promotedSelection,
               composing: promotedComposing,
               typingInput: batch.typingInput,
@@ -4752,33 +4726,33 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _promoteReclassifiedCommand(
-    _DeferredInputCommand command, {
-    _PlatformInputTiming? platformTiming,
+    FlarkDeferredInputCommand command, {
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     switch (command) {
-      case _DeferredInputCommand.deleteBackward:
+      case FlarkDeferredInputCommand.deleteBackward:
         _deleteBackward(allowSemantic: true, platformTiming: platformTiming);
-      case _DeferredInputCommand.deleteForward:
+      case FlarkDeferredInputCommand.deleteForward:
         _deleteForward(allowSemantic: true, platformTiming: platformTiming);
-      case _DeferredInputCommand.insertNewline:
+      case FlarkDeferredInputCommand.insertNewline:
         _insertNewline(allowSemantic: true, platformTiming: platformTiming);
     }
   }
 
   void _promoteDeferredCommand(
-    _DeferredInputCommand command, {
+    FlarkDeferredInputCommand command, {
     required bool semanticAlreadyAttempted,
-    _PlatformInputTiming? platformTiming,
+    FlarkPlatformInputTiming? platformTiming,
   }) {
     if (!semanticAlreadyAttempted) {
       _semanticEditV1Active = true;
       _queueSemanticEdit(
         switch (command) {
-          _DeferredInputCommand.deleteBackward =>
+          FlarkDeferredInputCommand.deleteBackward =>
             FlarkCoreEditIntentV1.deleteBackward,
-          _DeferredInputCommand.deleteForward =>
+          FlarkDeferredInputCommand.deleteForward =>
             FlarkCoreEditIntentV1.deleteForward,
-          _DeferredInputCommand.insertNewline =>
+          FlarkDeferredInputCommand.insertNewline =>
             FlarkCoreEditIntentV1.insertParagraphBreak,
         },
         fallbackWhenNotApplied: command,
@@ -4797,17 +4771,17 @@ final class FlarkEditorController extends ChangeNotifier
       preferredOrdinal: _activeOrdinal,
     );
     switch (command) {
-      case _DeferredInputCommand.deleteBackward:
+      case FlarkDeferredInputCommand.deleteBackward:
         _deleteBackward(allowSemantic: false, platformTiming: platformTiming);
-      case _DeferredInputCommand.deleteForward:
+      case FlarkDeferredInputCommand.deleteForward:
         _deleteForward(allowSemantic: false, platformTiming: platformTiming);
-      case _DeferredInputCommand.insertNewline:
+      case FlarkDeferredInputCommand.insertNewline:
         _insertNewline(allowSemantic: false, platformTiming: platformTiming);
     }
   }
 
   TextSelection? _mapProvisionalSelection(
-    _InputReconciliationMap map,
+    FlarkInputReconciliationMap map,
     TextSelection selection,
   ) {
     final downstream = selection.affinity == TextAffinity.downstream;
@@ -4826,7 +4800,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   TextRange? _mapProvisionalRange(
-    _InputReconciliationMap map,
+    FlarkInputReconciliationMap map,
     TextRange range,
   ) {
     if (range == TextRange.empty) return TextRange.empty;
@@ -4836,7 +4810,7 @@ final class FlarkEditorController extends ChangeNotifier
     return TextRange(start: start, end: end);
   }
 
-  _TextMutation? _differenceMutation(String before, String after) =>
+  FlarkTextMutation? _differenceMutation(String before, String after) =>
       _platformInput.differenceMutation(before, after);
 
   int _committedGapEnd(FlarkCoreCommittedPresentationGapV1 split) {
@@ -4983,8 +4957,8 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkEditorCommandTicket command,
     int acceptedAtEpochMicros,
     int localEditorSyncMicros,
-    _PlatformInputTiming? platformTiming, {
-    required _QueuedEditPublication publication,
+    FlarkPlatformInputTiming? platformTiming, {
+    required FlarkQueuedEditPublication publication,
   }) async {
     final generation = command.generation;
     try {
@@ -5321,14 +5295,14 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   Future<bool> _queueHistoryReplay({required bool undoDirection}) {
-    final pendingSemantic = _pendingSemanticInput;
+    final pendingSemantic = _inputTransactions.pendingSemantic;
     if (pendingSemantic != null) {
       if (!_reserveSemanticSuccessor(pendingSemantic)) {
         return Future<bool>.value(false);
       }
       final completion = Completer<bool>();
       pendingSemantic.successors.add(
-        _DeferredHistorySuccessor(
+        FlarkDeferredHistorySuccessor(
           undoDirection: undoDirection,
           completion: completion,
         ),
@@ -5340,7 +5314,9 @@ final class FlarkEditorController extends ChangeNotifier
         _status == FlarkEditorStatus.faulted ||
         _coordinator.historyReplayPending ||
         (!undoDirection && !_session.canRedo) ||
-        (undoDirection && !_session.canUndo && _pendingEdits == 0)) {
+        (undoDirection &&
+            !_session.canUndo &&
+            _coordinator.pendingEdits == 0)) {
       return Future<bool>.value(false);
     }
     _parseTimer?.cancel();
@@ -5386,7 +5362,7 @@ final class FlarkEditorController extends ChangeNotifier
       // restored publication indefinitely.
       _inputTransactions.discardPendingSemantic();
       _cancelCertificationDeferredInput();
-      _lateSemanticInput = null;
+      _inputTransactions.lateSemantic = null;
       _coordinator.endPublicationBarrier();
       _semanticEditV1Active = false;
       final receiptAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
@@ -5501,7 +5477,7 @@ final class FlarkEditorController extends ChangeNotifier
     required int flutterReceiptAdoptionMicros,
     required int acceptanceToReceiptMicros,
   }) {
-    _sourceEditPerformanceReceipts.add(
+    _performance.recordSource(
       FlarkSourceEditPerformance(
         kind: kind,
         sourceGeneration: generation,
@@ -5516,9 +5492,6 @@ final class FlarkEditorController extends ChangeNotifier
         acceptanceToReceiptMicros: acceptanceToReceiptMicros,
       ),
     );
-    if (_sourceEditPerformanceReceipts.length > _maximumPerformanceReceipts) {
-      _sourceEditPerformanceReceipts.removeAt(0);
-    }
   }
 
   void _scheduleParsingAfterInput({bool immediate = false}) {
@@ -5600,7 +5573,7 @@ final class FlarkEditorController extends ChangeNotifier
         }
         // An in-flight edit owns its own refresh; publishing around it would
         // race the optimistic window against a not-yet-committed splice.
-        if (!certified || !upgraded || _pendingEdits != 0) continue;
+        if (!certified || !upgraded || _coordinator.pendingEdits != 0) continue;
         final stamp = _coordinator.stamp;
         await _refreshViewport(
           restoreInputWindow: true,
@@ -6140,11 +6113,7 @@ final class FlarkEditorController extends ChangeNotifier
       text.length,
       candidateStart + _maximumInputCodeUnits,
     );
-    final window = _scalarAlignedUtf16Window(
-      text,
-      candidateStart,
-      candidateEnd,
-    );
+    final window = scalarAlignedUtf16Window(text, candidateStart, candidateEnd);
     _inputGlobalUtf16Start = sourceStart + window.start;
     _inputValue = TextEditingValue(
       text: text.substring(window.start, window.end),
@@ -6153,34 +6122,6 @@ final class FlarkEditorController extends ChangeNotifier
     _activeOrdinal = ordinal;
     _crossRowSelection = false;
     _updateGlobalSelection();
-  }
-
-  bool _isHighSurrogate(int codeUnit) =>
-      codeUnit >= 0xd800 && codeUnit <= 0xdbff;
-
-  bool _isLowSurrogate(int codeUnit) =>
-      codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
-
-  ({int start, int end}) _scalarAlignedUtf16Window(
-    String text,
-    int start,
-    int end,
-  ) {
-    var alignedStart = start;
-    var alignedEnd = end;
-    if (alignedStart > 0 &&
-        alignedStart < text.length &&
-        _isLowSurrogate(text.codeUnitAt(alignedStart)) &&
-        _isHighSurrogate(text.codeUnitAt(alignedStart - 1))) {
-      alignedStart += 1;
-    }
-    if (alignedEnd > alignedStart &&
-        alignedEnd < text.length &&
-        _isLowSurrogate(text.codeUnitAt(alignedEnd)) &&
-        _isHighSurrogate(text.codeUnitAt(alignedEnd - 1))) {
-      alignedEnd -= 1;
-    }
-    return (start: alignedStart, end: math.max(alignedStart, alignedEnd));
   }
 
   String _sliceVisibleUtf16(int globalStart, int globalEnd) =>
