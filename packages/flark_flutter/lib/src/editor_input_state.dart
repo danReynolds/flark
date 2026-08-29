@@ -127,7 +127,7 @@ final class FlarkEditorInputState {
       affinity: portableTextAffinity(affinity),
       maximumCodeUnits: maximumCodeUnits,
     );
-    _installPlannedWindow(window);
+    installWindowPlan(window);
     return window.selectionRepresented;
   }
 
@@ -145,10 +145,10 @@ final class FlarkEditorInputState {
       ordinal: ordinal,
       maximumCodeUnits: maximumCodeUnits,
     );
-    _installPlannedWindow(window);
+    installWindowPlan(window);
   }
 
-  void _installPlannedWindow(FlarkEditorInputWindow window) {
+  void installWindowPlan(FlarkEditorInputWindow window) {
     _globalUtf16Start = window.globalUtf16Start;
     _value = TextEditingValue(
       text: window.text,

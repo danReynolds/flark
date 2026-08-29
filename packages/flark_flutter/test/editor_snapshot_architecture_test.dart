@@ -148,6 +148,12 @@ void main() {
     expect(inputState, contains('markOversizedSelection'));
     expect(inputState, contains('FlarkEditorInputWindowPlanner.activate'));
     expect(inputState, contains('FlarkEditorInputWindowPlanner.collapsed'));
+    expect(inputState, contains('installWindowPlan'));
+    expect(portableInputWindow, contains('restoreCollapsed'));
+    expect(portableInputWindow, contains('paragraphGap'));
+    expect(portableInputWindow, contains('caretBoundary'));
+    expect(portableInputWindow, contains('neutralLine'));
+    expect(controller, isNot(contains('_activateWindowWithoutNotification')));
     expect(portableInputWindow, isNot(contains('package:flutter')));
     expect(portableInputWindow, isNot(contains('dart:ui')));
     expect(inputState, isNot(contains("import 'controller.dart'")));

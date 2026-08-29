@@ -297,6 +297,54 @@ final class FlarkSurfaceProjector {
     return FlarkSourceRange(currentMapped.start, split.rowEndUtf16);
   }
 
+  /// Source range that owns activation for one parser row.
+  FlarkSourceRange activationRange(FlarkViewportRow row) {
+    final editable = row.editableUtf16;
+    if (row.thematicBreak && editable != null && editable.length == 0) {
+      return editable;
+    }
+    if (editable != null && editable.start < row.sourceUtf16.start) {
+      return editable;
+    }
+    return row.sourceUtf16;
+  }
+
+  /// Resolves the surface ordinal at a global caret without frontend policy.
+  int? surfaceOrdinalAt({
+    required List<FlarkViewportRow> rows,
+    required int globalUtf16Offset,
+    required int sourceUtf16Length,
+  }) {
+    for (final row in rows) {
+      final range = surfaceSourceRange(row);
+      if (range.start <= globalUtf16Offset && globalUtf16Offset < range.end) {
+        return row.ordinal;
+      }
+    }
+    // Half-open ownership selects a following row at shared boundaries. Only
+    // a true document/page tail gives the last row inclusive end ownership;
+    // an internal blank gap remains a neutral physical line.
+    final visibleEnd = visibleUtf16Start + visibleSource.length;
+    if (globalUtf16Offset == sourceUtf16Length ||
+        globalUtf16Offset == visibleEnd) {
+      for (final row in rows.reversed) {
+        if (surfaceSourceRange(row).end == globalUtf16Offset) {
+          return row.ordinal;
+        }
+      }
+    }
+    if (visibleSource.isEmpty) return -1;
+    final local = (globalUtf16Offset - visibleUtf16Start).clamp(
+      0,
+      visibleSource.length,
+    );
+    var line = 0;
+    for (var index = 0; index < local; index += 1) {
+      if (visibleSource.codeUnitAt(index) == 0x0a) line += 1;
+    }
+    return -line - 1;
+  }
+
   FlarkSourceRange _includeActiveFallbackLineOwnership(
     FlarkViewportRow row,
     FlarkSourceRange mapped,

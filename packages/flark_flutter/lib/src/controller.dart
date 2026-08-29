@@ -3243,36 +3243,11 @@ final class FlarkEditorController extends ChangeNotifier
       _captureSurfaceProjector().mappedExactRowRange(row);
 
   int? _surfaceOrdinalAt(int globalUtf16Offset) {
-    for (final row in _viewportState.rows) {
-      final range = surfaceSourceRange(row);
-      if (range.start <= globalUtf16Offset && globalUtf16Offset < range.end) {
-        return row.ordinal;
-      }
-    }
-    // Half-open row ownership selects a following row at shared boundaries.
-    // Only a true document/page tail gives the last cached row inclusive end
-    // ownership. An internal blank gap must remain neutral rather than
-    // retargeting Return to the preceding semantic row.
-    final visibleEnd =
-        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    if (globalUtf16Offset == sourceUtf16Length ||
-        globalUtf16Offset == visibleEnd) {
-      for (final row in _viewportState.rows.reversed) {
-        if (surfaceSourceRange(row).end == globalUtf16Offset) {
-          return row.ordinal;
-        }
-      }
-    }
-    if (_viewportState.visibleSource.isEmpty) return -1;
-    final local = (globalUtf16Offset - _viewportState.visibleUtf16Start).clamp(
-      0,
-      _viewportState.visibleSource.length,
+    return _captureSurfaceProjector().surfaceOrdinalAt(
+      rows: _viewportState.rows,
+      globalUtf16Offset: globalUtf16Offset,
+      sourceUtf16Length: sourceUtf16Length,
     );
-    var line = 0;
-    for (var index = 0; index < local; index++) {
-      if (_viewportState.visibleSource.codeUnitAt(index) == 0x0a) line += 1;
-    }
-    return -line - 1;
   }
 
   bool _ensureActiveInputVisible() {
@@ -3412,63 +3387,16 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _restoreCollapsedInputWindow(int caret, {int? preferredOrdinal}) {
-    if (_restoreCommittedParagraphGapInputWindow(caret)) return;
-    if (_restoreCommittedCaretBoundaryInputWindow(caret)) return;
-    FlarkViewportRow? row;
-    if (preferredOrdinal != null) {
-      for (final candidate in _viewportState.rows) {
-        final range = _mapViewportRange(_activationRange(candidate));
-        if (candidate.ordinal == preferredOrdinal &&
-            range.start <= caret &&
-            caret <= range.end) {
-          row = candidate;
-          break;
-        }
-      }
-    }
-    final ordinalAtCaret = _surfaceOrdinalAt(caret);
-    if (row == null && ordinalAtCaret != null) {
-      for (final candidate in _viewportState.rows) {
-        if (candidate.ordinal == ordinalAtCaret) {
-          row = candidate;
-          break;
-        }
-      }
-    }
-    if (row != null) {
-      final range = _mapViewportRange(_activationRange(row));
-      final visibleEnd =
-          _viewportState.visibleUtf16Start +
-          _viewportState.visibleSource.length;
-      if (range.start >= _viewportState.visibleUtf16Start &&
-          range.end <= visibleEnd &&
-          range.start <= caret &&
-          caret <= range.end) {
-        _activateWindowWithoutNotification(
-          text: _sliceVisibleUtf16(range.start, range.end),
-          sourceStart: range.start,
-          caret: caret,
-          ordinal: row.ordinal,
-        );
-        return;
-      }
-    }
-    final localCaret = (caret - _viewportState.visibleUtf16Start).clamp(
-      0,
-      _viewportState.visibleSource.length,
-    );
-    final lineStart = localCaret == 0
-        ? 0
-        : _viewportState.visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
-    final newline = _viewportState.visibleSource.indexOf('\n', localCaret);
-    final lineEnd = newline == -1
-        ? _viewportState.visibleSource.length
-        : newline + 1;
-    _activateWindowWithoutNotification(
-      text: _viewportState.visibleSource.substring(lineStart, lineEnd),
-      sourceStart: _viewportState.visibleUtf16Start + lineStart,
-      caret: caret,
-      ordinal: ordinalAtCaret ?? -1,
+    _inputState.installWindowPlan(
+      FlarkEditorInputWindowPlanner.restoreCollapsed(
+        viewportState: _viewportState,
+        projector: _captureSurfaceProjector(),
+        pendingPresentation: _pendingPresentation,
+        caret: caret,
+        sourceUtf16Length: sourceUtf16Length,
+        maximumCodeUnits: _maximumInputCodeUnits,
+        preferredOrdinal: preferredOrdinal,
+      ),
     );
   }
 
@@ -5958,63 +5886,23 @@ final class FlarkEditorController extends ChangeNotifier
       _restoreSelectionSnapshot(_selectionSnapshot());
       return;
     }
-    if (_restoreCommittedParagraphGapInputWindow(
-      _inputState.selectionExtentUtf16,
-    )) {
-      return;
-    }
-    if (_restoreCommittedCaretBoundaryInputWindow(
-      _inputState.selectionExtentUtf16,
-    )) {
-      return;
-    }
     if ((_inputState.activeOrdinal ?? 0) < 0) {
+      if (_restoreCommittedParagraphGapInputWindow(
+        _inputState.selectionExtentUtf16,
+      )) {
+        return;
+      }
+      if (_restoreCommittedCaretBoundaryInputWindow(
+        _inputState.selectionExtentUtf16,
+      )) {
+        return;
+      }
       _restoreNeutralInputWindow(_inputState.selectionExtentUtf16);
       return;
     }
-    if (_viewportState.rows.isNotEmpty) {
-      final caret = _inputState.selectionExtentUtf16.clamp(
-        0,
-        sourceUtf16Length,
-      );
-      FlarkViewportRow? row;
-      for (final candidate in _viewportState.rows) {
-        final range = _activationRange(candidate);
-        if (range.start <= caret && caret <= range.end) {
-          row = candidate;
-          break;
-        }
-      }
-      if (row == null) {
-        _restoreNeutralInputWindow(caret);
-        return;
-      }
-      final activationRange = _activationRange(row);
-      final text = _sliceVisibleUtf16(
-        activationRange.start,
-        activationRange.end,
-      );
-      _activateWindowWithoutNotification(
-        text: text,
-        sourceStart: activationRange.start,
-        caret: caret,
-        ordinal: row.ordinal,
-      );
-      return;
-    }
-    final newline = _viewportState.visibleSource.indexOf('\n');
-    final end = newline == -1
-        ? _viewportState.visibleSource.length
-        : newline + 1;
-    final visibleEnd = _viewportState.visibleUtf16Start + end;
-    _activateWindowWithoutNotification(
-      text: _viewportState.visibleSource.substring(0, end),
-      sourceStart: _viewportState.visibleUtf16Start,
-      caret: _inputState.selectionExtentUtf16.clamp(
-        _viewportState.visibleUtf16Start,
-        visibleEnd,
-      ),
-      ordinal: -1,
+    _restoreCollapsedInputWindow(
+      _inputState.selectionExtentUtf16.clamp(0, sourceUtf16Length),
+      preferredOrdinal: _inputState.activeOrdinal,
     );
   }
 
@@ -6023,28 +5911,15 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkCoreCommittedPresentationGapV1? gap,
   }) {
     gap ??= _pendingPresentation.paragraphGap;
-    if (gap == null ||
-        caret < gap.rowEndUtf16 ||
-        caret > _committedGapEnd(gap)) {
-      return false;
-    }
-    final end = _committedGapEnd(gap);
-    final visibleEnd =
-        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    if (gap.rowEndUtf16 < _viewportState.visibleUtf16Start ||
-        end > visibleEnd) {
-      return false;
-    }
-    // The receipt owns this exact result-line extent. Rebuilding a physical
-    // line from [caret] is not equivalent when the caret is on its terminal
-    // newline: lastIndexOf then selects the following empty line and loses a
-    // hidden list/quote continuation prefix from the platform window.
-    _activateWindowWithoutNotification(
-      text: _sliceVisibleUtf16(gap.rowEndUtf16, end),
-      sourceStart: gap.rowEndUtf16,
+    final plan = FlarkEditorInputWindowPlanner.paragraphGap(
+      viewportState: _viewportState,
+      projector: _captureSurfaceProjector(),
+      gap: gap,
       caret: caret,
-      ordinal: -gap.rowOrdinal - 1,
+      maximumCodeUnits: _maximumInputCodeUnits,
     );
+    if (plan == null) return false;
+    _inputState.installWindowPlan(plan);
     return true;
   }
 
@@ -6053,90 +5928,26 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkPendingCaretBoundary? boundary,
   }) {
     boundary ??= _pendingPresentation.caretBoundary;
-    if (boundary == null) return false;
-    final end = _committedCaretBoundaryInputEnd(boundary);
-    if (end == null) return false;
-    if (caret < boundary.rowEndUtf16 || caret > end) return false;
-    var inputStart = boundary.rowEndUtf16;
-    var inputEnd = end;
-    final visibleEnd =
-        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    if (caret == end && end < visibleEnd) {
-      // Input windows are half-open at a shared physical-line edge. The caret
-      // after the boundary's terminal newline is the start of the downstream
-      // line, not the end of the preceding blank island. This rule survives
-      // parser recertification because it is derived from exact source geometry
-      // rather than from a transient row ordinal.
-      inputStart = end;
-      final localStart = inputStart - _viewportState.visibleUtf16Start;
-      final downstreamNewline = _viewportState.visibleSource.indexOf(
-        '\n',
-        localStart,
-      );
-      inputEnd = downstreamNewline == -1
-          ? visibleEnd
-          : _viewportState.visibleUtf16Start + downstreamNewline + 1;
-    }
-    // Certification retires the temporary visual gap but deliberately keeps
-    // this nonvisual boundary. Reuse its exact result-line origin for the
-    // platform window too; rebuilding from the parser's empty editable range
-    // would expose a zero-length surrogate after a later redundant refresh.
-    _activateWindowWithoutNotification(
-      text: _sliceVisibleUtf16(inputStart, inputEnd),
-      sourceStart: inputStart,
+    final plan = FlarkEditorInputWindowPlanner.caretBoundary(
+      viewportState: _viewportState,
+      boundary: boundary,
       caret: caret,
-      ordinal: -boundary.rowOrdinal - 1,
+      maximumCodeUnits: _maximumInputCodeUnits,
     );
+    if (plan == null) return false;
+    _inputState.installWindowPlan(plan);
     return true;
   }
 
   void _restoreNeutralInputWindow(int caret) {
-    if (_viewportState.visibleSource.isEmpty) {
-      _activateWindowWithoutNotification(
-        text: '',
-        sourceStart: _viewportState.visibleUtf16Start,
-        caret: _viewportState.visibleUtf16Start,
-        ordinal: -1,
-      );
-      return;
-    }
-    final localCaret = (caret - _viewportState.visibleUtf16Start).clamp(
-      0,
-      _viewportState.visibleSource.length,
-    );
-    final lineStart = localCaret == 0
-        ? 0
-        : _viewportState.visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
-    final newline = _viewportState.visibleSource.indexOf('\n', localCaret);
-    final lineEnd = newline == -1
-        ? _viewportState.visibleSource.length
-        : newline + 1;
-    var lineOrdinal = 0;
-    for (var index = 0; index < lineStart; index += 1) {
-      if (_viewportState.visibleSource.codeUnitAt(index) == 0x0a) {
-        lineOrdinal += 1;
-      }
-    }
-    _activateWindowWithoutNotification(
-      text: _viewportState.visibleSource.substring(lineStart, lineEnd),
-      sourceStart: _viewportState.visibleUtf16Start + lineStart,
-      caret: caret,
-      ordinal: -lineOrdinal - 1,
+    _inputState.installWindowPlan(
+      FlarkEditorInputWindowPlanner.neutralLine(
+        viewportState: _viewportState,
+        caret: caret,
+        maximumCodeUnits: _maximumInputCodeUnits,
+      ),
     );
   }
-
-  void _activateWindowWithoutNotification({
-    required String text,
-    required int sourceStart,
-    required int caret,
-    required int ordinal,
-  }) => _inputState.activateCollapsedWindow(
-    text: text,
-    sourceStart: sourceStart,
-    caret: caret,
-    ordinal: ordinal,
-    maximumCodeUnits: _maximumInputCodeUnits,
-  );
 
   String _sliceVisibleUtf16(int globalStart, int globalEnd) =>
       _viewportState.sliceVisibleUtf16(globalStart, globalEnd);
@@ -6263,14 +6074,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   FlarkSourceRange _activationRange(FlarkViewportRow row) {
-    final editable = row.editableUtf16;
-    if (row.thematicBreak && editable != null && editable.length == 0) {
-      return editable;
-    }
-    if (editable != null && editable.start < row.sourceUtf16.start) {
-      return editable;
-    }
-    return row.sourceUtf16;
+    return _captureSurfaceProjector().activationRange(row);
   }
 
   bool _rowSemanticsCurrent(FlarkSourceRange mappedSource) =>

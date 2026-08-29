@@ -1,6 +1,11 @@
 import 'dart:math' as math;
 
 import 'editor_text.dart';
+import 'editor_viewport_state.dart';
+import 'models.dart';
+import 'pending_presentation.dart';
+import 'presentation.dart';
+import 'surface_projector.dart';
 
 /// One immutable bounded input window planned without a frontend dependency.
 final class FlarkEditorInputWindow {
@@ -150,6 +155,230 @@ abstract final class FlarkEditorInputWindowPlanner {
       crossRowSelection: false,
       selectionRepresented: true,
     );
+  }
+
+  /// Restores a collapsed caret from parser/pending surface geometry.
+  static FlarkEditorInputWindow restoreCollapsed({
+    required FlarkEditorViewportState viewportState,
+    required FlarkSurfaceProjector projector,
+    required FlarkPendingPresentationSnapshot pendingPresentation,
+    required int caret,
+    required int sourceUtf16Length,
+    required int maximumCodeUnits,
+    int? preferredOrdinal,
+  }) {
+    final gap = paragraphGap(
+      viewportState: viewportState,
+      projector: projector,
+      gap: pendingPresentation.paragraphGap,
+      caret: caret,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+    if (gap != null) return gap;
+    final boundary = caretBoundary(
+      viewportState: viewportState,
+      boundary: pendingPresentation.caretBoundary,
+      caret: caret,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+    if (boundary != null) return boundary;
+
+    FlarkViewportRow? row;
+    if (preferredOrdinal != null) {
+      for (final candidate in viewportState.rows) {
+        final range = viewportState.mapRange(
+          projector.activationRange(candidate),
+        );
+        if (candidate.ordinal == preferredOrdinal &&
+            range.start <= caret &&
+            caret <= range.end) {
+          row = candidate;
+          break;
+        }
+      }
+    }
+    final ordinalAtCaret = projector.surfaceOrdinalAt(
+      rows: viewportState.rows,
+      globalUtf16Offset: caret,
+      sourceUtf16Length: sourceUtf16Length,
+    );
+    if (row == null && ordinalAtCaret != null) {
+      for (final candidate in viewportState.rows) {
+        if (candidate.ordinal == ordinalAtCaret) {
+          row = candidate;
+          break;
+        }
+      }
+    }
+    if (row != null) {
+      final range = viewportState.mapRange(projector.activationRange(row));
+      if (range.start >= viewportState.visibleUtf16Start &&
+          range.end <= viewportState.visibleUtf16End &&
+          range.start <= caret &&
+          caret <= range.end) {
+        return collapsed(
+          text: viewportState.sliceVisibleUtf16(range.start, range.end),
+          sourceStart: range.start,
+          caret: caret,
+          ordinal: row.ordinal,
+          maximumCodeUnits: maximumCodeUnits,
+        );
+      }
+    }
+    return _physicalLine(
+      viewportState: viewportState,
+      caret: caret,
+      ordinal: ordinalAtCaret ?? -1,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+  }
+
+  static FlarkEditorInputWindow? paragraphGap({
+    required FlarkEditorViewportState viewportState,
+    required FlarkSurfaceProjector projector,
+    required FlarkCoreCommittedPresentationGapV1? gap,
+    required int caret,
+    required int maximumCodeUnits,
+  }) {
+    if (gap == null) return null;
+    final end = _committedGapEnd(viewportState, projector, gap);
+    if (caret < gap.rowEndUtf16 || caret > end) return null;
+    if (gap.rowEndUtf16 < viewportState.visibleUtf16Start ||
+        end > viewportState.visibleUtf16End) {
+      return null;
+    }
+    return collapsed(
+      text: viewportState.sliceVisibleUtf16(gap.rowEndUtf16, end),
+      sourceStart: gap.rowEndUtf16,
+      caret: caret,
+      ordinal: -gap.rowOrdinal - 1,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+  }
+
+  static FlarkEditorInputWindow? caretBoundary({
+    required FlarkEditorViewportState viewportState,
+    required FlarkPendingCaretBoundary? boundary,
+    required int caret,
+    required int maximumCodeUnits,
+  }) {
+    if (boundary == null) return null;
+    final end = _caretBoundaryInputEnd(viewportState, boundary);
+    if (end == null || caret < boundary.rowEndUtf16 || caret > end) {
+      return null;
+    }
+    var inputStart = boundary.rowEndUtf16;
+    var inputEnd = end;
+    if (caret == end && end < viewportState.visibleUtf16End) {
+      // The shared physical-line edge belongs to the downstream line.
+      inputStart = end;
+      final localStart = inputStart - viewportState.visibleUtf16Start;
+      final newline = viewportState.visibleSource.indexOf('\n', localStart);
+      inputEnd = newline == -1
+          ? viewportState.visibleUtf16End
+          : viewportState.visibleUtf16Start + newline + 1;
+    }
+    return collapsed(
+      text: viewportState.sliceVisibleUtf16(inputStart, inputEnd),
+      sourceStart: inputStart,
+      caret: caret,
+      ordinal: -boundary.rowOrdinal - 1,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+  }
+
+  static FlarkEditorInputWindow neutralLine({
+    required FlarkEditorViewportState viewportState,
+    required int caret,
+    required int maximumCodeUnits,
+  }) {
+    if (viewportState.visibleSource.isEmpty) {
+      return collapsed(
+        text: '',
+        sourceStart: viewportState.visibleUtf16Start,
+        caret: viewportState.visibleUtf16Start,
+        ordinal: -1,
+        maximumCodeUnits: maximumCodeUnits,
+      );
+    }
+    final localCaret = (caret - viewportState.visibleUtf16Start).clamp(
+      0,
+      viewportState.visibleSource.length,
+    );
+    final lineStart = localCaret == 0
+        ? 0
+        : viewportState.visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
+    var lineOrdinal = 0;
+    for (var index = 0; index < lineStart; index += 1) {
+      if (viewportState.visibleSource.codeUnitAt(index) == 0x0a) {
+        lineOrdinal += 1;
+      }
+    }
+    return _physicalLine(
+      viewportState: viewportState,
+      caret: caret,
+      ordinal: -lineOrdinal - 1,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+  }
+
+  static FlarkEditorInputWindow _physicalLine({
+    required FlarkEditorViewportState viewportState,
+    required int caret,
+    required int ordinal,
+    required int maximumCodeUnits,
+  }) {
+    final localCaret = (caret - viewportState.visibleUtf16Start).clamp(
+      0,
+      viewportState.visibleSource.length,
+    );
+    final lineStart = localCaret == 0
+        ? 0
+        : viewportState.visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
+    final newline = viewportState.visibleSource.indexOf('\n', localCaret);
+    final lineEnd = newline == -1
+        ? viewportState.visibleSource.length
+        : newline + 1;
+    return collapsed(
+      text: viewportState.visibleSource.substring(lineStart, lineEnd),
+      sourceStart: viewportState.visibleUtf16Start + lineStart,
+      caret: caret,
+      ordinal: ordinal,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+  }
+
+  static int _committedGapEnd(
+    FlarkEditorViewportState viewportState,
+    FlarkSurfaceProjector projector,
+    FlarkCoreCommittedPresentationGapV1 gap,
+  ) {
+    var end = viewportState.visibleUtf16End;
+    final localStart = gap.rowEndUtf16 - viewportState.visibleUtf16Start;
+    if (0 <= localStart && localStart < viewportState.visibleSource.length) {
+      final newline = viewportState.visibleSource.indexOf('\n', localStart);
+      if (newline >= 0) end = viewportState.visibleUtf16Start + newline + 1;
+    }
+    for (final row in viewportState.rows) {
+      if (row.ordinal == gap.rowOrdinal) continue;
+      final start = projector.surfaceSourceRange(row).start;
+      if (start > gap.rowEndUtf16) end = math.min(end, start);
+    }
+    return end;
+  }
+
+  static int? _caretBoundaryInputEnd(
+    FlarkEditorViewportState viewportState,
+    FlarkPendingCaretBoundary boundary,
+  ) {
+    final localStart = boundary.rowEndUtf16 - viewportState.visibleUtf16Start;
+    if (localStart < 0 || localStart > viewportState.visibleSource.length) {
+      return null;
+    }
+    final newline = viewportState.visibleSource.indexOf('\n', localStart);
+    return newline == -1
+        ? viewportState.visibleUtf16End
+        : viewportState.visibleUtf16Start + newline + 1;
   }
 
   static void _checkCapacity(int maximumCodeUnits) {
