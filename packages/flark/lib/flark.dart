@@ -62,7 +62,8 @@ export 'src/models.dart'
         FlarkTablePresentation,
         FlarkViewport,
         FlarkViewportRow,
-        FlarkViewportRowEditCapability;
+        FlarkViewportRowEditCapability,
+        FlarkViewportRowSemanticCapabilities;
 export 'src/editor_coordinator.dart'
     show
         FlarkEditorCoordinator,

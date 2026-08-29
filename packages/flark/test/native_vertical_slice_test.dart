@@ -1210,12 +1210,19 @@ void main() {
       expect(quote.blockQuote?.prefixUtf16.end, 2);
       expect(quote.blockQuote?.nestingDepth, 1);
       expect(quote.blockQuote?.simpleContinuation, isTrue);
+      expect(quote.semanticCapabilities.insertParagraphBreak, isTrue);
+      expect(quote.semanticCapabilities.deleteBackwardAtEditableStart, isTrue);
 
       final fenced = viewport.rows.firstWhere(
         (row) => row.codeBlock?.style == FlarkCodeBlockStyle.fencedBacktick,
       );
       expect(fenced.codeBlock?.minimumClosingLength, 3);
       expect(fenced.codeBlock?.closed, isTrue);
+      expect(fenced.semanticCapabilities.insertParagraphBreak, isTrue);
+      expect(
+        fenced.semanticCapabilities.deleteBackwardAtPhysicalLineStart,
+        isTrue,
+      );
       expect(
         source.substring(
           fenced.editableUtf16!.start,
@@ -1254,7 +1261,16 @@ void main() {
         ),
         'indented\n',
       );
-      expect(viewport.rows.any((row) => row.thematicBreak), isTrue);
+      final thematic = viewport.rows.singleWhere((row) => row.thematicBreak);
+      expect(thematic.semanticCapabilities.insertParagraphBreak, isFalse);
+      expect(
+        thematic.semanticCapabilities.insertParagraphBreakAsLiteral,
+        isTrue,
+      );
+      expect(
+        thematic.semanticCapabilities.deleteForwardAtEditableStart,
+        isTrue,
+      );
     },
     skip: libraryPath == null,
   );

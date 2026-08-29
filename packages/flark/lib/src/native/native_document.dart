@@ -70,7 +70,14 @@ const _knownCodeVariantBits = 0x3f0000;
 const _thematicBreakPresentation = 0x10000;
 const _tablePresentation = 0x4000000;
 const _inlineAuthoritative = 0x8;
-const _knownViewportRowFlags = 0xf;
+const _insertParagraphBreak = 0x10;
+const _insertParagraphBreakAtPhysicalLineStart = 0x20;
+const _deleteBackwardAtEditableStart = 0x40;
+const _deleteBackwardAtProjectionStart = 0x80;
+const _deleteBackwardAtPhysicalLineStart = 0x100;
+const _deleteForwardAtEditableStart = 0x200;
+const _insertParagraphBreakAsLiteral = 0x400;
+const _knownViewportRowFlags = 0x7ff;
 const _viewportEditCapabilityFlags = 0x7;
 const _inlineFactCountMask = 0xffff;
 const _projectionSegmentCountShift = 16;
@@ -2545,6 +2552,21 @@ final class FlarkNativeDocument {
           FlarkViewportRowEditCapability.projectedReserved,
         _ => FlarkViewportRowEditCapability.unavailable,
       };
+      final semanticCapabilities = FlarkViewportRowSemanticCapabilities(
+        insertParagraphBreak: record.flags & _insertParagraphBreak != 0,
+        insertParagraphBreakAtPhysicalLineStart:
+            record.flags & _insertParagraphBreakAtPhysicalLineStart != 0,
+        insertParagraphBreakAsLiteral:
+            record.flags & _insertParagraphBreakAsLiteral != 0,
+        deleteBackwardAtEditableStart:
+            record.flags & _deleteBackwardAtEditableStart != 0,
+        deleteBackwardAtProjectionStart:
+            record.flags & _deleteBackwardAtProjectionStart != 0,
+        deleteBackwardAtPhysicalLineStart:
+            record.flags & _deleteBackwardAtPhysicalLineStart != 0,
+        deleteForwardAtEditableStart:
+            record.flags & _deleteForwardAtEditableStart != 0,
+      );
       final editable = capability != FlarkViewportRowEditCapability.unavailable;
       final sourceBytes = FlarkSourceRange(
         record.sourceStartByte,
@@ -2889,6 +2911,7 @@ final class FlarkNativeDocument {
         editableBytes: editableBytes,
         editableUtf16: editableUtf16,
         editCapability: capability,
+        semanticCapabilities: semanticCapabilities,
         headingLevel: headingLevel,
         headingStyle: headingStyle,
         listItem: listItem,

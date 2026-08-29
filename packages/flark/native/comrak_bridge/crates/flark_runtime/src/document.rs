@@ -117,6 +117,22 @@ pub enum DocumentViewportRowEditCapability {
     Unavailable,
 }
 
+/// Parser-authored routing facts for structural editor commands.
+///
+/// These facts only say where a frontend may route a command to the semantic
+/// intent lane. The intent resolver still revalidates the exact revision,
+/// caret, and Markdown owner before committing source.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DocumentViewportRowSemanticCapabilities {
+    pub insert_paragraph_break: bool,
+    pub insert_paragraph_break_at_physical_line_start: bool,
+    pub insert_paragraph_break_as_literal: bool,
+    pub delete_backward_at_editable_start: bool,
+    pub delete_backward_at_projection_start: bool,
+    pub delete_backward_at_physical_line_start: bool,
+    pub delete_forward_at_editable_start: bool,
+}
+
 /// Parser-declared literal edit class for one certified safe envelope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DocumentLiteralEditClass {
@@ -478,6 +494,7 @@ pub struct DocumentViewportRow {
     pub editable_range: Option<Range<u64>>,
     pub editable_utf16_range: Option<Range<u64>>,
     pub edit_capability: DocumentViewportRowEditCapability,
+    pub semantic_capabilities: DocumentViewportRowSemanticCapabilities,
     pub presentation: DocumentViewportRowPresentation,
     /// `Some` means the complete bounded inline leaf is authoritative. Empty
     /// is distinct from `None`, which requires exact-source neutral display.
@@ -5916,6 +5933,13 @@ fn document_viewport_row_with_inline_facts(
             source_utf16_range: utf16_start..utf16_end,
         });
     }
+    let path_depth = u32::try_from(row.path().len()).unwrap_or(u32::MAX);
+    let semantic_capabilities = document_semantic_capabilities(
+        presentation,
+        edit_capability,
+        editable_utf16_range.as_ref(),
+        path_depth,
+    );
     Ok(DocumentViewportRow {
         ordinal: row.ordinal(),
         kind: row.kind().get(),
@@ -5924,14 +5948,101 @@ fn document_viewport_row_with_inline_facts(
         editable_range,
         editable_utf16_range,
         edit_capability,
+        semantic_capabilities,
         presentation,
         inline_facts,
         literal_safe_envelopes,
         projection_edit_cells,
         pending_presentation_plans: Vec::new(),
         projection_segments,
-        path_depth: u32::try_from(row.path().len()).unwrap_or(u32::MAX),
+        path_depth,
     })
+}
+
+fn document_semantic_capabilities(
+    presentation: DocumentViewportRowPresentation,
+    edit_capability: DocumentViewportRowEditCapability,
+    editable_utf16_range: Option<&Range<u64>>,
+    path_depth: u32,
+) -> DocumentViewportRowSemanticCapabilities {
+    let editable = edit_capability != DocumentViewportRowEditCapability::Unavailable;
+    let plain_paragraph = presentation == DocumentViewportRowPresentation::Plain;
+    let simple_list = matches!(
+        presentation,
+        DocumentViewportRowPresentation::ListItem {
+            simple_continuation: true,
+            ..
+        }
+    );
+    let simple_block_quote = matches!(
+        presentation,
+        DocumentViewportRowPresentation::BlockQuote {
+            simple_continuation: true,
+            ..
+        }
+    );
+    let atx_heading = matches!(
+        presentation,
+        DocumentViewportRowPresentation::Heading {
+            style: DocumentHeadingStyle::Atx,
+            ..
+        }
+    );
+    let indented_code = matches!(
+        presentation,
+        DocumentViewportRowPresentation::CodeBlock {
+            style: DocumentCodeBlockStyle::Indented,
+        }
+    ) && editable;
+    let closed_fenced_code = matches!(
+        presentation,
+        DocumentViewportRowPresentation::CodeBlock {
+            style: DocumentCodeBlockStyle::Fenced { closed: true, .. },
+        }
+    ) && editable;
+    let projected_block_quote = matches!(
+        presentation,
+        DocumentViewportRowPresentation::BlockQuote { .. }
+    ) && edit_capability
+        == DocumentViewportRowEditCapability::ProjectedReserved;
+    let projected_indented_code = matches!(
+        presentation,
+        DocumentViewportRowPresentation::CodeBlock {
+            style: DocumentCodeBlockStyle::Indented,
+        }
+    ) && edit_capability
+        == DocumentViewportRowEditCapability::ProjectedReserved;
+    let top_level_thematic_break = presentation == DocumentViewportRowPresentation::ThematicBreak
+        && path_depth == 1
+        && editable_utf16_range.is_some_and(Range::is_empty);
+    let delete_backward_at_editable_start = editable
+        && (plain_paragraph
+            || simple_list
+            || simple_block_quote
+            || atx_heading
+            || indented_code
+            || closed_fenced_code
+            || top_level_thematic_break);
+    let delete_backward_at_projection_start =
+        editable && (projected_block_quote || projected_indented_code);
+
+    DocumentViewportRowSemanticCapabilities {
+        insert_paragraph_break: !matches!(
+            presentation,
+            DocumentViewportRowPresentation::ThematicBreak
+        ) && (delete_backward_at_editable_start
+            || delete_backward_at_projection_start
+            || closed_fenced_code),
+        insert_paragraph_break_at_physical_line_start: plain_paragraph,
+        insert_paragraph_break_as_literal: matches!(
+            presentation,
+            DocumentViewportRowPresentation::ThematicBreak
+        ),
+        delete_backward_at_editable_start,
+        delete_backward_at_projection_start,
+        delete_backward_at_physical_line_start: closed_fenced_code,
+        delete_forward_at_editable_start: top_level_thematic_break,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

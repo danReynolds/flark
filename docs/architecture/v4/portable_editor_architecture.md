@@ -168,8 +168,12 @@ certification, and optimistic-coordinate state now advance through one tested
 portable state machine. Native viewport querying, continuation cleanup,
 generation-safe result adoption, and ordered page paths now run through one
 tested portable pager; Flutter synchronously installs its typed result and
-restores platform input. The controller-facade work is therefore smaller but
-not complete.
+restores platform input. Rust now publishes the row-level boundary modes that
+may enter structural edit intents, so Flutter no longer derives semantic
+command eligibility from Markdown kinds or containers. Flutter-specific
+successor classification and bounded lineage lifecycle have one tested input
+transaction owner. The controller-facade work is therefore smaller but not
+complete.
 
 ### M4 — large-module audit and deletion
 

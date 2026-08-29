@@ -1094,6 +1094,87 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
 }
 
 #[test]
+fn viewport_routes_structural_commands_from_parser_authored_capabilities() {
+    let cases = [
+        ("plain\n", true, true, false, false, false),
+        ("# heading\n", true, true, false, false, false),
+        ("---\n", false, true, false, true, true),
+        ("```\ncode\n```\n", true, true, true, false, false),
+    ];
+    for (
+        source,
+        paragraph_break,
+        delete_at_editable_start,
+        delete_at_physical_line_start,
+        delete_forward,
+        paragraph_break_as_literal,
+    ) in cases
+    {
+        let mut document = DocumentSession::begin(source).expect("begin capability fixture");
+        pump_ready(&mut document);
+        let viewport = document
+            .query_viewport(1, 0..source.len(), 8)
+            .expect("query capability fixture");
+        let row = viewport.rows.first().expect("one capability row");
+        let capabilities = row.semantic_capabilities;
+        assert_eq!(
+            capabilities.insert_paragraph_break, paragraph_break,
+            "paragraph-break capability for {source:?}"
+        );
+        assert_eq!(
+            capabilities.delete_backward_at_editable_start, delete_at_editable_start,
+            "editable-start capability for {source:?}"
+        );
+        assert_eq!(
+            capabilities.delete_backward_at_physical_line_start, delete_at_physical_line_start,
+            "physical-line capability for {source:?}"
+        );
+        assert_eq!(
+            capabilities.delete_forward_at_editable_start, delete_forward,
+            "forward-delete capability for {source:?}"
+        );
+        assert_eq!(
+            capabilities.insert_paragraph_break_as_literal, paragraph_break_as_literal,
+            "literal Return capability for {source:?}"
+        );
+        document.close().expect("close capability fixture");
+    }
+
+    let source = "> alpha\n> beta\n";
+    let mut document = DocumentSession::begin(source).expect("begin projected quote");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("query projected quote");
+    assert!(
+        viewport
+            .rows
+            .first()
+            .expect("projected quote row")
+            .semantic_capabilities
+            .delete_backward_at_projection_start
+    );
+    document.close().expect("close projected quote");
+
+    let source = "| a\n | b |\n| --- | --- |\n| c | d |\n";
+    let mut document = DocumentSession::begin(source).expect("begin embedded-line paragraph");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("query embedded-line paragraph");
+    let row = viewport.rows.first().expect("embedded-line paragraph row");
+    assert_eq!(
+        row.edit_capability,
+        DocumentViewportRowEditCapability::Unavailable
+    );
+    assert!(
+        row.semantic_capabilities
+            .insert_paragraph_break_at_physical_line_start
+    );
+    document.close().expect("close embedded-line paragraph");
+}
+
+#[test]
 fn fenced_code_body_word_cell_retains_the_code_shell_and_matches_clean_parse() {
     let source = "```dart\nfinal value = 'a';\n```\n";
     let mut document = DocumentSession::begin(source).expect("begin fenced code cell source");

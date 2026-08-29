@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flark_flutter/src/editor_transactions.dart';
 import 'package:flark_flutter/src/input_reconciliation.dart';
 import 'package:flark_flutter/src/input_transaction_state.dart';
@@ -128,6 +130,69 @@ void main() {
 
       state.clearCompositionInputBase();
       expect(state.compositionInputBase, isNull);
+    });
+
+    test('semantic successor classification owns logical input lineage', () {
+      final state = FlarkInputTransactionState();
+
+      final newline = state.classifySemanticSuccessor(
+        const TextEditingValue(
+          text: 'a',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+        const TextEditingValue(
+          text: 'a\n',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+        mutation: const FlarkTextMutation(1, 1, '\n'),
+      );
+      expect(newline?.command, FlarkDeferredInputCommand.insertNewline);
+
+      final backspace = state.classifySemanticSuccessor(
+        const TextEditingValue(
+          text: 'a🌍',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+        const TextEditingValue(
+          text: 'a',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+        mutation: const FlarkTextMutation(1, 3, ''),
+      );
+      expect(backspace?.command, FlarkDeferredInputCommand.deleteBackward);
+
+      final replacement = state.classifySemanticSuccessor(
+        const TextEditingValue(
+          text: 'abc',
+          selection: TextSelection(baseOffset: 1, extentOffset: 2),
+        ),
+        const TextEditingValue(
+          text: 'axc',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+        mutation: const FlarkTextMutation(1, 2, 'x'),
+      );
+      expect(replacement?.command, isNull);
+      expect(replacement?.replacement, 'x');
+    });
+
+    test('successor overflow retires lineage and completes waiters', () async {
+      final state = FlarkInputTransactionState();
+      final history = Completer<bool>();
+      final pending = FlarkPendingSemanticInput(
+        base: const TextEditingValue(text: 'a'),
+        inputGlobalUtf16Start: 0,
+        initialCallbackStartedEpochMicros: 1,
+        provisionalAfter: const TextEditingValue(text: 'a'),
+      );
+      pending.successors.add(
+        FlarkDeferredHistorySuccessor(undoDirection: true, completion: history),
+      );
+      state.pendingSemantic = pending;
+
+      expect(state.reserveSemanticSuccessor(pending, maximum: 1), isFalse);
+      expect(state.pendingSemantic, isNull);
+      expect(await history.future, isFalse);
     });
   });
 

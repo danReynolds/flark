@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flark/flark.dart';
 import 'package:flutter/services.dart';
 
 import 'editor_transactions.dart';
@@ -167,6 +170,157 @@ final class FlarkInputTransactionState {
 
   void observeSuccessorCount(int count) {
     if (count > _successorHighWatermark) _successorHighWatermark = count;
+  }
+
+  /// Classifies one platform value change into a logical command or literal
+  /// replacement that can be replayed after its semantic predecessor.
+  /// Markdown meaning is deliberately absent: this is only Flutter text-value
+  /// lineage and bounded grapheme geometry.
+  FlarkDeferredInputSuccessor? classifySemanticSuccessor(
+    TextEditingValue before,
+    TextEditingValue after, {
+    required FlarkTextMutation? mutation,
+  }) {
+    if (before.composing != TextRange.empty ||
+        after.composing != TextRange.empty ||
+        !before.selection.isValid ||
+        !after.selection.isValid ||
+        !after.selection.isCollapsed ||
+        mutation == null) {
+      return null;
+    }
+    if (mutation.start < 0 ||
+        mutation.end < mutation.start ||
+        mutation.end > before.text.length ||
+        before.text.replaceRange(
+              mutation.start,
+              mutation.end,
+              mutation.replacement,
+            ) !=
+            after.text) {
+      return null;
+    }
+    final selectionStart = math.min(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    final selectionEnd = math.max(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    final resultCaret = mutation.start + mutation.replacement.length;
+    if (after.selection.extentOffset != resultCaret) return null;
+
+    if (mutation.start == selectionStart && mutation.end == selectionEnd) {
+      if (mutation.replacement == '\n') {
+        return FlarkDeferredInputSuccessor(
+          FlarkDeferredInputCommand.insertNewline,
+          platformTiming: _activeTiming,
+        );
+      }
+      if ((mutation.replacement.isNotEmpty || !before.selection.isCollapsed) &&
+          !mutation.replacement.contains('\n') &&
+          !mutation.replacement.contains('\r')) {
+        return FlarkDeferredInputSuccessor(
+          null,
+          replacement: mutation.replacement,
+          typingInput:
+              before.selection.isCollapsed &&
+              mutation.start == mutation.end &&
+              mutation.replacement.isNotEmpty,
+          platformTiming: _activeTiming,
+        );
+      }
+    }
+    if (!before.selection.isCollapsed || mutation.replacement.isNotEmpty) {
+      return null;
+    }
+    final caret = before.selection.extentOffset;
+    final previous = FlarkCoreGraphemePolicy.previousClusterRange(
+      before.text,
+      caret,
+    );
+    if (previous != null &&
+        mutation.start == previous.$1 &&
+        mutation.end == previous.$2) {
+      return FlarkDeferredInputSuccessor(
+        FlarkDeferredInputCommand.deleteBackward,
+        platformTiming: _activeTiming,
+      );
+    }
+    final next = FlarkCoreGraphemePolicy.nextClusterRange(before.text, caret);
+    if (next != null && mutation.start == next.$1 && mutation.end == next.$2) {
+      return FlarkDeferredInputSuccessor(
+        FlarkDeferredInputCommand.deleteForward,
+        platformTiming: _activeTiming,
+      );
+    }
+    return null;
+  }
+
+  FlarkDeferredInputSuccessor reclassifyAfterCertification(
+    FlarkDeferredInputSuccessor successor,
+  ) {
+    if (successor.command == null) return successor;
+    // A command observed against provisional geometry cannot safely target a
+    // receipt-backed row: hidden prefixes or padding may move its canonical
+    // caret. Preserve the logical command but require certified re-routing.
+    return FlarkDeferredInputSuccessor(
+      successor.command,
+      replacement: successor.replacement,
+      typingInput: successor.typingInput,
+      semanticAlreadyAttempted: successor.semanticAlreadyAttempted,
+      reclassifyAfterCertification: true,
+      platformTiming: successor.platformTiming,
+    );
+  }
+
+  /// Reserves one bounded successor slot. Overflow atomically retires the
+  /// lineage and completes every waiter before the caller resynchronizes.
+  bool reserveSemanticSuccessor(
+    FlarkPendingSemanticInput pending, {
+    required int maximum,
+  }) {
+    if (!identical(pendingSemantic, pending)) {
+      throw StateError('Successor reservation requires the owned lineage');
+    }
+    if (pending.successors.length < maximum) return true;
+    discardPendingSemantic();
+    return false;
+  }
+
+  void observePendingSuccessors(FlarkPendingSemanticInput pending) {
+    if (!identical(pendingSemantic, pending)) {
+      throw StateError('Successor metrics require the owned lineage');
+    }
+    observeSuccessorCount(pending.successors.length);
+  }
+
+  FlarkPendingSemanticInput? takePendingSemantic() {
+    final pending = pendingSemantic;
+    pendingSemantic = null;
+    return pending;
+  }
+
+  void completeDeferredHistorySuccessors(
+    Iterable<FlarkSemanticInputSuccessor> successors,
+    bool result,
+  ) {
+    for (final successor
+        in successors.whereType<FlarkDeferredHistorySuccessor>()) {
+      if (!successor.completion.isCompleted) {
+        successor.completion.complete(result);
+      }
+    }
+  }
+
+  void discardPendingSemantic() {
+    final pending = takePendingSemantic();
+    if (pending == null) return;
+    final promotion = pending.certificationPromotion;
+    pending.certificationPromotion = null;
+    if (promotion != null && !promotion.isCompleted) promotion.complete();
+    completeDeferredHistorySuccessors(pending.successors, false);
   }
 
   void recordReconciliationMicros(int elapsedMicros) {

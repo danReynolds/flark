@@ -17,6 +17,9 @@ void main() {
   final portableViewportPager = File(
     '../flark/lib/src/editor_viewport_pager.dart',
   ).readAsStringSync();
+  final inputTransactionState = File(
+    'lib/src/input_transaction_state.dart',
+  ).readAsStringSync();
 
   test('controller has one immutable outward publication function', () {
     expect(
@@ -101,5 +104,24 @@ void main() {
     expect(controller, isNot(contains('_viewportNavigation')));
     expect(controller, isNot(contains('_queryViewportAtAnchor')));
     expect(controller, isNot(contains('queryViewportNext(')));
+  });
+
+  test('Flutter consumes parser-authored semantic command capabilities', () {
+    expect(controller, contains('semanticCapabilities'));
+    expect(controller, isNot(contains('_supportsSemanticParagraphBreakV1')));
+    expect(controller, isNot(contains('_supportsSemanticDeleteBackwardV1')));
+    expect(controller, isNot(contains('_isPlainParagraphRow')));
+    expect(controller, isNot(contains('_isTopLevelThematicBreak')));
+  });
+
+  test('semantic successor lineage has one Flutter state owner', () {
+    expect(inputTransactionState, contains('classifySemanticSuccessor'));
+    expect(inputTransactionState, contains('reserveSemanticSuccessor'));
+    expect(inputTransactionState, contains('takePendingSemantic'));
+    expect(controller, isNot(contains('before.composing != TextRange.empty')));
+    expect(
+      controller,
+      isNot(contains('successors.length < _maximumSemanticSuccessors')),
+    );
   });
 }

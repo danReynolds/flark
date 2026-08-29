@@ -20,6 +20,64 @@ enum FlarkViewportRowEditCapability {
   unavailable,
 }
 
+/// Parser-authored routing facts for structural editor commands.
+///
+/// A capability permits a frontend to enter the semantic intent lane at the
+/// named boundary. Rust still revalidates the exact revision, caret, and
+/// Markdown owner before committing source.
+final class FlarkViewportRowSemanticCapabilities {
+  const FlarkViewportRowSemanticCapabilities({
+    this.insertParagraphBreak = false,
+    this.insertParagraphBreakAtPhysicalLineStart = false,
+    this.insertParagraphBreakAsLiteral = false,
+    this.deleteBackwardAtEditableStart = false,
+    this.deleteBackwardAtProjectionStart = false,
+    this.deleteBackwardAtPhysicalLineStart = false,
+    this.deleteForwardAtEditableStart = false,
+  });
+
+  static const none = FlarkViewportRowSemanticCapabilities();
+
+  final bool insertParagraphBreak;
+  final bool insertParagraphBreakAtPhysicalLineStart;
+  final bool insertParagraphBreakAsLiteral;
+  final bool deleteBackwardAtEditableStart;
+  final bool deleteBackwardAtProjectionStart;
+  final bool deleteBackwardAtPhysicalLineStart;
+  final bool deleteForwardAtEditableStart;
+
+  bool get supportsSemanticEdit =>
+      insertParagraphBreak ||
+      deleteBackwardAtEditableStart ||
+      deleteBackwardAtProjectionStart ||
+      deleteBackwardAtPhysicalLineStart ||
+      deleteForwardAtEditableStart;
+
+  int toMessage() =>
+      (insertParagraphBreak ? 1 << 0 : 0) |
+      (insertParagraphBreakAtPhysicalLineStart ? 1 << 1 : 0) |
+      (insertParagraphBreakAsLiteral ? 1 << 2 : 0) |
+      (deleteBackwardAtEditableStart ? 1 << 3 : 0) |
+      (deleteBackwardAtProjectionStart ? 1 << 4 : 0) |
+      (deleteBackwardAtPhysicalLineStart ? 1 << 5 : 0) |
+      (deleteForwardAtEditableStart ? 1 << 6 : 0);
+
+  factory FlarkViewportRowSemanticCapabilities.fromMessage(int bits) {
+    if (bits & ~0x7f != 0) {
+      throw FormatException('Unknown semantic capability bits: $bits');
+    }
+    return FlarkViewportRowSemanticCapabilities(
+      insertParagraphBreak: bits & (1 << 0) != 0,
+      insertParagraphBreakAtPhysicalLineStart: bits & (1 << 1) != 0,
+      insertParagraphBreakAsLiteral: bits & (1 << 2) != 0,
+      deleteBackwardAtEditableStart: bits & (1 << 3) != 0,
+      deleteBackwardAtProjectionStart: bits & (1 << 4) != 0,
+      deleteBackwardAtPhysicalLineStart: bits & (1 << 5) != 0,
+      deleteForwardAtEditableStart: bits & (1 << 6) != 0,
+    );
+  }
+}
+
 enum FlarkLiteralEditClass {
   asciiWordInsertion,
   singleAsciiSpaceInsertion,
@@ -709,6 +767,7 @@ final class FlarkViewportRow {
     required this.editableBytes,
     required this.editableUtf16,
     required this.editCapability,
+    this.semanticCapabilities = FlarkViewportRowSemanticCapabilities.none,
     required this.headingLevel,
     required this.headingStyle,
     required this.listItem,
@@ -739,6 +798,7 @@ final class FlarkViewportRow {
   final FlarkSourceRange? editableBytes;
   final FlarkSourceRange? editableUtf16;
   final FlarkViewportRowEditCapability editCapability;
+  final FlarkViewportRowSemanticCapabilities semanticCapabilities;
   final int? headingLevel;
   final FlarkHeadingStyle? headingStyle;
   final FlarkListItemPresentation? listItem;
@@ -775,6 +835,7 @@ final class FlarkViewportRow {
     'editableBytes': editableBytes?.toMessage(),
     'editableUtf16': editableUtf16?.toMessage(),
     'editCapability': editCapability.index,
+    'semanticCapabilities': semanticCapabilities.toMessage(),
     'headingLevel': headingLevel,
     'headingStyle': headingStyle?.index,
     'listItem': listItem?.toMessage(),
@@ -821,6 +882,9 @@ final class FlarkViewportRow {
     },
     editCapability: FlarkViewportRowEditCapability
         .values[message['editCapability']! as int],
+    semanticCapabilities: FlarkViewportRowSemanticCapabilities.fromMessage(
+      message['semanticCapabilities'] as int? ?? 0,
+    ),
     headingLevel: message['headingLevel'] as int?,
     headingStyle: switch (message['headingStyle']) {
       final int index => FlarkHeadingStyle.values[index],

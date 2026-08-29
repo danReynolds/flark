@@ -16,7 +16,7 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |-- FlarkEditorCoordinator (pure Dart command lifetimes, async lineage,
   |                           publication permission, pending presentation)
   |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
-  |-- FlarkInputTransactionState (callback and provisional input lineage)
+  |-- FlarkInputTransactionState (callback and bounded successor lineage)
   |-- Flutter text adaptation (TextEditingValue <-> portable UTF-16 facts)
   |-- FlarkEditorSnapshot / FlarkSurfaceProjector (`flark` immutable bounded
   |                                                 visual publication)
@@ -40,10 +40,10 @@ permission to preserve the controller's existing method graph.
 
 | Concern | Owner | Must not own |
 | --- | --- | --- |
-| Source, selection, history, Markdown semantics, semantic edit receipts, pending-presentation adoption policy | `flark` and Rust | Flutter input connections or widgets |
+| Source, selection, history, Markdown semantics, structural-command routing capabilities, semantic edit receipts, pending-presentation adoption policy | `flark` and Rust | Flutter input connections or widgets |
 | Identity-checked command lifetimes, edit generations, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
-| Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
+| Callback scope, logical successor classification, bounded provisional lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
 | Evolution and certified retirement of parser-authorized pending rows, structural transition ownership, and successor caret boundaries | Pending-presentation evolution in `flark` | Markdown inference, Flutter types, mutation callbacks, or asynchronous work |
 | Conversion between portable input facts and Flutter text types | Flutter text adaptation | Source mutation, Markdown rules, or retained editor state |
@@ -78,16 +78,20 @@ permission to preserve the controller's existing method graph.
 10. A viewport query returns an unapplied generation-bound receipt. Page history
     advances only during synchronous adoption; a zero continuation produces no
     asynchronous cleanup handoff.
+11. Rust publishes structural-command routing capabilities with each certified
+    row. Flutter may check caret geometry against those capabilities, but it
+    does not reconstruct eligibility from Markdown row kinds or containers.
 
 ## Controller reduction policy
 
 The controller is still larger than the intended facade. Remaining work should
 be extracted by authority, not by file length:
 
-- semantic command admission and successor promotion should become one bounded
-  lane with explicit inputs and outcomes. Lifecycle, command serialization,
-  pending presentation, and asynchronous lineage are now portable, but some
-  effect-specific coordination remains in the facade;
+- structural-command admission now consumes parser-authored capabilities, and
+  Flutter input successor classification, reservation, and retirement have one
+  tested state owner. Receipt-driven source/render promotion remains in the
+  facade until it has a narrow outcome that does not call back into controller
+  state;
 - viewport query and page-path orchestration now return one typed Core result;
   the remaining restoration handoff should move only when its portable
   selection outcome can replace, rather than call back into, controller state;
