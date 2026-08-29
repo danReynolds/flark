@@ -497,7 +497,10 @@ void main() {
       expect(initial.runs, hasLength(2));
       expect(initial.sourceOffsetForTextOffset(6), 10);
       expect(
-        initial.sourceOffsetForTextOffset(6, affinity: TextAffinity.upstream),
+        initial.sourceOffsetForTextOffset(
+          6,
+          affinity: FlarkTextAffinity.upstream,
+        ),
         8,
       );
 

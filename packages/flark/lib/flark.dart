@@ -73,8 +73,23 @@ export 'src/editor_coordinator.dart'
         FlarkPublicationAwaitingCertification,
         FlarkPublicationIdle,
         FlarkPublicationPhase;
+export 'src/editor_snapshot.dart'
+    show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
+export 'src/editor_text.dart'
+    show
+        FlarkEditorInputValue,
+        FlarkTextAffinity,
+        FlarkTextRange,
+        FlarkTextSelection;
 export 'src/optimistic_range_map.dart'
     show FlarkOptimisticRangeMap, FlarkOptimisticViewportEdit;
+export 'src/surface_projection.dart'
+    show
+        FlarkSurfaceInlineStyle,
+        FlarkSurfaceProjection,
+        FlarkSurfaceRow,
+        FlarkSurfaceTextRun;
+export 'src/surface_projector.dart' show FlarkSurfaceProjector;
 export 'src/viewport_installation.dart' show FlarkViewportInstallationPlan;
 export 'src/viewport_navigation.dart'
     show

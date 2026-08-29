@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'controller.dart';
+import 'text_adaptation.dart';
 
 const _maximumNeutralPaintRows = 32;
 
@@ -1336,7 +1337,7 @@ final class RenderFlarkSurface extends RenderBox {
     final authority = publication ?? _layoutSnapshot;
     final globalUtf16Offset = row.presentation.sourceOffsetForTextOffset(
       textOffset,
-      affinity: affinity,
+      affinity: portableTextAffinity(affinity),
     );
     final semanticTargetFact = _semanticTargetFactFor(
       row.row,
@@ -1459,13 +1460,13 @@ final class RenderFlarkSurface extends RenderBox {
             ? run.sourceUtf16Start + sliceStart - cursor
             : row.presentation.sourceOffsetForTextOffset(
                 sliceStart,
-                affinity: TextAffinity.downstream,
+                affinity: FlarkTextAffinity.downstream,
               );
         final sourceEnd = run.sourceExact
             ? run.sourceUtf16Start + sliceEnd - cursor
             : row.presentation.sourceOffsetForTextOffset(
                 sliceEnd,
-                affinity: TextAffinity.upstream,
+                affinity: FlarkTextAffinity.upstream,
               );
         start = start == null ? sourceStart : math.min(start, sourceStart);
         end = end == null ? sourceEnd : math.max(end, sourceEnd);
@@ -1477,13 +1478,13 @@ final class RenderFlarkSurface extends RenderBox {
         start ??
         row.presentation.sourceOffsetForTextOffset(
           row.fragmentStart,
-          affinity: TextAffinity.downstream,
+          affinity: FlarkTextAffinity.downstream,
         );
     var sourceEnd =
         end ??
         row.presentation.sourceOffsetForTextOffset(
           row.fragmentEnd,
-          affinity: TextAffinity.upstream,
+          affinity: FlarkTextAffinity.upstream,
         );
     final snapshotRow = row.snapshotRow;
     if (includeSemanticOwnership && snapshotRow != null) {
@@ -1554,7 +1555,10 @@ final class RenderFlarkSurface extends RenderBox {
     if (row == null) return null;
     return _hitForTextOffset(
       row,
-      row.presentation.textOffsetForSourceOffset(offset, affinity: affinity),
+      row.presentation.textOffsetForSourceOffset(
+        offset,
+        affinity: portableTextAffinity(affinity),
+      ),
       affinity: affinity,
     );
   }
@@ -1595,7 +1599,9 @@ final class RenderFlarkSurface extends RenderBox {
     final text = current.presentation.text;
     final textOffset = current.presentation.textOffsetForSourceOffset(
       offset,
-      affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+      affinity: forward
+          ? FlarkTextAffinity.downstream
+          : FlarkTextAffinity.upstream,
     );
     if (forward && textOffset < text.length) {
       final range = FlarkCoreGraphemePolicy.nextClusterRange(text, textOffset);
@@ -1648,7 +1654,9 @@ final class RenderFlarkSurface extends RenderBox {
     if (row == null) return null;
     final textOffset = row.presentation.textOffsetForSourceOffset(
       offset,
-      affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+      affinity: forward
+          ? FlarkTextAffinity.downstream
+          : FlarkTextAffinity.upstream,
     );
     final painterOffset = textOffset - row.fragmentStart + row.leadingLength;
     final boundary = row.painter.getLineBoundary(
@@ -1692,7 +1700,9 @@ final class RenderFlarkSurface extends RenderBox {
     var row = rows[rowIndex];
     var textOffset = row.presentation.textOffsetForSourceOffset(
       offset,
-      affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+      affinity: forward
+          ? FlarkTextAffinity.downstream
+          : FlarkTextAffinity.upstream,
     );
     while (true) {
       final text = row.presentation.text;
@@ -1750,7 +1760,7 @@ final class RenderFlarkSurface extends RenderBox {
       row,
       row.presentation.textOffsetForSourceOffset(
         cells[targetIndex].contentUtf16.start,
-        affinity: TextAffinity.downstream,
+        affinity: FlarkTextAffinity.downstream,
       ),
       affinity: TextAffinity.downstream,
     );
@@ -2125,7 +2135,7 @@ final class RenderFlarkSurface extends RenderBox {
           if (selection.isValid &&
               selection.start >= 0 &&
               selection.end <= row.presentation.text.length) {
-            rowConfig.textSelection = selection;
+            rowConfig.textSelection = flutterTextSelection(selection);
           }
         }
         if (_layoutSnapshot.canonicalSelectionBaseUtf16 !=
@@ -2326,7 +2336,7 @@ final class RenderFlarkSurface extends RenderBox {
                 fragmentSelectionStart - row.fragmentStart + row.leadingLength,
             extentOffset:
                 fragmentSelectionEnd - row.fragmentStart + row.leadingLength,
-            affinity: selection.affinity,
+            affinity: flutterTextAffinity(selection.affinity),
             isDirectional: selection.isDirectional,
           );
           for (final box in row.painter.getBoxesForSelection(
@@ -2352,7 +2362,7 @@ final class RenderFlarkSurface extends RenderBox {
           final caret = row.painter.getOffsetForCaret(
             TextPosition(
               offset: extent - row.fragmentStart + row.leadingLength,
-              affinity: selection.affinity,
+              affinity: flutterTextAffinity(selection.affinity),
             ),
             Rect.zero,
           );
@@ -2470,7 +2480,9 @@ final class RenderFlarkSurface extends RenderBox {
         canonicalSelectionBaseUtf16: publication.canonicalSelectionBaseUtf16,
         canonicalSelectionExtentUtf16:
             publication.canonicalSelectionExtentUtf16,
-        canonicalSelectionAffinity: inputValue.selection.affinity,
+        canonicalSelectionAffinity: flutterTextAffinity(
+          inputValue.selection.affinity,
+        ),
         canonicalSelectionIsDirectional: inputValue.selection.isDirectional,
         composingSourceUtf16Start: composingStart,
         composingSourceUtf16End: composingEnd,
@@ -2492,13 +2504,13 @@ final class RenderFlarkSurface extends RenderBox {
             ? run.sourceUtf16Start + sliceStart - cursor
             : row.presentation.sourceOffsetForTextOffset(
                 sliceStart,
-                affinity: TextAffinity.downstream,
+                affinity: FlarkTextAffinity.downstream,
               );
         final sourceEnd = run.sourceExact
             ? run.sourceUtf16Start + sliceEnd - cursor
             : row.presentation.sourceOffsetForTextOffset(
                 sliceEnd,
-                affinity: TextAffinity.upstream,
+                affinity: FlarkTextAffinity.upstream,
               );
         yield FlarkSurfacePaintRunObservation(
           text: run.text.substring(sliceStart - cursor, sliceEnd - cursor),

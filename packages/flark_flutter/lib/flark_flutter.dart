@@ -11,12 +11,7 @@ export 'src/controller.dart'
         FlarkEditorController,
         FlarkSemanticEditPerformance,
         FlarkSourceEditPerformance,
-        FlarkSourceEditPerformanceKind,
-        FlarkSurfaceInlineStyle,
-        FlarkSurfaceRow,
-        FlarkSurfaceTextRun;
-export 'src/editor_snapshot.dart'
-    show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
+        FlarkSourceEditPerformanceKind;
 export 'src/editor.dart'
     show FlarkEditor, FlarkEditorDebugGeometry, FlarkEditorDebugHandle;
 export 'src/markdown_view.dart' show FlarkMarkdownView;

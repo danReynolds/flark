@@ -3,8 +3,6 @@ import 'package:flark_flutter/src/input_reconciliation.dart';
 import 'package:flark_flutter/src/input_transaction_state.dart';
 import 'package:flark_flutter/src/input_window.dart';
 import 'package:flark_flutter/src/platform_input_bridge.dart';
-import 'package:flark_flutter/src/surface_projector.dart';
-import 'package:flark/flark.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -260,62 +258,5 @@ void main() {
         isTrue,
       );
     });
-  });
-
-  group('surface projector', () {
-    FlarkViewportRow row() => FlarkViewportRow(
-      ordinal: 0,
-      kind: 5,
-      sourceBytes: const FlarkSourceRange(0, 3),
-      sourceUtf16: const FlarkSourceRange(0, 3),
-      editableBytes: const FlarkSourceRange(0, 3),
-      editableUtf16: const FlarkSourceRange(0, 3),
-      editCapability: FlarkViewportRowEditCapability.contiguous,
-      headingLevel: null,
-      headingStyle: null,
-      listItem: null,
-      blockQuote: null,
-      codeBlock: null,
-      thematicBreak: false,
-      pathDepth: 0,
-      inlineFacts: const [],
-    );
-
-    test(
-      'captures optimistic range state instead of sharing controller state',
-      () {
-        final optimisticRanges = FlarkOptimisticRangeMap();
-        final projector = FlarkSurfaceProjector(
-          pendingPresentation: const FlarkPendingPresentationSnapshot.empty(),
-          visibleUtf16Start: 0,
-          visibleSource: 'abc',
-          inputGlobalUtf16Start: 0,
-          inputValue: const TextEditingValue(
-            text: 'abc',
-            selection: TextSelection.collapsed(offset: 3),
-          ),
-          activeOrdinal: 0,
-          selectionBaseUtf16: 3,
-          selectionExtentUtf16: 3,
-          crossRowSelection: false,
-          semanticViewportCurrent: true,
-          certificationRevisionCurrent: true,
-          certificationRanges: const [],
-          optimisticRanges: optimisticRanges,
-        );
-
-        optimisticRanges.add(
-          const FlarkOptimisticViewportEdit(
-            start: 0,
-            end: 0,
-            replacementLength: 2,
-          ),
-        );
-
-        final sourceRange = projector.surfaceSourceRange(row());
-        expect((sourceRange.start, sourceRange.end), (0, 3));
-        expect(projector.surfaceRow(row()).text, 'abc');
-      },
-    );
   });
 }

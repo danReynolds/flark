@@ -44,28 +44,28 @@ void main() {
       expect(
         active.sourceOffsetForTextOffset(
           boldDisplayStart,
-          affinity: TextAffinity.downstream,
+          affinity: FlarkTextAffinity.downstream,
         ),
         boldStart,
       );
       expect(
         active.sourceOffsetForTextOffset(
           boldDisplayStart,
-          affinity: TextAffinity.upstream,
+          affinity: FlarkTextAffinity.upstream,
         ),
         boldStart - 2,
       );
       expect(
         active.sourceOffsetForTextOffset(
           boldDisplayEnd,
-          affinity: TextAffinity.upstream,
+          affinity: FlarkTextAffinity.upstream,
         ),
         boldEnd,
       );
       expect(
         active.sourceOffsetForTextOffset(
           boldDisplayEnd,
-          affinity: TextAffinity.downstream,
+          affinity: FlarkTextAffinity.downstream,
         ),
         boldEnd + 2,
       );

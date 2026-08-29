@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flark/flark.dart';
-import 'package:flutter/services.dart';
+import 'editor_text.dart';
+import 'models.dart';
 
 const _maximumPaintCodeUnits = 2 * 1024;
 
@@ -25,20 +25,20 @@ final class FlarkSurfaceTextRun {
 
   int sourceOffsetForTextOffset(
     int offset, {
-    TextAffinity affinity = TextAffinity.downstream,
+    FlarkTextAffinity affinity = FlarkTextAffinity.downstream,
   }) {
     final local = offset.clamp(0, text.length);
     if (sourceExact) return sourceUtf16Start + local;
     if (local == 0) return sourceUtf16Start;
     if (local == text.length) return sourceUtf16End;
-    return affinity == TextAffinity.upstream
+    return affinity == FlarkTextAffinity.upstream
         ? sourceUtf16Start
         : sourceUtf16End;
   }
 
   int textOffsetForSourceOffset(
     int offset, {
-    TextAffinity affinity = TextAffinity.downstream,
+    FlarkTextAffinity affinity = FlarkTextAffinity.downstream,
   }) {
     final local = (offset - sourceUtf16Start).clamp(
       0,
@@ -47,7 +47,7 @@ final class FlarkSurfaceTextRun {
     if (sourceExact) return local;
     if (local == 0) return 0;
     if (local == sourceUtf16End - sourceUtf16Start) return text.length;
-    return affinity == TextAffinity.upstream ? 0 : text.length;
+    return affinity == FlarkTextAffinity.upstream ? 0 : text.length;
   }
 }
 
@@ -79,12 +79,12 @@ final class FlarkSurfaceRow {
   final bool listItem;
   final int ordinal;
   final bool active;
-  final TextSelection? selection;
+  final FlarkTextSelection? selection;
   final List<FlarkSurfaceTextRun> runs;
 
   int sourceOffsetForTextOffset(
     int offset, {
-    TextAffinity affinity = TextAffinity.downstream,
+    FlarkTextAffinity affinity = FlarkTextAffinity.downstream,
   }) {
     final local = offset.clamp(0, text.length);
     if (runs.isEmpty) return globalUtf16Start + local;
@@ -99,7 +99,8 @@ final class FlarkSurfaceRow {
         );
       }
       if (local == runEnd) {
-        if (affinity == TextAffinity.downstream && index + 1 < runs.length) {
+        if (affinity == FlarkTextAffinity.downstream &&
+            index + 1 < runs.length) {
           return runs[index + 1].sourceUtf16Start;
         }
         return run.sourceUtf16End;
@@ -111,7 +112,7 @@ final class FlarkSurfaceRow {
 
   int textOffsetForSourceOffset(
     int offset, {
-    TextAffinity affinity = TextAffinity.downstream,
+    FlarkTextAffinity affinity = FlarkTextAffinity.downstream,
   }) {
     if (runs.isEmpty) {
       return (offset - globalUtf16Start).clamp(0, text.length);
@@ -145,14 +146,14 @@ final class FlarkSurfaceProjection {
     return start < range.end && range.start < end;
   }
 
-  static TextSelection projectedSelection({
+  static FlarkTextSelection projectedSelection({
     required List<FlarkSurfaceTextRun> runs,
     required int textLength,
     required int base,
     required int extent,
-    required TextSelection inputSelection,
+    required FlarkTextSelection inputSelection,
   }) {
-    int project(int sourceOffset, TextAffinity affinity) {
+    int project(int sourceOffset, FlarkTextAffinity affinity) {
       if (runs.isEmpty) return 0;
       var consumed = 0;
       for (final run in runs) {
@@ -171,7 +172,7 @@ final class FlarkSurfaceProjection {
     }
 
     final affinity = inputSelection.affinity;
-    return TextSelection(
+    return FlarkTextSelection(
       baseOffset: project(base, affinity),
       extentOffset: project(extent, affinity),
       affinity: affinity,
@@ -179,9 +180,9 @@ final class FlarkSurfaceProjection {
     );
   }
 
-  static ({String text, int globalStart, TextSelection selection})
+  static ({String text, int globalStart, FlarkTextSelection selection})
   paintInputWindow({
-    required TextEditingValue value,
+    required FlarkEditorInputValue value,
     required int inputGlobalUtf16Start,
     int? sourceStart,
     int? sourceEnd,
@@ -201,7 +202,7 @@ final class FlarkSurfaceProjection {
       return (
         text: text,
         globalStart: inputGlobalUtf16Start + allowedStart,
-        selection: TextSelection(
+        selection: FlarkTextSelection(
           baseOffset: (value.selection.baseOffset - allowedStart).clamp(
             0,
             text.length,
@@ -251,7 +252,7 @@ final class FlarkSurfaceProjection {
     return (
       text: text,
       globalStart: inputGlobalUtf16Start + start,
-      selection: TextSelection(
+      selection: FlarkTextSelection(
         baseOffset: (value.selection.baseOffset - start).clamp(0, text.length),
         extentOffset: (value.selection.extentOffset - start).clamp(
           0,
@@ -272,7 +273,7 @@ final class FlarkSurfaceProjection {
     required bool selected,
     required int canonicalSelectionBaseUtf16,
     required int canonicalSelectionExtentUtf16,
-    required TextSelection inputSelection,
+    required FlarkTextSelection inputSelection,
   }) {
     final endingLength = text.endsWith('\r\n')
         ? 2
@@ -330,7 +331,7 @@ final class FlarkSurfaceProjection {
     required int visibleUtf16Start,
     required String visibleSource,
     required int inputGlobalUtf16Start,
-    required TextEditingValue inputValue,
+    required FlarkEditorInputValue inputValue,
     required int? activeOrdinal,
     required int canonicalSelectionBaseUtf16,
     required int canonicalSelectionExtentUtf16,

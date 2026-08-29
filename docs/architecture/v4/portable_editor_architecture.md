@@ -141,6 +141,9 @@ A helper that calls back into the controller does not qualify.
 
 ### M3 — thin Flutter adapter
 
+- Move the immutable snapshot, surface rows, and deterministic source/display
+  projector into `flark`; represent the bounded platform input facts with
+  host-neutral UTF-16 value types.
 - Make the Flutter controller an API/notification adapter over the portable
   coordinator.
 - Confine `TextEditingValue`, delta/full-value callback quirks, connection
@@ -153,6 +156,11 @@ Review gate: the controller owns no parser scheduling, Markdown transition,
 history, viewport algorithm, pending-presentation policy, or scattered
 publication state. File reduction is evidence of moved authority, not a target
 by itself.
+
+Current checkpoint: snapshot and deterministic projection ownership is now in
+`flark`, with one explicit Flutter text conversion boundary. The complete
+native-backed Dart and Flutter suites pass, including the 1 MiB and 5 MiB paint
+scenarios. Controller effect orchestration remains, so M3 is not complete.
 
 ### M4 — large-module audit and deletion
 

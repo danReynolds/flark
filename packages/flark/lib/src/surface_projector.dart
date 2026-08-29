@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 
-import 'package:flark/flark.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-
+import 'editor_text.dart';
+import 'models.dart';
+import 'optimistic_range_map.dart';
+import 'pending_presentation.dart';
+import 'presentation.dart';
 import 'surface_projection.dart';
 
 /// Immutable inputs for constructing one controller surface publication.
@@ -32,7 +33,7 @@ final class FlarkSurfaceProjector {
   final int visibleUtf16Start;
   final String visibleSource;
   final int inputGlobalUtf16Start;
-  final TextEditingValue inputValue;
+  final FlarkEditorInputValue inputValue;
   final int? activeOrdinal;
   final int selectionBaseUtf16;
   final int selectionExtentUtf16;
@@ -406,7 +407,7 @@ final class FlarkSurfaceProjector {
     );
   }
 
-  TextSelection _projectedSelection(
+  FlarkTextSelection _projectedSelection(
     List<FlarkSurfaceTextRun> runs,
     int textLength,
   ) => FlarkSurfaceProjection.projectedSelection(
@@ -672,7 +673,7 @@ final class FlarkSurfaceProjector {
           sourceExact &&
           runs.last.sourceExact &&
           runs.last.sourceUtf16End == start &&
-          setEquals(runs.last.styles, styles)) {
+          _setsEqual(runs.last.styles, styles)) {
         final prior = runs.removeLast();
         runs.add(
           FlarkSurfaceTextRun(
@@ -810,12 +811,16 @@ final class FlarkSurfaceProjector {
         selectionExtentUtf16,
       );
 
-  TextSelection _selectionForRange(FlarkSourceRange range) => TextSelection(
-    baseOffset: (selectionBaseUtf16 - range.start).clamp(0, range.length),
-    extentOffset: (selectionExtentUtf16 - range.start).clamp(0, range.length),
-    affinity: inputValue.selection.affinity,
-    isDirectional: inputValue.selection.isDirectional,
-  );
+  FlarkTextSelection _selectionForRange(FlarkSourceRange range) =>
+      FlarkTextSelection(
+        baseOffset: (selectionBaseUtf16 - range.start).clamp(0, range.length),
+        extentOffset: (selectionExtentUtf16 - range.start).clamp(
+          0,
+          range.length,
+        ),
+        affinity: inputValue.selection.affinity,
+        isDirectional: inputValue.selection.isDirectional,
+      );
 
   String _sliceVisible(int globalStart, int globalEnd) {
     final start = (globalStart - visibleUtf16Start).clamp(
@@ -873,3 +878,6 @@ final class FlarkSurfaceProjector {
     FlarkCorePresentationInlineStyle style,
   ) => FlarkSurfaceInlineStyle.values[style.index];
 }
+
+bool _setsEqual<T>(Set<T> left, Set<T> right) =>
+    left.length == right.length && left.containsAll(right);

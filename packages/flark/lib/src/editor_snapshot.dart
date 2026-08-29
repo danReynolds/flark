@@ -1,6 +1,6 @@
-import 'package:flark/flark.dart';
-import 'package:flutter/services.dart';
-
+import 'editor_coordinator.dart';
+import 'editor_text.dart';
+import 'models.dart';
 import 'surface_projection.dart';
 
 /// One parser row and every render-facing fact captured for the same editor
@@ -82,7 +82,7 @@ final class FlarkEditorSnapshot {
   final int canonicalSelectionBaseUtf16;
   final int canonicalSelectionExtentUtf16;
   final int inputGlobalUtf16Start;
-  final TextEditingValue inputValue;
+  final FlarkEditorInputValue inputValue;
   final int? activeOrdinal;
   final bool crossRowSelection;
   final List<FlarkEditorSnapshotRow> rows;

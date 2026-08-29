@@ -5,6 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final controller = File('lib/src/controller.dart').readAsStringSync();
   final renderer = File('lib/src/render_surface.dart').readAsStringSync();
+  final portableSnapshotSources = [
+    '../flark/lib/src/editor_snapshot.dart',
+    '../flark/lib/src/editor_text.dart',
+    '../flark/lib/src/surface_projection.dart',
+    '../flark/lib/src/surface_projector.dart',
+  ].map((path) => File(path).readAsStringSync()).join('\n');
 
   test('controller has one immutable outward publication function', () {
     expect(
@@ -34,5 +40,11 @@ void main() {
       'snapshot',
       'toggleTaskChecked',
     });
+  });
+
+  test('snapshot and deterministic projection remain host neutral', () {
+    expect(portableSnapshotSources, isNot(contains('package:flutter')));
+    expect(portableSnapshotSources, isNot(contains('dart:ui')));
+    expect(controller, isNot(contains('class FlarkEditorSnapshot')));
   });
 }

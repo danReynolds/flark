@@ -7,23 +7,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'editor_performance.dart';
-import 'editor_snapshot.dart';
 import 'editor_transactions.dart';
 import 'input_transaction_state.dart';
 import 'input_window.dart';
 import 'input_reconciliation.dart';
 import 'platform_input_bridge.dart';
-import 'surface_projection.dart';
-import 'surface_projector.dart';
+import 'text_adaptation.dart';
 
 export 'editor_performance.dart'
     show
         FlarkSemanticEditPerformance,
         FlarkSourceEditPerformance,
         FlarkSourceEditPerformanceKind;
-export 'editor_snapshot.dart' show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
-export 'surface_projection.dart'
-    show FlarkSurfaceInlineStyle, FlarkSurfaceRow, FlarkSurfaceTextRun;
 
 const _maximumVisibleBytes = 16 * 1024;
 const _maximumInputCodeUnits = 16 * 1024;
@@ -724,7 +719,7 @@ final class FlarkEditorController extends ChangeNotifier
       canonicalSelectionBaseUtf16: _globalSelectionBase,
       canonicalSelectionExtentUtf16: _globalSelectionExtent,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
-      inputValue: _inputValue,
+      inputValue: portableEditorInputValue(_inputValue),
       activeOrdinal: _activeOrdinal,
       crossRowSelection: _crossRowSelection,
       rows: capturedRows,
@@ -736,7 +731,7 @@ final class FlarkEditorController extends ChangeNotifier
     visibleUtf16Start: _visibleUtf16Start,
     visibleSource: _visibleSource,
     inputGlobalUtf16Start: _inputGlobalUtf16Start,
-    inputValue: _inputValue,
+    inputValue: portableEditorInputValue(_inputValue),
     activeOrdinal: _activeOrdinal,
     selectionBaseUtf16: _globalSelectionBase,
     selectionExtentUtf16: _globalSelectionExtent,
@@ -2724,15 +2719,15 @@ final class FlarkEditorController extends ChangeNotifier
       }
       final display = presentation.textOffsetForSourceOffset(
         global,
-        affinity: value.selection.affinity,
+        affinity: portableTextAffinity(value.selection.affinity),
       );
       final upstream = presentation.sourceOffsetForTextOffset(
         display,
-        affinity: TextAffinity.upstream,
+        affinity: FlarkTextAffinity.upstream,
       );
       final downstream = presentation.sourceOffsetForTextOffset(
         display,
-        affinity: TextAffinity.downstream,
+        affinity: FlarkTextAffinity.downstream,
       );
       // Both sides of a hidden delimiter are real editing boundaries. Keep
       // the exact side already owned by the canonical selection; forcing the
@@ -2766,11 +2761,11 @@ final class FlarkEditorController extends ChangeNotifier
       if (belongsToActiveRow &&
           presentation.textOffsetForSourceOffset(
                 globalBase,
-                affinity: selection.affinity,
+                affinity: portableTextAffinity(selection.affinity),
               ) ==
               presentation.textOffsetForSourceOffset(
                 globalExtent,
-                affinity: selection.affinity,
+                affinity: portableTextAffinity(selection.affinity),
               )) {
         // Source-only delimiters and row terminators can give the platform a
         // non-empty selection whose endpoints occupy one rendered caret. It
@@ -2835,7 +2830,7 @@ final class FlarkEditorController extends ChangeNotifier
     final globalCaret = _inputGlobalUtf16Start + selection.extentOffset;
     final displayCaret = presentation.textOffsetForSourceOffset(
       globalCaret,
-      affinity: selection.affinity,
+      affinity: portableTextAffinity(selection.affinity),
     );
     final cluster = backward
         ? FlarkCoreGraphemePolicy.previousClusterRange(
@@ -2851,11 +2846,11 @@ final class FlarkEditorController extends ChangeNotifier
     if (cluster == null) return true;
     final sourceStart = presentation.sourceOffsetForTextOffset(
       cluster.$1,
-      affinity: TextAffinity.downstream,
+      affinity: FlarkTextAffinity.downstream,
     );
     final sourceEnd = presentation.sourceOffsetForTextOffset(
       cluster.$2,
-      affinity: TextAffinity.upstream,
+      affinity: FlarkTextAffinity.upstream,
     );
     // The mapped grapheme can be separated from the raw caret by a hidden
     // inline delimiter. Delete the visible grapheme's exact source range and
@@ -2894,11 +2889,11 @@ final class FlarkEditorController extends ChangeNotifier
     final sourceEnd = _inputGlobalUtf16Start + mutation.end;
     final displayStart = presentation.textOffsetForSourceOffset(
       sourceStart,
-      affinity: TextAffinity.downstream,
+      affinity: FlarkTextAffinity.downstream,
     );
     final displayEnd = presentation.textOffsetForSourceOffset(
       sourceEnd,
-      affinity: TextAffinity.upstream,
+      affinity: FlarkTextAffinity.upstream,
     );
     return displayStart == displayEnd;
   }

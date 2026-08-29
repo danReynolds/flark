@@ -17,7 +17,9 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |                           publication permission, pending presentation)
   |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
   |-- FlarkInputTransactionState (callback and provisional input lineage)
-  |-- FlarkSurfaceProjector (pure source-to-visible publication)
+  |-- Flutter text adaptation (TextEditingValue <-> portable UTF-16 facts)
+  |-- FlarkEditorSnapshot / FlarkSurfaceProjector (`flark` immutable bounded
+  |                                                 visual publication)
   |-- FlarkViewportInstallationPlan (`flark` viewport adoption decision)
   |-- FlarkViewportNavigationState (`flark` page path and refresh origin)
   `-- flark (source, selection, history, Markdown, edit authority)
@@ -41,7 +43,8 @@ permission to preserve the controller's existing method graph.
 | Identity-checked command lifetimes, edit generations, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
 | Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
-| Visible rows, marker hiding, styles, source/display mapping, selection projection | Surface projector | Documents, timers, queues, or callbacks |
+| Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
+| Conversion between portable input facts and Flutter text types | Flutter text adaptation | Source mutation, Markdown rules, or retained editor state |
 | Whether a viewport result can atomically replace or certify the current surface | Viewport installation plan in `flark` | Mutation or asynchronous work |
 | Ordered page path, current page index, and retained refresh origin | Viewport navigation state in `flark` | Native queries, continuation lifetime, rows, input restoration, or publication |
 | Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
