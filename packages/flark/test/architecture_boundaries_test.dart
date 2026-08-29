@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flark/src/editor_runtime.dart';
+import 'package:flark/src/editor_transactions.dart';
+import 'package:flark/src/input_reconciliation.dart';
+import 'package:flark/src/input_transaction_state.dart';
 import 'package:flark/src/input_window.dart';
 import 'package:flark/src/optimistic_range_map.dart';
 import 'package:flark/src/platform_input_bridge.dart';
@@ -131,6 +134,144 @@ void main() {
       runtime.endPendingEdit();
       expect(runtime.pendingEdits, 0);
       expect(runtime.endPendingEdit, throwsStateError);
+    });
+
+    test('history replay is exclusive and runtime-owned', () {
+      final runtime = FlarkEditorRuntimeState();
+
+      runtime.beginHistoryReplay();
+      expect(runtime.historyReplayPending, isTrue);
+      expect(runtime.beginHistoryReplay, throwsStateError);
+      runtime.endHistoryReplay();
+      expect(runtime.historyReplayPending, isFalse);
+      expect(runtime.endHistoryReplay, throwsStateError);
+
+      runtime.beginClosing();
+      expect(runtime.beginHistoryReplay, throwsStateError);
+    });
+  });
+
+  group('input transaction state', () {
+    test('callback scope owns timing and rejects nested callbacks', () {
+      final state = FlarkInputTransactionState();
+      final timing = state.beginCallback();
+      final pending = FlarkPendingSemanticInput(
+        base: const TextEditingValue(text: 'a'),
+        inputGlobalUtf16Start: 0,
+        initialCallbackStartedEpochMicros: timing.acceptedAtEpochMicros,
+        platformTiming: timing,
+        provisionalAfter: const TextEditingValue(text: 'ab'),
+      );
+      state.pendingSemantic = pending;
+
+      expect(state.beginCallback, throwsStateError);
+      state.finishCallback(timing);
+
+      expect(state.activeTiming, isNull);
+      expect(state.activeCallbackStartedEpochMicros, isNull);
+      expect(pending.initialCallbackMicros, greaterThanOrEqualTo(0));
+      expect(() => state.finishCallback(timing), throwsStateError);
+    });
+
+    test('semantic and late lineages are mutually exclusive', () {
+      final state = FlarkInputTransactionState();
+      final pending = FlarkPendingSemanticInput(
+        base: const TextEditingValue(text: 'a'),
+        inputGlobalUtf16Start: 0,
+        initialCallbackStartedEpochMicros: 1,
+        provisionalAfter: const TextEditingValue(text: 'ab'),
+      );
+      final late = FlarkLateSemanticInput(
+        provisionalTail: const TextEditingValue(text: 'ab'),
+        reconciliation: const FlarkInputReconciliationMap(
+          fromStart: 1,
+          fromEnd: 1,
+          toStart: 1,
+          toEnd: 1,
+        ),
+        successorCount: 0,
+      );
+
+      state.pendingSemantic = pending;
+      expect(state.pendingSemantic, same(pending));
+      expect(() => state.lateSemantic = late, throwsStateError);
+      state.pendingSemantic = null;
+      state.lateSemantic = late;
+      expect(state.pendingSemantic, isNull);
+      expect(state.lateSemantic, same(late));
+
+      state.pendingSemantic = null;
+      expect(state.lateSemantic, same(late));
+      state.lateSemantic = null;
+      expect(state.lateSemantic, isNull);
+    });
+
+    test('paired platform commands are consumed exactly once', () {
+      final state = FlarkInputTransactionState();
+
+      state.markNewlineTextObserved();
+      expect(
+        state.consumeNewlineAction(textObservationAlreadyApplied: false),
+        isTrue,
+      );
+      expect(
+        state.consumeNewlineAction(textObservationAlreadyApplied: false),
+        isFalse,
+      );
+
+      state.markBackspaceTextObserved();
+      expect(
+        state.consumeBackspaceSelector(textObservationAlreadyApplied: false),
+        isTrue,
+      );
+      expect(
+        state.consumeBackspaceSelector(textObservationAlreadyApplied: false),
+        isFalse,
+      );
+      expect(
+        state.consumeBackspaceSelector(textObservationAlreadyApplied: true),
+        isTrue,
+      );
+    });
+
+    test('mutation scope and metrics enforce monotone invariants', () {
+      final state = FlarkInputTransactionState();
+
+      state.beginPlatformMutation();
+      expect(state.platformMutationActive, isTrue);
+      expect(state.beginPlatformMutation, throwsStateError);
+      state.endPlatformMutation();
+      expect(state.platformMutationActive, isFalse);
+      expect(state.endPlatformMutation, throwsStateError);
+
+      state.observeSuccessorCount(3);
+      state.observeSuccessorCount(1);
+      expect(state.successorHighWatermark, 3);
+      state.recordReconciliationMicros(7);
+      expect(state.lastReconciliationMicros, 7);
+      expect(() => state.recordReconciliationMicros(-1), throwsArgumentError);
+    });
+
+    test('composition input base is first-writer until cleared', () {
+      final state = FlarkInputTransactionState();
+      state.rememberCompositionInputBase(
+        windowStart: 2,
+        value: const TextEditingValue(
+          text: 'a',
+          composing: TextRange(start: 0, end: 1),
+        ),
+      );
+      state.rememberCompositionInputBase(
+        windowStart: 9,
+        value: const TextEditingValue(text: 'b'),
+      );
+
+      expect(state.compositionInputBase!.windowStart, 2);
+      expect(state.compositionInputBase!.value.text, 'a');
+      expect(state.compositionInputBase!.value.composing, TextRange.empty);
+
+      state.clearCompositionInputBase();
+      expect(state.compositionInputBase, isNull);
     });
   });
 

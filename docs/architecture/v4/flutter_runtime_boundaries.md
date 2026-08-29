@@ -10,6 +10,7 @@ second product model.
 FlarkEditorController (public facade and UI coordination)
   |-- FlarkEditorRuntimeState (time, lifecycle, async lineage)
   |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
+  |-- FlarkInputTransactionState (callback and provisional input lineage)
   |-- FlarkSurfaceProjector (pure source-to-visible publication)
   |-- FlarkViewportInstallationPlan (pure viewport adoption decision)
   `-- flark_core (source, selection, history, Markdown, edit authority)
@@ -26,6 +27,7 @@ semantics remain in Rust/Core.
 | Source, selection, history, Markdown semantics, semantic edit receipts | Core | Flutter input connections or widgets |
 | Edit generations, lifecycle, serialized edit tail, parser/page single-flight, publication barriers | Editor runtime | Markdown rules or rendered rows |
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
+| Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Visible rows, marker hiding, styles, source/display mapping, selection projection | Surface projector | Documents, timers, queues, or callbacks |
 | Whether a viewport result can atomically replace or certify the current surface | Viewport installation plan | Mutation or asynchronous work |
 | Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
@@ -38,12 +40,14 @@ semantics remain in Rust/Core.
    are independently single-flight.
 3. A platform callback is validated against one serialized shadow before any
    member of its delta batch is applied. A bad batch applies nothing.
-4. One surface publication is projected from one immutable captured state.
+4. Callback and platform-mutation scopes cannot nest. A Return or Backspace
+   text observation consumes at most one companion action/selector callback.
+5. One surface publication is projected from one immutable captured state.
    Projection cannot read a document or mutate controller state while rows are
    being built.
-5. A certified empty viewport is a valid current semantic result; row-cache
+6. A certified empty viewport is a valid current semantic result; row-cache
    replacement and certification are separate decisions.
-6. Optimistic source mapping may preserve semantics only where a parser-authored
+7. Optimistic source mapping may preserve semantics only where a parser-authored
    edit receipt allows it. It fails closed for structural uncertainty.
 
 ## Controller reduction policy
@@ -51,8 +55,9 @@ semantics remain in Rust/Core.
 The controller is still larger than the intended facade. Remaining work should
 be extracted by authority, not by file length:
 
-- semantic input transaction orchestration should become one bounded lane with
-  explicit inputs and outcomes;
+- semantic command policy and receipt promotion should become one bounded lane
+  with explicit inputs and outcomes; its callback and provisional-lineage state
+  is now centralized, but controller/Core coordination remains in the facade;
 - viewport query/restore orchestration should become one coordinator after its
   current state transitions are fully pinned; and
 - command-specific Markdown behavior must move only through new Core receipts,

@@ -63,6 +63,7 @@ final class FlarkEditorRuntimeState {
   int _surfacePublicationSequence = 0;
   int _openingPublishedRevision = -1;
   int _pendingEdits = 0;
+  bool _historyReplayPending = false;
   Future<void> _editTail = Future<void>.value();
   Future<void> _sourceEditAdoptionTail = Future<void>.value();
   int _pendingSessionOnlyCommands = 0;
@@ -82,6 +83,7 @@ final class FlarkEditorRuntimeState {
   FlarkSurfacePublication? get surfacePublication => _surfacePublication;
   int get openingPublishedRevision => _openingPublishedRevision;
   int get pendingEdits => _pendingEdits;
+  bool get historyReplayPending => _historyReplayPending;
   Future<void> get editTail => _editTail;
   Future<void> get sourceEditAdoptionTail => _sourceEditAdoptionTail;
   int get pendingSessionOnlyCommands => _pendingSessionOnlyCommands;
@@ -118,6 +120,21 @@ final class FlarkEditorRuntimeState {
       throw StateError('Pending edit accounting underflow');
     }
     _pendingEdits -= 1;
+  }
+
+  void beginHistoryReplay() {
+    if (_closed) throw StateError('A closed editor cannot replay history');
+    if (_historyReplayPending) {
+      throw StateError('History replay is already pending');
+    }
+    _historyReplayPending = true;
+  }
+
+  void endHistoryReplay() {
+    if (!_historyReplayPending) {
+      throw StateError('No history replay is pending');
+    }
+    _historyReplayPending = false;
   }
 
   void recordInteraction() {

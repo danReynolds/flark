@@ -1,0 +1,182 @@
+import 'package:flutter/services.dart';
+
+import 'editor_transactions.dart';
+import 'input_reconciliation.dart';
+
+/// Sole owner of Flutter input work that can outlive one platform callback.
+///
+/// This state machine knows callback lineage, paired platform actions,
+/// composition input, and provisional-to-committed reconciliation bookkeeping.
+/// It deliberately does not decide Markdown meaning, edit eligibility, source
+/// mutations, or rendered presentation; those remain controller/Core work.
+final class FlarkInputTransactionState {
+  bool _platformMutationActive = false;
+  FlarkPendingPlatformLineage? _lineage;
+  int? _activeCallbackStartedEpochMicros;
+  FlarkPlatformInputTiming? _activeTiming;
+  bool _newlineTextObservationAwaitingAction = false;
+  bool _backspaceTextObservationAwaitingSelector = false;
+  FlarkCompositionInputBase? _compositionInputBase;
+  int _successorHighWatermark = 0;
+  int _lastReconciliationMicros = 0;
+
+  bool get platformMutationActive => _platformMutationActive;
+  int? get activeCallbackStartedEpochMicros =>
+      _activeCallbackStartedEpochMicros;
+  FlarkPlatformInputTiming? get activeTiming => _activeTiming;
+  FlarkCompositionInputBase? get compositionInputBase => _compositionInputBase;
+  int get successorHighWatermark => _successorHighWatermark;
+  int get lastReconciliationMicros => _lastReconciliationMicros;
+
+  FlarkPendingSemanticInput? get pendingSemantic =>
+      _lineage is FlarkPendingSemanticInput
+      ? _lineage as FlarkPendingSemanticInput
+      : null;
+
+  set pendingSemantic(FlarkPendingSemanticInput? value) {
+    if (value != null) {
+      if (_lineage != null && !identical(_lineage, value)) {
+        throw StateError('Input lineage must be cleared before replacement');
+      }
+      _lineage = value;
+    } else if (_lineage is FlarkPendingSemanticInput) {
+      _lineage = null;
+    }
+  }
+
+  FlarkLateSemanticInput? get lateSemantic => _lineage is FlarkLateSemanticInput
+      ? _lineage as FlarkLateSemanticInput
+      : null;
+
+  set lateSemantic(FlarkLateSemanticInput? value) {
+    if (value != null) {
+      if (_lineage != null && !identical(_lineage, value)) {
+        throw StateError('Input lineage must be cleared before replacement');
+      }
+      _lineage = value;
+    } else if (_lineage is FlarkLateSemanticInput) {
+      _lineage = null;
+    }
+  }
+
+  /// Opens one platform callback scope. Nested callbacks would make timing
+  /// and provisional lineage ambiguous, so they fail immediately.
+  FlarkPlatformInputTiming beginCallback() {
+    if (_activeTiming != null) {
+      throw StateError('Platform input callbacks cannot nest');
+    }
+    final timing = FlarkPlatformInputTiming();
+    _activeCallbackStartedEpochMicros = timing.acceptedAtEpochMicros;
+    _activeTiming = timing;
+    return timing;
+  }
+
+  /// Closes exactly the scope returned by [beginCallback]. If that callback
+  /// admitted a semantic transaction, records its synchronous callback cost
+  /// on the same lineage before releasing the scope.
+  void finishCallback(FlarkPlatformInputTiming timing) {
+    if (!identical(_activeTiming, timing)) {
+      throw StateError('Platform input callback scope mismatch');
+    }
+    timing.complete();
+    final pending = pendingSemantic;
+    if (pending?.initialCallbackStartedEpochMicros ==
+        timing.acceptedAtEpochMicros) {
+      pending!.initialCallbackMicros = timing.editorSyncMicros;
+    }
+    _activeCallbackStartedEpochMicros = null;
+    _activeTiming = null;
+  }
+
+  void beginPlatformMutation() {
+    if (_platformMutationActive) {
+      throw StateError('Platform mutation scopes cannot nest');
+    }
+    _platformMutationActive = true;
+  }
+
+  void endPlatformMutation() {
+    if (!_platformMutationActive) {
+      throw StateError('No platform mutation scope is active');
+    }
+    _platformMutationActive = false;
+  }
+
+  void markNewlineTextObserved() {
+    _newlineTextObservationAwaitingAction = true;
+  }
+
+  void clearNewlineTextObservation() {
+    _newlineTextObservationAwaitingAction = false;
+  }
+
+  /// Consumes the action paired with a newline already reported as text.
+  /// Returns true when the caller must not execute another newline command.
+  bool consumeNewlineAction({required bool textObservationAlreadyApplied}) {
+    final consumed =
+        textObservationAlreadyApplied || _newlineTextObservationAwaitingAction;
+    _newlineTextObservationAwaitingAction = false;
+    return consumed;
+  }
+
+  void markBackspaceTextObserved() {
+    _backspaceTextObservationAwaitingSelector = true;
+  }
+
+  void clearBackspaceTextObservation() {
+    _backspaceTextObservationAwaitingSelector = false;
+  }
+
+  /// Consumes the selector paired with a Backspace already reported as text.
+  /// Returns true when the caller must not execute another delete command.
+  bool consumeBackspaceSelector({required bool textObservationAlreadyApplied}) {
+    final consumed =
+        textObservationAlreadyApplied ||
+        _backspaceTextObservationAwaitingSelector;
+    _backspaceTextObservationAwaitingSelector = false;
+    return consumed;
+  }
+
+  void markObservedCommand(FlarkDeferredInputCommand? command) {
+    switch (command) {
+      case FlarkDeferredInputCommand.insertNewline:
+        markNewlineTextObserved();
+        return;
+      case FlarkDeferredInputCommand.deleteBackward:
+        markBackspaceTextObserved();
+        return;
+      case FlarkDeferredInputCommand.deleteForward:
+      case null:
+        return;
+    }
+  }
+
+  void rememberCompositionInputBase({
+    required int windowStart,
+    required TextEditingValue value,
+  }) {
+    _compositionInputBase ??= FlarkCompositionInputBase(
+      windowStart: windowStart,
+      value: value.copyWith(composing: TextRange.empty),
+    );
+  }
+
+  void clearCompositionInputBase() {
+    _compositionInputBase = null;
+  }
+
+  void observeSuccessorCount(int count) {
+    if (count > _successorHighWatermark) _successorHighWatermark = count;
+  }
+
+  void recordReconciliationMicros(int elapsedMicros) {
+    if (elapsedMicros < 0) {
+      throw ArgumentError.value(
+        elapsedMicros,
+        'elapsedMicros',
+        'must not be negative',
+      );
+    }
+    _lastReconciliationMicros = elapsedMicros;
+  }
+}
