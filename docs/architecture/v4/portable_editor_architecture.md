@@ -26,10 +26,9 @@ flark_flutter                                   Flutter
   semantics, accessibility, platform lifecycle
 ```
 
-The current `flark_core` package becomes the public pure-Dart `flark` package.
-The current Flutter `flark` package becomes `flark_flutter`. A physical package
-rename is part of the cutover so package names and responsibility do not
-contradict each other.
+The former `flark_core` package is now the public pure-Dart `flark` package.
+The former Flutter `flark` package is now `flark_flutter`; package names and
+responsibilities therefore agree during the remaining architecture work.
 
 Rust remains callable by another language through the host-neutral ABI. We do
 not invent Swift, Kotlin, or Web SDK abstractions before a real second-language
@@ -126,6 +125,9 @@ the renderer consumes a captured snapshot; Core and Flutter suites pass.
 - Move command sequencing, generation-stamped receipt adoption, publication
   permission, and host-neutral pending presentation into it by complete
   responsibility.
+- Give every admitted edit one identity-checked command lifetime; stale
+  commands cannot publish source or adopt pending presentation, and history
+  lifetimes are exclusive.
 - Migrate literal edits, semantic edits, history, selection, and viewport
   commands onto the same command/receipt cycle.
 

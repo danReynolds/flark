@@ -12,22 +12,67 @@ void main() {
     expect(coordinator.accepts(initial), isTrue);
     expect(coordinator.accepts(initial, requireInteraction: true), isFalse);
 
-    coordinator.admitEditingCommand();
+    coordinator.admitCommand(FlarkEditorCommandKind.sourceEdit);
     expect(coordinator.accepts(initial), isFalse);
   });
 
   test('an older completion cannot clear a newer publication barrier', () {
     final coordinator = FlarkEditorCoordinator();
-    final firstGeneration = coordinator.admitEditingCommand();
+    final first = coordinator.admitCommand(FlarkEditorCommandKind.sourceEdit);
     coordinator.beginPublicationBarrier();
 
-    final secondGeneration = coordinator.admitEditingCommand();
+    final second = coordinator.admitCommand(FlarkEditorCommandKind.sourceEdit);
     coordinator.beginPublicationBarrier();
 
-    expect(coordinator.endPublicationBarrierForEdit(firstGeneration), isFalse);
+    expect(coordinator.endPublicationBarrierForEdit(first.generation), isFalse);
     expect(coordinator.publicationCertificationBarrierActive, isTrue);
-    expect(coordinator.endPublicationBarrierForEdit(secondGeneration), isTrue);
+    expect(coordinator.endPublicationBarrierForEdit(second.generation), isTrue);
     expect(coordinator.publicationCertificationBarrierActive, isFalse);
+  });
+
+  test('a stale command cannot relabel the published source', () {
+    final coordinator = FlarkEditorCoordinator();
+    final first = coordinator.admitCommand(FlarkEditorCommandKind.semanticEdit);
+    final second = coordinator.admitCommand(
+      FlarkEditorCommandKind.sourceEdit,
+      publishSourceImmediately: true,
+    );
+
+    expect(coordinator.publishCommandSource(first), isFalse);
+    expect(coordinator.publishedSourceGeneration, second.generation);
+    expect(
+      () => coordinator.admitCommand(
+        FlarkEditorCommandKind.semanticEdit,
+        publishSourceImmediately: true,
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('a stale semantic receipt cannot replace pending presentation', () {
+    final coordinator = FlarkEditorCoordinator();
+    final boundary = FlarkPendingCaretBoundary(rowOrdinal: 2, rowEndUtf16: 4);
+    coordinator.setPendingCaretBoundary(boundary);
+    final semantic = coordinator.admitCommand(
+      FlarkEditorCommandKind.semanticEdit,
+    );
+    coordinator.admitCommand(
+      FlarkEditorCommandKind.sourceEdit,
+      publishSourceImmediately: true,
+    );
+
+    final adoption = coordinator.adoptCommittedPresentation(
+      command: semantic,
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.mergeParagraph,
+      ),
+      transition: FlarkCoreCommittedPresentationTransitionV1(
+        clearPriorGap: true,
+      ),
+    );
+
+    expect(adoption, isNull);
+    expect(coordinator.pendingPresentation.caretBoundary, same(boundary));
   });
 
   test('disposed is a terminal coordinator status', () {
@@ -110,30 +155,55 @@ void main() {
     expect(await coordinator.runPage(() async => false), isFalse);
   });
 
-  test('pending edit accounting has one owner and cannot underflow', () {
+  test('command tickets own pending accounting and complete exactly once', () {
     final coordinator = FlarkEditorCoordinator();
 
-    coordinator.beginPendingEdit();
-    coordinator.beginPendingEdit();
+    final first = coordinator.admitCommand(FlarkEditorCommandKind.sourceEdit);
+    final second = coordinator.admitCommand(
+      FlarkEditorCommandKind.semanticEdit,
+    );
     expect(coordinator.pendingEdits, 2);
-    coordinator.endPendingEdit();
-    coordinator.endPendingEdit();
+    coordinator.completeCommand(first);
+    coordinator.completeCommand(second);
     expect(coordinator.pendingEdits, 0);
-    expect(coordinator.endPendingEdit, throwsStateError);
+    expect(() => coordinator.completeCommand(second), throwsStateError);
   });
 
-  test('history replay is exclusive and coordinator-owned', () {
+  test('history command lifetime is exclusive and coordinator-owned', () {
     final coordinator = FlarkEditorCoordinator();
 
-    coordinator.beginHistoryReplay();
+    final history = coordinator.admitCommand(
+      FlarkEditorCommandKind.historyReplay,
+    );
     expect(coordinator.historyReplayPending, isTrue);
-    expect(coordinator.beginHistoryReplay, throwsStateError);
-    coordinator.endHistoryReplay();
+    expect(
+      () => coordinator.admitCommand(FlarkEditorCommandKind.historyReplay),
+      throwsStateError,
+    );
+    expect(
+      () => coordinator.admitCommand(FlarkEditorCommandKind.sourceEdit),
+      throwsStateError,
+      reason: 'history is exclusive against every later command',
+    );
+    coordinator.completeCommand(history);
     expect(coordinator.historyReplayPending, isFalse);
-    expect(coordinator.endHistoryReplay, throwsStateError);
+    expect(() => coordinator.completeCommand(history), throwsStateError);
 
     coordinator.beginClosing();
-    expect(coordinator.beginHistoryReplay, throwsStateError);
+    expect(
+      () => coordinator.admitCommand(FlarkEditorCommandKind.historyReplay),
+      throwsStateError,
+    );
+  });
+
+  test('disposal rejects a leaked command lifetime', () {
+    final coordinator = FlarkEditorCoordinator();
+    final command = coordinator.admitCommand(FlarkEditorCommandKind.sourceEdit);
+
+    expect(coordinator.markDisposed, throwsStateError);
+    coordinator.completeCommand(command);
+    coordinator.markDisposed();
+    expect(coordinator.status, FlarkEditorStatus.disposed);
   });
 
   test('pending presentation is coordinator-owned', () {
@@ -148,3 +218,36 @@ void main() {
     expect(coordinator.pendingPresentation.isEmpty, isTrue);
   });
 }
+
+FlarkCoreEditIntentReceiptV1 _receipt({
+  required FlarkCoreEditPresentationTransitionV1 transition,
+}) => FlarkCoreEditIntentReceiptV1(
+  disposition: FlarkCoreEditIntentDispositionV1.applied,
+  baseRevision: 1,
+  resultRevision: 2,
+  baseByteStart: 4,
+  baseByteEnd: 5,
+  baseUtf16Start: 4,
+  baseUtf16End: 5,
+  resultByteStart: 4,
+  resultByteEnd: 4,
+  resultUtf16Start: 4,
+  resultUtf16End: 4,
+  replacement: '',
+  resultSelectionUtf16: 4,
+  resultSourceByteLength: 9,
+  resultSourceUtf16Length: 9,
+  historyToken: null,
+  parserPending: true,
+  presentationProven: true,
+  logicalEditId: 1,
+  requestDigest: 1,
+  telemetry: const FlarkCoreEditIntentTelemetryV1(
+    coreQueueMicros: 0,
+    workerRoundTripMicros: 0,
+    workerQueueMicros: 0,
+    nativeFfiMicros: 0,
+    coreAdoptionMicros: 0,
+  ),
+  presentationTransition: transition,
+);

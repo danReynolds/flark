@@ -66,6 +66,8 @@ export 'src/models.dart'
 export 'src/editor_coordinator.dart'
     show
         FlarkEditorCoordinator,
+        FlarkEditorCommandKind,
+        FlarkEditorCommandTicket,
         FlarkEditorStamp,
         FlarkEditorStatus,
         FlarkPublicationAwaitingCertification,

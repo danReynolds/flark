@@ -13,8 +13,8 @@ portable kernel.
 
 ```text
 FlarkEditorController (Flutter facade and adapter coordination)
-  |-- FlarkEditorCoordinator (pure Dart time, lifecycle, async lineage,
-  |                           pending presentation)
+  |-- FlarkEditorCoordinator (pure Dart command lifetimes, async lineage,
+  |                           publication permission, pending presentation)
   |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
   |-- FlarkInputTransactionState (callback and provisional input lineage)
   |-- FlarkSurfaceProjector (pure source-to-visible publication)
@@ -38,7 +38,7 @@ permission to preserve the controller's existing method graph.
 | Concern | Owner | Must not own |
 | --- | --- | --- |
 | Source, selection, history, Markdown semantics, semantic edit receipts, pending-presentation adoption policy | `flark` and Rust | Flutter input connections or widgets |
-| Edit generations, lifecycle, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
+| Identity-checked command lifetimes, edit generations, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
 | Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Visible rows, marker hiding, styles, source/display mapping, selection projection | Surface projector | Documents, timers, queues, or callbacks |
@@ -48,10 +48,12 @@ permission to preserve the controller's existing method graph.
 
 ## Rules that prevent the bug classes we have seen
 
-1. An asynchronous result carries an edit-generation stamp. A stale result
-   cannot publish or clear a newer edit's barrier.
-2. One accepted edit enters one serialized runtime tail. Parser and page work
-   are independently single-flight.
+1. An asynchronous result carries an identity-checked command ticket and edit
+   generation. A stale result cannot publish source, adopt presentation, or
+   clear a newer edit's barrier.
+2. One accepted edit has one command lifetime and enters one serialized edit
+   tail. Completion is exact-once; history lifetimes exclude later commands.
+   Parser and page work are independently single-flight.
 3. A platform callback is validated against one serialized shadow before any
    member of its delta batch is applied. A bad batch applies nothing.
 4. Callback and platform-mutation scopes cannot nest. A Return or Backspace

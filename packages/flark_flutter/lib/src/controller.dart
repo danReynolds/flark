@@ -240,10 +240,6 @@ final class FlarkEditorController extends ChangeNotifier
   int get pendingEdits => _coordinator.pendingEdits;
   int get _pendingEdits => _coordinator.pendingEdits;
 
-  int _admitEditingCommand() {
-    return _coordinator.admitEditingCommand();
-  }
-
   /// Test-only visibility into whether an optimistic parser proof is still
   /// driving the active presentation.
   @visibleForTesting
@@ -3999,10 +3995,10 @@ final class FlarkEditorController extends ChangeNotifier
     }
     _parseTimer?.cancel();
     _parseTimer = null;
-    final generation = _admitEditingCommand();
-    _coordinator.publishSourceGeneration(generation);
-    _coordinator.beginPendingEdit();
-    _status = FlarkEditorStatus.editing;
+    final command = _coordinator.admitCommand(
+      FlarkEditorCommandKind.sourceEdit,
+      publishSourceImmediately: true,
+    );
     final operation = _coordinator.queueEdit<FlarkCoreEditReceipt>(() async {
       final receipt = await _session.applyEditUtf16(
         start,
@@ -4038,7 +4034,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     final completion = _completeQueuedEdit(
       operation,
-      generation,
+      command,
       acceptedAtEpochMicros,
       acceptanceWatch.elapsedMicroseconds,
       platformTiming,
@@ -4348,20 +4344,16 @@ final class FlarkEditorController extends ChangeNotifier
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
     _parseTimer = null;
-    final generation = _admitEditingCommand();
-    _coordinator.beginPendingEdit();
-    _status = FlarkEditorStatus.editing;
+    final command = _coordinator.admitCommand(
+      FlarkEditorCommandKind.semanticEdit,
+    );
     final operation = _coordinator.afterEdits(
       () => _session.applyEditIntentOutcomeV1(
         intent,
         compositionActive: _session.compositionActive,
       ),
     );
-    final completion = _completeSemanticEdit(
-      operation,
-      generation,
-      admittedInput,
-    );
+    final completion = _completeSemanticEdit(operation, command, admittedInput);
     _coordinator.trackEdit(completion);
     unawaited(completion);
     // Queue admission changes no source, selection, or presentation. Publishing
@@ -4451,20 +4443,16 @@ final class FlarkEditorController extends ChangeNotifier
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
     _parseTimer = null;
-    final generation = _admitEditingCommand();
-    _coordinator.beginPendingEdit();
-    _status = FlarkEditorStatus.editing;
+    final command = _coordinator.admitCommand(
+      FlarkEditorCommandKind.semanticAction,
+    );
     final operation = _coordinator.afterEdits(
       () => _session.applySemanticActionV1(
         FlarkCoreSemanticActionV1.toggleTaskChecked,
         targetUtf16: target,
       ),
     );
-    final completion = _completeTaskToggle(
-      operation,
-      generation,
-      current.ordinal,
-    );
+    final completion = _completeTaskToggle(operation, command, current.ordinal);
     _coordinator.trackEdit(completion);
     notifyListeners();
     return completion;
@@ -4472,13 +4460,14 @@ final class FlarkEditorController extends ChangeNotifier
 
   Future<bool> _completeTaskToggle(
     Future<FlarkCoreEditIntentReceiptV1> operation,
-    int generation,
+    FlarkEditorCommandTicket command,
     int rowOrdinal,
   ) async {
+    final generation = command.generation;
     try {
       final receipt = await operation;
       if (!receipt.hasCommit) {
-        _coordinator.endPendingEdit();
+        _coordinator.completeCommand(command);
         if (generation == _editGeneration) {
           _status = _idleStatus(current: _semanticViewportCurrent);
         }
@@ -4496,7 +4485,7 @@ final class FlarkEditorController extends ChangeNotifier
         // its older coordinate splice or generation to that newer host
         // publication would tear source identity. The later edit's refresh
         // observes both commits atomically.
-        _coordinator.endPendingEdit();
+        _coordinator.completeCommand(command);
         return true;
       }
       if (!_applyLengthNeutralViewportReplacement(
@@ -4511,7 +4500,7 @@ final class FlarkEditorController extends ChangeNotifier
         receipt.baseUtf16End,
         receipt.replacement,
       );
-      _coordinator.publishSourceGeneration(generation);
+      _coordinator.publishCommandSource(command);
       _setPendingTaskCheck(rowOrdinal, checked);
       // Publish the receipt-backed prefix immediately; parser recertification
       // may take several bounded pumps on a large document.
@@ -4524,13 +4513,11 @@ final class FlarkEditorController extends ChangeNotifier
         );
         if (generation == _editGeneration) _scheduleParsingAfterInput();
       }
-      _coordinator.endPendingEdit();
+      _coordinator.completeCommand(command);
       notifyListeners();
       return true;
     } catch (error) {
-      _coordinator.endPendingEdit();
-      _lastError = error;
-      _status = FlarkEditorStatus.faulted;
+      _coordinator.failCommand(command, error);
       notifyListeners();
       return false;
     }
@@ -4557,9 +4544,10 @@ final class FlarkEditorController extends ChangeNotifier
 
   Future<void> _completeSemanticEdit(
     Future<FlarkCoreEditIntentOutcomeV1> operation,
-    int generation,
+    FlarkEditorCommandTicket command,
     _PendingSemanticInput admittedInput,
   ) async {
+    final generation = command.generation;
     try {
       final outcome = await operation;
       final receipt = outcome.receipt;
@@ -4574,21 +4562,26 @@ final class FlarkEditorController extends ChangeNotifier
       final adoptionWatch = Stopwatch()..start();
       var requireParserCertification = _publicationCertificationBarrierActive;
       if (receipt.hasCommit) {
-        // A semantic splice is new parser authority and is not constrained by
-        // a predecessor literal envelope. Keep that envelope painted while
-        // the command is merely in flight, then retire it atomically with the
-        // committing receipt.
-        _coordinator.retirePendingPresentation(const {
-          FlarkPendingPresentationPart.dependency,
-        });
-        _coordinator.publishSourceGeneration(generation);
-        _inlineContinuation = outcome.inlineContinuation;
-        requireParserCertification =
-            _adoptSemanticReceipt(receipt) || requireParserCertification;
-        if (requireParserCertification) {
-          _coordinator.beginPublicationBarrier();
-        } else {
-          _promoteSemanticSuccessors(receipt);
+        final commandIsCurrent = _coordinator.publishCommandSource(command);
+        if (commandIsCurrent) {
+          // A semantic splice is new parser authority and is not constrained
+          // by a predecessor literal envelope. Keep that envelope painted
+          // while the command is merely in flight, then retire it atomically
+          // with the committing receipt. A stale receipt is allowed to settle
+          // its native command but cannot alter the newer command's host
+          // presentation or continuation.
+          _coordinator.retirePendingPresentation(const {
+            FlarkPendingPresentationPart.dependency,
+          });
+          _inlineContinuation = outcome.inlineContinuation;
+          requireParserCertification =
+              _adoptSemanticReceipt(command, receipt) ||
+              requireParserCertification;
+          if (requireParserCertification) {
+            _coordinator.beginPublicationBarrier();
+          } else {
+            _promoteSemanticSuccessors(receipt);
+          }
         }
       } else {
         _semanticEditV1Active = false;
@@ -4643,12 +4636,12 @@ final class FlarkEditorController extends ChangeNotifier
         // Publishing completion of this predecessor would pair that newer
         // source with predecessor or exact-fallback presentation. The
         // successor publishes after retaining proof or refreshing semantics.
-        _coordinator.endPendingEdit();
+        _coordinator.completeCommand(command);
         return;
       }
       if (!receipt.hasCommit) {
         _status = _idleStatus(current: _semanticViewportCurrent);
-        _coordinator.endPendingEdit();
+        _coordinator.completeCommand(command);
         notifyListeners();
         return;
       }
@@ -4681,7 +4674,7 @@ final class FlarkEditorController extends ChangeNotifier
           _promoteSemanticSuccessors(receipt);
         }
         if (generation != _editGeneration) {
-          _coordinator.endPendingEdit();
+          _coordinator.completeCommand(command);
           return;
         }
       } else {
@@ -4692,26 +4685,29 @@ final class FlarkEditorController extends ChangeNotifier
         );
         if (generation == _editGeneration) _scheduleParsingAfterInput();
       }
-      _coordinator.endPendingEdit();
+      _coordinator.completeCommand(command);
       notifyListeners();
     } catch (error) {
       _coordinator.retirePendingPresentation(const {
         FlarkPendingPresentationPart.dependency,
       });
       _discardPendingSemanticInput();
-      _coordinator.endPendingEdit();
-      _lastError = error;
-      _status = FlarkEditorStatus.faulted;
+      _coordinator.failCommand(command, error);
       notifyListeners();
     }
   }
 
-  bool _adoptSemanticReceipt(FlarkCoreEditIntentReceiptV1 receipt) {
+  bool _adoptSemanticReceipt(
+    FlarkEditorCommandTicket command,
+    FlarkCoreEditIntentReceiptV1 receipt,
+  ) {
     final transition = _prepareCommittedPresentationTransition(receipt);
     final adoption = _coordinator.adoptCommittedPresentation(
+      command: command,
       receipt: receipt,
       transition: transition,
     );
+    if (adoption == null) return false;
     // The semantic receipt supplies a result-revision byte/UTF-16 pair even
     // when its structural splice crosses the cached page boundary. Preserve
     // that authoritative origin before the optimistic cache update can clear
@@ -5862,12 +5858,13 @@ final class FlarkEditorController extends ChangeNotifier
 
   Future<void> _completeQueuedEdit(
     Future<FlarkCoreEditReceipt> operation,
-    int generation,
+    FlarkEditorCommandTicket command,
     int acceptedAtEpochMicros,
     int localEditorSyncMicros,
     _PlatformInputTiming? platformTiming, {
     required _QueuedEditPublication publication,
   }) async {
+    final generation = command.generation;
     try {
       final receipt = await operation;
       final receiptAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
@@ -5916,7 +5913,7 @@ final class FlarkEditorController extends ChangeNotifier
             // publication when it advances the generation.
             _promoteCertificationDeferredInput();
             if (generation != _editGeneration) {
-              _coordinator.endPendingEdit();
+              _coordinator.completeCommand(command);
               // The operation committed and yielded publication ownership to
               // its promoted successor. Its timing receipt remains valid and
               // must not disappear merely because the successor advanced the
@@ -5964,7 +5961,7 @@ final class FlarkEditorController extends ChangeNotifier
           }
         }
       }
-      _coordinator.endPendingEdit();
+      _coordinator.completeCommand(command);
       recordPerformance();
       notifyListeners();
     } catch (error) {
@@ -5975,9 +5972,7 @@ final class FlarkEditorController extends ChangeNotifier
       _coordinator.retirePendingPresentation(const {
         FlarkPendingPresentationPart.dependency,
       });
-      _coordinator.endPendingEdit();
-      _lastError = error;
-      _status = FlarkEditorStatus.faulted;
+      _coordinator.failCommand(command, error);
       notifyListeners();
     }
   }
@@ -6013,7 +6008,6 @@ final class FlarkEditorController extends ChangeNotifier
         !_session.compositionActive) {
       return Future<bool>.value(false);
     }
-    _coordinator.beginHistoryReplay();
     _coordinator.retirePendingPresentation(const {
       FlarkPendingPresentationPart.dependency,
       FlarkPendingPresentationPart.paragraphGap,
@@ -6024,9 +6018,10 @@ final class FlarkEditorController extends ChangeNotifier
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
     _parseTimer = null;
-    final generation = _admitEditingCommand();
-    _coordinator.beginPendingEdit();
-    _status = FlarkEditorStatus.editing;
+    final command = _coordinator.admitCommand(
+      FlarkEditorCommandKind.compositionCancel,
+    );
+    final generation = command.generation;
     notifyListeners();
 
     final operation = _coordinator.queueEdit(() async {
@@ -6060,18 +6055,14 @@ final class FlarkEditorController extends ChangeNotifier
     unawaited(
       operation
           .then((cancelled) {
-            _coordinator.endPendingEdit();
-            _coordinator.endHistoryReplay();
+            _coordinator.completeCommand(command);
             if (!cancelled) {
               _status = _idleStatus(current: _semanticViewportCurrent);
             }
             notifyListeners();
           })
           .catchError((Object error, StackTrace stackTrace) {
-            _coordinator.endPendingEdit();
-            _coordinator.endHistoryReplay();
-            _lastError = error;
-            _status = FlarkEditorStatus.faulted;
+            _coordinator.failCommand(command, error);
             notifyListeners();
           }),
     );
@@ -6230,14 +6221,14 @@ final class FlarkEditorController extends ChangeNotifier
         (undoDirection && !_session.canUndo && _pendingEdits == 0)) {
       return Future<bool>.value(false);
     }
-    _coordinator.beginHistoryReplay();
     _parseTimer?.cancel();
     _parseTimer = null;
     final acceptedAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
     final acceptanceWatch = Stopwatch()..start();
-    final generation = _admitEditingCommand();
-    _coordinator.beginPendingEdit();
-    _status = FlarkEditorStatus.editing;
+    final command = _coordinator.admitCommand(
+      FlarkEditorCommandKind.historyReplay,
+    );
+    final generation = command.generation;
     acceptanceWatch.stop();
     final editorSyncMicros = acceptanceWatch.elapsedMicroseconds;
 
@@ -6340,8 +6331,7 @@ final class FlarkEditorController extends ChangeNotifier
     });
     final completion = operation.then<bool>(
       (didReplay) {
-        _coordinator.endPendingEdit();
-        _coordinator.endHistoryReplay();
+        _coordinator.completeCommand(command);
         if (!didReplay) {
           _status = _idleStatus(current: _semanticViewportCurrent);
         }
@@ -6349,10 +6339,7 @@ final class FlarkEditorController extends ChangeNotifier
         return didReplay;
       },
       onError: (Object error, StackTrace stackTrace) {
-        _coordinator.endPendingEdit();
-        _coordinator.endHistoryReplay();
-        _lastError = error;
-        _status = FlarkEditorStatus.faulted;
+        _coordinator.failCommand(command, error);
         notifyListeners();
         Error.throwWithStackTrace(error, stackTrace);
       },

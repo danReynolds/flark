@@ -17,6 +17,37 @@ enum FlarkEditorStatus {
   disposed,
 }
 
+/// The editor behavior admitted through one coordinated command lifetime.
+///
+/// This is deliberately a closed editor-specific set, not an extensible event
+/// or command bus. It lets the coordinator enforce the few lifetimes whose
+/// overlap matters to source publication and history correctness.
+enum FlarkEditorCommandKind {
+  sourceEdit,
+  semanticEdit,
+  semanticAction,
+  historyReplay,
+  compositionCancel,
+}
+
+/// Identity for one admitted editor command.
+///
+/// A ticket can be completed exactly once and only by the coordinator that
+/// issued it. The generation is the public receipt lineage used to reject a
+/// stale asynchronous result.
+final class FlarkEditorCommandTicket {
+  FlarkEditorCommandTicket._({
+    required FlarkEditorCoordinator owner,
+    required this.kind,
+    required this.generation,
+  }) : _owner = owner;
+
+  final FlarkEditorCoordinator _owner;
+  final FlarkEditorCommandKind kind;
+  final int generation;
+  bool _settled = false;
+}
+
 /// Identity attached to asynchronous editor effects.
 ///
 /// Results may be adopted only while their edit generation remains current.
@@ -65,8 +96,7 @@ final class FlarkEditorCoordinator {
   FlarkPendingPresentationSnapshot _pendingPresentation =
       const FlarkPendingPresentationSnapshot.empty();
   int _openingPublishedRevision = -1;
-  int _pendingEdits = 0;
-  bool _historyReplayPending = false;
+  final Set<FlarkEditorCommandTicket> _activeCommands = {};
   Future<void> _editTail = Future<void>.value();
   Future<void> _sourceEditAdoptionTail = Future<void>.value();
   int _pendingSessionOnlyCommands = 0;
@@ -86,8 +116,12 @@ final class FlarkEditorCoordinator {
   FlarkPendingPresentationSnapshot get pendingPresentation =>
       _pendingPresentation;
   int get openingPublishedRevision => _openingPublishedRevision;
-  int get pendingEdits => _pendingEdits;
-  bool get historyReplayPending => _historyReplayPending;
+  int get pendingEdits => _activeCommands.length;
+  bool get historyReplayPending => _activeCommands.any(
+    (command) =>
+        command.kind == FlarkEditorCommandKind.historyReplay ||
+        command.kind == FlarkEditorCommandKind.compositionCancel,
+  );
   Future<void> get editTail => _editTail;
   Future<void> get sourceEditAdoptionTail => _sourceEditAdoptionTail;
   int get pendingSessionOnlyCommands => _pendingSessionOnlyCommands;
@@ -109,36 +143,59 @@ final class FlarkEditorCoordinator {
       (!requireInteraction ||
           stamp.interactionGeneration == _interactionGeneration);
 
-  int admitEditingCommand() {
-    _interactionGeneration += 1;
-    return ++_editGeneration;
-  }
-
-  void beginPendingEdit() {
-    if (_closed) throw StateError('A closed editor cannot admit an edit');
-    _pendingEdits += 1;
-  }
-
-  void endPendingEdit() {
-    if (_pendingEdits == 0) {
-      throw StateError('Pending edit accounting underflow');
-    }
-    _pendingEdits -= 1;
-  }
-
-  void beginHistoryReplay() {
-    if (_closed) throw StateError('A closed editor cannot replay history');
-    if (_historyReplayPending) {
+  FlarkEditorCommandTicket admitCommand(
+    FlarkEditorCommandKind kind, {
+    bool publishSourceImmediately = false,
+  }) {
+    if (_closed) throw StateError('A closed editor cannot admit a command');
+    if (historyReplayPending) {
       throw StateError('History replay is already pending');
     }
-    _historyReplayPending = true;
+    if (publishSourceImmediately && kind != FlarkEditorCommandKind.sourceEdit) {
+      throw ArgumentError(
+        'Only a source edit can publish at command admission',
+      );
+    }
+    _interactionGeneration += 1;
+    final generation = ++_editGeneration;
+    _status = FlarkEditorStatus.editing;
+    if (publishSourceImmediately) {
+      _publishedSourceGeneration = generation;
+    }
+    final ticket = FlarkEditorCommandTicket._(
+      owner: this,
+      kind: kind,
+      generation: generation,
+    );
+    _activeCommands.add(ticket);
+    return ticket;
   }
 
-  void endHistoryReplay() {
-    if (!_historyReplayPending) {
-      throw StateError('No history replay is pending');
+  bool publishCommandSource(FlarkEditorCommandTicket ticket) {
+    _requireActiveCommand(ticket);
+    if (ticket.generation != _editGeneration) return false;
+    _publishedSourceGeneration = ticket.generation;
+    return true;
+  }
+
+  void completeCommand(FlarkEditorCommandTicket ticket) {
+    _requireActiveCommand(ticket);
+    ticket._settled = true;
+    _activeCommands.remove(ticket);
+  }
+
+  void failCommand(FlarkEditorCommandTicket ticket, Object error) {
+    completeCommand(ticket);
+    recordFault(error);
+  }
+
+  void _requireActiveCommand(FlarkEditorCommandTicket ticket) {
+    if (!identical(ticket._owner, this)) {
+      throw StateError('Editor command belongs to another coordinator');
     }
-    _historyReplayPending = false;
+    if (ticket._settled || !_activeCommands.contains(ticket)) {
+      throw StateError('Editor command is already complete');
+    }
   }
 
   void recordInteraction() {
@@ -167,6 +224,9 @@ final class FlarkEditorCoordinator {
   }
 
   void markDisposed() {
+    if (_activeCommands.isNotEmpty) {
+      throw StateError('Cannot dispose an editor with active commands');
+    }
     _closed = true;
     _status = FlarkEditorStatus.disposed;
   }
@@ -191,13 +251,6 @@ final class FlarkEditorCoordinator {
     }
     _publicationPhase = const FlarkPublicationIdle();
     return true;
-  }
-
-  void publishSourceGeneration(int generation) {
-    if (generation > _editGeneration) {
-      throw StateError('Cannot publish a future edit generation');
-    }
-    _publishedSourceGeneration = generation;
   }
 
   void installViewportRevision(int revision) {
@@ -318,10 +371,16 @@ final class FlarkEditorCoordinator {
     );
   }
 
-  FlarkPendingPresentationAdoption adoptCommittedPresentation({
+  FlarkPendingPresentationAdoption? adoptCommittedPresentation({
+    required FlarkEditorCommandTicket command,
     required FlarkCoreEditIntentReceiptV1 receipt,
     required FlarkCoreCommittedPresentationTransitionV1? transition,
   }) {
+    _requireActiveCommand(command);
+    if (command.kind != FlarkEditorCommandKind.semanticEdit) {
+      throw StateError('Only a semantic edit can adopt committed presentation');
+    }
+    if (command.generation != _editGeneration) return null;
     final adoption = _pendingPresentation.adoptCommittedTransition(
       receipt: receipt,
       transition: transition,
