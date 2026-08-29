@@ -76,6 +76,8 @@ export 'src/editor_coordinator.dart'
         FlarkPublicationPhase;
 export 'src/editor_snapshot.dart'
     show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
+export 'src/editor_input_window.dart'
+    show FlarkEditorInputWindow, FlarkEditorInputWindowPlanner;
 export 'src/editor_text.dart'
     show
         FlarkEditorInputValue,

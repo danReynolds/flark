@@ -174,8 +174,9 @@ command eligibility from Markdown kinds or containers. Flutter-specific
 successor classification and bounded lineage lifecycle have one tested input
 transaction owner. Bounded platform value, global UTF-16 origin, canonical
 selection mirrors, active row, oversized selection, and restoration now
-advance through one directly tested Flutter input-state owner. The
-controller-facade work is therefore smaller but not complete.
+advance through one directly tested Flutter input-state owner, while pure
+`flark` plans the capacity-bounded scalar-aligned window shared by any future
+host adapter. The controller-facade work is therefore smaller but not complete.
 
 ### M4 — large-module audit and deletion
 
@@ -193,7 +194,8 @@ Current audit:
 | Module | Verdict | Reason |
 | --- | --- | --- |
 | Flutter controller | Further boundary work required | Bounded input-window state has moved, but the controller still combines platform callback admission, command-effect choreography, receipt reconciliation, and lifecycle/publication routing. |
-| Flutter input state | Retain | It owns one bounded platform window and the canonical selection facts that must advance with it. Its interface is named transitions, it imports no controller, and its window/oversized-selection invariants have direct tests. |
+| Pure input-window planner | Retain | It owns capacity, scalar-aligned cuts, and local-to-canonical selection equivalence without a frontend dependency. |
+| Flutter input state | Retain | It owns one `TextEditingValue` window and its canonical mirrors, adapting immutable plans through named transitions. It imports no controller and its oversized-selection invariants have direct tests. |
 | Rust runtime document | Retain while its public surface stays narrow | It is the deep source/parser transaction boundary; edit-intent resolution is already separate. Split only when a codec, parser job, or transaction owner can move without sharing document internals. |
 | Dart native document | Retain pending a codec-sized extraction | Its size comes from one serialized actor plus strict ABI decoding. A split is useful only if a stateless decoder can be tested independently without duplicating FFI lifecycle state. |
 | Flutter render surface | Retain | Layout, paint, hit testing, selection geometry, and semantics are one custom render-object protocol and already consume immutable snapshots. |

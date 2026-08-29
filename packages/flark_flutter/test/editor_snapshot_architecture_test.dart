@@ -17,6 +17,9 @@ void main() {
   final portableViewportPager = File(
     '../flark/lib/src/editor_viewport_pager.dart',
   ).readAsStringSync();
+  final portableInputWindow = File(
+    '../flark/lib/src/editor_input_window.dart',
+  ).readAsStringSync();
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
@@ -143,6 +146,10 @@ void main() {
     expect(inputState, contains('activateWindow'));
     expect(inputState, contains('activateCollapsedWindow'));
     expect(inputState, contains('markOversizedSelection'));
+    expect(inputState, contains('FlarkEditorInputWindowPlanner.activate'));
+    expect(inputState, contains('FlarkEditorInputWindowPlanner.collapsed'));
+    expect(portableInputWindow, isNot(contains('package:flutter')));
+    expect(portableInputWindow, isNot(contains('dart:ui')));
     expect(inputState, isNot(contains("import 'controller.dart'")));
     expect(inputState, isNot(contains('FlarkEditorController')));
     expect(inputState, isNot(contains(RegExp(r'\n\s+set [A-Za-z]'))));
