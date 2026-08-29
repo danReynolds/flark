@@ -9,6 +9,48 @@ import 'input_window.dart';
 const _maximumSmallEditBytes = 4 * 1024;
 const _smallEditDescriptorBytes = 32;
 
+/// One normalized Flutter text-service observation.
+///
+/// Delta-model and full-value clients describe the same user operation with
+/// different callback shapes. This immutable value reduces both shapes to one
+/// before/after transaction so editor policy cannot diverge by platform API.
+final class FlarkPlatformInputObservation {
+  const FlarkPlatformInputObservation({
+    required this.before,
+    required this.after,
+    required this.rejection,
+    required this.observedMutation,
+    required this.effectiveMutation,
+    required this.mutatingChanges,
+    required this.typingInput,
+    required this.fromDeltaBatch,
+    required this.newlineCommand,
+    required this.deleteBackwardCommand,
+    required this.selectedDeletion,
+    required this.selectionSupersededByProjection,
+  });
+
+  final TextEditingValue before;
+  final TextEditingValue after;
+  final FlarkInputResyncReason rejection;
+
+  /// The mutation expressed by the platform's selection/delta geometry.
+  final FlarkTextMutation? observedMutation;
+
+  /// The minimal net text difference against the controller's current value.
+  final FlarkTextMutation? effectiveMutation;
+  final int mutatingChanges;
+  final bool typingInput;
+  final bool fromDeltaBatch;
+  final bool newlineCommand;
+  final bool deleteBackwardCommand;
+  final bool selectedDeletion;
+  final bool selectionSupersededByProjection;
+
+  bool get accepted => rejection == FlarkInputResyncReason.none;
+  bool get selectionOnly => mutatingChanges == 0;
+}
+
 /// Owns the serialized state of Flutter's active text-input connection.
 ///
 /// This boundary knows platform text values, hashes, ranges, and connection
@@ -126,6 +168,113 @@ final class FlarkPlatformInputBridge {
     _shadowWindowStart = globalStart;
     _shadowSelection = authoritativeValue.selection;
     _state = FlarkInputWindowState.synchronized;
+  }
+
+  /// Validates and normalizes one complete delta callback atomically.
+  FlarkPlatformInputObservation observeDeltaBatch(
+    List<TextEditingDelta> deltas, {
+    required TextEditingValue currentValue,
+  }) {
+    final rejection = validateDeltaBatch(deltas, fallbackValue: currentValue);
+    if (rejection != FlarkInputResyncReason.none) {
+      return FlarkPlatformInputObservation(
+        before: currentValue,
+        after: currentValue,
+        rejection: rejection,
+        observedMutation: null,
+        effectiveMutation: null,
+        mutatingChanges: 0,
+        typingInput: false,
+        fromDeltaBatch: true,
+        newlineCommand: false,
+        deleteBackwardCommand: false,
+        selectedDeletion: false,
+        selectionSupersededByProjection: false,
+      );
+    }
+    var after = currentValue;
+    var mutatingChanges = 0;
+    var typingInput = true;
+    for (final delta in deltas) {
+      after = delta.apply(after);
+      if (mutationFor(delta) != null) {
+        mutatingChanges += 1;
+        typingInput = typingInput && delta is TextEditingDeltaInsertion;
+      }
+    }
+    final observedMutation = deltas.length == 1
+        ? mutationFor(deltas.single)
+        : null;
+    final deleteBackward = isDeleteBackwardDeltaBatch(
+      deltas,
+      currentValue: currentValue,
+    );
+    return FlarkPlatformInputObservation(
+      before: currentValue,
+      after: after,
+      rejection: FlarkInputResyncReason.none,
+      observedMutation: observedMutation,
+      effectiveMutation: differenceMutation(currentValue.text, after.text),
+      mutatingChanges: mutatingChanges,
+      typingInput: mutatingChanges > 0 && typingInput,
+      fromDeltaBatch: true,
+      newlineCommand: isNewlineDeltaBatch(deltas, currentValue: currentValue),
+      deleteBackwardCommand: deleteBackward,
+      selectedDeletion:
+          observedMutation != null &&
+          isSelectedDeletion(
+            observedMutation,
+            currentSelection: currentValue.selection,
+          ),
+      selectionSupersededByProjection:
+          deleteBackward &&
+          _shadowText == currentValue.text &&
+          _shadowSelection != null &&
+          _shadowSelection != currentValue.selection,
+    );
+  }
+
+  /// Normalizes a full-value callback into the same transaction shape used by
+  /// [observeDeltaBatch].
+  FlarkPlatformInputObservation observeValue(
+    TextEditingValue value, {
+    required TextEditingValue currentValue,
+  }) {
+    final platformBefore = shadowValue ?? currentValue;
+    final observedMutation = selectionObservedMutation(platformBefore, value);
+    final effectiveMutation = differenceMutation(currentValue.text, value.text);
+    final selection = currentValue.selection;
+    final typingInput =
+        effectiveMutation != null &&
+        selection.isCollapsed &&
+        effectiveMutation.start == selection.extentOffset &&
+        effectiveMutation.end == selection.extentOffset &&
+        effectiveMutation.replacement.isNotEmpty;
+    return FlarkPlatformInputObservation(
+      before: currentValue,
+      after: value,
+      rejection: FlarkInputResyncReason.none,
+      observedMutation: observedMutation,
+      effectiveMutation: effectiveMutation,
+      mutatingChanges: currentValue.text == value.text ? 0 : 1,
+      typingInput: typingInput,
+      fromDeltaBatch: false,
+      newlineCommand: isNewlineValue(
+        currentValue: currentValue,
+        observedValue: value,
+      ),
+      deleteBackwardCommand: isDeleteBackwardValue(
+        currentValue: currentValue,
+        observedValue: value,
+      ),
+      selectedDeletion:
+          effectiveMutation != null &&
+          isSelectedDeletion(
+            effectiveMutation,
+            currentSelection: currentValue.selection,
+          ),
+      selectionSupersededByProjection: false,
+    );
   }
 
   /// Validates a complete callback batch against the serialized shadow before

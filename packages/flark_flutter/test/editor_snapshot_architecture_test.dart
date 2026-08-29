@@ -183,4 +183,15 @@ void main() {
     expect(portableCommandExecutor, contains('executeHistory'));
     expect(portableCommandExecutor, contains('executeCompositionCancel'));
   });
+
+  test('Flutter callback shapes converge before editor policy', () {
+    expect(controller, contains('_applyPlatformObservation(observation)'));
+    expect(controller, contains('_platformInput.observeValue('));
+    expect(controller, isNot(contains('_isPlatformNewlineMutation')));
+    expect(controller, isNot(contains('_isPlatformNewlineValue')));
+    expect(controller, isNot(contains('_isPlatformDeleteBackwardMutation')));
+    expect(controller, isNot(contains('_isPlatformDeleteBackwardValue')));
+    expect(controller, isNot(contains('_updateEditingValueFromPlatform')));
+    expect(controller, isNot(contains('_applyOversizedPlatformDeltas')));
+  });
 }

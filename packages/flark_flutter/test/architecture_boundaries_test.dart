@@ -434,6 +434,158 @@ void main() {
         isTrue,
       );
     });
+
+    test(
+      'delta and full-value insertion normalize to the same transaction',
+      () {
+        final bridge = FlarkPlatformInputBridge();
+        const current = TextEditingValue(
+          text: 'ab',
+          selection: TextSelection.collapsed(offset: 1),
+        );
+        bridge.install(
+          text: current.text,
+          globalStart: 0,
+          selection: current.selection,
+          platformOriginated: false,
+          closed: false,
+          faulted: false,
+        );
+        const after = TextEditingValue(
+          text: 'axb',
+          selection: TextSelection.collapsed(offset: 2),
+        );
+        final delta = bridge.observeDeltaBatch(const [
+          TextEditingDeltaInsertion(
+            oldText: 'ab',
+            textInserted: 'x',
+            insertionOffset: 1,
+            selection: TextSelection.collapsed(offset: 2),
+            composing: TextRange.empty,
+          ),
+        ], currentValue: current);
+        final value = bridge.observeValue(after, currentValue: current);
+
+        expect(delta.accepted, isTrue);
+        expect(value.accepted, isTrue);
+        expect(delta.after, value.after);
+        expect(
+          (delta.effectiveMutation!.start, delta.effectiveMutation!.end),
+          (value.effectiveMutation!.start, value.effectiveMutation!.end),
+        );
+        expect(
+          delta.effectiveMutation!.replacement,
+          value.effectiveMutation!.replacement,
+        );
+        expect(delta.typingInput, isTrue);
+        expect(value.typingInput, isTrue);
+        expect(delta.newlineCommand, isFalse);
+        expect(value.newlineCommand, isFalse);
+      },
+    );
+
+    test('delta and full-value commands share newline and Backspace facts', () {
+      final newlineBridge = FlarkPlatformInputBridge();
+      const selected = TextEditingValue(
+        text: 'ab',
+        selection: TextSelection(baseOffset: 0, extentOffset: 2),
+      );
+      newlineBridge.install(
+        text: selected.text,
+        globalStart: 0,
+        selection: selected.selection,
+        platformOriginated: false,
+        closed: false,
+        faulted: false,
+      );
+      final newlineDelta = newlineBridge.observeDeltaBatch(const [
+        TextEditingDeltaReplacement(
+          oldText: 'ab',
+          replacementText: '\n',
+          replacedRange: TextRange(start: 0, end: 2),
+          selection: TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      ], currentValue: selected);
+      final newlineValue = newlineBridge.observeValue(
+        const TextEditingValue(
+          text: '\n',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+        currentValue: selected,
+      );
+
+      expect(newlineDelta.newlineCommand, isTrue);
+      expect(newlineValue.newlineCommand, isTrue);
+      expect(newlineDelta.selectedDeletion, isFalse);
+      expect(newlineValue.selectedDeletion, isFalse);
+
+      final backspaceBridge = FlarkPlatformInputBridge();
+      const emoji = TextEditingValue(
+        text: 'a😀',
+        selection: TextSelection.collapsed(offset: 3),
+      );
+      backspaceBridge.install(
+        text: emoji.text,
+        globalStart: 0,
+        selection: emoji.selection,
+        platformOriginated: false,
+        closed: false,
+        faulted: false,
+      );
+      final backspaceDelta = backspaceBridge.observeDeltaBatch(const [
+        TextEditingDeltaDeletion(
+          oldText: 'a😀',
+          deletedRange: TextRange(start: 1, end: 3),
+          selection: TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      ], currentValue: emoji);
+      final backspaceValue = backspaceBridge.observeValue(
+        const TextEditingValue(
+          text: 'a',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+        currentValue: emoji,
+      );
+
+      expect(backspaceDelta.deleteBackwardCommand, isTrue);
+      expect(backspaceValue.deleteBackwardCommand, isTrue);
+      expect(backspaceDelta.effectiveMutation!.replacement, isEmpty);
+      expect(backspaceValue.effectiveMutation!.replacement, isEmpty);
+    });
+
+    test('a rejected batch never produces a partial observation', () {
+      final bridge = FlarkPlatformInputBridge();
+      const current = TextEditingValue(
+        text: 'abc',
+        selection: TextSelection.collapsed(offset: 3),
+      );
+      bridge.install(
+        text: current.text,
+        globalStart: 0,
+        selection: current.selection,
+        platformOriginated: false,
+        closed: false,
+        faulted: false,
+      );
+
+      final observation = bridge.observeDeltaBatch(const [
+        TextEditingDeltaInsertion(
+          oldText: 'stale',
+          textInserted: 'x',
+          insertionOffset: 3,
+          selection: TextSelection.collapsed(offset: 4),
+          composing: TextRange.empty,
+        ),
+      ], currentValue: current);
+
+      expect(observation.accepted, isFalse);
+      expect(observation.rejection, FlarkInputResyncReason.oldTextMismatch);
+      expect(observation.after, current);
+      expect(observation.effectiveMutation, isNull);
+      expect(observation.mutatingChanges, 0);
+    });
   });
 
   test('performance log bounds diagnostic receipts independently', () {

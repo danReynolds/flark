@@ -895,200 +895,19 @@ final class FlarkEditorController extends ChangeNotifier
     if (_captureSemanticSuccessors(deltas)) return;
     if (_captureLateSemanticSuccessors(deltas)) return;
     if (_capturePlatformDeltasBehindCertification(deltas)) return;
-    final rejection = _validateDeltaBatch(deltas);
-    if (rejection != FlarkInputResyncReason.none) {
-      _resynchronize(rejection);
+    final observation = _platformInput.observeDeltaBatch(
+      deltas,
+      currentValue: _inputState.value,
+    );
+    if (!observation.accepted) {
+      _resynchronize(observation.rejection);
       return;
     }
-    var observedValue = _inputState.value;
-    for (final delta in deltas) {
-      observedValue = delta.apply(observedValue);
-    }
-    if (_isCompositionCancelValue(observedValue)) {
+    if (_isCompositionCancelValue(observation.after)) {
       unawaited(cancelComposition());
       return;
     }
-    _inputTransactions.beginPlatformMutation();
-    try {
-      if (_inputState.oversizedSelection) {
-        _applyOversizedPlatformDeltas(deltas);
-        notifyListeners();
-        return;
-      }
-      final platformNewline = _isPlatformNewlineMutation(deltas);
-      if (platformNewline &&
-          _deferCommandUntilCertification(
-            FlarkDeferredInputCommand.insertNewline,
-            provisionalAfter: observedValue,
-          )) {
-        _inputTransactions.markNewlineTextObserved();
-        return;
-      }
-      if (platformNewline && _queuePlatformSemanticNewline(deltas)) {
-        _acceptPlatformWindowShadow(
-          observedValue,
-          globalStart: _inputState.globalUtf16Start,
-        );
-        return;
-      }
-      final platformDeleteBackward = _isPlatformDeleteBackwardMutation(deltas);
-      final platformSelectionSupersededByProjection =
-          platformDeleteBackward &&
-          _platformInput.shadowText == _inputState.value.text &&
-          _platformInput.shadowSelection != null &&
-          _platformInput.shadowSelection != _inputState.value.selection;
-      if (platformSelectionSupersededByProjection) {
-        // The text service can issue another Backspace before adopting a
-        // parser-normalized caret. Its oldText is still current, but its raw
-        // deletion range belongs to the superseded selection geometry. Treat
-        // the callback as the same visible command at the canonical caret and
-        // reassert that canonical window; applying the raw range can delete a
-        // hidden table delimiter/padding byte or reject an otherwise live
-        // input connection.
-        _inputTransactions.markBackspaceTextObserved();
-        _deleteBackward(
-          allowSemantic: true,
-          platformTiming: _inputTransactions.activeTiming,
-        );
-        notifyListeners();
-        return;
-      }
-      if (platformDeleteBackward &&
-          _deferCommandUntilCertification(
-            FlarkDeferredInputCommand.deleteBackward,
-            provisionalAfter: observedValue,
-          )) {
-        _inputTransactions.markBackspaceTextObserved();
-        return;
-      }
-      if (platformDeleteBackward &&
-          _queuePlatformSemanticDeleteBackward(deltas)) {
-        _acceptPlatformWindowShadow(
-          observedValue,
-          globalStart: _inputState.globalUtf16Start,
-        );
-        return;
-      }
-      final observedMutation = deltas.length == 1
-          ? _mutationFor(deltas.single)
-          : null;
-      if (observedMutation != null &&
-          _isPlatformSelectedDeletion(observedMutation) &&
-          _mutationTouchesOnlyHiddenProjection(observedMutation)) {
-        // A platform selection can span exact source that the rendered
-        // projection collapses away (a block's trailing newline is the common
-        // case). Preserve that hidden source and synchronously correct the
-        // provisional platform value. Resynchronizing drops liveness, while
-        // accepting the splice would make invisible Markdown user-deletable.
-        notifyListeners();
-        return;
-      }
-      if (platformNewline) {
-        _inputTransactions.markNewlineTextObserved();
-        _acceptPlatformWindowShadow(
-          observedValue,
-          globalStart: _inputState.globalUtf16Start,
-        );
-        insertNewline();
-        return;
-      }
-      if (platformDeleteBackward &&
-          _mutationTouchesOnlyHiddenProjection(_mutationFor(deltas.single)!)) {
-        // The text service still sees the exact source window and can report
-        // Backspace from an offset that a newly certified projection has made
-        // non-navigable. Interpret that callback as the visible Backspace
-        // command at the adjacent legal caret; never install a one-character
-        // deletion of an invisible marker.
-        _inputTransactions.markBackspaceTextObserved();
-        _acceptPlatformWindowShadow(
-          observedValue,
-          globalStart: _inputState.globalUtf16Start,
-        );
-        _deleteBackward(
-          allowSemantic: true,
-          platformTiming: _inputTransactions.activeTiming,
-        );
-        notifyListeners();
-        return;
-      }
-      if (platformDeleteBackward) {
-        _inputTransactions.markBackspaceTextObserved();
-      }
-      var finalValue = _inputState.value;
-      var mutatingDeltas = 0;
-      var typingInput = true;
-      var publishOptimistically = true;
-      for (final delta in deltas) {
-        finalValue = delta.apply(finalValue);
-        if (_mutationFor(delta) != null) {
-          mutatingDeltas += 1;
-          typingInput = typingInput && delta is TextEditingDeltaInsertion;
-        }
-      }
-      if (mutatingDeltas == 0) {
-        _adoptPlatformSelectionOnlyValue(finalValue);
-      } else {
-        final before = _inputState.value.text;
-        final after = finalValue.text;
-        final mutation = _differenceMutation(before, after);
-        if (mutation == null) {
-          _breakTypingHistoryGroup();
-          _inputState.replaceValue(finalValue);
-          _trackCompositionWithoutMutation(finalValue.composing);
-          _updateGlobalSelection();
-          unawaited(_installCanonicalSelection(_selectionSnapshot()));
-          notifyListeners();
-          return;
-        }
-        if (platformDeleteBackward &&
-            _mutationTouchesOnlyHiddenProjection(mutation)) {
-          // Repeated source characters can make the value-level difference
-          // choose a different, but textually equivalent, range from the
-          // platform delta (table padding is the common case). Classify the
-          // effective mutation too: hidden Markdown is never user-deletable,
-          // so preserve it and execute the visible Backspace command at the
-          // controller's normalized caret.
-          _inputTransactions.markBackspaceTextObserved();
-          _acceptPlatformWindowShadow(
-            finalValue,
-            globalStart: _platformInput.shadowWindowStart,
-          );
-          _deleteBackward(
-            allowSemantic: true,
-            platformTiming: _inputTransactions.activeTiming,
-          );
-          notifyListeners();
-          return;
-        }
-        final acceptance = _acceptMutation(
-          mutation,
-          selection: finalValue.selection,
-          composing: finalValue.composing,
-          typingInput: typingInput,
-          fullValue: finalValue.text.length <= _maximumInputCodeUnits
-              ? finalValue
-              : null,
-        );
-        if (!acceptance.accepted) {
-          _resynchronize(FlarkInputResyncReason.rangeOutOfWindow);
-          return;
-        }
-        publishOptimistically = acceptance.publishOptimistically;
-      }
-      if (publishOptimistically) notifyListeners();
-      // A projected edit may normalize the controller selection while the
-      // text service still owns finalValue's provisional selection. Publish
-      // the canonical correction first, then retain the exact observed shadow
-      // so a same-burst callback is classified in the coordinates it actually
-      // used. The next host-originated notification or adopted callback
-      // reconciles the two without retiring a live connection.
-      _acceptPlatformWindowShadow(
-        finalValue,
-        globalStart: _platformInput.shadowWindowStart,
-      );
-    } finally {
-      _inputTransactions.endPlatformMutation();
-    }
+    _applyPlatformObservation(observation);
   }
 
   void updateEditingValue(TextEditingValue value) {
@@ -1114,15 +933,30 @@ final class FlarkEditorController extends ChangeNotifier
     if (value.text == _inputState.value.text) {
       _inputTransactions.lateSemantic = null;
     }
+    _applyPlatformObservation(
+      _platformInput.observeValue(value, currentValue: _inputState.value),
+    );
+  }
+
+  void _applyPlatformObservation(FlarkPlatformInputObservation observation) {
     _inputTransactions.beginPlatformMutation();
     try {
+      final value = observation.after;
+      final effectiveMutation = observation.effectiveMutation;
       if (_inputState.oversizedSelection) {
-        _updateOversizedEditingValue(value);
+        if (effectiveMutation == null) {
+          _adoptPlatformSelectionOnlyValue(value);
+        } else {
+          _markOversizedPlatformCommand(effectiveMutation);
+          _replaceSelection(
+            effectiveMutation.replacement,
+            typingInput: observation.fromDeltaBatch && observation.typingInput,
+          );
+        }
         notifyListeners();
         return;
       }
-      final platformNewline = _isPlatformNewlineValue(value);
-      if (platformNewline &&
+      if (observation.newlineCommand &&
           _deferCommandUntilCertification(
             FlarkDeferredInputCommand.insertNewline,
             provisionalAfter: value,
@@ -1130,15 +964,27 @@ final class FlarkEditorController extends ChangeNotifier
         _inputTransactions.markNewlineTextObserved();
         return;
       }
-      if (platformNewline && _queuePlatformSemanticNewlineValue(value)) {
+      if (observation.newlineCommand &&
+          _queueObservedPlatformSemanticNewline(observation)) {
         _acceptPlatformWindowShadow(
           value,
           globalStart: _inputState.globalUtf16Start,
         );
         return;
       }
-      final platformDeleteBackward = _isPlatformDeleteBackwardValue(value);
-      if (platformDeleteBackward &&
+      if (observation.selectionSupersededByProjection) {
+        // The text service can issue another Backspace before adopting a
+        // parser-normalized caret. Its range belongs to superseded selection
+        // geometry, so execute the visible command at the canonical caret.
+        _inputTransactions.markBackspaceTextObserved();
+        _deleteBackward(
+          allowSemantic: true,
+          platformTiming: _inputTransactions.activeTiming,
+        );
+        notifyListeners();
+        return;
+      }
+      if (observation.deleteBackwardCommand &&
           _deferCommandUntilCertification(
             FlarkDeferredInputCommand.deleteBackward,
             provisionalAfter: value,
@@ -1146,25 +992,32 @@ final class FlarkEditorController extends ChangeNotifier
         _inputTransactions.markBackspaceTextObserved();
         return;
       }
-      if (platformDeleteBackward &&
-          _queuePlatformSemanticDeleteBackwardValue(value)) {
+      final commandMutation = observation.observedMutation ?? effectiveMutation;
+      if (observation.deleteBackwardCommand &&
+          commandMutation != null &&
+          _queueObservedPlatformSemanticDeleteBackward(
+            provisionalMutation: commandMutation,
+            provisionalAfter: value,
+          )) {
         _acceptPlatformWindowShadow(
           value,
           globalStart: _inputState.globalUtf16Start,
         );
         return;
       }
-      final observedMutation = _differenceMutation(
-        _inputState.value.text,
-        value.text,
-      );
-      if (observedMutation != null &&
-          _isPlatformSelectedDeletion(observedMutation) &&
-          _mutationTouchesOnlyHiddenProjection(observedMutation)) {
+      final selectedMutation = observation.fromDeltaBatch
+          ? observation.observedMutation
+          : effectiveMutation;
+      if (observation.selectedDeletion &&
+          selectedMutation != null &&
+          _mutationTouchesOnlyHiddenProjection(selectedMutation)) {
+        // A platform selection can include exact source collapsed by the
+        // rendered projection. Preserve that invisible Markdown and correct
+        // the provisional platform value synchronously.
         notifyListeners();
         return;
       }
-      if (platformNewline) {
+      if (observation.newlineCommand) {
         _inputTransactions.markNewlineTextObserved();
         _acceptPlatformWindowShadow(
           value,
@@ -1176,10 +1029,11 @@ final class FlarkEditorController extends ChangeNotifier
         );
         return;
       }
-      if (platformDeleteBackward &&
-          _mutationTouchesOnlyHiddenProjection(
-            _differenceMutation(_inputState.value.text, value.text)!,
-          )) {
+      if (observation.deleteBackwardCommand &&
+          commandMutation != null &&
+          _mutationTouchesOnlyHiddenProjection(commandMutation)) {
+        // Interpret a deletion reported in newly hidden source coordinates as
+        // visible Backspace at the adjacent legal caret.
         _inputTransactions.markBackspaceTextObserved();
         _acceptPlatformWindowShadow(
           value,
@@ -1192,94 +1046,62 @@ final class FlarkEditorController extends ChangeNotifier
         notifyListeners();
         return;
       }
-      if (platformDeleteBackward) {
+      if (observation.deleteBackwardCommand) {
         _inputTransactions.markBackspaceTextObserved();
       }
-      _updateEditingValueFromPlatform(value);
+      if (observation.selectionOnly) {
+        _adoptPlatformSelectionOnlyValue(value);
+        notifyListeners();
+        return;
+      }
+      if (effectiveMutation == null) {
+        // A multi-delta batch can perform text work whose net value is a no-op.
+        _breakTypingHistoryGroup();
+        _inputState.replaceValue(value);
+        _trackCompositionWithoutMutation(value.composing);
+        _updateGlobalSelection();
+        unawaited(_installCanonicalSelection(_selectionSnapshot()));
+        notifyListeners();
+        return;
+      }
+      if (observation.deleteBackwardCommand &&
+          _mutationTouchesOnlyHiddenProjection(effectiveMutation)) {
+        // Repeated characters can make minimal differencing choose a
+        // textually equivalent range distinct from the platform's raw range.
+        _inputTransactions.markBackspaceTextObserved();
+        _acceptPlatformWindowShadow(
+          value,
+          globalStart: _platformInput.shadowWindowStart,
+        );
+        _deleteBackward(
+          allowSemantic: true,
+          platformTiming: _inputTransactions.activeTiming,
+        );
+        notifyListeners();
+        return;
+      }
+      final acceptance = _acceptMutation(
+        effectiveMutation,
+        selection: value.selection,
+        composing: value.composing,
+        typingInput: observation.typingInput,
+        fullValue: value.text.length <= _maximumInputCodeUnits ? value : null,
+      );
+      if (!acceptance.accepted) {
+        _resynchronize(FlarkInputResyncReason.rangeOutOfWindow);
+        return;
+      }
+      if (acceptance.publishOptimistically) notifyListeners();
+      // A projected edit may normalize the controller selection while the
+      // text service still owns the observed provisional selection. Retain
+      // that exact shadow for same-burst callbacks after publishing.
+      _acceptPlatformWindowShadow(
+        value,
+        globalStart: _platformInput.shadowWindowStart,
+      );
     } finally {
       _inputTransactions.endPlatformMutation();
     }
-  }
-
-  void _updateEditingValueFromPlatform(TextEditingValue value) {
-    if (value.text == _inputState.value.text) {
-      _adoptPlatformSelectionOnlyValue(value);
-      notifyListeners();
-      return;
-    }
-    final mutation = _differenceMutation(_inputState.value.text, value.text);
-    if (mutation == null) {
-      _adoptPlatformSelectionOnlyValue(value);
-      notifyListeners();
-      return;
-    }
-    final selection = _inputState.value.selection;
-    final typingInput =
-        selection.isCollapsed &&
-        mutation.start == selection.extentOffset &&
-        mutation.end == selection.extentOffset &&
-        mutation.replacement.isNotEmpty;
-    final acceptance = _acceptMutation(
-      mutation,
-      selection: value.selection,
-      composing: value.composing,
-      fullValue: value.text.length <= _maximumInputCodeUnits ? value : null,
-      typingInput: typingInput,
-    );
-    if (!acceptance.accepted) {
-      _resynchronize(FlarkInputResyncReason.rangeOutOfWindow);
-      return;
-    }
-    if (acceptance.publishOptimistically) notifyListeners();
-    // Notification can publish a parser-normalized canonical caret. Retain
-    // the exact selection that produced this full-value callback afterward,
-    // because another callback already queued by the text service still uses
-    // those provisional coordinates.
-    _acceptPlatformWindowShadow(
-      value,
-      globalStart: _platformInput.shadowWindowStart,
-    );
-  }
-
-  void _applyOversizedPlatformDeltas(List<TextEditingDelta> deltas) {
-    var finalValue = _inputState.value;
-    var mutatingDeltas = 0;
-    var typingInput = true;
-    for (final delta in deltas) {
-      finalValue = delta.apply(finalValue);
-      if (_mutationFor(delta) != null) {
-        mutatingDeltas += 1;
-        typingInput = typingInput && delta is TextEditingDeltaInsertion;
-      }
-    }
-    if (mutatingDeltas == 0) {
-      _adoptPlatformSelectionOnlyValue(finalValue);
-      return;
-    }
-    final mutation = _differenceMutation(
-      _inputState.value.text,
-      finalValue.text,
-    );
-    if (mutation == null) {
-      _adoptPlatformSelectionOnlyValue(finalValue);
-      return;
-    }
-    _markOversizedPlatformCommand(mutation);
-    _replaceSelection(mutation.replacement, typingInput: typingInput);
-  }
-
-  void _updateOversizedEditingValue(TextEditingValue value) {
-    if (value.text == _inputState.value.text) {
-      _adoptPlatformSelectionOnlyValue(value);
-      return;
-    }
-    final mutation = _differenceMutation(_inputState.value.text, value.text);
-    if (mutation == null) {
-      _adoptPlatformSelectionOnlyValue(value);
-      return;
-    }
-    _markOversizedPlatformCommand(mutation);
-    _replaceSelection(mutation.replacement, typingInput: false);
   }
 
   void _markOversizedPlatformCommand(FlarkTextMutation mutation) {
@@ -1897,17 +1719,13 @@ final class FlarkEditorController extends ChangeNotifier
     _replaceSelection('\n', typingInput: false, platformTiming: platformTiming);
   }
 
-  bool _isPlatformNewlineMutation(List<TextEditingDelta> deltas) {
-    return _platformInput.isNewlineDeltaBatch(
-      deltas,
-      currentValue: _inputState.value,
-    );
-  }
-
-  bool _queuePlatformSemanticNewline(List<TextEditingDelta> deltas) {
+  bool _queueObservedPlatformSemanticNewline(
+    FlarkPlatformInputObservation observation,
+  ) {
+    final provisionalMutation =
+        observation.observedMutation ?? observation.effectiveMutation;
+    if (provisionalMutation == null) return false;
     _inputTransactions.lateSemantic = null;
-    final provisionalMutation = _mutationFor(deltas.single)!;
-    final provisionalAfter = deltas.single.apply(_inputState.value);
     _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
       base: _inputState.value,
       inputGlobalUtf16Start: _inputState.globalUtf16Start,
@@ -1916,7 +1734,7 @@ final class FlarkEditorController extends ChangeNotifier
           DateTime.now().microsecondsSinceEpoch,
       platformTiming: _inputTransactions.activeTiming,
       provisionalMutation: provisionalMutation,
-      provisionalAfter: provisionalAfter,
+      provisionalAfter: observation.after,
     );
     _inputTransactions.markNewlineTextObserved();
     final queued = _queueSemanticParagraphBreak(
@@ -1928,81 +1746,6 @@ final class FlarkEditorController extends ChangeNotifier
       _inputTransactions.clearNewlineTextObservation();
     }
     return queued;
-  }
-
-  bool _isPlatformNewlineValue(TextEditingValue value) {
-    return _platformInput.isNewlineValue(
-      currentValue: _inputState.value,
-      observedValue: value,
-    );
-  }
-
-  bool _queuePlatformSemanticNewlineValue(TextEditingValue value) {
-    _inputTransactions.lateSemantic = null;
-    final selection = _inputState.value.selection;
-    final provisionalMutation = FlarkTextMutation(
-      math.min(selection.baseOffset, selection.extentOffset),
-      math.max(selection.baseOffset, selection.extentOffset),
-      '\n',
-    );
-    _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
-      base: _inputState.value,
-      inputGlobalUtf16Start: _inputState.globalUtf16Start,
-      initialCallbackStartedEpochMicros:
-          _inputTransactions.activeCallbackStartedEpochMicros ??
-          DateTime.now().microsecondsSinceEpoch,
-      platformTiming: _inputTransactions.activeTiming,
-      provisionalMutation: provisionalMutation,
-      provisionalAfter: value,
-    );
-    _inputTransactions.markNewlineTextObserved();
-    final queued = _queueSemanticParagraphBreak(
-      _inputState.value.selection.extentOffset,
-      platformTiming: _inputTransactions.activeTiming,
-    );
-    if (!queued) {
-      _inputTransactions.discardPendingSemantic();
-      _inputTransactions.clearNewlineTextObservation();
-    }
-    return queued;
-  }
-
-  bool _isPlatformDeleteBackwardMutation(List<TextEditingDelta> deltas) {
-    return _platformInput.isDeleteBackwardDeltaBatch(
-      deltas,
-      currentValue: _inputState.value,
-    );
-  }
-
-  bool _isPlatformSelectedDeletion(FlarkTextMutation mutation) {
-    return _platformInput.isSelectedDeletion(
-      mutation,
-      currentSelection: _inputState.value.selection,
-    );
-  }
-
-  bool _queuePlatformSemanticDeleteBackward(List<TextEditingDelta> deltas) {
-    return _queueObservedPlatformSemanticDeleteBackward(
-      provisionalMutation: _mutationFor(deltas.single)!,
-      provisionalAfter: deltas.single.apply(_inputState.value),
-    );
-  }
-
-  bool _isPlatformDeleteBackwardValue(TextEditingValue value) {
-    return _platformInput.isDeleteBackwardValue(
-      currentValue: _inputState.value,
-      observedValue: value,
-    );
-  }
-
-  bool _queuePlatformSemanticDeleteBackwardValue(TextEditingValue value) {
-    return _queueObservedPlatformSemanticDeleteBackward(
-      provisionalMutation: _selectionObservedMutation(
-        _inputState.value,
-        value,
-      )!,
-      provisionalAfter: value,
-    );
   }
 
   bool _queueObservedPlatformSemanticDeleteBackward({

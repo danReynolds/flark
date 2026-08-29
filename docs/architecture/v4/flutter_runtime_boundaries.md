@@ -17,7 +17,8 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |                           publication permission, pending presentation)
   |-- FlarkEditorCommandExecutor (typed native invocation, command ordering,
   |                               private command tickets)
-  |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
+  |-- FlarkPlatformInputBridge (Flutter input connection, shadow, and one
+  |                              normalized callback observation)
   |-- FlarkInputTransactionState (callback and bounded successor lineage)
   |-- FlarkEditorInputState (one bounded Flutter platform-input window)
   |-- Flutter text adaptation (TextEditingValue <-> portable UTF-16 facts)
@@ -46,7 +47,7 @@ permission to preserve the controller's existing method graph.
 | Source, selection, history, Markdown semantics, structural-command routing capabilities, semantic edit receipts, pending-presentation adoption policy | `flark` and Rust | Flutter input connections or widgets |
 | Identity-checked command lifetimes, edit generations, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
 | Typed native edit, semantic-action, history, and composition-cancel invocation; private ticket identity; history boundary ordering | `FlarkEditorCommandExecutor` in `flark` | Receipt-to-platform adoption, Flutter state, or an extensible command registry |
-| Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
+| Connection/window epochs, serialized platform shadow, atomic validation, and normalization of delta/full-value callbacks into one immutable observation | Platform input bridge | Markdown rules, viewports, history, or source mutation |
 | Callback scope, logical successor classification, bounded provisional lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Current bounded platform value, global origin, canonical selection mirrors, active row, and oversized-selection state | Flutter input state consuming portable input-window plans | Native source, Markdown rules, rendered rows, or command ordering |
 | Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
@@ -70,7 +71,8 @@ and command-specific reconciliation into the platform window and viewport.
    tail. Completion is exact-once; history lifetimes exclude later commands.
    Parser and page work are independently single-flight.
 3. A platform callback is validated against one serialized shadow before any
-   member of its delta batch is applied. A bad batch applies nothing.
+   member of its delta batch is applied. A bad batch applies nothing. Delta and
+   full-value callback shapes converge to one observation before edit policy.
 4. Callback and platform-mutation scopes cannot nest. A Return or Backspace
    text observation consumes at most one companion action/selector callback.
 5. One `FlarkEditorSnapshot` is projected and published through one function.
@@ -103,6 +105,11 @@ be extracted by authority, not by file length:
   and ordering now have one portable executor. Receipt-driven source/render
   promotion remains in the facade until it has a narrow outcome that does not
   call back into controller state;
+- ordinary Flutter delta and full-value callbacks now normalize through one
+  immutable platform observation and one adoption path. Provisional semantic
+  lineage still has callback-shape-specific capture paths and is the remaining
+  duplication to remove only when one truthful lineage transaction can replace
+  both;
 - viewport query and page-path orchestration now return one typed Core result;
   the remaining restoration handoff should move only when its portable
   selection outcome can replace, rather than call back into, controller state;
