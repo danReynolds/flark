@@ -136,7 +136,7 @@ void main() {
       expect(deep, isNotNull);
       expect(
         deep!.belongsTo(
-          surface.layoutPublication,
+          surface.layoutSnapshot,
           liveInteractionGeneration: controller.interactionGeneration,
         ),
         isTrue,
@@ -147,7 +147,7 @@ void main() {
       controller.activateRow(controller.rows.first, 5000);
       expect(
         priorHit.belongsTo(
-          surface.layoutPublication,
+          surface.layoutSnapshot,
           liveInteractionGeneration: controller.interactionGeneration,
         ),
         isTrue,

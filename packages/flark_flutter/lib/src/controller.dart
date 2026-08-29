@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import 'editor_performance.dart';
 import 'editor_runtime.dart';
+import 'editor_snapshot.dart';
 import 'editor_transactions.dart';
 import 'input_transaction_state.dart';
 import 'input_window.dart';
@@ -24,14 +25,10 @@ export 'editor_performance.dart'
         FlarkSemanticEditPerformance,
         FlarkSourceEditPerformance,
         FlarkSourceEditPerformanceKind;
-export 'editor_runtime.dart' show FlarkEditorStatus;
+export 'editor_snapshot.dart'
+    show FlarkEditorSnapshot, FlarkEditorSnapshotRow, FlarkEditorStatus;
 export 'surface_projection.dart'
-    show
-        FlarkSurfaceInlineStyle,
-        FlarkSurfacePublication,
-        FlarkSurfacePublicationRow,
-        FlarkSurfaceRow,
-        FlarkSurfaceTextRun;
+    show FlarkSurfaceInlineStyle, FlarkSurfaceRow, FlarkSurfaceTextRun;
 
 const _maximumVisibleBytes = 16 * 1024;
 const _maximumInputCodeUnits = 16 * 1024;
@@ -113,7 +110,8 @@ typedef _InputReconciliationMap = FlarkInputReconciliationMap;
 /// This controller retains one bounded viewport page and at most 16 Ki UTF-16
 /// code units in the platform text input connection, so a keystroke does not
 /// copy a multi-megabyte document on Flutter's UI isolate.
-final class FlarkEditorController extends ChangeNotifier {
+final class FlarkEditorController extends ChangeNotifier
+    implements ValueListenable<FlarkEditorSnapshot> {
   FlarkEditorController._(this._document)
     : _session = FlarkCoreEditorSession(_document);
 
@@ -200,10 +198,9 @@ final class FlarkEditorController extends ChangeNotifier {
   int get _publishedDocumentRevision => _runtime.publishedDocumentRevision;
   bool get _publicationCertificationBarrierActive =>
       _runtime.publicationCertificationBarrierActive;
-  FlarkSurfacePublication? get _surfacePublication =>
-      _runtime.surfacePublication;
-  set _surfacePublication(FlarkSurfacePublication? value) {
-    if (value != null) _runtime.installSurfacePublication(value);
+  FlarkEditorSnapshot? get _snapshot => _runtime.snapshot;
+  set _snapshot(FlarkEditorSnapshot? value) {
+    if (value != null) _runtime.installSnapshot(value);
   }
 
   int get _openingPublishedRevision => _runtime.openingPublishedRevision;
@@ -337,11 +334,13 @@ final class FlarkEditorController extends ChangeNotifier {
   int get globalSelectionExtent => _globalSelectionExtent;
   int get globalCaretOffset => _globalSelectionExtent;
 
-  /// The last immutable visual state sealed at this controller's outward
+  /// The last immutable bounded state sealed at this controller's outward
   /// notification boundary. The lazy path exists only for initial attachment;
   /// every subsequent notification replaces this object before listeners run.
-  FlarkSurfacePublication get surfacePublication =>
-      _surfacePublication ??= _captureSurfacePublication();
+  FlarkEditorSnapshot get snapshot => _snapshot ??= _captureEditorSnapshot();
+
+  @override
+  FlarkEditorSnapshot get value => snapshot;
   String? get selectedText {
     final selection = _inputValue.selection;
     if (!selection.isValid || selection.isCollapsed) return null;
@@ -424,8 +423,7 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _reconcileSettledSemanticLane();
     _reconcileWindowShadow();
-    _sealSurfacePublication();
-    super.notifyListeners();
+    _publishSnapshot();
   }
 
   /// Registers a text-service-only observer. Unlike the ordinary controller
@@ -534,8 +532,7 @@ final class FlarkEditorController extends ChangeNotifier {
       globalStart: _inputGlobalUtf16Start,
     );
     if (compositionEnded) _scheduleParsingAfterInput();
-    _sealSurfacePublication();
-    super.notifyListeners();
+    _publishSnapshot();
   }
 
   /// Validates a complete platform delta batch against the serialized shadow
@@ -688,15 +685,18 @@ final class FlarkEditorController extends ChangeNotifier {
 
   List<FlarkViewportRow> get rows => _cachedRows;
 
-  void _sealSurfacePublication() {
-    _surfacePublication = _captureSurfacePublication();
+  /// The sole outward publication function. Every listener observes the exact
+  /// immutable value installed here; no asynchronous effect notifies directly.
+  void _publishSnapshot() {
+    _snapshot = _captureEditorSnapshot();
+    super.notifyListeners();
   }
 
-  FlarkSurfacePublication _captureSurfacePublication() {
+  FlarkEditorSnapshot _captureEditorSnapshot() {
     final projector = _captureSurfaceProjector();
-    final capturedRows = List<FlarkSurfacePublicationRow>.unmodifiable(
+    final capturedRows = List<FlarkEditorSnapshotRow>.unmodifiable(
       _cachedRows.map((row) {
-        return FlarkSurfacePublicationRow(
+        return FlarkEditorSnapshotRow(
           row: row,
           sourceUtf16: projector.surfaceSourceRange(row),
           editingPresentations: List<FlarkSurfaceRow>.unmodifiable(
@@ -709,15 +709,29 @@ final class FlarkEditorController extends ChangeNotifier {
         );
       }),
     );
-    return FlarkSurfacePublication(
-      sequence: _runtime.nextSurfacePublicationSequence(),
+    return FlarkEditorSnapshot(
+      sequence: _runtime.nextSnapshotSequence(),
+      status: _status,
+      lastError: _lastError,
       interactionGeneration: _interactionGeneration,
-      revision: revision,
-      sourceGeneration: sourceGeneration,
-      semanticsCurrent: semanticsCurrent,
-      viewportPageIndex: viewportPageIndex,
-      canPageForward: canPageForward,
-      canPageBackward: canPageBackward,
+      revision: _document.revision,
+      sourceGeneration: _publishedSourceGeneration,
+      sourceByteLength: _document.sourceByteLength,
+      sourceUtf16Length: _document.sourceUtf16Length,
+      pendingEdits: _runtime.pendingEdits,
+      canUndo:
+          !_runtime.historyReplayPending &&
+          (_session.canUndo || _runtime.pendingEdits > 0),
+      canRedo: !_runtime.historyReplayPending && _session.canRedo,
+      semanticsCurrent: _semanticViewportCurrent,
+      viewportPageIndex: _viewportNavigation.pageIndex,
+      canPageForward:
+          _semanticViewportCurrent &&
+          _viewport != null &&
+          (_viewport!.continuation != 0 ||
+              _viewport!.coveredBytes.end < _document.sourceByteLength),
+      canPageBackward:
+          _semanticViewportCurrent && _viewportNavigation.canPageBackward,
       pendingTableNavigationLocked: pendingTableNavigationLocked,
       visibleUtf16Start: _visibleUtf16Start,
       visibleSource: _visibleSource,

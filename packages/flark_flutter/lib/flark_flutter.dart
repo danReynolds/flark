@@ -9,13 +9,14 @@ export 'package:flark/flark.dart';
 export 'src/controller.dart'
     show
         FlarkEditorController,
-        FlarkEditorStatus,
         FlarkSemanticEditPerformance,
         FlarkSourceEditPerformance,
         FlarkSourceEditPerformanceKind,
         FlarkSurfaceInlineStyle,
         FlarkSurfaceRow,
         FlarkSurfaceTextRun;
+export 'src/editor_snapshot.dart'
+    show FlarkEditorSnapshot, FlarkEditorSnapshotRow, FlarkEditorStatus;
 export 'src/editor.dart'
     show FlarkEditor, FlarkEditorDebugGeometry, FlarkEditorDebugHandle;
 export 'src/markdown_view.dart' show FlarkMarkdownView;

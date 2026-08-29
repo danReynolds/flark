@@ -227,7 +227,7 @@ final class FlarkSurfaceHit {
   final FlarkInlineFact? semanticTargetFact;
 
   bool belongsTo(
-    FlarkSurfacePublication publication, {
+    FlarkEditorSnapshot publication, {
     required int liveInteractionGeneration,
   }) =>
       publicationSequence == publication.sequence &&
@@ -288,7 +288,7 @@ final class _PaintedRow {
     required this.layoutMaxWidth,
     this.ownsSemanticSourceStart = false,
     this.ownsSemanticSourceEnd = false,
-    this.publicationRow,
+    this.snapshotRow,
     this.neutralText,
     this.neutralUtf16Start,
   });
@@ -318,8 +318,8 @@ final class _PaintedRow {
   final bool ownsSemanticSourceStart;
   final bool ownsSemanticSourceEnd;
 
-  final FlarkSurfacePublicationRow? publicationRow;
-  FlarkViewportRow? get row => publicationRow?.row;
+  final FlarkEditorSnapshotRow? snapshotRow;
+  FlarkViewportRow? get row => snapshotRow?.row;
   final String? neutralText;
   final int? neutralUtf16Start;
 }
@@ -402,8 +402,8 @@ final class RenderFlarkSurface extends RenderBox {
     ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver,
     required TextDirection textDirection,
   }) : _controller = controller,
-       _pendingPublication = controller.surfacePublication,
-       _layoutPublication = controller.surfacePublication,
+       _pendingSnapshot = controller.snapshot,
+       _layoutSnapshot = controller.snapshot,
        _textStyle = textStyle,
        _padding = padding,
        _caretColor = caretColor,
@@ -414,8 +414,8 @@ final class RenderFlarkSurface extends RenderBox {
        _textDirection = textDirection;
 
   FlarkEditorController _controller;
-  FlarkSurfacePublication _pendingPublication;
-  FlarkSurfacePublication _layoutPublication;
+  FlarkEditorSnapshot _pendingSnapshot;
+  FlarkEditorSnapshot _layoutSnapshot;
   TextStyle _textStyle;
   EdgeInsets _padding;
   Color _caretColor;
@@ -545,12 +545,12 @@ final class RenderFlarkSurface extends RenderBox {
   );
 
   FlarkEditorController get controller => _controller;
-  FlarkSurfacePublication get layoutPublication => _layoutPublication;
+  FlarkEditorSnapshot get layoutSnapshot => _layoutSnapshot;
   set controller(FlarkEditorController value) {
     if (identical(value, _controller)) return;
     if (attached) _controller.removeListener(_changed);
     _controller = value;
-    _pendingPublication = value.surfacePublication;
+    _pendingSnapshot = value.snapshot;
     if (attached) _controller.addListener(_changed);
     markNeedsLayout();
     markNeedsSemanticsUpdate();
@@ -617,7 +617,7 @@ final class RenderFlarkSurface extends RenderBox {
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
-    _pendingPublication = _controller.surfacePublication;
+    _pendingSnapshot = _controller.snapshot;
     _controller.addListener(_changed);
   }
 
@@ -642,7 +642,7 @@ final class RenderFlarkSurface extends RenderBox {
   }
 
   void _changed() {
-    _pendingPublication = _controller.surfacePublication;
+    _pendingSnapshot = _controller.snapshot;
     markNeedsLayout();
     markNeedsSemanticsUpdate();
   }
@@ -660,8 +660,8 @@ final class RenderFlarkSurface extends RenderBox {
 
   @override
   void performLayout() {
-    final publication = _pendingPublication;
-    _layoutPublication = publication;
+    final publication = _pendingSnapshot;
+    _layoutSnapshot = publication;
     size = computeDryLayout(constraints);
     final previousPage = _laidOutPageIndex;
     final nextPage = publication.viewportPageIndex;
@@ -698,11 +698,11 @@ final class RenderFlarkSurface extends RenderBox {
       }
     }
     if (delta > 0 && _scrollOffset >= _maximumScrollOffset) {
-      if (_layoutPublication.canPageForward) {
+      if (_layoutSnapshot.canPageForward) {
         unawaited(_controller.nextViewportPage());
       }
     } else if (delta < 0 && _scrollOffset <= 0) {
-      if (_layoutPublication.canPageBackward) {
+      if (_layoutSnapshot.canPageBackward) {
         unawaited(_controller.previousViewportPage());
       }
     }
@@ -736,7 +736,7 @@ final class RenderFlarkSurface extends RenderBox {
   }
 
   void _buildVisibleLayoutsBody() {
-    final publication = _layoutPublication;
+    final publication = _layoutSnapshot;
     _laidOutRowCount = 0;
     _skippedRowCount = 0;
     _skippedFragmentCount = 0;
@@ -750,9 +750,9 @@ final class RenderFlarkSurface extends RenderBox {
       var skippedEstimate = 0.0;
       var sourceCursor = publication.visibleUtf16Start;
       var precedingOwnsEditorBlockBoundary = false;
-      for (final publicationRow in rows) {
-        final sourceRange = publicationRow.sourceUtf16;
-        final presentations = publicationRow.presentations(
+      for (final snapshotRow in rows) {
+        final sourceRange = snapshotRow.sourceUtf16;
+        final presentations = snapshotRow.presentations(
           includeEditingState: _includeEditingState,
         );
         // A parser-authored removed-row dependency keeps a zero-width input
@@ -799,7 +799,7 @@ final class RenderFlarkSurface extends RenderBox {
             ordinal: presentation.ordinal,
             top: top,
             maxWidth: maxWidth,
-            publicationRow: publicationRow,
+            snapshotRow: snapshotRow,
             ownsSemanticSourceStart: presentationIndex == 0,
             ownsSemanticSourceEnd:
                 presentationIndex == presentations.length - 1,
@@ -900,7 +900,7 @@ final class RenderFlarkSurface extends RenderBox {
     required double top,
     required double maxWidth,
   }) {
-    final publication = _layoutPublication;
+    final publication = _layoutSnapshot;
     final visibleStart = publication.visibleUtf16Start;
     final source = publication.visibleSource;
     final localStart = (globalStart - visibleStart).clamp(0, source.length);
@@ -1011,7 +1011,7 @@ final class RenderFlarkSurface extends RenderBox {
     required int ordinal,
     required double top,
     required double maxWidth,
-    FlarkSurfacePublicationRow? publicationRow,
+    FlarkEditorSnapshotRow? snapshotRow,
     bool ownsSemanticSourceStart = false,
     bool ownsSemanticSourceEnd = false,
     String? neutralText,
@@ -1058,7 +1058,7 @@ final class RenderFlarkSurface extends RenderBox {
         layoutMaxWidth: maxWidth,
         ownsSemanticSourceStart: ownsSemanticSourceStart,
         ownsSemanticSourceEnd: ownsSemanticSourceEnd,
-        publicationRow: publicationRow,
+        snapshotRow: snapshotRow,
         neutralText: neutralText,
         neutralUtf16Start: neutralUtf16Start,
       );
@@ -1331,9 +1331,9 @@ final class RenderFlarkSurface extends RenderBox {
     int textOffset, {
     required TextAffinity affinity,
     FlarkSurfaceAction? action,
-    FlarkSurfacePublication? publication,
+    FlarkEditorSnapshot? publication,
   }) {
-    final authority = publication ?? _layoutPublication;
+    final authority = publication ?? _layoutSnapshot;
     final globalUtf16Offset = row.presentation.sourceOffsetForTextOffset(
       textOffset,
       affinity: affinity,
@@ -1485,9 +1485,9 @@ final class RenderFlarkSurface extends RenderBox {
           row.fragmentEnd,
           affinity: TextAffinity.upstream,
         );
-    final publicationRow = row.publicationRow;
-    if (includeSemanticOwnership && publicationRow != null) {
-      final owned = publicationRow.sourceUtf16;
+    final snapshotRow = row.snapshotRow;
+    if (includeSemanticOwnership && snapshotRow != null) {
+      final owned = snapshotRow.sourceUtf16;
       if (row.ownsSemanticSourceStart && row.fragmentStart == 0) {
         sourceStart = math.min(sourceStart, owned.start);
       }
@@ -1758,7 +1758,7 @@ final class RenderFlarkSurface extends RenderBox {
 
   ({_PaintedRow row, List<FlarkTableCellPresentation> cells, int index})?
   _tableCellPosition(int offset) {
-    if (_layoutPublication.pendingTableNavigationLocked) return null;
+    if (_layoutSnapshot.pendingTableNavigationLocked) return null;
     final row = _logicalRowForSourceUtf16(offset);
     if (row == null || row.presentation.kind == 0) return null;
     final table = row.row?.table;
@@ -1908,7 +1908,7 @@ final class RenderFlarkSurface extends RenderBox {
         row.fragmentStart != 0 ||
         row.leadingLength == 0 ||
         row.row?.listItem?.taskChecked == null ||
-        row.publicationRow?.taskToggleable != true) {
+        row.snapshotRow?.taskToggleable != true) {
       return null;
     }
     final leading = row.presentation.leadingText;
@@ -2016,12 +2016,12 @@ final class RenderFlarkSurface extends RenderBox {
       ..identifier = _includeEditingState
           ? 'flark-markdown-editor'
           : 'flark-markdown-view';
-    if (maximumScrollOffset > 0 || _layoutPublication.canPageForward) {
+    if (maximumScrollOffset > 0 || _layoutSnapshot.canPageForward) {
       config.onScrollUp = () {
         if (hasSize) scrollBy(size.height * 0.8);
       };
     }
-    if (_scrollOffset > 0 || _layoutPublication.canPageBackward) {
+    if (_scrollOffset > 0 || _layoutSnapshot.canPageBackward) {
       config.onScrollDown = () {
         if (hasSize) scrollBy(-size.height * 0.8);
       };
@@ -2041,7 +2041,7 @@ final class RenderFlarkSurface extends RenderBox {
     _PaintedRow row,
     TextSelection selection,
     FlarkSurfaceSemanticsActions actions,
-    FlarkSurfacePublication publication,
+    FlarkEditorSnapshot publication,
   ) {
     if (row.row == null) return;
     final textLength = row.presentation.text.length;
@@ -2087,19 +2087,15 @@ final class RenderFlarkSurface extends RenderBox {
         ..textDirection = _textDirection;
       final actions = _includeEditingState ? _semanticsActions : null;
       if (actions != null && row.row != null) {
-        final semanticsPublication = _layoutPublication;
+        final semanticsSnapshot = _layoutSnapshot;
         rowConfig
           ..value = row.presentation.text
           ..isTextField = true
           ..isReadOnly = false
           ..isMultiline = row.presentation.text.contains('\n')
           ..isFocused = row.presentation.active;
-        rowConfig.onSetSelection = (selection) => _setSemanticSelection(
-          row,
-          selection,
-          actions,
-          semanticsPublication,
-        );
+        rowConfig.onSetSelection = (selection) =>
+            _setSemanticSelection(row, selection, actions, semanticsSnapshot);
         rowConfig.onMoveCursorForwardByCharacter = (extend) =>
             actions.onMoveCursor(
               forward: true,
@@ -2132,8 +2128,8 @@ final class RenderFlarkSurface extends RenderBox {
             rowConfig.textSelection = selection;
           }
         }
-        if (_layoutPublication.canonicalSelectionBaseUtf16 !=
-            _layoutPublication.canonicalSelectionExtentUtf16) {
+        if (_layoutSnapshot.canonicalSelectionBaseUtf16 !=
+            _layoutSnapshot.canonicalSelectionExtentUtf16) {
           rowConfig
             ..onCopy = actions.onCopy
             ..onCut = actions.onCut;
@@ -2146,7 +2142,7 @@ final class RenderFlarkSurface extends RenderBox {
       final task =
           row.presentation.kind == 0 ||
               taskRow == null ||
-              row.publicationRow?.taskToggleable != true
+              row.snapshotRow?.taskToggleable != true
           ? null
           : taskRow.listItem?.taskChecked;
       if (task != null) {
@@ -2189,7 +2185,7 @@ final class RenderFlarkSurface extends RenderBox {
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    final publication = _layoutPublication;
+    final publication = _layoutSnapshot;
     final canvas = context.canvas;
     final paintObserver = debugPaintObserver;
     final observedRows = paintObserver == null ? null : <String>[];

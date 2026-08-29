@@ -1,8 +1,8 @@
 # Flark
 
-`flark` is the Flutter product surface. Its headless Dart API lives in
-`flark`; parser and source authority live in the Rust runtime behind the
-fixed v4 ABI.
+`flark_flutter` is the Flutter product surface. Its headless Dart API lives in
+`flark`; parser and source authority live in the Rust runtime behind the fixed
+v4 ABI.
 
 The editor uses a custom `RenderBox`, Flutter delta text input, a bounded
 16 Ki UTF-16 input window, next-frame exact-source painting, and certified
@@ -14,3 +14,6 @@ consumer does not configure a library path:
 ```dart
 final controller = await FlarkEditorController.open(markdown);
 ```
+
+The controller is a `ValueListenable<FlarkEditorSnapshot>`. Each value is one
+immutable bounded state used by layout, paint, hit testing, and semantics.

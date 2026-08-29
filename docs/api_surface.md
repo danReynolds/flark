@@ -13,7 +13,9 @@ The `flark_flutter` barrel exports its Flutter surface and the complete
 supported headless Dart surface. Primary types are:
 
 - `FlarkEditorController`: document/controller lifecycle, selection, history,
-  edits, paging, streaming open, and source reads.
+  edits, paging, streaming open, source reads, and a typed snapshot listenable.
+- `FlarkEditorSnapshot`: one immutable bounded state for Flutter layout,
+  paint, hit testing, semantics, status, and command capabilities.
 - `FlarkEditor`: the continuously rendered editable custom render surface.
 - `FlarkMarkdownView`: the read-only surface sharing the same controller.
 - `FlarkEditorStatus`, `FlarkViewportRow`, and the presentation/receipt models

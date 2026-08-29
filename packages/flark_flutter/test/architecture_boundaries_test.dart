@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flark_flutter/src/editor_runtime.dart';
+import 'package:flark_flutter/src/editor_snapshot.dart';
 import 'package:flark_flutter/src/editor_transactions.dart';
 import 'package:flark_flutter/src/input_reconciliation.dart';
 import 'package:flark_flutter/src/input_transaction_state.dart';

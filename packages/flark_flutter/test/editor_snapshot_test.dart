@@ -7,7 +7,7 @@ void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
   test(
-    'published surface snapshots remain immutable after selection changes',
+    'editor snapshots are complete and immutable across selection',
     () async {
       final controller = await FlarkEditorController.open(
         '**alpha**\n',
@@ -17,14 +17,26 @@ void main() {
       await controller.continueParsing();
 
       final row = controller.rows.single;
-      final first = controller.surfacePublication;
+      final first = controller.snapshot;
+      expect(identical(controller.value, first), isTrue);
+      expect(first.status, FlarkEditorStatus.ready);
+      expect(first.lastError, isNull);
+      expect(first.sourceByteLength, 10);
+      expect(first.sourceUtf16Length, 10);
+      expect(first.pendingEdits, 0);
+      expect(first.canUndo, isFalse);
+      expect(first.canRedo, isFalse);
       final firstRows = first.rows;
       final firstPresentation = firstRows.single.editingPresentations.single;
+      FlarkEditorSnapshot? observed;
+      controller.addListener(() => observed = controller.value);
 
       controller.activateRow(row, 5);
-      final second = controller.surfacePublication;
+      final second = controller.snapshot;
 
       expect(identical(first, second), isFalse);
+      expect(identical(controller.value, second), isTrue);
+      expect(identical(observed, second), isTrue);
       expect(second.sequence, greaterThan(first.sequence));
       expect(
         second.interactionGeneration,

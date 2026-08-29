@@ -263,7 +263,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
     final surface = _surface;
     return surface != null &&
         hit.belongsTo(
-          surface.layoutPublication,
+          surface.layoutSnapshot,
           liveInteractionGeneration: widget.controller.interactionGeneration,
         );
   }

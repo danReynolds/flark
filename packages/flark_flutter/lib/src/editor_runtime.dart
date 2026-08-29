@@ -1,19 +1,6 @@
 import 'dart:async';
 
-import 'surface_projection.dart';
-
-enum FlarkEditorStatus {
-  opening,
-
-  /// A streamed open is still admitting source. The editor remains live while
-  /// its parser-certified head is painted and editable.
-  streaming,
-  parsing,
-  ready,
-  editing,
-  faulted,
-  disposed,
-}
+import 'editor_snapshot.dart';
 
 /// Identity attached to asynchronous editor effects.
 ///
@@ -59,8 +46,8 @@ final class FlarkEditorRuntimeState {
   int _publishedSourceGeneration = 0;
   int _publishedDocumentRevision = 0;
   FlarkPublicationPhase _publicationPhase = const FlarkPublicationIdle();
-  FlarkSurfacePublication? _surfacePublication;
-  int _surfacePublicationSequence = 0;
+  FlarkEditorSnapshot? _snapshot;
+  int _snapshotSequence = 0;
   int _openingPublishedRevision = -1;
   int _pendingEdits = 0;
   bool _historyReplayPending = false;
@@ -80,7 +67,7 @@ final class FlarkEditorRuntimeState {
   bool get publicationCertificationBarrierActive =>
       _publicationPhase is FlarkPublicationAwaitingCertification;
   FlarkPublicationPhase get publicationPhase => _publicationPhase;
-  FlarkSurfacePublication? get surfacePublication => _surfacePublication;
+  FlarkEditorSnapshot? get snapshot => _snapshot;
   int get openingPublishedRevision => _openingPublishedRevision;
   int get pendingEdits => _pendingEdits;
   bool get historyReplayPending => _historyReplayPending;
@@ -285,12 +272,12 @@ final class FlarkEditorRuntimeState {
     return started;
   }
 
-  int nextSurfacePublicationSequence() => ++_surfacePublicationSequence;
+  int nextSnapshotSequence() => ++_snapshotSequence;
 
-  void installSurfacePublication(FlarkSurfacePublication publication) {
-    if (publication.sequence != _surfacePublicationSequence) {
-      throw StateError('Surface publication sequence was not reserved');
+  void installSnapshot(FlarkEditorSnapshot snapshot) {
+    if (snapshot.sequence != _snapshotSequence) {
+      throw StateError('Editor snapshot sequence was not reserved');
     }
-    _surfacePublication = publication;
+    _snapshot = snapshot;
   }
 }
