@@ -2,8 +2,8 @@
 
 ## 0.1.0-dev.1
 
-- Cut over to the v4 package split: `flark_core` owns the headless Dart/Rust
-  runtime and `flark` owns the Flutter product surface.
+- Cut over to the portable v4 package split: `flark` owns the headless
+  Dart/Rust runtime and `flark_flutter` owns the Flutter product surface.
 - Added bounded, source-authoritative opening, editing, certification, semantic
   viewport, history, and lifecycle APIs through ABI 4.34.
 - Added parser-authored literal-safe insertion envelopes, ABI 4.27's bounded

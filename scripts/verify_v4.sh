@@ -13,7 +13,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BRIDGE="$ROOT/packages/flark_core/native/comrak_bridge"
+BRIDGE="$ROOT/packages/flark/native/comrak_bridge"
 PROFILE="${FLARK_V4_PROFILE:-debug}"
 # Experiment opt-in: extra cargo features for the flark-abi library build
 # (e.g. FLARK_V4_FEATURES=opening-session for the RFC 029 A3 streamed-open
@@ -77,15 +77,15 @@ fi
 
 # A fresh worktree has no package-local .dart_tool state. Resolve each v4
 # package explicitly so this gate does not depend on a previous developer run.
-(cd "$ROOT/packages/flark_core" && dart pub get)
-(cd "$ROOT/packages/flark" && flutter pub get)
-(cd "$ROOT/packages/flark_core" && dart analyze)
-(cd "$ROOT/packages/flark_core" && FLARK_V4_LIBRARY_PATH="$LIBRARY" dart test)
-(cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter analyze)
+(cd "$ROOT/packages/flark" && dart pub get)
+(cd "$ROOT/packages/flark_flutter" && flutter pub get)
+(cd "$ROOT/packages/flark" && dart analyze)
+(cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" dart test)
+(cd "$ROOT/packages/flark_flutter" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter analyze)
 # The package loads one native worker library per test process. Serial execution
 # is the stable, still-fast contract (about 20 s warm); concurrent flutter_test
 # processes can deadlock during native-worker teardown after all assertions.
-(cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter test --concurrency=1)
+(cd "$ROOT/packages/flark_flutter" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter test --concurrency=1)
 
 echo "verify_v4: active rust + dart + flutter v4 suites executed and passed."
 echo "verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes."

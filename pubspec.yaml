@@ -1,5 +1,5 @@
 name: flark_workspace
-description: Repository qualification harness for the flark and flark_core packages.
+description: Repository qualification harness for the flark and flark_flutter packages.
 version: 0.0.0
 publish_to: none
 

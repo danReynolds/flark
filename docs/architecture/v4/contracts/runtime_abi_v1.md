@@ -6,9 +6,9 @@ decoder are contract-tested together; later product milestones still determine
 release readiness.
 
 The machine-readable authority is
-[`packages/flark_core/test/fixtures/v4/runtime_abi_v1.json`](../../../../packages/flark_core/test/fixtures/v4/runtime_abi_v1.json).
+[`packages/flark/test/fixtures/v4/runtime_abi_v1.json`](../../../../packages/flark/test/fixtures/v4/runtime_abi_v1.json).
 The C declaration is
-[`packages/flark_core/native/comrak_bridge/include/flark_v4.h`](../../../../packages/flark_core/native/comrak_bridge/include/flark_v4.h).
+[`packages/flark/native/comrak_bridge/include/flark_v4.h`](../../../../packages/flark/native/comrak_bridge/include/flark_v4.h).
 Rust and C constants or layouts that disagree with the manifest fail the
 contract tests.
 

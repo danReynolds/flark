@@ -1,15 +1,16 @@
 # Flark
 
-Flark is a high-performance, continuously rendered Markdown editor for
-Flutter. The repository has two product packages:
+Flark is a high-performance, continuously rendered Markdown editor with a
+headless Dart kernel and a Flutter adapter. The repository has two product
+packages:
 
-- [`flark_core`](packages/flark_core): headless Dart API over the Rust-owned
+- [`flark`](packages/flark): headless Dart API over the Rust-owned
   source, incremental GFM parser, transactions, anchors, certification, and
   history.
-- [`flark`](packages/flark): the Flutter custom editor and read-only rendering
-  surfaces.
+- [`flark_flutter`](packages/flark_flutter): the Flutter custom editor and
+  read-only rendering surfaces.
 
-`flark_core` builds and bundles its Rust native asset automatically. Consumers
+`flark` builds and bundles its Rust native asset automatically. Consumers
 do not install a separate library or configure a runtime path.
 
 Read the [Flark North Star](NORTH_STAR.md) before changing editor architecture,

@@ -92,7 +92,7 @@ For each new feature, add all of:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| `FlarkMarkdownView` package API | Supported | Exposed from `package:flark/flark.dart` |
+| `FlarkMarkdownView` package API | Supported | Exposed from `package:flark_flutter/flark_flutter.dart` |
 | Parse/render parity (same flark pipeline) | Supported | Uses `FlarkController` + `FlarkTextRenderer` + `Tier1Painter` |
 | Read-only parity regression suite | Supported | `flark_markdown_view_parity_test.dart` validates heading/quote/list/task/fence/link/image/thematic-break semantics |
 | Focused post detail rollout | Supported | `view_post_screen.dart` now renders body via `FlarkMarkdownView` |

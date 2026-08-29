@@ -1,16 +1,15 @@
-# Flark
+# flark
 
-`flark` is the Flutter product surface. Its headless Dart API lives in
-`flark_core`; parser and source authority live in the Rust runtime behind the
-fixed v4 ABI.
+`flark` is Flark's headless Dart API. Canonical source, incremental GFM
+parsing, certification, anchors, transactions, and bounded history live in the
+Rust runtime behind the fixed C ABI; this package owns the isolate and safe
+Dart boundary without importing Flutter.
 
-The editor uses a custom `RenderBox`, Flutter delta text input, a bounded
-16 Ki UTF-16 input window, next-frame exact-source painting, and certified
-incremental viewport rows.
-
-Native Rust assets are built and bundled automatically by `flark_core`. A
-consumer does not configure a library path:
+The native runtime is compiled and bundled automatically by the Dart build
+hook. Consumers normally open a document without supplying a library path:
 
 ```dart
-final controller = await FlarkEditorController.open(markdown);
+final document = await FlarkCoreDocument.open(markdown);
 ```
+
+An explicit `libraryPath` remains available as a test and embedding override.

@@ -2,10 +2,10 @@
 
 Flark v4 has one active product path:
 
-- [`flark_core`](../packages/flark_core/README.md) owns the headless Dart API
+- [`flark`](../packages/flark/README.md) owns the headless Dart API
   over the Rust source and parser authority.
-- [`flark`](../packages/flark/README.md) owns the Flutter editor and read-only
-  rendering surfaces and re-exports the supported Core API.
+- [`flark_flutter`](../packages/flark_flutter/README.md) owns the Flutter editor
+  and read-only rendering surfaces and re-exports the supported Dart API.
 
 Start with [Getting started](getting_started.md), then use the
 [API surface](api_surface.md), [Cookbook](cookbook.md), and

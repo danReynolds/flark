@@ -6,7 +6,7 @@ trap 'exit 143' TERM
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${1:-$ROOT/build/dogfood-ready}"
-EXAMPLE="$ROOT/packages/flark/example"
+EXAMPLE="$ROOT/packages/flark_flutter/example"
 APP="$EXAMPLE/build/macos/Build/Products/Profile/Flark Dogfood.app"
 MAIN="$APP/Contents/MacOS/Flark Dogfood"
 ABI="$APP/Contents/Frameworks/flark_abi.framework/flark_abi"

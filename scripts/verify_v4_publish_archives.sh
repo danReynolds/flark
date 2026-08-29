@@ -10,8 +10,8 @@ trap 'exit 143' TERM
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CORE_PACKAGE_ROOT="$REPO_ROOT/packages/flark_core"
-FLUTTER_PACKAGE_ROOT="$REPO_ROOT/packages/flark"
+DART_PACKAGE_ROOT="$REPO_ROOT/packages/flark"
+FLUTTER_PACKAGE_ROOT="$REPO_ROOT/packages/flark_flutter"
 DART_BIN="${DART_BIN:-dart}"
 FLUTTER_BIN="${FLUTTER_BIN:-flutter}"
 
@@ -19,7 +19,7 @@ run_runtime=1
 
 usage() {
   cat <<'EOF'
-Build and consume the active flark_core and flark pub archives.
+Build and consume the active flark and flark_flutter pub archives.
 
 Usage:
   bash scripts/verify_v4_publish_archives.sh [--skip-runtime]
@@ -70,11 +70,11 @@ ARCHIVE_DIR="$WORKSPACE/archives"
 PACKAGE_DIR="$WORKSPACE/packages"
 CONSUMER_DIR="$WORKSPACE/consumers"
 LOG_DIR="$WORKSPACE/logs"
-CORE_ARCHIVE="$ARCHIVE_DIR/flark_core.tar.gz"
-FLUTTER_ARCHIVE="$ARCHIVE_DIR/flark.tar.gz"
+DART_ARCHIVE="$ARCHIVE_DIR/flark.tar.gz"
+FLUTTER_ARCHIVE="$ARCHIVE_DIR/flark_flutter.tar.gz"
 
-mkdir -p "$ARCHIVE_DIR" "$PACKAGE_DIR/flark_core" \
-  "$PACKAGE_DIR/flark" "$CONSUMER_DIR" "$LOG_DIR"
+mkdir -p "$ARCHIVE_DIR" "$PACKAGE_DIR/flark" \
+  "$PACKAGE_DIR/flark_flutter" "$CONSUMER_DIR" "$LOG_DIR"
 
 run_logged() {
   local label="$1"
@@ -128,32 +128,33 @@ PUBLISH_ENV=(
 )
 
 run_logged \
-  "Create the exact flark_core pub archive" \
-  "$LOG_DIR/flark-core-publish.log" \
-  "${PUBLISH_ENV[@]}" "$DART_BIN" pub publish --skip-validation \
-  --to-archive="$CORE_ARCHIVE" -C "$CORE_PACKAGE_ROOT"
-
-run_logged \
   "Create the exact flark pub archive" \
   "$LOG_DIR/flark-publish.log" \
   "${PUBLISH_ENV[@]}" "$DART_BIN" pub publish --skip-validation \
+  --to-archive="$DART_ARCHIVE" -C "$DART_PACKAGE_ROOT"
+
+run_logged \
+  "Create the exact flark_flutter pub archive" \
+  "$LOG_DIR/flark-flutter-publish.log" \
+  "${PUBLISH_ENV[@]}" "$DART_BIN" pub publish --skip-validation \
   --to-archive="$FLUTTER_ARCHIVE" -C "$FLUTTER_PACKAGE_ROOT"
 
-tar -tzf "$CORE_ARCHIVE" >"$WORKSPACE/flark-core-archive.list"
-tar -tzf "$FLUTTER_ARCHIVE" >"$WORKSPACE/flark-archive.list"
+tar -tzf "$DART_ARCHIVE" >"$WORKSPACE/flark-dart-archive.list"
+tar -tzf "$FLUTTER_ARCHIVE" >"$WORKSPACE/flark-flutter-archive.list"
 
-assert_archive_entry "$WORKSPACE/flark-core-archive.list" pubspec.yaml
-assert_archive_entry "$WORKSPACE/flark-core-archive.list" lib/flark_core.dart
-assert_archive_entry "$WORKSPACE/flark-core-archive.list" hook/build.dart
+assert_archive_entry "$WORKSPACE/flark-dart-archive.list" pubspec.yaml
+assert_archive_entry "$WORKSPACE/flark-dart-archive.list" lib/flark.dart
+assert_archive_entry "$WORKSPACE/flark-dart-archive.list" hook/build.dart
 assert_archive_entry \
-  "$WORKSPACE/flark-core-archive.list" native/comrak_bridge/Cargo.toml
+  "$WORKSPACE/flark-dart-archive.list" native/comrak_bridge/Cargo.toml
 assert_archive_entry \
-  "$WORKSPACE/flark-core-archive.list" native/comrak_bridge/Cargo.lock
-assert_archive_entry "$WORKSPACE/flark-archive.list" pubspec.yaml
-assert_archive_entry "$WORKSPACE/flark-archive.list" lib/flark.dart
+  "$WORKSPACE/flark-dart-archive.list" native/comrak_bridge/Cargo.lock
+assert_archive_entry "$WORKSPACE/flark-flutter-archive.list" pubspec.yaml
+assert_archive_entry \
+  "$WORKSPACE/flark-flutter-archive.list" lib/flark_flutter.dart
 
-for listing in "$WORKSPACE/flark-core-archive.list" \
-  "$WORKSPACE/flark-archive.list"; do
+for listing in "$WORKSPACE/flark-dart-archive.list" \
+  "$WORKSPACE/flark-flutter-archive.list"; do
   assert_archive_excludes "$listing" '(^/|(^|/)\.\.(/|$))' \
     'absolute or parent-traversing path'
   assert_archive_excludes "$listing" '(^|/)\.dart_tool(/|$)' \
@@ -166,8 +167,8 @@ for listing in "$WORKSPACE/flark-core-archive.list" \
     'package test source'
 done
 
-tar -xzf "$CORE_ARCHIVE" -C "$PACKAGE_DIR/flark_core"
-tar -xzf "$FLUTTER_ARCHIVE" -C "$PACKAGE_DIR/flark"
+tar -xzf "$DART_ARCHIVE" -C "$PACKAGE_DIR/flark"
+tar -xzf "$FLUTTER_ARCHIVE" -C "$PACKAGE_DIR/flark_flutter"
 
 if find "$PACKAGE_DIR" -type l -print -quit | grep -q .; then
   echo "Publish archives must not contain symbolic links." >&2
@@ -178,18 +179,18 @@ chmod -R a-w "$PACKAGE_DIR"
 
 mkdir -p "$CONSUMER_DIR/dart/bin"
 cat >"$CONSUMER_DIR/dart/pubspec.yaml" <<EOF
-name: flark_core_archive_consumer
-description: External consumer for the extracted flark_core archive.
+name: flark_archive_consumer
+description: External consumer for the extracted headless flark archive.
 publish_to: none
 version: 0.0.0
 environment:
   sdk: ^3.10.4
 dependencies:
-  flark_core:
-    path: $PACKAGE_DIR/flark_core
+  flark:
+    path: $PACKAGE_DIR/flark
 EOF
 cat >"$CONSUMER_DIR/dart/bin/main.dart" <<'EOF'
-import 'package:flark_core/flark_core.dart';
+import 'package:flark/flark.dart';
 
 Future<void> main() async {
   final document = await FlarkCoreDocument.open('# Archive consumer\n');
@@ -197,7 +198,7 @@ Future<void> main() async {
     final receipt = await document.applyEditUtf16(0, 0, '> ');
     if (receipt.revision != 2 ||
         await document.readSource() != '> # Archive consumer\n') {
-      throw StateError('Archive-backed flark_core did not edit exact source.');
+      throw StateError('Archive-backed flark did not edit exact source.');
     }
   } finally {
     await document.dispose();
@@ -209,7 +210,7 @@ void acceptTransactionReceipt(FlarkCoreSourceTransactionReceiptV1 receipt) {}
 void acceptNativeReceipt(FlarkNativeEditReceipt receipt) {}
 EOF
 
-run_logged "Resolve the extracted flark_core archive" \
+run_logged "Resolve the extracted flark archive" \
   "$LOG_DIR/dart-pub-get.log" \
   "$DART_BIN" pub get -C "$CONSUMER_DIR/dart"
 (
@@ -236,27 +237,27 @@ assert_no_checkout_reference "$CONSUMER_DIR/dart/.dart_tool/package_config.json"
 run_logged "Create a disposable Flutter archive consumer" \
   "$LOG_DIR/flutter-create.log" \
   "$FLUTTER_BIN" create --no-pub --platforms=macos,linux \
-  --project-name flark_archive_consumer "$CONSUMER_DIR/flutter"
+  --project-name flark_flutter_archive_consumer "$CONSUMER_DIR/flutter"
 
 cat >"$CONSUMER_DIR/flutter/pubspec.yaml" <<EOF
-name: flark_archive_consumer
-description: External consumer for the extracted flark and flark_core archives.
+name: flark_flutter_archive_consumer
+description: External consumer for the extracted flark and flark_flutter archives.
 publish_to: none
 version: 0.0.0+1
 environment:
   sdk: ^3.10.4
 dependencies:
-  flark:
-    path: $PACKAGE_DIR/flark
+  flark_flutter:
+    path: $PACKAGE_DIR/flark_flutter
   flutter:
     sdk: flutter
 dependency_overrides:
-  # flark's published constraint normally resolves flark_core from its hosted
+  # flark_flutter's published constraint normally resolves flark from its hosted
   # archive. This offline verifier binds that transitive identity to the
-  # separately extracted core archive; the archives themselves are still
+  # separately extracted headless archive; the archives themselves are still
   # required to exclude overrides and path dependencies.
-  flark_core:
-    path: $PACKAGE_DIR/flark_core
+  flark:
+    path: $PACKAGE_DIR/flark
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -265,7 +266,7 @@ flutter:
   uses-material-design: true
 EOF
 cat >"$CONSUMER_DIR/flutter/lib/main.dart" <<'EOF'
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 import 'package:flutter/material.dart';
 
 void main() => runApp(const MaterialApp(home: Text('Flark archive consumer')));
@@ -274,7 +275,7 @@ void main() => runApp(const MaterialApp(home: Text('Flark archive consumer')));
 void acceptRows(List<FlarkViewportRow> rows) {}
 EOF
 cat >"$CONSUMER_DIR/flutter/test/widget_test.dart" <<'EOF'
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -307,7 +308,7 @@ assert_no_checkout_reference \
   "$CONSUMER_DIR/flutter/.dart_tool/package_config.json"
 
 echo
-echo "Active flark_core and flark archives passed external-consumer verification."
+echo "Active flark and flark_flutter archives passed external-consumer verification."
 if [ "$run_runtime" -eq 1 ]; then
   echo "Core JIT/executed-AOT and Flutter widget/native-assets runtime smokes passed."
 fi

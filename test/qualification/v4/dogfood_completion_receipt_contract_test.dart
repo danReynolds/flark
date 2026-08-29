@@ -350,9 +350,9 @@ final class _CompletionFixture {
       "echo 'verify_v4_certification_stress: historical M0 receipt drift remains a separate audit.'\n",
     );
     for (final path in const [
-      'packages/flark/test/north_star_paint_matrix_test.dart',
-      'packages/flark/test/inline_dependency_island_paint_acceptance_test.dart',
-      'packages/flark/test/inline_semantic_editing_test.dart',
+      'packages/flark_flutter/test/north_star_paint_matrix_test.dart',
+      'packages/flark_flutter/test/inline_dependency_island_paint_acceptance_test.dart',
+      'packages/flark_flutter/test/inline_semantic_editing_test.dart',
     ]) {
       File('${repository.path}/$path')
         ..createSync(recursive: true)
@@ -361,7 +361,9 @@ final class _CompletionFixture {
           "void main() { testWidgets('fixture actual paint', (tester) async {}); }\n",
         );
     }
-    File('${repository.path}/packages/flark/pubspec.yaml').writeAsStringSync(
+    File(
+      '${repository.path}/packages/flark_flutter/pubspec.yaml',
+    ).writeAsStringSync(
       'name: flark_dogfood_gate_fixture\n'
       'environment:\n'
       "  sdk: '>=3.9.0 <4.0.0'\n"

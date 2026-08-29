@@ -1,32 +1,107 @@
-/// Flutter's custom live Markdown editing surface.
+/// Headless Dart API for Flark's bounded native Markdown runtime.
 library;
 
-// Re-export Core because public controller methods expose its viewport,
-// selection, and semantic model types. A consumer of the supported Flutter
-// barrel must not need a deep import merely to name those signatures.
-export 'package:flark_core/flark_core.dart';
-
-export 'src/controller.dart'
+export 'src/document.dart'
     show
-        FlarkEditorController,
-        FlarkEditorStatus,
-        FlarkSemanticEditPerformance,
-        FlarkSourceEditPerformance,
-        FlarkSourceEditPerformanceKind,
-        FlarkSurfaceInlineStyle,
-        FlarkSurfaceRow,
-        FlarkSurfaceTextRun;
-export 'src/editor.dart'
-    show FlarkEditor, FlarkEditorDebugGeometry, FlarkEditorDebugHandle;
-export 'src/markdown_view.dart' show FlarkMarkdownView;
-export 'src/render_surface.dart'
+        FlarkCoreAnchor,
+        FlarkCoreDocument,
+        FlarkCoreEditReceipt,
+        FlarkCoreEditIntentDispositionV1,
+        FlarkCoreEditPresentationTransitionV1,
+        FlarkCoreEditIntentReceiptV1,
+        FlarkCoreEditIntentTelemetryV1,
+        FlarkCoreEditIntentV1,
+        FlarkCoreInlineContinuationRecipeV1,
+        FlarkCoreInlineContinuationScalarPolicyV1,
+        FlarkCoreHistoryDisposition,
+        FlarkCoreHistoryToken,
+        FlarkCoreNativeException,
+        FlarkCoreSessionInspection,
+        FlarkCoreSourceTransactionReceiptV1,
+        FlarkCoreWorkerException;
+export 'src/editor_session.dart'
     show
-        FlarkSurfacePaintObservation,
-        FlarkSurfacePaintRowObservation,
-        FlarkSurfacePaintRunObservation;
-export 'src/input_window.dart'
+        FlarkCoreAffinity,
+        FlarkCoreEditorSession,
+        FlarkCoreEditIntentOutcomeV1,
+        FlarkCoreGraphemePolicy,
+        FlarkCoreHistoryDropped,
+        FlarkCoreHistoryOutcome,
+        FlarkCoreHistoryReplayed,
+        FlarkCoreInlineContinuationRewriteV1,
+        FlarkCoreInlineContinuationV1,
+        FlarkCoreSelectionSnapshot,
+        FlarkCoreSemanticActionV1;
+export 'src/models.dart'
     show
-        FlarkInputResyncReason,
-        FlarkInputWindowShadow,
-        FlarkInputWindowState,
-        flarkWindowTextSha256;
+        FlarkCertification,
+        FlarkCertificationRange,
+        FlarkBlockQuotePresentation,
+        FlarkCodeBlockPresentation,
+        FlarkCodeBlockStyle,
+        FlarkHeadingStyle,
+        FlarkInlineFact,
+        FlarkInlineFactKind,
+        FlarkLiteralEditClass,
+        FlarkLiteralSafeEnvelope,
+        FlarkListItemPresentation,
+        FlarkListMarkerStyle,
+        FlarkPendingPresentationPlan,
+        FlarkPendingPresentationStep,
+        FlarkProjectionSegment,
+        FlarkProjectionEditCell,
+        FlarkProjectionEditMatcher,
+        FlarkProjectionResultBlockKind,
+        FlarkProjectionResultBlockShell,
+        FlarkSemanticTarget,
+        FlarkSemanticTargetKind,
+        FlarkSemanticTargetSyntax,
+        FlarkSourceRange,
+        FlarkTableAlignment,
+        FlarkTableCellPresentation,
+        FlarkTablePresentation,
+        FlarkViewport,
+        FlarkViewportRow,
+        FlarkViewportRowEditCapability;
+export 'src/projection_continuity.dart'
+    show
+        FlarkPendingDependencyAuthority,
+        FlarkBoundedPendingPresentationPlanReceipt,
+        FlarkProjectionContinuityReceipt,
+        FlarkProjectionEditCellReceipt,
+        bindPendingDependencyAuthority,
+        authorizeBoundedPendingPresentationPlan,
+        authorizeProjectionEditCell,
+        authorizeRowProjectionContinuity;
+export 'src/pending_presentation.dart'
+    show
+        FlarkPendingCaretBoundary,
+        FlarkPendingDependencyPresentation,
+        materializeBoundedPendingPresentationPlan,
+        FlarkPendingPresentationAdoption,
+        FlarkPendingPresentationSnapshot,
+        FlarkPendingPresentationPart,
+        FlarkPendingStructuralSurface;
+export 'src/presentation.dart'
+    show
+        FlarkCoreCommittedPresentationGapV1,
+        FlarkCoreCommittedPresentationSurfaceRole,
+        FlarkCoreCommittedPresentationSurfaceV1,
+        FlarkCoreCommittedPresentationTransitionV1,
+        FlarkCorePresentationInlineStyle,
+        FlarkCorePresentationRow,
+        FlarkCorePresentationRun,
+        resolveCommittedPresentationTransitionV1;
+export 'src/native/native_document.dart'
+    show
+        FlarkNativeDocument,
+        FlarkNativeEditIntentDispositionV1,
+        FlarkNativeEditIntentReceiptV1,
+        FlarkNativeEditIntentV1,
+        FlarkNativeEditPresentationTransitionV1,
+        FlarkNativeEditReceipt,
+        FlarkNativeException,
+        FlarkNativeGlobalLiveStateInspection,
+        FlarkNativeHistoryDisposition,
+        FlarkNativeSessionInspection,
+        FlarkNativeSourceTransactionReceiptV1;

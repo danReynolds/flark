@@ -6,7 +6,7 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 
-import '../packages/flark/example/lib/dogfood_documents.dart';
+import '../packages/flark_flutter/example/lib/dogfood_documents.dart';
 import 'dogfood_bundle_manifest.dart';
 import 'dogfood_fixture_identity.dart';
 

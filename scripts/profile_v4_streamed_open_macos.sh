@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_BYTES="${FLARK_PROFILE_SOURCE_BYTES:-10485760}"
 RUN_COUNT="${FLARK_PROFILE_RUN_COUNT:-5}"
-LIBRARY="${FLARK_V4_LIBRARY_PATH:-$ROOT/packages/flark_core/native/comrak_bridge/target/release/libflark_abi.dylib}"
+LIBRARY="${FLARK_V4_LIBRARY_PATH:-$ROOT/packages/flark/native/comrak_bridge/target/release/libflark_abi.dylib}"
 
 if [[ ! -f "$LIBRARY" ]]; then
   echo "profile_v4_streamed_open_macos: missing $LIBRARY" >&2
@@ -21,7 +21,7 @@ fi
 
 caffeinate -u -t 2 || true
 
-cd "$ROOT/packages/flark/example"
+cd "$ROOT/packages/flark_flutter/example"
 exec caffeinate -dis flutter drive \
   --profile \
   --driver=test_driver/integration_test.dart \
