@@ -172,8 +172,10 @@ restores platform input. Rust now publishes the row-level boundary modes that
 may enter structural edit intents, so Flutter no longer derives semantic
 command eligibility from Markdown kinds or containers. Flutter-specific
 successor classification and bounded lineage lifecycle have one tested input
-transaction owner. The controller-facade work is therefore smaller but not
-complete.
+transaction owner. Bounded platform value, global UTF-16 origin, canonical
+selection mirrors, active row, oversized selection, and restoration now
+advance through one directly tested Flutter input-state owner. The
+controller-facade work is therefore smaller but not complete.
 
 ### M4 — large-module audit and deletion
 
@@ -190,15 +192,17 @@ Current audit:
 
 | Module | Verdict | Reason |
 | --- | --- | --- |
-| Flutter controller | Further boundary work required | It still combines bounded input-window restoration with command-effect choreography. Those are independently owned state transitions, not merely a long facade. |
+| Flutter controller | Further boundary work required | Bounded input-window state has moved, but the controller still combines platform callback admission, command-effect choreography, receipt reconciliation, and lifecycle/publication routing. |
+| Flutter input state | Retain | It owns one bounded platform window and the canonical selection facts that must advance with it. Its interface is named transitions, it imports no controller, and its window/oversized-selection invariants have direct tests. |
 | Rust runtime document | Retain while its public surface stays narrow | It is the deep source/parser transaction boundary; edit-intent resolution is already separate. Split only when a codec, parser job, or transaction owner can move without sharing document internals. |
 | Dart native document | Retain pending a codec-sized extraction | Its size comes from one serialized actor plus strict ABI decoding. A split is useful only if a stateless decoder can be tested independently without duplicating FFI lifecycle state. |
 | Flutter render surface | Retain | Layout, paint, hit testing, selection geometry, and semantics are one custom render-object protocol and already consume immutable snapshots. |
 
-The next justified seam is the bounded input-window owner: local value,
-canonical selection mirrors, active row, oversized-selection state, and
-restoration must advance through named atomic transitions. It must not become a
-general controller state bag.
+The bounded input-window extraction is accepted: it moved state plus the
+windowing/restoration invariants, has no controller callback, and is protected
+against raw-setter regression. The next review must identify a typed outcome
+that removes command-effect branches or asynchronous Core work from Flutter;
+another bag of controller fields or callback-forwarding helper does not count.
 
 ### M5 — qualification and architecture stop
 

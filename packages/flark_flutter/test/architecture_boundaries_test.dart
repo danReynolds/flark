@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flark_flutter/src/editor_input_state.dart';
 import 'package:flark_flutter/src/editor_transactions.dart';
 import 'package:flark_flutter/src/editor_performance.dart';
 import 'package:flark_flutter/src/input_reconciliation.dart';
@@ -10,6 +11,115 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('editor input state', () {
+    test('activation publishes one scalar-aligned bounded window', () {
+      final state = FlarkEditorInputState();
+      const sourceStart = 100;
+      const text = '01234😀567890abcdefghij';
+
+      final represented = state.activateWindow(
+        text: text,
+        sourceStart: sourceStart,
+        caret: sourceStart + 9,
+        selectionExtent: sourceStart + 12,
+        ordinal: 7,
+        affinity: TextAffinity.upstream,
+        maximumCodeUnits: 8,
+      );
+
+      expect(represented, isTrue);
+      expect(state.value.text.length, lessThanOrEqualTo(8));
+      expect(state.activeOrdinal, 7);
+      expect(state.selectionBaseUtf16, sourceStart + 9);
+      expect(state.selectionExtentUtf16, sourceStart + 12);
+      expect(state.crossRowSelection, isTrue);
+      expect(
+        state.globalUtf16Start + state.value.selection.baseOffset,
+        state.selectionBaseUtf16,
+      );
+      expect(
+        state.globalUtf16Start + state.value.selection.extentOffset,
+        state.selectionExtentUtf16,
+      );
+      expect(_startsWithLowSurrogate(state.value.text), isFalse);
+      expect(_endsWithHighSurrogate(state.value.text), isFalse);
+    });
+
+    test('unrepresentable selection preserves exact canonical endpoints', () {
+      final state = FlarkEditorInputState();
+
+      final represented = state.activateWindow(
+        text: '0123456789abcdefghij',
+        sourceStart: 100,
+        caret: 102,
+        selectionExtent: 118,
+        ordinal: 3,
+        affinity: TextAffinity.downstream,
+        maximumCodeUnits: 8,
+      );
+
+      expect(represented, isFalse);
+      expect(state.value.selection.isCollapsed, isTrue);
+      expect(state.selectionBaseUtf16, 102);
+      expect(state.selectionExtentUtf16, 118);
+      expect(state.value.text.length, lessThanOrEqualTo(8));
+
+      state.markOversizedSelection(
+        base: state.selectionBaseUtf16,
+        extent: state.selectionExtentUtf16,
+        activeOrdinal: state.activeOrdinal,
+      );
+      expect(state.oversizedSelection, isTrue);
+      expect(state.crossRowSelection, isTrue);
+    });
+
+    test('collapsed restoration updates canonical selection atomically', () {
+      final state = FlarkEditorInputState();
+
+      state.activateCollapsedWindow(
+        text: '01234😀567890abcdefghij',
+        sourceStart: 40,
+        caret: 51,
+        ordinal: 4,
+        maximumCodeUnits: 7,
+      );
+
+      expect(state.selectionBaseUtf16, 51);
+      expect(state.selectionExtentUtf16, 51);
+      expect(state.activeOrdinal, 4);
+      expect(state.crossRowSelection, isFalse);
+      expect(state.value.text.length, lessThanOrEqualTo(7));
+      expect(_startsWithLowSurrogate(state.value.text), isFalse);
+      expect(_endsWithHighSurrogate(state.value.text), isFalse);
+    });
+
+    test('window bounds reject nonpositive capacities', () {
+      final state = FlarkEditorInputState();
+
+      expect(
+        () => state.activateWindow(
+          text: 'a',
+          sourceStart: 0,
+          caret: 0,
+          ordinal: 0,
+          affinity: TextAffinity.downstream,
+          maximumCodeUnits: 0,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => state.activateCollapsedWindow(
+          text: 'a',
+          sourceStart: 0,
+          caret: 0,
+          ordinal: 0,
+          maximumCodeUnits: -1,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('input transaction state', () {
     test('callback scope owns timing and rejects nested callbacks', () {
       final state = FlarkInputTransactionState();
@@ -366,3 +476,13 @@ void main() {
     );
   });
 }
+
+bool _startsWithLowSurrogate(String value) =>
+    value.isNotEmpty &&
+    value.codeUnitAt(0) >= 0xDC00 &&
+    value.codeUnitAt(0) <= 0xDFFF;
+
+bool _endsWithHighSurrogate(String value) =>
+    value.isNotEmpty &&
+    value.codeUnitAt(value.length - 1) >= 0xD800 &&
+    value.codeUnitAt(value.length - 1) <= 0xDBFF;

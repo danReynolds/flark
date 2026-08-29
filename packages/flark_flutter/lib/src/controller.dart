@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'editor_performance.dart';
+import 'editor_input_state.dart';
 import 'editor_transactions.dart';
 import 'input_transaction_state.dart';
 import 'input_window.dart';
@@ -103,20 +104,10 @@ final class FlarkEditorController extends ChangeNotifier
 
   final FlarkEditorViewportState _viewportState = FlarkEditorViewportState();
   late final FlarkEditorViewportPager _viewportPager;
-  TextEditingValue _inputValue = const TextEditingValue(
-    selection: TextSelection.collapsed(offset: 0),
-  );
-  int _inputGlobalUtf16Start = 0;
-  int? _activeOrdinal;
-  int _globalSelectionBase = 0;
-  int _globalSelectionExtent = 0;
+  final FlarkEditorInputState _inputState = FlarkEditorInputState();
   Timer? _parseTimer;
   FlarkPendingPresentationSnapshot get _pendingPresentation =>
       _coordinator.pendingPresentation;
-  bool _semanticEditV1Active = false;
-  bool _crossRowSelection = false;
-  bool _oversizedSelection = false;
-  FlarkCoreInlineContinuationV1? _inlineContinuation;
 
   void _clearPendingTaskChecks() {
     _coordinator.retirePendingPresentation(const {
@@ -181,7 +172,7 @@ final class FlarkEditorController extends ChangeNotifier
   );
 
   bool get semanticsCurrent => _viewportState.semanticCurrent;
-  TextEditingValue get inputValue => _inputValue;
+  TextEditingValue get inputValue => _inputState.value;
   int get revision => _document.revision;
 
   /// Monotonic generation of the source currently exposed to the renderer.
@@ -239,10 +230,10 @@ final class FlarkEditorController extends ChangeNotifier
   bool get debugDelayedParseScheduled => _parseTimer?.isActive ?? false;
 
   @visibleForTesting
-  int? get debugActiveOrdinal => _activeOrdinal;
+  int? get debugActiveOrdinal => _inputState.activeOrdinal;
 
   @visibleForTesting
-  bool get debugSemanticEditV1Active => _semanticEditV1Active;
+  bool get debugSemanticEditV1Active => _inputState.semanticEditActive;
 
   @visibleForTesting
   bool get debugPendingSemanticInputActive =>
@@ -263,9 +254,9 @@ final class FlarkEditorController extends ChangeNotifier
       _debugLastSemanticReceiptDescription;
 
   Object? get lastError => _lastError;
-  int get globalSelectionBase => _globalSelectionBase;
-  int get globalSelectionExtent => _globalSelectionExtent;
-  int get globalCaretOffset => _globalSelectionExtent;
+  int get globalSelectionBase => _inputState.selectionBaseUtf16;
+  int get globalSelectionExtent => _inputState.selectionExtentUtf16;
+  int get globalCaretOffset => _inputState.selectionExtentUtf16;
 
   /// The last immutable bounded state sealed at this controller's outward
   /// notification boundary. The lazy path exists only for initial attachment;
@@ -275,12 +266,12 @@ final class FlarkEditorController extends ChangeNotifier
   @override
   FlarkEditorSnapshot get value => snapshot;
   String? get selectedText {
-    final selection = _inputValue.selection;
+    final selection = _inputState.value.selection;
     if (!selection.isValid || selection.isCollapsed) return null;
     final start = math.min(selection.baseOffset, selection.extentOffset);
     final end = math.max(selection.baseOffset, selection.extentOffset);
-    if (start < 0 || end > _inputValue.text.length) return null;
-    return _inputValue.text.substring(start, end);
+    if (start < 0 || end > _inputState.value.text.length) return null;
+    return _inputState.value.text.substring(start, end);
   }
 
   bool get canUndo =>
@@ -294,7 +285,7 @@ final class FlarkEditorController extends ChangeNotifier
   int get connectionEpoch => _platformInput.connectionEpoch;
   int get windowEpoch => _platformInput.windowEpoch;
   int get resyncCount => _platformInput.resyncCount;
-  bool get hasOversizedSelection => _oversizedSelection;
+  bool get hasOversizedSelection => _inputState.oversizedSelection;
   int get canonicalSelectionGeneration => _session.selectionGeneration;
   int get semanticSuccessorHighWatermark =>
       _inputTransactions.successorHighWatermark;
@@ -328,7 +319,7 @@ final class FlarkEditorController extends ChangeNotifier
   FlarkInputWindowShadow get inputWindowShadow => _platformInput.snapshot(
     representedRevision: _document.revision,
     selectionGeneration: _session.selectionGeneration,
-    fallbackValue: _inputValue,
+    fallbackValue: _inputState.value,
   );
 
   /// Reconciles the serialized platform shadow on every notification so no
@@ -394,15 +385,16 @@ final class FlarkEditorController extends ChangeNotifier
       return;
     }
     final activeRow = _activeCachedRow();
-    _semanticEditV1Active =
-        activeRow?.semanticCapabilities.supportsSemanticEdit ?? false;
+    _inputState.setSemanticEditActive(
+      activeRow?.semanticCapabilities.supportsSemanticEdit ?? false,
+    );
   }
 
   void _reconcileWindowShadow() {
     _installWindowShadow(
-      text: _inputValue.text,
-      globalStart: _inputGlobalUtf16Start,
-      selection: _inputValue.selection,
+      text: _inputState.value.text,
+      globalStart: _inputState.globalUtf16Start,
+      selection: _inputState.value.selection,
       platformOriginated: _inputTransactions.platformMutationActive,
     );
   }
@@ -424,9 +416,9 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool get _platformShadowMatchesCurrentInput => _platformInput.matches(
-    text: _inputValue.text,
-    globalStart: _inputGlobalUtf16Start,
-    selection: _inputValue.selection,
+    text: _inputState.value.text,
+    globalStart: _inputState.globalUtf16Start,
+    selection: _inputState.value.selection,
   );
 
   void _installWindowShadow({
@@ -457,13 +449,15 @@ final class FlarkEditorController extends ChangeNotifier
     var compositionEnded = false;
     if (_session.compositionActive) {
       _endCompositionHistoryGroup();
-      _inputValue = _inputValue.copyWith(composing: TextRange.empty);
+      _inputState.replaceValue(
+        _inputState.value.copyWith(composing: TextRange.empty),
+      );
       compositionEnded = true;
     }
     _platformInput.resynchronize(
       reason: reason,
-      authoritativeValue: _inputValue,
-      globalStart: _inputGlobalUtf16Start,
+      authoritativeValue: _inputState.value,
+      globalStart: _inputState.globalUtf16Start,
     );
     if (compositionEnded) _scheduleParsingAfterInput();
     _publishSnapshot();
@@ -484,7 +478,7 @@ final class FlarkEditorController extends ChangeNotifier
     deltas,
     against: against,
     expectedTextSha256: expectedTextSha256,
-    fallbackValue: _inputValue,
+    fallbackValue: _inputState.value,
   );
 
   static Future<FlarkEditorController> open(
@@ -589,8 +583,8 @@ final class FlarkEditorController extends ChangeNotifier
     final controller = FlarkEditorController._(document);
     await controller._refreshViewport(restoreInputWindow: true);
     await controller._session.setSelectionUtf16(
-      controller._globalSelectionBase,
-      controller._globalSelectionExtent,
+      controller._inputState.selectionBaseUtf16,
+      controller._inputState.selectionExtentUtf16,
       adapterState: controller._selectionSnapshot(),
     );
     return controller;
@@ -668,12 +662,12 @@ final class FlarkEditorController extends ChangeNotifier
       pendingTableNavigationLocked: pendingTableNavigationLocked,
       visibleUtf16Start: _viewportState.visibleUtf16Start,
       visibleSource: _viewportState.visibleSource,
-      canonicalSelectionBaseUtf16: _globalSelectionBase,
-      canonicalSelectionExtentUtf16: _globalSelectionExtent,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
-      inputValue: portableEditorInputValue(_inputValue),
-      activeOrdinal: _activeOrdinal,
-      crossRowSelection: _crossRowSelection,
+      canonicalSelectionBaseUtf16: _inputState.selectionBaseUtf16,
+      canonicalSelectionExtentUtf16: _inputState.selectionExtentUtf16,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
+      inputValue: portableEditorInputValue(_inputState.value),
+      activeOrdinal: _inputState.activeOrdinal,
+      crossRowSelection: _inputState.crossRowSelection,
       rows: capturedRows,
     );
   }
@@ -681,12 +675,12 @@ final class FlarkEditorController extends ChangeNotifier
   FlarkSurfaceProjector _captureSurfaceProjector() =>
       _viewportState.captureSurfaceProjector(
         pendingPresentation: _pendingPresentation,
-        inputGlobalUtf16Start: _inputGlobalUtf16Start,
-        inputValue: portableEditorInputValue(_inputValue),
-        activeOrdinal: _activeOrdinal,
-        selectionBaseUtf16: _globalSelectionBase,
-        selectionExtentUtf16: _globalSelectionExtent,
-        crossRowSelection: _crossRowSelection,
+        inputGlobalUtf16Start: _inputState.globalUtf16Start,
+        inputValue: portableEditorInputValue(_inputState.value),
+        activeOrdinal: _inputState.activeOrdinal,
+        selectionBaseUtf16: _inputState.selectionBaseUtf16,
+        selectionExtentUtf16: _inputState.selectionExtentUtf16,
+        crossRowSelection: _inputState.crossRowSelection,
       );
 
   FlarkSurfaceRow surfaceRow(
@@ -733,8 +727,10 @@ final class FlarkEditorController extends ChangeNotifier
     // A pointer/navigation selection is a new editing-context decision even
     // when it resolves to the same numeric caret. Do not let one-shot
     // delete-to-empty continuation authority survive that explicit choice.
-    _inlineContinuation = null;
-    _semanticEditV1Active = row.semanticCapabilities.supportsSemanticEdit;
+    _inputState.abandonInlineContinuation();
+    _inputState.setSemanticEditActive(
+      row.semanticCapabilities.supportsSemanticEdit,
+    );
     _coordinator.retirePendingPresentation(const {
       FlarkPendingPresentationPart.dependency,
       FlarkPendingPresentationPart.paragraphGap,
@@ -768,8 +764,8 @@ final class FlarkEditorController extends ChangeNotifier
     int? selectionExtent,
     TextAffinity affinity = TextAffinity.downstream,
   }) {
-    _inlineContinuation = null;
-    _semanticEditV1Active = false;
+    _inputState.abandonInlineContinuation();
+    _inputState.setSemanticEditActive(false);
     _coordinator.retirePendingPresentation(const {
       FlarkPendingPresentationPart.dependency,
     });
@@ -792,26 +788,28 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void extendSelectionTo(int globalUtf16Offset, {int? activeOrdinal}) {
-    _inlineContinuation = null;
+    _inputState.abandonInlineContinuation();
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
-    final local = globalUtf16Offset - _inputGlobalUtf16Start;
+    final local = globalUtf16Offset - _inputState.globalUtf16Start;
     final remainsInActiveWindow =
-        !_crossRowSelection &&
+        !_inputState.crossRowSelection &&
         local >= 0 &&
-        local <= _inputValue.text.length &&
-        (activeOrdinal == null || activeOrdinal == _activeOrdinal);
+        local <= _inputState.value.text.length &&
+        (activeOrdinal == null || activeOrdinal == _inputState.activeOrdinal);
     if (remainsInActiveWindow) {
-      _inputValue = _inputValue.copyWith(
-        selection: TextSelection(
-          baseOffset: _inputValue.selection.baseOffset,
-          extentOffset: local,
-          affinity: _inputValue.selection.affinity,
-          isDirectional: _inputValue.selection.isDirectional,
+      _inputState.replaceValue(
+        _inputState.value.copyWith(
+          selection: TextSelection(
+            baseOffset: _inputState.value.selection.baseOffset,
+            extentOffset: local,
+            affinity: _inputState.value.selection.affinity,
+            isDirectional: _inputState.value.selection.isDirectional,
+          ),
+          composing: TextRange.empty,
         ),
-        composing: TextRange.empty,
       );
-      _globalSelectionExtent = globalUtf16Offset;
+      _inputState.extendCanonicalSelection(globalUtf16Offset);
       unawaited(_installCanonicalSelection(_selectionSnapshot()));
       _publishCommandInputState();
       return;
@@ -827,42 +825,50 @@ final class FlarkEditorController extends ChangeNotifier
 
     final visibleEnd =
         _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    final start = math.min(_globalSelectionBase, globalUtf16Offset);
-    final end = math.max(_globalSelectionBase, globalUtf16Offset);
+    final start = math.min(_inputState.selectionBaseUtf16, globalUtf16Offset);
+    final end = math.max(_inputState.selectionBaseUtf16, globalUtf16Offset);
     if (end - start > _maximumInputCodeUnits ||
         start < _viewportState.visibleUtf16Start ||
         end > visibleEnd) {
-      final exactBase = _globalSelectionBase;
-      _globalSelectionExtent = globalUtf16Offset;
-      _activeOrdinal = activeOrdinal ?? _surfaceOrdinalAt(globalUtf16Offset);
-      _crossRowSelection = true;
-      _oversizedSelection = true;
+      final exactBase = _inputState.selectionBaseUtf16;
+      final targetOrdinal =
+          activeOrdinal ?? _surfaceOrdinalAt(globalUtf16Offset);
+      _inputState.markOversizedSelection(
+        base: exactBase,
+        extent: globalUtf16Offset,
+        activeOrdinal: targetOrdinal,
+      );
       _restoreCollapsedInputWindow(
         globalUtf16Offset,
-        preferredOrdinal: _activeOrdinal,
+        preferredOrdinal: _inputState.activeOrdinal,
       );
-      _globalSelectionBase = exactBase;
-      _globalSelectionExtent = globalUtf16Offset;
-      _crossRowSelection = true;
-      _oversizedSelection = true;
+      _inputState.markOversizedSelection(
+        base: exactBase,
+        extent: globalUtf16Offset,
+        activeOrdinal: _inputState.activeOrdinal,
+      );
       _publishCommandInputState();
       unawaited(selectOversizedRangeUtf16(exactBase, globalUtf16Offset));
       return;
     }
     final selection = TextSelection(
-      baseOffset: _globalSelectionBase - start,
+      baseOffset: _inputState.selectionBaseUtf16 - start,
       extentOffset: globalUtf16Offset - start,
-      affinity: _inputValue.selection.affinity,
+      affinity: _inputState.value.selection.affinity,
       isDirectional: true,
     );
-    _inputGlobalUtf16Start = start;
-    _inputValue = TextEditingValue(
-      text: _sliceVisibleUtf16(start, end),
-      selection: selection,
+    _inputState.replaceWindow(
+      globalUtf16Start: start,
+      value: TextEditingValue(
+        text: _sliceVisibleUtf16(start, end),
+        selection: selection,
+      ),
     );
-    _activeOrdinal = activeOrdinal ?? _surfaceOrdinalAt(globalUtf16Offset);
-    _crossRowSelection = !selection.isCollapsed;
-    _globalSelectionExtent = globalUtf16Offset;
+    _inputState.retargetActiveOrdinal(
+      activeOrdinal ?? _surfaceOrdinalAt(globalUtf16Offset),
+    );
+    _inputState.setCrossRowSelection(!selection.isCollapsed);
+    _inputState.extendCanonicalSelection(globalUtf16Offset);
     unawaited(_installCanonicalSelection(_selectionSnapshot()));
     _publishCommandInputState();
   }
@@ -889,7 +895,7 @@ final class FlarkEditorController extends ChangeNotifier
       _resynchronize(rejection);
       return;
     }
-    var observedValue = _inputValue;
+    var observedValue = _inputState.value;
     for (final delta in deltas) {
       observedValue = delta.apply(observedValue);
     }
@@ -899,7 +905,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     _inputTransactions.beginPlatformMutation();
     try {
-      if (_oversizedSelection) {
+      if (_inputState.oversizedSelection) {
         _applyOversizedPlatformDeltas(deltas);
         notifyListeners();
         return;
@@ -916,16 +922,16 @@ final class FlarkEditorController extends ChangeNotifier
       if (platformNewline && _queuePlatformSemanticNewline(deltas)) {
         _acceptPlatformWindowShadow(
           observedValue,
-          globalStart: _inputGlobalUtf16Start,
+          globalStart: _inputState.globalUtf16Start,
         );
         return;
       }
       final platformDeleteBackward = _isPlatformDeleteBackwardMutation(deltas);
       final platformSelectionSupersededByProjection =
           platformDeleteBackward &&
-          _platformInput.shadowText == _inputValue.text &&
+          _platformInput.shadowText == _inputState.value.text &&
           _platformInput.shadowSelection != null &&
-          _platformInput.shadowSelection != _inputValue.selection;
+          _platformInput.shadowSelection != _inputState.value.selection;
       if (platformSelectionSupersededByProjection) {
         // The text service can issue another Backspace before adopting a
         // parser-normalized caret. Its oldText is still current, but its raw
@@ -954,7 +960,7 @@ final class FlarkEditorController extends ChangeNotifier
           _queuePlatformSemanticDeleteBackward(deltas)) {
         _acceptPlatformWindowShadow(
           observedValue,
-          globalStart: _inputGlobalUtf16Start,
+          globalStart: _inputState.globalUtf16Start,
         );
         return;
       }
@@ -976,7 +982,7 @@ final class FlarkEditorController extends ChangeNotifier
         _inputTransactions.markNewlineTextObserved();
         _acceptPlatformWindowShadow(
           observedValue,
-          globalStart: _inputGlobalUtf16Start,
+          globalStart: _inputState.globalUtf16Start,
         );
         insertNewline();
         return;
@@ -991,7 +997,7 @@ final class FlarkEditorController extends ChangeNotifier
         _inputTransactions.markBackspaceTextObserved();
         _acceptPlatformWindowShadow(
           observedValue,
-          globalStart: _inputGlobalUtf16Start,
+          globalStart: _inputState.globalUtf16Start,
         );
         _deleteBackward(
           allowSemantic: true,
@@ -1003,7 +1009,7 @@ final class FlarkEditorController extends ChangeNotifier
       if (platformDeleteBackward) {
         _inputTransactions.markBackspaceTextObserved();
       }
-      var finalValue = _inputValue;
+      var finalValue = _inputState.value;
       var mutatingDeltas = 0;
       var typingInput = true;
       var publishOptimistically = true;
@@ -1017,12 +1023,12 @@ final class FlarkEditorController extends ChangeNotifier
       if (mutatingDeltas == 0) {
         _adoptPlatformSelectionOnlyValue(finalValue);
       } else {
-        final before = _inputValue.text;
+        final before = _inputState.value.text;
         final after = finalValue.text;
         final mutation = _differenceMutation(before, after);
         if (mutation == null) {
           _breakTypingHistoryGroup();
-          _inputValue = finalValue;
+          _inputState.replaceValue(finalValue);
           _trackCompositionWithoutMutation(finalValue.composing);
           _updateGlobalSelection();
           unawaited(_installCanonicalSelection(_selectionSnapshot()));
@@ -1100,10 +1106,12 @@ final class FlarkEditorController extends ChangeNotifier
     }
     if (_captureSemanticSuccessorValue(value)) return;
     if (_capturePlatformValueBehindCertification(value)) return;
-    if (value.text == _inputValue.text) _inputTransactions.lateSemantic = null;
+    if (value.text == _inputState.value.text) {
+      _inputTransactions.lateSemantic = null;
+    }
     _inputTransactions.beginPlatformMutation();
     try {
-      if (_oversizedSelection) {
+      if (_inputState.oversizedSelection) {
         _updateOversizedEditingValue(value);
         notifyListeners();
         return;
@@ -1118,7 +1126,10 @@ final class FlarkEditorController extends ChangeNotifier
         return;
       }
       if (platformNewline && _queuePlatformSemanticNewlineValue(value)) {
-        _acceptPlatformWindowShadow(value, globalStart: _inputGlobalUtf16Start);
+        _acceptPlatformWindowShadow(
+          value,
+          globalStart: _inputState.globalUtf16Start,
+        );
         return;
       }
       final platformDeleteBackward = _isPlatformDeleteBackwardValue(value);
@@ -1132,11 +1143,14 @@ final class FlarkEditorController extends ChangeNotifier
       }
       if (platformDeleteBackward &&
           _queuePlatformSemanticDeleteBackwardValue(value)) {
-        _acceptPlatformWindowShadow(value, globalStart: _inputGlobalUtf16Start);
+        _acceptPlatformWindowShadow(
+          value,
+          globalStart: _inputState.globalUtf16Start,
+        );
         return;
       }
       final observedMutation = _differenceMutation(
-        _inputValue.text,
+        _inputState.value.text,
         value.text,
       );
       if (observedMutation != null &&
@@ -1147,7 +1161,10 @@ final class FlarkEditorController extends ChangeNotifier
       }
       if (platformNewline) {
         _inputTransactions.markNewlineTextObserved();
-        _acceptPlatformWindowShadow(value, globalStart: _inputGlobalUtf16Start);
+        _acceptPlatformWindowShadow(
+          value,
+          globalStart: _inputState.globalUtf16Start,
+        );
         _insertNewline(
           allowSemantic: true,
           platformTiming: _inputTransactions.activeTiming,
@@ -1156,10 +1173,13 @@ final class FlarkEditorController extends ChangeNotifier
       }
       if (platformDeleteBackward &&
           _mutationTouchesOnlyHiddenProjection(
-            _differenceMutation(_inputValue.text, value.text)!,
+            _differenceMutation(_inputState.value.text, value.text)!,
           )) {
         _inputTransactions.markBackspaceTextObserved();
-        _acceptPlatformWindowShadow(value, globalStart: _inputGlobalUtf16Start);
+        _acceptPlatformWindowShadow(
+          value,
+          globalStart: _inputState.globalUtf16Start,
+        );
         _deleteBackward(
           allowSemantic: true,
           platformTiming: _inputTransactions.activeTiming,
@@ -1177,18 +1197,18 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _updateEditingValueFromPlatform(TextEditingValue value) {
-    if (value.text == _inputValue.text) {
+    if (value.text == _inputState.value.text) {
       _adoptPlatformSelectionOnlyValue(value);
       notifyListeners();
       return;
     }
-    final mutation = _differenceMutation(_inputValue.text, value.text);
+    final mutation = _differenceMutation(_inputState.value.text, value.text);
     if (mutation == null) {
       _adoptPlatformSelectionOnlyValue(value);
       notifyListeners();
       return;
     }
-    final selection = _inputValue.selection;
+    final selection = _inputState.value.selection;
     final typingInput =
         selection.isCollapsed &&
         mutation.start == selection.extentOffset &&
@@ -1217,7 +1237,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _applyOversizedPlatformDeltas(List<TextEditingDelta> deltas) {
-    var finalValue = _inputValue;
+    var finalValue = _inputState.value;
     var mutatingDeltas = 0;
     var typingInput = true;
     for (final delta in deltas) {
@@ -1231,7 +1251,10 @@ final class FlarkEditorController extends ChangeNotifier
       _adoptPlatformSelectionOnlyValue(finalValue);
       return;
     }
-    final mutation = _differenceMutation(_inputValue.text, finalValue.text);
+    final mutation = _differenceMutation(
+      _inputState.value.text,
+      finalValue.text,
+    );
     if (mutation == null) {
       _adoptPlatformSelectionOnlyValue(finalValue);
       return;
@@ -1241,11 +1264,11 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _updateOversizedEditingValue(TextEditingValue value) {
-    if (value.text == _inputValue.text) {
+    if (value.text == _inputState.value.text) {
       _adoptPlatformSelectionOnlyValue(value);
       return;
     }
-    final mutation = _differenceMutation(_inputValue.text, value.text);
+    final mutation = _differenceMutation(_inputState.value.text, value.text);
     if (mutation == null) {
       _adoptPlatformSelectionOnlyValue(value);
       return;
@@ -1255,7 +1278,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _markOversizedPlatformCommand(FlarkTextMutation mutation) {
-    final caret = _inputValue.selection.extentOffset;
+    final caret = _inputState.value.selection.extentOffset;
     if (mutation.replacement == '\n') {
       _inputTransactions.markNewlineTextObserved();
     }
@@ -1270,11 +1293,11 @@ final class FlarkEditorController extends ChangeNotifier
     _breakTypingHistoryGroup();
     value = _normalizeProjectedSelection(value);
     if (!_session.compositionActive && value.composing.isValid) {
-      _rememberCompositionInputBase(_inputValue);
+      _rememberCompositionInputBase(_inputState.value);
     }
-    _inputValue = value;
+    _inputState.replaceValue(value);
     _trackCompositionWithoutMutation(value.composing);
-    if (_oversizedSelection) {
+    if (_inputState.oversizedSelection) {
       // The platform only sees a collapsed surrogate for an exact selection
       // that is larger than the bounded input window. Echoes and non-text
       // updates may synchronize that surrogate, but must never retarget the
@@ -1304,12 +1327,12 @@ final class FlarkEditorController extends ChangeNotifier
       _breakTypingHistoryGroup();
       _endCompositionHistoryGroup();
     }
-    if (_oversizedSelection) {
+    if (_inputState.oversizedSelection) {
       _replaceOversizedSelection(replacement);
       if (publish) _publishCommandInputState();
       return;
     }
-    final selection = _inputValue.selection;
+    final selection = _inputState.value.selection;
     final start = math.min(selection.baseOffset, selection.extentOffset);
     final end = math.max(selection.baseOffset, selection.extentOffset);
     final caret = start + replacement.length;
@@ -1333,7 +1356,7 @@ final class FlarkEditorController extends ChangeNotifier
   /// surrogate; typing, paste, or deletion against it replaces the complete
   /// exact global selection atomically through the anchor-resolved range.
   Future<int> selectOversizedRangeUtf16(int base, int extent) async {
-    _inlineContinuation = null;
+    _inputState.abandonInlineContinuation();
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     final length = sourceUtf16Length;
@@ -1341,21 +1364,25 @@ final class FlarkEditorController extends ChangeNotifier
     final clampedExtent = extent.clamp(0, length);
     final exactSelection = FlarkEditorSelectionSnapshot(
       TextSelection(baseOffset: clampedBase, extentOffset: clampedExtent),
-      _activeOrdinal,
+      _inputState.activeOrdinal,
     );
     final generation = await _installCanonicalSelection(exactSelection);
-    _oversizedSelection = true;
-    _crossRowSelection = clampedBase != clampedExtent;
+    _inputState.markOversizedSelection(
+      base: clampedBase,
+      extent: clampedExtent,
+      activeOrdinal: _inputState.activeOrdinal,
+    );
     await _restoreHistorySelection(
       FlarkEditorSelectionSnapshot(
         TextSelection.collapsed(offset: clampedExtent),
         null,
       ),
     );
-    _globalSelectionBase = clampedBase;
-    _globalSelectionExtent = clampedExtent;
-    _crossRowSelection = clampedBase != clampedExtent;
-    _oversizedSelection = true;
+    _inputState.markOversizedSelection(
+      base: clampedBase,
+      extent: clampedExtent,
+      activeOrdinal: _inputState.activeOrdinal,
+    );
     notifyListeners();
     return generation;
   }
@@ -1586,8 +1613,8 @@ final class FlarkEditorController extends ChangeNotifier
   /// A user activation abandons the platform surrogate. The immediately
   /// queued ordinary selection replaces the canonical anchors in order.
   void _abandonOversizedSelection() {
-    if (!_oversizedSelection) return;
-    _oversizedSelection = false;
+    if (!_inputState.oversizedSelection) return;
+    _inputState.clearOversizedSelection();
   }
 
   /// Resolves the exact core-owned selection after every queued edit or host
@@ -1600,7 +1627,9 @@ final class FlarkEditorController extends ChangeNotifier
   /// Reads the complete selected source even when the platform input window
   /// carries only an active-extent surrogate.
   Future<String?> readSelectedText() async {
-    if (!_crossRowSelection && !_oversizedSelection) return selectedText;
+    if (!_inputState.crossRowSelection && !_inputState.oversizedSelection) {
+      return selectedText;
+    }
     final selection = await resolveCanonicalSelection();
     if (selection == null || selection.isCollapsed) return null;
     final start = math.min(selection.base, selection.extent);
@@ -1610,7 +1639,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _replaceOversizedSelection(String replacement) {
     final resolved = _selectionSnapshot();
-    _oversizedSelection = false;
+    _inputState.clearOversizedSelection();
     final start = math.min(
       resolved.selection.baseOffset,
       resolved.selection.extentOffset,
@@ -1634,10 +1663,9 @@ final class FlarkEditorController extends ChangeNotifier
       null,
     );
     _retainOptimisticRefreshAnchor(start, deriveFromInput: true);
-    _globalSelectionBase = caret;
-    _globalSelectionExtent = caret;
-    _crossRowSelection = false;
-    _activeOrdinal = _surfaceOrdinalAt(start);
+    _inputState.setCanonicalSelection(caret, caret);
+    _inputState.setCrossRowSelection(false);
+    _inputState.retargetActiveOrdinal(_surfaceOrdinalAt(start));
     var windowStart = math.max(0, replacement.length - _maximumInputCodeUnits);
     final alignedWindow = scalarAlignedUtf16Window(
       replacement,
@@ -1646,10 +1674,12 @@ final class FlarkEditorController extends ChangeNotifier
     );
     windowStart = alignedWindow.start;
     final windowLength = alignedWindow.end - windowStart;
-    _inputGlobalUtf16Start = start + windowStart;
-    _inputValue = TextEditingValue(
-      text: replacement.substring(windowStart, alignedWindow.end),
-      selection: TextSelection.collapsed(offset: windowLength),
+    _inputState.replaceWindow(
+      globalUtf16Start: start + windowStart,
+      value: TextEditingValue(
+        text: replacement.substring(windowStart, alignedWindow.end),
+        selection: TextSelection.collapsed(offset: windowLength),
+      ),
     );
     _queueNativeEdit(
       start,
@@ -1683,11 +1713,11 @@ final class FlarkEditorController extends ChangeNotifier
         )) {
       return;
     }
-    if (_oversizedSelection) {
+    if (_inputState.oversizedSelection) {
       replaceSelection('');
       return;
     }
-    var selection = _inputValue.selection;
+    var selection = _inputState.value.selection;
     if (!selection.isCollapsed) {
       replaceSelection('');
       return;
@@ -1700,7 +1730,7 @@ final class FlarkEditorController extends ChangeNotifier
       return;
     }
     if (_normalizeProjectedCommandSelection()) {
-      selection = _inputValue.selection;
+      selection = _inputState.value.selection;
       if (allowSemantic &&
           _queueSemanticDeleteBackward(
             selection.extentOffset,
@@ -1718,7 +1748,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (selection.extentOffset == 0) return;
     final end = selection.extentOffset;
     final cluster = FlarkCoreGraphemePolicy.previousClusterRange(
-      _inputValue.text,
+      _inputState.value.text,
       end,
     );
     if (cluster == null) return;
@@ -1745,16 +1775,16 @@ final class FlarkEditorController extends ChangeNotifier
         )) {
       return;
     }
-    if (_oversizedSelection) {
+    if (_inputState.oversizedSelection) {
       replaceSelection('');
       return;
     }
-    final selection = _inputValue.selection;
+    final selection = _inputState.value.selection;
     if (!selection.isCollapsed) {
       replaceSelection('');
       return;
     }
-    final globalCaret = _inputGlobalUtf16Start + selection.extentOffset;
+    final globalCaret = _inputState.globalUtf16Start + selection.extentOffset;
     final paragraphGap = _pendingPresentation.paragraphGap;
     final caretBoundary = _pendingPresentation.caretBoundary;
     final boundaryRowEnd =
@@ -1793,9 +1823,9 @@ final class FlarkEditorController extends ChangeNotifier
       return;
     }
     final start = selection.extentOffset;
-    if (start == _inputValue.text.length) return;
+    if (start == _inputState.value.text.length) return;
     final cluster = FlarkCoreGraphemePolicy.nextClusterRange(
-      _inputValue.text,
+      _inputState.value.text,
       start,
     );
     if (cluster == null) return;
@@ -1818,7 +1848,7 @@ final class FlarkEditorController extends ChangeNotifier
       // A rendered row boundary has no glyph, but an explicit Backspace or
       // Delete command still owns its adjacent line ending. Other hidden
       // source (Markdown delimiters) remains protected by projection facts.
-      editabilityProven: _inputValue.text
+      editabilityProven: _inputState.value.text
           .substring(start, end)
           .codeUnits
           .every((unit) => unit == 0x0a || unit == 0x0d),
@@ -1850,7 +1880,7 @@ final class FlarkEditorController extends ChangeNotifier
         )) {
       return;
     }
-    final selection = _inputValue.selection;
+    final selection = _inputState.value.selection;
     if (allowSemantic &&
         selection.isCollapsed &&
         _queueSemanticParagraphBreak(
@@ -1865,17 +1895,17 @@ final class FlarkEditorController extends ChangeNotifier
   bool _isPlatformNewlineMutation(List<TextEditingDelta> deltas) {
     return _platformInput.isNewlineDeltaBatch(
       deltas,
-      currentValue: _inputValue,
+      currentValue: _inputState.value,
     );
   }
 
   bool _queuePlatformSemanticNewline(List<TextEditingDelta> deltas) {
     _inputTransactions.lateSemantic = null;
     final provisionalMutation = _mutationFor(deltas.single)!;
-    final provisionalAfter = deltas.single.apply(_inputValue);
+    final provisionalAfter = deltas.single.apply(_inputState.value);
     _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
-      base: _inputValue,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      base: _inputState.value,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
       initialCallbackStartedEpochMicros:
           _inputTransactions.activeCallbackStartedEpochMicros ??
           DateTime.now().microsecondsSinceEpoch,
@@ -1885,7 +1915,7 @@ final class FlarkEditorController extends ChangeNotifier
     );
     _inputTransactions.markNewlineTextObserved();
     final queued = _queueSemanticParagraphBreak(
-      _inputValue.selection.extentOffset,
+      _inputState.value.selection.extentOffset,
       platformTiming: _inputTransactions.activeTiming,
     );
     if (!queued) {
@@ -1897,22 +1927,22 @@ final class FlarkEditorController extends ChangeNotifier
 
   bool _isPlatformNewlineValue(TextEditingValue value) {
     return _platformInput.isNewlineValue(
-      currentValue: _inputValue,
+      currentValue: _inputState.value,
       observedValue: value,
     );
   }
 
   bool _queuePlatformSemanticNewlineValue(TextEditingValue value) {
     _inputTransactions.lateSemantic = null;
-    final selection = _inputValue.selection;
+    final selection = _inputState.value.selection;
     final provisionalMutation = FlarkTextMutation(
       math.min(selection.baseOffset, selection.extentOffset),
       math.max(selection.baseOffset, selection.extentOffset),
       '\n',
     );
     _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
-      base: _inputValue,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      base: _inputState.value,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
       initialCallbackStartedEpochMicros:
           _inputTransactions.activeCallbackStartedEpochMicros ??
           DateTime.now().microsecondsSinceEpoch,
@@ -1922,7 +1952,7 @@ final class FlarkEditorController extends ChangeNotifier
     );
     _inputTransactions.markNewlineTextObserved();
     final queued = _queueSemanticParagraphBreak(
-      _inputValue.selection.extentOffset,
+      _inputState.value.selection.extentOffset,
       platformTiming: _inputTransactions.activeTiming,
     );
     if (!queued) {
@@ -1935,34 +1965,37 @@ final class FlarkEditorController extends ChangeNotifier
   bool _isPlatformDeleteBackwardMutation(List<TextEditingDelta> deltas) {
     return _platformInput.isDeleteBackwardDeltaBatch(
       deltas,
-      currentValue: _inputValue,
+      currentValue: _inputState.value,
     );
   }
 
   bool _isPlatformSelectedDeletion(FlarkTextMutation mutation) {
     return _platformInput.isSelectedDeletion(
       mutation,
-      currentSelection: _inputValue.selection,
+      currentSelection: _inputState.value.selection,
     );
   }
 
   bool _queuePlatformSemanticDeleteBackward(List<TextEditingDelta> deltas) {
     return _queueObservedPlatformSemanticDeleteBackward(
       provisionalMutation: _mutationFor(deltas.single)!,
-      provisionalAfter: deltas.single.apply(_inputValue),
+      provisionalAfter: deltas.single.apply(_inputState.value),
     );
   }
 
   bool _isPlatformDeleteBackwardValue(TextEditingValue value) {
     return _platformInput.isDeleteBackwardValue(
-      currentValue: _inputValue,
+      currentValue: _inputState.value,
       observedValue: value,
     );
   }
 
   bool _queuePlatformSemanticDeleteBackwardValue(TextEditingValue value) {
     return _queueObservedPlatformSemanticDeleteBackward(
-      provisionalMutation: _selectionObservedMutation(_inputValue, value)!,
+      provisionalMutation: _selectionObservedMutation(
+        _inputState.value,
+        value,
+      )!,
       provisionalAfter: value,
     );
   }
@@ -1973,8 +2006,8 @@ final class FlarkEditorController extends ChangeNotifier
   }) {
     _inputTransactions.lateSemantic = null;
     _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
-      base: _inputValue,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      base: _inputState.value,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
       initialCallbackStartedEpochMicros:
           _inputTransactions.activeCallbackStartedEpochMicros ??
           DateTime.now().microsecondsSinceEpoch,
@@ -1984,7 +2017,7 @@ final class FlarkEditorController extends ChangeNotifier
     );
     _inputTransactions.markBackspaceTextObserved();
     final queued = _queueSemanticDeleteBackward(
-      _inputValue.selection.extentOffset,
+      _inputState.value.selection.extentOffset,
       platformTiming: _inputTransactions.activeTiming,
     );
     if (!queued) {
@@ -2110,9 +2143,9 @@ final class FlarkEditorController extends ChangeNotifier
       return false;
     }
     final before = late.provisionalTail;
-    if (before.text == _inputValue.text &&
-        before.selection == _inputValue.selection &&
-        before.composing == _inputValue.composing) {
+    if (before.text == _inputState.value.text &&
+        before.selection == _inputState.value.selection &&
+        before.composing == _inputState.value.composing) {
       // The text service has adopted the committed window exactly. Keeping
       // the predecessor's provisional lineage alive would make a fresh
       // Return look like an old successor and lose its own provisional
@@ -2152,7 +2185,7 @@ final class FlarkEditorController extends ChangeNotifier
     );
     final holder = FlarkPendingSemanticInput(
       base: before,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
       initialCallbackStartedEpochMicros:
           _inputTransactions.activeCallbackStartedEpochMicros ??
           DateTime.now().microsecondsSinceEpoch,
@@ -2303,7 +2336,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     final timing = _inputTransactions.activeTiming;
     final pending = FlarkPendingSemanticInput(
-      base: _inputValue,
+      base: _inputState.value,
       inputGlobalUtf16Start: _platformInput.shadowWindowStart,
       initialCallbackStartedEpochMicros:
           timing?.acceptedAtEpochMicros ??
@@ -2342,14 +2375,14 @@ final class FlarkEditorController extends ChangeNotifier
     }
     final timing = platformTiming ?? _inputTransactions.activeTiming;
     final pending = FlarkPendingSemanticInput(
-      base: _inputValue,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      base: _inputState.value,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
       initialCallbackStartedEpochMicros:
           timing?.acceptedAtEpochMicros ??
           _inputTransactions.activeCallbackStartedEpochMicros ??
           DateTime.now().microsecondsSinceEpoch,
       platformTiming: timing,
-      provisionalAfter: provisionalAfter ?? _inputValue,
+      provisionalAfter: provisionalAfter ?? _inputState.value,
     );
     pending.successors.add(
       FlarkDeferredInputSuccessor(
@@ -2367,7 +2400,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (provisionalAfter != null) {
       _acceptPlatformWindowShadow(
         provisionalAfter,
-        globalStart: _inputGlobalUtf16Start,
+        globalStart: _inputState.globalUtf16Start,
       );
     }
     return true;
@@ -2492,10 +2525,11 @@ final class FlarkEditorController extends ChangeNotifier
     final row = _activeCachedRow();
     if (row == null) return value;
     if (value.selection.isCollapsed) {
-      final globalCaret = _inputGlobalUtf16Start + value.selection.extentOffset;
+      final globalCaret =
+          _inputState.globalUtf16Start + value.selection.extentOffset;
       final structuralCaret = _structuralCanonicalCaretAt(globalCaret);
       if (structuralCaret != null) {
-        final localCaret = structuralCaret - _inputGlobalUtf16Start;
+        final localCaret = structuralCaret - _inputState.globalUtf16Start;
         if (0 <= localCaret && localCaret <= value.text.length) {
           return value.copyWith(
             selection: TextSelection.collapsed(
@@ -2534,7 +2568,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (!_surfaceHasProjection(presentation, row)) return value;
 
     int normalize(int localOffset) {
-      final global = _inputGlobalUtf16Start + localOffset;
+      final global = _inputState.globalUtf16Start + localOffset;
       final exactRow = _mappedExactRowRange(row);
       // The start and end of a source-owned block are canonical caret stops
       // even when the first or last Markdown marker is hidden by projection.
@@ -2563,7 +2597,7 @@ final class FlarkEditorController extends ChangeNotifier
       final normalizedGlobal = value.selection.affinity == TextAffinity.upstream
           ? upstream
           : downstream;
-      return (normalizedGlobal - _inputGlobalUtf16Start).clamp(
+      return (normalizedGlobal - _inputState.globalUtf16Start).clamp(
         0,
         value.text.length,
       );
@@ -2577,8 +2611,9 @@ final class FlarkEditorController extends ChangeNotifier
     );
     if (!selection.isCollapsed) {
       final exactRow = _mappedExactRowRange(row);
-      final globalBase = _inputGlobalUtf16Start + selection.baseOffset;
-      final globalExtent = _inputGlobalUtf16Start + selection.extentOffset;
+      final globalBase = _inputState.globalUtf16Start + selection.baseOffset;
+      final globalExtent =
+          _inputState.globalUtf16Start + selection.extentOffset;
       final belongsToActiveRow =
           exactRow.start <= globalBase &&
           globalBase <= exactRow.end &&
@@ -2632,10 +2667,10 @@ final class FlarkEditorController extends ChangeNotifier
       _captureSurfaceProjector().exactTrailingWhitespaceRange(row, globalCaret);
 
   bool _normalizeProjectedCommandSelection() {
-    final normalized = _normalizeProjectedSelection(_inputValue);
-    if (normalized.selection == _inputValue.selection) return false;
+    final normalized = _normalizeProjectedSelection(_inputState.value);
+    if (normalized.selection == _inputState.value.selection) return false;
     _breakTypingHistoryGroup();
-    _inputValue = normalized;
+    _inputState.replaceValue(normalized);
     _updateGlobalSelection();
     unawaited(_installCanonicalSelection(_selectionSnapshot()));
     return true;
@@ -2651,9 +2686,9 @@ final class FlarkEditorController extends ChangeNotifier
     if (!presentation.active || !_surfaceHasProjection(presentation, row)) {
       return false;
     }
-    final selection = _inputValue.selection;
+    final selection = _inputState.value.selection;
     if (!selection.isCollapsed) return false;
-    final globalCaret = _inputGlobalUtf16Start + selection.extentOffset;
+    final globalCaret = _inputState.globalUtf16Start + selection.extentOffset;
     final displayCaret = presentation.textOffsetForSourceOffset(
       globalCaret,
       affinity: portableTextAffinity(selection.affinity),
@@ -2684,9 +2719,11 @@ final class FlarkEditorController extends ChangeNotifier
     // itself. Structural row boundaries have no neighboring display cluster
     // here and continue to use their parser-authored semantic recipes.
     if (sourceStart >= sourceEnd) return true;
-    final localStart = sourceStart - _inputGlobalUtf16Start;
-    final localEnd = sourceEnd - _inputGlobalUtf16Start;
-    if (localStart < 0 || localEnd > _inputValue.text.length) return false;
+    final localStart = sourceStart - _inputState.globalUtf16Start;
+    final localEnd = sourceEnd - _inputState.globalUtf16Start;
+    if (localStart < 0 || localEnd > _inputState.value.text.length) {
+      return false;
+    }
     final acceptance = _acceptMutation(
       FlarkTextMutation(localStart, localEnd, ''),
       selection: TextSelection.collapsed(offset: localStart),
@@ -2711,8 +2748,8 @@ final class FlarkEditorController extends ChangeNotifier
     // transaction-authorized result surface, not predecessor coordinates.
     final presentation = surfaceRow(row);
     if (!_surfaceHasProjection(presentation, row)) return false;
-    final sourceStart = _inputGlobalUtf16Start + mutation.start;
-    final sourceEnd = _inputGlobalUtf16Start + mutation.end;
+    final sourceStart = _inputState.globalUtf16Start + mutation.start;
+    final sourceEnd = _inputState.globalUtf16Start + mutation.end;
     final displayStart = presentation.textOffsetForSourceOffset(
       sourceStart,
       affinity: FlarkTextAffinity.downstream,
@@ -2757,7 +2794,7 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkPlatformInputTiming? platformTiming,
     bool editabilityProven = false,
   }) {
-    final source = _inputValue.text;
+    final source = _inputState.value.text;
     if (mutation.start < 0 ||
         mutation.end < mutation.start ||
         mutation.end > source.length) {
@@ -2768,7 +2805,7 @@ final class FlarkEditorController extends ChangeNotifier
     // trailing newline. Once that range was accepted, later IME updates own
     // it authoritatively; rejecting the replacement against stale projection
     // facts drops real dead-key/CJK commits and forces a needless resync.
-    final activeComposition = _inputValue.composing;
+    final activeComposition = _inputState.value.composing;
     final replacesAcceptedComposition =
         activeComposition.isValid &&
         mutation.start >= activeComposition.start &&
@@ -2787,7 +2824,8 @@ final class FlarkEditorController extends ChangeNotifier
     final insertsAtContinuation =
         continuation != null &&
         mutation.start == mutation.end &&
-        _inputGlobalUtf16Start + mutation.start == continuation.caretUtf16 &&
+        _inputState.globalUtf16Start + mutation.start ==
+            continuation.caretUtf16 &&
         selection.isCollapsed &&
         selection.extentOffset ==
             mutation.start + mutation.replacement.length &&
@@ -2823,19 +2861,21 @@ final class FlarkEditorController extends ChangeNotifier
       // certified until Rust parses the wrapped source. Hold the prior atomic
       // frame rather than flashing delimiters or plain styling.
       _coordinator.beginPublicationBarrier();
-      _inlineContinuation = continuationRewrite.continuesOwner
-          ? continuation!.materializedAtRevision(
-              continuation.revision + 1,
-              _inputGlobalUtf16Start + effectiveSelection.extentOffset,
-            )
-          : null;
+      _inputState.restoreInlineContinuation(
+        continuationRewrite.continuesOwner
+            ? continuation!.materializedAtRevision(
+                continuation.revision + 1,
+                _inputState.globalUtf16Start + effectiveSelection.extentOffset,
+              )
+            : null,
+      );
     } else if (continuation != null &&
         (insertsAtContinuation ||
             mutation.start != mutation.end ||
             mutation.replacement.isNotEmpty)) {
       // Whitespace and every nonmatching edit leave the emptied owner. Undo
       // still restores the continuation through beforeSelection.
-      _inlineContinuation = null;
+      _inputState.abandonInlineContinuation();
     }
     final nextLength = replacementResultLength(
       source: source,
@@ -2857,8 +2897,8 @@ final class FlarkEditorController extends ChangeNotifier
         effectiveSelection.extentOffset > nextLength) {
       return const FlarkRejectedMutation();
     }
-    final inputStart = _inputGlobalUtf16Start;
-    final wasCrossRowSelection = _crossRowSelection;
+    final inputStart = _inputState.globalUtf16Start;
+    final wasCrossRowSelection = _inputState.crossRowSelection;
     final globalStart = inputStart + effectiveMutation.start;
     final globalEnd = inputStart + effectiveMutation.end;
     final preferredOrdinal = _preferredMutationOrdinal(
@@ -2876,17 +2916,18 @@ final class FlarkEditorController extends ChangeNotifier
     _retainOptimisticRefreshAnchor(globalStart, deriveFromInput: true);
 
     if (nextLength <= _maximumInputCodeUnits) {
-      _inputValue =
-          effectiveFullValue ??
-          TextEditingValue(
-            text: source.replaceRange(
-              effectiveMutation.start,
-              effectiveMutation.end,
-              effectiveMutation.replacement,
+      _inputState.replaceValue(
+        effectiveFullValue ??
+            TextEditingValue(
+              text: source.replaceRange(
+                effectiveMutation.start,
+                effectiveMutation.end,
+                effectiveMutation.replacement,
+              ),
+              selection: effectiveSelection,
+              composing: effectiveComposing,
             ),
-            selection: effectiveSelection,
-            composing: effectiveComposing,
-          );
+      );
     } else {
       final window = boundedReplacementWindow(
         source: source,
@@ -2912,22 +2953,26 @@ final class FlarkEditorController extends ChangeNotifier
               end: effectiveComposing.end - window.start,
             )
           : TextRange.empty;
-      _inputGlobalUtf16Start = inputStart + window.start;
-      _inputValue = TextEditingValue(
-        text: window.text,
-        selection: TextSelection(
-          baseOffset: localBase,
-          extentOffset: localExtent,
-          affinity: effectiveSelection.affinity,
-          isDirectional: effectiveSelection.isDirectional,
+      _inputState.replaceWindow(
+        globalUtf16Start: inputStart + window.start,
+        value: TextEditingValue(
+          text: window.text,
+          selection: TextSelection(
+            baseOffset: localBase,
+            extentOffset: localExtent,
+            affinity: effectiveSelection.affinity,
+            isDirectional: effectiveSelection.isDirectional,
+          ),
+          composing: localComposing,
         ),
-        composing: localComposing,
       );
     }
-    _globalSelectionBase = inputStart + effectiveSelection.baseOffset;
-    _globalSelectionExtent = inputStart + effectiveSelection.extentOffset;
-    _activeOrdinal = preferredOrdinal;
-    _crossRowSelection = false;
+    _inputState.setCanonicalSelection(
+      inputStart + effectiveSelection.baseOffset,
+      inputStart + effectiveSelection.extentOffset,
+    );
+    _inputState.retargetActiveOrdinal(preferredOrdinal);
+    _inputState.setCrossRowSelection(false);
     final afterSelection = _selectionSnapshot();
     final coalesceTyping =
         typingInput &&
@@ -2973,7 +3018,7 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkEditorSelectionSnapshot snapshot, {
     bool publish = true,
   }) {
-    _inlineContinuation = snapshot.inlineContinuation;
+    _inputState.restoreInlineContinuation(snapshot.inlineContinuation);
     final core = _coreSnapshot(snapshot);
     final operation = _coordinator.queueSessionCommand(
       () => _session.setSelectionUtf16(
@@ -3022,7 +3067,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   int? _compositionGroupForMutation(TextRange composing) {
     if (!_session.compositionActive && composing.isValid) {
-      _rememberCompositionInputBase(_inputValue);
+      _rememberCompositionInputBase(_inputState.value);
     }
     final group = _session.compositionGroupForMutation(
       composingActive: composing.isValid,
@@ -3034,7 +3079,7 @@ final class FlarkEditorController extends ChangeNotifier
   void _trackCompositionWithoutMutation(TextRange composing) {
     if (!_session.compositionActive && composing.isValid) {
       _rememberCompositionInputBase(
-        _inputValue.copyWith(composing: TextRange.empty),
+        _inputState.value.copyWith(composing: TextRange.empty),
       );
     }
     final compositionEnded = _session.trackCompositionWithoutMutation(
@@ -3060,7 +3105,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _rememberCompositionInputBase(TextEditingValue value) {
     _inputTransactions.rememberCompositionInputBase(
-      windowStart: _inputGlobalUtf16Start,
+      windowStart: _inputState.globalUtf16Start,
       value: value,
     );
   }
@@ -3070,7 +3115,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (base == null || !_session.compositionActive) return false;
     final expected = base.value;
     return value.composing == TextRange.empty &&
-        base.windowStart == _inputGlobalUtf16Start &&
+        base.windowStart == _inputState.globalUtf16Start &&
         value.text == expected.text &&
         value.selection == expected.selection;
   }
@@ -3151,111 +3196,46 @@ final class FlarkEditorController extends ChangeNotifier
     required int ordinal,
     required TextAffinity affinity,
   }) {
-    final requestedLocalCaret = caret - sourceStart;
-    final requestedLocalExtent = selectionExtent == null
-        ? requestedLocalCaret
-        : selectionExtent - sourceStart;
-    final localCaret = requestedLocalCaret.clamp(0, text.length);
-    final localExtent = selectionExtent == null
-        ? localCaret
-        : requestedLocalExtent.clamp(0, text.length);
-    var windowStart = 0;
-    var windowEnd = text.length;
-    if (text.length > _maximumInputCodeUnits) {
-      windowStart = (localCaret - _maximumInputCodeUnits ~/ 2).clamp(
-        0,
-        text.length - _maximumInputCodeUnits,
-      );
-      final selectionStart = math.min(localCaret, localExtent);
-      final selectionEnd = math.max(localCaret, localExtent);
-      if (selectionEnd - selectionStart <= _maximumInputCodeUnits) {
-        if (selectionStart < windowStart) windowStart = selectionStart;
-        if (selectionEnd > windowStart + _maximumInputCodeUnits) {
-          windowStart = selectionEnd - _maximumInputCodeUnits;
-        }
-      }
-      windowEnd = windowStart + _maximumInputCodeUnits;
-    }
-    final alignedWindow = scalarAlignedUtf16Window(
-      text,
-      windowStart,
-      windowEnd,
+    final selectionRepresented = _inputState.activateWindow(
+      text: text,
+      sourceStart: sourceStart,
+      caret: caret,
+      selectionExtent: selectionExtent,
+      ordinal: ordinal,
+      affinity: affinity,
+      maximumCodeUnits: _maximumInputCodeUnits,
     );
-    windowStart = alignedWindow.start;
-    windowEnd = alignedWindow.end;
-    final window = text.substring(windowStart, windowEnd);
-    final windowCaret = localCaret - windowStart;
-    final windowExtent = localExtent - windowStart;
-    final selectionRepresented =
-        requestedLocalCaret == localCaret &&
-        requestedLocalExtent == localExtent &&
-        windowCaret >= 0 &&
-        windowCaret <= window.length &&
-        windowExtent >= 0 &&
-        windowExtent <= window.length;
-    _inputGlobalUtf16Start = sourceStart + windowStart;
-    _inputValue = TextEditingValue(
-      text: window,
-      selection: selectionExtent != null && selectionRepresented
-          ? TextSelection(
-              baseOffset: windowCaret,
-              extentOffset: windowExtent,
-              affinity: affinity,
-              isDirectional: true,
-            )
-          : TextSelection.collapsed(
-              offset: windowCaret.clamp(0, window.length),
-              affinity: affinity,
-            ),
-    );
-    _activeOrdinal = ordinal;
-    _crossRowSelection =
-        selectionExtent != null &&
-        selectionRepresented &&
-        caret != selectionExtent;
-    _globalSelectionBase = selectionExtent != null && !selectionRepresented
-        ? caret
-        : _inputGlobalUtf16Start + _inputValue.selection.baseOffset;
-    _globalSelectionExtent = selectionExtent != null && !selectionRepresented
-        ? selectionExtent
-        : _inputGlobalUtf16Start + _inputValue.selection.extentOffset;
     notifyListeners();
     return selectionRepresented;
   }
 
-  void _updateGlobalSelection() {
-    _globalSelectionBase =
-        _inputGlobalUtf16Start + _inputValue.selection.baseOffset;
-    _globalSelectionExtent =
-        _inputGlobalUtf16Start + _inputValue.selection.extentOffset;
-    if (_globalSelectionBase != _globalSelectionExtent ||
-        _inlineContinuation?.caretUtf16 != _globalSelectionExtent) {
-      _inlineContinuation = null;
-    }
-  }
+  void _updateGlobalSelection() => _inputState.updateCanonicalFromLocal();
 
   FlarkEditorSelectionSnapshot _selectionSnapshot() =>
       FlarkEditorSelectionSnapshot(
         TextSelection(
-          baseOffset: _globalSelectionBase,
-          extentOffset: _globalSelectionExtent,
-          affinity: _inputValue.selection.affinity,
-          isDirectional: _inputValue.selection.isDirectional,
+          baseOffset: _inputState.selectionBaseUtf16,
+          extentOffset: _inputState.selectionExtentUtf16,
+          affinity: _inputState.value.selection.affinity,
+          isDirectional: _inputState.value.selection.isDirectional,
         ),
-        _activeOrdinal,
+        _inputState.activeOrdinal,
         inlineContinuation:
-            _inlineContinuation != null &&
+            _inputState.inlineContinuation != null &&
                 // A rapid platform successor is admitted before its preceding
                 // source transaction reaches the worker. Continuation authority
                 // may therefore name one revision per already-pending edit plus
                 // the edit currently being accepted, but never an arbitrary
                 // future revision.
-                _document.revision <= _inlineContinuation!.revision &&
-                _inlineContinuation!.revision <=
+                _document.revision <=
+                    _inputState.inlineContinuation!.revision &&
+                _inputState.inlineContinuation!.revision <=
                     _document.revision + _coordinator.pendingEdits + 1 &&
-                _globalSelectionBase == _globalSelectionExtent &&
-                _inlineContinuation?.caretUtf16 == _globalSelectionExtent
-            ? _inlineContinuation
+                _inputState.selectionBaseUtf16 ==
+                    _inputState.selectionExtentUtf16 &&
+                _inputState.inlineContinuation?.caretUtf16 ==
+                    _inputState.selectionExtentUtf16
+            ? _inputState.inlineContinuation
             : null,
       );
 
@@ -3296,17 +3276,18 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _ensureActiveInputVisible() {
-    final caret = _globalSelectionExtent;
+    final caret = _inputState.selectionExtentUtf16;
     final visibleEnd =
         _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
     if (_viewportState.visibleUtf16Start <= caret && caret <= visibleEnd) {
       return false;
     }
-    final inputEnd = _inputGlobalUtf16Start + _inputValue.text.length;
-    if (caret < _inputGlobalUtf16Start || caret > inputEnd) return false;
+    final inputEnd =
+        _inputState.globalUtf16Start + _inputState.value.text.length;
+    if (caret < _inputState.globalUtf16Start || caret > inputEnd) return false;
     _viewportState.adoptUncertifiedSourceWindow(
-      source: _inputValue.text,
-      startUtf16: _inputGlobalUtf16Start,
+      source: _inputState.value.text,
+      startUtf16: _inputState.globalUtf16Start,
     );
     _clearPendingTaskChecks();
     _status = _idleStatus(current: _document.isReady);
@@ -3358,7 +3339,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _restoreSelectionSnapshot(FlarkEditorSelectionSnapshot snapshot) {
-    _inlineContinuation = snapshot.inlineContinuation;
+    _inputState.restoreInlineContinuation(snapshot.inlineContinuation);
     final selection = snapshot.selection;
     final start = math.min(selection.baseOffset, selection.extentOffset);
     final end = math.max(selection.baseOffset, selection.extentOffset);
@@ -3378,44 +3359,52 @@ final class FlarkEditorController extends ChangeNotifier
       }
       if (containingRow != null) {
         final range = _mapViewportRange(_activationRange(containingRow));
-        _inputGlobalUtf16Start = range.start;
-        _inputValue = TextEditingValue(
-          text: _sliceVisibleUtf16(range.start, range.end),
+        _inputState.replaceWindow(
+          globalUtf16Start: range.start,
+          value: TextEditingValue(
+            text: _sliceVisibleUtf16(range.start, range.end),
+            selection: TextSelection(
+              baseOffset: selection.baseOffset - range.start,
+              extentOffset: selection.extentOffset - range.start,
+              affinity: selection.affinity,
+              isDirectional: selection.isDirectional,
+            ),
+          ),
+        );
+        _inputState.setCanonicalSelection(
+          selection.baseOffset,
+          selection.extentOffset,
+        );
+        _inputState.retargetActiveOrdinal(containingRow.ordinal);
+        _inputState.setCrossRowSelection(false);
+        return;
+      }
+      _inputState.replaceWindow(
+        globalUtf16Start: start,
+        value: TextEditingValue(
+          text: _sliceVisibleUtf16(start, end),
           selection: TextSelection(
-            baseOffset: selection.baseOffset - range.start,
-            extentOffset: selection.extentOffset - range.start,
+            baseOffset: selection.baseOffset - start,
+            extentOffset: selection.extentOffset - start,
             affinity: selection.affinity,
             isDirectional: selection.isDirectional,
           ),
-        );
-        _globalSelectionBase = selection.baseOffset;
-        _globalSelectionExtent = selection.extentOffset;
-        _activeOrdinal = containingRow.ordinal;
-        _crossRowSelection = false;
-        return;
-      }
-      _inputGlobalUtf16Start = start;
-      _inputValue = TextEditingValue(
-        text: _sliceVisibleUtf16(start, end),
-        selection: TextSelection(
-          baseOffset: selection.baseOffset - start,
-          extentOffset: selection.extentOffset - start,
-          affinity: selection.affinity,
-          isDirectional: selection.isDirectional,
         ),
       );
-      _globalSelectionBase = selection.baseOffset;
-      _globalSelectionExtent = selection.extentOffset;
-      _activeOrdinal =
-          snapshot.activeOrdinal ?? _surfaceOrdinalAt(selection.extentOffset);
-      _crossRowSelection = true;
+      _inputState.setCanonicalSelection(
+        selection.baseOffset,
+        selection.extentOffset,
+      );
+      _inputState.retargetActiveOrdinal(
+        snapshot.activeOrdinal ?? _surfaceOrdinalAt(selection.extentOffset),
+      );
+      _inputState.setCrossRowSelection(true);
       return;
     }
     final caret = selection.extentOffset
         .clamp(0, math.max(sourceUtf16Length, visibleEnd))
         .toInt();
-    _globalSelectionBase = caret;
-    _globalSelectionExtent = caret;
+    _inputState.setCanonicalSelection(caret, caret);
     _restoreCollapsedInputWindow(
       caret,
       preferredOrdinal: snapshot.activeOrdinal,
@@ -3540,7 +3529,9 @@ final class FlarkEditorController extends ChangeNotifier
     final structurals = _pendingPresentation.structuralSurfaces;
     final compositionUsesExactFallback = compositionHistoryGroup != null;
     final neutralInputStartsExactBlock =
-        (_activeOrdinal ?? 0) < 0 && start == end && insertsNonLineEndingText;
+        (_inputState.activeOrdinal ?? 0) < 0 &&
+        start == end &&
+        insertsNonLineEndingText;
     final editStartsExactFallback =
         compositionUsesExactFallback ||
         caretBoundaryStartsExactBlock ||
@@ -3580,25 +3571,26 @@ final class FlarkEditorController extends ChangeNotifier
     }
     final editUsesExactFallback =
         editStartsExactFallback && projectionReceipt == null;
-    final firstLf = _inputValue.text.indexOf('\n');
-    final firstCr = _inputValue.text.indexOf('\r');
+    final firstLf = _inputState.value.text.indexOf('\n');
+    final firstCr = _inputState.value.text.indexOf('\r');
     final firstLineEnding = firstLf < 0
         ? firstCr
         : firstCr < 0
         ? firstLf
         : math.min(firstLf, firstCr);
     final lookaheadStart = firstLineEnding < 0
-        ? _inputValue.text.length
+        ? _inputState.value.text.length
         : firstLineEnding +
               (firstCr == firstLineEnding &&
-                      firstLineEnding + 1 < _inputValue.text.length &&
-                      _inputValue.text.codeUnitAt(firstLineEnding + 1) == 0x0a
+                      firstLineEnding + 1 < _inputState.value.text.length &&
+                      _inputState.value.text.codeUnitAt(firstLineEnding + 1) ==
+                          0x0a
                   ? 2
                   : 1);
     final exactFallbackHasStructuralLookahead =
         !compositionUsesExactFallback &&
         editUsesExactFallback &&
-        lookaheadStart < _inputValue.text.length;
+        lookaheadStart < _inputState.value.text.length;
     final exactFallbackHasCertifiedNeighbor =
         !compositionUsesExactFallback &&
         editUsesExactFallback &&
@@ -3674,9 +3666,9 @@ final class FlarkEditorController extends ChangeNotifier
     // Normalize the result caret now, before publishing it back to the text
     // service and before recording the Core history selection, so a rapid
     // successor cannot target newly hidden syntax (for example table padding).
-    final normalizedInput = _normalizeProjectedSelection(_inputValue);
-    if (normalizedInput.selection != _inputValue.selection) {
-      _inputValue = normalizedInput;
+    final normalizedInput = _normalizeProjectedSelection(_inputState.value);
+    if (normalizedInput.selection != _inputState.value.selection) {
+      _inputState.replaceValue(normalizedInput);
       _updateGlobalSelection();
       committedAfterSelection = _selectionSnapshot();
     }
@@ -3686,14 +3678,16 @@ final class FlarkEditorController extends ChangeNotifier
         committedAfterSelection.selection.extentOffset ==
             start + replacement.length;
     if (parserResultCaret != null &&
-        _inputValue.selection.isCollapsed &&
+        _inputState.value.selection.isCollapsed &&
         selectionFollowsEffectiveSplice) {
-      final localCaret = parserResultCaret - _inputGlobalUtf16Start;
-      if (localCaret >= 0 && localCaret <= _inputValue.text.length) {
-        _inputValue = _inputValue.copyWith(
-          selection: TextSelection.collapsed(
-            offset: localCaret,
-            affinity: _inputValue.selection.affinity,
+      final localCaret = parserResultCaret - _inputState.globalUtf16Start;
+      if (localCaret >= 0 && localCaret <= _inputState.value.text.length) {
+        _inputState.replaceValue(
+          _inputState.value.copyWith(
+            selection: TextSelection.collapsed(
+              offset: localCaret,
+              affinity: _inputState.value.selection.affinity,
+            ),
           ),
         );
         _updateGlobalSelection();
@@ -3756,11 +3750,11 @@ final class FlarkEditorController extends ChangeNotifier
     int localCaret, {
     FlarkPlatformInputTiming? platformTiming,
   }) {
-    if (!_inputValue.selection.isCollapsed ||
+    if (!_inputState.value.selection.isCollapsed ||
         _publicationCertificationBarrierActive) {
       return false;
     }
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    final globalCaret = _inputState.globalUtf16Start + localCaret;
     final dependency = _pendingPresentation.dependency;
     if (dependency?.authority.continueWith(
           startUtf16: globalCaret,
@@ -3778,7 +3772,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (row?.semanticCapabilities.insertParagraphBreakAsLiteral ?? false) {
       return false;
     }
-    final neutralCaret = (_activeOrdinal ?? 0) < 0;
+    final neutralCaret = (_inputState.activeOrdinal ?? 0) < 0;
     final editableRange = row?.editableUtf16;
     final parserOwnedEmbeddedLineStart =
         row != null &&
@@ -3791,10 +3785,12 @@ final class FlarkEditorController extends ChangeNotifier
     if (row != null && _viewportState.semanticCurrent && !rowEligible) {
       return false;
     }
-    if (!rowEligible && !_semanticEditV1Active && !neutralCaret) return false;
-    if (neutralCaret) _semanticEditV1Active = true;
+    if (!rowEligible && !_inputState.semanticEditActive && !neutralCaret) {
+      return false;
+    }
+    if (neutralCaret) _inputState.setSemanticEditActive(true);
     if (rowEligible) {
-      _semanticEditV1Active = true;
+      _inputState.setSemanticEditActive(true);
       final editable = editableRange == null
           ? null
           : _mapViewportRange(editableRange);
@@ -3836,18 +3832,19 @@ final class FlarkEditorController extends ChangeNotifier
     int localCaret, {
     FlarkPlatformInputTiming? platformTiming,
   }) {
-    if (!_inputValue.selection.isCollapsed ||
+    if (!_inputState.value.selection.isCollapsed ||
         _publicationCertificationBarrierActive) {
       return false;
     }
     final row = _activeCachedRow();
-    final neutralLineStart = (_activeOrdinal ?? 0) < 0 && localCaret == 0;
+    final neutralLineStart =
+        (_inputState.activeOrdinal ?? 0) < 0 && localCaret == 0;
     final retainedSemanticWindowStart =
-        localCaret == 0 && _semanticEditV1Active;
+        localCaret == 0 && _inputState.semanticEditActive;
     final retainedNeutralSemanticCaret =
-        (_activeOrdinal ?? 0) < 0 && _semanticEditV1Active;
+        (_inputState.activeOrdinal ?? 0) < 0 && _inputState.semanticEditActive;
     final editableRange = row?.editableUtf16;
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    final globalCaret = _inputState.globalUtf16Start + localCaret;
     final atInlineSemanticBoundary =
         row != null &&
         _isParserOwnedInlineBoundary(row, globalCaret, backward: true);
@@ -3868,9 +3865,9 @@ final class FlarkEditorController extends ChangeNotifier
     if (!rowEligible && !retainedNeutralSemanticCaret && !neutralLineStart) {
       if (!retainedSemanticWindowStart) return false;
     }
-    if (neutralLineStart) _semanticEditV1Active = true;
+    if (neutralLineStart) _inputState.setSemanticEditActive(true);
     if (rowEligible) {
-      _semanticEditV1Active = true;
+      _inputState.setSemanticEditActive(true);
       final editable = _mapViewportRange(editableRange!);
       final fencedPhysicalLineStart =
           row.semanticCapabilities.deleteBackwardAtPhysicalLineStart &&
@@ -3916,7 +3913,7 @@ final class FlarkEditorController extends ChangeNotifier
     int localCaret, {
     FlarkPlatformInputTiming? platformTiming,
   }) {
-    if (!_inputValue.selection.isCollapsed ||
+    if (!_inputState.value.selection.isCollapsed ||
         _publicationCertificationBarrierActive) {
       return false;
     }
@@ -3924,7 +3921,7 @@ final class FlarkEditorController extends ChangeNotifier
     final editableRange = row?.editableUtf16;
     if (row == null || editableRange == null) return false;
     final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    final globalCaret = _inputState.globalUtf16Start + localCaret;
     final atInlineSemanticBoundary = _isParserOwnedInlineBoundary(
       row,
       globalCaret,
@@ -3937,7 +3934,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (!parserOwnedForwardStart && !atInlineSemanticBoundary) {
       return false;
     }
-    _semanticEditV1Active = true;
+    _inputState.setSemanticEditActive(true);
     _queueSemanticEdit(
       FlarkCoreEditIntentV1.deleteForward,
       fallbackWhenNotApplied: FlarkDeferredInputCommand.deleteForward,
@@ -4024,7 +4021,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     // Once Tab belongs to a list item it must not escape into Flutter focus
     // traversal, even while an incompatible composition/selection is active.
-    if (!_inputValue.selection.isCollapsed ||
+    if (!_inputState.value.selection.isCollapsed ||
         _session.compositionActive ||
         _inputTransactions.pendingSemantic != null ||
         _pendingPresentation.dependency != null ||
@@ -4033,9 +4030,9 @@ final class FlarkEditorController extends ChangeNotifier
       return true;
     }
     final editable = _mapViewportRange(editableUtf16);
-    final caret = _globalSelectionExtent;
+    final caret = _inputState.selectionExtentUtf16;
     if (caret < editable.start || caret > editable.end) return false;
-    _semanticEditV1Active = true;
+    _inputState.setSemanticEditActive(true);
     _queueSemanticEdit(
       outdent
           ? FlarkCoreEditIntentV1.outdentListItem
@@ -4173,14 +4170,14 @@ final class FlarkEditorController extends ChangeNotifier
     _inputTransactions.lateSemantic = null;
     final timing = platformTiming ?? _inputTransactions.activeTiming;
     _inputTransactions.pendingSemantic = FlarkPendingSemanticInput(
-      base: _inputValue,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      base: _inputState.value,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
       initialCallbackStartedEpochMicros:
           timing?.acceptedAtEpochMicros ??
           _inputTransactions.activeCallbackStartedEpochMicros ??
           DateTime.now().microsecondsSinceEpoch,
       platformTiming: timing,
-      provisionalAfter: _inputValue,
+      provisionalAfter: _inputState.value,
     );
     if (timing != null) {
       _inputTransactions.pendingSemantic!.initialCallbackMicros =
@@ -4219,7 +4216,7 @@ final class FlarkEditorController extends ChangeNotifier
           _coordinator.retirePendingPresentation(const {
             FlarkPendingPresentationPart.dependency,
           });
-          _inlineContinuation = outcome.inlineContinuation;
+          _inputState.restoreInlineContinuation(outcome.inlineContinuation);
           requireParserCertification =
               _adoptSemanticReceipt(command, receipt) ||
               requireParserCertification;
@@ -4230,7 +4227,7 @@ final class FlarkEditorController extends ChangeNotifier
           }
         }
       } else {
-        _semanticEditV1Active = false;
+        _inputState.setSemanticEditActive(false);
         final pending = _inputTransactions.pendingSemantic;
         if (pending?.provisionalMutation != null) {
           _promoteUncommittedPlatformMutation();
@@ -4345,7 +4342,7 @@ final class FlarkEditorController extends ChangeNotifier
     final transition = resolvePendingPresentationTransition(
       receipt: receipt,
       pendingPresentation: _pendingPresentation,
-      activeOrdinal: _activeOrdinal,
+      activeOrdinal: _inputState.activeOrdinal,
       priorRows: _viewportState.rows
           .map(
             (row) => FlarkSurfaceProjector.corePresentationFromSurface(
@@ -4381,17 +4378,19 @@ final class FlarkEditorController extends ChangeNotifier
       _viewportState.removeRows(adoption.removedRowOrdinals);
     }
     final caret = receipt.resultSelectionUtf16;
-    _globalSelectionBase = caret;
-    _globalSelectionExtent = caret;
-    _crossRowSelection = false;
-    _oversizedSelection = false;
-    _activeOrdinal = _surfaceOrdinalAt(caret);
+    _inputState.setCanonicalSelection(caret, caret);
+    _inputState.setCrossRowSelection(false);
+    _inputState.clearOversizedSelection();
+    _inputState.retargetActiveOrdinal(_surfaceOrdinalAt(caret));
     if (!_installCommittedSemanticInputWindow(receipt, caret)) {
-      _restoreCollapsedInputWindow(caret, preferredOrdinal: _activeOrdinal);
+      _restoreCollapsedInputWindow(
+        caret,
+        preferredOrdinal: _inputState.activeOrdinal,
+      );
     }
-    final normalized = _normalizeProjectedSelection(_inputValue);
-    if (normalized.selection != _inputValue.selection) {
-      _inputValue = normalized;
+    final normalized = _normalizeProjectedSelection(_inputState.value);
+    if (normalized.selection != _inputState.value.selection) {
+      _inputState.replaceValue(normalized);
       _updateGlobalSelection();
       unawaited(
         _installCanonicalSelection(_selectionSnapshot(), publish: false),
@@ -4420,10 +4419,12 @@ final class FlarkEditorController extends ChangeNotifier
       if (localCaret < 0 || localCaret > pending.base.text.length) {
         return false;
       }
-      _inputGlobalUtf16Start = resultWindowStart;
-      _inputValue = pending.base.copyWith(
-        selection: TextSelection.collapsed(offset: localCaret),
-        composing: TextRange.empty,
+      _inputState.replaceWindow(
+        globalUtf16Start: resultWindowStart,
+        value: pending.base.copyWith(
+          selection: TextSelection.collapsed(offset: localCaret),
+          composing: TextRange.empty,
+        ),
       );
       return true;
     }
@@ -4445,10 +4446,12 @@ final class FlarkEditorController extends ChangeNotifier
         localCaret > text.length) {
       return false;
     }
-    _inputGlobalUtf16Start = pending.inputGlobalUtf16Start;
-    _inputValue = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: localCaret),
+    _inputState.replaceWindow(
+      globalUtf16Start: pending.inputGlobalUtf16Start,
+      value: TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: localCaret),
+      ),
     );
     return true;
   }
@@ -4469,9 +4472,9 @@ final class FlarkEditorController extends ChangeNotifier
       final reconciliation = FlarkInputReconciliationMap.forSemanticBarrier(
         pending: pending,
         receipt: receipt,
-        canonicalResultSelectionUtf16: _globalSelectionExtent,
-        committedInputGlobalUtf16Start: _inputGlobalUtf16Start,
-        committedInputLength: _inputValue.text.length,
+        canonicalResultSelectionUtf16: _inputState.selectionExtentUtf16,
+        committedInputGlobalUtf16Start: _inputState.globalUtf16Start,
+        committedInputLength: _inputState.value.text.length,
       );
       if (reconciliation == null) {
         _inputTransactions.completeDeferredHistorySuccessors(
@@ -4657,9 +4660,11 @@ final class FlarkEditorController extends ChangeNotifier
       final mutation = _differenceMutation(batch.before.text, batch.after.text);
       if (mutation == null) {
         _breakTypingHistoryGroup();
-        _inputValue = _inputValue.copyWith(
-          selection: selection,
-          composing: composing,
+        _inputState.replaceValue(
+          _inputState.value.copyWith(
+            selection: selection,
+            composing: composing,
+          ),
         );
         _trackCompositionWithoutMutation(composing);
         _updateGlobalSelection();
@@ -4674,10 +4679,10 @@ final class FlarkEditorController extends ChangeNotifier
         mutation.end,
         downstream: true,
       );
-      final continuation = _inlineContinuation;
+      final continuation = _inputState.inlineContinuation;
       final continuationLocalCaret = continuation == null
           ? null
-          : continuation.caretUtf16 - _inputGlobalUtf16Start;
+          : continuation.caretUtf16 - _inputState.globalUtf16Start;
       final continuesAtCanonicalCaret =
           continuationLocalCaret != null &&
           batch.typingInput &&
@@ -4685,7 +4690,7 @@ final class FlarkEditorController extends ChangeNotifier
           batch.after.selection.isCollapsed &&
           !batch.after.composing.isValid &&
           0 <= continuationLocalCaret &&
-          continuationLocalCaret <= _inputValue.text.length;
+          continuationLocalCaret <= _inputState.value.text.length;
       final promotedStart = continuesAtCanonicalCaret
           ? continuationLocalCaret
           : mappedStart;
@@ -4745,7 +4750,7 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkPlatformInputTiming? platformTiming,
   }) {
     if (!semanticAlreadyAttempted) {
-      _semanticEditV1Active = true;
+      _inputState.setSemanticEditActive(true);
       _queueSemanticEdit(
         switch (command) {
           FlarkDeferredInputCommand.deleteBackward =>
@@ -4767,8 +4772,8 @@ final class FlarkEditorController extends ChangeNotifier
     // to an artificial neutral row here would expose inline delimiters to the
     // next Backspace/Delete command in the same event-loop burst.
     _restoreCollapsedInputWindow(
-      _globalSelectionExtent,
-      preferredOrdinal: _activeOrdinal,
+      _inputState.selectionExtentUtf16,
+      preferredOrdinal: _inputState.activeOrdinal,
     );
     switch (command) {
       case FlarkDeferredInputCommand.deleteBackward:
@@ -5081,8 +5086,8 @@ final class FlarkEditorController extends ChangeNotifier
     }
     final visibleEnd =
         _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    if (_globalSelectionExtent < _viewportState.visibleUtf16Start ||
-        _globalSelectionExtent > visibleEnd) {
+    if (_inputState.selectionExtentUtf16 < _viewportState.visibleUtf16Start ||
+        _inputState.selectionExtentUtf16 > visibleEnd) {
       return false;
     }
     return _viewportState.rows.every((row) {
@@ -5112,7 +5117,7 @@ final class FlarkEditorController extends ChangeNotifier
       FlarkPendingPresentationPart.caretBoundary,
       FlarkPendingPresentationPart.structuralSurfaces,
     });
-    _semanticEditV1Active = false;
+    _inputState.setSemanticEditActive(false);
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
     _parseTimer = null;
@@ -5126,7 +5131,9 @@ final class FlarkEditorController extends ChangeNotifier
       try {
         final outcome = await _session.cancelComposition();
         if (outcome == null) {
-          _inputValue = _inputValue.copyWith(composing: TextRange.empty);
+          _inputState.replaceValue(
+            _inputState.value.copyWith(composing: TextRange.empty),
+          );
           _scheduleParsingAfterInput();
           return true;
         }
@@ -5286,10 +5293,12 @@ final class FlarkEditorController extends ChangeNotifier
   /// adapter range, and lets parsing converge.
   void commitActiveComposition() {
     if (_closed ||
-        (!_session.compositionActive && !_inputValue.composing.isValid)) {
+        (!_session.compositionActive && !_inputState.value.composing.isValid)) {
       return;
     }
-    _inputValue = _inputValue.copyWith(composing: TextRange.empty);
+    _inputState.replaceValue(
+      _inputState.value.copyWith(composing: TextRange.empty),
+    );
     _trackCompositionWithoutMutation(TextRange.empty);
     notifyListeners();
   }
@@ -5364,7 +5373,7 @@ final class FlarkEditorController extends ChangeNotifier
       _cancelCertificationDeferredInput();
       _inputTransactions.lateSemantic = null;
       _coordinator.endPublicationBarrier();
-      _semanticEditV1Active = false;
+      _inputState.setSemanticEditActive(false);
       final receiptAtEpochMicros = DateTime.now().microsecondsSinceEpoch;
       final adoptionWatch = Stopwatch()..start();
       final resolvedSelection =
@@ -5451,8 +5460,8 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _finalizeDroppedHistoryInputWindow() {
-    if (!_inputValue.selection.isCollapsed) return;
-    final caret = _globalSelectionExtent;
+    if (!_inputState.value.selection.isCollapsed) return;
+    final caret = _inputState.selectionExtentUtf16;
     final boundary = _pendingPresentation.caretBoundary;
     // A replay queued behind a source edit can become invalid when that edit
     // clears the opposite history stack. The edit's current canonical caret is
@@ -5463,9 +5472,12 @@ final class FlarkEditorController extends ChangeNotifier
     if (boundary == null) {
       _restoreNeutralInputWindow(caret);
     } else {
-      _restoreCollapsedInputWindow(caret, preferredOrdinal: _activeOrdinal);
+      _restoreCollapsedInputWindow(
+        caret,
+        preferredOrdinal: _inputState.activeOrdinal,
+      );
     }
-    _activeOrdinal = _surfaceOrdinalAt(caret);
+    _inputState.retargetActiveOrdinal(_surfaceOrdinalAt(caret));
   }
 
   void _recordSourceEditPerformance({
@@ -5662,8 +5674,8 @@ final class FlarkEditorController extends ChangeNotifier
       editStart: editStart,
       deriveFromInput: deriveFromInput,
       currentViewport: _viewportState.viewport,
-      inputGlobalUtf16Start: _inputGlobalUtf16Start,
-      inputText: _inputValue.text,
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
+      inputText: _inputState.value.text,
     );
   }
 
@@ -5684,7 +5696,7 @@ final class FlarkEditorController extends ChangeNotifier
             _viewportState.allOptimisticEditsStartAtOrAfter(
               previous.coveredUtf16.start,
             ),
-        caretUtf16: _globalSelectionExtent,
+        caretUtf16: _inputState.selectionExtentUtf16,
         ensureCaretVisible: ensureActiveInputVisible,
         expectedEditGeneration: expectedEditGeneration,
       ),
@@ -5733,7 +5745,7 @@ final class FlarkEditorController extends ChangeNotifier
     _viewportPager.observeInstallation(
       viewport: viewport,
       installation: installation,
-      caretUtf16: _globalSelectionExtent,
+      caretUtf16: _inputState.selectionExtentUtf16,
     );
     if (installsCertifiedSurface) _clearPendingTaskChecks();
     // A streamed open's head page is typically mixed — certified head rows
@@ -5798,13 +5810,15 @@ final class FlarkEditorController extends ChangeNotifier
       // The prior ordinal can be a neutral placeholder retained during a
       // semantic transition; using it here expands the platform window to the
       // whole physical list line and exposes its hidden prefix.
-      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+      _inputState.retargetActiveOrdinal(
+        _surfaceOrdinalAt(_inputState.selectionExtentUtf16),
+      );
     }
     if (restoreInputWindow) {
       if (supersededParagraphGap != null &&
-          !_certifiedRowHasNonemptyInputAt(_globalSelectionExtent) &&
+          !_certifiedRowHasNonemptyInputAt(_inputState.selectionExtentUtf16) &&
           _restoreCommittedParagraphGapInputWindow(
-            _globalSelectionExtent,
+            _inputState.selectionExtentUtf16,
             gap: supersededParagraphGap,
           )) {
         // The certified viewport supersedes the gap's rendering ownership,
@@ -5817,7 +5831,9 @@ final class FlarkEditorController extends ChangeNotifier
       }
     } else if (ensureActiveInputVisible) {
       if (!_ensureActiveInputVisible()) {
-        _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+        _inputState.retargetActiveOrdinal(
+          _surfaceOrdinalAt(_inputState.selectionExtentUtf16),
+        );
       }
     }
     if (installsFreshRows) {
@@ -5827,25 +5843,27 @@ final class FlarkEditorController extends ChangeNotifier
       // restoration too because an intentionally retained empty paragraph
       // gap installs a neutral input surrogate without changing the parser-
       // owned active row.
-      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+      _inputState.retargetActiveOrdinal(
+        _surfaceOrdinalAt(_inputState.selectionExtentUtf16),
+      );
     }
     var certifiedBoundaryCaretChanged = false;
     if (installsFreshRows &&
         _viewportState.semanticCurrent &&
-        !_crossRowSelection &&
-        !_oversizedSelection &&
-        _inputValue.selection.isCollapsed &&
-        _inputValue.selection.affinity == TextAffinity.downstream) {
+        !_inputState.crossRowSelection &&
+        !_inputState.oversizedSelection &&
+        _inputState.value.selection.isCollapsed &&
+        _inputState.value.selection.affinity == TextAffinity.downstream) {
       final canonicalCaret = _certifiedDownstreamBoundaryCaretAt(
-        _globalSelectionExtent,
+        _inputState.selectionExtentUtf16,
       );
-      if (canonicalCaret != null && canonicalCaret != _globalSelectionExtent) {
-        _globalSelectionBase = canonicalCaret;
-        _globalSelectionExtent = canonicalCaret;
-        _activeOrdinal = _surfaceOrdinalAt(canonicalCaret);
+      if (canonicalCaret != null &&
+          canonicalCaret != _inputState.selectionExtentUtf16) {
+        _inputState.setCanonicalSelection(canonicalCaret, canonicalCaret);
+        _inputState.retargetActiveOrdinal(_surfaceOrdinalAt(canonicalCaret));
         _restoreCollapsedInputWindow(
           canonicalCaret,
-          preferredOrdinal: _activeOrdinal,
+          preferredOrdinal: _inputState.activeOrdinal,
         );
         certifiedBoundaryCaretChanged = true;
       }
@@ -5854,8 +5872,8 @@ final class FlarkEditorController extends ChangeNotifier
         restoreInputWindow || ensureActiveInputVisible;
     if (installsFreshRows &&
         mayRestoreInputWindow &&
-        (_activeOrdinal ?? 0) < 0) {
-      _restoreNeutralInputWindow(_globalSelectionExtent);
+        (_inputState.activeOrdinal ?? 0) < 0) {
+      _restoreNeutralInputWindow(_inputState.selectionExtentUtf16);
     }
     // A fresh parse owns presentation, never the canonical source selection.
     // Platform-originated selections are normalized when observed and
@@ -5884,7 +5902,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   int? _certifiedDownstreamBoundaryCaretAt(int globalCaret) {
-    if ((_activeOrdinal ?? 0) >= 0) return null;
+    if ((_inputState.activeOrdinal ?? 0) >= 0) return null;
     var hasPredecessor = false;
     FlarkSourceRange? successor;
     for (final row in _viewportState.rows) {
@@ -5911,43 +5929,54 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _restoreInputWindow() {
-    final previousComposing = _inputValue.composing;
+    final previousComposing = _inputState.value.composing;
     final composingStart = previousComposing.isValid
-        ? _inputGlobalUtf16Start + previousComposing.start
+        ? _inputState.globalUtf16Start + previousComposing.start
         : null;
     final composingEnd = previousComposing.isValid
-        ? _inputGlobalUtf16Start + previousComposing.end
+        ? _inputState.globalUtf16Start + previousComposing.end
         : null;
     _restoreInputWindowBody();
     if (composingStart == null || composingEnd == null) return;
-    final windowEnd = _inputGlobalUtf16Start + _inputValue.text.length;
-    if (_inputGlobalUtf16Start <= composingStart && composingEnd <= windowEnd) {
-      _inputValue = _inputValue.copyWith(
-        composing: TextRange(
-          start: composingStart - _inputGlobalUtf16Start,
-          end: composingEnd - _inputGlobalUtf16Start,
+    final windowEnd =
+        _inputState.globalUtf16Start + _inputState.value.text.length;
+    if (_inputState.globalUtf16Start <= composingStart &&
+        composingEnd <= windowEnd) {
+      _inputState.replaceValue(
+        _inputState.value.copyWith(
+          composing: TextRange(
+            start: composingStart - _inputState.globalUtf16Start,
+            end: composingEnd - _inputState.globalUtf16Start,
+          ),
         ),
       );
     }
   }
 
   void _restoreInputWindowBody() {
-    if (_crossRowSelection) {
+    if (_inputState.crossRowSelection) {
       _restoreSelectionSnapshot(_selectionSnapshot());
       return;
     }
-    if (_restoreCommittedParagraphGapInputWindow(_globalSelectionExtent)) {
+    if (_restoreCommittedParagraphGapInputWindow(
+      _inputState.selectionExtentUtf16,
+    )) {
       return;
     }
-    if (_restoreCommittedCaretBoundaryInputWindow(_globalSelectionExtent)) {
+    if (_restoreCommittedCaretBoundaryInputWindow(
+      _inputState.selectionExtentUtf16,
+    )) {
       return;
     }
-    if ((_activeOrdinal ?? 0) < 0) {
-      _restoreNeutralInputWindow(_globalSelectionExtent);
+    if ((_inputState.activeOrdinal ?? 0) < 0) {
+      _restoreNeutralInputWindow(_inputState.selectionExtentUtf16);
       return;
     }
     if (_viewportState.rows.isNotEmpty) {
-      final caret = _globalSelectionExtent.clamp(0, sourceUtf16Length);
+      final caret = _inputState.selectionExtentUtf16.clamp(
+        0,
+        sourceUtf16Length,
+      );
       FlarkViewportRow? row;
       for (final candidate in _viewportState.rows) {
         final range = _activationRange(candidate);
@@ -5981,7 +6010,7 @@ final class FlarkEditorController extends ChangeNotifier
     _activateWindowWithoutNotification(
       text: _viewportState.visibleSource.substring(0, end),
       sourceStart: _viewportState.visibleUtf16Start,
-      caret: _globalSelectionExtent.clamp(
+      caret: _inputState.selectionExtentUtf16.clamp(
         _viewportState.visibleUtf16Start,
         visibleEnd,
       ),
@@ -6101,28 +6130,13 @@ final class FlarkEditorController extends ChangeNotifier
     required int sourceStart,
     required int caret,
     required int ordinal,
-  }) {
-    final localCaret = (caret - sourceStart).clamp(0, text.length);
-    final candidateStart = text.length <= _maximumInputCodeUnits
-        ? 0
-        : (localCaret - _maximumInputCodeUnits ~/ 2).clamp(
-            0,
-            text.length - _maximumInputCodeUnits,
-          );
-    final candidateEnd = math.min(
-      text.length,
-      candidateStart + _maximumInputCodeUnits,
-    );
-    final window = scalarAlignedUtf16Window(text, candidateStart, candidateEnd);
-    _inputGlobalUtf16Start = sourceStart + window.start;
-    _inputValue = TextEditingValue(
-      text: text.substring(window.start, window.end),
-      selection: TextSelection.collapsed(offset: localCaret - window.start),
-    );
-    _activeOrdinal = ordinal;
-    _crossRowSelection = false;
-    _updateGlobalSelection();
-  }
+  }) => _inputState.activateCollapsedWindow(
+    text: text,
+    sourceStart: sourceStart,
+    caret: caret,
+    ordinal: ordinal,
+    maximumCodeUnits: _maximumInputCodeUnits,
+  );
 
   String _sliceVisibleUtf16(int globalStart, int globalEnd) =>
       _viewportState.sliceVisibleUtf16(globalStart, globalEnd);
@@ -6137,9 +6151,9 @@ final class FlarkEditorController extends ChangeNotifier
       globalStart: globalStart,
       globalEnd: globalEnd,
       replacement: replacement,
-      fallbackSource: _inputValue.text,
-      fallbackUtf16Start: _inputGlobalUtf16Start,
-      focusUtf16: _globalSelectionExtent,
+      fallbackSource: _inputState.value.text,
+      fallbackUtf16Start: _inputState.globalUtf16Start,
+      focusUtf16: _inputState.selectionExtentUtf16,
       maximumVisibleCodeUnits: _maximumInputCodeUnits,
       preservesMappedRowFacts: preservesMappedRowFacts,
     );
@@ -6149,7 +6163,9 @@ final class FlarkEditorController extends ChangeNotifier
     }
     if (adoption.disposition !=
         FlarkOptimisticViewportEditDisposition.retainedMappedSurface) {
-      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+      _inputState.retargetActiveOrdinal(
+        _surfaceOrdinalAt(_inputState.selectionExtentUtf16),
+      );
     }
   }
 
@@ -6168,8 +6184,8 @@ final class FlarkEditorController extends ChangeNotifier
     int globalEnd,
     String replacement,
   ) {
-    final windowStart = _inputGlobalUtf16Start;
-    final windowEnd = windowStart + _inputValue.text.length;
+    final windowStart = _inputState.globalUtf16Start;
+    final windowEnd = windowStart + _inputState.value.text.length;
     if (globalEnd <= windowStart || globalStart >= windowEnd) return;
     if (globalStart < windowStart ||
         globalEnd > windowEnd ||
@@ -6178,10 +6194,16 @@ final class FlarkEditorController extends ChangeNotifier
     }
     final localStart = globalStart - windowStart;
     final localEnd = globalEnd - windowStart;
-    _inputValue = _inputValue.copyWith(
-      text: _inputValue.text.replaceRange(localStart, localEnd, replacement),
-      selection: _inputValue.selection,
-      composing: _inputValue.composing,
+    _inputState.replaceValue(
+      _inputState.value.copyWith(
+        text: _inputState.value.text.replaceRange(
+          localStart,
+          localEnd,
+          replacement,
+        ),
+        selection: _inputState.value.selection,
+        composing: _inputState.value.composing,
+      ),
     );
   }
 
@@ -6189,7 +6211,7 @@ final class FlarkEditorController extends ChangeNotifier
       _viewportState.mapRange(base);
 
   FlarkViewportRow? _activeCachedRow() {
-    final activeOrdinal = _activeOrdinal;
+    final activeOrdinal = _inputState.activeOrdinal;
     if (activeOrdinal == null) return null;
     for (final candidate in _viewportState.rows) {
       if (candidate.ordinal == activeOrdinal) return candidate;

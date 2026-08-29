@@ -20,6 +20,7 @@ void main() {
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
+  final inputState = File('lib/src/editor_input_state.dart').readAsStringSync();
 
   test('controller has one immutable outward publication function', () {
     expect(
@@ -123,5 +124,27 @@ void main() {
       controller,
       isNot(contains('successors.length < _maximumSemanticSuccessors')),
     );
+  });
+
+  test('bounded platform input has one invariant-owning state boundary', () {
+    expect(controller, contains('final FlarkEditorInputState _inputState'));
+    expect(controller, isNot(contains('TextEditingValue _inputValue')));
+    expect(controller, isNot(contains('int _inputGlobalUtf16Start')));
+    expect(controller, isNot(contains('int? _activeOrdinal')));
+    expect(controller, isNot(contains('int _globalSelectionBase')));
+    expect(controller, isNot(contains('int _globalSelectionExtent')));
+    expect(controller, isNot(contains('bool _crossRowSelection')));
+    expect(controller, isNot(contains('bool _oversizedSelection')));
+    expect(controller, isNot(contains('bool _semanticEditV1Active')));
+    expect(
+      controller,
+      isNot(contains('FlarkCoreInlineContinuationV1? _inlineContinuation')),
+    );
+    expect(inputState, contains('activateWindow'));
+    expect(inputState, contains('activateCollapsedWindow'));
+    expect(inputState, contains('markOversizedSelection'));
+    expect(inputState, isNot(contains("import 'controller.dart'")));
+    expect(inputState, isNot(contains('FlarkEditorController')));
+    expect(inputState, isNot(contains(RegExp(r'\n\s+set [A-Za-z]'))));
   });
 }
