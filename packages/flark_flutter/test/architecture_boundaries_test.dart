@@ -586,6 +586,92 @@ void main() {
       expect(observation.effectiveMutation, isNull);
       expect(observation.mutatingChanges, 0);
     });
+
+    test('both callback models normalize against provisional lineage', () {
+      final bridge = FlarkPlatformInputBridge();
+      const committed = TextEditingValue(
+        text: 'committed',
+        selection: TextSelection.collapsed(offset: 9),
+      );
+      const provisional = TextEditingValue(
+        text: 'provisional',
+        selection: TextSelection.collapsed(offset: 11),
+      );
+      const after = TextEditingValue(
+        text: 'provisional!',
+        selection: TextSelection.collapsed(offset: 12),
+      );
+      bridge.install(
+        text: committed.text,
+        globalStart: 0,
+        selection: committed.selection,
+        platformOriginated: false,
+        closed: false,
+        faulted: false,
+      );
+
+      final delta = bridge.observeDeltaBatch(
+        const [
+          TextEditingDeltaInsertion(
+            oldText: 'provisional',
+            textInserted: '!',
+            insertionOffset: 11,
+            selection: TextSelection.collapsed(offset: 12),
+            composing: TextRange.empty,
+          ),
+        ],
+        currentValue: committed,
+        against: provisional,
+        expectedTextSha256: flarkWindowTextSha256(provisional.text),
+      );
+      final value = bridge.observeValue(
+        after,
+        currentValue: committed,
+        against: provisional,
+      );
+
+      expect(delta.accepted, isTrue);
+      expect(delta.before, provisional);
+      expect(value.before, provisional);
+      expect(delta.after, after);
+      expect(value.after, after);
+      expect(delta.effectiveMutation!.start, 11);
+      expect(value.effectiveMutation!.start, 11);
+      expect(delta.selectionSupersededByProjection, isFalse);
+    });
+
+    test('selection-only callbacks are never classified as typing', () {
+      final bridge = FlarkPlatformInputBridge();
+      const current = TextEditingValue(
+        text: 'abc',
+        selection: TextSelection.collapsed(offset: 3),
+      );
+      bridge.install(
+        text: current.text,
+        globalStart: 0,
+        selection: current.selection,
+        platformOriginated: false,
+        closed: false,
+        faulted: false,
+      );
+      const selected = TextEditingValue(
+        text: 'abc',
+        selection: TextSelection.collapsed(offset: 1),
+      );
+      final delta = bridge.observeDeltaBatch(const [
+        TextEditingDeltaNonTextUpdate(
+          oldText: 'abc',
+          selection: TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      ], currentValue: current);
+      final value = bridge.observeValue(selected, currentValue: current);
+
+      expect(delta.selectionOnly, isTrue);
+      expect(value.selectionOnly, isTrue);
+      expect(delta.typingInput, isFalse);
+      expect(value.typingInput, isFalse);
+    });
   });
 
   test('performance log bounds diagnostic receipts independently', () {

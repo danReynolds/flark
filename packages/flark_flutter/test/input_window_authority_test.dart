@@ -1379,6 +1379,47 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
+    'delta and full-value successors converge behind semantic Return',
+    () async {
+      for (final useDeltas in <bool>[true, false]) {
+        final controller = await open('9) alpha\n');
+        addTearDown(controller.close);
+        final row = controller.rows.single;
+        controller.activateRow(row, row.editableUtf16!.end);
+        final before = controller.inputValue;
+        final newline = insertion(before, before.selection.extentOffset, '\n');
+        final provisional = newline.apply(before);
+        final successor = insertion(
+          provisional,
+          provisional.selection.extentOffset,
+          'x',
+        );
+        final after = successor.apply(provisional);
+
+        if (useDeltas) {
+          controller.applyDeltas([newline]);
+          controller.applyDeltas([successor]);
+        } else {
+          controller.updateEditingValue(provisional);
+          controller.updateEditingValue(after);
+        }
+        controller.observePlatformNewlineAction();
+
+        await settle(controller);
+        expect(
+          controller.visibleSource,
+          '9) alpha\n10) x\n',
+          reason: useDeltas ? 'delta model' : 'full-value model',
+        );
+        expect(controller.globalCaretOffset, 14);
+        expect(controller.resyncCount, 0);
+        expect(controller.semanticSuccessorHighWatermark, 1);
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'typing behind empty-list exit maps across distinct structural splices',
     () async {
       final controller = await open('- one\n- \n');

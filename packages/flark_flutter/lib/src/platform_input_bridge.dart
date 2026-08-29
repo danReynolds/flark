@@ -174,12 +174,20 @@ final class FlarkPlatformInputBridge {
   FlarkPlatformInputObservation observeDeltaBatch(
     List<TextEditingDelta> deltas, {
     required TextEditingValue currentValue,
+    TextEditingValue? against,
+    String? expectedTextSha256,
   }) {
-    final rejection = validateDeltaBatch(deltas, fallbackValue: currentValue);
+    final before = against ?? currentValue;
+    final rejection = validateDeltaBatch(
+      deltas,
+      against: against,
+      expectedTextSha256: expectedTextSha256,
+      fallbackValue: currentValue,
+    );
     if (rejection != FlarkInputResyncReason.none) {
       return FlarkPlatformInputObservation(
-        before: currentValue,
-        after: currentValue,
+        before: before,
+        after: before,
         rejection: rejection,
         observedMutation: null,
         effectiveMutation: null,
@@ -192,7 +200,7 @@ final class FlarkPlatformInputBridge {
         selectionSupersededByProjection: false,
       );
     }
-    var after = currentValue;
+    var after = before;
     var mutatingChanges = 0;
     var typingInput = true;
     for (final delta in deltas) {
@@ -207,30 +215,31 @@ final class FlarkPlatformInputBridge {
         : null;
     final deleteBackward = isDeleteBackwardDeltaBatch(
       deltas,
-      currentValue: currentValue,
+      currentValue: before,
     );
     return FlarkPlatformInputObservation(
-      before: currentValue,
+      before: before,
       after: after,
       rejection: FlarkInputResyncReason.none,
       observedMutation: observedMutation,
-      effectiveMutation: differenceMutation(currentValue.text, after.text),
+      effectiveMutation: differenceMutation(before.text, after.text),
       mutatingChanges: mutatingChanges,
       typingInput: mutatingChanges > 0 && typingInput,
       fromDeltaBatch: true,
-      newlineCommand: isNewlineDeltaBatch(deltas, currentValue: currentValue),
+      newlineCommand: isNewlineDeltaBatch(deltas, currentValue: before),
       deleteBackwardCommand: deleteBackward,
       selectedDeletion:
           observedMutation != null &&
           isSelectedDeletion(
             observedMutation,
-            currentSelection: currentValue.selection,
+            currentSelection: before.selection,
           ),
       selectionSupersededByProjection:
+          against == null &&
           deleteBackward &&
-          _shadowText == currentValue.text &&
+          _shadowText == before.text &&
           _shadowSelection != null &&
-          _shadowSelection != currentValue.selection,
+          _shadowSelection != before.selection,
     );
   }
 
@@ -239,11 +248,13 @@ final class FlarkPlatformInputBridge {
   FlarkPlatformInputObservation observeValue(
     TextEditingValue value, {
     required TextEditingValue currentValue,
+    TextEditingValue? against,
   }) {
-    final platformBefore = shadowValue ?? currentValue;
+    final before = against ?? currentValue;
+    final platformBefore = against ?? shadowValue ?? currentValue;
     final observedMutation = selectionObservedMutation(platformBefore, value);
-    final effectiveMutation = differenceMutation(currentValue.text, value.text);
-    final selection = currentValue.selection;
+    final effectiveMutation = differenceMutation(before.text, value.text);
+    final selection = before.selection;
     final typingInput =
         effectiveMutation != null &&
         selection.isCollapsed &&
@@ -251,27 +262,27 @@ final class FlarkPlatformInputBridge {
         effectiveMutation.end == selection.extentOffset &&
         effectiveMutation.replacement.isNotEmpty;
     return FlarkPlatformInputObservation(
-      before: currentValue,
+      before: before,
       after: value,
       rejection: FlarkInputResyncReason.none,
       observedMutation: observedMutation,
       effectiveMutation: effectiveMutation,
-      mutatingChanges: currentValue.text == value.text ? 0 : 1,
+      mutatingChanges: before.text == value.text ? 0 : 1,
       typingInput: typingInput,
       fromDeltaBatch: false,
       newlineCommand: isNewlineValue(
-        currentValue: currentValue,
+        currentValue: before,
         observedValue: value,
       ),
       deleteBackwardCommand: isDeleteBackwardValue(
-        currentValue: currentValue,
+        currentValue: before,
         observedValue: value,
       ),
       selectedDeletion:
           effectiveMutation != null &&
           isSelectedDeletion(
             effectiveMutation,
-            currentSelection: currentValue.selection,
+            currentSelection: before.selection,
           ),
       selectionSupersededByProjection: false,
     );

@@ -193,5 +193,13 @@ void main() {
     expect(controller, isNot(contains('_isPlatformDeleteBackwardValue')));
     expect(controller, isNot(contains('_updateEditingValueFromPlatform')));
     expect(controller, isNot(contains('_applyOversizedPlatformDeltas')));
+    expect(controller, isNot(contains('_validateDeltaBatch')));
+    expect(controller, isNot(contains('_mutationFor(')));
+    expect(controller, contains('_captureSemanticSuccessorObservation('));
+    expect(controller, contains('_captureLateSemanticObservation('));
+    expect(
+      controller,
+      contains('_capturePlatformObservationBehindCertification('),
+    );
   });
 }
