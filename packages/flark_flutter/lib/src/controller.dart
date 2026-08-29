@@ -777,14 +777,6 @@ final class FlarkEditorController extends ChangeNotifier
     includeEditingState: includeEditingState,
   );
 
-  FlarkSurfaceRow _committedStructuralSurfaceRow(
-    FlarkCoreCommittedPresentationSurfaceV1 structural, {
-    required bool includeEditingState,
-  }) => _captureSurfaceProjector().committedStructuralSurfaceRow(
-    structural,
-    includeEditingState: includeEditingState,
-  );
-
   void activateRow(
     FlarkViewportRow row,
     int globalUtf16Offset, {
@@ -4689,7 +4681,19 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkEditorCommandTicket command,
     FlarkCoreEditIntentReceiptV1 receipt,
   ) {
-    final transition = _prepareCommittedPresentationTransition(receipt);
+    final transition = resolvePendingPresentationTransition(
+      receipt: receipt,
+      pendingPresentation: _pendingPresentation,
+      activeOrdinal: _activeOrdinal,
+      priorRows: _cachedRows
+          .map(
+            (row) => FlarkSurfaceProjector.corePresentationFromSurface(
+              surfaceRow(row, includeEditingState: false),
+              surfaceSourceRange(row),
+            ),
+          )
+          .toList(growable: false),
+    );
     final adoption = _coordinator.adoptCommittedPresentation(
       command: command,
       receipt: receipt,
@@ -4738,131 +4742,6 @@ final class FlarkEditorController extends ChangeNotifier
     }
     return adoption.requiresParserCertification;
   }
-
-  FlarkCoreCommittedPresentationTransitionV1?
-  _prepareCommittedPresentationTransition(
-    FlarkCoreEditIntentReceiptV1 receipt,
-  ) {
-    final structuralIndex = _pendingPresentation.structuralIndexForRange(
-      receipt.baseUtf16Start,
-      receipt.baseUtf16End,
-    );
-    final structural = structuralIndex < 0
-        ? null
-        : _pendingPresentation.structuralSurfaces[structuralIndex].surface;
-    var activeOrdinal = structural?.rowOrdinal ?? _activeOrdinal;
-    var activeIndex = activeOrdinal == null
-        ? -1
-        : _cachedRows.indexWhere((row) => row.ordinal == activeOrdinal);
-    if (structural == null && activeIndex < 0) {
-      // A parser-authored paragraph can span several physical lines while an
-      // editor-owned neutral caret is represented by a negative ordinal. The
-      // structural receipt still belongs to that row when its exact splice is
-      // strictly inside one and only one mapped source extent. Recover that
-      // ownership so Core can publish the receipt-backed row partition.
-      final containing = <int>[];
-      for (var index = 0; index < _cachedRows.length; index += 1) {
-        final range = surfaceSourceRange(_cachedRows[index]);
-        if (range.start < receipt.baseUtf16Start &&
-            receipt.baseUtf16End < range.end) {
-          containing.add(index);
-        }
-      }
-      if (containing.length == 1) {
-        activeIndex = containing.single;
-        activeOrdinal = _cachedRows[activeIndex].ordinal;
-      }
-    }
-
-    FlarkCorePresentationRow? coreRowAt(int index) {
-      if (index < 0 || index >= _cachedRows.length) return null;
-      final row = _cachedRows[index];
-      return _corePresentationRow(
-        surfaceRow(row, includeEditingState: false),
-        surfaceSourceRange(row),
-      );
-    }
-
-    return resolveCommittedPresentationTransitionV1(
-      receipt: receipt,
-      priorActiveOrdinal: activeOrdinal,
-      activeRow: structural == null
-          ? coreRowAt(activeIndex)
-          : _corePresentationRow(
-              _committedStructuralSurfaceRow(
-                structural,
-                includeEditingState: false,
-              ),
-              structural.sourceUtf16,
-            ),
-      precedingRow: coreRowAt(activeIndex - 1),
-      priorGapPending: _pendingPresentation.paragraphGap != null,
-      activeRowTransitional: structural != null,
-    );
-  }
-
-  FlarkPendingCaretBoundary? _caretBoundaryForStructuralSurfaces(
-    Iterable<FlarkPendingStructuralSurface> states,
-  ) {
-    FlarkCoreCommittedPresentationSurfaceV1? previous;
-    for (final state in states) {
-      final surface = state.surface;
-      final previousIsSeparator =
-          previous?.role ==
-              FlarkCoreCommittedPresentationSurfaceRole.blockSeparator ||
-          previous?.role ==
-              FlarkCoreCommittedPresentationSurfaceRole.visibleBlankSeparator;
-      if (surface.role ==
-              FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor &&
-          previous != null &&
-          (surface.presentation.text.isEmpty || previousIsSeparator)) {
-        return FlarkPendingCaretBoundary(
-          rowOrdinal: surface.rowOrdinal,
-          // The editor-owned boundary begins before any separator it paints.
-          // The separator role controls visibility, not the command origin.
-          rowEndUtf16: previousIsSeparator
-              ? previous.sourceUtf16.start
-              : previous.sourceUtf16.end,
-          authorizedContentUtf16: surface.sourceUtf16,
-          projectionEditCells: surface.projectionEditCells,
-        );
-      }
-      previous = surface;
-    }
-    return null;
-  }
-
-  FlarkCorePresentationRow _corePresentationRow(
-    FlarkSurfaceRow row,
-    FlarkSourceRange sourceUtf16,
-  ) => FlarkCorePresentationRow(
-    sourceUtf16: sourceUtf16,
-    leadingText: row.leadingText,
-    text: row.text,
-    globalUtf16Start: row.globalUtf16Start,
-    kind: row.kind,
-    headingLevel: row.headingLevel,
-    blockQuoteDepth: row.blockQuoteDepth,
-    codeBlock: row.codeBlock,
-    thematicBreak: row.thematicBreak,
-    listItem: row.listItem,
-    ordinal: row.ordinal,
-    runs: List.unmodifiable(
-      row.runs.map(
-        (run) => FlarkCorePresentationRun(
-          text: run.text,
-          sourceUtf16Start: run.sourceUtf16Start,
-          sourceUtf16End: run.sourceUtf16End,
-          sourceExact: run.sourceExact,
-          styles: Set.unmodifiable(run.styles.map(_coreStyleFromSurface)),
-        ),
-      ),
-    ),
-  );
-
-  static FlarkCorePresentationInlineStyle _coreStyleFromSurface(
-    FlarkSurfaceInlineStyle style,
-  ) => FlarkSurfaceProjector.coreStyleFromSurface(style);
 
   bool _installCommittedSemanticInputWindow(
     FlarkCoreEditIntentReceiptV1 receipt,
@@ -5383,7 +5262,10 @@ final class FlarkEditorController extends ChangeNotifier
     if (authority != null) {
       final dependency = bindPendingDependencyPresentation(
         rowOrdinal: row.ordinal,
-        base: _corePresentationRow(base, surfaceSourceRange(row)),
+        base: FlarkSurfaceProjector.corePresentationFromSurface(
+          base,
+          surfaceSourceRange(row),
+        ),
         authority: authority,
         visibleSource: _visibleSource,
         visibleUtf16Start: _visibleUtf16Start,
@@ -6467,7 +6349,7 @@ final class FlarkEditorController extends ChangeNotifier
         ? _pendingPresentation.paragraphGap
         : null;
     final supersededStructuralCaretBoundary = _semanticViewportCurrent
-        ? _caretBoundaryForStructuralSurfaces(
+        ? caretBoundaryForStructuralSurfaces(
             _pendingPresentation.structuralSurfaces,
           )
         : null;

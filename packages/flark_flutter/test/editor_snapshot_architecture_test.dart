@@ -63,5 +63,14 @@ void main() {
         ),
       ),
     );
+    expect(
+      controller,
+      isNot(contains('_prepareCommittedPresentationTransition')),
+    );
+    expect(controller, isNot(contains('_caretBoundaryForStructuralSurfaces')));
+    expect(
+      controller,
+      isNot(contains('resolveCommittedPresentationTransitionV1(')),
+    );
   });
 }

@@ -874,6 +874,38 @@ final class FlarkSurfaceProjector {
     FlarkSurfaceInlineStyle style,
   ) => FlarkCorePresentationInlineStyle.values[style.index];
 
+  /// Removes frontend-only selection state from one captured surface row.
+  ///
+  /// This is a vocabulary conversion, not Markdown reconstruction: every
+  /// source range, run, style, and block fact was already parser-authored.
+  static FlarkCorePresentationRow corePresentationFromSurface(
+    FlarkSurfaceRow row,
+    FlarkSourceRange sourceUtf16,
+  ) => FlarkCorePresentationRow(
+    sourceUtf16: sourceUtf16,
+    leadingText: row.leadingText,
+    text: row.text,
+    globalUtf16Start: row.globalUtf16Start,
+    kind: row.kind,
+    headingLevel: row.headingLevel,
+    blockQuoteDepth: row.blockQuoteDepth,
+    codeBlock: row.codeBlock,
+    thematicBreak: row.thematicBreak,
+    listItem: row.listItem,
+    ordinal: row.ordinal,
+    runs: List.unmodifiable(
+      row.runs.map(
+        (run) => FlarkCorePresentationRun(
+          text: run.text,
+          sourceUtf16Start: run.sourceUtf16Start,
+          sourceUtf16End: run.sourceUtf16End,
+          sourceExact: run.sourceExact,
+          styles: Set.unmodifiable(run.styles.map(coreStyleFromSurface)),
+        ),
+      ),
+    ),
+  );
+
   static FlarkSurfaceInlineStyle surfaceStyleFromCore(
     FlarkCorePresentationInlineStyle style,
   ) => FlarkSurfaceInlineStyle.values[style.index];

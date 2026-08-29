@@ -85,7 +85,9 @@ export 'src/pending_presentation_evolution.dart'
     show
         advancePendingDependencyPresentation,
         advancePendingPresentationRow,
-        bindPendingDependencyPresentation;
+        bindPendingDependencyPresentation,
+        caretBoundaryForStructuralSurfaces,
+        resolvePendingPresentationTransition;
 export 'src/optimistic_range_map.dart'
     show FlarkOptimisticRangeMap, FlarkOptimisticViewportEdit;
 export 'src/surface_projection.dart'

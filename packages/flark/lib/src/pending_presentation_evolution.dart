@@ -1,7 +1,91 @@
+import 'document.dart';
 import 'models.dart';
 import 'pending_presentation.dart';
 import 'presentation.dart';
 import 'projection_continuity.dart';
+
+/// Resolves the parser-authored structural consequence against one captured
+/// bounded presentation.
+///
+/// A negative frontend ordinal may stand for a physical line inside a larger
+/// parser row. In that case the exact receipt splice can recover ownership
+/// only when exactly one captured Core row strictly contains it.
+FlarkCoreCommittedPresentationTransitionV1?
+resolvePendingPresentationTransition({
+  required FlarkCoreEditIntentReceiptV1 receipt,
+  required FlarkPendingPresentationSnapshot pendingPresentation,
+  required int? activeOrdinal,
+  required List<FlarkCorePresentationRow> priorRows,
+}) {
+  final structuralIndex = pendingPresentation.structuralIndexForRange(
+    receipt.baseUtf16Start,
+    receipt.baseUtf16End,
+  );
+  final structural = structuralIndex < 0
+      ? null
+      : pendingPresentation.structuralSurfaces[structuralIndex].surface;
+  var resolvedOrdinal = structural?.rowOrdinal ?? activeOrdinal;
+  var activeIndex = resolvedOrdinal == null
+      ? -1
+      : priorRows.indexWhere((row) => row.ordinal == resolvedOrdinal);
+  if (structural == null && activeIndex < 0) {
+    final containing = <int>[];
+    for (var index = 0; index < priorRows.length; index += 1) {
+      final range = priorRows[index].sourceUtf16;
+      if (range.start < receipt.baseUtf16Start &&
+          receipt.baseUtf16End < range.end) {
+        containing.add(index);
+      }
+    }
+    if (containing.length == 1) {
+      activeIndex = containing.single;
+      resolvedOrdinal = priorRows[activeIndex].ordinal;
+    }
+  }
+
+  FlarkCorePresentationRow? rowAt(int index) =>
+      index < 0 || index >= priorRows.length ? null : priorRows[index];
+
+  return resolveCommittedPresentationTransitionV1(
+    receipt: receipt,
+    priorActiveOrdinal: resolvedOrdinal,
+    activeRow: structural?.presentation ?? rowAt(activeIndex),
+    precedingRow: rowAt(activeIndex - 1),
+    priorGapPending: pendingPresentation.paragraphGap != null,
+    activeRowTransitional: structural != null,
+  );
+}
+
+/// Retains the nonvisual command boundary owned by a certified structural
+/// successor after its temporary visual surfaces are superseded.
+FlarkPendingCaretBoundary? caretBoundaryForStructuralSurfaces(
+  Iterable<FlarkPendingStructuralSurface> states,
+) {
+  FlarkCoreCommittedPresentationSurfaceV1? previous;
+  for (final state in states) {
+    final surface = state.surface;
+    final previousIsSeparator =
+        previous?.role ==
+            FlarkCoreCommittedPresentationSurfaceRole.blockSeparator ||
+        previous?.role ==
+            FlarkCoreCommittedPresentationSurfaceRole.visibleBlankSeparator;
+    if (surface.role ==
+            FlarkCoreCommittedPresentationSurfaceRole.editableSuccessor &&
+        previous != null &&
+        (surface.presentation.text.isEmpty || previousIsSeparator)) {
+      return FlarkPendingCaretBoundary(
+        rowOrdinal: surface.rowOrdinal,
+        rowEndUtf16: previousIsSeparator
+            ? previous.sourceUtf16.start
+            : previous.sourceUtf16.end,
+        authorizedContentUtf16: surface.sourceUtf16,
+        projectionEditCells: surface.projectionEditCells,
+      );
+    }
+    previous = surface;
+  }
+  return null;
+}
 
 /// Binds one parser-authorized edit to its first immutable pending
 /// presentation.
