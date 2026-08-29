@@ -20,6 +20,9 @@ void main() {
   final portableInputWindow = File(
     '../flark/lib/src/editor_input_window.dart',
   ).readAsStringSync();
+  final portableCommandExecutor = File(
+    '../flark/lib/src/editor_command_executor.dart',
+  ).readAsStringSync();
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
@@ -159,5 +162,25 @@ void main() {
     expect(inputState, isNot(contains("import 'controller.dart'")));
     expect(inputState, isNot(contains('FlarkEditorController')));
     expect(inputState, isNot(contains(RegExp(r'\n\s+set [A-Za-z]'))));
+  });
+
+  test('native editor commands have one portable execution boundary', () {
+    expect(portableCommandExecutor, isNot(contains('package:flutter')));
+    expect(portableCommandExecutor, isNot(contains('dart:ui')));
+    expect(controller, contains('FlarkEditorCommandExecutor _commands'));
+    expect(controller, isNot(contains('_coordinator.admitCommand(')));
+    expect(controller, isNot(contains('_coordinator.completeCommand(')));
+    expect(controller, isNot(contains('_coordinator.failCommand(')));
+    expect(controller, isNot(contains('_session.applyEditUtf16(')));
+    expect(controller, isNot(contains('_session.applyEditIntentOutcomeV1(')));
+    expect(controller, isNot(contains('_session.applySemanticActionV1(')));
+    expect(controller, isNot(contains('_session.undo(')));
+    expect(controller, isNot(contains('_session.redo(')));
+    expect(controller, isNot(contains('_session.cancelComposition(')));
+    expect(portableCommandExecutor, contains('executeSourceEdit'));
+    expect(portableCommandExecutor, contains('executeSemanticEdit'));
+    expect(portableCommandExecutor, contains('executeSemanticAction'));
+    expect(portableCommandExecutor, contains('executeHistory'));
+    expect(portableCommandExecutor, contains('executeCompositionCancel'));
   });
 }

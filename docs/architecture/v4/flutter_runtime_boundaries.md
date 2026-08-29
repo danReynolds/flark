@@ -15,8 +15,11 @@ portable kernel.
 FlarkEditorController (Flutter facade and adapter coordination)
   |-- FlarkEditorCoordinator (pure Dart command lifetimes, async lineage,
   |                           publication permission, pending presentation)
+  |-- FlarkEditorCommandExecutor (typed native invocation, command ordering,
+  |                               private command tickets)
   |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
   |-- FlarkInputTransactionState (callback and bounded successor lineage)
+  |-- FlarkEditorInputState (one bounded Flutter platform-input window)
   |-- Flutter text adaptation (TextEditingValue <-> portable UTF-16 facts)
   |-- FlarkEditorSnapshot / FlarkSurfaceProjector (`flark` immutable bounded
   |                                                 visual publication)
@@ -42,18 +45,21 @@ permission to preserve the controller's existing method graph.
 | --- | --- | --- |
 | Source, selection, history, Markdown semantics, structural-command routing capabilities, semantic edit receipts, pending-presentation adoption policy | `flark` and Rust | Flutter input connections or widgets |
 | Identity-checked command lifetimes, edit generations, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
+| Typed native edit, semantic-action, history, and composition-cancel invocation; private ticket identity; history boundary ordering | `FlarkEditorCommandExecutor` in `flark` | Receipt-to-platform adoption, Flutter state, or an extensible command registry |
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
 | Callback scope, logical successor classification, bounded provisional lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
+| Current bounded platform value, global origin, canonical selection mirrors, active row, and oversized-selection state | Flutter input state consuming portable input-window plans | Native source, Markdown rules, rendered rows, or command ordering |
 | Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
 | Evolution and certified retirement of parser-authorized pending rows, structural transition ownership, and successor caret boundaries | Pending-presentation evolution in `flark` | Markdown inference, Flutter types, mutation callbacks, or asynchronous work |
 | Conversion between portable input facts and Flutter text types | Flutter text adaptation | Source mutation, Markdown rules, or retained editor state |
 | Bounded viewport, rows, visible source, certification, and optimistic coordinate mapping | `FlarkEditorViewportState` in `flark` | Native queries, input restoration, publication, or Flutter types |
 | Native viewport queries, continuation lifetime, stale-result rejection, ordered page path, and retained refresh origin | `FlarkEditorViewportPager` in `flark` | Input restoration, publication, Flutter types, or mutable render state |
-| Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
+| Public commands, Flutter callbacks, receipt-to-platform adoption, lifecycle, and composing the owners above | Controller | Parallel copies of owner state or direct native command invocation |
 
-The remaining failed ownership check is the bounded active input window. Its
-value, global origin, selection mirrors, active row, and restoration flags are
-still mutated across controller paths; they are the next state-machine seam.
+The bounded active input window and native command invocation now each have one
+tested owner. The remaining failed ownership check is receipt adoption: the
+controller still combines parser scheduling, lifecycle/publication routing,
+and command-specific reconciliation into the platform window and viewport.
 
 ## Rules that prevent the bug classes we have seen
 
@@ -93,9 +99,10 @@ be extracted by authority, not by file length:
 
 - structural-command admission now consumes parser-authored capabilities, and
   Flutter input successor classification, reservation, and retirement have one
-  tested state owner. Receipt-driven source/render promotion remains in the
-  facade until it has a narrow outcome that does not call back into controller
-  state;
+  tested state owner. Native command admission, invocation, ticket identity,
+  and ordering now have one portable executor. Receipt-driven source/render
+  promotion remains in the facade until it has a narrow outcome that does not
+  call back into controller state;
 - viewport query and page-path orchestration now return one typed Core result;
   the remaining restoration handoff should move only when its portable
   selection outcome can replace, rather than call back into, controller state;
@@ -114,6 +121,7 @@ qualify.
 - Can an old async completion affect a newer edit or interaction?
 - Can presentation code observe state changing halfway through a publication?
 - Did any Flutter code infer Markdown meaning or edit authority?
-- Is the new boundary directly testable without opening a native document?
+- Is the new boundary directly tested at its narrowest truthful layer, without
+  requiring a Flutter widget when it owns no Flutter behavior?
 - Did the full native-backed editor suite and relevant performance lane stay
   green?

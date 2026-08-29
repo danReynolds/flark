@@ -178,7 +178,10 @@ advance through one directly tested Flutter input-state owner, while pure
 `flark` plans the capacity-bounded scalar-aligned window, parser-row
 activation, neutral-line ownership, and pending boundary restoration shared by
 any future host adapter. The controller-facade work is therefore smaller but
-not complete.
+not complete. Typed source edits, semantic edits/actions, history, and
+composition cancellation now enter one portable command executor that owns
+native invocation, ordering, and private coordinator tickets; Flutter retains
+receipt-to-input/viewport adoption rather than native command authority.
 
 ### M4 — large-module audit and deletion
 
@@ -195,7 +198,8 @@ Current audit:
 
 | Module | Verdict | Reason |
 | --- | --- | --- |
-| Flutter controller | Further boundary work required | Bounded input-window state has moved, but the controller still combines platform callback admission, command-effect choreography, receipt reconciliation, and lifecycle/publication routing. |
+| Flutter controller | Further boundary work required | Bounded input-window state and native command execution have moved, but the controller still combines platform callback admission, receipt reconciliation, parser scheduling, and lifecycle/publication routing. |
+| Pure command executor | Retain | It is a closed typed native-command lane with private coordinator tickets and direct lifetime/ordering tests. It owns no host adoption state, callback registry, or generic dispatch. |
 | Pure input-window planner | Retain | It owns capacity, scalar-aligned cuts, local-to-canonical selection equivalence, and restoration from parser/pending surface geometry without a frontend dependency. |
 | Flutter input state | Retain | It owns one `TextEditingValue` window and its canonical mirrors, adapting immutable plans through named transitions. It imports no controller and its oversized-selection invariants have direct tests. |
 | Rust runtime document | Retain while its public surface stays narrow | It is the deep source/parser transaction boundary; edit-intent resolution is already separate. Split only when a codec, parser job, or transaction owner can move without sharing document internals. |
@@ -204,8 +208,11 @@ Current audit:
 
 The bounded input-window extraction is accepted: it moved state plus the
 windowing/restoration invariants, has no controller callback, and is protected
-against raw-setter regression. The next review must identify a typed outcome
-that removes command-effect branches or asynchronous Core work from Flutter;
+against raw-setter regression. The native command executor is also accepted:
+it moved command admission, invocation, ticket identity, and history ordering
+below Flutter; its execution receipt keeps host adoption explicit without
+exposing coordinator tickets. The next review must identify a typed outcome
+that removes receipt-reconciliation or parser/lifecycle branches from Flutter;
 another bag of controller fields or callback-forwarding helper does not count.
 
 ### M5 — qualification and architecture stop

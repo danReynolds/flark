@@ -74,6 +74,12 @@ export 'src/editor_coordinator.dart'
         FlarkPublicationAwaitingCertification,
         FlarkPublicationIdle,
         FlarkPublicationPhase;
+export 'src/editor_command_executor.dart'
+    show
+        FlarkEditorCommandExecution,
+        FlarkEditorCommandExecutor,
+        FlarkHistoryDirection,
+        FlarkSourceEditCommand;
 export 'src/editor_snapshot.dart'
     show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
 export 'src/editor_input_window.dart'
