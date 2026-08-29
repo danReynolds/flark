@@ -4,6 +4,11 @@ This is the maintainability contract for the v4 Flutter editor. It applies the
 [North Star](../../../NORTH_STAR.md) to code ownership without introducing a
 second product model.
 
+The final package and application-state destination is defined by
+[Portable editor architecture](portable_editor_architecture.md). This document
+governs the current Flutter implementation while it is cut over to that
+portable kernel.
+
 ## Dependency direction
 
 ```text

@@ -17,6 +17,12 @@ document-sized semantic readiness model with bounded source admission, a
 persistent compact index, certified Green fragments, and a source-anchored
 virtual viewport.
 
+**Package-boundary update (2026-08-29):**
+[Portable editor architecture](../v4/portable_editor_architecture.md)
+supersedes this RFC's public package naming and Flutter-product-only scope.
+The destination is a pure-Dart `flark` editor kernel with a separate
+`flark_flutter` adapter. Rust remains the source and Markdown authority.
+
 ## 1. Product directive
 
 Build a live Markdown editor with breakthrough performance on large documents:
