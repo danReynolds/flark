@@ -1,3 +1,4 @@
+import 'document.dart';
 import 'models.dart';
 import 'presentation.dart';
 import 'projection_continuity.dart';
@@ -354,6 +355,105 @@ final class FlarkPendingPresentationSnapshot {
       structuralSurfaces.isNotEmpty ||
       taskChecks.isNotEmpty;
 
+  int structuralIndexForRange(int start, int end) {
+    for (var index = structuralSurfaces.length - 1; index >= 0; index -= 1) {
+      final surface = structuralSurfaces[index].surface;
+      if (surface.projectionCurrent &&
+          surface.sourceUtf16.start <= start &&
+          end <= surface.sourceUtf16.end) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  /// Applies one Core-authored structural transition to the framework-neutral
+  /// pending-presentation state. Frontends apply [removedRowOrdinals] to their
+  /// bounded row cache but do not reinterpret the semantic transition enum.
+  FlarkPendingPresentationAdoption adoptCommittedTransition({
+    required FlarkCoreEditIntentReceiptV1 receipt,
+    required FlarkCoreCommittedPresentationTransitionV1? transition,
+  }) {
+    final priorStructuralIndex = structuralIndexForRange(
+      receipt.baseUtf16Start,
+      receipt.baseUtf16End,
+    );
+    final retainedGap = transition?.clearPriorGap ?? false
+        ? null
+        : paragraphGap;
+    final preservesCaretBoundaryOnInteriorMerge =
+        caretBoundary != null &&
+        (transition?.clearPriorGap ?? false) &&
+        receipt.presentationTransition ==
+            FlarkCoreEditPresentationTransitionV1.mergeParagraph &&
+        receipt.baseUtf16Start > caretBoundary!.rowEndUtf16;
+    final retainedCaretBoundary =
+        transition?.gap != null ||
+            ((transition?.clearPriorGap ?? false) &&
+                !preservesCaretBoundaryOnInteriorMerge)
+        ? null
+        : caretBoundary;
+    final chainsTerminalSplit =
+        receipt.presentationTransition ==
+            FlarkCoreEditPresentationTransitionV1.splitParagraph &&
+        receipt.baseUtf16Start == receipt.baseUtf16End &&
+        priorStructuralIndex >= 0 &&
+        receipt.baseUtf16Start ==
+            structuralSurfaces[priorStructuralIndex].surface.sourceUtf16.end;
+    final carriedPrefix =
+        transition?.surfaces.isNotEmpty == true &&
+            chainsTerminalSplit &&
+            priorStructuralIndex > 0
+        ? structuralSurfaces.take(priorStructuralIndex)
+        : const <FlarkPendingStructuralSurface>[];
+    final nextStructuralSurfaces =
+        List<FlarkPendingStructuralSurface>.unmodifiable([
+          ...carriedPrefix,
+          ...(transition?.surfaces ??
+                  const <FlarkCoreCommittedPresentationSurfaceV1>[])
+              .map(
+                (surface) => FlarkPendingStructuralSurface(surface: surface),
+              ),
+        ]);
+    final removedRowOrdinals = Set<int>.unmodifiable({
+      ...?transition?.removedRowOrdinals,
+      ...nextStructuralSurfaces
+          .map((state) => state.surface.removedRowOrdinal)
+          .whereType<int>(),
+    });
+    final next = FlarkPendingPresentationSnapshot(
+      dependency: dependency,
+      paragraphGap: transition?.gap ?? retainedGap,
+      caretBoundary: retainedCaretBoundary,
+      structuralSurfaces: nextStructuralSurfaces,
+      taskChecks: taskChecks,
+    );
+    final hasOnlyUnprovedSurfaces =
+        transition?.surfaces.isNotEmpty == true &&
+        transition!.surfaces.every((surface) => !surface.projectionCurrent);
+    final hasGapOnlyPrefixedContinuation =
+        transition?.gap != null &&
+        transition!.surfaces.isEmpty &&
+        switch (receipt.presentationTransition) {
+          FlarkCoreEditPresentationTransitionV1.continueList ||
+          FlarkCoreEditPresentationTransitionV1.continueBlockQuote ||
+          FlarkCoreEditPresentationTransitionV1.continueIndentedCode => true,
+          _ => false,
+        };
+    final requiresParserCertification =
+        transition == null ||
+        hasOnlyUnprovedSurfaces ||
+        hasGapOnlyPrefixedContinuation ||
+        (transition.surfaces.isEmpty &&
+            transition.gap == null &&
+            !transition.retainPriorGap);
+    return FlarkPendingPresentationAdoption(
+      snapshot: next,
+      removedRowOrdinals: removedRowOrdinals,
+      requiresParserCertification: requiresParserCertification,
+    );
+  }
+
   FlarkPendingPresentationSnapshot withDependency(
     FlarkPendingDependencyPresentation? value,
   ) => FlarkPendingPresentationSnapshot(
@@ -432,4 +532,18 @@ final class FlarkPendingPresentationSnapshot {
 
   FlarkPendingPresentationSnapshot clear() =>
       retire(FlarkPendingPresentationPart.values.toSet());
+}
+
+/// Complete framework-neutral result of adopting one committed semantic
+/// presentation transition.
+final class FlarkPendingPresentationAdoption {
+  const FlarkPendingPresentationAdoption({
+    required this.snapshot,
+    required this.removedRowOrdinals,
+    required this.requiresParserCertification,
+  });
+
+  final FlarkPendingPresentationSnapshot snapshot;
+  final Set<int> removedRowOrdinals;
+  final bool requiresParserCertification;
 }

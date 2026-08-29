@@ -4700,33 +4700,11 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _adoptSemanticReceipt(FlarkCoreEditIntentReceiptV1 receipt) {
-    final priorPendingPresentation = _pendingPresentation;
-    final priorStructuralSurfaces = priorPendingPresentation.structuralSurfaces;
-    final priorStructuralIndex = _committedStructuralIndexForRange(
-      receipt.baseUtf16Start,
-      receipt.baseUtf16End,
-    );
     final transition = _prepareCommittedPresentationTransition(receipt);
-    final retainedGap = transition?.clearPriorGap ?? false
-        ? null
-        : priorPendingPresentation.paragraphGap;
-    final priorCaretBoundary = priorPendingPresentation.caretBoundary;
-    // Backspace can merge two adjacent empty physical lines while leaving the
-    // parser-less blank editing island itself intact. Only a splice strictly
-    // after the durable boundary has that meaning; deleting the boundary byte
-    // still retires it through the ordinary clearPriorGap path.
-    final preservesCaretBoundaryOnInteriorMerge =
-        priorCaretBoundary != null &&
-        (transition?.clearPriorGap ?? false) &&
-        receipt.presentationTransition ==
-            FlarkCoreEditPresentationTransitionV1.mergeParagraph &&
-        receipt.baseUtf16Start > priorCaretBoundary.rowEndUtf16;
-    final retainedCaretBoundary =
-        transition?.gap != null ||
-            ((transition?.clearPriorGap ?? false) &&
-                !preservesCaretBoundaryOnInteriorMerge)
-        ? null
-        : priorCaretBoundary;
+    final adoption = _pendingPresentation.adoptCommittedTransition(
+      receipt: receipt,
+      transition: transition,
+    );
     // The semantic receipt supplies a result-revision byte/UTF-16 pair even
     // when its structural splice crosses the cached page boundary. Preserve
     // that authoritative origin before the optimistic cache update can clear
@@ -4743,49 +4721,14 @@ final class FlarkEditorController extends ChangeNotifier {
       receipt.replacement,
       preservesMappedRowFacts: false,
     );
-    final chainsTerminalSplit =
-        receipt.presentationTransition ==
-            FlarkCoreEditPresentationTransitionV1.splitParagraph &&
-        receipt.baseUtf16Start == receipt.baseUtf16End &&
-        priorStructuralIndex >= 0 &&
-        receipt.baseUtf16Start ==
-            priorStructuralSurfaces[priorStructuralIndex]
-                .surface
-                .sourceUtf16
-                .end;
-    final carriedPrefix =
-        transition?.surfaces.isNotEmpty == true &&
-            chainsTerminalSplit &&
-            priorStructuralIndex > 0
-        ? priorStructuralSurfaces.take(priorStructuralIndex)
-        : const <FlarkPendingStructuralSurface>[];
-    final nextStructuralSurfaces =
-        List<FlarkPendingStructuralSurface>.unmodifiable([
-          ...carriedPrefix,
-          ...(transition?.surfaces ??
-                  const <FlarkCoreCommittedPresentationSurfaceV1>[])
-              .map(
-                (surface) => FlarkPendingStructuralSurface(surface: surface),
-              ),
-        ]);
-    final removedRowOrdinals = <int>{
-      ...?transition?.removedRowOrdinals,
-      ...nextStructuralSurfaces
-          .map((state) => state.surface.removedRowOrdinal)
-          .whereType<int>(),
-    };
-    if (removedRowOrdinals.isNotEmpty) {
+    if (adoption.removedRowOrdinals.isNotEmpty) {
       _cachedRows = List.unmodifiable(
-        _cachedRows.where((row) => !removedRowOrdinals.contains(row.ordinal)),
+        _cachedRows.where(
+          (row) => !adoption.removedRowOrdinals.contains(row.ordinal),
+        ),
       );
     }
-    _pendingPresentation = FlarkPendingPresentationSnapshot(
-      dependency: priorPendingPresentation.dependency,
-      paragraphGap: transition?.gap ?? retainedGap,
-      caretBoundary: retainedCaretBoundary,
-      structuralSurfaces: nextStructuralSurfaces,
-      taskChecks: priorPendingPresentation.taskChecks,
-    );
+    _pendingPresentation = adoption.snapshot;
     final caret = receipt.resultSelectionUtf16;
     _globalSelectionBase = caret;
     _globalSelectionExtent = caret;
@@ -4803,31 +4746,14 @@ final class FlarkEditorController extends ChangeNotifier {
         _installCanonicalSelection(_selectionSnapshot(), publish: false),
       );
     }
-    final hasOnlyUnprovedSurfaces =
-        transition?.surfaces.isNotEmpty == true &&
-        transition!.surfaces.every((surface) => !surface.projectionCurrent);
-    final hasGapOnlyPrefixedContinuation =
-        transition?.gap != null &&
-        transition!.surfaces.isEmpty &&
-        switch (receipt.presentationTransition) {
-          FlarkCoreEditPresentationTransitionV1.continueList ||
-          FlarkCoreEditPresentationTransitionV1.continueBlockQuote ||
-          FlarkCoreEditPresentationTransitionV1.continueIndentedCode => true,
-          _ => false,
-        };
-    return transition == null ||
-        hasOnlyUnprovedSurfaces ||
-        hasGapOnlyPrefixedContinuation ||
-        (transition.surfaces.isEmpty &&
-            transition.gap == null &&
-            !transition.retainPriorGap);
+    return adoption.requiresParserCertification;
   }
 
   FlarkCoreCommittedPresentationTransitionV1?
   _prepareCommittedPresentationTransition(
     FlarkCoreEditIntentReceiptV1 receipt,
   ) {
-    final structuralIndex = _committedStructuralIndexForRange(
+    final structuralIndex = _pendingPresentation.structuralIndexForRange(
       receipt.baseUtf16Start,
       receipt.baseUtf16End,
     );
@@ -4914,22 +4840,6 @@ final class FlarkEditorController extends ChangeNotifier {
       previous = surface;
     }
     return null;
-  }
-
-  int _committedStructuralIndexForRange(int start, int end) {
-    for (
-      var index = _pendingPresentation.structuralSurfaces.length - 1;
-      index >= 0;
-      index -= 1
-    ) {
-      final surface = _pendingPresentation.structuralSurfaces[index].surface;
-      if (surface.projectionCurrent &&
-          surface.sourceUtf16.start <= start &&
-          end <= surface.sourceUtf16.end) {
-        return index;
-      }
-    }
-    return -1;
   }
 
   FlarkCorePresentationRow _corePresentationRow(

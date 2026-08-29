@@ -19,6 +19,71 @@ void main() {
     sourceUtf16: FlarkSourceRange(0, 4),
   );
 
+  FlarkCoreEditIntentReceiptV1 receipt({
+    required FlarkCoreEditPresentationTransitionV1 transition,
+    required int baseStart,
+    required int baseEnd,
+    String replacement = '',
+  }) {
+    final delta = replacement.length - (baseEnd - baseStart);
+    return FlarkCoreEditIntentReceiptV1(
+      disposition: FlarkCoreEditIntentDispositionV1.applied,
+      baseRevision: 1,
+      resultRevision: 2,
+      baseByteStart: baseStart,
+      baseByteEnd: baseEnd,
+      baseUtf16Start: baseStart,
+      baseUtf16End: baseEnd,
+      resultByteStart: baseStart,
+      resultByteEnd: baseStart + replacement.length,
+      resultUtf16Start: baseStart,
+      resultUtf16End: baseStart + replacement.length,
+      replacement: replacement,
+      resultSelectionUtf16: baseStart + replacement.length,
+      resultSourceByteLength: 100 + delta,
+      resultSourceUtf16Length: 100 + delta,
+      historyToken: null,
+      parserPending: true,
+      presentationProven: true,
+      logicalEditId: 1,
+      requestDigest: 1,
+      telemetry: const FlarkCoreEditIntentTelemetryV1(
+        coreQueueMicros: 0,
+        workerRoundTripMicros: 0,
+        workerQueueMicros: 0,
+        nativeFfiMicros: 0,
+        coreAdoptionMicros: 0,
+      ),
+      presentationTransition: transition,
+    );
+  }
+
+  FlarkCoreCommittedPresentationSurfaceV1 structuralSurface({
+    required int rowOrdinal,
+    required int start,
+    required int end,
+    bool projectionCurrent = true,
+    int? removedRowOrdinal,
+  }) => FlarkCoreCommittedPresentationSurfaceV1(
+    rowOrdinal: rowOrdinal,
+    sourceUtf16: FlarkSourceRange(start, end),
+    presentation: FlarkCorePresentationRow(
+      sourceUtf16: FlarkSourceRange(start, end),
+      leadingText: '',
+      text: List<String>.filled(end - start, 'x', growable: false).join(),
+      globalUtf16Start: start,
+      kind: 5,
+      headingLevel: null,
+      blockQuoteDepth: null,
+      codeBlock: null,
+      thematicBreak: false,
+      ordinal: rowOrdinal,
+      runs: const [],
+    ),
+    projectionCurrent: projectionCurrent,
+    removedRowOrdinal: removedRowOrdinal,
+  );
+
   FlarkViewport exactEmptyViewport({
     int revision = 7,
     FlarkCertification certification = FlarkCertification.currentCertified,
@@ -354,6 +419,143 @@ void main() {
 
     expect(authority, isA<FlarkProjectionContinuityReceipt>());
     expect(authority?.presentsExactIsland, isFalse);
+  });
+
+  test(
+    'committed adoption chains structural state and reports row removals',
+    () {
+      final first = structuralSurface(rowOrdinal: 1, start: 0, end: 2);
+      final active = structuralSurface(rowOrdinal: 2, start: 2, end: 4);
+      final successor = structuralSurface(
+        rowOrdinal: 3,
+        start: 4,
+        end: 5,
+        removedRowOrdinal: 9,
+      );
+      final snapshot = FlarkPendingPresentationSnapshot(
+        structuralSurfaces: [
+          FlarkPendingStructuralSurface(surface: first),
+          FlarkPendingStructuralSurface(surface: active),
+        ],
+        taskChecks: const {7: true},
+      );
+      final adoption = snapshot.adoptCommittedTransition(
+        receipt: receipt(
+          transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+          baseStart: 4,
+          baseEnd: 4,
+          replacement: '\n',
+        ),
+        transition: FlarkCoreCommittedPresentationTransitionV1(
+          surfaces: [successor],
+          removedRowOrdinals: const [10],
+        ),
+      );
+
+      expect(
+        adoption.snapshot.structuralSurfaces.map(
+          (state) => state.surface.rowOrdinal,
+        ),
+        [1, 3],
+      );
+      expect(adoption.snapshot.taskChecks, const {7: true});
+      expect(adoption.removedRowOrdinals, {9, 10});
+      expect(() => adoption.removedRowOrdinals.add(11), throwsUnsupportedError);
+      expect(adoption.requiresParserCertification, isFalse);
+    },
+  );
+
+  test('committed adoption owns caret-boundary retirement policy', () {
+    final boundary = FlarkPendingCaretBoundary(rowOrdinal: 2, rowEndUtf16: 4);
+    final snapshot = FlarkPendingPresentationSnapshot(
+      paragraphGap: const FlarkCoreCommittedPresentationGapV1(
+        rowOrdinal: 2,
+        rowEndUtf16: 4,
+      ),
+      caretBoundary: boundary,
+    );
+    final transition = FlarkCoreCommittedPresentationTransitionV1(
+      clearPriorGap: true,
+    );
+
+    final interiorMerge = snapshot.adoptCommittedTransition(
+      receipt: receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.mergeParagraph,
+        baseStart: 5,
+        baseEnd: 6,
+      ),
+      transition: transition,
+    );
+    final boundaryMerge = snapshot.adoptCommittedTransition(
+      receipt: receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.mergeParagraph,
+        baseStart: 4,
+        baseEnd: 5,
+      ),
+      transition: transition,
+    );
+
+    expect(interiorMerge.snapshot.paragraphGap, isNull);
+    expect(interiorMerge.snapshot.caretBoundary, same(boundary));
+    expect(boundaryMerge.snapshot.caretBoundary, isNull);
+    expect(interiorMerge.requiresParserCertification, isTrue);
+  });
+
+  test('committed adoption classifies unsafe provisional surfaces in Core', () {
+    final unproved = structuralSurface(
+      rowOrdinal: 1,
+      start: 0,
+      end: 1,
+      projectionCurrent: false,
+    );
+    final unprovedAdoption = const FlarkPendingPresentationSnapshot.empty()
+        .adoptCommittedTransition(
+          receipt: receipt(
+            transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+            baseStart: 0,
+            baseEnd: 0,
+            replacement: '\n',
+          ),
+          transition: FlarkCoreCommittedPresentationTransitionV1(
+            surfaces: [unproved],
+          ),
+        );
+    final gapOnlyContinuation = const FlarkPendingPresentationSnapshot.empty()
+        .adoptCommittedTransition(
+          receipt: receipt(
+            transition: FlarkCoreEditPresentationTransitionV1.continueList,
+            baseStart: 0,
+            baseEnd: 0,
+            replacement: '\n- ',
+          ),
+          transition: FlarkCoreCommittedPresentationTransitionV1(
+            gap: const FlarkCoreCommittedPresentationGapV1(
+              rowOrdinal: 1,
+              rowEndUtf16: 1,
+            ),
+          ),
+        );
+
+    expect(unprovedAdoption.requiresParserCertification, isTrue);
+    expect(gapOnlyContinuation.requiresParserCertification, isTrue);
+
+    final absentTransition =
+        FlarkPendingPresentationSnapshot(
+          structuralSurfaces: [
+            FlarkPendingStructuralSurface(surface: unproved),
+          ],
+          taskChecks: const {4: false},
+        ).adoptCommittedTransition(
+          receipt: receipt(
+            transition: FlarkCoreEditPresentationTransitionV1.none,
+            baseStart: 0,
+            baseEnd: 0,
+          ),
+          transition: null,
+        );
+    expect(absentTransition.snapshot.structuralSurfaces, isEmpty);
+    expect(absentTransition.snapshot.taskChecks, const {4: false});
+    expect(absentTransition.requiresParserCertification, isTrue);
   });
 
   test('snapshot owns dependency, structure, gap, and actions immutably', () {

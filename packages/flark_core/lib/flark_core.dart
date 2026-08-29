@@ -78,6 +78,7 @@ export 'src/pending_presentation.dart'
         FlarkPendingCaretBoundary,
         FlarkPendingDependencyPresentation,
         materializeBoundedPendingPresentationPlan,
+        FlarkPendingPresentationAdoption,
         FlarkPendingPresentationSnapshot,
         FlarkPendingPresentationPart,
         FlarkPendingStructuralSurface;

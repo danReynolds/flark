@@ -21,11 +21,17 @@ The boundary components never import the controller. `flark_core` never
 imports Flutter. Markdown recognition and permission to retain rendered
 semantics remain in Rust/Core.
 
+The intended end state is a small public controller over one application-level
+edit coordinator. That coordinator admits typed commands and asynchronous Core
+receipts, then publishes one immutable editor snapshot to the platform adapter
+and renderer. The current boundary work is converging on that shape; it is not
+permission to preserve the controller's existing method graph.
+
 ## One owner for each kind of truth
 
 | Concern | Owner | Must not own |
 | --- | --- | --- |
-| Source, selection, history, Markdown semantics, semantic edit receipts | Core | Flutter input connections or widgets |
+| Source, selection, history, Markdown semantics, semantic edit receipts, pending-presentation adoption policy | Core | Flutter input connections or widgets |
 | Edit generations, lifecycle, serialized edit tail, parser/page single-flight, publication barriers | Editor runtime | Markdown rules or rendered rows |
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
 | Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
@@ -53,15 +59,19 @@ semantics remain in Rust/Core.
    edit receipt allows it. It fails closed for structural uncertainty.
 8. Viewport page index is derived from one ordered anchor path. Moving forward,
    backward, or adopting a refresh replaces that path atomically.
+9. Flutter does not switch over Markdown transition kinds to decide structural
+   chaining, row retirement, or parser-certification requirements. Core reduces
+   its typed receipt into one pending-presentation adoption outcome.
 
 ## Controller reduction policy
 
 The controller is still larger than the intended facade. Remaining work should
 be extracted by authority, not by file length:
 
-- semantic command policy and receipt promotion should become one bounded lane
-  with explicit inputs and outcomes; its callback and provisional-lineage state
-  is now centralized, but controller/Core coordination remains in the facade;
+- semantic command admission and successor promotion should become one bounded
+  lane with explicit inputs and outcomes. Provisional lineage is centralized,
+  and committed presentation adoption now reduces in Core, but effect
+  coordination remains in the facade;
 - viewport query/restore orchestration should be split only after its page-path
   state (now centralized) and surface/input handoff can be expressed as narrow
   outcomes without controller callbacks; and
