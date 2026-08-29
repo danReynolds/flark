@@ -785,10 +785,6 @@ final class FlarkEditorController extends ChangeNotifier
     includeEditingState: includeEditingState,
   );
 
-  FlarkSurfaceRow _surfacePresentationFromCore(
-    FlarkCorePresentationRow presentation,
-  ) => _captureSurfaceProjector().surfacePresentationFromCore(presentation);
-
   void activateRow(
     FlarkViewportRow row,
     int globalUtf16Offset, {
@@ -5339,11 +5335,13 @@ final class FlarkEditorController extends ChangeNotifier
         replacement: replacement,
       );
       if (successor != null) {
-        final dependency = _advancePendingDependencyPresentation(
+        final dependency = advancePendingDependencyPresentation(
           current: current,
           authority: successor,
-          start: start,
-          end: end,
+          visibleSource: _visibleSource,
+          visibleUtf16Start: _visibleUtf16Start,
+          startUtf16: start,
+          endUtf16: end,
           replacement: replacement,
         );
         if (dependency != null) {
@@ -5383,12 +5381,14 @@ final class FlarkEditorController extends ChangeNotifier
       replacement: replacement,
     );
     if (authority != null) {
-      final dependency = _bindPendingDependencyPresentation(
-        row: row,
-        base: base,
+      final dependency = bindPendingDependencyPresentation(
+        rowOrdinal: row.ordinal,
+        base: _corePresentationRow(base, surfaceSourceRange(row)),
         authority: authority,
-        start: start,
-        end: end,
+        visibleSource: _visibleSource,
+        visibleUtf16Start: _visibleUtf16Start,
+        startUtf16: start,
+        endUtf16: end,
         replacement: replacement,
       );
       if (dependency != null) {
@@ -5400,452 +5400,6 @@ final class FlarkEditorController extends ChangeNotifier
       FlarkPendingPresentationPart.dependency,
     });
     return null;
-  }
-
-  FlarkPendingDependencyPresentation? _bindPendingDependencyPresentation({
-    required FlarkViewportRow row,
-    required FlarkSurfaceRow base,
-    required FlarkPendingDependencyAuthority authority,
-    required int start,
-    required int end,
-    required String replacement,
-  }) {
-    if (authority is FlarkBoundedPendingPresentationPlanReceipt) {
-      final source = _visibleSourceAfterSplice(start, end, replacement);
-      if (source == null) return null;
-      return materializeBoundedPendingPresentationPlan(
-        authority: authority,
-        rowOrdinal: row.ordinal,
-        visibleSource: source,
-        visibleUtf16Start: _visibleUtf16Start,
-      );
-    }
-    final presentation = _splicePendingDependencyPresentation(
-      base,
-      authority,
-      start,
-      end,
-      replacement,
-    );
-    if (presentation == null) return null;
-    final source = surfaceSourceRange(row);
-    final delta = replacement.length - (end - start);
-    return FlarkPendingDependencyPresentation(
-      rowOrdinal: row.ordinal,
-      authority: authority,
-      removesOwnerRow:
-          authority is FlarkProjectionEditCellReceipt &&
-          authority.resultBlockShell?.kind ==
-              FlarkProjectionResultBlockKind.removed,
-      presentation: _corePresentationRow(
-        presentation,
-        FlarkSourceRange(source.start, source.end + delta),
-      ),
-    );
-  }
-
-  FlarkPendingDependencyPresentation? _advancePendingDependencyPresentation({
-    required FlarkPendingDependencyPresentation current,
-    required FlarkPendingDependencyAuthority authority,
-    required int start,
-    required int end,
-    required String replacement,
-  }) {
-    if (authority is FlarkBoundedPendingPresentationPlanReceipt) {
-      final source = _visibleSourceAfterSplice(start, end, replacement);
-      if (source == null) return null;
-      return materializeBoundedPendingPresentationPlan(
-        authority: authority,
-        rowOrdinal: current.rowOrdinal,
-        visibleSource: source,
-        visibleUtf16Start: _visibleUtf16Start,
-      );
-    }
-    final presentation = _splicePendingDependencyPresentation(
-      _surfacePresentationFromCore(current.presentation),
-      authority,
-      start,
-      end,
-      replacement,
-    );
-    if (presentation == null) return null;
-    final delta = replacement.length - (end - start);
-    final priorSource = current.presentation.sourceUtf16;
-    return FlarkPendingDependencyPresentation(
-      rowOrdinal: current.rowOrdinal,
-      authority: authority,
-      presentation: _corePresentationRow(
-        presentation,
-        FlarkSourceRange(priorSource.start, priorSource.end + delta),
-      ),
-    );
-  }
-
-  String? _visibleSourceAfterSplice(int start, int end, String replacement) {
-    final localStart = start - _visibleUtf16Start;
-    final localEnd = end - _visibleUtf16Start;
-    if (localStart < 0 ||
-        localStart > localEnd ||
-        localEnd > _visibleSource.length) {
-      return null;
-    }
-    return _visibleSource.replaceRange(localStart, localEnd, replacement);
-  }
-
-  FlarkSurfaceRow? _splicePendingDependencyPresentation(
-    FlarkSurfaceRow presentation,
-    FlarkPendingDependencyAuthority authority,
-    int start,
-    int end,
-    String replacement,
-  ) => switch (authority) {
-    FlarkProjectionContinuityReceipt() => _spliceContinuityPresentation(
-      presentation,
-      authority.authorizedContentUtf16,
-      start,
-      end,
-      replacement,
-    ),
-    FlarkProjectionEditCellReceipt() => _spliceProjectionEditCellPresentation(
-      presentation,
-      authority,
-      start,
-      end,
-      replacement,
-    ),
-    FlarkBoundedPendingPresentationPlanReceipt() => null,
-  };
-
-  FlarkSurfaceRow? _spliceContinuityPresentation(
-    FlarkSurfaceRow presentation,
-    FlarkSourceRange authorizedContent,
-    int start,
-    int end,
-    String replacement,
-  ) {
-    final delta = replacement.length - (end - start);
-    final baseAuthorizedContent = FlarkSourceRange(
-      authorizedContent.start,
-      authorizedContent.end - delta,
-    );
-    var target = -1;
-    for (var index = 0; index < presentation.runs.length; index += 1) {
-      final run = presentation.runs[index];
-      final insertionInside =
-          start == end &&
-          start >= run.sourceUtf16Start &&
-          start <= run.sourceUtf16End;
-      final replacementInside =
-          start < end &&
-          start >= run.sourceUtf16Start &&
-          end <= run.sourceUtf16End;
-      final runInsideAuthority =
-          baseAuthorizedContent.start <= run.sourceUtf16Start &&
-          run.sourceUtf16End <= baseAuthorizedContent.end;
-      if (run.sourceExact &&
-          runInsideAuthority &&
-          (insertionInside || replacementInside)) {
-        target = index;
-        break;
-      }
-    }
-    if (target < 0) {
-      if (start != end ||
-          start < baseAuthorizedContent.start ||
-          start > baseAuthorizedContent.end) {
-        return null;
-      }
-      var insertionIndex = presentation.runs.length;
-      for (var index = 0; index < presentation.runs.length; index += 1) {
-        if (presentation.runs[index].sourceUtf16Start >= start) {
-          insertionIndex = index;
-          break;
-        }
-      }
-      final inserted = <FlarkSurfaceTextRun>[
-        ...presentation.runs.take(insertionIndex),
-        FlarkSurfaceTextRun(
-          text: replacement,
-          sourceUtf16Start: start,
-          sourceUtf16End: start + replacement.length,
-          sourceExact: true,
-          styles: const {},
-        ),
-        ...presentation.runs
-            .skip(insertionIndex)
-            .map(
-              (run) => FlarkSurfaceTextRun(
-                text: run.text,
-                sourceUtf16Start: run.sourceUtf16Start + delta,
-                sourceUtf16End: run.sourceUtf16End + delta,
-                sourceExact: run.sourceExact,
-                styles: run.styles,
-              ),
-            ),
-      ];
-      final projected = List<FlarkSurfaceTextRun>.unmodifiable(inserted);
-      return FlarkSurfaceRow(
-        leadingText: presentation.leadingText,
-        text: projected.map((run) => run.text).join(),
-        globalUtf16Start: presentation.globalUtf16Start,
-        kind: presentation.kind,
-        headingLevel: presentation.headingLevel,
-        blockQuoteDepth: presentation.blockQuoteDepth,
-        codeBlock: presentation.codeBlock,
-        thematicBreak: presentation.thematicBreak,
-        listItem: presentation.listItem,
-        ordinal: presentation.ordinal,
-        active: false,
-        selection: null,
-        runs: projected,
-      );
-    }
-
-    final runs = <FlarkSurfaceTextRun>[];
-    for (var index = 0; index < presentation.runs.length; index += 1) {
-      final run = presentation.runs[index];
-      if (index < target) {
-        runs.add(run);
-        continue;
-      }
-      if (index == target) {
-        final localStart = start - run.sourceUtf16Start;
-        final localEnd = end - run.sourceUtf16Start;
-        runs.add(
-          FlarkSurfaceTextRun(
-            text: run.text.replaceRange(localStart, localEnd, replacement),
-            sourceUtf16Start: run.sourceUtf16Start,
-            sourceUtf16End: run.sourceUtf16End + delta,
-            sourceExact: true,
-            styles: run.styles,
-          ),
-        );
-        continue;
-      }
-      runs.add(
-        FlarkSurfaceTextRun(
-          text: run.text,
-          sourceUtf16Start: run.sourceUtf16Start + delta,
-          sourceUtf16End: run.sourceUtf16End + delta,
-          sourceExact: run.sourceExact,
-          styles: run.styles,
-        ),
-      );
-    }
-    final projected = List<FlarkSurfaceTextRun>.unmodifiable(runs);
-    return FlarkSurfaceRow(
-      leadingText: presentation.leadingText,
-      text: projected.map((run) => run.text).join(),
-      globalUtf16Start: presentation.globalUtf16Start,
-      kind: presentation.kind,
-      headingLevel: presentation.headingLevel,
-      blockQuoteDepth: presentation.blockQuoteDepth,
-      codeBlock: presentation.codeBlock,
-      thematicBreak: presentation.thematicBreak,
-      listItem: presentation.listItem,
-      ordinal: presentation.ordinal,
-      active: false,
-      selection: null,
-      runs: projected,
-    );
-  }
-
-  FlarkSurfaceRow? _spliceProjectionEditCellPresentation(
-    FlarkSurfaceRow presentation,
-    FlarkProjectionEditCellReceipt receipt,
-    int start,
-    int end,
-    String replacement,
-  ) {
-    final resultShell = receipt.resultBlockShell;
-    if ((!receipt.retainBlockShell && resultShell == null) ||
-        !receipt.presentClosureExact) {
-      return null;
-    }
-    final base = receipt.baseAffectedUtf16;
-    final result = receipt.affectedUtf16;
-    final baseText = _sliceVisibleUtf16(base.start, base.end);
-    final localStart = start - base.start;
-    final localEnd = end - base.start;
-    if (localStart < 0 || localStart > localEnd || localEnd > baseText.length) {
-      return null;
-    }
-    final resultText = baseText.replaceRange(localStart, localEnd, replacement);
-    if (resultText.length != result.length) return null;
-    final delta = result.length - base.length;
-    final before = <FlarkSurfaceTextRun>[];
-    final after = <FlarkSurfaceTextRun>[];
-    for (final run in presentation.runs) {
-      if (base.length == 0 &&
-          run.sourceUtf16Start == base.start &&
-          run.sourceUtf16End == base.end) {
-        continue;
-      }
-      if (run.sourceUtf16End <= base.start) {
-        before.add(run);
-        continue;
-      }
-      if (run.sourceUtf16Start >= base.end) {
-        after.add(
-          FlarkSurfaceTextRun(
-            text: run.text,
-            sourceUtf16Start: run.sourceUtf16Start + delta,
-            sourceUtf16End: run.sourceUtf16End + delta,
-            sourceExact: run.sourceExact,
-            styles: run.styles,
-          ),
-        );
-        continue;
-      }
-      if (run.sourceUtf16Start < base.start || run.sourceUtf16End > base.end) {
-        // Projection-cell boundaries may fall inside one parser-certified
-        // plain source run. Splitting an exact unstyled identity run is pure
-        // source geometry; a styled or projected run still requires the
-        // parser to publish a wider dependency closure.
-        if (!run.sourceExact || run.styles.isNotEmpty) return null;
-        if (run.sourceUtf16Start < base.start) {
-          final prefix = _sliceVisibleUtf16(run.sourceUtf16Start, base.start);
-          if (prefix.length != base.start - run.sourceUtf16Start) return null;
-          before.add(
-            FlarkSurfaceTextRun(
-              text: prefix,
-              sourceUtf16Start: run.sourceUtf16Start,
-              sourceUtf16End: base.start,
-              sourceExact: true,
-              styles: const {},
-            ),
-          );
-        }
-        if (run.sourceUtf16End > base.end) {
-          final suffix = _sliceVisibleUtf16(base.end, run.sourceUtf16End);
-          if (suffix.length != run.sourceUtf16End - base.end) return null;
-          after.add(
-            FlarkSurfaceTextRun(
-              text: suffix,
-              sourceUtf16Start: result.end,
-              sourceUtf16End: run.sourceUtf16End + delta,
-              sourceExact: true,
-              styles: const {},
-            ),
-          );
-        }
-        continue;
-      }
-    }
-    if (!receipt.retainOutsideClosure &&
-        (before.isNotEmpty || after.isNotEmpty)) {
-      return null;
-    }
-    if (resultShell != null) {
-      if (before.isNotEmpty ||
-          after.isNotEmpty ||
-          resultShell.prefixUtf16Length > resultText.length) {
-        return null;
-      }
-      if (resultShell.kind == FlarkProjectionResultBlockKind.removed) {
-        if (resultText.isNotEmpty || result.length != 0) return null;
-        return FlarkSurfaceRow(
-          leadingText: '',
-          text: '',
-          globalUtf16Start: result.start,
-          kind: 0,
-          headingLevel: null,
-          blockQuoteDepth: null,
-          codeBlock: null,
-          thematicBreak: false,
-          listItem: false,
-          ordinal: presentation.ordinal,
-          active: false,
-          selection: null,
-          runs: const [],
-        );
-      }
-      final contentStart = result.start + resultShell.prefixUtf16Length;
-      final content = resultText.substring(resultShell.prefixUtf16Length);
-      final block = switch (resultShell.kind) {
-        FlarkProjectionResultBlockKind.plain => (
-          leading: '',
-          kind: 5,
-          heading: null,
-          quote: null,
-          list: false,
-        ),
-        FlarkProjectionResultBlockKind.atxHeading => (
-          leading: '',
-          kind: 12,
-          heading: resultShell.parameter,
-          quote: null,
-          list: false,
-        ),
-        FlarkProjectionResultBlockKind.blockQuote => (
-          leading: _projectedBlockQuotePrefixDepth(resultShell.parameter),
-          kind: 5,
-          heading: null,
-          quote: resultShell.parameter,
-          list: false,
-        ),
-        FlarkProjectionResultBlockKind.listItem => (
-          leading: resultText.substring(0, resultShell.prefixUtf16Length),
-          kind: 5,
-          heading: null,
-          quote: null,
-          list: true,
-        ),
-        FlarkProjectionResultBlockKind.removed => throw StateError(
-          'removed result shell was not handled before block construction',
-        ),
-      };
-      final resultRuns = List<FlarkSurfaceTextRun>.unmodifiable([
-        FlarkSurfaceTextRun(
-          text: content,
-          sourceUtf16Start: contentStart,
-          sourceUtf16End: result.end,
-          sourceExact: true,
-          styles: const {},
-        ),
-      ]);
-      return FlarkSurfaceRow(
-        leadingText: block.leading,
-        text: content,
-        globalUtf16Start: contentStart,
-        kind: block.kind,
-        headingLevel: block.heading,
-        blockQuoteDepth: block.quote,
-        codeBlock: null,
-        thematicBreak: false,
-        listItem: block.list,
-        ordinal: presentation.ordinal,
-        active: false,
-        selection: null,
-        runs: resultRuns,
-      );
-    }
-    final runs = List<FlarkSurfaceTextRun>.unmodifiable([
-      ...before,
-      FlarkSurfaceTextRun(
-        text: resultText,
-        sourceUtf16Start: result.start,
-        sourceUtf16End: result.end,
-        sourceExact: true,
-        styles: const {},
-      ),
-      ...after,
-    ]);
-    return FlarkSurfaceRow(
-      leadingText: presentation.leadingText,
-      text: runs.map((run) => run.text).join(),
-      globalUtf16Start: presentation.globalUtf16Start,
-      kind: presentation.kind,
-      headingLevel: presentation.headingLevel,
-      blockQuoteDepth: presentation.blockQuoteDepth,
-      codeBlock: presentation.codeBlock,
-      thematicBreak: presentation.thematicBreak,
-      listItem: presentation.listItem,
-      ordinal: presentation.ordinal,
-      active: false,
-      selection: null,
-      runs: runs,
-    );
   }
 
   Future<void> _completeQueuedEdit(
@@ -6071,7 +5625,7 @@ final class FlarkEditorController extends ChangeNotifier
           ({
             int index,
             FlarkProjectionEditCellReceipt receipt,
-            FlarkSurfaceRow presentation,
+            FlarkCorePresentationRow presentation,
           })
         >[];
     for (
@@ -6101,16 +5655,14 @@ final class FlarkEditorController extends ChangeNotifier
           ? authority
           : null;
       if (receipt == null) continue;
-      final base = _committedStructuralSurfaceRow(
-        surface,
-        includeEditingState: false,
-      );
-      final presentation = _spliceProjectionEditCellPresentation(
-        base,
-        receipt,
-        start,
-        end,
-        replacement,
+      final presentation = advancePendingPresentationRow(
+        presentation: surface.presentation,
+        authority: receipt,
+        visibleSource: _visibleSource,
+        visibleUtf16Start: _visibleUtf16Start,
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
       );
       if (presentation != null) {
         candidates.add((
@@ -6149,7 +5701,7 @@ final class FlarkEditorController extends ChangeNotifier
         sourceUtf16: source,
         projectionCurrent: true,
         role: previous.role,
-        presentation: _corePresentationRow(matched.presentation, source),
+        presentation: matched.presentation,
       ),
     );
     _coordinator.setPendingStructuralSurfaces(states);
@@ -7559,9 +7111,6 @@ final class FlarkEditorController extends ChangeNotifier
     }
     return row.sourceUtf16;
   }
-
-  String _projectedBlockQuotePrefixDepth(int depth) =>
-      FlarkSurfaceProjector.blockQuotePrefixDepth(depth);
 
   bool _rowSemanticsCurrent(FlarkSourceRange mappedSource) =>
       _captureSurfaceProjector().rowSemanticsCurrent(mappedSource);

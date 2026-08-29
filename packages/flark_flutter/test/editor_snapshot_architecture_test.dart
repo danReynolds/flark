@@ -47,4 +47,21 @@ void main() {
     expect(portableSnapshotSources, isNot(contains('dart:ui')));
     expect(controller, isNot(contains('class FlarkEditorSnapshot')));
   });
+
+  test('pending presentation evolution remains below Flutter', () {
+    expect(controller, isNot(contains('_spliceContinuityPresentation')));
+    expect(
+      controller,
+      isNot(contains('_spliceProjectionEditCellPresentation')),
+    );
+    expect(
+      controller,
+      isNot(
+        contains(
+          'switch (authority) {\n'
+          '    FlarkProjectionContinuityReceipt',
+        ),
+      ),
+    );
+  });
 }
