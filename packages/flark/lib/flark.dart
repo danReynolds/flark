@@ -80,6 +80,15 @@ export 'src/editor_command_executor.dart'
         FlarkEditorCommandExecutor,
         FlarkHistoryDirection,
         FlarkSourceEditCommand;
+export 'src/editor_parse_driver.dart'
+    show
+        FlarkEditorParseDriver,
+        FlarkEditorParseOpeningPublication,
+        FlarkEditorParseOpeningSealed,
+        FlarkEditorParsePublication,
+        FlarkEditorParseReadyPublication,
+        FlarkEditorParseStep,
+        FlarkEditorParseStopped;
 export 'src/editor_snapshot.dart'
     show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
 export 'src/editor_input_window.dart'

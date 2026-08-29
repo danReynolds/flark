@@ -23,6 +23,9 @@ void main() {
   final portableCommandExecutor = File(
     '../flark/lib/src/editor_command_executor.dart',
   ).readAsStringSync();
+  final portableParseDriver = File(
+    '../flark/lib/src/editor_parse_driver.dart',
+  ).readAsStringSync();
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
@@ -182,6 +185,32 @@ void main() {
     expect(portableCommandExecutor, contains('executeSemanticAction'));
     expect(portableCommandExecutor, contains('executeHistory'));
     expect(portableCommandExecutor, contains('executeCompositionCancel'));
+  });
+
+  test('native parse progression has one portable execution boundary', () {
+    expect(portableParseDriver, isNot(contains('package:flutter')));
+    expect(portableParseDriver, isNot(contains('dart:ui')));
+    expect(controller, contains('FlarkEditorParseDriver _parseDriver'));
+    expect(controller, contains('switch (await _parseDriver.next())'));
+    expect(portableParseDriver, contains('_coordinator.editTail'));
+    expect(
+      portableParseDriver,
+      contains('_coordinator.sourceEditAdoptionTail'),
+    );
+    expect(portableParseDriver, contains('_document.pump('));
+    expect(portableParseDriver, contains('_document.queryViewport('));
+    expect(portableParseDriver, contains('adoptOpening('));
+
+    final finishParsing = RegExp(
+      r'Future<void> _finishParsing\(\) async \{[\s\S]*?\n  void _retainOptimisticRefreshAnchor',
+    ).firstMatch(controller)!.group(0)!;
+    expect(finishParsing, isNot(contains('_document.pump(')));
+    expect(finishParsing, isNot(contains('_document.queryViewport(')));
+    expect(finishParsing, isNot(contains('_coordinator.editTail')));
+    expect(
+      finishParsing,
+      isNot(contains('_coordinator.sourceEditAdoptionTail')),
+    );
   });
 
   test('Flutter callback shapes converge before editor policy', () {

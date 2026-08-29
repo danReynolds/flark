@@ -88,6 +88,13 @@ final class FlarkEditorController extends ChangeNotifier
       coordinator: _coordinator,
       session: _session,
     );
+    _parseDriver = FlarkEditorParseDriver(
+      document: _document,
+      session: _session,
+      coordinator: _coordinator,
+      openingHeadProbeBytes: _openingHeadProbeBytes,
+      viewportRowsPerPage: _viewportRowsPerPage,
+    );
     _viewportPager = FlarkEditorViewportPager(
       source: _document,
       coordinator: _coordinator,
@@ -104,6 +111,7 @@ final class FlarkEditorController extends ChangeNotifier
   final FlarkCoreEditorSession _session;
   final FlarkEditorCoordinator _coordinator = FlarkEditorCoordinator();
   late final FlarkEditorCommandExecutor _commands;
+  late final FlarkEditorParseDriver _parseDriver;
   final ObserverList<VoidCallback> _inputStateListeners =
       ObserverList<VoidCallback>();
 
@@ -5165,128 +5173,42 @@ final class FlarkEditorController extends ChangeNotifier
   Future<void> _finishParsing() async {
     try {
       _status = _idleStatus(current: false);
-      // Streamed-open startup (RFC 029 A3): a document that is still
-      // admitting source cannot pump to Ready first — that would discard the
-      // certified head the whole path exists to serve. Instead, interleave
-      // bounded pump slices with the bounded head-window certification probe
-      // and publish through the ordinary viewport refresh path: the first
-      // certified viewport makes the editor paint and accept input for the
-      // certified region, and later publications happen only on genuine
-      // certification upgrades (an adopted append rebinds the same certified
-      // head, so republishing it would be a no-op; a mid-load edit's
-      // recertification arrives at a new revision). Uncertified turns
-      // publish nothing, so the last certified presentation stays painted
-      // exactly as the projection-continuity machinery already guarantees
-      // during recertification. When the stream seals, fall through to the
-      // ordinary pump-to-ready convergence below.
-      var openingPublishedCertifiedEnd = -1;
-      Object? openingError;
-      StackTrace? openingErrorStackTrace;
-      if (_document.isOpening) {
-        // A failed stream never seals, so the loop below would otherwise
-        // keep serving the admitted prefix forever without surfacing the
-        // typed failure the core layer is holding for it.
-        unawaited(
-          _document.openingSealed.then<void>(
-            (_) {},
-            onError: (Object error, StackTrace stackTrace) {
-              openingError = error;
-              openingErrorStackTrace = stackTrace;
-            },
-          ),
-        );
-      }
-      while (_document.isOpening && !_closed && !_session.compositionActive) {
-        if (openingError case final error?) {
-          Error.throwWithStackTrace(error, openingErrorStackTrace!);
+      while (true) {
+        switch (await _parseDriver.next()) {
+          case FlarkEditorParseStopped():
+            return;
+          case FlarkEditorParseOpeningSealed():
+            _openingPublication?.complete();
+            _openingPublication = null;
+            if (_status == FlarkEditorStatus.streaming) {
+              _status = FlarkEditorStatus.parsing;
+              notifyListeners();
+            }
+          case final FlarkEditorParseOpeningPublication publication:
+            await _refreshViewport(
+              restoreInputWindow: true,
+              expectedEditGeneration: publication.editGeneration,
+              ensureActiveInputVisible: true,
+            );
+            if (_parseDriver.adoptOpening(publication)) {
+              _openingPublication?.complete();
+              _openingPublication = null;
+            }
+          case final FlarkEditorParseReadyPublication publication:
+            await _refreshViewport(
+              restoreInputWindow: true,
+              expectedEditGeneration: publication.editGeneration,
+              ensureActiveInputVisible: true,
+            );
+            if (!_parseDriver.accepts(publication)) continue;
+            if (_certificationDeferredInputActive) {
+              // Receipt-backed rows can be safe to paint before they are
+              // current command semantics. Reclassify their queued command
+              // only after this certified viewport has installed.
+              _promoteCertificationDeferredInput();
+            }
+            return;
         }
-        await _document.pump(workUnits: 512);
-        if (_closed || _session.compositionActive) return;
-        if (!_document.isOpening) break;
-        final probe = await _document.queryViewport(
-          endByte: math.min(sourceByteLength, _openingHeadProbeBytes),
-          maxRows: _viewportRowsPerPage,
-        );
-        // A semantic row query answers with whole-page certification; the
-        // per-range breakdown belongs to live-projection queries and is
-        // always empty here. During a streamed open the runtime clamps the
-        // page to the certified head, so a certified answer carrying rows is
-        // exactly the publishable event, and its last row's end is the
-        // certified frontier that decides whether a later turn upgraded.
-        final certified = probe.isCertified && probe.rows.isNotEmpty;
-        final certifiedEnd = certified ? probe.rows.last.sourceBytes.end : 0;
-        final upgraded =
-            probe.revision != _openingPublishedRevision ||
-            certifiedEnd > openingPublishedCertifiedEnd;
-        if (probe.continuation != 0) {
-          await _document.releaseViewportContinuation(probe);
-        }
-        // An in-flight edit owns its own refresh; publishing around it would
-        // race the optimistic window against a not-yet-committed splice.
-        if (!certified || !upgraded || _coordinator.pendingEdits != 0) continue;
-        final stamp = _coordinator.stamp;
-        await _refreshViewport(
-          restoreInputWindow: true,
-          expectedEditGeneration: stamp.editGeneration,
-          ensureActiveInputVisible: true,
-        );
-        if (!_coordinator.accepts(stamp)) continue;
-        _coordinator.recordOpeningPublication(probe.revision);
-        openingPublishedCertifiedEnd = certifiedEnd;
-        _openingPublication?.complete();
-        _openingPublication = null;
-      }
-      // Leaving the opening loop for any reason — sealed, closed, faulted,
-      // or a composition taking over — releases every presentation barrier
-      // waiting on the next publication; none is coming from this loop.
-      _openingPublication?.complete();
-      _openingPublication = null;
-      if (_closed || _session.compositionActive) return;
-      if (_status == FlarkEditorStatus.streaming) {
-        // The stream sealed; the post-seal parse converges below.
-        _status = FlarkEditorStatus.parsing;
-        notifyListeners();
-      }
-      parseLoop:
-      while (!_closed && !_session.compositionActive) {
-        // An older idle parser task can survive into a newer edit generation.
-        // Wait for that generation's native edit tail before pumping/querying;
-        // otherwise it can publish a shorter pre-commit source window beside
-        // the optimistic input for the same generation.
-        final stamp = _coordinator.stamp;
-        final editBarrier = _coordinator.editTail;
-        final adoptionBarrier = _coordinator.sourceEditAdoptionTail;
-        await Future.wait([editBarrier, adoptionBarrier]);
-        if (_closed || _session.compositionActive) return;
-        if (!_coordinator.accepts(stamp) ||
-            !identical(editBarrier, _coordinator.editTail) ||
-            !identical(adoptionBarrier, _coordinator.sourceEditAdoptionTail)) {
-          continue;
-        }
-        while (!_document.isReady && !_closed) {
-          await _document.pump(workUnits: 512);
-          if (_session.compositionActive) return;
-          if (!_coordinator.accepts(stamp)) continue parseLoop;
-        }
-        if (_closed || _session.compositionActive) return;
-        if (!_coordinator.accepts(stamp)) continue;
-        await _refreshViewport(
-          restoreInputWindow: true,
-          expectedEditGeneration: stamp.editGeneration,
-          ensureActiveInputVisible: true,
-        );
-        if (_coordinator.accepts(stamp) && _certificationDeferredInputActive) {
-          // Receipt-backed dependency or structural rows can be safe to paint
-          // without being current command semantics. A Return/Delete/
-          // Backspace observed on that surface waits here, then reclassifies
-          // against the certified row partition instead of falling back
-          // literally in provisional coordinates.
-          _promoteCertificationDeferredInput();
-        }
-        if (_coordinator.accepts(stamp)) return;
-        // A newer edit arrived while the parser/query task was in flight.
-        // This same task must converge on that generation: a later idle timer
-        // may already have joined the runtime's single parser task.
       }
     } catch (error) {
       if (_certificationDeferredInputActive) {
