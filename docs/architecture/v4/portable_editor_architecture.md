@@ -162,8 +162,10 @@ Current checkpoint: snapshot and deterministic projection ownership is now in
 native-backed Dart and Flutter suites pass, including the 1 MiB and 5 MiB paint
 scenarios. Parser-authorized pending-presentation evolution also operates on
 framework-neutral Core rows in `flark`; Flutter no longer splices projection
-continuity or edit-cell result shells. Controller effect orchestration remains,
-so M3 is not complete.
+continuity or edit-cell result shells. Bounded viewport, row, visible-source,
+certification, and optimistic-coordinate state now advance through one tested
+portable state machine. Flutter still performs native query effects and input
+restoration, so the controller-facade work is not complete.
 
 ### M4 — large-module audit and deletion
 

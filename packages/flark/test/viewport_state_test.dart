@@ -2,6 +2,142 @@ import 'package:flark/flark.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('editor viewport state', () {
+    FlarkViewportRow row() => FlarkViewportRow(
+      ordinal: 0,
+      kind: 5,
+      sourceBytes: const FlarkSourceRange(0, 3),
+      sourceUtf16: const FlarkSourceRange(0, 3),
+      editableBytes: const FlarkSourceRange(0, 3),
+      editableUtf16: const FlarkSourceRange(0, 3),
+      editCapability: FlarkViewportRowEditCapability.contiguous,
+      headingLevel: null,
+      headingStyle: null,
+      listItem: null,
+      blockQuote: null,
+      codeBlock: null,
+      thematicBreak: false,
+      pathDepth: 0,
+      inlineFacts: const [],
+    );
+
+    FlarkViewport viewport({
+      required FlarkCertification certification,
+      List<FlarkViewportRow> rows = const [],
+    }) => FlarkViewport(
+      revision: 1,
+      snapshot: 1,
+      requestedBytes: const FlarkSourceRange(0, 3),
+      coveredBytes: const FlarkSourceRange(0, 3),
+      coveredUtf16: const FlarkSourceRange(0, 3),
+      certification: certification,
+      rows: rows,
+      neutralSource: rows.isEmpty ? 'abc' : null,
+      continuation: 0,
+    );
+
+    test('installs source rows and certification as one state', () {
+      final state = FlarkEditorViewportState();
+
+      final installation = state.install(
+        viewport(
+          certification: FlarkCertification.currentCertified,
+          rows: [row()],
+        ),
+        'abc',
+      );
+
+      expect(installation.installsCertifiedSurface, isTrue);
+      expect(state.semanticCurrent, isTrue);
+      expect(state.visibleSource, 'abc');
+      expect(state.rows, hasLength(1));
+
+      final adoption = state.applyOptimisticEdit(
+        globalStart: 1,
+        globalEnd: 1,
+        replacement: 'x',
+        fallbackSource: 'axbc',
+        fallbackUtf16Start: 0,
+        focusUtf16: 2,
+        maximumVisibleCodeUnits: 16,
+      );
+
+      expect(
+        adoption.disposition,
+        FlarkOptimisticViewportEditDisposition.retainedMappedSurface,
+      );
+      expect(state.semanticCurrent, isFalse);
+      expect(state.visibleSource, 'axbc');
+      expect(state.rows, hasLength(1));
+      expect(state.mapRange(const FlarkSourceRange(0, 3)).end, 4);
+    });
+
+    test('matching pending source retains the installed row shell', () {
+      final state = FlarkEditorViewportState()
+        ..install(
+          viewport(
+            certification: FlarkCertification.currentCertified,
+            rows: [row()],
+          ),
+          'abc',
+        );
+
+      final installation = state.install(
+        viewport(certification: FlarkCertification.pendingNeutral),
+        'abc',
+      );
+
+      expect(installation.retainsExistingSurface, isTrue);
+      expect(state.rows, hasLength(1));
+      expect(state.visibleSource, 'abc');
+      expect(state.semanticCurrent, isFalse);
+    });
+
+    test('an out-of-window edit falls back atomically to host input', () {
+      final state = FlarkEditorViewportState()
+        ..install(
+          viewport(
+            certification: FlarkCertification.currentCertified,
+            rows: [row()],
+          ),
+          'abc',
+        );
+
+      final adoption = state.applyOptimisticEdit(
+        globalStart: 9,
+        globalEnd: 9,
+        replacement: 'x',
+        fallbackSource: 'input',
+        fallbackUtf16Start: 8,
+        focusUtf16: 10,
+        maximumVisibleCodeUnits: 16,
+      );
+
+      expect(
+        adoption.disposition,
+        FlarkOptimisticViewportEditDisposition.replacedByInputWindow,
+      );
+      expect(state.viewport, isNull);
+      expect(state.rows, isEmpty);
+      expect(state.visibleSource, 'input');
+      expect(state.visibleUtf16Start, 8);
+    });
+
+    test('bounded replacement never returns an unpaired surrogate', () {
+      final window = boundedReplacementWindow(
+        source: 'a😀b',
+        start: 1,
+        end: 1,
+        replacement: '',
+        focus: 2,
+        maximumCodeUnits: 1,
+      );
+
+      expect(window.text, isEmpty);
+      expect(window.start, 3);
+    });
+  });
+
   group('viewport installation plan', () {
     FlarkViewport viewport({
       required FlarkCertification certification,

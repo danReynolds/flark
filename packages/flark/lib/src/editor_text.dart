@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 /// Direction used when one rendered caret position borders hidden source.
 enum FlarkTextAffinity { upstream, downstream }
 
@@ -85,3 +87,85 @@ final class FlarkEditorInputValue {
   @override
   int get hashCode => Object.hash(text, selection, composing);
 }
+
+int replacementResultLength({
+  required String source,
+  required int start,
+  required int end,
+  required String replacement,
+}) => source.length - (end - start) + replacement.length;
+
+/// Returns a bounded, well-formed UTF-16 window around a replacement focus.
+({int start, String text}) boundedReplacementWindow({
+  required String source,
+  required int start,
+  required int end,
+  required String replacement,
+  required int focus,
+  required int maximumCodeUnits,
+}) {
+  if (start < 0 || start > source.length) {
+    throw RangeError.range(start, 0, source.length, 'start');
+  }
+  if (end < start || end > source.length) {
+    throw RangeError.range(end, start, source.length, 'end');
+  }
+  if (maximumCodeUnits <= 0) {
+    throw ArgumentError.value(
+      maximumCodeUnits,
+      'maximumCodeUnits',
+      'must be positive',
+    );
+  }
+  final nextLength = replacementResultLength(
+    source: source,
+    start: start,
+    end: end,
+    replacement: replacement,
+  );
+  final windowLength = math.min(nextLength, maximumCodeUnits);
+  final windowStart = (focus - windowLength ~/ 2).clamp(
+    0,
+    nextLength - windowLength,
+  );
+  final windowEnd = windowStart + windowLength;
+  final replacementEnd = start + replacement.length;
+  final output = StringBuffer();
+
+  void appendIntersection(
+    String segment,
+    int segmentStart,
+    int sourceStart,
+    int sourceEnd,
+  ) {
+    final segmentEnd = segmentStart + sourceEnd - sourceStart;
+    final overlapStart = math.max(windowStart, segmentStart);
+    final overlapEnd = math.min(windowEnd, segmentEnd);
+    if (overlapStart >= overlapEnd) return;
+    output.write(
+      segment.substring(
+        sourceStart + overlapStart - segmentStart,
+        sourceStart + overlapEnd - segmentStart,
+      ),
+    );
+  }
+
+  appendIntersection(source, 0, 0, start);
+  appendIntersection(replacement, start, 0, replacement.length);
+  appendIntersection(source, replacementEnd, end, source.length);
+  var bounded = output.toString();
+  var boundedStart = windowStart;
+  if (bounded.isNotEmpty && _isLowSurrogate(bounded.codeUnitAt(0))) {
+    bounded = bounded.substring(1);
+    boundedStart += 1;
+  }
+  if (bounded.isNotEmpty &&
+      _isHighSurrogate(bounded.codeUnitAt(bounded.length - 1))) {
+    bounded = bounded.substring(0, bounded.length - 1);
+  }
+  return (start: boundedStart, text: bounded);
+}
+
+bool _isHighSurrogate(int codeUnit) => codeUnit >= 0xd800 && codeUnit <= 0xdbff;
+
+bool _isLowSurrogate(int codeUnit) => codeUnit >= 0xdc00 && codeUnit <= 0xdfff;

@@ -80,7 +80,14 @@ export 'src/editor_text.dart'
         FlarkEditorInputValue,
         FlarkTextAffinity,
         FlarkTextRange,
-        FlarkTextSelection;
+        FlarkTextSelection,
+        boundedReplacementWindow,
+        replacementResultLength;
+export 'src/editor_viewport_state.dart'
+    show
+        FlarkEditorViewportState,
+        FlarkOptimisticViewportEditAdoption,
+        FlarkOptimisticViewportEditDisposition;
 export 'src/pending_presentation_evolution.dart'
     show
         advancePendingDependencyPresentation,

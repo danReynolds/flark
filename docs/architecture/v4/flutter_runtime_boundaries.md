@@ -46,7 +46,7 @@ permission to preserve the controller's existing method graph.
 | Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
 | Evolution of parser-authorized pending rows, structural transition ownership, and successor caret boundaries | Pending-presentation evolution in `flark` | Markdown inference, Flutter types, mutation callbacks, or asynchronous work |
 | Conversion between portable input facts and Flutter text types | Flutter text adaptation | Source mutation, Markdown rules, or retained editor state |
-| Whether a viewport result can atomically replace or certify the current surface | Viewport installation plan in `flark` | Mutation or asynchronous work |
+| Bounded viewport, rows, visible source, certification, and optimistic coordinate mapping | `FlarkEditorViewportState` in `flark` | Native queries, input restoration, publication, or Flutter types |
 | Ordered page path, current page index, and retained refresh origin | Viewport navigation state in `flark` | Native queries, continuation lifetime, rows, input restoration, or publication |
 | Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
 
@@ -85,7 +85,7 @@ be extracted by authority, not by file length:
   pending presentation, and asynchronous lineage are now portable, but some
   effect-specific coordination remains in the facade;
 - viewport query/restore orchestration should be split only after its page-path
-  state and adoption rules (now centralized and tested in `flark`) can join
+  state and bounded surface adoption (now centralized and tested in `flark`) can join
   native queries to the surface/input handoff through narrow outcomes without
   controller callbacks; and
 - command-specific Markdown behavior must move only through new Core receipts,

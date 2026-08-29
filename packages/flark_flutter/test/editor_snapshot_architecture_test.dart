@@ -11,6 +11,9 @@ void main() {
     '../flark/lib/src/surface_projection.dart',
     '../flark/lib/src/surface_projector.dart',
   ].map((path) => File(path).readAsStringSync()).join('\n');
+  final portableViewportState = File(
+    '../flark/lib/src/editor_viewport_state.dart',
+  ).readAsStringSync();
 
   test('controller has one immutable outward publication function', () {
     expect(
@@ -72,5 +75,15 @@ void main() {
       controller,
       isNot(contains('resolveCommittedPresentationTransitionV1(')),
     );
+  });
+
+  test('bounded viewport publication has one portable state owner', () {
+    expect(portableViewportState, isNot(contains('package:flutter')));
+    expect(portableViewportState, isNot(contains('dart:ui')));
+    expect(controller, contains('final FlarkEditorViewportState'));
+    expect(controller, isNot(contains('FlarkViewport? _viewport')));
+    expect(controller, isNot(contains('List<FlarkViewportRow> _cachedRows')));
+    expect(controller, isNot(contains('String _visibleSource')));
+    expect(controller, isNot(contains('FlarkOptimisticRangeMap')));
   });
 }

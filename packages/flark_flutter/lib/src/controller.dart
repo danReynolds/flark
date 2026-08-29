@@ -79,7 +79,6 @@ typedef _QueuedEditPublication = FlarkQueuedEditPublication;
 typedef _MutationAcceptance = FlarkMutationAcceptance;
 typedef _RejectedMutation = FlarkRejectedMutation;
 typedef _QueuedMutation = FlarkQueuedMutation;
-typedef _OptimisticViewportEdit = FlarkOptimisticViewportEdit;
 typedef _ViewportPageAnchor = FlarkViewportPageAnchor;
 typedef _ViewportQueryPage = FlarkViewportQueryPage;
 typedef _EditorSelectionSnapshot = FlarkEditorSelectionSnapshot;
@@ -114,11 +113,7 @@ final class FlarkEditorController extends ChangeNotifier
   final ObserverList<VoidCallback> _inputStateListeners =
       ObserverList<VoidCallback>();
 
-  FlarkViewport? _viewport;
-  List<FlarkViewportRow> _cachedRows = const [];
-  List<FlarkCertificationRange> _certificationRanges = const [];
-  String _visibleSource = '';
-  int _visibleUtf16Start = 0;
+  final FlarkEditorViewportState _viewportState = FlarkEditorViewportState();
   TextEditingValue _inputValue = const TextEditingValue(
     selection: TextSelection.collapsed(offset: 0),
   );
@@ -129,13 +124,9 @@ final class FlarkEditorController extends ChangeNotifier
   Timer? _parseTimer;
   final FlarkViewportNavigationState _viewportNavigation =
       FlarkViewportNavigationState();
-  final FlarkOptimisticRangeMap _optimisticViewportEdits =
-      FlarkOptimisticRangeMap();
   FlarkPendingPresentationSnapshot get _pendingPresentation =>
       _coordinator.pendingPresentation;
-  bool _semanticViewportCurrent = false;
   bool _semanticEditV1Active = false;
-  bool _certificationRevisionCurrent = false;
   bool _crossRowSelection = false;
   bool _oversizedSelection = false;
   FlarkCoreInlineContinuationV1? _inlineContinuation;
@@ -201,21 +192,21 @@ final class FlarkEditorController extends ChangeNotifier
     return current ? FlarkEditorStatus.ready : FlarkEditorStatus.parsing;
   }
 
-  FlarkViewport? get viewport => _viewport;
-  String get visibleSource => _visibleSource;
-  int get visibleUtf16Start => _visibleUtf16Start;
+  FlarkViewport? get viewport => _viewportState.viewport;
+  String get visibleSource => _viewportState.visibleSource;
+  int get visibleUtf16Start => _viewportState.visibleUtf16Start;
   int get viewportPageIndex => _viewportNavigation.pageIndex;
   bool get canPageBackward =>
-      _semanticViewportCurrent && _viewportNavigation.canPageBackward;
+      _viewportState.semanticCurrent && _viewportNavigation.canPageBackward;
   bool get canPageForward {
-    final viewport = _viewport;
-    return _semanticViewportCurrent &&
+    final viewport = _viewportState.viewport;
+    return _viewportState.semanticCurrent &&
         viewport != null &&
         (viewport.continuation != 0 ||
             viewport.coveredBytes.end < sourceByteLength);
   }
 
-  bool get semanticsCurrent => _semanticViewportCurrent;
+  bool get semanticsCurrent => _viewportState.semanticCurrent;
   TextEditingValue get inputValue => _inputValue;
   int get revision => _document.revision;
 
@@ -262,7 +253,7 @@ final class FlarkEditorController extends ChangeNotifier
   bool get pendingTableNavigationLocked {
     final continuity = _pendingPresentation.dependency;
     if (continuity == null) return false;
-    for (final row in _cachedRows) {
+    for (final row in _viewportState.rows) {
       if (row.ordinal == continuity.rowOrdinal) return row.table != null;
     }
     return false;
@@ -370,7 +361,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   @visibleForTesting
   List<FlarkCertificationRange> get debugCertificationRanges =>
-      List.unmodifiable(_certificationRanges);
+      List.unmodifiable(_viewportState.certificationRanges);
 
   FlarkInputWindowShadow get inputWindowShadow => _platformInput.snapshot(
     representedRevision: _document.revision,
@@ -436,7 +427,7 @@ final class FlarkEditorController extends ChangeNotifier
     // command.
     if (_pendingEdits != 0 ||
         _pendingSemanticInput != null ||
-        !_semanticViewportCurrent ||
+        !_viewportState.semanticCurrent ||
         _session.compositionActive) {
       return;
     }
@@ -647,7 +638,7 @@ final class FlarkEditorController extends ChangeNotifier
     _parseTimer?.cancel();
     _parseTimer = null;
     if (_closed ||
-        (_document.isReady && _semanticViewportCurrent) ||
+        (_document.isReady && _viewportState.semanticCurrent) ||
         _status == FlarkEditorStatus.faulted) {
       return Future<void>.value();
     }
@@ -664,7 +655,7 @@ final class FlarkEditorController extends ChangeNotifier
     return _coordinator.runPage(_loadPreviousViewportPage);
   }
 
-  List<FlarkViewportRow> get rows => _cachedRows;
+  List<FlarkViewportRow> get rows => _viewportState.rows;
 
   /// The sole outward publication function. Every listener observes the exact
   /// immutable value installed here; no asynchronous effect notifies directly.
@@ -676,7 +667,7 @@ final class FlarkEditorController extends ChangeNotifier
   FlarkEditorSnapshot _captureEditorSnapshot() {
     final projector = _captureSurfaceProjector();
     final capturedRows = List<FlarkEditorSnapshotRow>.unmodifiable(
-      _cachedRows.map((row) {
+      _viewportState.rows.map((row) {
         return FlarkEditorSnapshotRow(
           row: row,
           sourceUtf16: projector.surfaceSourceRange(row),
@@ -704,18 +695,19 @@ final class FlarkEditorController extends ChangeNotifier
           !_coordinator.historyReplayPending &&
           (_session.canUndo || _coordinator.pendingEdits > 0),
       canRedo: !_coordinator.historyReplayPending && _session.canRedo,
-      semanticsCurrent: _semanticViewportCurrent,
+      semanticsCurrent: _viewportState.semanticCurrent,
       viewportPageIndex: _viewportNavigation.pageIndex,
       canPageForward:
-          _semanticViewportCurrent &&
-          _viewport != null &&
-          (_viewport!.continuation != 0 ||
-              _viewport!.coveredBytes.end < _document.sourceByteLength),
+          _viewportState.semanticCurrent &&
+          _viewportState.viewport != null &&
+          (_viewportState.viewport!.continuation != 0 ||
+              _viewportState.viewport!.coveredBytes.end <
+                  _document.sourceByteLength),
       canPageBackward:
-          _semanticViewportCurrent && _viewportNavigation.canPageBackward,
+          _viewportState.semanticCurrent && _viewportNavigation.canPageBackward,
       pendingTableNavigationLocked: pendingTableNavigationLocked,
-      visibleUtf16Start: _visibleUtf16Start,
-      visibleSource: _visibleSource,
+      visibleUtf16Start: _viewportState.visibleUtf16Start,
+      visibleSource: _viewportState.visibleSource,
       canonicalSelectionBaseUtf16: _globalSelectionBase,
       canonicalSelectionExtentUtf16: _globalSelectionExtent,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
@@ -726,21 +718,16 @@ final class FlarkEditorController extends ChangeNotifier
     );
   }
 
-  FlarkSurfaceProjector _captureSurfaceProjector() => FlarkSurfaceProjector(
-    pendingPresentation: _pendingPresentation,
-    visibleUtf16Start: _visibleUtf16Start,
-    visibleSource: _visibleSource,
-    inputGlobalUtf16Start: _inputGlobalUtf16Start,
-    inputValue: portableEditorInputValue(_inputValue),
-    activeOrdinal: _activeOrdinal,
-    selectionBaseUtf16: _globalSelectionBase,
-    selectionExtentUtf16: _globalSelectionExtent,
-    crossRowSelection: _crossRowSelection,
-    semanticViewportCurrent: _semanticViewportCurrent,
-    certificationRevisionCurrent: _certificationRevisionCurrent,
-    certificationRanges: _certificationRanges,
-    optimisticRanges: _optimisticViewportEdits,
-  );
+  FlarkSurfaceProjector _captureSurfaceProjector() =>
+      _viewportState.captureSurfaceProjector(
+        pendingPresentation: _pendingPresentation,
+        inputGlobalUtf16Start: _inputGlobalUtf16Start,
+        inputValue: portableEditorInputValue(_inputValue),
+        activeOrdinal: _activeOrdinal,
+        selectionBaseUtf16: _globalSelectionBase,
+        selectionExtentUtf16: _globalSelectionExtent,
+        crossRowSelection: _crossRowSelection,
+      );
 
   FlarkSurfaceRow surfaceRow(
     FlarkViewportRow row, {
@@ -878,11 +865,12 @@ final class FlarkEditorController extends ChangeNotifier
       FlarkPendingPresentationPart.dependency,
     });
 
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
     final start = math.min(_globalSelectionBase, globalUtf16Offset);
     final end = math.max(_globalSelectionBase, globalUtf16Offset);
     if (end - start > _maximumInputCodeUnits ||
-        start < _visibleUtf16Start ||
+        start < _viewportState.visibleUtf16Start ||
         end > visibleEnd) {
       final exactBase = _globalSelectionBase;
       _globalSelectionExtent = globalUtf16Offset;
@@ -1543,7 +1531,7 @@ final class FlarkEditorController extends ChangeNotifier
     required bool restoreInputWindow,
     Future<void> Function()? prepareForRefresh,
   }) async {
-    final hadNoPriorSemanticRows = _cachedRows.isEmpty;
+    final hadNoPriorSemanticRows = _viewportState.rows.isEmpty;
     while (generation == _editGeneration && !_closed) {
       await _awaitEditPublicationCertification(
         generation,
@@ -1614,7 +1602,7 @@ final class FlarkEditorController extends ChangeNotifier
   bool _installedViewportProvesEditPublication({
     required bool allowExactPending,
   }) {
-    final viewport = _viewport;
+    final viewport = _viewportState.viewport;
     if (viewport == null) return false;
     return viewport.provesEditPublication(
       documentRevision: revision,
@@ -1816,7 +1804,7 @@ final class FlarkEditorController extends ChangeNotifier
         boundaryRowEnd <= globalCaret &&
         globalCaret <= boundaryEnd;
     if (editorBoundaryOwnsCaret &&
-        _cachedRows.any(
+        _viewportState.rows.any(
           (row) => surfaceSourceRange(row).start == globalCaret,
         )) {
       // The parser-authored paragraph gap still owns this boundary even when
@@ -2400,7 +2388,8 @@ final class FlarkEditorController extends ChangeNotifier
     TextEditingValue? provisionalAfter,
     _PlatformInputTiming? platformTiming,
   }) {
-    final staleViewportNeedsCommandCertification = !_semanticViewportCurrent;
+    final staleViewportNeedsCommandCertification =
+        !_viewportState.semanticCurrent;
     if ((!_publicationCertificationBarrierActive &&
             !staleViewportNeedsCommandCertification) ||
         _pendingSemanticInput != null) {
@@ -2910,13 +2899,6 @@ final class FlarkEditorController extends ChangeNotifier
     return sourceCursor != activation.end;
   }
 
-  int _replacementLength(
-    String source,
-    int start,
-    int end,
-    String replacement,
-  ) => source.length - (end - start) + replacement.length;
-
   _MutationAcceptance _acceptMutation(
     _TextMutation mutation, {
     required TextSelection selection,
@@ -3006,11 +2988,11 @@ final class FlarkEditorController extends ChangeNotifier
       // still restores the continuation through beforeSelection.
       _inlineContinuation = null;
     }
-    final nextLength = _replacementLength(
-      source,
-      effectiveMutation.start,
-      effectiveMutation.end,
-      effectiveMutation.replacement,
+    final nextLength = replacementResultLength(
+      source: source,
+      start: effectiveMutation.start,
+      end: effectiveMutation.end,
+      replacement: effectiveMutation.replacement,
     );
     final removedText = source.substring(
       effectiveMutation.start,
@@ -3057,12 +3039,13 @@ final class FlarkEditorController extends ChangeNotifier
             composing: effectiveComposing,
           );
     } else {
-      final window = _boundedReplacementWindow(
-        source,
-        effectiveMutation.start,
-        effectiveMutation.end,
-        effectiveMutation.replacement,
-        effectiveSelection.extentOffset,
+      final window = boundedReplacementWindow(
+        source: source,
+        start: effectiveMutation.start,
+        end: effectiveMutation.end,
+        replacement: effectiveMutation.replacement,
+        focus: effectiveSelection.extentOffset,
+        maximumCodeUnits: _maximumInputCodeUnits,
       );
       final windowEnd = window.start + window.text.length;
       final localBase = (effectiveSelection.baseOffset - window.start).clamp(
@@ -3242,57 +3225,6 @@ final class FlarkEditorController extends ChangeNotifier
         value.selection == expected.selection;
   }
 
-  ({int start, String text}) _boundedReplacementWindow(
-    String source,
-    int start,
-    int end,
-    String replacement,
-    int focus,
-  ) {
-    final nextLength = _replacementLength(source, start, end, replacement);
-    final windowLength = math.min(nextLength, _maximumInputCodeUnits);
-    final windowStart = (focus - windowLength ~/ 2).clamp(
-      0,
-      nextLength - windowLength,
-    );
-    final windowEnd = windowStart + windowLength;
-    final replacementEnd = start + replacement.length;
-    final output = StringBuffer();
-
-    void appendIntersection(
-      String segment,
-      int segmentStart,
-      int sourceStart,
-      int sourceEnd,
-    ) {
-      final segmentEnd = segmentStart + sourceEnd - sourceStart;
-      final overlapStart = math.max(windowStart, segmentStart);
-      final overlapEnd = math.min(windowEnd, segmentEnd);
-      if (overlapStart >= overlapEnd) return;
-      output.write(
-        segment.substring(
-          sourceStart + overlapStart - segmentStart,
-          sourceStart + overlapEnd - segmentStart,
-        ),
-      );
-    }
-
-    appendIntersection(source, 0, 0, start);
-    appendIntersection(replacement, start, 0, replacement.length);
-    appendIntersection(source, replacementEnd, end, source.length);
-    var bounded = output.toString();
-    var boundedStart = windowStart;
-    if (bounded.isNotEmpty && _isLowSurrogate(bounded.codeUnitAt(0))) {
-      bounded = bounded.substring(1);
-      boundedStart += 1;
-    }
-    if (bounded.isNotEmpty &&
-        _isHighSurrogate(bounded.codeUnitAt(bounded.length - 1))) {
-      bounded = bounded.substring(0, bounded.length - 1);
-    }
-    return (start: boundedStart, text: bounded);
-  }
-
   Future<void> close() async {
     if (_closed) return;
     _coordinator.beginClosing();
@@ -3320,7 +3252,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   Future<bool> _loadNextViewportPage() async {
-    final current = _viewport;
+    final current = _viewportState.viewport;
     if (current == null || !canPageForward) return false;
     final stamp = _coordinator.stamp;
     FlarkViewport? queriedViewport;
@@ -3379,7 +3311,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   Future<bool> _loadPreviousViewportPage() async {
-    final current = _viewport;
+    final current = _viewportState.viewport;
     final previousAnchor = _viewportNavigation.previousAnchor;
     if (current == null || previousAnchor == null) return false;
     final stamp = _coordinator.stamp;
@@ -3542,7 +3474,7 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   int? _surfaceOrdinalAt(int globalUtf16Offset) {
-    for (final row in _cachedRows) {
+    for (final row in _viewportState.rows) {
       final range = surfaceSourceRange(row);
       if (range.start <= globalUtf16Offset && globalUtf16Offset < range.end) {
         return row.ordinal;
@@ -3552,40 +3484,41 @@ final class FlarkEditorController extends ChangeNotifier
     // Only a true document/page tail gives the last cached row inclusive end
     // ownership. An internal blank gap must remain neutral rather than
     // retargeting Return to the preceding semantic row.
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
     if (globalUtf16Offset == sourceUtf16Length ||
         globalUtf16Offset == visibleEnd) {
-      for (final row in _cachedRows.reversed) {
+      for (final row in _viewportState.rows.reversed) {
         if (surfaceSourceRange(row).end == globalUtf16Offset) {
           return row.ordinal;
         }
       }
     }
-    if (_visibleSource.isEmpty) return -1;
-    final local = (globalUtf16Offset - _visibleUtf16Start).clamp(
+    if (_viewportState.visibleSource.isEmpty) return -1;
+    final local = (globalUtf16Offset - _viewportState.visibleUtf16Start).clamp(
       0,
-      _visibleSource.length,
+      _viewportState.visibleSource.length,
     );
     var line = 0;
     for (var index = 0; index < local; index++) {
-      if (_visibleSource.codeUnitAt(index) == 0x0a) line += 1;
+      if (_viewportState.visibleSource.codeUnitAt(index) == 0x0a) line += 1;
     }
     return -line - 1;
   }
 
   bool _ensureActiveInputVisible() {
     final caret = _globalSelectionExtent;
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
-    if (_visibleUtf16Start <= caret && caret <= visibleEnd) return false;
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
+    if (_viewportState.visibleUtf16Start <= caret && caret <= visibleEnd) {
+      return false;
+    }
     final inputEnd = _inputGlobalUtf16Start + _inputValue.text.length;
     if (caret < _inputGlobalUtf16Start || caret > inputEnd) return false;
-    _cachedRows = const [];
-    _certificationRanges = const [];
-    _certificationRevisionCurrent = false;
-    _semanticViewportCurrent = false;
-    _visibleSource = _inputValue.text;
-    _visibleUtf16Start = _inputGlobalUtf16Start;
-    _optimisticViewportEdits.clear();
+    _viewportState.adoptUncertifiedSourceWindow(
+      source: _inputValue.text,
+      startUtf16: _inputGlobalUtf16Start,
+    );
     _clearPendingTaskChecks();
     _status = _idleStatus(current: _document.isReady);
     return true;
@@ -3603,8 +3536,10 @@ final class FlarkEditorController extends ChangeNotifier
         .max(selection.baseOffset, selection.extentOffset)
         .clamp(selectionStart, sourceUtf16Length)
         .toInt();
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
-    if (selectionStart < _visibleUtf16Start || selectionEnd > visibleEnd) {
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
+    if (selectionStart < _viewportState.visibleUtf16Start ||
+        selectionEnd > visibleEnd) {
       final selectionLength = selectionEnd - selectionStart;
       var windowStart = (selection.extentOffset - _maximumInputCodeUnits ~/ 2)
           .clamp(0, math.max(0, sourceUtf16Length - _maximumInputCodeUnits))
@@ -3620,16 +3555,14 @@ final class FlarkEditorController extends ChangeNotifier
         sourceUtf16Length,
         windowStart + _maximumInputCodeUnits,
       );
-      _visibleSource = await _document.readSourceUtf16Range(
+      final source = await _document.readSourceUtf16Range(
         windowStart,
         windowEnd,
       );
-      _visibleUtf16Start = windowStart;
-      _cachedRows = const [];
-      _certificationRanges = const [];
-      _certificationRevisionCurrent = false;
-      _semanticViewportCurrent = false;
-      _optimisticViewportEdits.clear();
+      _viewportState.adoptUncertifiedSourceWindow(
+        source: source,
+        startUtf16: windowStart,
+      );
       _status = _idleStatus(current: _document.isReady);
     }
     _restoreSelectionSnapshot(snapshot);
@@ -3640,13 +3573,14 @@ final class FlarkEditorController extends ChangeNotifier
     final selection = snapshot.selection;
     final start = math.min(selection.baseOffset, selection.extentOffset);
     final end = math.max(selection.baseOffset, selection.extentOffset);
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
     if (!selection.isCollapsed &&
-        start >= _visibleUtf16Start &&
+        start >= _viewportState.visibleUtf16Start &&
         end <= visibleEnd &&
         end - start <= _maximumInputCodeUnits) {
       FlarkViewportRow? containingRow;
-      for (final row in _cachedRows) {
+      for (final row in _viewportState.rows) {
         final range = _mapViewportRange(_activationRange(row));
         if (range.start <= start && end <= range.end) {
           containingRow = row;
@@ -3704,7 +3638,7 @@ final class FlarkEditorController extends ChangeNotifier
     if (_restoreCommittedCaretBoundaryInputWindow(caret)) return;
     FlarkViewportRow? row;
     if (preferredOrdinal != null) {
-      for (final candidate in _cachedRows) {
+      for (final candidate in _viewportState.rows) {
         final range = _mapViewportRange(_activationRange(candidate));
         if (candidate.ordinal == preferredOrdinal &&
             range.start <= caret &&
@@ -3716,7 +3650,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     final ordinalAtCaret = _surfaceOrdinalAt(caret);
     if (row == null && ordinalAtCaret != null) {
-      for (final candidate in _cachedRows) {
+      for (final candidate in _viewportState.rows) {
         if (candidate.ordinal == ordinalAtCaret) {
           row = candidate;
           break;
@@ -3725,8 +3659,10 @@ final class FlarkEditorController extends ChangeNotifier
     }
     if (row != null) {
       final range = _mapViewportRange(_activationRange(row));
-      final visibleEnd = _visibleUtf16Start + _visibleSource.length;
-      if (range.start >= _visibleUtf16Start &&
+      final visibleEnd =
+          _viewportState.visibleUtf16Start +
+          _viewportState.visibleSource.length;
+      if (range.start >= _viewportState.visibleUtf16Start &&
           range.end <= visibleEnd &&
           range.start <= caret &&
           caret <= range.end) {
@@ -3739,18 +3675,20 @@ final class FlarkEditorController extends ChangeNotifier
         return;
       }
     }
-    final localCaret = (caret - _visibleUtf16Start).clamp(
+    final localCaret = (caret - _viewportState.visibleUtf16Start).clamp(
       0,
-      _visibleSource.length,
+      _viewportState.visibleSource.length,
     );
     final lineStart = localCaret == 0
         ? 0
-        : _visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
-    final newline = _visibleSource.indexOf('\n', localCaret);
-    final lineEnd = newline == -1 ? _visibleSource.length : newline + 1;
+        : _viewportState.visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
+    final newline = _viewportState.visibleSource.indexOf('\n', localCaret);
+    final lineEnd = newline == -1
+        ? _viewportState.visibleSource.length
+        : newline + 1;
     _activateWindowWithoutNotification(
-      text: _visibleSource.substring(lineStart, lineEnd),
-      sourceStart: _visibleUtf16Start + lineStart,
+      text: _viewportState.visibleSource.substring(lineStart, lineEnd),
+      sourceStart: _viewportState.visibleUtf16Start + lineStart,
       caret: caret,
       ordinal: ordinalAtCaret ?? -1,
     );
@@ -3881,7 +3819,7 @@ final class FlarkEditorController extends ChangeNotifier
         // remain rendered. A generic neutral fallback has no such typed
         // partition and must retain the prior atomic frame.
         !caretBoundaryStartsExactBlock &&
-        _cachedRows.any((row) {
+        _viewportState.rows.any((row) {
           final range = surfaceSourceRange(row);
           return range.end <= start || end <= range.start;
         });
@@ -4063,7 +4001,9 @@ final class FlarkEditorController extends ChangeNotifier
         row != null &&
         (_supportsSemanticParagraphBreakV1(row) ||
             parserOwnedEmbeddedLineStart);
-    if (row != null && _semanticViewportCurrent && !rowEligible) return false;
+    if (row != null && _viewportState.semanticCurrent && !rowEligible) {
+      return false;
+    }
     if (!rowEligible && !_semanticEditV1Active && !neutralCaret) return false;
     if (neutralCaret) _semanticEditV1Active = true;
     if (rowEligible) {
@@ -4090,7 +4030,7 @@ final class FlarkEditorController extends ChangeNotifier
         // only one primary editable range. An exact embedded line start is
         // still parser-owned; Rust's current-row context decides whether the
         // structural command is applicable at that boundary.
-        if (_semanticViewportCurrent &&
+        if (_viewportState.semanticCurrent &&
             !parserOwnedEmbeddedLineStart &&
             !atListMarkerEnd) {
           return false;
@@ -4133,7 +4073,7 @@ final class FlarkEditorController extends ChangeNotifier
             projectedStructuralRow ||
             atInlineSemanticBoundary);
     if (row != null &&
-        _semanticViewportCurrent &&
+        _viewportState.semanticCurrent &&
         !rowEligible &&
         !retainedSemanticWindowStart) {
       return false;
@@ -4155,7 +4095,7 @@ final class FlarkEditorController extends ChangeNotifier
                 (segment) =>
                     _mapViewportRange(segment.sourceUtf16).start == globalCaret,
               )) ||
-          (!_semanticViewportCurrent &&
+          (!_viewportState.semanticCurrent &&
               _pendingPresentation.structuralSurfaces.any((state) {
                 final surface = state.surface;
                 final runs = surface.presentation.runs;
@@ -4172,7 +4112,7 @@ final class FlarkEditorController extends ChangeNotifier
       if (!atStructuralSegmentStart &&
           !atInlineSemanticBoundary &&
           globalCaret != editable.start &&
-          (_semanticViewportCurrent || localCaret != 0) &&
+          (_viewportState.semanticCurrent || localCaret != 0) &&
           !retainedSemanticWindowStart) {
         return false;
       }
@@ -4223,7 +4163,8 @@ final class FlarkEditorController extends ChangeNotifier
     int globalCaret, {
     required bool backward,
   }) {
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
     for (final fact in row.inlineFacts ?? const <FlarkInlineFact>[]) {
       if (!fact.supportsEmptyOwnerDelete) continue;
       final content = _mapViewportRange(fact.contentUtf16);
@@ -4231,7 +4172,7 @@ final class FlarkEditorController extends ChangeNotifier
           ? content.end == globalCaret
           : content.start == globalCaret;
       if (!atBoundary ||
-          content.start < _visibleUtf16Start ||
+          content.start < _viewportState.visibleUtf16Start ||
           content.end > visibleEnd) {
         continue;
       }
@@ -4390,12 +4331,12 @@ final class FlarkEditorController extends ChangeNotifier
         _pendingPresentation.dependency != null ||
         _pendingPresentation.paragraphGap != null ||
         _pendingPresentation.structuralSurfaces.isNotEmpty ||
-        (!_semanticViewportCurrent &&
+        (!_viewportState.semanticCurrent &&
             _pendingPresentation.taskChecks.isEmpty)) {
       return null;
     }
     FlarkViewportRow? current;
-    for (final candidate in _cachedRows) {
+    for (final candidate in _viewportState.rows) {
       if (candidate.ordinal == row.ordinal) {
         current = candidate;
         break;
@@ -4449,7 +4390,7 @@ final class FlarkEditorController extends ChangeNotifier
       if (!receipt.hasCommit) {
         _coordinator.completeCommand(command);
         if (generation == _editGeneration) {
-          _status = _idleStatus(current: _semanticViewportCurrent);
+          _status = _idleStatus(current: _viewportState.semanticCurrent);
         }
         notifyListeners();
         return false;
@@ -4620,7 +4561,7 @@ final class FlarkEditorController extends ChangeNotifier
         return;
       }
       if (!receipt.hasCommit) {
-        _status = _idleStatus(current: _semanticViewportCurrent);
+        _status = _idleStatus(current: _viewportState.semanticCurrent);
         _coordinator.completeCommand(command);
         notifyListeners();
         return;
@@ -4685,7 +4626,7 @@ final class FlarkEditorController extends ChangeNotifier
       receipt: receipt,
       pendingPresentation: _pendingPresentation,
       activeOrdinal: _activeOrdinal,
-      priorRows: _cachedRows
+      priorRows: _viewportState.rows
           .map(
             (row) => FlarkSurfaceProjector.corePresentationFromSurface(
               surfaceRow(row, includeEditingState: false),
@@ -4717,11 +4658,7 @@ final class FlarkEditorController extends ChangeNotifier
       preservesMappedRowFacts: false,
     );
     if (adoption.removedRowOrdinals.isNotEmpty) {
-      _cachedRows = List.unmodifiable(
-        _cachedRows.where(
-          (row) => !adoption.removedRowOrdinals.contains(row.ordinal),
-        ),
-      );
+      _viewportState.removeRows(adoption.removedRowOrdinals);
     }
     final caret = receipt.resultSelectionUtf16;
     _globalSelectionBase = caret;
@@ -5150,13 +5087,14 @@ final class FlarkEditorController extends ChangeNotifier
       _platformInput.differenceMutation(before, after);
 
   int _committedGapEnd(FlarkCoreCommittedPresentationGapV1 split) {
-    var end = _visibleUtf16Start + _visibleSource.length;
-    final localStart = split.rowEndUtf16 - _visibleUtf16Start;
-    if (0 <= localStart && localStart < _visibleSource.length) {
-      final newline = _visibleSource.indexOf('\n', localStart);
-      if (newline >= 0) end = _visibleUtf16Start + newline + 1;
+    var end =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
+    final localStart = split.rowEndUtf16 - _viewportState.visibleUtf16Start;
+    if (0 <= localStart && localStart < _viewportState.visibleSource.length) {
+      final newline = _viewportState.visibleSource.indexOf('\n', localStart);
+      if (newline >= 0) end = _viewportState.visibleUtf16Start + newline + 1;
     }
-    for (final row in _cachedRows) {
+    for (final row in _viewportState.rows) {
       if (row.ordinal == split.rowOrdinal) continue;
       final start = surfaceSourceRange(row).start;
       if (start > split.rowEndUtf16) end = math.min(end, start);
@@ -5165,8 +5103,9 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   int _committedCaretBoundaryEnd(FlarkPendingCaretBoundary boundary) {
-    var end = _visibleUtf16Start + _visibleSource.length;
-    for (final row in _cachedRows) {
+    var end =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
+    for (final row in _viewportState.rows) {
       if (row.ordinal == boundary.rowOrdinal) continue;
       final start = surfaceSourceRange(row).start;
       if (start >= boundary.rowEndUtf16) end = math.min(end, start);
@@ -5175,12 +5114,14 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   int? _committedCaretBoundaryInputEnd(FlarkPendingCaretBoundary boundary) {
-    final localStart = boundary.rowEndUtf16 - _visibleUtf16Start;
-    if (localStart < 0 || localStart > _visibleSource.length) return null;
-    final newline = _visibleSource.indexOf('\n', localStart);
+    final localStart = boundary.rowEndUtf16 - _viewportState.visibleUtf16Start;
+    if (localStart < 0 || localStart > _viewportState.visibleSource.length) {
+      return null;
+    }
+    final newline = _viewportState.visibleSource.indexOf('\n', localStart);
     return newline == -1
-        ? _visibleUtf16Start + _visibleSource.length
-        : _visibleUtf16Start + newline + 1;
+        ? _viewportState.visibleUtf16Start + _viewportState.visibleSource.length
+        : _viewportState.visibleUtf16Start + newline + 1;
   }
 
   bool _editorOwnedBoundaryContains(int start, int end) {
@@ -5217,8 +5158,8 @@ final class FlarkEditorController extends ChangeNotifier
         final dependency = advancePendingDependencyPresentation(
           current: current,
           authority: successor,
-          visibleSource: _visibleSource,
-          visibleUtf16Start: _visibleUtf16Start,
+          visibleSource: _viewportState.visibleSource,
+          visibleUtf16Start: _viewportState.visibleUtf16Start,
           startUtf16: start,
           endUtf16: end,
           replacement: replacement,
@@ -5235,7 +5176,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     // Cached envelopes predate any optimistic edit. Only a fresh parser
     // publication can authorize another literal transaction.
-    if (_optimisticViewportEdits.isNotEmpty) {
+    if (_viewportState.hasOptimisticEdits) {
       return null;
     }
     final row = _activeCachedRow();
@@ -5267,8 +5208,8 @@ final class FlarkEditorController extends ChangeNotifier
           surfaceSourceRange(row),
         ),
         authority: authority,
-        visibleSource: _visibleSource,
-        visibleUtf16Start: _visibleUtf16Start,
+        visibleSource: _viewportState.visibleSource,
+        visibleUtf16Start: _viewportState.visibleUtf16Start,
         startUtf16: start,
         endUtf16: end,
         replacement: replacement,
@@ -5369,7 +5310,7 @@ final class FlarkEditorController extends ChangeNotifier
             // it; unchanged rows retain only mapped predecessor facts.
             _scheduleParsingAfterInput(immediate: true);
           } else {
-            final hadNoPriorSemanticRows = _cachedRows.isEmpty;
+            final hadNoPriorSemanticRows = _viewportState.rows.isEmpty;
             await _refreshViewport(
               restoreInputWindow: false,
               expectedEditGeneration: generation,
@@ -5406,19 +5347,21 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _canRetainOptimisticSurfaceAfterCommit() {
-    if (_cachedRows.isEmpty ||
+    if (_viewportState.rows.isEmpty ||
         _activeCachedRow() == null ||
-        _optimisticViewportEdits.any((edit) => !edit.preservesMappedRowFacts)) {
+        !_viewportState.allOptimisticEditsPreserveMappedRowFacts) {
       return false;
     }
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
-    if (_globalSelectionExtent < _visibleUtf16Start ||
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
+    if (_globalSelectionExtent < _viewportState.visibleUtf16Start ||
         _globalSelectionExtent > visibleEnd) {
       return false;
     }
-    return _cachedRows.every((row) {
+    return _viewportState.rows.every((row) {
       final mapped = _mapViewportRange(row.sourceUtf16);
-      return _visibleUtf16Start <= mapped.start && mapped.end <= visibleEnd;
+      return _viewportState.visibleUtf16Start <= mapped.start &&
+          mapped.end <= visibleEnd;
     });
   }
 
@@ -5461,7 +5404,7 @@ final class FlarkEditorController extends ChangeNotifier
           return true;
         }
         final restore = _adapterSnapshot(outcome.restoreSelection);
-        _optimisticViewportEdits.clear();
+        _viewportState.clearOptimisticEdits();
         _clearPendingTaskChecks();
         await _refreshEditPublicationAfterCertification(
           generation,
@@ -5485,7 +5428,7 @@ final class FlarkEditorController extends ChangeNotifier
           .then((cancelled) {
             _coordinator.completeCommand(command);
             if (!cancelled) {
-              _status = _idleStatus(current: _semanticViewportCurrent);
+              _status = _idleStatus(current: _viewportState.semanticCurrent);
             }
             notifyListeners();
           })
@@ -5540,8 +5483,8 @@ final class FlarkEditorController extends ChangeNotifier
       final presentation = advancePendingPresentationRow(
         presentation: surface.presentation,
         authority: receipt,
-        visibleSource: _visibleSource,
-        visibleUtf16Start: _visibleUtf16Start,
+        visibleSource: _viewportState.visibleSource,
+        visibleUtf16Start: _viewportState.visibleUtf16Start,
         startUtf16: start,
         endUtf16: end,
         replacement: replacement,
@@ -5700,7 +5643,7 @@ final class FlarkEditorController extends ChangeNotifier
       final restore = resolvedSelection == null
           ? _selectionSnapshot()
           : _adapterSnapshot(resolvedSelection);
-      _optimisticViewportEdits.clear();
+      _viewportState.clearOptimisticEdits();
       _clearPendingTaskChecks();
       // History replay is one authoritative visual transaction. Do not
       // publish a pending exact-source viewport between the native replay and
@@ -5759,7 +5702,7 @@ final class FlarkEditorController extends ChangeNotifier
       (didReplay) {
         _coordinator.completeCommand(command);
         if (!didReplay) {
-          _status = _idleStatus(current: _semanticViewportCurrent);
+          _status = _idleStatus(current: _viewportState.semanticCurrent);
         }
         notifyListeners();
         return didReplay;
@@ -6044,7 +5987,7 @@ final class FlarkEditorController extends ChangeNotifier
     _viewportNavigation.retainRefreshAnchorForEdit(
       editStart: editStart,
       deriveFromInput: deriveFromInput,
-      currentViewport: _viewport,
+      currentViewport: _viewportState.viewport,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
       inputText: _inputValue.text,
     );
@@ -6062,7 +6005,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     FlarkViewport? pendingViewport;
     try {
-      final previous = _viewport;
+      final previous = _viewportState.viewport;
       _ViewportPageAnchor? activeOrigin;
       if (ensureActiveInputVisible) {
         final retained = _viewportNavigation.refreshAnchorForCaret(
@@ -6071,9 +6014,9 @@ final class FlarkEditorController extends ChangeNotifier
         if (retained != null) {
           activeOrigin = retained;
         } else if (previous != null &&
-            previous.coveredUtf16.start == _visibleUtf16Start &&
-            _optimisticViewportEdits.every(
-              (edit) => edit.start >= previous.coveredUtf16.start,
+            previous.coveredUtf16.start == _viewportState.visibleUtf16Start &&
+            _viewportState.allOptimisticEditsStartAtOrAfter(
+              previous.coveredUtf16.start,
             )) {
           activeOrigin = _ViewportPageAnchor(
             byte: previous.coveredBytes.start,
@@ -6085,8 +6028,8 @@ final class FlarkEditorController extends ChangeNotifier
           ? null
           : _viewportNavigation.byteWindowForCaret(
               origin: activeOrigin,
-              visibleUtf16Start: _visibleUtf16Start,
-              visibleSource: _visibleSource,
+              visibleUtf16Start: _viewportState.visibleUtf16Start,
+              visibleSource: _viewportState.visibleSource,
               caret: _globalSelectionExtent,
               sourceByteLength: sourceByteLength,
               maximumVisibleBytes: _maximumVisibleBytes,
@@ -6098,11 +6041,11 @@ final class FlarkEditorController extends ChangeNotifier
       if (ensureActiveInputVisible &&
           previous != null &&
           _viewportNavigation.canPageBackward &&
-          _globalSelectionExtent >= _visibleUtf16Start &&
-          previous.coveredUtf16.start == _visibleUtf16Start &&
+          _globalSelectionExtent >= _viewportState.visibleUtf16Start &&
+          previous.coveredUtf16.start == _viewportState.visibleUtf16Start &&
           _viewportNavigation.currentPageMatches(previous) &&
-          _optimisticViewportEdits.every(
-            (edit) => edit.start >= previous.coveredUtf16.start,
+          _viewportState.allOptimisticEditsStartAtOrAfter(
+            previous.coveredUtf16.start,
           ) &&
           previous.coveredBytes.start <= sourceByteLength) {
         requestedAnchor = _viewportNavigation.currentAnchor;
@@ -6260,16 +6203,7 @@ final class FlarkEditorController extends ChangeNotifier
     bool ensureActiveInputVisible = false,
     bool publish = true,
   }) {
-    _viewport = viewport;
-    final installation = FlarkViewportInstallationPlan.evaluate(
-      viewport: viewport,
-      source: source,
-      previousVisibleUtf16Start: _visibleUtf16Start,
-      previousVisibleSource: _visibleSource,
-      mappedCachedRowRanges: _cachedRows.map(
-        (row) => _mapViewportRange(row.sourceUtf16),
-      ),
-    );
+    final installation = _viewportState.install(viewport, source);
     final retainsExistingSurface = installation.retainsExistingSurface;
     final sourceFitsViewport = installation.sourceFitsViewport;
     final installsFreshRows = installation.installsFreshRows;
@@ -6288,24 +6222,7 @@ final class FlarkEditorController extends ChangeNotifier
       // install that replaces the visible source, never before its query.
       _coordinator.installViewportRevision(viewport.revision);
     }
-    if (installsFreshRows) {
-      _cachedRows = viewport.rows;
-    } else if (!retainsExistingSurface) {
-      _cachedRows = const [];
-    }
-    // Rows and their source cache are one publication. A pending viewport can
-    // legitimately contain no semantic rows; pairing that new source window
-    // with retained rows creates a torn surface and can eject the active row.
-    // Optimistic edits have already updated the retained source cache, so keep
-    // both halves until a fresh row publication arrives.
-    if (!retainsExistingSurface) {
-      _visibleSource = source;
-      _visibleUtf16Start = viewport.coveredUtf16.start;
-    }
-    _certificationRanges = viewport.certificationRanges;
-    _certificationRevisionCurrent = viewport.certificationRanges.isNotEmpty;
     if (installsCertifiedSurface) {
-      _optimisticViewportEdits.clear();
       if (viewport.coveredUtf16.start <= _globalSelectionExtent &&
           _globalSelectionExtent <= viewport.coveredUtf16.end) {
         _viewportNavigation.clearRefreshAnchor();
@@ -6325,7 +6242,6 @@ final class FlarkEditorController extends ChangeNotifier
         ),
       );
     }
-    _semanticViewportCurrent = installsCertifiedSurface;
     // A streamed open's head page is typically mixed — certified head rows
     // ahead of pending-exact tail — so the first-certified receipt keys on
     // published rows inside any certified range, not on the whole-viewport
@@ -6345,15 +6261,15 @@ final class FlarkEditorController extends ChangeNotifier
         FlarkPendingPresentationPart.dependency,
       });
     }
-    final supersededParagraphGap = _semanticViewportCurrent
+    final supersededParagraphGap = _viewportState.semanticCurrent
         ? _pendingPresentation.paragraphGap
         : null;
-    final supersededStructuralCaretBoundary = _semanticViewportCurrent
+    final supersededStructuralCaretBoundary = _viewportState.semanticCurrent
         ? caretBoundaryForStructuralSurfaces(
             _pendingPresentation.structuralSurfaces,
           )
         : null;
-    if (_semanticViewportCurrent) {
+    if (_viewportState.semanticCurrent) {
       // Certified rows supersede the visual transition partition. The AST
       // still cannot represent which side owns a caret in the resulting blank
       // source gap, so promote that one fact into a nonvisual boundary receipt
@@ -6379,7 +6295,7 @@ final class FlarkEditorController extends ChangeNotifier
         FlarkPendingPresentationPart.structuralSurfaces,
       });
     }
-    _status = _idleStatus(current: _semanticViewportCurrent);
+    _status = _idleStatus(current: _viewportState.semanticCurrent);
     if (installsFreshRows) {
       // Input-window restoration must route through the fresh row partition.
       // The prior ordinal can be a neutral placeholder retained during a
@@ -6418,7 +6334,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
     var certifiedBoundaryCaretChanged = false;
     if (installsFreshRows &&
-        _semanticViewportCurrent &&
+        _viewportState.semanticCurrent &&
         !_crossRowSelection &&
         !_oversizedSelection &&
         _inputValue.selection.isCollapsed &&
@@ -6458,8 +6374,8 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   bool _certifiedRowHasNonemptyInputAt(int caret) {
-    if (!_semanticViewportCurrent) return false;
-    for (final row in _cachedRows) {
+    if (!_viewportState.semanticCurrent) return false;
+    for (final row in _viewportState.rows) {
       final activation = _mapViewportRange(_activationRange(row));
       if (activation.length > 0 &&
           activation.start <= caret &&
@@ -6474,7 +6390,7 @@ final class FlarkEditorController extends ChangeNotifier
     if ((_activeOrdinal ?? 0) >= 0) return null;
     var hasPredecessor = false;
     FlarkSourceRange? successor;
-    for (final row in _cachedRows) {
+    for (final row in _viewportState.rows) {
       final source = surfaceSourceRange(row);
       if (source.end <= globalCaret) hasPredecessor = true;
       if (source.start <= globalCaret) continue;
@@ -6610,10 +6526,10 @@ final class FlarkEditorController extends ChangeNotifier
       _restoreNeutralInputWindow(_globalSelectionExtent);
       return;
     }
-    if (_cachedRows.isNotEmpty) {
+    if (_viewportState.rows.isNotEmpty) {
       final caret = _globalSelectionExtent.clamp(0, sourceUtf16Length);
       FlarkViewportRow? row;
-      for (final candidate in _cachedRows) {
+      for (final candidate in _viewportState.rows) {
         final range = _activationRange(candidate);
         if (range.start <= caret && caret <= range.end) {
           row = candidate;
@@ -6637,13 +6553,18 @@ final class FlarkEditorController extends ChangeNotifier
       );
       return;
     }
-    final newline = _visibleSource.indexOf('\n');
-    final end = newline == -1 ? _visibleSource.length : newline + 1;
-    final visibleEnd = _visibleUtf16Start + end;
+    final newline = _viewportState.visibleSource.indexOf('\n');
+    final end = newline == -1
+        ? _viewportState.visibleSource.length
+        : newline + 1;
+    final visibleEnd = _viewportState.visibleUtf16Start + end;
     _activateWindowWithoutNotification(
-      text: _visibleSource.substring(0, end),
-      sourceStart: _visibleUtf16Start,
-      caret: _globalSelectionExtent.clamp(_visibleUtf16Start, visibleEnd),
+      text: _viewportState.visibleSource.substring(0, end),
+      sourceStart: _viewportState.visibleUtf16Start,
+      caret: _globalSelectionExtent.clamp(
+        _viewportState.visibleUtf16Start,
+        visibleEnd,
+      ),
       ordinal: -1,
     );
   }
@@ -6659,8 +6580,10 @@ final class FlarkEditorController extends ChangeNotifier
       return false;
     }
     final end = _committedGapEnd(gap);
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
-    if (gap.rowEndUtf16 < _visibleUtf16Start || end > visibleEnd) {
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
+    if (gap.rowEndUtf16 < _viewportState.visibleUtf16Start ||
+        end > visibleEnd) {
       return false;
     }
     // The receipt owns this exact result-line extent. Rebuilding a physical
@@ -6687,7 +6610,8 @@ final class FlarkEditorController extends ChangeNotifier
     if (caret < boundary.rowEndUtf16 || caret > end) return false;
     var inputStart = boundary.rowEndUtf16;
     var inputEnd = end;
-    final visibleEnd = _visibleUtf16Start + _visibleSource.length;
+    final visibleEnd =
+        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
     if (caret == end && end < visibleEnd) {
       // Input windows are half-open at a shared physical-line edge. The caret
       // after the boundary's terminal newline is the start of the downstream
@@ -6695,11 +6619,14 @@ final class FlarkEditorController extends ChangeNotifier
       // parser recertification because it is derived from exact source geometry
       // rather than from a transient row ordinal.
       inputStart = end;
-      final localStart = inputStart - _visibleUtf16Start;
-      final downstreamNewline = _visibleSource.indexOf('\n', localStart);
+      final localStart = inputStart - _viewportState.visibleUtf16Start;
+      final downstreamNewline = _viewportState.visibleSource.indexOf(
+        '\n',
+        localStart,
+      );
       inputEnd = downstreamNewline == -1
           ? visibleEnd
-          : _visibleUtf16Start + downstreamNewline + 1;
+          : _viewportState.visibleUtf16Start + downstreamNewline + 1;
     }
     // Certification retires the temporary visual gap but deliberately keeps
     // this nonvisual boundary. Reuse its exact result-line origin for the
@@ -6715,31 +6642,35 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   void _restoreNeutralInputWindow(int caret) {
-    if (_visibleSource.isEmpty) {
+    if (_viewportState.visibleSource.isEmpty) {
       _activateWindowWithoutNotification(
         text: '',
-        sourceStart: _visibleUtf16Start,
-        caret: _visibleUtf16Start,
+        sourceStart: _viewportState.visibleUtf16Start,
+        caret: _viewportState.visibleUtf16Start,
         ordinal: -1,
       );
       return;
     }
-    final localCaret = (caret - _visibleUtf16Start).clamp(
+    final localCaret = (caret - _viewportState.visibleUtf16Start).clamp(
       0,
-      _visibleSource.length,
+      _viewportState.visibleSource.length,
     );
     final lineStart = localCaret == 0
         ? 0
-        : _visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
-    final newline = _visibleSource.indexOf('\n', localCaret);
-    final lineEnd = newline == -1 ? _visibleSource.length : newline + 1;
+        : _viewportState.visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
+    final newline = _viewportState.visibleSource.indexOf('\n', localCaret);
+    final lineEnd = newline == -1
+        ? _viewportState.visibleSource.length
+        : newline + 1;
     var lineOrdinal = 0;
     for (var index = 0; index < lineStart; index += 1) {
-      if (_visibleSource.codeUnitAt(index) == 0x0a) lineOrdinal += 1;
+      if (_viewportState.visibleSource.codeUnitAt(index) == 0x0a) {
+        lineOrdinal += 1;
+      }
     }
     _activateWindowWithoutNotification(
-      text: _visibleSource.substring(lineStart, lineEnd),
-      sourceStart: _visibleUtf16Start + lineStart,
+      text: _viewportState.visibleSource.substring(lineStart, lineEnd),
+      sourceStart: _viewportState.visibleUtf16Start + lineStart,
       caret: caret,
       ordinal: -lineOrdinal - 1,
     );
@@ -6805,17 +6736,8 @@ final class FlarkEditorController extends ChangeNotifier
     return (start: alignedStart, end: math.max(alignedStart, alignedEnd));
   }
 
-  String _sliceVisibleUtf16(int globalStart, int globalEnd) {
-    final start = (globalStart - _visibleUtf16Start).clamp(
-      0,
-      _visibleSource.length,
-    );
-    final end = (globalEnd - _visibleUtf16Start).clamp(
-      start,
-      _visibleSource.length,
-    );
-    return _visibleSource.substring(start, end);
-  }
+  String _sliceVisibleUtf16(int globalStart, int globalEnd) =>
+      _viewportState.sliceVisibleUtf16(globalStart, globalEnd);
 
   void _applyOptimisticViewportEdit(
     int globalStart,
@@ -6823,88 +6745,35 @@ final class FlarkEditorController extends ChangeNotifier
     String replacement, {
     bool preservesMappedRowFacts = true,
   }) {
-    _semanticViewportCurrent = false;
-    _certificationRevisionCurrent = false;
-    _certificationRanges = const [];
-    final localStart = globalStart - _visibleUtf16Start;
-    final localEnd = globalEnd - _visibleUtf16Start;
-    if (localStart < 0 ||
-        localEnd < localStart ||
-        localEnd > _visibleSource.length) {
-      _viewport = null;
-      _cachedRows = const [];
-      _visibleSource = _inputValue.text;
-      _visibleUtf16Start = _inputGlobalUtf16Start;
-      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
-      _optimisticViewportEdits.clear();
-      return;
-    }
-    final nextLength = _replacementLength(
-      _visibleSource,
-      localStart,
-      localEnd,
-      replacement,
+    final adoption = _viewportState.applyOptimisticEdit(
+      globalStart: globalStart,
+      globalEnd: globalEnd,
+      replacement: replacement,
+      fallbackSource: _inputValue.text,
+      fallbackUtf16Start: _inputGlobalUtf16Start,
+      focusUtf16: _globalSelectionExtent,
+      maximumVisibleCodeUnits: _maximumInputCodeUnits,
+      preservesMappedRowFacts: preservesMappedRowFacts,
     );
-    if (nextLength > _maximumInputCodeUnits) {
-      final window = _boundedReplacementWindow(
-        _visibleSource,
-        localStart,
-        localEnd,
-        replacement,
-        _globalSelectionExtent - _visibleUtf16Start,
-      );
-      _visibleSource = window.text;
-      _visibleUtf16Start += window.start;
-      _viewport = null;
-      _cachedRows = const [];
+    if (adoption.disposition ==
+        FlarkOptimisticViewportEditDisposition.replacedByBoundedWindow) {
       _viewportNavigation.resetPagePath();
-      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
-      _optimisticViewportEdits.clear();
-      return;
     }
-    _visibleSource = _visibleSource.replaceRange(
-      localStart,
-      localEnd,
-      replacement,
-    );
-    _optimisticViewportEdits.add(
-      _OptimisticViewportEdit(
-        start: globalStart,
-        end: globalEnd,
-        replacementLength: replacement.length,
-        preservesMappedRowFacts: preservesMappedRowFacts,
-      ),
-    );
+    if (adoption.disposition !=
+        FlarkOptimisticViewportEditDisposition.retainedMappedSurface) {
+      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+    }
   }
 
   bool _applyLengthNeutralViewportReplacement(
     int globalStart,
     int globalEnd,
     String replacement,
-  ) {
-    if (globalEnd < globalStart ||
-        replacement.length != globalEnd - globalStart) {
-      return false;
-    }
-    final localStart = globalStart - _visibleUtf16Start;
-    final localEnd = globalEnd - _visibleUtf16Start;
-    if (localStart < 0 ||
-        localEnd < localStart ||
-        localEnd > _visibleSource.length) {
-      return false;
-    }
-    _semanticViewportCurrent = false;
-    _certificationRevisionCurrent = false;
-    _certificationRanges = const [];
-    _visibleSource = _visibleSource.replaceRange(
-      localStart,
-      localEnd,
-      replacement,
-    );
-    // No range-map entry is needed: the action is length-neutral, so every
-    // cached source coordinate remains exact at the result revision.
-    return true;
-  }
+  ) => _viewportState.applyLengthNeutralReplacement(
+    globalStart: globalStart,
+    globalEnd: globalEnd,
+    replacement: replacement,
+  );
 
   void _applyLengthNeutralInputReplacement(
     int globalStart,
@@ -6929,12 +6798,12 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   FlarkSourceRange _mapViewportRange(FlarkSourceRange base) =>
-      _optimisticViewportEdits.mapRange(base);
+      _viewportState.mapRange(base);
 
   FlarkViewportRow? _activeCachedRow() {
     final activeOrdinal = _activeOrdinal;
     if (activeOrdinal == null) return null;
-    for (final candidate in _cachedRows) {
+    for (final candidate in _viewportState.rows) {
       if (candidate.ordinal == activeOrdinal) return candidate;
     }
     return null;
@@ -6946,7 +6815,7 @@ final class FlarkEditorController extends ChangeNotifier
     String replacement,
   ) {
     final direct = _surfaceOrdinalAt(startUtf16);
-    if (_cachedRows.any((row) => row.ordinal == direct)) return direct;
+    if (_viewportState.rows.any((row) => row.ordinal == direct)) return direct;
 
     final continuity = _pendingPresentation.dependency;
     if (continuity != null) {
