@@ -91,6 +91,108 @@ void main() {
     role: role,
   );
 
+  FlarkViewportRow viewportRow({
+    int kind = 5,
+    List<FlarkInlineFact>? inlineFacts,
+  }) => FlarkViewportRow(
+    ordinal: 7,
+    kind: kind,
+    sourceBytes: const FlarkSourceRange(0, 4),
+    sourceUtf16: const FlarkSourceRange(0, 4),
+    editableBytes: const FlarkSourceRange(0, 4),
+    editableUtf16: const FlarkSourceRange(0, 4),
+    editCapability: FlarkViewportRowEditCapability.contiguous,
+    headingLevel: null,
+    headingStyle: null,
+    listItem: null,
+    blockQuote: null,
+    codeBlock: null,
+    thematicBreak: false,
+    pathDepth: 0,
+    inlineFacts: inlineFacts,
+  );
+
+  FlarkViewport certifiedViewport({
+    required FlarkViewportRow viewportRow,
+    int revision = 2,
+  }) => FlarkViewport(
+    revision: revision,
+    snapshot: 1,
+    requestedBytes: const FlarkSourceRange(0, 4),
+    coveredBytes: const FlarkSourceRange(0, 4),
+    coveredUtf16: const FlarkSourceRange(0, 4),
+    certification: FlarkCertification.currentCertified,
+    rows: [viewportRow],
+    neutralSource: null,
+    continuation: 0,
+  );
+
+  test(
+    'viewport supersession fails closed until parser facts replace proof',
+    () {
+      final authority = authorizeRowProjectionContinuity(
+        revision: 1,
+        envelopes: const [
+          FlarkLiteralSafeEnvelope(
+            editClass: FlarkLiteralEditClass.asciiWordInsertion,
+            sourceBytes: FlarkSourceRange(0, 3),
+            sourceUtf16: FlarkSourceRange(0, 3),
+          ),
+        ],
+        authorizedContentUtf16: const FlarkSourceRange(0, 3),
+        startUtf16: 1,
+        endUtf16: 1,
+        replacement: 'x',
+      )!;
+      final pending = FlarkPendingPresentationSnapshot(
+        dependency: FlarkPendingDependencyPresentation(
+          rowOrdinal: 7,
+          authority: authority,
+          presentation: row(
+            text: 'axbc',
+            styles: const {FlarkCorePresentationInlineStyle.emphasis},
+          ),
+        ),
+      );
+
+      expect(
+        certifiedViewportSupersedesPendingDependency(
+          viewport: certifiedViewport(
+            viewportRow: viewportRow(inlineFacts: null),
+          ),
+          pendingPresentation: pending,
+        ),
+        isFalse,
+      );
+      expect(
+        certifiedViewportSupersedesPendingDependency(
+          viewport: certifiedViewport(
+            viewportRow: viewportRow(inlineFacts: const []),
+            revision: 1,
+          ),
+          pendingPresentation: pending,
+        ),
+        isFalse,
+      );
+      expect(
+        certifiedViewportSupersedesPendingDependency(
+          viewport: certifiedViewport(
+            viewportRow: viewportRow(inlineFacts: const []),
+          ),
+          pendingPresentation: pending,
+        ),
+        isTrue,
+      );
+      expect(
+        certifiedViewportSupersedesPendingDependency(
+          viewport: certifiedViewport(viewportRow: viewportRow(kind: 2)),
+          pendingPresentation: pending,
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('transition ownership recovers one containing parser row', () {
     final active = row(text: 'abc');
 

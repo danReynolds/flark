@@ -3466,13 +3466,6 @@ final class FlarkEditorController extends ChangeNotifier
   FlarkSourceRange _mappedExactRowRange(FlarkViewportRow row) =>
       _captureSurfaceProjector().mappedExactRowRange(row);
 
-  FlarkSourceRange _exactRowRange(FlarkViewportRow row) {
-    final source = row.sourceUtf16;
-    final prefix = row.listItem?.prefixUtf16 ?? row.blockQuote?.prefixUtf16;
-    if (prefix == null) return source;
-    return FlarkSourceRange(prefix.start, source.end);
-  }
-
   int? _surfaceOrdinalAt(int globalUtf16Offset) {
     for (final row in _viewportState.rows) {
       final range = surfaceSourceRange(row);
@@ -6256,7 +6249,10 @@ final class FlarkEditorController extends ChangeNotifier
           DateTime.now().microsecondsSinceEpoch;
       _firstCertifiedPublication.complete();
     }
-    if (_viewportSupersedesProjectionContinuity(viewport)) {
+    if (certifiedViewportSupersedesPendingDependency(
+      viewport: viewport,
+      pendingPresentation: _pendingPresentation,
+    )) {
       _coordinator.retirePendingPresentation(const {
         FlarkPendingPresentationPart.dependency,
       });
@@ -6411,83 +6407,6 @@ final class FlarkEditorController extends ChangeNotifier
     // inter-row case notably occurs when a rapid paragraph split turns a
     // former table continuation into the next parser-owned row.
     return successor.start;
-  }
-
-  bool _viewportSupersedesProjectionContinuity(FlarkViewport viewport) {
-    final continuity = _pendingPresentation.dependency;
-    if (continuity == null || !viewport.isCertified) {
-      return false;
-    }
-    if (viewport.revision < continuity.resultRevision) return false;
-    final authorized = continuity.affectedUtf16;
-    if (continuity.removesOwnerRow) {
-      // The result closure is intentionally zero-width, so no certified row
-      // can contain it. Coverage of that parser-authored point at the result
-      // revision is precisely the proof that the temporary removed-row
-      // overlay has been superseded, including an otherwise empty document.
-      return viewport.coveredUtf16.start <= authorized.start &&
-          authorized.end <= viewport.coveredUtf16.end;
-    }
-    if (viewport.rows.isEmpty) return false;
-    if (continuity.authority
-        case final FlarkBoundedPendingPresentationPlanReceipt plan) {
-      // A bounded plan certifies its exact remaining sequence, not merely its
-      // first result. Intermediate fresh parses agree with the supplied clean
-      // snapshot but must not discard later declared prefixes. Any
-      // nonmatching edit still retires it synchronously.
-      if (plan.prefixLength < plan.plan.sequence.length) return false;
-      if (viewport.coveredUtf16.start > authorized.start ||
-          authorized.end > viewport.coveredUtf16.end) {
-        return false;
-      }
-      final coveringRows = viewport.rows
-          .where(
-            (row) =>
-                row.sourceUtf16.start < authorized.end &&
-                authorized.start < row.sourceUtf16.end,
-          )
-          .toList(growable: false);
-      return coveringRows.isNotEmpty &&
-          coveringRows.every((row) => row.inlineFacts != null);
-    }
-    for (final row in viewport.rows) {
-      final source = _exactRowRange(row);
-      if (source.start > authorized.start || authorized.end > source.end) {
-        continue;
-      }
-      // Block certification and inline presentation are separate facts. An
-      // incomplete autolink/HTML opener can produce a certified Paragraph
-      // whose inline facts are deliberately unavailable. Replacing the
-      // mechanically exact provisional surface with that row would expose
-      // unrelated, previously certified delimiters. Keep the provisional
-      // presentation until the parser publishes usable inline facts, while a
-      // real block-kind change is still allowed to supersede it immediately.
-      if (row.kind != continuity.presentation.kind ||
-          row.projectionSegments != null) {
-        return true;
-      }
-      final inlineFacts = row.inlineFacts;
-      if (inlineFacts == null) return false;
-      if (continuity.presentsExactIsland) {
-        // A result-revision complete inline publication always supersedes an
-        // exact edit-cell island. The parser, not the predecessor partition,
-        // owns the new inline vocabulary.
-        return true;
-      }
-      if (inlineFacts.isNotEmpty) return true;
-      // An authoritative empty fact set is allowed to remove styling only
-      // when the literal edit actually touched the run that owned it. When
-      // the edit landed in a plain run, an empty result can be the parser's
-      // conservative response to a new incomplete hazard (`<`, for example);
-      // unrelated projected runs remain mechanically valid.
-      return continuity.presentation.runs.any(
-        (run) =>
-            run.styles.isNotEmpty &&
-            run.sourceUtf16Start < authorized.end &&
-            authorized.start < run.sourceUtf16End,
-      );
-    }
-    return false;
   }
 
   void _restoreInputWindow() {

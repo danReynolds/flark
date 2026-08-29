@@ -94,6 +94,7 @@ export 'src/pending_presentation_evolution.dart'
         advancePendingPresentationRow,
         bindPendingDependencyPresentation,
         caretBoundaryForStructuralSurfaces,
+        certifiedViewportSupersedesPendingDependency,
         resolvePendingPresentationTransition;
 export 'src/optimistic_range_map.dart'
     show FlarkOptimisticRangeMap, FlarkOptimisticViewportEdit;

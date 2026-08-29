@@ -87,6 +87,69 @@ FlarkPendingCaretBoundary? caretBoundaryForStructuralSurfaces(
   return null;
 }
 
+/// Whether one certified viewport has replaced the parser authority carried
+/// by the current pending dependency presentation.
+///
+/// This fails closed for incomplete bounded plans, uncovered result ranges,
+/// unavailable inline facts, and older revisions. A frontend may retire the
+/// pending dependency only when this returns true.
+bool certifiedViewportSupersedesPendingDependency({
+  required FlarkViewport viewport,
+  required FlarkPendingPresentationSnapshot pendingPresentation,
+}) {
+  final continuity = pendingPresentation.dependency;
+  if (continuity == null || !viewport.isCertified) return false;
+  if (viewport.revision < continuity.resultRevision) return false;
+  final authorized = continuity.affectedUtf16;
+  if (continuity.removesOwnerRow) {
+    return viewport.coveredUtf16.start <= authorized.start &&
+        authorized.end <= viewport.coveredUtf16.end;
+  }
+  if (viewport.rows.isEmpty) return false;
+  if (continuity.authority
+      case final FlarkBoundedPendingPresentationPlanReceipt plan) {
+    if (plan.prefixLength < plan.plan.sequence.length) return false;
+    if (viewport.coveredUtf16.start > authorized.start ||
+        authorized.end > viewport.coveredUtf16.end) {
+      return false;
+    }
+    final coveringRows = viewport.rows.where(
+      (row) =>
+          row.sourceUtf16.start < authorized.end &&
+          authorized.start < row.sourceUtf16.end,
+    );
+    return coveringRows.isNotEmpty &&
+        coveringRows.every((row) => row.inlineFacts != null);
+  }
+  for (final row in viewport.rows) {
+    final source = _exactViewportRowRange(row);
+    if (source.start > authorized.start || authorized.end > source.end) {
+      continue;
+    }
+    if (row.kind != continuity.presentation.kind ||
+        row.projectionSegments != null) {
+      return true;
+    }
+    final inlineFacts = row.inlineFacts;
+    if (inlineFacts == null) return false;
+    if (continuity.presentsExactIsland || inlineFacts.isNotEmpty) return true;
+    return continuity.presentation.runs.any(
+      (run) =>
+          run.styles.isNotEmpty &&
+          run.sourceUtf16Start < authorized.end &&
+          authorized.start < run.sourceUtf16End,
+    );
+  }
+  return false;
+}
+
+FlarkSourceRange _exactViewportRowRange(FlarkViewportRow row) {
+  final prefix = row.listItem?.prefixUtf16 ?? row.blockQuote?.prefixUtf16;
+  return prefix == null
+      ? row.sourceUtf16
+      : FlarkSourceRange(prefix.start, row.sourceUtf16.end);
+}
+
 /// Binds one parser-authorized edit to its first immutable pending
 /// presentation.
 ///

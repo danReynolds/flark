@@ -75,6 +75,10 @@ void main() {
       controller,
       isNot(contains('resolveCommittedPresentationTransitionV1(')),
     );
+    expect(
+      controller,
+      isNot(contains('_viewportSupersedesProjectionContinuity')),
+    );
   });
 
   test('bounded viewport publication has one portable state owner', () {
