@@ -21,7 +21,8 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |-- FlarkEditorSnapshot / FlarkSurfaceProjector (`flark` immutable bounded
   |                                                 visual publication)
   |-- FlarkViewportInstallationPlan (`flark` viewport adoption decision)
-  |-- FlarkViewportNavigationState (`flark` page path and refresh origin)
+  |-- FlarkEditorViewportPager (`flark` native queries, stale-result cleanup,
+  |                             page path, and refresh origin)
   `-- flark (source, selection, history, Markdown, edit authority)
 ```
 
@@ -47,7 +48,7 @@ permission to preserve the controller's existing method graph.
 | Evolution and certified retirement of parser-authorized pending rows, structural transition ownership, and successor caret boundaries | Pending-presentation evolution in `flark` | Markdown inference, Flutter types, mutation callbacks, or asynchronous work |
 | Conversion between portable input facts and Flutter text types | Flutter text adaptation | Source mutation, Markdown rules, or retained editor state |
 | Bounded viewport, rows, visible source, certification, and optimistic coordinate mapping | `FlarkEditorViewportState` in `flark` | Native queries, input restoration, publication, or Flutter types |
-| Ordered page path, current page index, and retained refresh origin | Viewport navigation state in `flark` | Native queries, continuation lifetime, rows, input restoration, or publication |
+| Native viewport queries, continuation lifetime, stale-result rejection, ordered page path, and retained refresh origin | `FlarkEditorViewportPager` in `flark` | Input restoration, publication, Flutter types, or mutable render state |
 | Public commands, Flutter callbacks, and composing the owners above | Controller | Parallel copies of owner state |
 
 ## Rules that prevent the bug classes we have seen
@@ -74,6 +75,9 @@ permission to preserve the controller's existing method graph.
 9. Flutter does not switch over Markdown transition kinds to decide structural
    chaining, row retirement, or parser-certification requirements. Core reduces
    its typed receipt into one pending-presentation adoption outcome.
+10. A viewport query returns an unapplied generation-bound receipt. Page history
+    advances only during synchronous adoption; a zero continuation produces no
+    asynchronous cleanup handoff.
 
 ## Controller reduction policy
 
@@ -84,10 +88,9 @@ be extracted by authority, not by file length:
   lane with explicit inputs and outcomes. Lifecycle, command serialization,
   pending presentation, and asynchronous lineage are now portable, but some
   effect-specific coordination remains in the facade;
-- viewport query/restore orchestration should be split only after its page-path
-  state and bounded surface adoption (now centralized and tested in `flark`) can join
-  native queries to the surface/input handoff through narrow outcomes without
-  controller callbacks; and
+- viewport query and page-path orchestration now return one typed Core result;
+  the remaining restoration handoff should move only when its portable
+  selection outcome can replace, rather than call back into, controller state;
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 

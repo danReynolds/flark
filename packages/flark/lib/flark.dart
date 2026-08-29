@@ -88,6 +88,11 @@ export 'src/editor_viewport_state.dart'
         FlarkEditorViewportState,
         FlarkOptimisticViewportEditAdoption,
         FlarkOptimisticViewportEditDisposition;
+export 'src/editor_viewport_pager.dart'
+    show
+        FlarkEditorViewportPager,
+        FlarkViewportPageResult,
+        FlarkViewportRefreshRequest;
 export 'src/pending_presentation_evolution.dart'
     show
         advancePendingDependencyPresentation,
@@ -111,6 +116,7 @@ export 'src/viewport_navigation.dart'
         FlarkViewportNavigationState,
         FlarkViewportPageAnchor,
         FlarkViewportQueryPage;
+export 'src/viewport_source.dart' show FlarkViewportSource;
 export 'src/projection_continuity.dart'
     show
         FlarkPendingDependencyAuthority,

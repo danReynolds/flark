@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'models.dart';
 import 'native/native_document.dart';
 import 'text_unicode.dart';
+import 'viewport_source.dart';
 
 const _notReadySourceGapStatus = 8;
 const _invalidUtf16HostInputStatus = 0x020b;
@@ -378,7 +379,7 @@ final class FlarkCoreEditIntentTelemetryV1 {
 /// A single persistent isolate owns the native session. Calls are serialized by
 /// its mailbox, so parsing and source reads never execute on Flutter's UI
 /// isolate and revision order cannot race.
-final class FlarkCoreDocument {
+final class FlarkCoreDocument implements FlarkViewportSource {
   FlarkCoreDocument._(
     this._isolate,
     this._commands, {
@@ -427,6 +428,7 @@ final class FlarkCoreDocument {
   Completer<void>? _openingSealed;
 
   int get revision => _revision;
+  @override
   int get sourceByteLength => _sourceByteLength;
   int get sourceUtf16Length => _sourceUtf16Length;
   bool get isReady => _ready;
@@ -1071,6 +1073,7 @@ final class FlarkCoreDocument {
     _ready = result['ready']! as bool;
   }
 
+  @override
   Future<FlarkViewport> queryViewport({
     int startByte = 0,
     int? endByte,
@@ -1108,6 +1111,7 @@ final class FlarkCoreDocument {
     };
   }
 
+  @override
   Future<FlarkViewport> queryViewportNext(
     FlarkViewport previous, {
     int maxRows = 256,
@@ -1121,6 +1125,7 @@ final class FlarkCoreDocument {
     );
   }
 
+  @override
   Future<void> releaseViewportContinuation(FlarkViewport viewport) async {
     if (viewport.continuation == 0) return;
     await _request('releaseViewportContinuation', {
@@ -1172,6 +1177,7 @@ final class FlarkCoreDocument {
     return result['source']! as String;
   }
 
+  @override
   Future<String> readSourceRange(int startByte, int endByte) async {
     final result = await _request('readSourceRange', {
       'startByte': startByte,

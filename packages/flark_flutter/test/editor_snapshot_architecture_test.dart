@@ -14,6 +14,9 @@ void main() {
   final portableViewportState = File(
     '../flark/lib/src/editor_viewport_state.dart',
   ).readAsStringSync();
+  final portableViewportPager = File(
+    '../flark/lib/src/editor_viewport_pager.dart',
+  ).readAsStringSync();
 
   test('controller has one immutable outward publication function', () {
     expect(
@@ -89,5 +92,14 @@ void main() {
     expect(controller, isNot(contains('List<FlarkViewportRow> _cachedRows')));
     expect(controller, isNot(contains('String _visibleSource')));
     expect(controller, isNot(contains('FlarkOptimisticRangeMap')));
+  });
+
+  test('viewport query and page-path effects stay below Flutter', () {
+    expect(portableViewportPager, isNot(contains('package:flutter')));
+    expect(portableViewportPager, isNot(contains('dart:ui')));
+    expect(controller, contains('final FlarkEditorViewportPager'));
+    expect(controller, isNot(contains('_viewportNavigation')));
+    expect(controller, isNot(contains('_queryViewportAtAnchor')));
+    expect(controller, isNot(contains('queryViewportNext(')));
   });
 }

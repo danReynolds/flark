@@ -165,8 +165,11 @@ framework-neutral Core rows in `flark`; Flutter no longer splices projection
 continuity, decides when certified parser facts retire that continuity, or
 splices edit-cell result shells. Bounded viewport, row, visible-source,
 certification, and optimistic-coordinate state now advance through one tested
-portable state machine. Flutter still performs native query effects and input
-restoration, so the controller-facade work is not complete.
+portable state machine. Native viewport querying, continuation cleanup,
+generation-safe result adoption, and ordered page paths now run through one
+tested portable pager; Flutter synchronously installs its typed result and
+restores platform input. The controller-facade work is therefore smaller but
+not complete.
 
 ### M4 — large-module audit and deletion
 
