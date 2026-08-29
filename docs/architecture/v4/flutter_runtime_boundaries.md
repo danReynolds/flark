@@ -12,19 +12,20 @@ portable kernel.
 ## Dependency direction
 
 ```text
-FlarkEditorController (public facade and UI coordination)
-  |-- FlarkEditorRuntimeState (time, lifecycle, async lineage)
+FlarkEditorController (Flutter facade and adapter coordination)
+  |-- FlarkEditorCoordinator (pure Dart time, lifecycle, async lineage,
+  |                           pending presentation)
   |-- FlarkPlatformInputBridge (Flutter input connection and shadow)
   |-- FlarkInputTransactionState (callback and provisional input lineage)
   |-- FlarkSurfaceProjector (pure source-to-visible publication)
   |-- FlarkViewportInstallationPlan (pure viewport adoption decision)
   |-- FlarkViewportNavigationState (page path and refresh origin)
-  `-- flark_core (source, selection, history, Markdown, edit authority)
+  `-- flark (source, selection, history, Markdown, edit authority)
 ```
 
-The boundary components never import the controller. `flark_core` never
-imports Flutter. Markdown recognition and permission to retain rendered
-semantics remain in Rust/Core.
+The boundary components never import the controller. `flark` never imports
+Flutter. Markdown recognition and permission to retain rendered semantics
+remain in Rust and headless Dart.
 
 The intended end state is a small public controller over one application-level
 edit coordinator. That coordinator admits typed commands and asynchronous Core
@@ -36,8 +37,8 @@ permission to preserve the controller's existing method graph.
 
 | Concern | Owner | Must not own |
 | --- | --- | --- |
-| Source, selection, history, Markdown semantics, semantic edit receipts, pending-presentation adoption policy | Core | Flutter input connections or widgets |
-| Edit generations, lifecycle, serialized edit tail, parser/page single-flight, publication barriers | Editor runtime | Markdown rules or rendered rows |
+| Source, selection, history, Markdown semantics, semantic edit receipts, pending-presentation adoption policy | `flark` and Rust | Flutter input connections or widgets |
+| Edit generations, lifecycle, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
 | Connection/window epochs, serialized platform shadow, delta/value validation and classification | Platform input bridge | Markdown rules, viewports, or history |
 | Callback scope, provisional semantic lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Visible rows, marker hiding, styles, source/display mapping, selection projection | Surface projector | Documents, timers, queues, or callbacks |
@@ -55,9 +56,9 @@ permission to preserve the controller's existing method graph.
    member of its delta batch is applied. A bad batch applies nothing.
 4. Callback and platform-mutation scopes cannot nest. A Return or Backspace
    text observation consumes at most one companion action/selector callback.
-5. One surface publication is projected from one immutable captured state.
+5. One `FlarkEditorSnapshot` is projected and published through one function.
    Projection cannot read a document or mutate controller state while rows are
-   being built.
+   being built; the renderer reads no mutable visual truth from the controller.
 6. A certified empty viewport is a valid current semantic result; row-cache
    replacement and certification are separate decisions.
 7. Optimistic source mapping may preserve semantics only where a parser-authored
@@ -74,9 +75,9 @@ The controller is still larger than the intended facade. Remaining work should
 be extracted by authority, not by file length:
 
 - semantic command admission and successor promotion should become one bounded
-  lane with explicit inputs and outcomes. Provisional lineage is centralized,
-  and committed presentation adoption now reduces in Core, but effect
-  coordination remains in the facade;
+  lane with explicit inputs and outcomes. Lifecycle, command serialization,
+  pending presentation, and asynchronous lineage are now portable, but some
+  effect-specific coordination remains in the facade;
 - viewport query/restore orchestration should be split only after its page-path
   state (now centralized) and surface/input handoff can be expressed as narrow
   outcomes without controller callbacks; and

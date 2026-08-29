@@ -1,14 +1,29 @@
 import 'dart:async';
 
-import 'editor_snapshot.dart';
+import 'document.dart';
+import 'pending_presentation.dart';
+import 'presentation.dart';
+
+enum FlarkEditorStatus {
+  opening,
+
+  /// A streamed open is still admitting source. The editor remains live while
+  /// its parser-certified head is exposed and editable.
+  streaming,
+  parsing,
+  ready,
+  editing,
+  faulted,
+  disposed,
+}
 
 /// Identity attached to asynchronous editor effects.
 ///
 /// Results may be adopted only while their edit generation remains current.
 /// Interaction generation is carried separately because selection/navigation
 /// can invalidate user intent without advancing the canonical source.
-final class FlarkRuntimeStamp {
-  const FlarkRuntimeStamp({
+final class FlarkEditorStamp {
+  const FlarkEditorStamp({
     required this.editGeneration,
     required this.interactionGeneration,
   });
@@ -29,15 +44,15 @@ final class FlarkPublicationAwaitingCertification
     extends FlarkPublicationPhase {
   const FlarkPublicationAwaitingCertification(this.stamp);
 
-  final FlarkRuntimeStamp stamp;
+  final FlarkEditorStamp stamp;
 }
 
-/// Sole owner of controller-wide lifecycle and publication lineage.
+/// Sole owner of host-neutral editor coordination and publication lineage.
 ///
-/// Markdown semantics remain in Core. Platform input shadow state lives in
-/// [FlarkPlatformInputBridge]. This object owns the temporal identity that
-/// joins their asynchronous results into one publishable editor state.
-final class FlarkEditorRuntimeState {
+/// Markdown and canonical source remain in the native runtime. This object
+/// owns the temporal identity, command serialization, pending-presentation
+/// state, and bounded-work admission shared by every frontend.
+final class FlarkEditorCoordinator {
   FlarkEditorStatus _status = FlarkEditorStatus.opening;
   Object? _lastError;
   bool _closed = false;
@@ -46,8 +61,9 @@ final class FlarkEditorRuntimeState {
   int _publishedSourceGeneration = 0;
   int _publishedDocumentRevision = 0;
   FlarkPublicationPhase _publicationPhase = const FlarkPublicationIdle();
-  FlarkEditorSnapshot? _snapshot;
   int _snapshotSequence = 0;
+  FlarkPendingPresentationSnapshot _pendingPresentation =
+      const FlarkPendingPresentationSnapshot.empty();
   int _openingPublishedRevision = -1;
   int _pendingEdits = 0;
   bool _historyReplayPending = false;
@@ -67,7 +83,8 @@ final class FlarkEditorRuntimeState {
   bool get publicationCertificationBarrierActive =>
       _publicationPhase is FlarkPublicationAwaitingCertification;
   FlarkPublicationPhase get publicationPhase => _publicationPhase;
-  FlarkEditorSnapshot? get snapshot => _snapshot;
+  FlarkPendingPresentationSnapshot get pendingPresentation =>
+      _pendingPresentation;
   int get openingPublishedRevision => _openingPublishedRevision;
   int get pendingEdits => _pendingEdits;
   bool get historyReplayPending => _historyReplayPending;
@@ -77,13 +94,13 @@ final class FlarkEditorRuntimeState {
   Future<void>? get parserTask => _parserTask;
   Future<bool>? get pageTask => _pageTask;
 
-  FlarkRuntimeStamp get stamp => FlarkRuntimeStamp(
+  FlarkEditorStamp get stamp => FlarkEditorStamp(
     editGeneration: _editGeneration,
     interactionGeneration: _interactionGeneration,
   );
 
   bool accepts(
-    FlarkRuntimeStamp stamp, {
+    FlarkEditorStamp stamp, {
     bool requireInteraction = false,
     bool allowClosing = false,
   }) =>
@@ -274,10 +291,42 @@ final class FlarkEditorRuntimeState {
 
   int nextSnapshotSequence() => ++_snapshotSequence;
 
-  void installSnapshot(FlarkEditorSnapshot snapshot) {
-    if (snapshot.sequence != _snapshotSequence) {
-      throw StateError('Editor snapshot sequence was not reserved');
-    }
-    _snapshot = snapshot;
+  void retirePendingPresentation(Set<FlarkPendingPresentationPart> parts) {
+    _pendingPresentation = _pendingPresentation.retire(parts);
+  }
+
+  void setPendingDependency(FlarkPendingDependencyPresentation? dependency) {
+    _pendingPresentation = _pendingPresentation.withDependency(dependency);
+  }
+
+  void setPendingCaretBoundary(FlarkPendingCaretBoundary? boundary) {
+    _pendingPresentation = _pendingPresentation.withCaretBoundary(boundary);
+  }
+
+  void setPendingStructuralSurfaces(
+    List<FlarkPendingStructuralSurface> surfaces,
+  ) {
+    _pendingPresentation = _pendingPresentation.withStructuralSurfaces(
+      surfaces,
+    );
+  }
+
+  void setPendingTaskCheck(int rowOrdinal, bool checked) {
+    _pendingPresentation = _pendingPresentation.withTaskCheck(
+      rowOrdinal,
+      checked,
+    );
+  }
+
+  FlarkPendingPresentationAdoption adoptCommittedPresentation({
+    required FlarkCoreEditIntentReceiptV1 receipt,
+    required FlarkCoreCommittedPresentationTransitionV1? transition,
+  }) {
+    final adoption = _pendingPresentation.adoptCommittedTransition(
+      receipt: receipt,
+      transition: transition,
+    );
+    _pendingPresentation = adoption.snapshot;
+    return adoption;
   }
 }

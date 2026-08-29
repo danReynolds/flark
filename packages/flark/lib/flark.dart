@@ -63,6 +63,14 @@ export 'src/models.dart'
         FlarkViewport,
         FlarkViewportRow,
         FlarkViewportRowEditCapability;
+export 'src/editor_coordinator.dart'
+    show
+        FlarkEditorCoordinator,
+        FlarkEditorStamp,
+        FlarkEditorStatus,
+        FlarkPublicationAwaitingCertification,
+        FlarkPublicationIdle,
+        FlarkPublicationPhase;
 export 'src/projection_continuity.dart'
     show
         FlarkPendingDependencyAuthority,

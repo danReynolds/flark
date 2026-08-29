@@ -4,14 +4,43 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final controller = File('lib/src/controller.dart').readAsStringSync();
+  final coordinator = File(
+    '../flark/lib/src/editor_coordinator.dart',
+  ).readAsStringSync();
 
-  test('controller owns exactly one pending-presentation state slot', () {
+  test('portable coordinator owns the pending-presentation state slot', () {
     expect(
       RegExp(
         r'FlarkPendingPresentationSnapshot\s+_pendingPresentation\b',
-      ).allMatches(controller),
+      ).allMatches(coordinator),
       hasLength(1),
     );
+    expect(
+      RegExp(
+        r'FlarkPendingPresentationSnapshot\s+_pendingPresentation\s*=',
+      ).allMatches(controller),
+      isEmpty,
+    );
+    expect(
+      RegExp(r'_pendingPresentation\s*=(?!=|>)').allMatches(controller),
+      isEmpty,
+      reason: 'the Flutter adapter must not mutate Core presentation state',
+    );
+    expect(coordinator, isNot(contains('replacePendingPresentation')));
+    for (final operation in [
+      'retirePendingPresentation',
+      'setPendingDependency',
+      'setPendingCaretBoundary',
+      'setPendingStructuralSurfaces',
+      'setPendingTaskCheck',
+      'adoptCommittedPresentation',
+    ]) {
+      expect(
+        coordinator,
+        contains('$operation('),
+        reason: '$operation must be an explicit coordinator operation',
+      );
+    }
     for (final retiredSlot in [
       '_projectionContinuity',
       '_committedParagraphSplit',
@@ -40,7 +69,7 @@ void main() {
       expect(controller, isNot(contains('withDependency(null)')));
       expect(controller, isNot(contains('withParagraphGap(null)')));
       expect(controller, isNot(contains('withStructuralSurfaces(const [])')));
-      expect(controller, contains('.retire('));
+      expect(controller, contains('retirePendingPresentation('));
       for (final parserPolicy in [
         '_isAsciiAlphanumeric',
         '_isSafeAsciiProsePunctuation',

@@ -3,19 +3,6 @@ import 'package:flutter/services.dart';
 
 import 'surface_projection.dart';
 
-enum FlarkEditorStatus {
-  opening,
-
-  /// A streamed open is still admitting source. The editor remains live while
-  /// its parser-certified head is painted and editable.
-  streaming,
-  parsing,
-  ready,
-  editing,
-  faulted,
-  disposed,
-}
-
 /// One parser row and every render-facing fact captured for the same editor
 /// snapshot. Layout never asks mutable coordinator state to reconstruct row
 /// ownership after this object is created.
