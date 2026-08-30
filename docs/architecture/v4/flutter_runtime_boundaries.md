@@ -62,7 +62,7 @@ permission to preserve the controller's existing method graph.
 | Generation-safe source publication, structural transition adoption, refresh anchoring, and bounded viewport mutation for one committed semantic receipt | `FlarkEditorSemanticReceiptAdopter` in `flark` | Flutter input installation, successor callbacks, parser waiting, or outward publication |
 | Exact literal mutation validation, parser-authored inline-continuation rewrite, bounded scalar-safe input result, canonical selection, structural-certification classification, and composition-active fact | `FlarkEditorInputMutationPlanner` in `flark` | Platform callback normalization, hidden-projection admission, history adoption, native commands, or outward publication |
 | Connection/window epochs, serialized platform shadow, atomic validation, and normalization of delta/full-value callbacks against current or provisional input into one immutable observation | Platform input bridge | Markdown rules, viewports, history, or source mutation |
-| Callback scope, logical successor classification, bounded provisional lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
+| Callback scope, logical successor classification, bounded provisional/late lineage, paired platform actions, capture/deferral transitions, fallback insertion, composition base, and reconciliation accounting | Input transaction state | Markdown decisions, source mutation, rendered presentation, or execution of returned effects |
 | Current bounded platform value, global origin, canonical selection mirrors, active row, and oversized-selection state | Flutter input state consuming portable input-window plans | Native source, Markdown rules, rendered rows, or command ordering |
 | Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
 | Evolution and certified retirement of parser-authorized pending rows, structural transition ownership, and successor caret boundaries | Pending-presentation evolution in `flark` | Markdown inference, Flutter types, mutation callbacks, or asynchronous work |
@@ -76,9 +76,9 @@ invocation, native parse progression, ordinary source-edit presentation
 planning, and committed semantic-receipt publication now each have one tested
 owner. Edit completion also delegates its parser-certification and phase-proof
 loop to that same driver. The remaining failed ownership check is host
-reconciliation: the controller still combines parser timer admission,
-lifecycle/publication routing, history/composition host adoption, and platform
-successor promotion into the input adapter.
+reconciliation: the controller still executes the transaction owner's typed
+successor effects and combines them with parser timer admission,
+lifecycle/publication routing, and history/composition host adoption.
 
 ## Rules that prevent the bug classes we have seen
 
@@ -118,12 +118,15 @@ The controller is still larger than the intended facade. Remaining work should
 be extracted by authority, not by file length:
 
 - structural-command admission now consumes parser-authored capabilities, and
-  Flutter input successor classification, reservation, and retirement have one
-  tested state owner. Native command admission, invocation, ticket identity,
-  and ordering now have one portable executor. Committed semantic-receipt
-  promotion is portable; task-action, history, composition, and platform
-  successor adoption remain in the facade until each has a narrow outcome
-  that does not call back into controller state;
+  Flutter input successor classification, reservation, pending/late capture,
+  deferral, fallback insertion, metric accounting, and retirement have one
+  tested state owner. The controller no longer mutates successor collections,
+  provisional tails, or certification completers; it executes the owner's
+  typed shadow, resync, and promotion effects. Native command admission,
+  invocation, ticket identity, and ordering have one portable executor.
+  Task-action, history/composition adoption, and successor effect execution
+  remain in the facade until each has a narrow outcome that does not call back
+  into controller state;
 - Flutter delta and full-value callbacks now normalize through one immutable
   platform observation for ordinary edits, provisional semantic successors,
   late receipt races, and certification-deferred commands. The controller no

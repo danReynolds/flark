@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flark/flark.dart';
@@ -5,6 +6,73 @@ import 'package:flutter/services.dart';
 
 import 'editor_transactions.dart';
 import 'input_reconciliation.dart';
+import 'input_window.dart';
+import 'platform_input_bridge.dart';
+
+/// Typed effect the Flutter facade must perform after the input transaction
+/// state machine captures one platform observation.
+sealed class FlarkInputCaptureOutcome {
+  const FlarkInputCaptureOutcome();
+}
+
+final class FlarkInputCaptureShadow extends FlarkInputCaptureOutcome {
+  const FlarkInputCaptureShadow({
+    required this.value,
+    required this.globalUtf16Start,
+    this.latePromotion,
+  });
+
+  final TextEditingValue value;
+  final int globalUtf16Start;
+  final FlarkLateInputPromotion? latePromotion;
+}
+
+final class FlarkInputCaptureResync extends FlarkInputCaptureOutcome {
+  const FlarkInputCaptureResync(this.reason);
+
+  final FlarkInputResyncReason reason;
+}
+
+/// One already-captured late successor that must be promoted against the
+/// committed semantic predecessor. The transaction state owns its lineage;
+/// the controller owns only execution of these typed effects.
+final class FlarkLateInputPromotion {
+  const FlarkLateInputPromotion({
+    required this.pending,
+    required this.reconciliation,
+  });
+
+  final FlarkPendingSemanticInput pending;
+  final FlarkInputReconciliationMap reconciliation;
+}
+
+sealed class FlarkInputDeferralOutcome {
+  const FlarkInputDeferralOutcome();
+}
+
+final class FlarkInputDeferralIgnored extends FlarkInputDeferralOutcome {
+  const FlarkInputDeferralIgnored();
+}
+
+final class FlarkInputDeferralStored extends FlarkInputDeferralOutcome {
+  const FlarkInputDeferralStored();
+}
+
+final class FlarkInputDeferralResync extends FlarkInputDeferralOutcome {
+  const FlarkInputDeferralResync(this.reason);
+
+  final FlarkInputResyncReason reason;
+}
+
+final class FlarkInputDeferralPromote extends FlarkInputDeferralOutcome {
+  const FlarkInputDeferralPromote({
+    required this.command,
+    required this.platformTiming,
+  });
+
+  final FlarkDeferredInputCommand command;
+  final FlarkPlatformInputTiming? platformTiming;
+}
 
 /// Sole owner of Flutter input work that can outlive one platform callback.
 ///
@@ -60,6 +128,34 @@ final class FlarkInputTransactionState {
     } else if (_lineage is FlarkLateSemanticInput) {
       _lineage = null;
     }
+  }
+
+  void discardLateSemantic() {
+    lateSemantic = null;
+  }
+
+  FlarkPendingSemanticInput beginSemanticInput({
+    required TextEditingValue base,
+    required int inputGlobalUtf16Start,
+    required TextEditingValue provisionalAfter,
+    FlarkPlatformInputTiming? platformTiming,
+    FlarkTextMutation? provisionalMutation,
+  }) {
+    lateSemantic = null;
+    final timing = platformTiming ?? activeTiming;
+    final pending = FlarkPendingSemanticInput(
+      base: base,
+      inputGlobalUtf16Start: inputGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          timing?.acceptedAtEpochMicros ??
+          activeCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      platformTiming: timing,
+      provisionalMutation: provisionalMutation,
+      provisionalAfter: provisionalAfter,
+    );
+    pendingSemantic = pending;
+    return pending;
   }
 
   /// Opens one platform callback scope. Nested callbacks would make timing
@@ -275,6 +371,193 @@ final class FlarkInputTransactionState {
     );
   }
 
+  /// Captures one observation behind the currently pending semantic command.
+  ///
+  /// Lineage mutation, command pairing, bounded successor admission, and
+  /// provisional-tail advancement are atomic here. The caller only installs
+  /// the returned platform shadow or performs the requested resynchronization.
+  FlarkInputCaptureOutcome capturePendingObservation({
+    required FlarkPlatformInputObservation observation,
+    required bool observedValueValid,
+    required FlarkTextMutation? fallbackMutation,
+    required int maximumSuccessors,
+  }) {
+    final pending = pendingSemantic;
+    if (pending == null) {
+      throw StateError('Pending capture requires a semantic lineage');
+    }
+    if (!reserveSemanticSuccessor(pending, maximum: maximumSuccessors)) {
+      return const FlarkInputCaptureResync(
+        FlarkInputResyncReason.successorQueueOverflow,
+      );
+    }
+    if (!observation.accepted || !observedValueValid) {
+      discardPendingSemantic();
+      return FlarkInputCaptureResync(
+        observation.accepted
+            ? FlarkInputResyncReason.unsupportedSuccessorObservation
+            : observation.rejection,
+      );
+    }
+
+    final logical = classifySemanticSuccessor(
+      observation.before,
+      observation.after,
+      mutation: observation.observedMutation ?? fallbackMutation,
+    );
+    if (logical != null) {
+      pending.successors.add(reclassifyAfterCertification(logical));
+      markObservedCommand(logical.command);
+    } else {
+      if (pending.successors.isNotEmpty &&
+          pending.successors.last is FlarkDeferredInputSuccessor) {
+        discardPendingSemantic();
+        return const FlarkInputCaptureResync(
+          FlarkInputResyncReason.unsupportedSuccessorObservation,
+        );
+      }
+      pending.successors.add(
+        FlarkProvisionalInputBatch(
+          before: observation.before,
+          after: observation.after,
+          typingInput: observation.typingInput,
+          platformTiming: activeTiming,
+        ),
+      );
+    }
+    pending.provisionalTail = observation.after;
+    observePendingSuccessors(pending);
+    return FlarkInputCaptureShadow(
+      value: observation.after,
+      globalUtf16Start: pending.inputGlobalUtf16Start,
+    );
+  }
+
+  /// Retires late lineage once the platform has adopted the committed input.
+  bool retainLateLineage({
+    required bool shadowMatchesCurrentInput,
+    required TextEditingValue currentInput,
+  }) {
+    final late = lateSemantic;
+    if (late == null) return false;
+    final provisional = late.provisionalTail;
+    if (shadowMatchesCurrentInput ||
+        (provisional.text == currentInput.text &&
+            provisional.selection == currentInput.selection &&
+            provisional.composing == currentInput.composing)) {
+      lateSemantic = null;
+      return false;
+    }
+    return true;
+  }
+
+  /// Captures one callback that raced a semantic receipt publication.
+  FlarkInputCaptureOutcome captureLateObservation({
+    required FlarkPlatformInputObservation observation,
+    required FlarkTextMutation? fallbackMutation,
+    required int currentInputGlobalUtf16Start,
+    required int shadowGlobalUtf16Start,
+    required int maximumSuccessors,
+  }) {
+    final late = lateSemantic;
+    if (late == null) {
+      throw StateError('Late capture requires a retained semantic lineage');
+    }
+    if (late.successorCount >= maximumSuccessors) {
+      lateSemantic = null;
+      return const FlarkInputCaptureResync(
+        FlarkInputResyncReason.successorQueueOverflow,
+      );
+    }
+
+    final logical = classifySemanticSuccessor(
+      observation.before,
+      observation.after,
+      mutation: observation.observedMutation ?? fallbackMutation,
+    );
+    final holder = FlarkPendingSemanticInput(
+      base: observation.before,
+      inputGlobalUtf16Start: currentInputGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          activeCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      platformTiming: activeTiming,
+      provisionalAfter: observation.before,
+    );
+    if (logical != null) {
+      holder.successors.add(logical);
+      markObservedCommand(logical.command);
+    } else {
+      holder.successors.add(
+        FlarkProvisionalInputBatch(
+          before: observation.before,
+          after: observation.after,
+          typingInput: observation.typingInput,
+          platformTiming: activeTiming,
+        ),
+      );
+    }
+    late.provisionalTail = observation.after;
+    late.successorCount += 1;
+    observeSuccessorCount(late.successorCount);
+    return FlarkInputCaptureShadow(
+      value: observation.after,
+      globalUtf16Start: shadowGlobalUtf16Start,
+      latePromotion: FlarkLateInputPromotion(
+        pending: holder,
+        reconciliation: late.reconciliation,
+      ),
+    );
+  }
+
+  /// Captures a complete logical command reported against a platform shadow
+  /// while the current source publication is waiting for certification.
+  FlarkInputCaptureOutcome captureCertificationDeferredObservation({
+    required FlarkPlatformInputObservation observation,
+    required bool observedValueValid,
+    required FlarkTextMutation? fallbackMutation,
+    required TextEditingValue currentInput,
+    required int shadowGlobalUtf16Start,
+  }) {
+    if (!observation.accepted || !observedValueValid) {
+      return FlarkInputCaptureResync(
+        observation.accepted
+            ? FlarkInputResyncReason.unsupportedSuccessorObservation
+            : observation.rejection,
+      );
+    }
+    final logical = classifySemanticSuccessor(
+      observation.before,
+      observation.after,
+      mutation: observation.observedMutation ?? fallbackMutation,
+    );
+    if (logical == null) {
+      return const FlarkInputCaptureResync(
+        FlarkInputResyncReason.unsupportedSuccessorObservation,
+      );
+    }
+    final timing = activeTiming;
+    final pending = FlarkPendingSemanticInput(
+      base: currentInput,
+      inputGlobalUtf16Start: shadowGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          timing?.acceptedAtEpochMicros ??
+          activeCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      platformTiming: timing,
+      provisionalAfter: observation.after,
+    );
+    pending.successors.add(reclassifyAfterCertification(logical));
+    pending.certificationPromotion = Completer<void>();
+    pendingSemantic = pending;
+    markObservedCommand(logical.command);
+    observePendingSuccessors(pending);
+    return FlarkInputCaptureShadow(
+      value: observation.after,
+      globalUtf16Start: shadowGlobalUtf16Start,
+    );
+  }
+
   /// Reserves one bounded successor slot. Overflow atomically retires the
   /// lineage and completes every waiter before the caller resynchronizes.
   bool reserveSemanticSuccessor(
@@ -287,6 +570,165 @@ final class FlarkInputTransactionState {
     if (pending.successors.length < maximum) return true;
     discardPendingSemantic();
     return false;
+  }
+
+  bool appendPendingSuccessor(
+    FlarkPendingSemanticInput pending,
+    FlarkSemanticInputSuccessor successor, {
+    required int maximum,
+  }) {
+    if (!reserveSemanticSuccessor(pending, maximum: maximum)) return false;
+    pending.successors.add(successor);
+    observePendingSuccessors(pending);
+    return true;
+  }
+
+  FlarkInputDeferralOutcome deferSuccessor({
+    FlarkDeferredInputCommand? command,
+    String? replacement,
+    FlarkPlatformInputTiming? platformTiming,
+    required bool certificationDeferred,
+    required bool shadowMatchesCurrentInput,
+    required int maximumSuccessors,
+  }) {
+    final pending = pendingSemantic;
+    final timing = platformTiming ?? activeTiming;
+    if (pending != null) {
+      final stored = appendPendingSuccessor(
+        pending,
+        FlarkDeferredInputSuccessor(
+          command,
+          replacement: replacement,
+          reclassifyAfterCertification:
+              certificationDeferred && command != null,
+          platformTiming: timing,
+        ),
+        maximum: maximumSuccessors,
+      );
+      return stored
+          ? const FlarkInputDeferralStored()
+          : const FlarkInputDeferralResync(
+              FlarkInputResyncReason.successorQueueOverflow,
+            );
+    }
+
+    final late = lateSemantic;
+    if (late == null || command == null || replacement != null) {
+      return const FlarkInputDeferralIgnored();
+    }
+    if (shadowMatchesCurrentInput) {
+      lateSemantic = null;
+      return const FlarkInputDeferralIgnored();
+    }
+    if (late.successorCount >= maximumSuccessors) {
+      lateSemantic = null;
+      return const FlarkInputDeferralResync(
+        FlarkInputResyncReason.successorQueueOverflow,
+      );
+    }
+    late.successorCount += 1;
+    observeSuccessorCount(late.successorCount);
+    lateSemantic = null;
+    return FlarkInputDeferralPromote(command: command, platformTiming: timing);
+  }
+
+  Completer<void> beginCertificationDeferredInput() {
+    final pending = pendingSemantic;
+    if (pending == null) {
+      throw StateError('Certification-deferred input requires live lineage');
+    }
+    return pending.certificationPromotion ??= Completer<void>();
+  }
+
+  Completer<void>? takeCertificationPromotion() {
+    final pending = pendingSemantic;
+    final promotion = pending?.certificationPromotion;
+    if (pending != null) pending.certificationPromotion = null;
+    return promotion;
+  }
+
+  void setSemanticFallback(
+    FlarkPendingSemanticInput pending,
+    FlarkDeferredInputCommand? fallback,
+  ) {
+    if (!identical(pendingSemantic, pending)) {
+      throw StateError('Semantic fallback requires the owned lineage');
+    }
+    pending.fallbackWhenNotApplied = fallback;
+  }
+
+  void prependSemanticFallback(FlarkPendingSemanticInput pending) {
+    if (!identical(pendingSemantic, pending)) {
+      throw StateError('Semantic fallback requires the owned lineage');
+    }
+    final fallback = pending.fallbackWhenNotApplied;
+    if (fallback == null) return;
+    pending.successors.insert(
+      0,
+      FlarkDeferredInputSuccessor(
+        fallback,
+        semanticAlreadyAttempted: true,
+        platformTiming: pending.platformTiming,
+      ),
+    );
+    // This fallback is synthesized after a Core not-applicable receipt; it is
+    // not another platform-observed successor and must not inflate the public
+    // successor high-water receipt.
+  }
+
+  void retainLateAfterCommit({
+    required FlarkPendingSemanticInput pending,
+    required FlarkInputReconciliationMap reconciliation,
+  }) {
+    if (_lineage != null) {
+      throw StateError('Late lineage requires the pending lineage to be taken');
+    }
+    lateSemantic = FlarkLateSemanticInput(
+      provisionalTail: pending.provisionalTail,
+      reconciliation: reconciliation,
+      successorCount: pending.successors.length,
+    );
+  }
+
+  void carryPendingSuccessors({
+    required FlarkPendingSemanticInput from,
+    required int startIndex,
+    required FlarkPendingSemanticInput to,
+  }) {
+    if (!identical(pendingSemantic, to)) {
+      throw StateError('Successor carry requires the new owned lineage');
+    }
+    if (startIndex < 0 || startIndex > from.successors.length) {
+      throw RangeError.range(
+        startIndex,
+        0,
+        from.successors.length,
+        'startIndex',
+      );
+    }
+    to.successors.addAll(from.successors.skip(startIndex));
+    to.provisionalTail = from.provisionalTail;
+    observePendingSuccessors(to);
+  }
+
+  Future<bool>? deferHistoryReplay({
+    required bool undoDirection,
+    required int maximumSuccessors,
+  }) {
+    final pending = pendingSemantic;
+    if (pending == null) return null;
+    final completion = Completer<bool>();
+    if (!appendPendingSuccessor(
+      pending,
+      FlarkDeferredHistorySuccessor(
+        undoDirection: undoDirection,
+        completion: completion,
+      ),
+      maximum: maximumSuccessors,
+    )) {
+      return Future<bool>.value(false);
+    }
+    return completion.future;
   }
 
   void observePendingSuccessors(FlarkPendingSemanticInput pending) {

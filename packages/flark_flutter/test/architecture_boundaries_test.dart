@@ -328,6 +328,184 @@ void main() {
       expect(state.pendingSemantic, isNull);
       expect(await history.future, isFalse);
     });
+
+    test('pending capture advances one bounded logical lineage atomically', () {
+      final state = FlarkInputTransactionState();
+      final pending = FlarkPendingSemanticInput(
+        base: const TextEditingValue(
+          text: 'a',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+        inputGlobalUtf16Start: 9,
+        initialCallbackStartedEpochMicros: 1,
+        provisionalAfter: const TextEditingValue(
+          text: 'a',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      state.pendingSemantic = pending;
+
+      final outcome = state.capturePendingObservation(
+        observation: _observation(
+          before: pending.provisionalTail,
+          after: const TextEditingValue(
+            text: 'a\n',
+            selection: TextSelection.collapsed(offset: 2),
+          ),
+        ),
+        observedValueValid: true,
+        fallbackMutation: const FlarkTextMutation(1, 1, '\n'),
+        maximumSuccessors: 7,
+      );
+
+      expect(outcome, isA<FlarkInputCaptureShadow>());
+      final shadow = outcome as FlarkInputCaptureShadow;
+      expect(shadow.globalUtf16Start, 9);
+      expect(shadow.value.text, 'a\n');
+      expect(pending.provisionalTail, shadow.value);
+      expect(pending.successors, hasLength(1));
+      final successor =
+          pending.successors.single as FlarkDeferredInputSuccessor;
+      expect(successor.command, FlarkDeferredInputCommand.insertNewline);
+      expect(successor.reclassifyAfterCertification, isTrue);
+      expect(
+        state.consumeNewlineAction(textObservationAlreadyApplied: false),
+        isTrue,
+      );
+    });
+
+    test('invalid pending capture retires its whole lineage', () {
+      final state = FlarkInputTransactionState();
+      state.pendingSemantic = FlarkPendingSemanticInput(
+        base: const TextEditingValue(text: 'a'),
+        inputGlobalUtf16Start: 0,
+        initialCallbackStartedEpochMicros: 1,
+        provisionalAfter: const TextEditingValue(text: 'a'),
+      );
+
+      final outcome = state.capturePendingObservation(
+        observation: _observation(
+          before: const TextEditingValue(text: 'a'),
+          after: const TextEditingValue(text: 'oversized'),
+        ),
+        observedValueValid: false,
+        fallbackMutation: null,
+        maximumSuccessors: 7,
+      );
+
+      expect(
+        outcome,
+        isA<FlarkInputCaptureResync>().having(
+          (value) => value.reason,
+          'reason',
+          FlarkInputResyncReason.unsupportedSuccessorObservation,
+        ),
+      );
+      expect(state.pendingSemantic, isNull);
+    });
+
+    test('late capture returns one typed promotion and owns retirement', () {
+      final state = FlarkInputTransactionState();
+      state.lateSemantic = FlarkLateSemanticInput(
+        provisionalTail: const TextEditingValue(
+          text: 'a',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+        reconciliation: const FlarkInputReconciliationMap(
+          fromStart: 0,
+          fromEnd: 0,
+          toStart: 0,
+          toEnd: 0,
+        ),
+        successorCount: 0,
+      );
+
+      final outcome = state.captureLateObservation(
+        observation: _observation(
+          before: state.lateSemantic!.provisionalTail,
+          after: const TextEditingValue(
+            text: 'ab',
+            selection: TextSelection.collapsed(offset: 2),
+          ),
+        ),
+        fallbackMutation: const FlarkTextMutation(1, 1, 'b'),
+        currentInputGlobalUtf16Start: 4,
+        shadowGlobalUtf16Start: 7,
+        maximumSuccessors: 7,
+      );
+
+      final captured = outcome as FlarkInputCaptureShadow;
+      expect(captured.globalUtf16Start, 7);
+      expect(captured.latePromotion, isNotNull);
+      expect(captured.latePromotion!.pending.inputGlobalUtf16Start, 4);
+      expect(captured.latePromotion!.pending.successors, hasLength(1));
+      expect(state.lateSemantic!.successorCount, 1);
+      expect(state.successorHighWatermark, 1);
+      expect(
+        state.retainLateLineage(
+          shadowMatchesCurrentInput: true,
+          currentInput: const TextEditingValue(text: 'committed'),
+        ),
+        isFalse,
+      );
+      expect(state.lateSemantic, isNull);
+    });
+
+    test('certification capture owns deferred lineage construction', () {
+      final state = FlarkInputTransactionState();
+      final outcome = state.captureCertificationDeferredObservation(
+        observation: _observation(
+          before: const TextEditingValue(
+            text: 'a',
+            selection: TextSelection.collapsed(offset: 1),
+          ),
+          after: const TextEditingValue(
+            text: 'a\n',
+            selection: TextSelection.collapsed(offset: 2),
+          ),
+        ),
+        observedValueValid: true,
+        fallbackMutation: const FlarkTextMutation(1, 1, '\n'),
+        currentInput: const TextEditingValue(text: 'committed'),
+        shadowGlobalUtf16Start: 11,
+      );
+
+      expect(outcome, isA<FlarkInputCaptureShadow>());
+      final pending = state.pendingSemantic!;
+      expect(pending.base.text, 'committed');
+      expect(pending.inputGlobalUtf16Start, 11);
+      expect(pending.certificationPromotion, isNotNull);
+      final successor =
+          pending.successors.single as FlarkDeferredInputSuccessor;
+      expect(successor.command, FlarkDeferredInputCommand.insertNewline);
+      expect(successor.reclassifyAfterCertification, isTrue);
+    });
+
+    test('a synthesized semantic fallback is not an observed successor', () {
+      final state = FlarkInputTransactionState();
+      final pending = state.beginSemanticInput(
+        base: const TextEditingValue(text: 'a'),
+        inputGlobalUtf16Start: 0,
+        provisionalAfter: const TextEditingValue(text: 'a'),
+      );
+      expect(
+        state.appendPendingSuccessor(
+          pending,
+          const FlarkDeferredInputSuccessor(null, replacement: 'x'),
+          maximum: 7,
+        ),
+        isTrue,
+      );
+      state.setSemanticFallback(
+        pending,
+        FlarkDeferredInputCommand.deleteBackward,
+      );
+
+      state.prependSemanticFallback(pending);
+
+      expect(pending.successors, hasLength(2));
+      expect(state.successorHighWatermark, 1);
+    });
   });
 
   group('platform input bridge', () {
@@ -737,6 +915,24 @@ void main() {
     );
   });
 }
+
+FlarkPlatformInputObservation _observation({
+  required TextEditingValue before,
+  required TextEditingValue after,
+}) => FlarkPlatformInputObservation(
+  before: before,
+  after: after,
+  rejection: FlarkInputResyncReason.none,
+  observedMutation: null,
+  effectiveMutation: null,
+  mutatingChanges: before.text == after.text ? 0 : 1,
+  typingInput: false,
+  fromDeltaBatch: false,
+  newlineCommand: false,
+  deleteBackwardCommand: false,
+  selectedDeletion: false,
+  selectionSupersededByProjection: false,
+);
 
 bool _startsWithLowSurrogate(String value) =>
     value.isNotEmpty &&

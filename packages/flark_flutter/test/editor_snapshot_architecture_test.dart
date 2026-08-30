@@ -134,11 +134,24 @@ void main() {
     expect(inputTransactionState, contains('classifySemanticSuccessor'));
     expect(inputTransactionState, contains('reserveSemanticSuccessor'));
     expect(inputTransactionState, contains('takePendingSemantic'));
+    expect(inputTransactionState, contains('capturePendingObservation'));
+    expect(inputTransactionState, contains('captureLateObservation'));
+    expect(
+      inputTransactionState,
+      contains('captureCertificationDeferredObservation'),
+    );
+    expect(inputTransactionState, contains('deferSuccessor'));
     expect(controller, isNot(contains('before.composing != TextRange.empty')));
     expect(
       controller,
       isNot(contains('successors.length < _maximumSemanticSuccessors')),
     );
+    expect(controller, isNot(contains('successors.add(')));
+    expect(controller, isNot(contains('successors.addAll(')));
+    expect(controller, isNot(contains('successors.insert(')));
+    expect(controller, isNot(contains('provisionalTail =')));
+    expect(controller, isNot(contains('certificationPromotion =')));
+    expect(controller, isNot(contains('fallbackWhenNotApplied =')));
   });
 
   test('bounded platform input has one invariant-owning state boundary', () {
