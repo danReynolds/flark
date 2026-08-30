@@ -179,10 +179,12 @@ void main() {
     expect(controller, isNot(contains('candidateContinuationRewrite')));
     expect(controller, isNot(contains('boundedReplacementWindow(')));
     expect(portableInputWindow, contains('restoreCollapsed'));
+    expect(portableInputWindow, contains('restoreSelection'));
     expect(portableInputWindow, contains('paragraphGap'));
     expect(portableInputWindow, contains('caretBoundary'));
     expect(portableInputWindow, contains('neutralLine'));
     expect(controller, isNot(contains('_activateWindowWithoutNotification')));
+    expect(controller, isNot(contains('FlarkViewportRow? containingRow')));
     expect(portableInputWindow, isNot(contains('package:flutter')));
     expect(portableInputWindow, isNot(contains('dart:ui')));
     expect(inputState, isNot(contains("import 'controller.dart'")));

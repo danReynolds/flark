@@ -2738,74 +2738,16 @@ final class FlarkEditorController extends ChangeNotifier
 
   void _restoreSelectionSnapshot(FlarkEditorSelectionSnapshot snapshot) {
     _inputState.restoreInlineContinuation(snapshot.inlineContinuation);
-    final selection = snapshot.selection;
-    final start = math.min(selection.baseOffset, selection.extentOffset);
-    final end = math.max(selection.baseOffset, selection.extentOffset);
-    final visibleEnd =
-        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    if (!selection.isCollapsed &&
-        start >= _viewportState.visibleUtf16Start &&
-        end <= visibleEnd &&
-        end - start <= _maximumInputCodeUnits) {
-      FlarkViewportRow? containingRow;
-      for (final row in _viewportState.rows) {
-        final range = _mapViewportRange(_activationRange(row));
-        if (range.start <= start && end <= range.end) {
-          containingRow = row;
-          break;
-        }
-      }
-      if (containingRow != null) {
-        final range = _mapViewportRange(_activationRange(containingRow));
-        _inputState.replaceWindow(
-          globalUtf16Start: range.start,
-          value: TextEditingValue(
-            text: _sliceVisibleUtf16(range.start, range.end),
-            selection: TextSelection(
-              baseOffset: selection.baseOffset - range.start,
-              extentOffset: selection.extentOffset - range.start,
-              affinity: selection.affinity,
-              isDirectional: selection.isDirectional,
-            ),
-          ),
-        );
-        _inputState.setCanonicalSelection(
-          selection.baseOffset,
-          selection.extentOffset,
-        );
-        _inputState.retargetActiveOrdinal(containingRow.ordinal);
-        _inputState.setCrossRowSelection(false);
-        return;
-      }
-      _inputState.replaceWindow(
-        globalUtf16Start: start,
-        value: TextEditingValue(
-          text: _sliceVisibleUtf16(start, end),
-          selection: TextSelection(
-            baseOffset: selection.baseOffset - start,
-            extentOffset: selection.extentOffset - start,
-            affinity: selection.affinity,
-            isDirectional: selection.isDirectional,
-          ),
-        ),
-      );
-      _inputState.setCanonicalSelection(
-        selection.baseOffset,
-        selection.extentOffset,
-      );
-      _inputState.retargetActiveOrdinal(
-        snapshot.activeOrdinal ?? _surfaceOrdinalAt(selection.extentOffset),
-      );
-      _inputState.setCrossRowSelection(true);
-      return;
-    }
-    final caret = selection.extentOffset
-        .clamp(0, math.max(sourceUtf16Length, visibleEnd))
-        .toInt();
-    _inputState.setCanonicalSelection(caret, caret);
-    _restoreCollapsedInputWindow(
-      caret,
-      preferredOrdinal: snapshot.activeOrdinal,
+    _inputState.installWindowPlan(
+      FlarkEditorInputWindowPlanner.restoreSelection(
+        viewportState: _viewportState,
+        projector: _captureSurfaceProjector(),
+        pendingPresentation: _pendingPresentation,
+        selection: portableTextSelection(snapshot.selection),
+        sourceUtf16Length: sourceUtf16Length,
+        maximumCodeUnits: _maximumInputCodeUnits,
+        preferredOrdinal: snapshot.activeOrdinal,
+      ),
     );
   }
 

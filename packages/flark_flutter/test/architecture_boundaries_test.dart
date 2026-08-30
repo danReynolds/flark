@@ -74,6 +74,31 @@ void main() {
       expect(state.crossRowSelection, isTrue);
     });
 
+    test('portable oversized restoration installs one atomic state', () {
+      final state = FlarkEditorInputState();
+
+      state.installWindowPlan(
+        const FlarkEditorInputWindow(
+          text: '6789',
+          globalUtf16Start: 6,
+          selection: FlarkTextSelection.collapsed(offset: 3),
+          activeOrdinal: -1,
+          canonicalSelectionBaseUtf16: 1,
+          canonicalSelectionExtentUtf16: 9,
+          crossRowSelection: true,
+          selectionRepresented: false,
+          oversizedSelection: true,
+        ),
+      );
+
+      expect(state.value.text, '6789');
+      expect(state.value.selection, const TextSelection.collapsed(offset: 3));
+      expect(state.selectionBaseUtf16, 1);
+      expect(state.selectionExtentUtf16, 9);
+      expect(state.crossRowSelection, isTrue);
+      expect(state.oversizedSelection, isTrue);
+    });
+
     test('collapsed restoration updates canonical selection atomically', () {
       final state = FlarkEditorInputState();
 

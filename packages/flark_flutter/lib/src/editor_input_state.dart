@@ -166,6 +166,7 @@ final class FlarkEditorInputState {
     _selectionBaseUtf16 = window.canonicalSelectionBaseUtf16;
     _selectionExtentUtf16 = window.canonicalSelectionExtentUtf16;
     _crossRowSelection = window.crossRowSelection;
+    _oversizedSelection = window.oversizedSelection;
     if (_selectionBaseUtf16 != _selectionExtentUtf16 ||
         _inlineContinuation?.caretUtf16 != _selectionExtentUtf16) {
       _inlineContinuation = null;

@@ -156,6 +156,11 @@ be extracted by authority, not by file length:
   explicit composition-active fact to the pure input-mutation planner. Flutter
   retains hidden-projection admission, history/composition adoption, native
   command execution, and platform publication;
+- canonical selection restoration now delegates same-row, cross-row,
+  collapsed, and capacity-exceeding placement to the same portable input-window
+  planner. An oversized history selection keeps its exact Core endpoints while
+  Flutter exposes only a bounded collapsed surrogate; the controller no longer
+  rebuilds selection windows with a parallel branch tree;
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 

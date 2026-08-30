@@ -1679,6 +1679,10 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(undone, isTrue);
       expect(controller.sourceUtf16Length, lengthBefore);
       await settle(controller);
+      expect(controller.hasOversizedSelection, isTrue);
+      expect(controller.globalSelectionBase, start);
+      expect(controller.globalSelectionExtent, end);
+      expect(await controller.readSelectedText(), source.substring(start, end));
     },
     skip: libraryPath == null,
   );

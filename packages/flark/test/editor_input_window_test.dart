@@ -365,6 +365,103 @@ void main() {
     expect(window.activeOrdinal, -2);
     expect(window.canonicalSelectionExtentUtf16, 19);
   });
+
+  test('selection restoration retains its containing parser row', () {
+    final viewportState = FlarkEditorViewportState()
+      ..install(_viewport(rows: [_row()]), 'abc');
+
+    final window = FlarkEditorInputWindowPlanner.restoreSelection(
+      viewportState: viewportState,
+      projector: _projector(viewportState),
+      pendingPresentation: const FlarkPendingPresentationSnapshot.empty(),
+      selection: const FlarkTextSelection(
+        baseOffset: 2,
+        extentOffset: 0,
+        affinity: FlarkTextAffinity.upstream,
+        isDirectional: true,
+      ),
+      preferredOrdinal: null,
+      sourceUtf16Length: 3,
+      maximumCodeUnits: 8,
+    );
+
+    expect(window.text, 'abc');
+    expect(window.globalUtf16Start, 0);
+    expect(window.selection.baseOffset, 2);
+    expect(window.selection.extentOffset, 0);
+    expect(window.selection.affinity, FlarkTextAffinity.upstream);
+    expect(window.activeOrdinal, 0);
+    expect(window.crossRowSelection, isFalse);
+    expect(window.selectionRepresented, isTrue);
+    expect(window.oversizedSelection, isFalse);
+  });
+
+  test('selection restoration retains an exact cross-row source range', () {
+    const source = 'abc\ndef';
+    final viewportState = FlarkEditorViewportState()
+      ..install(
+        _viewport(
+          rows: const [
+            _TestRow(0, 0, 3),
+            _TestRow(1, 4, 7),
+          ].map((value) => value.build()).toList(),
+          sourceLength: source.length,
+        ),
+        source,
+      );
+
+    final window = FlarkEditorInputWindowPlanner.restoreSelection(
+      viewportState: viewportState,
+      projector: _projector(viewportState),
+      pendingPresentation: const FlarkPendingPresentationSnapshot.empty(),
+      selection: const FlarkTextSelection(
+        baseOffset: 5,
+        extentOffset: 1,
+        isDirectional: true,
+      ),
+      preferredOrdinal: 1,
+      sourceUtf16Length: source.length,
+      maximumCodeUnits: 8,
+    );
+
+    expect(window.text, 'bc\nd');
+    expect(window.globalUtf16Start, 1);
+    expect(window.selection.baseOffset, 4);
+    expect(window.selection.extentOffset, 0);
+    expect(window.activeOrdinal, 1);
+    expect(window.crossRowSelection, isTrue);
+    expect(window.selectionRepresented, isTrue);
+    expect(window.oversizedSelection, isFalse);
+  });
+
+  test('oversized restoration preserves exact canonical endpoints', () {
+    final viewportState = FlarkEditorViewportState()
+      ..adoptUncertifiedSourceWindow(source: '0123456789', startUtf16: 0);
+
+    final window = FlarkEditorInputWindowPlanner.restoreSelection(
+      viewportState: viewportState,
+      projector: _projector(viewportState),
+      pendingPresentation: const FlarkPendingPresentationSnapshot.empty(),
+      selection: const FlarkTextSelection(
+        baseOffset: 1,
+        extentOffset: 9,
+        affinity: FlarkTextAffinity.upstream,
+        isDirectional: true,
+      ),
+      preferredOrdinal: null,
+      sourceUtf16Length: 10,
+      maximumCodeUnits: 4,
+    );
+
+    expect(window.text.length, lessThanOrEqualTo(4));
+    expect(window.selection.isCollapsed, isTrue);
+    expect(window.selection.affinity, FlarkTextAffinity.upstream);
+    expect(window.canonicalSelectionBaseUtf16, 1);
+    expect(window.canonicalSelectionExtentUtf16, 9);
+    expect(window.crossRowSelection, isTrue);
+    expect(window.selectionRepresented, isFalse);
+    expect(window.oversizedSelection, isTrue);
+  });
 }
 
 FlarkViewportRow _row() => FlarkViewportRow(
@@ -385,18 +482,46 @@ FlarkViewportRow _row() => FlarkViewportRow(
   inlineFacts: const [],
 );
 
-FlarkViewport _viewport({required List<FlarkViewportRow> rows}) =>
-    FlarkViewport(
-      revision: 1,
-      snapshot: 1,
-      requestedBytes: const FlarkSourceRange(0, 3),
-      coveredBytes: const FlarkSourceRange(0, 3),
-      coveredUtf16: const FlarkSourceRange(0, 3),
-      certification: FlarkCertification.currentCertified,
-      rows: rows,
-      neutralSource: null,
-      continuation: 0,
-    );
+FlarkViewport _viewport({
+  required List<FlarkViewportRow> rows,
+  int sourceLength = 3,
+}) => FlarkViewport(
+  revision: 1,
+  snapshot: 1,
+  requestedBytes: FlarkSourceRange(0, sourceLength),
+  coveredBytes: FlarkSourceRange(0, sourceLength),
+  coveredUtf16: FlarkSourceRange(0, sourceLength),
+  certification: FlarkCertification.currentCertified,
+  rows: rows,
+  neutralSource: null,
+  continuation: 0,
+);
+
+final class _TestRow {
+  const _TestRow(this.ordinal, this.start, this.end);
+
+  final int ordinal;
+  final int start;
+  final int end;
+
+  FlarkViewportRow build() => FlarkViewportRow(
+    ordinal: ordinal,
+    kind: 5,
+    sourceBytes: FlarkSourceRange(start, end),
+    sourceUtf16: FlarkSourceRange(start, end),
+    editableBytes: FlarkSourceRange(start, end),
+    editableUtf16: FlarkSourceRange(start, end),
+    editCapability: FlarkViewportRowEditCapability.contiguous,
+    headingLevel: null,
+    headingStyle: null,
+    listItem: null,
+    blockQuote: null,
+    codeBlock: null,
+    thematicBreak: false,
+    pathDepth: 0,
+    inlineFacts: const [],
+  );
+}
 
 FlarkSurfaceProjector _projector(FlarkEditorViewportState viewportState) =>
     viewportState.captureSurfaceProjector(

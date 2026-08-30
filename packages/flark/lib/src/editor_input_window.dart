@@ -20,6 +20,7 @@ final class FlarkEditorInputWindow {
     required this.canonicalSelectionExtentUtf16,
     required this.crossRowSelection,
     required this.selectionRepresented,
+    this.oversizedSelection = false,
   });
 
   final String text;
@@ -31,6 +32,7 @@ final class FlarkEditorInputWindow {
   final int canonicalSelectionExtentUtf16;
   final bool crossRowSelection;
   final bool selectionRepresented;
+  final bool oversizedSelection;
 }
 
 /// Deterministic result of admitting one exact mutation against a bounded
@@ -274,6 +276,120 @@ abstract final class FlarkEditorInputMutationPlanner {
 /// only capacity, scalar-aligned cuts, and the exact relationship between a
 /// local surrogate selection and its canonical global endpoints.
 abstract final class FlarkEditorInputWindowPlanner {
+  /// Restores one canonical selection into the bounded platform surrogate.
+  ///
+  /// A selection contained by one parser row retains that row's whole input
+  /// extent. A representable cross-row selection retains only its exact source
+  /// range. A selection larger than the platform capacity keeps its exact
+  /// canonical endpoints while exposing a collapsed surrogate at the active
+  /// extent; the host can therefore replace the full selection without ever
+  /// materializing it in a platform text value.
+  static FlarkEditorInputWindow restoreSelection({
+    required FlarkEditorViewportState viewportState,
+    required FlarkSurfaceProjector projector,
+    required FlarkPendingPresentationSnapshot pendingPresentation,
+    required FlarkTextSelection selection,
+    required int sourceUtf16Length,
+    required int maximumCodeUnits,
+    int? preferredOrdinal,
+  }) {
+    _checkCapacity(maximumCodeUnits);
+    final base = selection.baseOffset.clamp(0, sourceUtf16Length);
+    final extent = selection.extentOffset.clamp(0, sourceUtf16Length);
+    final normalized = FlarkTextSelection(
+      baseOffset: base,
+      extentOffset: extent,
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+    if (normalized.isCollapsed) {
+      return restoreCollapsed(
+        viewportState: viewportState,
+        projector: projector,
+        pendingPresentation: pendingPresentation,
+        caret: extent,
+        sourceUtf16Length: sourceUtf16Length,
+        maximumCodeUnits: maximumCodeUnits,
+        preferredOrdinal: preferredOrdinal,
+      );
+    }
+
+    final start = math.min(base, extent);
+    final end = math.max(base, extent);
+    final selectionLength = end - start;
+    final visible =
+        viewportState.visibleUtf16Start <= start &&
+        end <= viewportState.visibleUtf16End;
+    if (!visible || selectionLength > maximumCodeUnits) {
+      final surrogate = restoreCollapsed(
+        viewportState: viewportState,
+        projector: projector,
+        pendingPresentation: pendingPresentation,
+        caret: extent,
+        sourceUtf16Length: sourceUtf16Length,
+        maximumCodeUnits: maximumCodeUnits,
+        preferredOrdinal: preferredOrdinal,
+      );
+      return FlarkEditorInputWindow(
+        text: surrogate.text,
+        globalUtf16Start: surrogate.globalUtf16Start,
+        selection: FlarkTextSelection.collapsed(
+          offset: surrogate.selection.extentOffset,
+          affinity: normalized.affinity,
+        ),
+        composing: surrogate.composing,
+        activeOrdinal: surrogate.activeOrdinal,
+        canonicalSelectionBaseUtf16: base,
+        canonicalSelectionExtentUtf16: extent,
+        crossRowSelection: true,
+        selectionRepresented: false,
+        oversizedSelection: true,
+      );
+    }
+
+    for (final row in viewportState.rows) {
+      final range = viewportState.mapRange(projector.activationRange(row));
+      if (range.start > start || end > range.end) continue;
+      return FlarkEditorInputWindow(
+        text: viewportState.sliceVisibleUtf16(range.start, range.end),
+        globalUtf16Start: range.start,
+        selection: FlarkTextSelection(
+          baseOffset: base - range.start,
+          extentOffset: extent - range.start,
+          affinity: normalized.affinity,
+          isDirectional: normalized.isDirectional,
+        ),
+        activeOrdinal: row.ordinal,
+        canonicalSelectionBaseUtf16: base,
+        canonicalSelectionExtentUtf16: extent,
+        crossRowSelection: false,
+        selectionRepresented: true,
+      );
+    }
+
+    return FlarkEditorInputWindow(
+      text: viewportState.sliceVisibleUtf16(start, end),
+      globalUtf16Start: start,
+      selection: FlarkTextSelection(
+        baseOffset: base - start,
+        extentOffset: extent - start,
+        affinity: normalized.affinity,
+        isDirectional: normalized.isDirectional,
+      ),
+      activeOrdinal:
+          preferredOrdinal ??
+          projector.surfaceOrdinalAt(
+            rows: viewportState.rows,
+            globalUtf16Offset: extent,
+            sourceUtf16Length: sourceUtf16Length,
+          ),
+      canonicalSelectionBaseUtf16: base,
+      canonicalSelectionExtentUtf16: extent,
+      crossRowSelection: true,
+      selectionRepresented: true,
+    );
+  }
+
   /// Applies one authoritative source splice to an existing bounded input
   /// window while preserving its exact global origin and collapsed result
   /// caret. A null result means the host must rebuild from source geometry.

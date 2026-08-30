@@ -176,8 +176,11 @@ transaction owner. Bounded platform value, global UTF-16 origin, canonical
 selection mirrors, active row, oversized selection, and restoration now
 advance through one directly tested Flutter input-state owner, while pure
 `flark` plans the capacity-bounded scalar-aligned window, parser-row
-activation, neutral-line ownership, and pending boundary restoration shared by
-any future host adapter. The controller-facade work is therefore smaller but
+activation, neutral-line ownership, pending boundary restoration, and exact
+same-row/cross-row/oversized selection restoration shared by any future host
+adapter. Capacity-exceeding history selections retain their exact canonical
+endpoints behind a bounded collapsed platform surrogate. The controller-facade
+work is therefore smaller but
 not complete. Typed source edits, semantic edits/actions, history, and
 composition cancellation now enter one portable command executor that owns
 native invocation, ordering, and private coordinator tickets; Flutter retains
@@ -234,7 +237,7 @@ Current audit:
 | Pure semantic receipt adopter | Retain | It owns one synchronous, identity-checked committed-receipt transaction across source publication, pending presentation, refresh navigation, and bounded viewport state. It returns only the caret, continuation, and certification obligation a host must install, and direct native tests reject superseded receipts. |
 | Flutter platform input bridge | Retain | It owns connection epochs, the serialized shadow, atomic delta validation, and one immutable normal form shared by delta/full-value callbacks against current or provisional input. It knows no Markdown, viewport, or source-mutation policy. |
 | Flutter input transaction state | Retain | It is the sole mutable owner of callback scopes, paired actions, provisional/late successor lineage, capture and deferral transitions, certification-completer lifetime, and successor accounting. It returns typed shadow, resync, and late-promotion effects; it knows no Markdown, viewport, native document, or rendered presentation. |
-| Pure input-window and mutation planners | Retain | They own capacity, scalar-aligned cuts, local-to-canonical selection equivalence, restoration from parser/pending surface geometry, exact literal splice validation, parser-authored continuation rewrite, structural-certification classification, and composition activity without a frontend dependency. |
+| Pure input-window and mutation planners | Retain | They own capacity, scalar-aligned cuts, local-to-canonical selection equivalence, collapsed/same-row/cross-row/oversized restoration from parser and pending surface geometry, exact literal splice validation, parser-authored continuation rewrite, structural-certification classification, and composition activity without a frontend dependency. |
 | Flutter input state | Retain | It owns one `TextEditingValue` window and its canonical mirrors, adapting immutable plans through named transitions. It imports no controller and its oversized-selection invariants have direct tests. |
 | Rust runtime document | Retain while its public surface stays narrow | It is the deep source/parser transaction boundary; edit-intent resolution is already separate. Split only when a codec, parser job, or transaction owner can move without sharing document internals. |
 | Dart native document | Retain pending a codec-sized extraction | Its size comes from one serialized actor plus strict ABI decoding. A split is useful only if a stateless decoder can be tested independently without duplicating FFI lifecycle state. |
@@ -270,7 +273,11 @@ accepted too: capture, deferral, fallback insertion, late-lineage retirement,
 certification-completer lifetime, and accounting moved behind typed effects,
 and a focused gate caught and fixed the attempted inflation of the observed
 successor metric by an internal fallback. The controller no longer mutates any
-successor collection or provisional tail. The next review must remove another
+successor collection or provisional tail. Portable selection restoration is
+accepted as a complete input-window transition: it removed the Flutter-only
+same-row/cross-row branch tree and fixed capacity-exceeding history restoration
+so exact canonical endpoints survive behind the bounded platform surrogate.
+The next review must remove another
 complete authority—successor effect execution, history/composition adoption, or
 lifecycle admission—rather than reshuffling facade methods.
 
