@@ -11,15 +11,6 @@ final class FlarkTextMutation {
   final String replacement;
 }
 
-/// The only two publication outcomes of an accepted source edit.
-enum FlarkQueuedEditPublication {
-  publishOptimistically,
-  retainPublishedUntilCertified;
-
-  bool get publishesOptimistically => this == publishOptimistically;
-  bool get requiresParserCertification => this == retainPublishedUntilCertified;
-}
-
 sealed class FlarkMutationAcceptance {
   const FlarkMutationAcceptance();
 

@@ -95,6 +95,10 @@ final class FlarkEditorController extends ChangeNotifier
       openingHeadProbeBytes: _openingHeadProbeBytes,
       viewportRowsPerPage: _viewportRowsPerPage,
     );
+    _sourceEditPlanner = FlarkEditorSourceEditPlanner(
+      coordinator: _coordinator,
+      viewportState: _viewportState,
+    );
     _viewportPager = FlarkEditorViewportPager(
       source: _document,
       coordinator: _coordinator,
@@ -112,6 +116,7 @@ final class FlarkEditorController extends ChangeNotifier
   final FlarkEditorCoordinator _coordinator = FlarkEditorCoordinator();
   late final FlarkEditorCommandExecutor _commands;
   late final FlarkEditorParseDriver _parseDriver;
+  late final FlarkEditorSourceEditPlanner _sourceEditPlanner;
   final ObserverList<VoidCallback> _inputStateListeners =
       ObserverList<VoidCallback>();
 
@@ -1527,9 +1532,15 @@ final class FlarkEditorController extends ChangeNotifier
     final boundaryRowEnd =
         paragraphGap?.rowEndUtf16 ?? caretBoundary?.rowEndUtf16;
     final boundaryEnd = paragraphGap != null
-        ? _committedGapEnd(paragraphGap)
+        ? _sourceEditPlanner.committedGapEnd(
+            paragraphGap,
+            _captureSurfaceProjector(),
+          )
         : caretBoundary != null
-        ? _committedCaretBoundaryEnd(caretBoundary)
+        ? _sourceEditPlanner.committedCaretBoundaryEnd(
+            caretBoundary,
+            _captureSurfaceProjector(),
+          )
         : null;
     final editorBoundaryOwnsCaret =
         boundaryRowEnd != null &&
@@ -3087,169 +3098,23 @@ final class FlarkEditorController extends ChangeNotifier
         platformTiming?.acceptedAtEpochMicros ??
         DateTime.now().microsecondsSinceEpoch;
     _retainOptimisticRefreshAnchor(start, deriveFromInput: false);
-    final split = _pendingPresentation.paragraphGap;
-    if (split != null &&
-        (start < split.rowEndUtf16 || end > _committedGapEnd(split))) {
-      _coordinator.retirePendingPresentation(const {
-        FlarkPendingPresentationPart.paragraphGap,
-      });
-    }
-    final insertsNonLineEndingText =
-        replacement.isNotEmpty &&
-        !replacement.contains('\n') &&
-        !replacement.contains('\r');
-    final caretBoundary = _pendingPresentation.caretBoundary;
-    var caretBoundaryStartsExactBlock = false;
-    if (caretBoundary != null) {
-      final boundaryEnd = _committedCaretBoundaryEnd(caretBoundary);
-      final insertsInsideBlankBoundary =
-          start == end &&
-          caretBoundary.rowEndUtf16 <= start &&
-          start <= boundaryEnd;
-      final insertsOnlyLineEndings =
-          replacement.isNotEmpty &&
-          replacement.codeUnits.every((unit) => unit == 0x0a || unit == 0x0d);
-      final preservesBlankBoundary =
-          insertsInsideBlankBoundary && insertsOnlyLineEndings;
-      caretBoundaryStartsExactBlock =
-          insertsInsideBlankBoundary && insertsNonLineEndingText;
-      if (!preservesBlankBoundary) {
-        _coordinator.retirePendingPresentation(const {
-          FlarkPendingPresentationPart.caretBoundary,
-        });
-      }
-    }
-    final structurals = _pendingPresentation.structuralSurfaces;
-    final compositionUsesExactFallback = compositionHistoryGroup != null;
-    final neutralInputStartsExactBlock =
-        (_inputState.activeOrdinal ?? 0) < 0 &&
-        start == end &&
-        insertsNonLineEndingText;
-    final editStartsExactFallback =
-        compositionUsesExactFallback ||
-        caretBoundaryStartsExactBlock ||
-        neutralInputStartsExactBlock;
-    FlarkProjectionEditCellReceipt? projectionReceipt;
-    var structuralSuccessorRequiresCertification = false;
-    if (!compositionUsesExactFallback &&
-        editStartsExactFallback &&
-        structurals.isNotEmpty) {
-      // A structural Return can leave the caret in a parser-owned exact
-      // successor island. Prefer the result edit-cell proof for the first
-      // non-line-ending splice: it keeps the predecessor rendered while
-      // authorizing the exact successor text. Falling straight to an
-      // unproved local island here widens the stale owner row over both
-      // blocks and briefly exposes the predecessor's Markdown markers.
-      projectionReceipt = _advanceCommittedStructuralSurfaces(
-        start,
-        end,
-        replacement,
-      );
-    }
-    if (!compositionUsesExactFallback &&
-        editStartsExactFallback &&
-        projectionReceipt == null &&
-        structurals.isEmpty &&
-        caretBoundary != null) {
-      // Certified rows retire the temporary structural surface, but its
-      // parser-authored first-edit cell survives on the nonvisual boundary.
-      // This keeps ordinary typing immediate without a Flutter Markdown
-      // character allowlist; syntax-shaped prefixes fail closed naturally.
-      projectionReceipt = _advanceCommittedCaretBoundary(
-        caretBoundary,
-        start,
-        end,
-        replacement,
-      );
-    }
-    final editUsesExactFallback =
-        editStartsExactFallback && projectionReceipt == null;
-    final firstLf = _inputState.value.text.indexOf('\n');
-    final firstCr = _inputState.value.text.indexOf('\r');
-    final firstLineEnding = firstLf < 0
-        ? firstCr
-        : firstCr < 0
-        ? firstLf
-        : math.min(firstLf, firstCr);
-    final lookaheadStart = firstLineEnding < 0
-        ? _inputState.value.text.length
-        : firstLineEnding +
-              (firstCr == firstLineEnding &&
-                      firstLineEnding + 1 < _inputState.value.text.length &&
-                      _inputState.value.text.codeUnitAt(firstLineEnding + 1) ==
-                          0x0a
-                  ? 2
-                  : 1);
-    final exactFallbackHasStructuralLookahead =
-        !compositionUsesExactFallback &&
-        editUsesExactFallback &&
-        lookaheadStart < _inputState.value.text.length;
-    final exactFallbackHasCertifiedNeighbor =
-        !compositionUsesExactFallback &&
-        editUsesExactFallback &&
-        // A retained caret boundary supplies exact source geometry for the
-        // parser-less blank island. It may safely paint ordinary or
-        // syntax-shaped input as local exact source while certified siblings
-        // remain rendered. A generic neutral fallback has no such typed
-        // partition and must retain the prior atomic frame.
-        !caretBoundaryStartsExactBlock &&
-        _viewportState.rows.any((row) {
-          final range = surfaceSourceRange(row);
-          return range.end <= start || end <= range.start;
-        });
-    if (editUsesExactFallback) {
-      // Parser certification is intentionally pinned during composition, and
-      // a neutral input island has no AST row yet. Neither state proves result
-      // Markdown semantics. They do prove the exact local editing island, so
-      // publish that island as source while mechanically unchanged siblings
-      // stay rendered. This prevents both stale UTF-16 projection and a blank
-      // row that appears to ignore the user's first character. The durable
-      // caret-boundary receipt covers shared parser boundaries; the negative
-      // neutral ordinal covers the same exact island after blank-line edits.
-      _coordinator.retirePendingPresentation(const {
-        FlarkPendingPresentationPart.dependency,
-        FlarkPendingPresentationPart.structuralSurfaces,
-      });
-    } else if (projectionReceipt == null && structurals.isNotEmpty) {
-      // Only a parser-proved structural surface may carry a typed edit cell
-      // into its result revision. Exactly one matching cell may advance that
-      // temporary presentation; every other successor fails closed until a
-      // fresh parser publication arrives.
-      projectionReceipt = _advanceCommittedStructuralSurfaces(
-        start,
-        end,
-        replacement,
-      );
-      if (projectionReceipt == null) {
-        // The semantic predecessor still proves the source partition that is
-        // on screen, but it did not authorize this exact successor result.
-        // Once those surfaces are retired there is no parser-owned geometry
-        // for the new source. Keep the same-burst edit atomic through fresh
-        // certification instead of publishing one raw window across blocks.
-        structuralSuccessorRequiresCertification = true;
-        _coordinator.retirePendingPresentation(const {
-          FlarkPendingPresentationPart.dependency,
-          FlarkPendingPresentationPart.structuralSurfaces,
-        });
-      }
-    } else {
-      projectionReceipt = _prepareProjectionContinuity(start, end, replacement);
-    }
-    // Exact source is always valid input state, but it is not necessarily the
-    // rendered result: one scalar may change inline styling, join a lazy
-    // continuation, or reinterpret sibling physical lines as a new block.
-    // Publish optimistically only when Core supplied an exact authority for
-    // this result. Otherwise keep the previous atomic surface publication
-    // until the native parser certifies the successor revision.
-    final lacksResultPresentationAuthority =
-        !editUsesExactFallback &&
-        projectionReceipt == null &&
-        _pendingPresentation.dependency == null;
-    final structuralOneShotRequiresCertification =
-        !editUsesExactFallback &&
-        structurals.isNotEmpty &&
-        projectionReceipt != null &&
-        !projectionReceipt.chainResultCell;
+    final editPlan = _sourceEditPlanner.plan(
+      FlarkEditorSourceEditPlanningRequest(
+        revision: revision,
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
+        inputGlobalUtf16Start: _inputState.globalUtf16Start,
+        inputValue: portableEditorInputValue(_inputState.value),
+        activeOrdinal: _inputState.activeOrdinal,
+        selectionBaseUtf16: _inputState.selectionBaseUtf16,
+        selectionExtentUtf16: _inputState.selectionExtentUtf16,
+        crossRowSelection: _inputState.crossRowSelection,
+        compositionUsesExactFallback: compositionHistoryGroup != null,
+        requiresStructuralCertification: requiresStructuralCertification,
+      ),
+    );
+    final projectionReceipt = editPlan.projectionReceipt;
     _applyOptimisticViewportEdit(start, end, replacement);
     var committedAfterSelection = afterSelection;
     if (recenterAfterOptimisticEdit) {
@@ -3310,19 +3175,7 @@ final class FlarkEditorController extends ChangeNotifier
       _commands.trackAdoption(operation);
     }
     acceptanceWatch.stop();
-    final requiresParserCertification =
-        _publicationCertificationBarrierActive ||
-        structuralSuccessorRequiresCertification ||
-        structuralOneShotRequiresCertification ||
-        exactFallbackHasStructuralLookahead ||
-        exactFallbackHasCertifiedNeighbor ||
-        lacksResultPresentationAuthority ||
-        (requiresStructuralCertification &&
-            projectionReceipt == null &&
-            !editUsesExactFallback);
-    final publication = requiresParserCertification
-        ? FlarkQueuedEditPublication.retainPublishedUntilCertified
-        : FlarkQueuedEditPublication.publishOptimistically;
+    final publication = editPlan.publication;
     if (publication.requiresParserCertification) {
       _coordinator.beginPublicationBarrier();
     }
@@ -4127,9 +3980,10 @@ final class FlarkEditorController extends ChangeNotifier
           ? provisional
           : null,
       platformTiming: pending.platformTiming,
-      editabilityProven: _editorOwnedBoundaryContains(
+      editabilityProven: _sourceEditPlanner.editorOwnedBoundaryContains(
         pending.inputGlobalUtf16Start + mutation.start,
         pending.inputGlobalUtf16Start + mutation.end,
+        _captureSurfaceProjector(),
       ),
     );
     if (!acceptance.accepted) {
@@ -4396,145 +4250,6 @@ final class FlarkEditorController extends ChangeNotifier
   FlarkTextMutation? _differenceMutation(String before, String after) =>
       _platformInput.differenceMutation(before, after);
 
-  int _committedGapEnd(FlarkCoreCommittedPresentationGapV1 split) {
-    var end =
-        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    final localStart = split.rowEndUtf16 - _viewportState.visibleUtf16Start;
-    if (0 <= localStart && localStart < _viewportState.visibleSource.length) {
-      final newline = _viewportState.visibleSource.indexOf('\n', localStart);
-      if (newline >= 0) end = _viewportState.visibleUtf16Start + newline + 1;
-    }
-    for (final row in _viewportState.rows) {
-      if (row.ordinal == split.rowOrdinal) continue;
-      final start = surfaceSourceRange(row).start;
-      if (start > split.rowEndUtf16) end = math.min(end, start);
-    }
-    return end;
-  }
-
-  int _committedCaretBoundaryEnd(FlarkPendingCaretBoundary boundary) {
-    var end =
-        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    for (final row in _viewportState.rows) {
-      if (row.ordinal == boundary.rowOrdinal) continue;
-      final start = surfaceSourceRange(row).start;
-      if (start >= boundary.rowEndUtf16) end = math.min(end, start);
-    }
-    return end;
-  }
-
-  int? _committedCaretBoundaryInputEnd(FlarkPendingCaretBoundary boundary) {
-    final localStart = boundary.rowEndUtf16 - _viewportState.visibleUtf16Start;
-    if (localStart < 0 || localStart > _viewportState.visibleSource.length) {
-      return null;
-    }
-    final newline = _viewportState.visibleSource.indexOf('\n', localStart);
-    return newline == -1
-        ? _viewportState.visibleUtf16Start + _viewportState.visibleSource.length
-        : _viewportState.visibleUtf16Start + newline + 1;
-  }
-
-  bool _editorOwnedBoundaryContains(int start, int end) {
-    if (start > end) return false;
-    final gap = _pendingPresentation.paragraphGap;
-    if (gap != null &&
-        gap.rowEndUtf16 <= start &&
-        end <= _committedGapEnd(gap)) {
-      return true;
-    }
-    final boundary = _pendingPresentation.caretBoundary;
-    final boundaryEnd = boundary == null
-        ? null
-        : _committedCaretBoundaryInputEnd(boundary);
-    return boundary != null &&
-        boundaryEnd != null &&
-        boundary.rowEndUtf16 <= start &&
-        end <= boundaryEnd;
-  }
-
-  FlarkProjectionEditCellReceipt? _prepareProjectionContinuity(
-    int start,
-    int end,
-    String replacement,
-  ) {
-    final current = _pendingPresentation.dependency;
-    if (current != null) {
-      final successor = current.authority.continueWith(
-        startUtf16: start,
-        endUtf16: end,
-        replacement: replacement,
-      );
-      if (successor != null) {
-        final dependency = advancePendingDependencyPresentation(
-          current: current,
-          authority: successor,
-          visibleSource: _viewportState.visibleSource,
-          visibleUtf16Start: _viewportState.visibleUtf16Start,
-          startUtf16: start,
-          endUtf16: end,
-          replacement: replacement,
-        );
-        if (dependency != null) {
-          _coordinator.setPendingDependency(dependency);
-          return successor is FlarkProjectionEditCellReceipt ? successor : null;
-        }
-      }
-      _coordinator.retirePendingPresentation(const {
-        FlarkPendingPresentationPart.dependency,
-      });
-      return null;
-    }
-    // Cached envelopes predate any optimistic edit. Only a fresh parser
-    // publication can authorize another literal transaction.
-    if (_viewportState.hasOptimisticEdits) {
-      return null;
-    }
-    final row = _activeCachedRow();
-    if (row == null) return null;
-    final activation = _mapViewportRange(_activationRange(row));
-    if (!_rowSemanticsCurrent(activation)) {
-      return null;
-    }
-    final editable = _mapViewportRange(
-      row.editableUtf16 ?? _activationRange(row),
-    );
-    final base = surfaceRow(row, includeEditingState: false);
-    final authority = bindPendingDependencyAuthority(
-      revision: revision,
-      plans: row.pendingPresentationPlans,
-      cells: row.projectionEditCells,
-      envelopes: row.literalSafeEnvelopes,
-      authorizedContentUtf16: editable,
-      authorizedBlockUtf16: _mappedExactRowRange(row),
-      startUtf16: start,
-      endUtf16: end,
-      replacement: replacement,
-    );
-    if (authority != null) {
-      final dependency = bindPendingDependencyPresentation(
-        rowOrdinal: row.ordinal,
-        base: FlarkSurfaceProjector.corePresentationFromSurface(
-          base,
-          surfaceSourceRange(row),
-        ),
-        authority: authority,
-        visibleSource: _viewportState.visibleSource,
-        visibleUtf16Start: _viewportState.visibleUtf16Start,
-        startUtf16: start,
-        endUtf16: end,
-        replacement: replacement,
-      );
-      if (dependency != null) {
-        _coordinator.setPendingDependency(dependency);
-        return authority is FlarkProjectionEditCellReceipt ? authority : null;
-      }
-    }
-    _coordinator.retirePendingPresentation(const {
-      FlarkPendingPresentationPart.dependency,
-    });
-    return null;
-  }
-
   Future<void> _completeQueuedEdit(
     FlarkEditorCommandExecution<FlarkCoreEditReceipt> execution,
     Future<FlarkCoreEditReceipt> operation,
@@ -4748,119 +4463,6 @@ final class FlarkEditorController extends ChangeNotifier
         });
     _commands.trackAdoption(completion);
     return completion;
-  }
-
-  FlarkProjectionEditCellReceipt? _advanceCommittedStructuralSurfaces(
-    int start,
-    int end,
-    String replacement,
-  ) {
-    final candidates =
-        <
-          ({
-            int index,
-            FlarkProjectionEditCellReceipt receipt,
-            FlarkCorePresentationRow presentation,
-          })
-        >[];
-    for (
-      var index = 0;
-      index < _pendingPresentation.structuralSurfaces.length;
-      index++
-    ) {
-      final state = _pendingPresentation.structuralSurfaces[index];
-      final surface = state.surface;
-      if (!surface.projectionCurrent) continue;
-      final authority =
-          state.continuity?.continueWith(
-            startUtf16: start,
-            endUtf16: end,
-            replacement: replacement,
-          ) ??
-          bindPendingDependencyAuthority(
-            revision: revision,
-            cells: surface.projectionEditCells,
-            envelopes: const [],
-            authorizedContentUtf16: surface.sourceUtf16,
-            startUtf16: start,
-            endUtf16: end,
-            replacement: replacement,
-          );
-      final receipt = authority is FlarkProjectionEditCellReceipt
-          ? authority
-          : null;
-      if (receipt == null) continue;
-      final presentation = advancePendingPresentationRow(
-        presentation: surface.presentation,
-        authority: receipt,
-        visibleSource: _viewportState.visibleSource,
-        visibleUtf16Start: _viewportState.visibleUtf16Start,
-        startUtf16: start,
-        endUtf16: end,
-        replacement: replacement,
-      );
-      if (presentation != null) {
-        candidates.add((
-          index: index,
-          receipt: receipt,
-          presentation: presentation,
-        ));
-      }
-    }
-    if (candidates.length != 1) return null;
-    final matched = candidates.single;
-    final states = [..._pendingPresentation.structuralSurfaces];
-    final previous = states[matched.index].surface;
-    final delta = replacement.length - (end - start);
-    // The edit cell owns only the mutable closure inside this transitional
-    // row. Advancing it must preserve the row's parser-authored block prefix
-    // and terminal line ending; narrowing source ownership to the cell makes
-    // those bytes reappear as neutral rows until the next parse publishes.
-    final source = FlarkSourceRange(
-      previous.sourceUtf16.start,
-      previous.sourceUtf16.end + delta,
-    );
-    if (matched.receipt.affectedUtf16.start < source.start ||
-        matched.receipt.affectedUtf16.end > source.end) {
-      return null;
-    }
-    states[matched.index] = FlarkPendingStructuralSurface(
-      // A one-shot receipt still proves the result of this edit. It consumes
-      // future edit authority, not the transformed rendered surface. Keep the
-      // result visible with no continuity so the next edit fails closed until
-      // a fresh parser publication.
-      continuity: matched.receipt.chainResultCell ? matched.receipt : null,
-      surface: FlarkCoreCommittedPresentationSurfaceV1(
-        rowOrdinal: previous.rowOrdinal,
-        removedRowOrdinal: previous.removedRowOrdinal,
-        sourceUtf16: source,
-        projectionCurrent: true,
-        role: previous.role,
-        presentation: matched.presentation,
-      ),
-    );
-    _coordinator.setPendingStructuralSurfaces(states);
-    return matched.receipt;
-  }
-
-  FlarkProjectionEditCellReceipt? _advanceCommittedCaretBoundary(
-    FlarkPendingCaretBoundary boundary,
-    int start,
-    int end,
-    String replacement,
-  ) {
-    final authorized = boundary.authorizedContentUtf16;
-    if (authorized == null || boundary.projectionEditCells.isEmpty) return null;
-    final authority = bindPendingDependencyAuthority(
-      revision: revision,
-      cells: boundary.projectionEditCells,
-      envelopes: const [],
-      authorizedContentUtf16: authorized,
-      startUtf16: start,
-      endUtf16: end,
-      replacement: replacement,
-    );
-    return authority is FlarkProjectionEditCellReceipt ? authority : null;
   }
 
   /// Commits the currently accepted composition prefix when the platform text

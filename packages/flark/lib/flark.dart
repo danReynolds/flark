@@ -90,6 +90,12 @@ export 'src/editor_parse_driver.dart'
         FlarkEditorParseReadyPublication,
         FlarkEditorParseStep,
         FlarkEditorParseStopped;
+export 'src/editor_source_edit_planner.dart'
+    show
+        FlarkEditorSourceEditPlan,
+        FlarkEditorSourceEditPlanner,
+        FlarkEditorSourceEditPlanningRequest,
+        FlarkQueuedEditPublication;
 export 'src/editor_snapshot.dart'
     show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
 export 'src/editor_input_window.dart'

@@ -7,6 +7,9 @@ void main() {
   final coordinator = File(
     '../flark/lib/src/editor_coordinator.dart',
   ).readAsStringSync();
+  final sourceEditPlanner = File(
+    '../flark/lib/src/editor_source_edit_planner.dart',
+  ).readAsStringSync();
 
   test('portable coordinator owns the pending-presentation state slot', () {
     expect(
@@ -55,33 +58,38 @@ void main() {
     }
   });
 
-  test(
-    'controller consumes the sealed Core binder without Markdown policy',
-    () {
+  test('portable source-edit planning consumes the sealed Core binder', () {
+    expect(
+      RegExp(
+        r'bindPendingDependencyAuthority\(',
+      ).allMatches(sourceEditPlanner).length,
+      greaterThanOrEqualTo(3),
+    );
+    expect(
+      RegExp(r'bindPendingDependencyAuthority\(').allMatches(controller).length,
+      1,
+      reason: 'Flutter retains only committed-view reconciliation',
+    );
+    for (final retiredPolicy in [
+      'authorizeProjectionEditCell(',
+      'authorizeRowProjectionContinuity(',
+      'withDependency(null)',
+      'withParagraphGap(null)',
+      'withStructuralSurfaces(const [])',
+    ]) {
+      expect(controller, isNot(contains(retiredPolicy)));
+    }
+    for (final parserPolicy in [
+      '_isAsciiAlphanumeric',
+      '_isSafeAsciiProsePunctuation',
+      'FlarkLiteralEditClass.',
+      'FlarkProjectionEditMatcher.',
+    ]) {
       expect(
-        RegExp(
-          r'bindPendingDependencyAuthority\(',
-        ).allMatches(controller).length,
-        greaterThanOrEqualTo(2),
+        controller,
+        isNot(contains(parserPolicy)),
+        reason: '$parserPolicy belongs behind the Core/parser boundary',
       );
-      expect(controller, isNot(contains('authorizeProjectionEditCell(')));
-      expect(controller, isNot(contains('authorizeRowProjectionContinuity(')));
-      expect(controller, isNot(contains('withDependency(null)')));
-      expect(controller, isNot(contains('withParagraphGap(null)')));
-      expect(controller, isNot(contains('withStructuralSurfaces(const [])')));
-      expect(controller, contains('retirePendingPresentation('));
-      for (final parserPolicy in [
-        '_isAsciiAlphanumeric',
-        '_isSafeAsciiProsePunctuation',
-        'FlarkLiteralEditClass.',
-        'FlarkProjectionEditMatcher.',
-      ]) {
-        expect(
-          controller,
-          isNot(contains(parserPolicy)),
-          reason: '$parserPolicy belongs behind the Core/parser boundary',
-        );
-      }
-    },
-  );
+    }
+  });
 }

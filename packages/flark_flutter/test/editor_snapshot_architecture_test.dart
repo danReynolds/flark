@@ -26,6 +26,9 @@ void main() {
   final portableParseDriver = File(
     '../flark/lib/src/editor_parse_driver.dart',
   ).readAsStringSync();
+  final portableSourceEditPlanner = File(
+    '../flark/lib/src/editor_source_edit_planner.dart',
+  ).readAsStringSync();
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
@@ -218,6 +221,24 @@ void main() {
     expect(
       finishParsing,
       isNot(contains('_coordinator.sourceEditAdoptionTail')),
+    );
+  });
+
+  test('source-edit presentation planning stays below Flutter', () {
+    expect(portableSourceEditPlanner, isNot(contains('package:flutter')));
+    expect(portableSourceEditPlanner, isNot(contains('dart:ui')));
+    expect(controller, contains('FlarkEditorSourceEditPlanner'));
+    expect(controller, contains('_sourceEditPlanner.plan('));
+    expect(controller, isNot(contains('_prepareProjectionContinuity')));
+    expect(controller, isNot(contains('_advanceCommittedStructuralSurfaces')));
+    expect(controller, isNot(contains('_advanceCommittedCaretBoundary')));
+    expect(
+      portableSourceEditPlanner,
+      contains('structuralSuccessorRequiresCertification'),
+    );
+    expect(
+      portableSourceEditPlanner,
+      contains('lacksResultPresentationAuthority'),
     );
   });
 
