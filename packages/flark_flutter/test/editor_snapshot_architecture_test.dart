@@ -200,6 +200,14 @@ void main() {
     expect(portableParseDriver, contains('_document.pump('));
     expect(portableParseDriver, contains('_document.queryViewport('));
     expect(portableParseDriver, contains('adoptOpening('));
+    expect(portableParseDriver, contains('awaitEditPublication('));
+    expect(portableParseDriver, contains('adoptEditPublication('));
+    expect(portableParseDriver, contains('currentOpeningEditPublication('));
+    expect(controller, isNot(contains('_awaitEditPublicationCertification')));
+    expect(
+      controller,
+      isNot(contains('_installedViewportProvesEditPublication')),
+    );
 
     final finishParsing = RegExp(
       r'Future<void> _finishParsing\(\) async \{[\s\S]*?\n  void _retainOptimisticRefreshAnchor',

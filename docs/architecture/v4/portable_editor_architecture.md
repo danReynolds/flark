@@ -188,12 +188,12 @@ longer maintain parallel newline, Backspace, selection, and oversized-window
 implementations. The same observation can be based on an explicit provisional
 window, so pending/late semantic successors and certification-deferred input
 also share one capture path across both callback models. Bounded native pumping,
-streamed-head certification probes, and the edit/adoption tail barriers now run
-through one pure-Dart parse driver. It returns owned generation-bound
-publications and never installs Flutter state or calls back into the controller.
-Flutter still owns timer admission and viewport/input adoption, so this is an
-accepted parse-progression boundary rather than a claim that parser lifecycle
-has fully left the facade.
+streamed-head certification probes, edit-publication phase proof, and the
+edit/adoption tail barriers now run through one pure-Dart parse driver. It
+returns owned generation-bound publications and never installs Flutter state
+or calls back into the controller. Flutter still owns timer admission and
+viewport/input adoption, so this is an accepted parse/proof boundary rather
+than a claim that parser lifecycle has fully left the facade.
 
 ### M4 — large-module audit and deletion
 
@@ -210,9 +210,9 @@ Current audit:
 
 | Module | Verdict | Reason |
 | --- | --- | --- |
-| Flutter controller | Further boundary work required | Bounded input-window state, native command execution, and native parse progression have moved, but the controller still combines platform callback admission, receipt reconciliation, parser timer admission, and lifecycle/publication routing. |
+| Flutter controller | Further boundary work required | Bounded input-window state, native command execution, native parse progression, and edit-publication proof have moved, but the controller still combines platform callback admission, command-receipt reconciliation, parser timer admission, and lifecycle/publication routing. |
 | Pure command executor | Retain | It is a closed typed native-command lane with private coordinator tickets and direct lifetime/ordering tests. It owns no host adoption state, callback registry, or generic dispatch. |
-| Pure parse driver | Retain | It owns bounded native pumping, streamed-open certification probing, generation barriers, and owned parse publications. It has no timer, callback, Flutter, or host-state dependency and is directly contract-tested. |
+| Pure parse driver | Retain | It owns bounded native pumping, streamed-open certification probing, edit-publication phase proof, generation barriers, and owned parse publications. It has no timer, callback, Flutter, or host-state dependency and is directly contract-tested. |
 | Flutter platform input bridge | Retain | It owns connection epochs, the serialized shadow, atomic delta validation, and one immutable normal form shared by delta/full-value callbacks against current or provisional input. It knows no Markdown, viewport, or source-mutation policy. |
 | Pure input-window planner | Retain | It owns capacity, scalar-aligned cuts, local-to-canonical selection equivalence, and restoration from parser/pending surface geometry without a frontend dependency. |
 | Flutter input state | Retain | It owns one `TextEditingValue` window and its canonical mirrors, adapting immutable plans through named transitions. It imports no controller and its oversized-selection invariants have direct tests. |
@@ -230,10 +230,11 @@ one typed observation/adoption path, deleting the duplicate delta/full-value
 policy without adding mutable state. Provisional, late, and
 certification-deferred successors now reuse that same normal form too; the
 controller no longer owns raw delta validation or extraction. Portable parse
-progression is accepted on the same grounds: it moved the native pump/probe and
-generation-barrier invariants, issues identity-bound publications, and leaves
-Flutter with explicit adoption. The next review must remove another complete
-authority—receipt reconciliation or timer/lifecycle admission—rather than
+progression and edit-publication proof are accepted on the same grounds: they
+moved the native pump/probe, document-phase proof, and generation-barrier
+invariants, issue identity-bound publications, and leave Flutter with explicit
+host-state adoption. The next review must remove another complete authority—
+command-receipt reconciliation or timer/lifecycle admission—rather than
 reshuffling facade methods.
 
 ### M5 — qualification and architecture stop

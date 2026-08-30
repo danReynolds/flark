@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'document.dart';
 import 'editor_coordinator.dart';
 import 'editor_session.dart';
+import 'models.dart';
 
 sealed class FlarkEditorParseStep {
   const FlarkEditorParseStep();
@@ -58,6 +59,24 @@ final class FlarkEditorParseReadyPublication
     required super.owner,
     required super.stamp,
   }) : super._();
+}
+
+/// Parser authority is ready for the host to install and validate one atomic
+/// edit publication.
+final class FlarkEditorEditPublication {
+  FlarkEditorEditPublication._({
+    required FlarkEditorParseDriver owner,
+    required FlarkEditorStamp stamp,
+    required this.allowExactPending,
+  }) : _owner = owner,
+       _stamp = stamp;
+
+  final FlarkEditorParseDriver _owner;
+  final FlarkEditorStamp _stamp;
+  final bool allowExactPending;
+  bool _settled = false;
+
+  int get editGeneration => _stamp.editGeneration;
 }
 
 /// Owns native parser progression and its generation barriers.
@@ -172,6 +191,118 @@ final class FlarkEditorParseDriver {
     return const FlarkEditorParseStopped();
   }
 
+  /// Advances parser authority far enough to attempt one atomic edit
+  /// publication for [editGeneration].
+  ///
+  /// A streamed document may yield after its bounded head proves either
+  /// certified rows or, when explicitly allowed, complete exact pending
+  /// source. A buffered document yields only after the runtime reaches Ready.
+  /// A stale generation, composition, or closing editor yields no receipt.
+  Future<FlarkEditorEditPublication?> awaitEditPublication({
+    required int editGeneration,
+    required bool allowExactPending,
+  }) async {
+    while (_document.isOpening && _acceptsEdit(editGeneration) && !_stopped) {
+      _throwOpeningError();
+      await _document.pump(workUnits: _workUnits);
+      if (!_document.isOpening || !_acceptsEdit(editGeneration) || _stopped) {
+        break;
+      }
+      final probe = await _document.queryViewport(
+        endByte: math.min(_document.sourceByteLength, _openingHeadProbeBytes),
+        maxRows: _viewportRowsPerPage,
+      );
+      final exactPending =
+          allowExactPending &&
+          probe.provesExactPendingDocument(
+            documentRevision: _document.revision,
+            documentSourceByteLength: _document.sourceByteLength,
+            documentSourceUtf16Length: _document.sourceUtf16Length,
+          );
+      final publishable =
+          probe.revision == _document.revision &&
+          ((probe.isCertified && probe.rows.isNotEmpty) ||
+              probe.provesExactEmptyDocument(
+                documentRevision: _document.revision,
+                documentSourceByteLength: _document.sourceByteLength,
+                documentSourceUtf16Length: _document.sourceUtf16Length,
+              ) ||
+              exactPending);
+      if (probe.continuation != 0) {
+        await _document.releaseViewportContinuation(probe);
+      }
+      if (!_acceptsEdit(editGeneration) || _stopped) return null;
+      if (publishable) {
+        return FlarkEditorEditPublication._(
+          owner: this,
+          stamp: _coordinator.stamp,
+          allowExactPending: allowExactPending,
+        );
+      }
+    }
+    _throwOpeningError();
+    while (!_document.isReady && _acceptsEdit(editGeneration) && !_stopped) {
+      await _document.pump(workUnits: _workUnits);
+    }
+    if (!_document.isReady || !_acceptsEdit(editGeneration) || _stopped) {
+      return null;
+    }
+    return FlarkEditorEditPublication._(
+      owner: this,
+      stamp: _coordinator.stamp,
+      allowExactPending: allowExactPending,
+    );
+  }
+
+  /// Adopts [publication] only when [viewport] proves the current complete
+  /// source for the document's current opening/ready phase.
+  bool adoptEditPublication(
+    FlarkEditorEditPublication publication,
+    FlarkViewport? viewport,
+  ) {
+    if (!identical(publication._owner, this)) {
+      throw StateError('Edit parse publication belongs to another driver');
+    }
+    if (publication._settled) {
+      throw StateError('Edit parse publication is already settled');
+    }
+    publication._settled = true;
+    if (!_coordinator.accepts(publication._stamp) ||
+        _session.compositionActive ||
+        viewport == null) {
+      return false;
+    }
+    final proven = viewport.provesEditPublication(
+      documentRevision: _document.revision,
+      documentSourceByteLength: _document.sourceByteLength,
+      documentSourceUtf16Length: _document.sourceUtf16Length,
+      documentOpening: _document.isOpening,
+      documentReady: _document.isReady,
+      allowExactPending: publication.allowExactPending,
+    );
+    if (proven && _document.isOpening) {
+      _coordinator.recordOpeningPublication(_document.revision);
+    }
+    return proven;
+  }
+
+  /// Issues a receipt for a synchronous opening refresh that is already
+  /// installed by the host. Adoption still performs the complete source and
+  /// document-phase proof through [adoptEditPublication].
+  FlarkEditorEditPublication? currentOpeningEditPublication({
+    required int editGeneration,
+    required bool allowExactPending,
+  }) {
+    if (!_document.isOpening || _stopped || !_acceptsEdit(editGeneration)) {
+      return null;
+    }
+    return FlarkEditorEditPublication._(
+      owner: this,
+      stamp: _coordinator.stamp,
+      allowExactPending: allowExactPending,
+    );
+  }
+
   bool accepts(FlarkEditorParsePublication publication) {
     _requireOwned(publication);
     return _coordinator.accepts(publication._stamp);
@@ -194,6 +325,9 @@ final class FlarkEditorParseDriver {
   }
 
   bool get _stopped => _coordinator.closed || _session.compositionActive;
+
+  bool _acceptsEdit(int editGeneration) =>
+      !_coordinator.closed && editGeneration == _coordinator.editGeneration;
 
   void _throwOpeningError() {
     final error = _openingError;

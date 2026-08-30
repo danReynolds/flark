@@ -83,6 +83,7 @@ export 'src/editor_command_executor.dart'
 export 'src/editor_parse_driver.dart'
     show
         FlarkEditorParseDriver,
+        FlarkEditorEditPublication,
         FlarkEditorParseOpeningPublication,
         FlarkEditorParseOpeningSealed,
         FlarkEditorParsePublication,

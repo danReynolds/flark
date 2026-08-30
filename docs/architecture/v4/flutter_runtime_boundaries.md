@@ -18,7 +18,8 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |-- FlarkEditorCommandExecutor (typed native invocation, command ordering,
   |                               private command tickets)
   |-- FlarkEditorParseDriver (bounded native parser progression, streamed-head
-  |                           probing, edit/adoption generation barriers)
+  |                           probing, edit-publication certification,
+  |                           edit/adoption generation barriers)
   |-- FlarkPlatformInputBridge (Flutter input connection, shadow, and one
   |                              normalized callback observation)
   |-- FlarkInputTransactionState (callback and bounded successor lineage)
@@ -49,7 +50,7 @@ permission to preserve the controller's existing method graph.
 | Source, selection, history, Markdown semantics, structural-command routing capabilities, semantic edit receipts, pending-presentation adoption policy | `flark` and Rust | Flutter input connections or widgets |
 | Identity-checked command lifetimes, edit generations, serialized edit tail, parser/page single-flight, publication barriers, current pending presentation | `FlarkEditorCoordinator` in `flark` | Flutter types, Markdown rules, or rendered rows |
 | Typed native edit, semantic-action, history, and composition-cancel invocation; private ticket identity; history boundary ordering | `FlarkEditorCommandExecutor` in `flark` | Receipt-to-platform adoption, Flutter state, or an extensible command registry |
-| Bounded native parser progression, streamed-head certification probes, edit/adoption barriers, and generation-bound parse publications | `FlarkEditorParseDriver` in `flark` | Timers, Flutter state, viewport installation, or outward notification |
+| Bounded native parser progression, streamed-head certification probes, edit-publication proof, edit/adoption barriers, and generation-bound parse publications | `FlarkEditorParseDriver` in `flark` | Timers, Flutter state, viewport installation, or outward notification |
 | Connection/window epochs, serialized platform shadow, atomic validation, and normalization of delta/full-value callbacks against current or provisional input into one immutable observation | Platform input bridge | Markdown rules, viewports, history, or source mutation |
 | Callback scope, logical successor classification, bounded provisional lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Current bounded platform value, global origin, canonical selection mirrors, active row, and oversized-selection state | Flutter input state consuming portable input-window plans | Native source, Markdown rules, rendered rows, or command ordering |
@@ -61,10 +62,11 @@ permission to preserve the controller's existing method graph.
 | Public commands, Flutter callbacks, receipt-to-platform adoption, lifecycle, and composing the owners above | Controller | Parallel copies of owner state or direct native command invocation |
 
 The bounded active input window, native command invocation, and native parse
-progression now each have one tested owner. The remaining failed ownership
-check is receipt adoption: the controller still combines parser timer
-admission, lifecycle/publication routing, and command-specific reconciliation
-into the platform window and viewport.
+progression now each have one tested owner. Edit completion also delegates its
+parser-certification and phase-proof loop to that same driver. The remaining
+failed ownership check is command-receipt adoption: the controller still
+combines parser timer admission, lifecycle/publication routing, and
+command-specific reconciliation into the platform window and viewport.
 
 ## Rules that prevent the bug classes we have seen
 
@@ -116,10 +118,11 @@ be extracted by authority, not by file length:
 - viewport query and page-path orchestration now return one typed Core result;
   the remaining restoration handoff should move only when its portable
   selection outcome can replace, rather than call back into, controller state;
-- bounded parser pumping, streamed-head probes, and edit/adoption barriers now
-  return typed generation-bound Core publications. Flutter retains timer
-  admission and installs the resulting viewport; those are the next seams to
-  judge independently rather than folding lifecycle into the driver;
+- bounded parser pumping, streamed-head probes, edit-publication certification,
+  phase-safe viewport proof, and edit/adoption barriers now return typed
+  generation-bound Core publications. Flutter retains timer admission and
+  installs the resulting viewport; those are the next seams to judge
+  independently rather than folding lifecycle into the driver;
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 

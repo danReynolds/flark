@@ -71,6 +71,73 @@ void main() {
         expect(() => stranger.accepts(publication), throwsStateError);
       });
 
+      test(
+        'edit publication receipt validates one installed current viewport',
+        () async {
+          await open('base\n');
+          final publication = await driver.awaitEditPublication(
+            editGeneration: 0,
+            allowExactPending: false,
+          );
+          final viewport = await document.queryViewport(
+            endByte: document.sourceByteLength,
+            maxRows: 32,
+          );
+          final stranger = FlarkEditorParseDriver(
+            document: document,
+            session: session,
+            coordinator: coordinator,
+          );
+
+          expect(publication, isNotNull);
+          expect(
+            () => stranger.adoptEditPublication(publication!, viewport),
+            throwsStateError,
+          );
+          expect(driver.adoptEditPublication(publication!, viewport), isTrue);
+          expect(
+            () => driver.adoptEditPublication(publication, viewport),
+            throwsStateError,
+          );
+        },
+      );
+
+      test('edit publication receipt rejects a newer generation', () async {
+        await open('base\n');
+        final publication = (await driver.awaitEditPublication(
+          editGeneration: 0,
+          allowExactPending: false,
+        ))!;
+        final viewport = await document.queryViewport(
+          endByte: document.sourceByteLength,
+          maxRows: 32,
+        );
+        final newer = coordinator.admitCommand(
+          FlarkEditorCommandKind.sourceEdit,
+          publishSourceImmediately: true,
+        );
+
+        expect(driver.adoptEditPublication(publication, viewport), isFalse);
+        coordinator.completeCommand(newer);
+      });
+
+      test('cannot certify an already stale edit generation', () async {
+        await open('base\n');
+        final newer = coordinator.admitCommand(
+          FlarkEditorCommandKind.sourceEdit,
+          publishSourceImmediately: true,
+        );
+
+        expect(
+          await driver.awaitEditPublication(
+            editGeneration: 0,
+            allowExactPending: false,
+          ),
+          isNull,
+        );
+        coordinator.completeCommand(newer);
+      });
+
       test('cannot advance after the coordinator starts closing', () async {
         await open('base\n');
         coordinator.beginClosing();

@@ -1274,69 +1274,9 @@ final class FlarkEditorController extends ChangeNotifier
     await _waitForMutationTail();
   }
 
-  /// Waits for parser authority that can safely complete one atomic edit
-  /// publication at [generation]. A buffered document converges to Ready.
-  /// A streamed-open document cannot do that until transport ends, so it
-  /// instead waits for the current revision's certified head: every editable
-  /// opening row is drawn from that same bounded head window.
-  ///
-  /// Keeping this distinction in one helper prevents command completion,
-  /// history, and composition paths from accidentally turning "recertify the
-  /// edited row" into "wait for the user to finish loading the document".
-  Future<void> _awaitEditPublicationCertification(
-    int generation, {
-    required bool allowExactPending,
-  }) async {
-    while (_document.isOpening &&
-        generation == _editGeneration &&
-        !_closed &&
-        !_session.compositionActive) {
-      await _document.pump(workUnits: 512);
-      if (!_document.isOpening ||
-          generation != _editGeneration ||
-          _closed ||
-          _session.compositionActive) {
-        break;
-      }
-      final probe = await _document.queryViewport(
-        endByte: math.min(sourceByteLength, _openingHeadProbeBytes),
-        maxRows: _viewportRowsPerPage,
-      );
-      final exactPendingWithoutPriorSemantics =
-          allowExactPending &&
-          probe.provesExactPendingDocument(
-            documentRevision: revision,
-            documentSourceByteLength: sourceByteLength,
-            documentSourceUtf16Length: sourceUtf16Length,
-          );
-      final certified =
-          probe.revision == revision &&
-          ((probe.isCertified && probe.rows.isNotEmpty) ||
-              probe.provesExactEmptyDocument(
-                documentRevision: revision,
-                documentSourceByteLength: sourceByteLength,
-                documentSourceUtf16Length: sourceUtf16Length,
-              ) ||
-              exactPendingWithoutPriorSemantics);
-      if (probe.continuation != 0) {
-        await _document.releaseViewportContinuation(probe);
-      }
-      if (certified) return;
-    }
-    while (!_document.isReady &&
-        generation == _editGeneration &&
-        !_closed &&
-        !_session.compositionActive) {
-      await _document.pump(workUnits: 512);
-    }
-  }
-
-  /// Installs the authority admitted by
-  /// [_awaitEditPublicationCertification], then revalidates the installed
-  /// viewport against the source that exists after the refresh. Opening
-  /// appends intentionally preserve the edit revision, so generation and
-  /// revision checks alone cannot prove that a pre-refresh pending viewport
-  /// still covers the complete source.
+  /// Installs parser authority for one atomic edit publication, then asks the
+  /// portable driver to validate the installed viewport against the source
+  /// and document phase that still exist after the refresh.
   Future<void> _refreshEditPublicationAfterCertification(
     int generation, {
     required bool restoreInputWindow,
@@ -1344,15 +1284,18 @@ final class FlarkEditorController extends ChangeNotifier
   }) async {
     final hadNoPriorSemanticRows = _viewportState.rows.isEmpty;
     while (generation == _editGeneration && !_closed) {
-      await _awaitEditPublicationCertification(
-        generation,
+      final publication = await _parseDriver.awaitEditPublication(
+        editGeneration: generation,
         allowExactPending: hadNoPriorSemanticRows,
       );
-      if (generation != _editGeneration || _closed) return;
+      if (publication == null) return;
 
       final prepare = prepareForRefresh;
       if (prepare != null) await prepare();
-      if (generation != _editGeneration || _closed) return;
+      if (generation != _editGeneration || _closed) {
+        _parseDriver.adoptEditPublication(publication, null);
+        return;
+      }
 
       await _refreshViewport(
         restoreInputWindow: restoreInputWindow,
@@ -1360,16 +1303,14 @@ final class FlarkEditorController extends ChangeNotifier
         ensureActiveInputVisible: true,
         publish: false,
       );
+      final adopted = _parseDriver.adoptEditPublication(
+        publication,
+        _viewportState.viewport,
+      );
       if (generation != _editGeneration || _closed) return;
-      if (_document.isOpening &&
-          _recordOpeningExactPublicationIfProven(
-            hadNoPriorSemanticRows: hadNoPriorSemanticRows,
-          )) {
-        return;
-      }
-      if (!_document.isOpening &&
-          _document.isReady &&
-          _installedViewportProvesEditPublication(allowExactPending: false)) {
+      if (adopted) {
+        _openingPublication?.complete();
+        _openingPublication = null;
         return;
       }
       // No await may separate either proof above from its phase decision. A
@@ -1381,48 +1322,26 @@ final class FlarkEditorController extends ChangeNotifier
     }
   }
 
-  /// Records a controller-owned refresh as the current streamed publication.
-  /// The long-lived opening parse task deliberately refuses to publish while
-  /// an edit is pending; the completing edit therefore owns this bookkeeping.
-  void _recordOpeningEditPublication() {
-    if (!_document.isOpening) return;
-    _coordinator.recordOpeningPublication(revision);
-    _openingPublication?.complete();
-    _openingPublication = null;
-  }
-
-  /// Records a streamed publication only when the installed viewport proves
-  /// the current source. Pending-neutral source may do so solely when the
-  /// editor had no older semantic rows to retain; this prevents a live tail
-  /// from replacing rendered Markdown with raw source while still keeping an
-  /// initially empty document writable before transport seals.
+  /// Records a synchronous streamed refresh only when Core proves the current
+  /// source and generation. Pending-neutral source is allowed solely when the
+  /// editor had no older semantic rows to retain.
   bool _recordOpeningExactPublicationIfProven({
     required bool hadNoPriorSemanticRows,
   }) {
-    if (!_document.isOpening) return false;
-    final proven = _installedViewportProvesEditPublication(
+    final publication = _parseDriver.currentOpeningEditPublication(
+      editGeneration: _editGeneration,
       allowExactPending: hadNoPriorSemanticRows,
     );
-    if (proven) _recordOpeningEditPublication();
-    return proven;
-  }
-
-  /// Whether the viewport actually installed in the controller proves a safe
-  /// edit publication for the document's current phase and source lengths.
-  /// Pending-neutral source is never authority after a stream seals.
-  bool _installedViewportProvesEditPublication({
-    required bool allowExactPending,
-  }) {
-    final viewport = _viewportState.viewport;
-    if (viewport == null) return false;
-    return viewport.provesEditPublication(
-      documentRevision: revision,
-      documentSourceByteLength: sourceByteLength,
-      documentSourceUtf16Length: sourceUtf16Length,
-      documentOpening: _document.isOpening,
-      documentReady: _document.isReady,
-      allowExactPending: allowExactPending,
+    if (publication == null) return false;
+    final proven = _parseDriver.adoptEditPublication(
+      publication,
+      _viewportState.viewport,
     );
+    if (proven) {
+      _openingPublication?.complete();
+      _openingPublication = null;
+    }
+    return proven;
   }
 
   Future<FlarkSemanticTarget?> querySemanticTarget(FlarkInlineFact fact) =>
