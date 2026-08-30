@@ -94,6 +94,12 @@ export 'src/editor_semantic_receipt_adopter.dart'
         FlarkEditorSemanticReceiptAdopter,
         FlarkEditorSemanticReceiptAdoption,
         FlarkEditorSemanticReceiptAdoptionRequest;
+export 'src/editor_semantic_command_planner.dart'
+    show
+        FlarkEditorSemanticCommand,
+        FlarkEditorSemanticCommandAdmission,
+        FlarkEditorSemanticCommandPlanner,
+        FlarkEditorSemanticCommandPlanningRequest;
 export 'src/editor_source_edit_planner.dart'
     show
         FlarkEditorSourceEditPlan,

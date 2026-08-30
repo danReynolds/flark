@@ -130,6 +130,8 @@ final class FlarkEditorController extends ChangeNotifier
   late final FlarkEditorParseDriver _parseDriver;
   late final FlarkEditorSourceEditPlanner _sourceEditPlanner;
   late final FlarkEditorSemanticReceiptAdopter _semanticReceiptAdopter;
+  final FlarkEditorSemanticCommandPlanner _semanticCommandPlanner =
+      const FlarkEditorSemanticCommandPlanner();
   final ObserverList<VoidCallback> _inputStateListeners =
       ObserverList<VoidCallback>();
 
@@ -1478,7 +1480,8 @@ final class FlarkEditorController extends ChangeNotifier
       return;
     }
     if (allowSemantic &&
-        _queueSemanticDeleteBackward(
+        _queueSemanticCommand(
+          FlarkEditorSemanticCommand.deleteBackward,
           selection.extentOffset,
           platformTiming: platformTiming,
         )) {
@@ -1487,7 +1490,8 @@ final class FlarkEditorController extends ChangeNotifier
     if (_normalizeProjectedCommandSelection()) {
       selection = _inputState.value.selection;
       if (allowSemantic &&
-          _queueSemanticDeleteBackward(
+          _queueSemanticCommand(
+            FlarkEditorSemanticCommand.deleteBackward,
             selection.extentOffset,
             platformTiming: platformTiming,
           )) {
@@ -1571,7 +1575,8 @@ final class FlarkEditorController extends ChangeNotifier
       return;
     }
     if (allowSemantic &&
-        _queueSemanticDeleteForward(
+        _queueSemanticCommand(
+          FlarkEditorSemanticCommand.deleteForward,
           selection.extentOffset,
           platformTiming: platformTiming,
         )) {
@@ -1644,7 +1649,8 @@ final class FlarkEditorController extends ChangeNotifier
     final selection = _inputState.value.selection;
     if (allowSemantic &&
         selection.isCollapsed &&
-        _queueSemanticParagraphBreak(
+        _queueSemanticCommand(
+          FlarkEditorSemanticCommand.insertParagraphBreak,
           selection.extentOffset,
           platformTiming: platformTiming,
         )) {
@@ -1667,7 +1673,8 @@ final class FlarkEditorController extends ChangeNotifier
       provisionalAfter: observation.after,
     );
     _inputTransactions.markNewlineTextObserved();
-    final queued = _queueSemanticParagraphBreak(
+    final queued = _queueSemanticCommand(
+      FlarkEditorSemanticCommand.insertParagraphBreak,
       _inputState.value.selection.extentOffset,
       platformTiming: _inputTransactions.activeTiming,
     );
@@ -1690,7 +1697,8 @@ final class FlarkEditorController extends ChangeNotifier
       provisionalAfter: provisionalAfter,
     );
     _inputTransactions.markBackspaceTextObserved();
-    final queued = _queueSemanticDeleteBackward(
+    final queued = _queueSemanticCommand(
+      FlarkEditorSemanticCommand.deleteBackward,
       _inputState.value.selection.extentOffset,
       platformTiming: _inputTransactions.activeTiming,
     );
@@ -2704,233 +2712,37 @@ final class FlarkEditorController extends ChangeNotifier
     return publication;
   }
 
-  bool _queueSemanticParagraphBreak(
+  bool _queueSemanticCommand(
+    FlarkEditorSemanticCommand command,
     int localCaret, {
     FlarkPlatformInputTiming? platformTiming,
   }) {
-    if (!_inputState.value.selection.isCollapsed ||
-        _publicationCertificationBarrierActive) {
-      return false;
-    }
-    final globalCaret = _inputState.globalUtf16Start + localCaret;
-    final dependency = _pendingPresentation.dependency;
-    if (dependency?.authority.continueWith(
-          startUtf16: globalCaret,
-          endUtf16: globalCaret,
-          replacement: '\n',
-        ) !=
-        null) {
-      // A parser-authored pending sequence owns this exact newline. Keep it
-      // on the ordinary source-edit lane so Core can select the supplied
-      // result snapshot; a structural intent would race or discard that
-      // stronger pre-edit authority.
-      return false;
-    }
-    final row = _activeCachedRow();
-    if (row?.semanticCapabilities.insertParagraphBreakAsLiteral ?? false) {
-      return false;
-    }
-    final neutralCaret = (_inputState.activeOrdinal ?? 0) < 0;
-    final editableRange = row?.editableUtf16;
-    final parserOwnedEmbeddedLineStart =
-        row != null &&
-        row.semanticCapabilities.insertParagraphBreakAtPhysicalLineStart &&
-        _isPhysicalLineStartInsideRow(row, globalCaret);
-    final rowEligible =
-        row != null &&
-        (row.semanticCapabilities.insertParagraphBreak ||
-            parserOwnedEmbeddedLineStart);
-    if (row != null && _viewportState.semanticCurrent && !rowEligible) {
-      return false;
-    }
-    if (!rowEligible && !_inputState.semanticEditActive && !neutralCaret) {
-      return false;
-    }
-    if (neutralCaret) _inputState.setSemanticEditActive(true);
-    if (rowEligible) {
-      _inputState.setSemanticEditActive(true);
-      final editable = editableRange == null
-          ? null
-          : _mapViewportRange(editableRange);
-      final listItem = row.listItem;
-      final listPrefix = listItem?.prefixUtf16;
-      final atListMarkerEnd =
-          listPrefix != null &&
-          listItem != null &&
-          globalCaret ==
-              _mapViewportRange(listPrefix).start +
-                  listItem.markerOffset +
-                  listItem.markerText.length;
-      if (editable != null &&
-          (globalCaret < editable.start || globalCaret > editable.end)) {
-        // A retained certified row can border the exact neutral island
-        // created by the last semantic receipt. While recertification is
-        // pending, the lane remains authoritative and Rust reclassifies the
-        // current source at the anchor; the stale row range is not a gate.
-        // A paragraph can own multiple physical source lines while exposing
-        // only one primary editable range. An exact embedded line start is
-        // still parser-owned; Rust's current-row context decides whether the
-        // structural command is applicable at that boundary.
-        if (_viewportState.semanticCurrent &&
-            !parserOwnedEmbeddedLineStart &&
-            !atListMarkerEnd) {
-          return false;
-        }
-      }
-    }
-    _queueSemanticEdit(
-      FlarkCoreEditIntentV1.insertParagraphBreak,
-      fallbackWhenNotApplied: FlarkDeferredInputCommand.insertNewline,
-      platformTiming: platformTiming,
+    final admission = _semanticCommandPlanner.plan(
+      FlarkEditorSemanticCommandPlanningRequest(
+        command: command,
+        projector: _captureSurfaceProjector(),
+        row: _activeCachedRow(),
+        localCaretUtf16: localCaret,
+        semanticEditActive: _inputState.semanticEditActive,
+        publicationCertificationBarrierActive:
+            _publicationCertificationBarrierActive,
+      ),
     );
-    return true;
-  }
-
-  bool _queueSemanticDeleteBackward(
-    int localCaret, {
-    FlarkPlatformInputTiming? platformTiming,
-  }) {
-    if (!_inputState.value.selection.isCollapsed ||
-        _publicationCertificationBarrierActive) {
-      return false;
-    }
-    final row = _activeCachedRow();
-    final neutralLineStart =
-        (_inputState.activeOrdinal ?? 0) < 0 && localCaret == 0;
-    final retainedSemanticWindowStart =
-        localCaret == 0 && _inputState.semanticEditActive;
-    final retainedNeutralSemanticCaret =
-        (_inputState.activeOrdinal ?? 0) < 0 && _inputState.semanticEditActive;
-    final editableRange = row?.editableUtf16;
-    final globalCaret = _inputState.globalUtf16Start + localCaret;
-    final atInlineSemanticBoundary =
-        row != null &&
-        _isParserOwnedInlineBoundary(row, globalCaret, backward: true);
-    final projectedStructuralRow =
-        row?.semanticCapabilities.deleteBackwardAtProjectionStart ?? false;
-    final rowEligible =
-        row != null &&
-        (row.semanticCapabilities.deleteBackwardAtEditableStart ||
-            projectedStructuralRow ||
-            row.semanticCapabilities.deleteBackwardAtPhysicalLineStart ||
-            atInlineSemanticBoundary);
-    if (row != null &&
-        _viewportState.semanticCurrent &&
-        !rowEligible &&
-        !retainedSemanticWindowStart) {
-      return false;
-    }
-    if (!rowEligible && !retainedNeutralSemanticCaret && !neutralLineStart) {
-      if (!retainedSemanticWindowStart) return false;
-    }
-    if (neutralLineStart) _inputState.setSemanticEditActive(true);
-    if (rowEligible) {
-      _inputState.setSemanticEditActive(true);
-      final editable = _mapViewportRange(editableRange!);
-      final fencedPhysicalLineStart =
-          row.semanticCapabilities.deleteBackwardAtPhysicalLineStart &&
-          _isPhysicalLineStartInsideRow(row, globalCaret);
-      final atStructuralSegmentStart =
-          fencedPhysicalLineStart ||
-          (projectedStructuralRow &&
-              row.projectionSegments!.any(
-                (segment) =>
-                    _mapViewportRange(segment.sourceUtf16).start == globalCaret,
-              )) ||
-          (!_viewportState.semanticCurrent &&
-              _pendingPresentation.structuralSurfaces.any((state) {
-                final surface = state.surface;
-                final runs = surface.presentation.runs;
-                for (var index = 0; index < runs.length; index += 1) {
-                  final run = runs[index];
-                  if (run.sourceUtf16Start != globalCaret) continue;
-                  final precedingEnd = index == 0
-                      ? surface.sourceUtf16.start
-                      : runs[index - 1].sourceUtf16End;
-                  if (precedingEnd < globalCaret) return true;
-                }
-                return false;
-              }));
-      if (!atStructuralSegmentStart &&
-          !atInlineSemanticBoundary &&
-          globalCaret != editable.start &&
-          (_viewportState.semanticCurrent || localCaret != 0) &&
-          !retainedSemanticWindowStart) {
-        return false;
-      }
-    }
-    _queueSemanticEdit(
-      FlarkCoreEditIntentV1.deleteBackward,
-      fallbackWhenNotApplied: FlarkDeferredInputCommand.deleteBackward,
-      platformTiming: platformTiming,
-    );
-    return true;
-  }
-
-  bool _queueSemanticDeleteForward(
-    int localCaret, {
-    FlarkPlatformInputTiming? platformTiming,
-  }) {
-    if (!_inputState.value.selection.isCollapsed ||
-        _publicationCertificationBarrierActive) {
-      return false;
-    }
-    final row = _activeCachedRow();
-    final editableRange = row?.editableUtf16;
-    if (row == null || editableRange == null) return false;
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputState.globalUtf16Start + localCaret;
-    final atInlineSemanticBoundary = _isParserOwnedInlineBoundary(
-      row,
-      globalCaret,
-      backward: false,
-    );
-    final parserOwnedForwardStart =
-        row.semanticCapabilities.deleteForwardAtEditableStart &&
-        globalCaret == editable.start &&
-        _rowSemanticsCurrent(editable);
-    if (!parserOwnedForwardStart && !atInlineSemanticBoundary) {
-      return false;
-    }
+    if (admission == null) return false;
     _inputState.setSemanticEditActive(true);
     _queueSemanticEdit(
-      FlarkCoreEditIntentV1.deleteForward,
-      fallbackWhenNotApplied: FlarkDeferredInputCommand.deleteForward,
+      admission.intent,
+      fallbackWhenNotApplied: switch (command) {
+        FlarkEditorSemanticCommand.insertParagraphBreak =>
+          FlarkDeferredInputCommand.insertNewline,
+        FlarkEditorSemanticCommand.deleteBackward =>
+          FlarkDeferredInputCommand.deleteBackward,
+        FlarkEditorSemanticCommand.deleteForward =>
+          FlarkDeferredInputCommand.deleteForward,
+      },
       platformTiming: platformTiming,
     );
     return true;
-  }
-
-  /// Routes only from parser-authored capability. Rust revalidates the exact
-  /// revision and owner closure when the semantic command executes.
-  bool _isParserOwnedInlineBoundary(
-    FlarkViewportRow row,
-    int globalCaret, {
-    required bool backward,
-  }) {
-    final visibleEnd =
-        _viewportState.visibleUtf16Start + _viewportState.visibleSource.length;
-    for (final fact in row.inlineFacts ?? const <FlarkInlineFact>[]) {
-      if (!fact.supportsEmptyOwnerDelete) continue;
-      final content = _mapViewportRange(fact.contentUtf16);
-      final atBoundary = backward
-          ? content.end == globalCaret
-          : content.start == globalCaret;
-      if (!atBoundary ||
-          content.start < _viewportState.visibleUtf16Start ||
-          content.end > visibleEnd) {
-        continue;
-      }
-      return true;
-    }
-    return false;
-  }
-
-  bool _isPhysicalLineStartInsideRow(FlarkViewportRow row, int globalCaret) {
-    final source = _mappedExactRowRange(row);
-    if (globalCaret <= source.start || globalCaret >= source.end) return false;
-    final previous = _sliceVisibleUtf16(globalCaret - 1, globalCaret);
-    return previous == '\n' || previous == '\r';
   }
 
   void _queueSemanticEdit(

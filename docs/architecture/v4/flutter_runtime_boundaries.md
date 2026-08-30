@@ -22,6 +22,8 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |                           edit/adoption generation barriers)
   |-- FlarkEditorSourceEditPlanner (pending-presentation evolution and
   |                                 publication certification decision)
+  |-- FlarkEditorSemanticCommandPlanner (parser-capability-driven Return,
+  |                                      Backspace, and Delete admission)
   |-- FlarkEditorSemanticReceiptAdopter (generation-safe semantic receipt
   |                                      publication and viewport adoption)
   |-- FlarkEditorViewportAdopter (atomic queried-viewport publication,
@@ -61,6 +63,7 @@ permission to preserve the controller's existing method graph.
 | Typed native edit, semantic-action, history, and composition-cancel invocation; private ticket identity; history boundary ordering | `FlarkEditorCommandExecutor` in `flark` | Receipt-to-platform adoption, Flutter state, or an extensible command registry |
 | Bounded native parser progression, streamed-head certification probes, edit-publication proof, edit/adoption barriers, and generation-bound parse publications | `FlarkEditorParseDriver` in `flark` | Timers, Flutter state, viewport installation, or outward notification |
 | Parser-authorized pending-presentation evolution and the optimistic-versus-certified publication decision for one exact source splice | `FlarkEditorSourceEditPlanner` in `flark` | Native source mutation, Flutter input types, timers, callbacks, or outward publication |
+| Parser-capability-driven admission of Return, Backspace, and Delete at exact rendered/source boundaries | `FlarkEditorSemanticCommandPlanner` in `flark` | Markdown inference, native mutation, Flutter input types, command fallback execution, or outward publication |
 | Generation-safe source publication, structural transition adoption, refresh anchoring, and bounded viewport mutation for one committed semantic receipt | `FlarkEditorSemanticReceiptAdopter` in `flark` | Flutter input installation, successor callbacks, parser waiting, or outward publication |
 | Exact literal mutation validation, parser-authored inline-continuation rewrite, bounded scalar-safe input result, canonical selection, structural-certification classification, and composition-active fact | `FlarkEditorInputMutationPlanner` in `flark` | Platform callback normalization, hidden-projection admission, history adoption, native commands, or outward publication |
 | Connection/window epochs, serialized platform shadow, atomic validation, and normalization of delta/full-value callbacks against current or provisional input into one immutable observation | Platform input bridge | Markdown rules, viewports, history, or source mutation |
@@ -112,16 +115,20 @@ lifecycle/publication routing, and history/composition host adoption.
     advances only during synchronous adoption; a zero continuation produces no
     asynchronous cleanup handoff.
 11. Rust publishes structural-command routing capabilities with each certified
-    row. Flutter may check caret geometry against those capabilities, but it
-    does not reconstruct eligibility from Markdown row kinds or containers.
+    row. One host-neutral planner checks exact caret geometry against those
+    capabilities; Flutter neither reconstructs eligibility from Markdown row
+    kinds nor carries command-specific boundary rules.
 
 ## Controller reduction policy
 
 The controller is still larger than the intended facade. Remaining work should
 be extracted by authority, not by file length:
 
-- structural-command admission now consumes parser-authored capabilities, and
-  Flutter input successor classification, reservation, pending/late capture,
+- structural-command admission now consumes parser-authored capabilities in
+  one portable planner. The planner owns row/editable/projection/inline-owner
+  geometry for Return, Backspace, and Delete while Flutter maps an admitted
+  command to its platform fallback and execution timing. Flutter input
+  successor classification, reservation, pending/late capture,
   deferral, fallback insertion, metric accounting, and retirement have one
   tested state owner. The controller no longer mutates successor collections,
   provisional tails, or certification completers; it executes the owner's

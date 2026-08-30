@@ -35,6 +35,9 @@ void main() {
   final portableSemanticReceiptAdopter = File(
     '../flark/lib/src/editor_semantic_receipt_adopter.dart',
   ).readAsStringSync();
+  final portableSemanticCommandPlanner = File(
+    '../flark/lib/src/editor_semantic_command_planner.dart',
+  ).readAsStringSync();
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
@@ -165,8 +168,18 @@ void main() {
     );
   });
 
-  test('Flutter consumes parser-authored semantic command capabilities', () {
-    expect(controller, contains('semanticCapabilities'));
+  test('portable planner consumes parser semantic command capabilities', () {
+    expect(portableSemanticCommandPlanner, isNot(contains('package:flutter')));
+    expect(portableSemanticCommandPlanner, isNot(contains('dart:ui')));
+    expect(portableSemanticCommandPlanner, contains('semanticCapabilities'));
+    expect(controller, contains('FlarkEditorSemanticCommandPlanner'));
+    expect(
+      controller,
+      isNot(contains('semanticCapabilities.insertParagraphBreak')),
+    );
+    expect(controller, isNot(contains('.deleteBackwardAt')));
+    expect(controller, isNot(contains('.deleteForwardAt')));
+    expect(controller, isNot(contains('supportsEmptyOwnerDelete')));
     expect(controller, isNot(contains('_supportsSemanticParagraphBreakV1')));
     expect(controller, isNot(contains('_supportsSemanticDeleteBackwardV1')));
     expect(controller, isNot(contains('_isPlainParagraphRow')));
