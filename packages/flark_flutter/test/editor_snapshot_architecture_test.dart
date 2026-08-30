@@ -161,6 +161,10 @@ void main() {
     expect(inputState, contains('FlarkEditorInputWindowPlanner.activate'));
     expect(inputState, contains('FlarkEditorInputWindowPlanner.collapsed'));
     expect(inputState, contains('installWindowPlan'));
+    expect(portableInputWindow, contains('FlarkEditorInputMutationPlanner'));
+    expect(controller, contains('FlarkEditorInputMutationPlanner.plan('));
+    expect(controller, isNot(contains('candidateContinuationRewrite')));
+    expect(controller, isNot(contains('boundedReplacementWindow(')));
     expect(portableInputWindow, contains('restoreCollapsed'));
     expect(portableInputWindow, contains('paragraphGap'));
     expect(portableInputWindow, contains('caretBoundary'));

@@ -169,6 +169,160 @@ void main() {
     );
   });
 
+  test('input mutation plan owns exact global and bounded result state', () {
+    final plan = FlarkEditorInputMutationPlanner.plan(
+      input: const FlarkEditorInputValue(
+        text: 'abc',
+        selection: FlarkTextSelection.collapsed(offset: 1),
+      ),
+      inputGlobalUtf16Start: 10,
+      activeOrdinal: 3,
+      inlineContinuation: null,
+      start: 1,
+      end: 1,
+      replacement: 'x',
+      resultSelection: const FlarkTextSelection.collapsed(offset: 2),
+      resultComposing: FlarkTextRange.empty,
+      maximumCodeUnits: 8,
+    );
+
+    expect(plan, isNotNull);
+    expect((plan!.globalStartUtf16, plan.globalEndUtf16), (11, 11));
+    expect(plan.replacement, 'x');
+    expect(plan.window.text, 'axbc');
+    expect(plan.window.globalUtf16Start, 10);
+    expect(plan.window.canonicalSelectionExtentUtf16, 12);
+    expect(plan.window.activeOrdinal, 3);
+    expect(plan.requiresStructuralCertification, isFalse);
+    expect(plan.beginsPublicationBarrier, isFalse);
+    expect(plan.compositionActive, isFalse);
+  });
+
+  test('input mutation plan rewrites one parser-authored continuation', () {
+    const continuation = FlarkCoreInlineContinuationV1(
+      revision: 4,
+      caretUtf16: 0,
+      prefix: '*',
+      suffix: '*',
+      collisionScalars: '*_',
+      scalarPolicy:
+          FlarkCoreInlineContinuationScalarPolicyV1.stableNonWhitespace,
+    );
+
+    final plan = FlarkEditorInputMutationPlanner.plan(
+      input: const FlarkEditorInputValue(),
+      inputGlobalUtf16Start: 0,
+      activeOrdinal: 0,
+      inlineContinuation: continuation,
+      start: 0,
+      end: 0,
+      replacement: 'x',
+      resultSelection: const FlarkTextSelection.collapsed(offset: 1),
+      resultComposing: FlarkTextRange.empty,
+      maximumCodeUnits: 8,
+    );
+
+    expect(plan, isNotNull);
+    expect(plan!.replacement, '*x*');
+    expect(plan.window.text, '*x*');
+    expect(plan.window.selection.extentOffset, 2);
+    expect(plan.beginsPublicationBarrier, isTrue);
+    expect(plan.inlineContinuation?.revision, 5);
+    expect(plan.inlineContinuation?.caretUtf16, 2);
+    expect(plan.inlineContinuation?.ownerMaterialized, isTrue);
+  });
+
+  test('input mutation plan leaves the continuation on whitespace', () {
+    const continuation = FlarkCoreInlineContinuationV1(
+      revision: 4,
+      caretUtf16: 0,
+      prefix: '*',
+      suffix: '*',
+      collisionScalars: '*_',
+      scalarPolicy:
+          FlarkCoreInlineContinuationScalarPolicyV1.stableNonWhitespace,
+    );
+
+    final plan = FlarkEditorInputMutationPlanner.plan(
+      input: const FlarkEditorInputValue(),
+      inputGlobalUtf16Start: 0,
+      activeOrdinal: 0,
+      inlineContinuation: continuation,
+      start: 0,
+      end: 0,
+      replacement: ' ',
+      resultSelection: const FlarkTextSelection.collapsed(offset: 1),
+      resultComposing: FlarkTextRange.empty,
+      maximumCodeUnits: 8,
+    );
+
+    expect(plan, isNotNull);
+    expect(plan!.replacement, ' ');
+    expect(plan.window.text, ' ');
+    expect(plan.inlineContinuation, isNull);
+    expect(plan.beginsPublicationBarrier, isFalse);
+  });
+
+  test('input mutation plan rejects torn values and classifies line edits', () {
+    const input = FlarkEditorInputValue(
+      text: 'a\nb',
+      selection: FlarkTextSelection.collapsed(offset: 1),
+    );
+    final structural = FlarkEditorInputMutationPlanner.plan(
+      input: input,
+      inputGlobalUtf16Start: 0,
+      activeOrdinal: 0,
+      inlineContinuation: null,
+      start: 1,
+      end: 2,
+      replacement: '',
+      resultSelection: const FlarkTextSelection.collapsed(offset: 1),
+      resultComposing: FlarkTextRange.empty,
+      maximumCodeUnits: 8,
+    );
+
+    expect(structural?.requiresStructuralCertification, isTrue);
+    expect(
+      FlarkEditorInputMutationPlanner.plan(
+        input: input,
+        inputGlobalUtf16Start: 0,
+        activeOrdinal: 0,
+        inlineContinuation: null,
+        start: 0,
+        end: 1,
+        replacement: 'x',
+        resultSelection: const FlarkTextSelection.collapsed(offset: 1),
+        resultComposing: FlarkTextRange.empty,
+        fullValue: const FlarkEditorInputValue(text: 'wrong'),
+        maximumCodeUnits: 8,
+      ),
+      isNull,
+    );
+  });
+
+  test('bounded input can drop a range without ending Core composition', () {
+    final plan = FlarkEditorInputMutationPlanner.plan(
+      input: const FlarkEditorInputValue(
+        text: 'abcdefgh',
+        selection: FlarkTextSelection.collapsed(offset: 4),
+      ),
+      inputGlobalUtf16Start: 0,
+      activeOrdinal: 0,
+      inlineContinuation: null,
+      start: 4,
+      end: 4,
+      replacement: 'x',
+      resultSelection: const FlarkTextSelection.collapsed(offset: 5),
+      resultComposing: const FlarkTextRange(start: 0, end: 9),
+      maximumCodeUnits: 4,
+    );
+
+    expect(plan, isNotNull);
+    expect(plan!.compositionActive, isTrue);
+    expect(plan.window.composing, FlarkTextRange.empty);
+    expect(plan.window.text.length, lessThanOrEqualTo(4));
+  });
+
   test('collapsed restoration selects a certified row without host policy', () {
     final viewportState = FlarkEditorViewportState()
       ..install(_viewport(rows: [_row()]), 'abc');

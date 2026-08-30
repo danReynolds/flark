@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flark/flark.dart';
 import 'package:flark_flutter/src/editor_input_state.dart';
 import 'package:flark_flutter/src/editor_transactions.dart';
 import 'package:flark_flutter/src/editor_performance.dart';
@@ -117,6 +118,28 @@ void main() {
         ),
         throwsArgumentError,
       );
+    });
+
+    test('portable mutation window preserves composing state on install', () {
+      final state = FlarkEditorInputState();
+
+      state.installWindowPlan(
+        const FlarkEditorInputWindow(
+          text: 'typed',
+          globalUtf16Start: 7,
+          selection: FlarkTextSelection.collapsed(offset: 5),
+          composing: FlarkTextRange(start: 1, end: 5),
+          activeOrdinal: 2,
+          canonicalSelectionBaseUtf16: 12,
+          canonicalSelectionExtentUtf16: 12,
+          crossRowSelection: false,
+          selectionRepresented: true,
+        ),
+      );
+
+      expect(state.value.composing, const TextRange(start: 1, end: 5));
+      expect(state.globalUtf16Start, 7);
+      expect(state.selectionExtentUtf16, 12);
     });
   });
 

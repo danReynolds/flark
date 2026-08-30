@@ -104,7 +104,11 @@ export 'src/editor_source_edit_planner.dart'
 export 'src/editor_snapshot.dart'
     show FlarkEditorSnapshot, FlarkEditorSnapshotRow;
 export 'src/editor_input_window.dart'
-    show FlarkEditorInputWindow, FlarkEditorInputWindowPlanner;
+    show
+        FlarkEditorInputMutationPlan,
+        FlarkEditorInputMutationPlanner,
+        FlarkEditorInputWindow,
+        FlarkEditorInputWindowPlanner;
 export 'src/editor_text.dart'
     show
         FlarkEditorInputValue,

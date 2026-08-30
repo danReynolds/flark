@@ -204,7 +204,13 @@ source identity, resolves and adopts the parser-authored structural
 transition, pins refresh navigation, and advances the bounded viewport as one
 synchronous transaction. The pure input-window planner computes the paired
 bounded splice result; Flutter installs it and retains only platform successor
-reconciliation.
+reconciliation. Ordinary literal mutations now cross a companion pure
+input-mutation planner that owns exact splice validation, parser-authored
+inline-continuation rewrites, scalar-safe bounded results, canonical selection,
+structural-certification classification, and an explicit composition-active
+fact. Keeping that last fact separate from the possibly truncated platform
+composing range prevents bounded windowing from ending a Core composition
+group.
 
 ### M4 — large-module audit and deletion
 
@@ -221,13 +227,13 @@ Current audit:
 
 | Module | Verdict | Reason |
 | --- | --- | --- |
-| Flutter controller | Further boundary work required | Bounded input-window state, native command execution, native parse progression, edit-publication proof, ordinary source-edit planning, and committed semantic-receipt publication have moved, but the controller still combines platform callback reconciliation, parser timer admission, history/composition host adoption, and lifecycle/publication routing. |
+| Flutter controller | Further boundary work required | Bounded input-window state and literal mutation planning, native command execution, native parse progression, edit-publication proof, ordinary source-edit planning, and committed semantic-receipt publication have moved, but the controller still combines platform callback reconciliation, parser timer admission, history/composition host adoption, and lifecycle/publication routing. |
 | Pure command executor | Retain | It is a closed typed native-command lane with private coordinator tickets and direct lifetime/ordering tests. It owns no host adoption state, callback registry, or generic dispatch. |
 | Pure parse driver | Retain | It owns bounded native pumping, streamed-open certification probing, edit-publication phase proof, generation barriers, and owned parse publications. It has no timer, callback, Flutter, or host-state dependency and is directly contract-tested. |
 | Pure source-edit planner | Retain | It synchronously evolves the coordinator's one pending-presentation snapshot from bounded portable input facts and returns one publication requirement. It has no Flutter, native-I/O, callback, or timer dependency; direct tests cover authorized continuity, exact fallback, single structural advancement, barriers, invalid input, and ambiguous-authority failure. |
 | Pure semantic receipt adopter | Retain | It owns one synchronous, identity-checked committed-receipt transaction across source publication, pending presentation, refresh navigation, and bounded viewport state. It returns only the caret, continuation, and certification obligation a host must install, and direct native tests reject superseded receipts. |
 | Flutter platform input bridge | Retain | It owns connection epochs, the serialized shadow, atomic delta validation, and one immutable normal form shared by delta/full-value callbacks against current or provisional input. It knows no Markdown, viewport, or source-mutation policy. |
-| Pure input-window planner | Retain | It owns capacity, scalar-aligned cuts, local-to-canonical selection equivalence, and restoration from parser/pending surface geometry without a frontend dependency. |
+| Pure input-window and mutation planners | Retain | They own capacity, scalar-aligned cuts, local-to-canonical selection equivalence, restoration from parser/pending surface geometry, exact literal splice validation, parser-authored continuation rewrite, structural-certification classification, and composition activity without a frontend dependency. |
 | Flutter input state | Retain | It owns one `TextEditingValue` window and its canonical mirrors, adapting immutable plans through named transitions. It imports no controller and its oversized-selection invariants have direct tests. |
 | Rust runtime document | Retain while its public surface stays narrow | It is the deep source/parser transaction boundary; edit-intent resolution is already separate. Split only when a codec, parser job, or transaction owner can move without sharing document internals. |
 | Dart native document | Retain pending a codec-sized extraction | Its size comes from one serialized actor plus strict ABI decoding. A split is useful only if a stateless decoder can be tested independently without duplicating FFI lifecycle state. |
@@ -253,7 +259,12 @@ fails closed when parser authority is absent or ambiguous. Committed
 semantic-receipt adoption is accepted as well: it removed direct structural
 transition, source-publication, refresh-anchor, and viewport-mutation authority
 from Flutter, while the existing input-window planner now owns the paired
-bounded splice calculation. The next review must remove another complete
+bounded splice calculation. Portable literal-mutation planning is accepted: it
+replaced the controller's exact-splice, continuation, bounded-window, canonical
+selection, and structural-certification branches with one immutable plan and
+direct tests, without callbacks or reverse dependencies. The milestone review
+also made Core composition activity explicit instead of inferring it from a
+possibly truncated platform range. The next review must remove another complete
 authority—platform successor reconciliation, history/composition adoption, or
 lifecycle admission—rather than reshuffling facade methods.
 

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'editor_session.dart';
 import 'editor_text.dart';
 import 'editor_viewport_state.dart';
 import 'models.dart';
@@ -13,6 +14,7 @@ final class FlarkEditorInputWindow {
     required this.text,
     required this.globalUtf16Start,
     required this.selection,
+    this.composing = FlarkTextRange.empty,
     required this.activeOrdinal,
     required this.canonicalSelectionBaseUtf16,
     required this.canonicalSelectionExtentUtf16,
@@ -23,11 +25,247 @@ final class FlarkEditorInputWindow {
   final String text;
   final int globalUtf16Start;
   final FlarkTextSelection selection;
+  final FlarkTextRange composing;
   final int? activeOrdinal;
   final int canonicalSelectionBaseUtf16;
   final int canonicalSelectionExtentUtf16;
   final bool crossRowSelection;
   final bool selectionRepresented;
+}
+
+/// Deterministic result of admitting one exact mutation against a bounded
+/// host input window.
+final class FlarkEditorInputMutationPlan {
+  const FlarkEditorInputMutationPlan({
+    required this.globalStartUtf16,
+    required this.globalEndUtf16,
+    required this.replacement,
+    required this.window,
+    required this.inlineContinuation,
+    required this.beginsPublicationBarrier,
+    required this.requiresStructuralCertification,
+    required this.compositionActive,
+  });
+
+  final int globalStartUtf16;
+  final int globalEndUtf16;
+  final String replacement;
+  final FlarkEditorInputWindow window;
+  final FlarkCoreInlineContinuationV1? inlineContinuation;
+  final bool beginsPublicationBarrier;
+  final bool requiresStructuralCertification;
+  final bool compositionActive;
+}
+
+/// Plans source mutation and bounded input state without frontend types.
+abstract final class FlarkEditorInputMutationPlanner {
+  static FlarkEditorInputMutationPlan? plan({
+    required FlarkEditorInputValue input,
+    required int inputGlobalUtf16Start,
+    required int? activeOrdinal,
+    required FlarkCoreInlineContinuationV1? inlineContinuation,
+    required int start,
+    required int end,
+    required String replacement,
+    required FlarkTextSelection resultSelection,
+    required FlarkTextRange resultComposing,
+    FlarkEditorInputValue? fullValue,
+    required int maximumCodeUnits,
+  }) {
+    FlarkEditorInputWindowPlanner._checkCapacity(maximumCodeUnits);
+    final source = input.text;
+    if (inputGlobalUtf16Start < 0 ||
+        start < 0 ||
+        end < start ||
+        end > source.length) {
+      return null;
+    }
+
+    final effectiveStart = start;
+    var effectiveEnd = end;
+    var effectiveReplacement = replacement;
+    var effectiveSelection = resultSelection;
+    var effectiveComposing = resultComposing;
+    var effectiveFullValue = fullValue;
+    var nextContinuation = inlineContinuation;
+    var beginsPublicationBarrier = false;
+    final insertsAtContinuation =
+        inlineContinuation != null &&
+        start == end &&
+        inputGlobalUtf16Start + start == inlineContinuation.caretUtf16 &&
+        resultSelection.isCollapsed &&
+        resultSelection.extentOffset == start + replacement.length &&
+        !resultComposing.isValid;
+    final candidateRewrite = inlineContinuation != null && insertsAtContinuation
+        ? inlineContinuation.rewriteReplacement(replacement)
+        : null;
+    final rewriteEnd = candidateRewrite == null
+        ? end
+        : end + candidateRewrite.replacedSuffixUtf16;
+    final rewrite =
+        candidateRewrite != null &&
+            (candidateRewrite.replacedSuffixUtf16 == 0 ||
+                (rewriteEnd <= source.length &&
+                    source.substring(end, rewriteEnd) ==
+                        inlineContinuation!.suffix))
+        ? candidateRewrite
+        : null;
+    if (rewrite != null) {
+      effectiveEnd = rewriteEnd;
+      effectiveReplacement = rewrite.replacement;
+      effectiveSelection = FlarkTextSelection.collapsed(
+        offset: start + rewrite.caretUtf16Offset,
+        affinity: resultSelection.affinity,
+      );
+      effectiveComposing = FlarkTextRange.empty;
+      effectiveFullValue = null;
+      beginsPublicationBarrier = true;
+      nextContinuation = rewrite.continuesOwner
+          ? inlineContinuation!.materializedAtRevision(
+              inlineContinuation.revision + 1,
+              inputGlobalUtf16Start + effectiveSelection.extentOffset,
+            )
+          : null;
+    } else if (inlineContinuation != null &&
+        (insertsAtContinuation || start != end || replacement.isNotEmpty)) {
+      nextContinuation = null;
+    }
+
+    final nextLength = replacementResultLength(
+      source: source,
+      start: effectiveStart,
+      end: effectiveEnd,
+      replacement: effectiveReplacement,
+    );
+    if (!effectiveSelection.isValid ||
+        effectiveSelection.baseOffset > nextLength ||
+        effectiveSelection.extentOffset > nextLength ||
+        (effectiveComposing.isValid && effectiveComposing.end > nextLength)) {
+      return null;
+    }
+    final removedText = source.substring(effectiveStart, effectiveEnd);
+    final requiresStructuralCertification =
+        effectiveReplacement.contains('\n') ||
+        effectiveReplacement.contains('\r') ||
+        removedText.contains('\n') ||
+        removedText.contains('\r');
+    final exactText = source.replaceRange(
+      effectiveStart,
+      effectiveEnd,
+      effectiveReplacement,
+    );
+    if (effectiveFullValue != null && effectiveFullValue.text != exactText) {
+      return null;
+    }
+
+    final nextInput = effectiveFullValue == null
+        ? FlarkEditorInputValue(
+            text: exactText,
+            selection: effectiveSelection,
+            composing: effectiveComposing,
+          )
+        : FlarkEditorInputValue(
+            text: effectiveFullValue.text,
+            selection: effectiveSelection,
+            composing: effectiveComposing,
+          );
+    final window = _boundedMutationWindow(
+      value: nextInput,
+      originalSource: source,
+      inputGlobalUtf16Start: inputGlobalUtf16Start,
+      activeOrdinal: activeOrdinal,
+      start: effectiveStart,
+      end: effectiveEnd,
+      replacement: effectiveReplacement,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+    return FlarkEditorInputMutationPlan(
+      globalStartUtf16: inputGlobalUtf16Start + effectiveStart,
+      globalEndUtf16: inputGlobalUtf16Start + effectiveEnd,
+      replacement: effectiveReplacement,
+      window: window,
+      inlineContinuation: nextContinuation,
+      beginsPublicationBarrier: beginsPublicationBarrier,
+      requiresStructuralCertification: requiresStructuralCertification,
+      compositionActive: effectiveComposing.isValid,
+    );
+  }
+
+  static FlarkEditorInputWindow _boundedMutationWindow({
+    required FlarkEditorInputValue value,
+    required String originalSource,
+    required int inputGlobalUtf16Start,
+    required int? activeOrdinal,
+    required int start,
+    required int end,
+    required String replacement,
+    required int maximumCodeUnits,
+  }) {
+    if (value.text.length <= maximumCodeUnits) {
+      return FlarkEditorInputWindow(
+        text: value.text,
+        globalUtf16Start: inputGlobalUtf16Start,
+        selection: value.selection,
+        composing: value.composing,
+        activeOrdinal: activeOrdinal,
+        canonicalSelectionBaseUtf16:
+            inputGlobalUtf16Start + value.selection.baseOffset,
+        canonicalSelectionExtentUtf16:
+            inputGlobalUtf16Start + value.selection.extentOffset,
+        crossRowSelection: false,
+        selectionRepresented: true,
+      );
+    }
+    final bounded = boundedReplacementWindow(
+      source: originalSource,
+      start: start,
+      end: end,
+      replacement: replacement,
+      focus: value.selection.extentOffset,
+      maximumCodeUnits: maximumCodeUnits,
+    );
+    final boundedEnd = bounded.start + bounded.text.length;
+    final base = (value.selection.baseOffset - bounded.start).clamp(
+      0,
+      bounded.text.length,
+    );
+    final extent = (value.selection.extentOffset - bounded.start).clamp(
+      0,
+      bounded.text.length,
+    );
+    final composing =
+        value.composing.isValid &&
+            value.composing.start >= bounded.start &&
+            value.composing.end <= boundedEnd
+        ? FlarkTextRange(
+            start: value.composing.start - bounded.start,
+            end: value.composing.end - bounded.start,
+          )
+        : FlarkTextRange.empty;
+    final selectionRepresented =
+        value.selection.baseOffset >= bounded.start &&
+        value.selection.baseOffset <= boundedEnd &&
+        value.selection.extentOffset >= bounded.start &&
+        value.selection.extentOffset <= boundedEnd;
+    return FlarkEditorInputWindow(
+      text: bounded.text,
+      globalUtf16Start: inputGlobalUtf16Start + bounded.start,
+      selection: FlarkTextSelection(
+        baseOffset: base,
+        extentOffset: extent,
+        affinity: value.selection.affinity,
+        isDirectional: value.selection.isDirectional,
+      ),
+      composing: composing,
+      activeOrdinal: activeOrdinal,
+      canonicalSelectionBaseUtf16:
+          inputGlobalUtf16Start + value.selection.baseOffset,
+      canonicalSelectionExtentUtf16:
+          inputGlobalUtf16Start + value.selection.extentOffset,
+      crossRowSelection: false,
+      selectionRepresented: selectionRepresented,
+    );
+  }
 }
 
 /// Plans bounded UTF-16 windows shared by every host adapter.

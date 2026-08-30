@@ -2503,181 +2503,72 @@ final class FlarkEditorController extends ChangeNotifier
       return const FlarkRejectedMutation();
     }
     final beforeSelection = _selectionSnapshot();
-    var effectiveMutation = mutation;
-    var effectiveSelection = selection;
-    var effectiveComposing = composing;
-    var effectiveFullValue = fullValue;
-    final continuation = beforeSelection.inlineContinuation;
-    final insertsAtContinuation =
-        continuation != null &&
-        mutation.start == mutation.end &&
-        _inputState.globalUtf16Start + mutation.start ==
-            continuation.caretUtf16 &&
-        selection.isCollapsed &&
-        selection.extentOffset ==
-            mutation.start + mutation.replacement.length &&
-        !composing.isValid;
-    final candidateContinuationRewrite =
-        continuation != null && insertsAtContinuation
-        ? continuation.rewriteReplacement(mutation.replacement)
-        : null;
-    final continuationRewriteEnd = candidateContinuationRewrite == null
-        ? mutation.end
-        : mutation.end + candidateContinuationRewrite.replacedSuffixUtf16;
-    final continuationRewrite =
-        candidateContinuationRewrite != null &&
-            (candidateContinuationRewrite.replacedSuffixUtf16 == 0 ||
-                (continuationRewriteEnd <= source.length &&
-                    source.substring(mutation.end, continuationRewriteEnd) ==
-                        continuation!.suffix))
-        ? candidateContinuationRewrite
-        : null;
-    if (continuationRewrite != null) {
-      effectiveMutation = FlarkTextMutation(
-        mutation.start,
-        continuationRewriteEnd,
-        continuationRewrite.replacement,
-      );
-      effectiveSelection = TextSelection.collapsed(
-        offset: mutation.start + continuationRewrite.caretUtf16Offset,
-        affinity: selection.affinity,
-      );
-      effectiveComposing = TextRange.empty;
-      effectiveFullValue = null;
-      // The recipe is parser-authored, but its successor projection is not
-      // certified until Rust parses the wrapped source. Hold the prior atomic
-      // frame rather than flashing delimiters or plain styling.
-      _coordinator.beginPublicationBarrier();
-      _inputState.restoreInlineContinuation(
-        continuationRewrite.continuesOwner
-            ? continuation!.materializedAtRevision(
-                continuation.revision + 1,
-                _inputState.globalUtf16Start + effectiveSelection.extentOffset,
-              )
-            : null,
-      );
-    } else if (continuation != null &&
-        (insertsAtContinuation ||
-            mutation.start != mutation.end ||
-            mutation.replacement.isNotEmpty)) {
-      // Whitespace and every nonmatching edit leave the emptied owner. Undo
-      // still restores the continuation through beforeSelection.
-      _inputState.abandonInlineContinuation();
-    }
-    final nextLength = replacementResultLength(
-      source: source,
-      start: effectiveMutation.start,
-      end: effectiveMutation.end,
-      replacement: effectiveMutation.replacement,
+    final plan = FlarkEditorInputMutationPlanner.plan(
+      input: portableEditorInputValue(_inputState.value),
+      inputGlobalUtf16Start: _inputState.globalUtf16Start,
+      activeOrdinal: _inputState.activeOrdinal,
+      inlineContinuation: beforeSelection.inlineContinuation,
+      start: mutation.start,
+      end: mutation.end,
+      replacement: mutation.replacement,
+      resultSelection: portableTextSelection(selection),
+      resultComposing: FlarkTextRange(
+        start: composing.start,
+        end: composing.end,
+      ),
+      fullValue: fullValue == null ? null : portableEditorInputValue(fullValue),
+      maximumCodeUnits: _maximumInputCodeUnits,
     );
-    final removedText = source.substring(
-      effectiveMutation.start,
-      effectiveMutation.end,
-    );
-    final requiresStructuralCertification =
-        effectiveMutation.replacement.contains('\n') ||
-        effectiveMutation.replacement.contains('\r') ||
-        removedText.contains('\n') ||
-        removedText.contains('\r');
-    if (!effectiveSelection.isValid ||
-        effectiveSelection.baseOffset > nextLength ||
-        effectiveSelection.extentOffset > nextLength) {
+    if (plan == null) {
       return const FlarkRejectedMutation();
     }
-    final inputStart = _inputState.globalUtf16Start;
+    if (plan.beginsPublicationBarrier) {
+      // The parser-authored continuation recipe proves the exact source
+      // rewrite but not its successor projection. Retain the prior frame.
+      _coordinator.beginPublicationBarrier();
+    }
+    _inputState.restoreInlineContinuation(plan.inlineContinuation);
     final wasCrossRowSelection = _inputState.crossRowSelection;
-    final globalStart = inputStart + effectiveMutation.start;
-    final globalEnd = inputStart + effectiveMutation.end;
     final preferredOrdinal = _preferredMutationOrdinal(
-      globalStart,
-      globalEnd,
-      effectiveMutation.replacement,
+      plan.globalStartUtf16,
+      plan.globalEndUtf16,
+      plan.replacement,
     );
+    final plannedComposing = plan.compositionActive
+        ? const TextRange.collapsed(0)
+        : TextRange.empty;
     final compositionHistoryGroup = _compositionGroupForMutation(
-      effectiveComposing,
+      plannedComposing,
     );
 
     // Preserve an exact origin while this still carries the pre-edit input
     // text. A splice crossing a deep viewport start invalidates that page's
     // byte position, but an origin at or before the splice remains stable.
-    _retainOptimisticRefreshAnchor(globalStart, deriveFromInput: true);
-
-    if (nextLength <= _maximumInputCodeUnits) {
-      _inputState.replaceValue(
-        effectiveFullValue ??
-            TextEditingValue(
-              text: source.replaceRange(
-                effectiveMutation.start,
-                effectiveMutation.end,
-                effectiveMutation.replacement,
-              ),
-              selection: effectiveSelection,
-              composing: effectiveComposing,
-            ),
-      );
-    } else {
-      final window = boundedReplacementWindow(
-        source: source,
-        start: effectiveMutation.start,
-        end: effectiveMutation.end,
-        replacement: effectiveMutation.replacement,
-        focus: effectiveSelection.extentOffset,
-        maximumCodeUnits: _maximumInputCodeUnits,
-      );
-      final windowEnd = window.start + window.text.length;
-      final localBase = (effectiveSelection.baseOffset - window.start).clamp(
-        0,
-        window.text.length,
-      );
-      final localExtent = (effectiveSelection.extentOffset - window.start)
-          .clamp(0, window.text.length);
-      final localComposing =
-          effectiveComposing.isValid &&
-              effectiveComposing.start >= window.start &&
-              effectiveComposing.end <= windowEnd
-          ? TextRange(
-              start: effectiveComposing.start - window.start,
-              end: effectiveComposing.end - window.start,
-            )
-          : TextRange.empty;
-      _inputState.replaceWindow(
-        globalUtf16Start: inputStart + window.start,
-        value: TextEditingValue(
-          text: window.text,
-          selection: TextSelection(
-            baseOffset: localBase,
-            extentOffset: localExtent,
-            affinity: effectiveSelection.affinity,
-            isDirectional: effectiveSelection.isDirectional,
-          ),
-          composing: localComposing,
-        ),
-      );
-    }
-    _inputState.setCanonicalSelection(
-      inputStart + effectiveSelection.baseOffset,
-      inputStart + effectiveSelection.extentOffset,
+    _retainOptimisticRefreshAnchor(
+      plan.globalStartUtf16,
+      deriveFromInput: true,
     );
+
+    _inputState.installWindowPlan(plan.window);
     _inputState.retargetActiveOrdinal(preferredOrdinal);
-    _inputState.setCrossRowSelection(false);
     final afterSelection = _selectionSnapshot();
     final coalesceTyping =
         typingInput &&
         compositionHistoryGroup == null &&
-        !effectiveComposing.isValid;
+        !plan.compositionActive;
     if (!coalesceTyping) _breakTypingHistoryGroup();
     final publication = _queueNativeEdit(
-      globalStart,
-      globalEnd,
-      effectiveMutation.replacement,
+      plan.globalStartUtf16,
+      plan.globalEndUtf16,
+      plan.replacement,
       beforeSelection: beforeSelection,
       afterSelection: afterSelection,
       coalesceTyping: coalesceTyping,
       compositionHistoryGroup: compositionHistoryGroup,
       compositionFinal:
-          compositionHistoryGroup != null && !effectiveComposing.isValid,
+          compositionHistoryGroup != null && !plan.compositionActive,
       recenterAfterOptimisticEdit: wasCrossRowSelection,
-      requiresStructuralCertification: requiresStructuralCertification,
+      requiresStructuralCertification: plan.requiresStructuralCertification,
       platformTiming: platformTiming ?? _inputTransactions.activeTiming,
     );
     return FlarkQueuedMutation(publication);

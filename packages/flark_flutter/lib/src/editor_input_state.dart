@@ -158,6 +158,9 @@ final class FlarkEditorInputState {
         affinity: flutterTextAffinity(window.selection.affinity),
         isDirectional: window.selection.isDirectional,
       ),
+      composing: window.composing.isValid
+          ? TextRange(start: window.composing.start, end: window.composing.end)
+          : TextRange.empty,
     );
     _activeOrdinal = window.activeOrdinal;
     _selectionBaseUtf16 = window.canonicalSelectionBaseUtf16;
