@@ -533,6 +533,136 @@ void main() {
     });
   });
 
+  group('input successor planner', () {
+    const planner = FlarkInputSuccessorPlanner();
+    const identity = FlarkInputReconciliationMap(
+      fromStart: 0,
+      fromEnd: 0,
+      toStart: 0,
+      toEnd: 0,
+    );
+
+    test('reclassifies a deferred command behind certification', () {
+      final plan = planner.plan(
+        const FlarkInputSuccessorPlanningRequest(
+          successor: FlarkDeferredInputSuccessor(
+            FlarkDeferredInputCommand.insertNewline,
+          ),
+          reconciliation: identity,
+          currentInput: TextEditingValue(text: 'a'),
+          currentInputGlobalUtf16Start: 0,
+          inlineContinuation: null,
+          publicationCertificationBarrierActive: true,
+        ),
+      );
+
+      expect(plan, isA<FlarkInputCommandSuccessorPlan>());
+      final command = plan as FlarkInputCommandSuccessorPlan;
+      expect(command.command, FlarkDeferredInputCommand.insertNewline);
+      expect(command.reclassifyAfterCertification, isTrue);
+    });
+
+    test('maps provisional mutation and selection as one typed effect', () {
+      final plan = planner.plan(
+        const FlarkInputSuccessorPlanningRequest(
+          successor: FlarkProvisionalInputBatch(
+            before: TextEditingValue(
+              text: 'ab',
+              selection: TextSelection.collapsed(offset: 1),
+            ),
+            after: TextEditingValue(
+              text: 'axb',
+              selection: TextSelection.collapsed(offset: 2),
+            ),
+            typingInput: true,
+          ),
+          reconciliation: identity,
+          currentInput: TextEditingValue(text: 'ab'),
+          currentInputGlobalUtf16Start: 0,
+          inlineContinuation: null,
+          publicationCertificationBarrierActive: false,
+        ),
+      );
+
+      expect(plan, isA<FlarkInputMutationSuccessorPlan>());
+      final mutation = plan as FlarkInputMutationSuccessorPlan;
+      expect((mutation.mutation.start, mutation.mutation.end), (1, 1));
+      expect(mutation.mutation.replacement, 'x');
+      expect(mutation.selection.extentOffset, 2);
+      expect(mutation.typingInput, isTrue);
+    });
+
+    test(
+      'canonical inline continuation overrides provisional caret geometry',
+      () {
+        final plan = planner.plan(
+          const FlarkInputSuccessorPlanningRequest(
+            successor: FlarkProvisionalInputBatch(
+              before: TextEditingValue(
+                selection: TextSelection.collapsed(offset: 0),
+              ),
+              after: TextEditingValue(
+                text: 'x',
+                selection: TextSelection.collapsed(offset: 1),
+              ),
+              typingInput: true,
+            ),
+            reconciliation: identity,
+            currentInput: TextEditingValue(text: '**'),
+            currentInputGlobalUtf16Start: 100,
+            inlineContinuation: FlarkCoreInlineContinuationV1(
+              revision: 1,
+              caretUtf16: 101,
+              prefix: '**',
+              suffix: '**',
+              collisionScalars: '*',
+              scalarPolicy: FlarkCoreInlineContinuationScalarPolicyV1
+                  .commonMarkOrdinaryOnly,
+            ),
+            publicationCertificationBarrierActive: false,
+          ),
+        );
+
+        final mutation = plan as FlarkInputMutationSuccessorPlan;
+        expect((mutation.mutation.start, mutation.mutation.end), (1, 1));
+        expect(mutation.selection.extentOffset, 2);
+      },
+    );
+
+    test(
+      'fails closed when provisional selection crosses an unmappable gap',
+      () {
+        final plan = planner.plan(
+          const FlarkInputSuccessorPlanningRequest(
+            successor: FlarkProvisionalInputBatch(
+              before: TextEditingValue(
+                text: 'abc',
+                selection: TextSelection.collapsed(offset: 0),
+              ),
+              after: TextEditingValue(
+                text: 'abc',
+                selection: TextSelection.collapsed(offset: 1),
+              ),
+              typingInput: false,
+            ),
+            reconciliation: FlarkInputReconciliationMap(
+              fromStart: 0,
+              fromEnd: 3,
+              toStart: 0,
+              toEnd: 0,
+            ),
+            currentInput: TextEditingValue(),
+            currentInputGlobalUtf16Start: 0,
+            inlineContinuation: null,
+            publicationCertificationBarrierActive: false,
+          ),
+        );
+
+        expect(plan, isA<FlarkInputRejectedSuccessorPlan>());
+      },
+    );
+  });
+
   group('platform input bridge', () {
     test('platform updates advance the window without reconnecting', () {
       final bridge = FlarkPlatformInputBridge();

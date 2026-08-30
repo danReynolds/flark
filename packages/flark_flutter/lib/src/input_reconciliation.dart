@@ -19,6 +19,194 @@ final class FlarkLateSemanticInput extends FlarkPendingPlatformLineage {
   int successorCount;
 }
 
+/// Immutable facts needed to translate one provisional successor into an
+/// effect against the current committed input window.
+final class FlarkInputSuccessorPlanningRequest {
+  const FlarkInputSuccessorPlanningRequest({
+    required this.successor,
+    required this.reconciliation,
+    required this.currentInput,
+    required this.currentInputGlobalUtf16Start,
+    required this.inlineContinuation,
+    required this.publicationCertificationBarrierActive,
+  });
+
+  final FlarkSemanticInputSuccessor successor;
+  final FlarkInputReconciliationMap reconciliation;
+  final TextEditingValue currentInput;
+  final int currentInputGlobalUtf16Start;
+  final FlarkCoreInlineContinuationV1? inlineContinuation;
+  final bool publicationCertificationBarrierActive;
+}
+
+/// Closed set of host effects produced by successor reconciliation.
+sealed class FlarkInputSuccessorPlan {
+  const FlarkInputSuccessorPlan();
+}
+
+final class FlarkInputHistorySuccessorPlan extends FlarkInputSuccessorPlan {
+  const FlarkInputHistorySuccessorPlan(this.successor);
+
+  final FlarkDeferredHistorySuccessor successor;
+}
+
+final class FlarkInputReplacementSuccessorPlan extends FlarkInputSuccessorPlan {
+  const FlarkInputReplacementSuccessorPlan({
+    required this.replacement,
+    required this.typingInput,
+    required this.platformTiming,
+  });
+
+  final String replacement;
+  final bool typingInput;
+  final FlarkPlatformInputTiming? platformTiming;
+}
+
+final class FlarkInputCommandSuccessorPlan extends FlarkInputSuccessorPlan {
+  const FlarkInputCommandSuccessorPlan({
+    required this.command,
+    required this.semanticAlreadyAttempted,
+    required this.reclassifyAfterCertification,
+    required this.platformTiming,
+  });
+
+  final FlarkDeferredInputCommand command;
+  final bool semanticAlreadyAttempted;
+  final bool reclassifyAfterCertification;
+  final FlarkPlatformInputTiming? platformTiming;
+}
+
+final class FlarkInputSelectionSuccessorPlan extends FlarkInputSuccessorPlan {
+  const FlarkInputSelectionSuccessorPlan({
+    required this.selection,
+    required this.composing,
+  });
+
+  final TextSelection selection;
+  final TextRange composing;
+}
+
+final class FlarkInputMutationSuccessorPlan extends FlarkInputSuccessorPlan {
+  const FlarkInputMutationSuccessorPlan({
+    required this.mutation,
+    required this.selection,
+    required this.composing,
+    required this.typingInput,
+    required this.platformTiming,
+  });
+
+  final FlarkTextMutation mutation;
+  final TextSelection selection;
+  final TextRange composing;
+  final bool typingInput;
+  final FlarkPlatformInputTiming? platformTiming;
+}
+
+final class FlarkInputRejectedSuccessorPlan extends FlarkInputSuccessorPlan {
+  const FlarkInputRejectedSuccessorPlan();
+}
+
+/// Plans one successor without executing controller callbacks or source work.
+///
+/// Platform callback lineage is provisional. This planner owns its monotone
+/// mapping onto the committed input window, including canonical continuation
+/// placement. The controller remains the executor of the resulting fixed
+/// host effects.
+final class FlarkInputSuccessorPlanner {
+  const FlarkInputSuccessorPlanner();
+
+  FlarkInputSuccessorPlan plan(FlarkInputSuccessorPlanningRequest request) {
+    final successor = request.successor;
+    if (successor is FlarkDeferredHistorySuccessor) {
+      return FlarkInputHistorySuccessorPlan(successor);
+    }
+    if (successor is FlarkDeferredInputSuccessor) {
+      final replacement = successor.replacement;
+      if (replacement != null) {
+        return FlarkInputReplacementSuccessorPlan(
+          replacement: replacement,
+          typingInput: successor.typingInput,
+          platformTiming: successor.platformTiming,
+        );
+      }
+      final command = successor.command;
+      if (command == null) return const FlarkInputRejectedSuccessorPlan();
+      return FlarkInputCommandSuccessorPlan(
+        command: command,
+        semanticAlreadyAttempted: successor.semanticAlreadyAttempted,
+        reclassifyAfterCertification:
+            successor.reclassifyAfterCertification ||
+            request.publicationCertificationBarrierActive,
+        platformTiming: successor.platformTiming,
+      );
+    }
+
+    final batch = successor as FlarkProvisionalInputBatch;
+    final selection = request.reconciliation.mapSelection(
+      batch.after.selection,
+    );
+    final composing = request.reconciliation.mapRange(batch.after.composing);
+    if (selection == null || composing == null) {
+      return const FlarkInputRejectedSuccessorPlan();
+    }
+    final mutation = flarkDifferenceMutation(
+      batch.before.text,
+      batch.after.text,
+    );
+    if (mutation == null) {
+      return FlarkInputSelectionSuccessorPlan(
+        selection: selection,
+        composing: composing,
+      );
+    }
+    final mappedStart = request.reconciliation.mapOffset(
+      mutation.start,
+      downstream: true,
+    );
+    final mappedEnd = request.reconciliation.mapOffset(
+      mutation.end,
+      downstream: true,
+    );
+    final continuation = request.inlineContinuation;
+    final continuationLocalCaret = continuation == null
+        ? null
+        : continuation.caretUtf16 - request.currentInputGlobalUtf16Start;
+    final continuesAtCanonicalCaret =
+        continuationLocalCaret != null &&
+        batch.typingInput &&
+        mutation.start == mutation.end &&
+        batch.after.selection.isCollapsed &&
+        !batch.after.composing.isValid &&
+        0 <= continuationLocalCaret &&
+        continuationLocalCaret <= request.currentInput.text.length;
+    final promotedStart = continuesAtCanonicalCaret
+        ? continuationLocalCaret
+        : mappedStart;
+    final promotedEnd = continuesAtCanonicalCaret
+        ? continuationLocalCaret
+        : mappedEnd;
+    if (promotedStart == null || promotedEnd == null) {
+      return const FlarkInputRejectedSuccessorPlan();
+    }
+    return FlarkInputMutationSuccessorPlan(
+      mutation: FlarkTextMutation(
+        promotedStart,
+        promotedEnd,
+        mutation.replacement,
+      ),
+      selection: continuesAtCanonicalCaret
+          ? TextSelection.collapsed(
+              offset: continuationLocalCaret + mutation.replacement.length,
+              affinity: selection.affinity,
+            )
+          : selection,
+      composing: continuesAtCanonicalCaret ? TextRange.empty : composing,
+      typingInput: batch.typingInput,
+      platformTiming: batch.platformTiming,
+    );
+  }
+}
+
 /// One bounded monotone map between a platform-provisional input window and
 /// the Rust-committed window. Offsets inside differing interiors are
 /// intentionally unmappable; callers resynchronize instead of guessing.
@@ -194,5 +382,26 @@ final class FlarkInputReconciliationMap {
     if (offset == fromStart) return toStart;
     if (offset == fromEnd) return toEnd;
     return null;
+  }
+
+  TextSelection? mapSelection(TextSelection selection) {
+    final downstream = selection.affinity == TextAffinity.downstream;
+    final base = mapOffset(selection.baseOffset, downstream: downstream);
+    final extent = mapOffset(selection.extentOffset, downstream: downstream);
+    if (base == null || extent == null) return null;
+    return TextSelection(
+      baseOffset: base,
+      extentOffset: extent,
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+  }
+
+  TextRange? mapRange(TextRange range) {
+    if (range == TextRange.empty) return TextRange.empty;
+    final start = mapOffset(range.start, downstream: true);
+    final end = mapOffset(range.end, downstream: true);
+    if (start == null || end == null) return null;
+    return TextRange(start: start, end: end);
   }
 }

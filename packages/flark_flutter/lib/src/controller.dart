@@ -156,6 +156,8 @@ final class FlarkEditorController extends ChangeNotifier
   final FlarkPlatformInputBridge _platformInput = FlarkPlatformInputBridge();
   final FlarkInputTransactionState _inputTransactions =
       FlarkInputTransactionState();
+  final FlarkInputSuccessorPlanner _inputSuccessorPlanner =
+      const FlarkInputSuccessorPlanner();
 
   String? _debugLastSemanticReceiptDescription;
   final FlarkEditorPerformanceLog _performance = FlarkEditorPerformanceLog();
@@ -3243,158 +3245,128 @@ final class FlarkEditorController extends ChangeNotifier
     FlarkInputReconciliationMap reconciliation,
   ) {
     for (var index = 0; index < pending.successors.length; index += 1) {
-      final successor = pending.successors[index];
-      if (successor is FlarkDeferredHistorySuccessor) {
-        unawaited(
-          _queueHistoryReplay(undoDirection: successor.undoDirection).then(
-            (replayed) {
-              if (!replayed) _finalizeDroppedHistoryInputWindow();
-              successor.completion.complete(replayed);
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              successor.completion.completeError(error, stackTrace);
-            },
-          ),
-        );
-        continue;
-      }
-      if (successor case FlarkDeferredInputSuccessor(
-        command: final command,
-        replacement: final replacement,
-        typingInput: final typingInput,
-        semanticAlreadyAttempted: final semanticAlreadyAttempted,
-        reclassifyAfterCertification: final reclassifyAfterCertification,
-      )) {
-        if (replacement != null) {
+      final plan = _inputSuccessorPlanner.plan(
+        FlarkInputSuccessorPlanningRequest(
+          successor: pending.successors[index],
+          reconciliation: reconciliation,
+          currentInput: _inputState.value,
+          currentInputGlobalUtf16Start: _inputState.globalUtf16Start,
+          inlineContinuation: _inputState.inlineContinuation,
+          publicationCertificationBarrierActive:
+              _publicationCertificationBarrierActive,
+        ),
+      );
+      switch (plan) {
+        case FlarkInputHistorySuccessorPlan(:final successor):
+          unawaited(
+            _queueHistoryReplay(undoDirection: successor.undoDirection).then(
+              (replayed) {
+                if (!replayed) _finalizeDroppedHistoryInputWindow();
+                successor.completion.complete(replayed);
+              },
+              onError: (Object error, StackTrace stackTrace) {
+                successor.completion.completeError(error, stackTrace);
+              },
+            ),
+          );
+        case FlarkInputReplacementSuccessorPlan(
+          :final replacement,
+          :final typingInput,
+          :final platformTiming,
+        ):
           _replaceSelection(
             replacement,
             typingInput: typingInput,
-            platformTiming: successor.platformTiming,
+            platformTiming: platformTiming,
             // This edit was accepted while the semantic predecessor was still
             // in flight. Its native receipt is the first point where source,
             // selection, and presentation can be published as one frame.
             publish: false,
           );
-        } else if (reclassifyAfterCertification ||
-            _publicationCertificationBarrierActive) {
-          // A preceding successor in this same promotion pass can create a
-          // new parser-certification barrier. Route every later command back
-          // through the ordinary command gate so it is classified against
-          // the certified result row, rather than queueing a semantic intent
-          // with the predecessor's geometry and leaving the input shadow
-          // stranded when that intent is not applicable.
-          _promoteReclassifiedCommand(
-            command!,
-            platformTiming: successor.platformTiming,
-          );
-        } else {
-          _promoteDeferredCommand(
-            command!,
-            semanticAlreadyAttempted: semanticAlreadyAttempted,
-            platformTiming: successor.platformTiming,
-          );
-        }
-        final nextBarrier = _inputTransactions.pendingSemantic;
-        if (nextBarrier != null) {
-          if (index + 1 < pending.successors.length) {
-            _inputTransactions.carryPendingSuccessors(
-              from: pending,
-              startIndex: index + 1,
-              to: nextBarrier,
+          if (_carryRemainingSemanticSuccessors(pending, index)) return;
+        case FlarkInputCommandSuccessorPlan(
+          :final command,
+          :final semanticAlreadyAttempted,
+          :final reclassifyAfterCertification,
+          :final platformTiming,
+        ):
+          if (reclassifyAfterCertification) {
+            _promoteReclassifiedCommand(
+              command,
+              platformTiming: platformTiming,
+            );
+          } else {
+            _promoteDeferredCommand(
+              command,
+              semanticAlreadyAttempted: semanticAlreadyAttempted,
+              platformTiming: platformTiming,
             );
           }
-          return;
-        }
-        continue;
-      }
-      final batch = successor as FlarkProvisionalInputBatch;
-      final selection = _mapProvisionalSelection(
-        reconciliation,
-        batch.after.selection,
-      );
-      final composing = _mapProvisionalRange(
-        reconciliation,
-        batch.after.composing,
-      );
-      if (selection == null || composing == null) {
-        _inputTransactions.completeDeferredHistorySuccessors(
-          pending.successors.skip(index),
-          false,
-        );
-        _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
-        return;
-      }
-      final mutation = _differenceMutation(batch.before.text, batch.after.text);
-      if (mutation == null) {
-        _breakTypingHistoryGroup();
-        _inputState.replaceValue(
-          _inputState.value.copyWith(
+          if (_carryRemainingSemanticSuccessors(pending, index)) return;
+        case FlarkInputSelectionSuccessorPlan(
+          :final selection,
+          :final composing,
+        ):
+          _breakTypingHistoryGroup();
+          _inputState.replaceValue(
+            _inputState.value.copyWith(
+              selection: selection,
+              composing: composing,
+            ),
+          );
+          _trackCompositionWithoutMutation(composing);
+          _updateGlobalSelection();
+          unawaited(_installCanonicalSelection(_selectionSnapshot()));
+        case FlarkInputMutationSuccessorPlan(
+          :final mutation,
+          :final selection,
+          :final composing,
+          :final typingInput,
+          :final platformTiming,
+        ):
+          final acceptance = _acceptMutation(
+            mutation,
             selection: selection,
             composing: composing,
-          ),
-        );
-        _trackCompositionWithoutMutation(composing);
-        _updateGlobalSelection();
-        unawaited(_installCanonicalSelection(_selectionSnapshot()));
-        continue;
-      }
-      final mappedStart = reconciliation.mapOffset(
-        mutation.start,
-        downstream: true,
-      );
-      final mappedEnd = reconciliation.mapOffset(
-        mutation.end,
-        downstream: true,
-      );
-      final continuation = _inputState.inlineContinuation;
-      final continuationLocalCaret = continuation == null
-          ? null
-          : continuation.caretUtf16 - _inputState.globalUtf16Start;
-      final continuesAtCanonicalCaret =
-          continuationLocalCaret != null &&
-          batch.typingInput &&
-          mutation.start == mutation.end &&
-          batch.after.selection.isCollapsed &&
-          !batch.after.composing.isValid &&
-          0 <= continuationLocalCaret &&
-          continuationLocalCaret <= _inputState.value.text.length;
-      final promotedStart = continuesAtCanonicalCaret
-          ? continuationLocalCaret
-          : mappedStart;
-      final promotedEnd = continuesAtCanonicalCaret
-          ? continuationLocalCaret
-          : mappedEnd;
-      final promotedSelection = continuesAtCanonicalCaret
-          ? TextSelection.collapsed(
-              offset: continuationLocalCaret + mutation.replacement.length,
-              affinity: selection.affinity,
-            )
-          : selection;
-      final promotedComposing = continuesAtCanonicalCaret
-          ? TextRange.empty
-          : composing;
-      final acceptance = promotedStart == null || promotedEnd == null
-          ? null
-          : _acceptMutation(
-              FlarkTextMutation(
-                promotedStart,
-                promotedEnd,
-                mutation.replacement,
-              ),
-              selection: promotedSelection,
-              composing: promotedComposing,
-              typingInput: batch.typingInput,
-              platformTiming: batch.platformTiming,
-            );
-      if (acceptance?.accepted != true) {
-        _inputTransactions.completeDeferredHistorySuccessors(
-          pending.successors.skip(index),
-          false,
-        );
-        _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
-        return;
+            typingInput: typingInput,
+            platformTiming: platformTiming,
+          );
+          if (!acceptance.accepted) {
+            _rejectSemanticSuccessors(pending, index);
+            return;
+          }
+        case FlarkInputRejectedSuccessorPlan():
+          _rejectSemanticSuccessors(pending, index);
+          return;
       }
     }
+  }
+
+  bool _carryRemainingSemanticSuccessors(
+    FlarkPendingSemanticInput pending,
+    int completedIndex,
+  ) {
+    final nextBarrier = _inputTransactions.pendingSemantic;
+    if (nextBarrier == null) return false;
+    if (completedIndex + 1 < pending.successors.length) {
+      _inputTransactions.carryPendingSuccessors(
+        from: pending,
+        startIndex: completedIndex + 1,
+        to: nextBarrier,
+      );
+    }
+    return true;
+  }
+
+  void _rejectSemanticSuccessors(
+    FlarkPendingSemanticInput pending,
+    int failedIndex,
+  ) {
+    _inputTransactions.completeDeferredHistorySuccessors(
+      pending.successors.skip(failedIndex),
+      false,
+    );
+    _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
   }
 
   void _promoteReclassifiedCommand(
@@ -3451,39 +3423,6 @@ final class FlarkEditorController extends ChangeNotifier
         _insertNewline(allowSemantic: false, platformTiming: platformTiming);
     }
   }
-
-  TextSelection? _mapProvisionalSelection(
-    FlarkInputReconciliationMap map,
-    TextSelection selection,
-  ) {
-    final downstream = selection.affinity == TextAffinity.downstream;
-    final base = map.mapOffset(selection.baseOffset, downstream: downstream);
-    final extent = map.mapOffset(
-      selection.extentOffset,
-      downstream: downstream,
-    );
-    if (base == null || extent == null) return null;
-    return TextSelection(
-      baseOffset: base,
-      extentOffset: extent,
-      affinity: selection.affinity,
-      isDirectional: selection.isDirectional,
-    );
-  }
-
-  TextRange? _mapProvisionalRange(
-    FlarkInputReconciliationMap map,
-    TextRange range,
-  ) {
-    if (range == TextRange.empty) return TextRange.empty;
-    final start = map.mapOffset(range.start, downstream: true);
-    final end = map.mapOffset(range.end, downstream: true);
-    if (start == null || end == null) return null;
-    return TextRange(start: start, end: end);
-  }
-
-  FlarkTextMutation? _differenceMutation(String before, String after) =>
-      _platformInput.differenceMutation(before, after);
 
   Future<void> _completeQueuedEdit(
     FlarkEditorCommandExecution<FlarkCoreEditReceipt> execution,

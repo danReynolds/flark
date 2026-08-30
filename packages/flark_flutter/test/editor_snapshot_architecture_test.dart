@@ -41,6 +41,9 @@ void main() {
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
+  final inputReconciliation = File(
+    'lib/src/input_reconciliation.dart',
+  ).readAsStringSync();
   final inputState = File('lib/src/editor_input_state.dart').readAsStringSync();
 
   test('controller has one immutable outward publication function', () {
@@ -208,6 +211,12 @@ void main() {
     expect(controller, isNot(contains('provisionalTail =')));
     expect(controller, isNot(contains('certificationPromotion =')));
     expect(controller, isNot(contains('fallbackWhenNotApplied =')));
+    expect(inputReconciliation, contains('FlarkInputSuccessorPlanner'));
+    expect(inputReconciliation, contains('FlarkInputSuccessorPlan'));
+    expect(controller, contains('FlarkInputSuccessorPlanner'));
+    expect(controller, isNot(contains('FlarkProvisionalInputBatch')));
+    expect(controller, isNot(contains('continuesAtCanonicalCaret')));
+    expect(controller, isNot(contains('.mapOffset(')));
   });
 
   test('bounded platform input has one invariant-owning state boundary', () {

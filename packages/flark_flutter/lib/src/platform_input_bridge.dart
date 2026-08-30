@@ -496,35 +496,7 @@ final class FlarkPlatformInputBridge {
   }
 
   FlarkTextMutation? differenceMutation(String before, String after) {
-    if (before == after) return null;
-    var prefix = 0;
-    while (prefix < before.length &&
-        prefix < after.length &&
-        before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
-      prefix += 1;
-    }
-    if (_splitsUtf16Scalar(before, prefix) ||
-        _splitsUtf16Scalar(after, prefix)) {
-      prefix -= 1;
-    }
-    var oldSuffix = before.length;
-    var newSuffix = after.length;
-    while (oldSuffix > prefix &&
-        newSuffix > prefix &&
-        before.codeUnitAt(oldSuffix - 1) == after.codeUnitAt(newSuffix - 1)) {
-      oldSuffix -= 1;
-      newSuffix -= 1;
-    }
-    if (_splitsUtf16Scalar(before, oldSuffix) ||
-        _splitsUtf16Scalar(after, newSuffix)) {
-      oldSuffix += 1;
-      newSuffix += 1;
-    }
-    return FlarkTextMutation(
-      prefix,
-      oldSuffix,
-      after.substring(prefix, newSuffix),
-    );
+    return flarkDifferenceMutation(before, after);
   }
 
   bool validObservedValue(
@@ -543,16 +515,4 @@ final class FlarkPlatformInputBridge {
             composing.start >= 0 &&
             composing.end <= value.text.length);
   }
-
-  static bool _splitsUtf16Scalar(String source, int offset) =>
-      offset > 0 &&
-      offset < source.length &&
-      _isHighSurrogate(source.codeUnitAt(offset - 1)) &&
-      _isLowSurrogate(source.codeUnitAt(offset));
-
-  static bool _isHighSurrogate(int codeUnit) =>
-      codeUnit >= 0xD800 && codeUnit <= 0xDBFF;
-
-  static bool _isLowSurrogate(int codeUnit) =>
-      codeUnit >= 0xDC00 && codeUnit <= 0xDFFF;
 }
