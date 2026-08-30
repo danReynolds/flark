@@ -90,6 +90,11 @@ export 'src/editor_parse_driver.dart'
         FlarkEditorParseReadyPublication,
         FlarkEditorParseStep,
         FlarkEditorParseStopped;
+export 'src/editor_semantic_receipt_adopter.dart'
+    show
+        FlarkEditorSemanticReceiptAdopter,
+        FlarkEditorSemanticReceiptAdoption,
+        FlarkEditorSemanticReceiptAdoptionRequest;
 export 'src/editor_source_edit_planner.dart'
     show
         FlarkEditorSourceEditPlan,

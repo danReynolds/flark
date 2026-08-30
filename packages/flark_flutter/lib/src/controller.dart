@@ -106,6 +106,13 @@ final class FlarkEditorController extends ChangeNotifier
       rowsPerPage: _viewportRowsPerPage,
       maximumCaretPageHops: _maximumActiveViewportPageHops,
     );
+    _semanticReceiptAdopter = FlarkEditorSemanticReceiptAdopter(
+      coordinator: _coordinator,
+      commands: _commands,
+      viewportState: _viewportState,
+      viewportPager: _viewportPager,
+      maximumVisibleCodeUnits: _maximumInputCodeUnits,
+    );
   }
 
   final FlarkCoreDocument _document;
@@ -117,6 +124,7 @@ final class FlarkEditorController extends ChangeNotifier
   late final FlarkEditorCommandExecutor _commands;
   late final FlarkEditorParseDriver _parseDriver;
   late final FlarkEditorSourceEditPlanner _sourceEditPlanner;
+  late final FlarkEditorSemanticReceiptAdopter _semanticReceiptAdopter;
   final ObserverList<VoidCallback> _inputStateListeners =
       ObserverList<VoidCallback>();
 
@@ -3636,20 +3644,23 @@ final class FlarkEditorController extends ChangeNotifier
       final adoptionWatch = Stopwatch()..start();
       var requireParserCertification = _publicationCertificationBarrierActive;
       if (receipt.hasCommit) {
-        final commandIsCurrent = _commands.publishSource(execution);
-        if (commandIsCurrent) {
-          // A semantic splice is new parser authority and is not constrained
-          // by a predecessor literal envelope. Keep that envelope painted
-          // while the command is merely in flight, then retire it atomically
-          // with the committing receipt. A stale receipt is allowed to settle
-          // its native command but cannot alter the newer command's host
-          // presentation or continuation.
-          _coordinator.retirePendingPresentation(const {
-            FlarkPendingPresentationPart.dependency,
-          });
-          _inputState.restoreInlineContinuation(outcome.inlineContinuation);
+        final adoption = _semanticReceiptAdopter.adopt(
+          FlarkEditorSemanticReceiptAdoptionRequest(
+            execution: execution,
+            outcome: outcome,
+            inputGlobalUtf16Start: _inputState.globalUtf16Start,
+            inputValue: portableEditorInputValue(_inputState.value),
+            activeOrdinal: _inputState.activeOrdinal,
+            selectionBaseUtf16: _inputState.selectionBaseUtf16,
+            selectionExtentUtf16: _inputState.selectionExtentUtf16,
+            crossRowSelection: _inputState.crossRowSelection,
+          ),
+        );
+        if (adoption != null) {
+          _inputState.restoreInlineContinuation(adoption.inlineContinuation);
+          _adoptSemanticInput(receipt, adoption.caretUtf16);
           requireParserCertification =
-              _adoptSemanticReceipt(execution, receipt) ||
+              adoption.requiresParserCertification ||
               requireParserCertification;
           if (requireParserCertification) {
             _coordinator.beginPublicationBarrier();
@@ -3766,49 +3777,7 @@ final class FlarkEditorController extends ChangeNotifier
     }
   }
 
-  bool _adoptSemanticReceipt(
-    FlarkEditorCommandExecution<FlarkCoreEditIntentOutcomeV1> execution,
-    FlarkCoreEditIntentReceiptV1 receipt,
-  ) {
-    final transition = resolvePendingPresentationTransition(
-      receipt: receipt,
-      pendingPresentation: _pendingPresentation,
-      activeOrdinal: _inputState.activeOrdinal,
-      priorRows: _viewportState.rows
-          .map(
-            (row) => FlarkSurfaceProjector.corePresentationFromSurface(
-              surfaceRow(row, includeEditingState: false),
-              surfaceSourceRange(row),
-            ),
-          )
-          .toList(growable: false),
-    );
-    final adoption = _commands.adoptCommittedPresentation(
-      execution,
-      receipt: receipt,
-      transition: transition,
-    );
-    if (adoption == null) return false;
-    // The semantic receipt supplies a result-revision byte/UTF-16 pair even
-    // when its structural splice crosses the cached page boundary. Preserve
-    // that authoritative origin before the optimistic cache update can clear
-    // the old viewport; the next query will rewind it to any enclosing row.
-    _viewportPager.pinRefreshAnchor(
-      FlarkViewportPageAnchor(
-        byte: receipt.resultByteStart,
-        utf16: receipt.resultUtf16Start,
-      ),
-    );
-    _applyOptimisticViewportEdit(
-      receipt.baseUtf16Start,
-      receipt.baseUtf16End,
-      receipt.replacement,
-      preservesMappedRowFacts: false,
-    );
-    if (adoption.removedRowOrdinals.isNotEmpty) {
-      _viewportState.removeRows(adoption.removedRowOrdinals);
-    }
-    final caret = receipt.resultSelectionUtf16;
+  void _adoptSemanticInput(FlarkCoreEditIntentReceiptV1 receipt, int caret) {
     _inputState.setCanonicalSelection(caret, caret);
     _inputState.setCrossRowSelection(false);
     _inputState.clearOversizedSelection();
@@ -3827,7 +3796,6 @@ final class FlarkEditorController extends ChangeNotifier
         _installCanonicalSelection(_selectionSnapshot(), publish: false),
       );
     }
-    return adoption.requiresParserCertification;
   }
 
   bool _installCommittedSemanticInputWindow(
@@ -3836,54 +3804,18 @@ final class FlarkEditorController extends ChangeNotifier
   ) {
     final pending = _inputTransactions.pendingSemantic;
     if (pending == null) return false;
-    final windowStart = pending.inputGlobalUtf16Start;
-    final windowEnd = windowStart + pending.base.text.length;
-    final delta =
-        receipt.replacement.length -
-        (receipt.baseUtf16End - receipt.baseUtf16Start);
-    if (receipt.baseUtf16End <= windowStart ||
-        receipt.baseUtf16Start >= windowEnd) {
-      final resultWindowStart = receipt.baseUtf16End <= windowStart
-          ? windowStart + delta
-          : windowStart;
-      final localCaret = caret - resultWindowStart;
-      if (localCaret < 0 || localCaret > pending.base.text.length) {
-        return false;
-      }
-      _inputState.replaceWindow(
-        globalUtf16Start: resultWindowStart,
-        value: pending.base.copyWith(
-          selection: TextSelection.collapsed(offset: localCaret),
-          composing: TextRange.empty,
-        ),
-      );
-      return true;
-    }
-    final localStart = receipt.baseUtf16Start - pending.inputGlobalUtf16Start;
-    final localEnd = receipt.baseUtf16End - pending.inputGlobalUtf16Start;
-    if (localStart < 0 ||
-        localEnd < localStart ||
-        localEnd > pending.base.text.length) {
-      return false;
-    }
-    final text = pending.base.text.replaceRange(
-      localStart,
-      localEnd,
-      receipt.replacement,
+    final window = FlarkEditorInputWindowPlanner.afterCommittedSplice(
+      base: portableEditorInputValue(pending.base),
+      inputGlobalUtf16Start: pending.inputGlobalUtf16Start,
+      activeOrdinal: _inputState.activeOrdinal,
+      startUtf16: receipt.baseUtf16Start,
+      endUtf16: receipt.baseUtf16End,
+      replacement: receipt.replacement,
+      resultCaretUtf16: caret,
+      maximumCodeUnits: _maximumInputCodeUnits,
     );
-    final localCaret = caret - pending.inputGlobalUtf16Start;
-    if (text.length > _maximumInputCodeUnits ||
-        localCaret < 0 ||
-        localCaret > text.length) {
-      return false;
-    }
-    _inputState.replaceWindow(
-      globalUtf16Start: pending.inputGlobalUtf16Start,
-      value: TextEditingValue(
-        text: text,
-        selection: TextSelection.collapsed(offset: localCaret),
-      ),
-    );
+    if (window == null) return false;
+    _inputState.installWindowPlan(window);
     return true;
   }
 

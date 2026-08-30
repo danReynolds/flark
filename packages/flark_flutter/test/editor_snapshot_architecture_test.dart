@@ -29,6 +29,9 @@ void main() {
   final portableSourceEditPlanner = File(
     '../flark/lib/src/editor_source_edit_planner.dart',
   ).readAsStringSync();
+  final portableSemanticReceiptAdopter = File(
+    '../flark/lib/src/editor_semantic_receipt_adopter.dart',
+  ).readAsStringSync();
   final inputTransactionState = File(
     'lib/src/input_transaction_state.dart',
   ).readAsStringSync();
@@ -240,6 +243,39 @@ void main() {
       portableSourceEditPlanner,
       contains('lacksResultPresentationAuthority'),
     );
+  });
+
+  test('semantic receipt publication state stays below Flutter', () {
+    expect(portableSemanticReceiptAdopter, isNot(contains('package:flutter')));
+    expect(portableSemanticReceiptAdopter, isNot(contains('dart:ui')));
+    expect(controller, contains('FlarkEditorSemanticReceiptAdopter'));
+    expect(controller, contains('_semanticReceiptAdopter.adopt('));
+    expect(
+      controller,
+      isNot(contains('resolvePendingPresentationTransition(')),
+    );
+    expect(
+      controller,
+      isNot(contains('_commands.adoptCommittedPresentation(')),
+    );
+    expect(controller, isNot(contains('_viewportPager.pinRefreshAnchor(')));
+    expect(
+      portableSemanticReceiptAdopter,
+      contains('_commands.publishSource('),
+    );
+    expect(
+      portableSemanticReceiptAdopter,
+      contains('resolvePendingPresentationTransition('),
+    );
+    expect(
+      portableSemanticReceiptAdopter,
+      contains('_commands.adoptCommittedPresentation('),
+    );
+    expect(
+      portableSemanticReceiptAdopter,
+      contains('_viewportState.applyOptimisticEdit('),
+    );
+    expect(controller, contains('afterCommittedSplice('));
   });
 
   test('Flutter callback shapes converge before editor policy', () {

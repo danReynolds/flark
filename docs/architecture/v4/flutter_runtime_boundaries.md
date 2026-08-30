@@ -22,6 +22,8 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |                           edit/adoption generation barriers)
   |-- FlarkEditorSourceEditPlanner (pending-presentation evolution and
   |                                 publication certification decision)
+  |-- FlarkEditorSemanticReceiptAdopter (generation-safe semantic receipt
+  |                                      publication and viewport adoption)
   |-- FlarkPlatformInputBridge (Flutter input connection, shadow, and one
   |                              normalized callback observation)
   |-- FlarkInputTransactionState (callback and bounded successor lineage)
@@ -54,6 +56,7 @@ permission to preserve the controller's existing method graph.
 | Typed native edit, semantic-action, history, and composition-cancel invocation; private ticket identity; history boundary ordering | `FlarkEditorCommandExecutor` in `flark` | Receipt-to-platform adoption, Flutter state, or an extensible command registry |
 | Bounded native parser progression, streamed-head certification probes, edit-publication proof, edit/adoption barriers, and generation-bound parse publications | `FlarkEditorParseDriver` in `flark` | Timers, Flutter state, viewport installation, or outward notification |
 | Parser-authorized pending-presentation evolution and the optimistic-versus-certified publication decision for one exact source splice | `FlarkEditorSourceEditPlanner` in `flark` | Native source mutation, Flutter input types, timers, callbacks, or outward publication |
+| Generation-safe source publication, structural transition adoption, refresh anchoring, and bounded viewport mutation for one committed semantic receipt | `FlarkEditorSemanticReceiptAdopter` in `flark` | Flutter input installation, successor callbacks, parser waiting, or outward publication |
 | Connection/window epochs, serialized platform shadow, atomic validation, and normalization of delta/full-value callbacks against current or provisional input into one immutable observation | Platform input bridge | Markdown rules, viewports, history, or source mutation |
 | Callback scope, logical successor classification, bounded provisional lineage, paired platform actions, composition base, reconciliation accounting | Input transaction state | Markdown decisions, source mutation, or rendered presentation |
 | Current bounded platform value, global origin, canonical selection mirrors, active row, and oversized-selection state | Flutter input state consuming portable input-window plans | Native source, Markdown rules, rendered rows, or command ordering |
@@ -65,12 +68,12 @@ permission to preserve the controller's existing method graph.
 | Public commands, Flutter callbacks, receipt-to-platform adoption, lifecycle, and composing the owners above | Controller | Parallel copies of owner state or direct native command invocation |
 
 The bounded active input window, native command invocation, native parse
-progression, and ordinary source-edit presentation planning now each have one
-tested owner. Edit completion also delegates its parser-certification and
-phase-proof loop to that same driver. The remaining failed ownership check is
-command-receipt adoption: the controller still combines parser timer
-admission, lifecycle/publication routing, and command-specific reconciliation
-into the platform window and viewport.
+progression, ordinary source-edit presentation planning, and committed
+semantic-receipt publication now each have one tested owner. Edit completion
+also delegates its parser-certification and phase-proof loop to that same
+driver. The remaining failed ownership check is host reconciliation: the
+controller still combines parser timer admission, lifecycle/publication
+routing, and platform successor promotion into the input adapter.
 
 ## Rules that prevent the bug classes we have seen
 
@@ -112,9 +115,10 @@ be extracted by authority, not by file length:
 - structural-command admission now consumes parser-authored capabilities, and
   Flutter input successor classification, reservation, and retirement have one
   tested state owner. Native command admission, invocation, ticket identity,
-  and ordering now have one portable executor. Receipt-driven source/render
-  promotion remains in the facade until it has a narrow outcome that does not
-  call back into controller state;
+  and ordering now have one portable executor. Committed semantic-receipt
+  promotion is portable; task-action, history, composition, and platform
+  successor adoption remain in the facade until each has a narrow outcome
+  that does not call back into controller state;
 - Flutter delta and full-value callbacks now normalize through one immutable
   platform observation for ordinary edits, provisional semantic successors,
   late receipt races, and certification-deferred commands. The controller no
@@ -133,6 +137,11 @@ be extracted by authority, not by file length:
   the one publication requirement Flutter must honor. Receipt adoption and
   preferred platform-window routing remain in the facade until they can move
   as a complete state transition;
+- committed semantic receipts now advance source publication, pending
+  presentation, refresh anchoring, and the bounded viewport through one
+  generation-safe portable adopter. The existing pure input-window planner
+  also computes the receipt's bounded result window; Flutter only installs
+  that value and reconciles platform-specific successors;
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 

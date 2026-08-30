@@ -23,7 +23,7 @@ final class FlarkEditorInputWindow {
   final String text;
   final int globalUtf16Start;
   final FlarkTextSelection selection;
-  final int activeOrdinal;
+  final int? activeOrdinal;
   final int canonicalSelectionBaseUtf16;
   final int canonicalSelectionExtentUtf16;
   final bool crossRowSelection;
@@ -36,6 +36,72 @@ final class FlarkEditorInputWindow {
 /// only capacity, scalar-aligned cuts, and the exact relationship between a
 /// local surrogate selection and its canonical global endpoints.
 abstract final class FlarkEditorInputWindowPlanner {
+  /// Applies one authoritative source splice to an existing bounded input
+  /// window while preserving its exact global origin and collapsed result
+  /// caret. A null result means the host must rebuild from source geometry.
+  static FlarkEditorInputWindow? afterCommittedSplice({
+    required FlarkEditorInputValue base,
+    required int inputGlobalUtf16Start,
+    required int? activeOrdinal,
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+    required int resultCaretUtf16,
+    required int maximumCodeUnits,
+  }) {
+    _checkCapacity(maximumCodeUnits);
+    if (inputGlobalUtf16Start < 0 ||
+        startUtf16 < 0 ||
+        endUtf16 < startUtf16 ||
+        resultCaretUtf16 < 0) {
+      throw ArgumentError('Committed input-window splice must be valid');
+    }
+    if (base.text.length > maximumCodeUnits) return null;
+    final windowEnd = inputGlobalUtf16Start + base.text.length;
+    final delta = replacement.length - (endUtf16 - startUtf16);
+    if (endUtf16 <= inputGlobalUtf16Start || startUtf16 >= windowEnd) {
+      final resultWindowStart = endUtf16 <= inputGlobalUtf16Start
+          ? inputGlobalUtf16Start + delta
+          : inputGlobalUtf16Start;
+      final localCaret = resultCaretUtf16 - resultWindowStart;
+      if (localCaret < 0 || localCaret > base.text.length) return null;
+      return FlarkEditorInputWindow(
+        text: base.text,
+        globalUtf16Start: resultWindowStart,
+        selection: FlarkTextSelection.collapsed(offset: localCaret),
+        activeOrdinal: activeOrdinal,
+        canonicalSelectionBaseUtf16: resultCaretUtf16,
+        canonicalSelectionExtentUtf16: resultCaretUtf16,
+        crossRowSelection: false,
+        selectionRepresented: true,
+      );
+    }
+    final localStart = startUtf16 - inputGlobalUtf16Start;
+    final localEnd = endUtf16 - inputGlobalUtf16Start;
+    if (localStart < 0 ||
+        localEnd < localStart ||
+        localEnd > base.text.length) {
+      return null;
+    }
+    final text = base.text.replaceRange(localStart, localEnd, replacement);
+    final localCaret = resultCaretUtf16 - inputGlobalUtf16Start;
+    if (text.length > maximumCodeUnits ||
+        localCaret < 0 ||
+        localCaret > text.length) {
+      return null;
+    }
+    return FlarkEditorInputWindow(
+      text: text,
+      globalUtf16Start: inputGlobalUtf16Start,
+      selection: FlarkTextSelection.collapsed(offset: localCaret),
+      activeOrdinal: activeOrdinal,
+      canonicalSelectionBaseUtf16: resultCaretUtf16,
+      canonicalSelectionExtentUtf16: resultCaretUtf16,
+      crossRowSelection: false,
+      selectionRepresented: true,
+    );
+  }
+
   static FlarkEditorInputWindow activate({
     required String text,
     required int sourceStart,

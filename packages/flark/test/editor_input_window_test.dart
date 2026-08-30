@@ -89,6 +89,86 @@ void main() {
     );
   });
 
+  test('committed splice updates one bounded input window exactly', () {
+    final window = FlarkEditorInputWindowPlanner.afterCommittedSplice(
+      base: const FlarkEditorInputValue(
+        text: 'abc',
+        selection: FlarkTextSelection.collapsed(offset: 1),
+      ),
+      inputGlobalUtf16Start: 10,
+      activeOrdinal: 4,
+      startUtf16: 11,
+      endUtf16: 11,
+      replacement: 'xy',
+      resultCaretUtf16: 13,
+      maximumCodeUnits: 8,
+    );
+
+    expect(window, isNotNull);
+    expect(window!.text, 'axybc');
+    expect(window.globalUtf16Start, 10);
+    expect(window.selection.extentOffset, 3);
+    expect(window.canonicalSelectionExtentUtf16, 13);
+    expect(window.activeOrdinal, 4);
+  });
+
+  test('committed splice before a window shifts its global origin', () {
+    final window = FlarkEditorInputWindowPlanner.afterCommittedSplice(
+      base: const FlarkEditorInputValue(
+        text: 'abc',
+        selection: FlarkTextSelection.collapsed(offset: 3),
+      ),
+      inputGlobalUtf16Start: 10,
+      activeOrdinal: null,
+      startUtf16: 5,
+      endUtf16: 7,
+      replacement: 'x',
+      resultCaretUtf16: 12,
+      maximumCodeUnits: 8,
+    );
+
+    expect(window, isNotNull);
+    expect(window!.text, 'abc');
+    expect(window.globalUtf16Start, 9);
+    expect(window.selection.extentOffset, 3);
+    expect(window.canonicalSelectionExtentUtf16, 12);
+    expect(window.activeOrdinal, isNull);
+  });
+
+  test('partial or oversized committed window splices fail closed', () {
+    const base = FlarkEditorInputValue(
+      text: 'abc',
+      selection: FlarkTextSelection.collapsed(offset: 1),
+    );
+
+    expect(
+      FlarkEditorInputWindowPlanner.afterCommittedSplice(
+        base: base,
+        inputGlobalUtf16Start: 10,
+        activeOrdinal: 0,
+        startUtf16: 9,
+        endUtf16: 11,
+        replacement: '',
+        resultCaretUtf16: 10,
+        maximumCodeUnits: 8,
+      ),
+      isNull,
+    );
+    expect(
+      FlarkEditorInputWindowPlanner.afterCommittedSplice(
+        base: base,
+        inputGlobalUtf16Start: 10,
+        activeOrdinal: 0,
+        startUtf16: 11,
+        endUtf16: 11,
+        replacement: 'long',
+        resultCaretUtf16: 15,
+        maximumCodeUnits: 4,
+      ),
+      isNull,
+    );
+  });
+
   test('collapsed restoration selects a certified row without host policy', () {
     final viewportState = FlarkEditorViewportState()
       ..install(_viewport(rows: [_row()]), 'abc');
@@ -158,11 +238,11 @@ FlarkViewport _viewport({required List<FlarkViewportRow> rows}) =>
       requestedBytes: const FlarkSourceRange(0, 3),
       coveredBytes: const FlarkSourceRange(0, 3),
       coveredUtf16: const FlarkSourceRange(0, 3),
-  certification: FlarkCertification.currentCertified,
-  rows: rows,
-  neutralSource: null,
-  continuation: 0,
-);
+      certification: FlarkCertification.currentCertified,
+      rows: rows,
+      neutralSource: null,
+      continuation: 0,
+    );
 
 FlarkSurfaceProjector _projector(FlarkEditorViewportState viewportState) =>
     viewportState.captureSurfaceProjector(
