@@ -128,6 +128,8 @@ export 'src/editor_viewport_pager.dart'
         FlarkEditorViewportPager,
         FlarkViewportPageResult,
         FlarkViewportRefreshRequest;
+export 'src/editor_viewport_adopter.dart'
+    show FlarkEditorViewportAdopter, FlarkEditorViewportAdoption;
 export 'src/pending_presentation_evolution.dart'
     show
         advancePendingDependencyPresentation,

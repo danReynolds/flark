@@ -106,6 +106,11 @@ final class FlarkEditorController extends ChangeNotifier
       rowsPerPage: _viewportRowsPerPage,
       maximumCaretPageHops: _maximumActiveViewportPageHops,
     );
+    _viewportAdopter = FlarkEditorViewportAdopter(
+      coordinator: _coordinator,
+      pager: _viewportPager,
+      state: _viewportState,
+    );
     _semanticReceiptAdopter = FlarkEditorSemanticReceiptAdopter(
       coordinator: _coordinator,
       commands: _commands,
@@ -130,6 +135,7 @@ final class FlarkEditorController extends ChangeNotifier
 
   final FlarkEditorViewportState _viewportState = FlarkEditorViewportState();
   late final FlarkEditorViewportPager _viewportPager;
+  late final FlarkEditorViewportAdopter _viewportAdopter;
   final FlarkEditorInputState _inputState = FlarkEditorInputState();
   Timer? _parseTimer;
   FlarkPendingPresentationSnapshot get _pendingPresentation =>
@@ -167,7 +173,6 @@ final class FlarkEditorController extends ChangeNotifier
   int get _editGeneration => _coordinator.editGeneration;
   int get _interactionGeneration => _coordinator.interactionGeneration;
   int get _publishedSourceGeneration => _coordinator.publishedSourceGeneration;
-  int get _publishedDocumentRevision => _coordinator.publishedDocumentRevision;
   bool get _publicationCertificationBarrierActive =>
       _coordinator.publicationCertificationBarrierActive;
   FlarkEditorSnapshot? _snapshot;
@@ -2388,12 +2393,16 @@ final class FlarkEditorController extends ChangeNotifier
     try {
       final result = await _viewportPager.nextPage(current);
       if (result == null) return false;
-      if (!_viewportPager.adopt(result)) {
-        final cleanup = _viewportPager.discard(result);
+      final adoption = _viewportAdopter.adopt(
+        result,
+        caretUtf16: _inputState.selectionExtentUtf16,
+      );
+      if (adoption == null) {
+        final cleanup = _viewportAdopter.discard(result);
         if (cleanup != null) await cleanup;
         return false;
       }
-      _installViewport(result, restoreInputWindow: false);
+      _installViewport(adoption, restoreInputWindow: false);
       return true;
     } catch (error) {
       _lastError = error;
@@ -2409,12 +2418,16 @@ final class FlarkEditorController extends ChangeNotifier
     try {
       final result = await _viewportPager.previousPage(current);
       if (result == null) return false;
-      if (!_viewportPager.adopt(result)) {
-        final cleanup = _viewportPager.discard(result);
+      final adoption = _viewportAdopter.adopt(
+        result,
+        caretUtf16: _inputState.selectionExtentUtf16,
+      );
+      if (adoption == null) {
+        final cleanup = _viewportAdopter.discard(result);
         if (cleanup != null) await cleanup;
         return false;
       }
-      _installViewport(result, restoreInputWindow: false);
+      _installViewport(adoption, restoreInputWindow: false);
       return true;
     } catch (error) {
       _lastError = error;
@@ -4183,13 +4196,17 @@ final class FlarkEditorController extends ChangeNotifier
       ),
     );
     if (result == null) return;
-    if (!_viewportPager.adopt(result)) {
-      final cleanup = _viewportPager.discard(result);
+    final adoption = _viewportAdopter.adopt(
+      result,
+      caretUtf16: _inputState.selectionExtentUtf16,
+    );
+    if (adoption == null) {
+      final cleanup = _viewportAdopter.discard(result);
       if (cleanup != null) await cleanup;
       return;
     }
     _installViewport(
-      result,
+      adoption,
       restoreInputWindow: restoreInputWindow,
       ensureActiveInputVisible: ensureActiveInputVisible,
       publish: publish,
@@ -4199,92 +4216,25 @@ final class FlarkEditorController extends ChangeNotifier
   // Installation is synchronous so page index, rows, visible source, and
   // certification can never be observed in a torn half-installed state.
   void _installViewport(
-    FlarkViewportPageResult result, {
+    FlarkEditorViewportAdoption adoption, {
     required bool restoreInputWindow,
     bool ensureActiveInputVisible = false,
     bool publish = true,
   }) {
-    final viewport = result.viewport;
-    final installation = _viewportState.install(viewport, result.source);
-    final retainsExistingSurface = installation.retainsExistingSurface;
+    final installation = adoption.installation;
     final installsFreshRows = installation.installsFreshRows;
-    final installsCertifiedSurface = installation.installsCertifiedSurface;
-    if (!retainsExistingSurface) {
-      // Async parsing, paging, and history restoration can replace source
-      // mapping without admitting a new key command. Invalidate hits from the
-      // previous layout before the replacement is exposed to listeners.
-      _coordinator.recordInteraction();
-    }
-    if (!retainsExistingSurface &&
-        viewport.revision != _publishedDocumentRevision) {
-      // History replay and composition cancellation adopt their new source
-      // through this atomic viewport publication rather than an optimistic
-      // local splice. Advance the paint generation in the same synchronous
-      // install that replaces the visible source, never before its query.
-      _coordinator.installViewportRevision(viewport.revision);
-    }
-    _viewportPager.observeInstallation(
-      viewport: viewport,
-      installation: installation,
-      caretUtf16: _inputState.selectionExtentUtf16,
-    );
-    if (installsCertifiedSurface) _clearPendingTaskChecks();
     // A streamed open's head page is typically mixed — certified head rows
     // ahead of pending-exact tail — so the first-certified receipt keys on
     // published rows inside any certified range, not on the whole-viewport
     // certification that only a converged parse restores.
-    if (installsFreshRows &&
+    if (adoption.hasFirstCertifiedEvidence &&
         !_firstCertifiedPublication.isCompleted &&
-        (viewport.isCertified ||
-            viewport.certificationRanges.any(
-              (range) => range.isCertified && range.sourceBytes.length > 0,
-            ))) {
+        installsFreshRows) {
       _firstCertifiedPublicationEpochMicros =
           DateTime.now().microsecondsSinceEpoch;
       _firstCertifiedPublication.complete();
     }
-    if (certifiedViewportSupersedesPendingDependency(
-      viewport: viewport,
-      pendingPresentation: _pendingPresentation,
-    )) {
-      _coordinator.retirePendingPresentation(const {
-        FlarkPendingPresentationPart.dependency,
-      });
-    }
-    final supersededParagraphGap = _viewportState.semanticCurrent
-        ? _pendingPresentation.paragraphGap
-        : null;
-    final supersededStructuralCaretBoundary = _viewportState.semanticCurrent
-        ? caretBoundaryForStructuralSurfaces(
-            _pendingPresentation.structuralSurfaces,
-          )
-        : null;
-    if (_viewportState.semanticCurrent) {
-      // Certified rows supersede the visual transition partition. The AST
-      // still cannot represent which side owns a caret in the resulting blank
-      // source gap, so promote that one fact into a nonvisual boundary receipt
-      // before retiring the visual gap and structural surfaces.
-      if (supersededParagraphGap != null) {
-        _coordinator.setPendingCaretBoundary(
-          FlarkPendingCaretBoundary.fromGap(
-            supersededParagraphGap,
-            // The gap owns durable shared-edge geometry; the structural
-            // successor owns the parser-authored first-edit cell. Parser
-            // certification supersedes their visual surfaces, not either
-            // half of that typed interaction authority.
-            editAuthority:
-                supersededStructuralCaretBoundary ??
-                _pendingPresentation.caretBoundary,
-          ),
-        );
-      } else if (supersededStructuralCaretBoundary != null) {
-        _coordinator.setPendingCaretBoundary(supersededStructuralCaretBoundary);
-      }
-      _coordinator.retirePendingPresentation(const {
-        FlarkPendingPresentationPart.paragraphGap,
-        FlarkPendingPresentationPart.structuralSurfaces,
-      });
-    }
+    final supersededParagraphGap = adoption.supersededParagraphGap;
     _status = _idleStatus(current: _viewportState.semanticCurrent);
     if (installsFreshRows) {
       // Input-window restoration must route through the fresh row partition.

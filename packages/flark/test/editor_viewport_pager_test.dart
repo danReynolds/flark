@@ -150,6 +150,104 @@ void main() {
       expect(() => owner.discard(receipt), throwsStateError);
     });
   });
+
+  group('editor viewport adopter', () {
+    test(
+      'atomically publishes current viewport and retires certified state',
+      () async {
+        final viewport = _viewport(start: 0, end: 4);
+        final source = _FakeViewportSource(
+          text: 'aaa\n',
+          pages: {0: viewport},
+          successors: const {},
+        );
+        final coordinator = FlarkEditorCoordinator()
+          ..setPendingTaskCheck(0, true);
+        final pager = FlarkEditorViewportPager(
+          source: source,
+          coordinator: coordinator,
+          maximumVisibleBytes: 4,
+          rowsPerPage: 1,
+        );
+        final state = FlarkEditorViewportState();
+        final adopter = FlarkEditorViewportAdopter(
+          coordinator: coordinator,
+          pager: pager,
+          state: state,
+        );
+        final result = await pager.refresh(
+          const FlarkViewportRefreshRequest(
+            previousViewport: null,
+            visibleUtf16Start: 0,
+            visibleSource: '',
+            optimisticEditsStartAtOrAfterPreviousStart: true,
+            caretUtf16: 0,
+            ensureCaretVisible: false,
+            expectedEditGeneration: 0,
+          ),
+        );
+
+        final adoption = adopter.adopt(result!, caretUtf16: 0);
+
+        expect(adoption, isNotNull);
+        expect(adoption!.installation.installsFreshRows, isTrue);
+        expect(adoption.hasFirstCertifiedEvidence, isTrue);
+        expect(state.viewport, same(viewport));
+        expect(state.visibleSource, 'aaa\n');
+        expect(state.semanticCurrent, isTrue);
+        expect(coordinator.interactionGeneration, 1);
+        expect(coordinator.publishedDocumentRevision, viewport.revision);
+        expect(coordinator.pendingPresentation.taskChecks, isEmpty);
+        expect(pager.pageIndex, 0);
+      },
+    );
+
+    test('rejects a stale receipt before any portable state mutates', () async {
+      final viewport = _viewport(start: 0, end: 4);
+      final source = _FakeViewportSource(
+        text: 'aaa\n',
+        pages: {0: viewport},
+        successors: const {},
+      );
+      final coordinator = FlarkEditorCoordinator();
+      final pager = FlarkEditorViewportPager(
+        source: source,
+        coordinator: coordinator,
+        maximumVisibleBytes: 4,
+        rowsPerPage: 1,
+      );
+      final state = FlarkEditorViewportState();
+      final adopter = FlarkEditorViewportAdopter(
+        coordinator: coordinator,
+        pager: pager,
+        state: state,
+      );
+      final result = (await pager.refresh(
+        const FlarkViewportRefreshRequest(
+          previousViewport: null,
+          visibleUtf16Start: 0,
+          visibleSource: '',
+          optimisticEditsStartAtOrAfterPreviousStart: true,
+          caretUtf16: 0,
+          ensureCaretVisible: false,
+          expectedEditGeneration: 0,
+        ),
+      ))!;
+      final newer = coordinator.admitCommand(
+        FlarkEditorCommandKind.sourceEdit,
+        publishSourceImmediately: true,
+      );
+      final interactionGeneration = coordinator.interactionGeneration;
+
+      expect(adopter.adopt(result, caretUtf16: 0), isNull);
+      expect(adopter.discard(result), isNull);
+      expect(state.viewport, isNull);
+      expect(state.visibleSource, isEmpty);
+      expect(coordinator.interactionGeneration, interactionGeneration);
+      expect(pager.pageIndex, 0);
+      coordinator.completeCommand(newer);
+    });
+  });
 }
 
 FlarkViewport _viewport({

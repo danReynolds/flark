@@ -24,6 +24,8 @@ FlarkEditorController (Flutter facade and adapter coordination)
   |                                 publication certification decision)
   |-- FlarkEditorSemanticReceiptAdopter (generation-safe semantic receipt
   |                                      publication and viewport adoption)
+  |-- FlarkEditorViewportAdopter (atomic queried-viewport publication,
+  |                              navigation, and certified retirement)
   |-- FlarkEditorInputMutationPlanner (exact source-splice validation,
   |                                    continuation rewrite, bounded input
   |                                    result, and certification facts)
@@ -69,6 +71,7 @@ permission to preserve the controller's existing method graph.
 | Conversion between portable input facts and Flutter text types | Flutter text adaptation | Source mutation, Markdown rules, or retained editor state |
 | Bounded viewport, rows, visible source, certification, and optimistic coordinate mapping | `FlarkEditorViewportState` in `flark` | Native queries, input restoration, publication, or Flutter types |
 | Native viewport queries, continuation lifetime, stale-result rejection, ordered page path, and retained refresh origin | `FlarkEditorViewportPager` in `flark` | Input restoration, publication, Flutter types, or mutable render state |
+| Atomic queried-viewport receipt adoption across navigation, bounded source/rows, source publication generation, and certified pending-presentation retirement | `FlarkEditorViewportAdopter` in `flark` | Flutter input restoration, notification, timers, layout, or paint |
 | Public commands, Flutter callbacks, receipt-to-platform adoption, lifecycle, and composing the owners above | Controller | Parallel copies of owner state or direct native command invocation |
 
 The bounded active input window, literal input-mutation planning, native command
@@ -165,6 +168,10 @@ be extracted by authority, not by file length:
   Backspace/Delete mapping across hidden delimiters now live with the portable
   surface topology that defines those caret stops. Flutter consumes a typed
   boundary-or-source-range result and no longer reimplements projection gaps;
+- queried viewport receipts now cross one portable atomic adopter before
+  Flutter restores input. Page navigation, bounded source/rows, source paint
+  generation, refresh origin, task-check retirement, and structural/gap
+  retirement can no longer advance as separate controller branches;
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 

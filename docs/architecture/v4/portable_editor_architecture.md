@@ -238,6 +238,7 @@ Current audit:
 | Pure parse driver | Retain | It owns bounded native pumping, streamed-open certification probing, edit-publication phase proof, generation barriers, and owned parse publications. It has no timer, callback, Flutter, or host-state dependency and is directly contract-tested. |
 | Pure source-edit planner | Retain | It synchronously evolves the coordinator's one pending-presentation snapshot from bounded portable input facts and returns one publication requirement. It has no Flutter, native-I/O, callback, or timer dependency; direct tests cover authorized continuity, exact fallback, single structural advancement, barriers, invalid input, and ambiguous-authority failure. |
 | Pure semantic receipt adopter | Retain | It owns one synchronous, identity-checked committed-receipt transaction across source publication, pending presentation, refresh navigation, and bounded viewport state. It returns only the caret, continuation, and certification obligation a host must install, and direct native tests reject superseded receipts. |
+| Pure viewport adopter | Retain | It settles one pager receipt and atomically advances navigation, bounded source/rows, source publication generation, refresh origin, and certified retirement of provisional presentation. It returns only input-restoration and first-certified evidence to the host. |
 | Flutter platform input bridge | Retain | It owns connection epochs, the serialized shadow, atomic delta validation, and one immutable normal form shared by delta/full-value callbacks against current or provisional input. It knows no Markdown, viewport, or source-mutation policy. |
 | Flutter input transaction state | Retain | It is the sole mutable owner of callback scopes, paired actions, provisional/late successor lineage, capture and deferral transitions, certification-completer lifetime, and successor accounting. It returns typed shadow, resync, and late-promotion effects; it knows no Markdown, viewport, native document, or rendered presentation. |
 | Pure input-window and mutation planners | Retain | They own capacity, scalar-aligned cuts, local-to-canonical selection equivalence, collapsed/same-row/cross-row/oversized restoration from parser and pending surface geometry, exact literal splice validation, parser-authored continuation rewrite, structural-certification classification, and composition activity without a frontend dependency. |
@@ -285,7 +286,11 @@ Projected-edit routing is accepted too: the legal-caret, hidden-selection, and
 visible-grapheme deletion rules moved beside their source/display topology with
 typed outcomes and direct tests. Unicode grapheme policy sits in the portable
 text module, so the projector does not depend on history/session internals.
-The next review must remove another
+Atomic viewport publication is accepted: all queried results now settle through
+one generation-checked portable adopter before Flutter restores its input
+window. Direct tests prove both the current transaction and stale-receipt
+no-op, while Flutter no longer advances pager, viewport, source generation, and
+certified retirement independently. The next review must remove another
 complete authority—successor effect execution, history/composition adoption, or
 lifecycle admission—rather than reshuffling facade methods.
 

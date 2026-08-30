@@ -17,6 +17,9 @@ void main() {
   final portableViewportPager = File(
     '../flark/lib/src/editor_viewport_pager.dart',
   ).readAsStringSync();
+  final portableViewportAdopter = File(
+    '../flark/lib/src/editor_viewport_adopter.dart',
+  ).readAsStringSync();
   final portableInputWindow = File(
     '../flark/lib/src/editor_input_window.dart',
   ).readAsStringSync();
@@ -136,6 +139,30 @@ void main() {
     expect(controller, isNot(contains('_viewportNavigation')));
     expect(controller, isNot(contains('_queryViewportAtAnchor')));
     expect(controller, isNot(contains('queryViewportNext(')));
+  });
+
+  test('viewport publication has one portable atomic adopter', () {
+    expect(portableViewportAdopter, isNot(contains('package:flutter')));
+    expect(portableViewportAdopter, isNot(contains('dart:ui')));
+    expect(controller, contains('FlarkEditorViewportAdopter'));
+    expect(portableViewportAdopter, contains('_pager.adopt(result)'));
+    expect(portableViewportAdopter, contains('_state.install('));
+    expect(portableViewportAdopter, contains('installViewportRevision'));
+    expect(
+      portableViewportAdopter,
+      contains('certifiedViewportSupersedesPendingDependency'),
+    );
+    expect(
+      portableViewportAdopter,
+      contains('caretBoundaryForStructuralSurfaces'),
+    );
+    expect(controller, isNot(contains('_viewportPager.adopt(')));
+    expect(controller, isNot(contains('_viewportState.install(')));
+    expect(controller, isNot(contains('installViewportRevision(')));
+    expect(
+      controller,
+      isNot(contains('certifiedViewportSupersedesPendingDependency(')),
+    );
   });
 
   test('Flutter consumes parser-authored semantic command capabilities', () {
