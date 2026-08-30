@@ -1,5 +1,49 @@
 import 'dart:math' as math;
 
+import 'package:characters/characters.dart';
+
+/// Extended-grapheme-cluster policy pinned to `package:characters` 1.4.1
+/// (Unicode 16.0.0). Pure functions over a caller-supplied bounded context:
+/// callers provide the text window, so no function here can scan a document.
+abstract final class FlarkCoreGraphemePolicy {
+  /// The cluster range that Backspace at [offset] removes, or null at the
+  /// window start.
+  static (int, int)? previousClusterRange(String text, int offset) {
+    if (offset <= 0 || offset > text.length) return null;
+    final cluster = CharacterRange.at(text, offset);
+    if (cluster.isEmpty && !cluster.moveBack()) return null;
+    return (cluster.stringBeforeLength, offset);
+  }
+
+  /// The cluster range that forward Delete at [offset] removes, or null at
+  /// the window end.
+  static (int, int)? nextClusterRange(String text, int offset) {
+    if (offset < 0 || offset >= text.length) return null;
+    final cluster = CharacterRange.at(text, offset);
+    if (cluster.isEmpty && !cluster.moveNext()) return null;
+    return (offset, text.length - cluster.stringAfterLength);
+  }
+
+  static bool isSingleCluster(String text) =>
+      text.isNotEmpty && text.characters.length == 1;
+
+  /// The largest extended-grapheme-cluster boundary at or before [offset].
+  static int clusterBoundaryAtOrBefore(String text, int offset) {
+    if (offset <= 0) return 0;
+    if (offset >= text.length) return text.length;
+    final cluster = CharacterRange.at(text, offset);
+    return cluster.isEmpty ? offset : cluster.stringBeforeLength;
+  }
+
+  /// The smallest extended-grapheme-cluster boundary at or after [offset].
+  static int clusterBoundaryAtOrAfter(String text, int offset) {
+    if (offset <= 0) return 0;
+    if (offset >= text.length) return text.length;
+    final cluster = CharacterRange.at(text, offset);
+    return cluster.isEmpty ? offset : text.length - cluster.stringAfterLength;
+  }
+}
+
 /// Direction used when one rendered caret position borders hidden source.
 enum FlarkTextAffinity { upstream, downstream }
 

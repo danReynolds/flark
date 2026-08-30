@@ -64,7 +64,7 @@ permission to preserve the controller's existing method graph.
 | Connection/window epochs, serialized platform shadow, atomic validation, and normalization of delta/full-value callbacks against current or provisional input into one immutable observation | Platform input bridge | Markdown rules, viewports, history, or source mutation |
 | Callback scope, logical successor classification, bounded provisional/late lineage, paired platform actions, capture/deferral transitions, fallback insertion, composition base, and reconciliation accounting | Input transaction state | Markdown decisions, source mutation, rendered presentation, or execution of returned effects |
 | Current bounded platform value, global origin, canonical selection mirrors, active row, and oversized-selection state | Flutter input state consuming portable input-window plans | Native source, Markdown rules, rendered rows, or command ordering |
-| Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
+| Bounded input facts, visible rows, marker hiding, styles, source/display mapping, selection projection, legal-caret normalization, hidden-only mutation classification, and visible-grapheme deletion mapping | Editor snapshot and surface projector in `flark` | Documents, timers, queues, callbacks, or Flutter types |
 | Evolution and certified retirement of parser-authorized pending rows, structural transition ownership, and successor caret boundaries | Pending-presentation evolution in `flark` | Markdown inference, Flutter types, mutation callbacks, or asynchronous work |
 | Conversion between portable input facts and Flutter text types | Flutter text adaptation | Source mutation, Markdown rules, or retained editor state |
 | Bounded viewport, rows, visible source, certification, and optimistic coordinate mapping | `FlarkEditorViewportState` in `flark` | Native queries, input restoration, publication, or Flutter types |
@@ -161,6 +161,10 @@ be extracted by authority, not by file length:
   planner. An oversized history selection keeps its exact Core endpoints while
   Flutter exposes only a bounded collapsed surrogate; the controller no longer
   rebuilds selection windows with a parallel branch tree;
+- projected selection normalization, hidden-only mutation classification, and
+  Backspace/Delete mapping across hidden delimiters now live with the portable
+  surface topology that defines those caret stops. Flutter consumes a typed
+  boundary-or-source-range result and no longer reimplements projection gaps;
 - command-specific Markdown behavior must move only through new Core receipts,
   never into a Flutter helper.
 

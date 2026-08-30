@@ -48,6 +48,9 @@ the ABI; pure Dart must not become a second Markdown implementation.
 
 The snapshot is a revision-bound publication, not another document model. It
 contains only bounded host-facing state and cannot mutate the native document.
+Its projector also owns the inverse editing topology: legal source carets,
+hidden-only selections, and the exact source grapheme adjacent to a rendered
+Backspace/Delete command.
 
 ## Update cycle
 
@@ -238,6 +241,7 @@ Current audit:
 | Flutter platform input bridge | Retain | It owns connection epochs, the serialized shadow, atomic delta validation, and one immutable normal form shared by delta/full-value callbacks against current or provisional input. It knows no Markdown, viewport, or source-mutation policy. |
 | Flutter input transaction state | Retain | It is the sole mutable owner of callback scopes, paired actions, provisional/late successor lineage, capture and deferral transitions, certification-completer lifetime, and successor accounting. It returns typed shadow, resync, and late-promotion effects; it knows no Markdown, viewport, native document, or rendered presentation. |
 | Pure input-window and mutation planners | Retain | They own capacity, scalar-aligned cuts, local-to-canonical selection equivalence, collapsed/same-row/cross-row/oversized restoration from parser and pending surface geometry, exact literal splice validation, parser-authored continuation rewrite, structural-certification classification, and composition activity without a frontend dependency. |
+| Pure surface projector | Retain | It is the bounded source/display topology in both directions: immutable rows, legal caret normalization, hidden-only mutation classification, and rendered-grapheme deletion mapping. It owns no document, timer, callback, or frontend type. |
 | Flutter input state | Retain | It owns one `TextEditingValue` window and its canonical mirrors, adapting immutable plans through named transitions. It imports no controller and its oversized-selection invariants have direct tests. |
 | Rust runtime document | Retain while its public surface stays narrow | It is the deep source/parser transaction boundary; edit-intent resolution is already separate. Split only when a codec, parser job, or transaction owner can move without sharing document internals. |
 | Dart native document | Retain pending a codec-sized extraction | Its size comes from one serialized actor plus strict ABI decoding. A split is useful only if a stateless decoder can be tested independently without duplicating FFI lifecycle state. |
@@ -277,6 +281,10 @@ successor collection or provisional tail. Portable selection restoration is
 accepted as a complete input-window transition: it removed the Flutter-only
 same-row/cross-row branch tree and fixed capacity-exceeding history restoration
 so exact canonical endpoints survive behind the bounded platform surrogate.
+Projected-edit routing is accepted too: the legal-caret, hidden-selection, and
+visible-grapheme deletion rules moved beside their source/display topology with
+typed outcomes and direct tests. Unicode grapheme policy sits in the portable
+text module, so the projector does not depend on history/session internals.
 The next review must remove another
 complete authority—successor effect execution, history/composition adoption, or
 lifecycle admission—rather than reshuffling facade methods.

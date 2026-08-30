@@ -73,6 +73,22 @@ void main() {
     expect(controller, isNot(contains('class FlarkEditorSnapshot')));
   });
 
+  test('projected edit topology stays in the portable projector', () {
+    expect(portableSnapshotSources, contains('normalizeProjectedSelection'));
+    expect(portableSnapshotSources, contains('projectedDeletion'));
+    expect(
+      portableSnapshotSources,
+      contains('mutationTouchesOnlyHiddenProjection'),
+    );
+    expect(portableSnapshotSources, contains('surfaceHasProjection'));
+    expect(controller, isNot(contains('_surfaceHasProjection')));
+    expect(controller, isNot(contains('_structuralCanonicalCaretAt')));
+    expect(
+      controller,
+      isNot(contains('FlarkCoreCommittedPresentationSurfaceV1? committed')),
+    );
+  });
+
   test('pending presentation evolution remains below Flutter', () {
     expect(controller, isNot(contains('_spliceContinuityPresentation')));
     expect(

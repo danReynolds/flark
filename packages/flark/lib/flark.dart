@@ -24,7 +24,6 @@ export 'src/editor_session.dart'
         FlarkCoreAffinity,
         FlarkCoreEditorSession,
         FlarkCoreEditIntentOutcomeV1,
-        FlarkCoreGraphemePolicy,
         FlarkCoreHistoryDropped,
         FlarkCoreHistoryOutcome,
         FlarkCoreHistoryReplayed,
@@ -111,6 +110,7 @@ export 'src/editor_input_window.dart'
         FlarkEditorInputWindowPlanner;
 export 'src/editor_text.dart'
     show
+        FlarkCoreGraphemePolicy,
         FlarkEditorInputValue,
         FlarkTextAffinity,
         FlarkTextRange,
@@ -144,7 +144,12 @@ export 'src/surface_projection.dart'
         FlarkSurfaceProjection,
         FlarkSurfaceRow,
         FlarkSurfaceTextRun;
-export 'src/surface_projector.dart' show FlarkSurfaceProjector;
+export 'src/surface_projector.dart'
+    show
+        FlarkProjectedDeletionBoundary,
+        FlarkProjectedDeletionPlan,
+        FlarkProjectedDeletionSource,
+        FlarkSurfaceProjector;
 export 'src/viewport_installation.dart' show FlarkViewportInstallationPlan;
 export 'src/viewport_navigation.dart'
     show

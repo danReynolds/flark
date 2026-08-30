@@ -2053,150 +2053,16 @@ final class FlarkEditorController extends ChangeNotifier
   }
 
   TextEditingValue _normalizeProjectedSelection(TextEditingValue value) {
-    if (!value.selection.isValid || !value.composing.isCollapsed) return value;
     final row = _activeCachedRow();
     if (row == null) return value;
-    if (value.selection.isCollapsed) {
-      final globalCaret =
-          _inputState.globalUtf16Start + value.selection.extentOffset;
-      final structuralCaret = _structuralCanonicalCaretAt(globalCaret);
-      if (structuralCaret != null) {
-        final localCaret = structuralCaret - _inputState.globalUtf16Start;
-        if (0 <= localCaret && localCaret <= value.text.length) {
-          return value.copyWith(
-            selection: TextSelection.collapsed(
-              offset: localCaret,
-              affinity: value.selection.affinity,
-            ),
-          );
-        }
-      }
-      if (_exactTrailingWhitespaceRange(row, globalCaret) != null) return value;
-      final dependency = _pendingPresentation.dependency?.authority;
-      if (dependency is FlarkProjectionEditCellReceipt &&
-          dependency.resultCaretUtf16 == globalCaret) {
-        return value;
-      }
-      if (dependency is FlarkBoundedPendingPresentationPlanReceipt &&
-          dependency.plan.triggerUtf16.start + dependency.prefixLength ==
-              globalCaret) {
-        // Every admitted prefix is parser-authored as one exact insertion
-        // sequence. Its ordinary insertion result remains the canonical
-        // source caret even when that clean step hides the entire prefix.
-        return value;
-      }
-      for (final state in _pendingPresentation.structuralSurfaces) {
-        final continuity = state.continuity;
-        if (state.surface.rowOrdinal == row.ordinal &&
-            continuity?.resultCaretUtf16 == globalCaret) {
-          return value;
-        }
-      }
-    }
-    // A pending dependency surface carries parser-authored coordinates across
-    // an optimistic edit. The predecessor-only surface can clamp a newly
-    // advanced caret backward before the next same-burst command.
-    final presentation = surfaceRow(row);
-    if (!_surfaceHasProjection(presentation, row)) return value;
-
-    int normalize(int localOffset) {
-      final global = _inputState.globalUtf16Start + localOffset;
-      final exactRow = _mappedExactRowRange(row);
-      // The start and end of a source-owned block are canonical caret stops
-      // even when the first or last Markdown marker is hidden by projection.
-      // Projecting source zero through the first visible heading run would
-      // otherwise move it across `# ` merely because parsing completed.
-      if (global == exactRow.start || global == exactRow.end) {
-        return localOffset;
-      }
-      final display = presentation.textOffsetForSourceOffset(
-        global,
-        affinity: portableTextAffinity(value.selection.affinity),
-      );
-      final upstream = presentation.sourceOffsetForTextOffset(
-        display,
-        affinity: FlarkTextAffinity.upstream,
-      );
-      final downstream = presentation.sourceOffsetForTextOffset(
-        display,
-        affinity: FlarkTextAffinity.downstream,
-      );
-      // Both sides of a hidden delimiter are real editing boundaries. Keep
-      // the exact side already owned by the canonical selection; forcing the
-      // current affinity here makes a fresh parser publication move a caret
-      // across closing syntax and changes where the next rapid key lands.
-      if (global == upstream || global == downstream) return localOffset;
-      final normalizedGlobal = value.selection.affinity == TextAffinity.upstream
-          ? upstream
-          : downstream;
-      return (normalizedGlobal - _inputState.globalUtf16Start).clamp(
-        0,
-        value.text.length,
-      );
-    }
-
-    var selection = TextSelection(
-      baseOffset: normalize(value.selection.baseOffset),
-      extentOffset: normalize(value.selection.extentOffset),
-      affinity: value.selection.affinity,
-      isDirectional: value.selection.isDirectional,
+    final selection = _captureSurfaceProjector().normalizeProjectedSelection(
+      row,
+      portableEditorInputValue(value),
     );
-    if (!selection.isCollapsed) {
-      final exactRow = _mappedExactRowRange(row);
-      final globalBase = _inputState.globalUtf16Start + selection.baseOffset;
-      final globalExtent =
-          _inputState.globalUtf16Start + selection.extentOffset;
-      final belongsToActiveRow =
-          exactRow.start <= globalBase &&
-          globalBase <= exactRow.end &&
-          exactRow.start <= globalExtent &&
-          globalExtent <= exactRow.end;
-      if (belongsToActiveRow &&
-          presentation.textOffsetForSourceOffset(
-                globalBase,
-                affinity: portableTextAffinity(selection.affinity),
-              ) ==
-              presentation.textOffsetForSourceOffset(
-                globalExtent,
-                affinity: portableTextAffinity(selection.affinity),
-              )) {
-        // Source-only delimiters and row terminators can give the platform a
-        // non-empty selection whose endpoints occupy one rendered caret. It
-        // has selected nothing the user can see, so retain the anchor as the
-        // canonical caret. Otherwise the next insertion attempts to replace
-        // hidden Markdown and is correctly rejected as an invalid splice.
-        selection = TextSelection.collapsed(
-          offset: selection.baseOffset,
-          affinity: selection.affinity,
-        );
-      }
-    }
-    return selection == value.selection
+    return selection == portableTextSelection(value.selection)
         ? value
-        : value.copyWith(selection: selection);
+        : value.copyWith(selection: flutterTextSelection(selection));
   }
-
-  int? _structuralCanonicalCaretAt(int globalCaret) {
-    for (final state in _pendingPresentation.structuralSurfaces) {
-      final surface = state.surface;
-      for (final cell in surface.projectionEditCells) {
-        if (cell.triggerUtf16.start == cell.affectedUtf16.end &&
-            cell.triggerUtf16.end == cell.affectedUtf16.end &&
-            cell.affectedUtf16.start == globalCaret &&
-            cell.affectedUtf16.end > globalCaret &&
-            surface.presentation.globalUtf16Start == cell.affectedUtf16.end) {
-          return cell.affectedUtf16.end;
-        }
-      }
-    }
-    return null;
-  }
-
-  FlarkSourceRange? _exactTrailingWhitespaceRange(
-    FlarkViewportRow row,
-    int globalCaret,
-  ) =>
-      _captureSurfaceProjector().exactTrailingWhitespaceRange(row, globalCaret);
 
   bool _normalizeProjectedCommandSelection() {
     final normalized = _normalizeProjectedSelection(_inputState.value);
@@ -2214,45 +2080,22 @@ final class FlarkEditorController extends ChangeNotifier
   }) {
     final row = _activeCachedRow();
     if (row == null) return false;
-    final presentation = surfaceRow(row);
-    if (!presentation.active || !_surfaceHasProjection(presentation, row)) {
-      return false;
-    }
-    final selection = _inputState.value.selection;
-    if (!selection.isCollapsed) return false;
-    final globalCaret = _inputState.globalUtf16Start + selection.extentOffset;
-    final displayCaret = presentation.textOffsetForSourceOffset(
-      globalCaret,
-      affinity: portableTextAffinity(selection.affinity),
+    final plan = _captureSurfaceProjector().projectedDeletion(
+      row,
+      backward: backward,
     );
-    final cluster = backward
-        ? FlarkCoreGraphemePolicy.previousClusterRange(
-            presentation.text,
-            displayCaret,
-          )
-        : FlarkCoreGraphemePolicy.nextClusterRange(
-            presentation.text,
-            displayCaret,
-          );
+    if (plan == null) return false;
     // The visual edge can still have hidden source on the other side. Treat
     // that edge as a legal stop instead of deleting an invisible delimiter.
-    if (cluster == null) return true;
-    final sourceStart = presentation.sourceOffsetForTextOffset(
-      cluster.$1,
-      affinity: FlarkTextAffinity.downstream,
-    );
-    final sourceEnd = presentation.sourceOffsetForTextOffset(
-      cluster.$2,
-      affinity: FlarkTextAffinity.upstream,
-    );
+    if (plan is FlarkProjectedDeletionBoundary) return true;
+    final source = (plan as FlarkProjectedDeletionSource).sourceUtf16;
     // The mapped grapheme can be separated from the raw caret by a hidden
     // inline delimiter. Delete the visible grapheme's exact source range and
     // cross that delimiter as one rendered caret stop; never delete the gap
     // itself. Structural row boundaries have no neighboring display cluster
     // here and continue to use their parser-authored semantic recipes.
-    if (sourceStart >= sourceEnd) return true;
-    final localStart = sourceStart - _inputState.globalUtf16Start;
-    final localEnd = sourceEnd - _inputState.globalUtf16Start;
+    final localStart = source.start - _inputState.globalUtf16Start;
+    final localEnd = source.end - _inputState.globalUtf16Start;
     if (localStart < 0 || localEnd > _inputState.value.text.length) {
       return false;
     }
@@ -2276,45 +2119,15 @@ final class FlarkEditorController extends ChangeNotifier
     if (mutation.start == mutation.end) return false;
     final row = _activeCachedRow();
     if (row == null) return false;
-    // Same-burst platform callbacks must be classified against the
-    // transaction-authorized result surface, not predecessor coordinates.
-    final presentation = surfaceRow(row);
-    if (!_surfaceHasProjection(presentation, row)) return false;
     final sourceStart = _inputState.globalUtf16Start + mutation.start;
     final sourceEnd = _inputState.globalUtf16Start + mutation.end;
-    final displayStart = presentation.textOffsetForSourceOffset(
-      sourceStart,
-      affinity: FlarkTextAffinity.downstream,
+    // Same-burst platform callbacks are classified against the captured
+    // transaction-authorized result surface, not predecessor coordinates.
+    return _captureSurfaceProjector().mutationTouchesOnlyHiddenProjection(
+      row,
+      sourceStartUtf16: sourceStart,
+      sourceEndUtf16: sourceEnd,
     );
-    final displayEnd = presentation.textOffsetForSourceOffset(
-      sourceEnd,
-      affinity: FlarkTextAffinity.upstream,
-    );
-    return displayStart == displayEnd;
-  }
-
-  bool _surfaceHasProjection(
-    FlarkSurfaceRow presentation,
-    FlarkViewportRow row,
-  ) {
-    if (presentation.runs.isEmpty) return false;
-    FlarkCoreCommittedPresentationSurfaceV1? committed;
-    for (final state in _pendingPresentation.structuralSurfaces) {
-      final surface = state.surface;
-      if (surface.rowOrdinal == row.ordinal) {
-        committed = surface;
-        break;
-      }
-    }
-    final activation =
-        committed?.sourceUtf16 ?? _mapViewportRange(_activationRange(row));
-    if (committed == null && !_rowSemanticsCurrent(activation)) return false;
-    var sourceCursor = activation.start;
-    for (final run in presentation.runs) {
-      if (!run.sourceExact || run.sourceUtf16Start != sourceCursor) return true;
-      sourceCursor = run.sourceUtf16End;
-    }
-    return sourceCursor != activation.end;
   }
 
   FlarkMutationAcceptance _acceptMutation(

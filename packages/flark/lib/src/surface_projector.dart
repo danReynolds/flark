@@ -5,7 +5,25 @@ import 'models.dart';
 import 'optimistic_range_map.dart';
 import 'pending_presentation.dart';
 import 'presentation.dart';
+import 'projection_continuity.dart';
 import 'surface_projection.dart';
+
+sealed class FlarkProjectedDeletionPlan {
+  const FlarkProjectedDeletionPlan();
+}
+
+/// The rendered caret is at a visual edge. The command is consumed without
+/// deleting hidden source on the other side of that edge.
+final class FlarkProjectedDeletionBoundary extends FlarkProjectedDeletionPlan {
+  const FlarkProjectedDeletionBoundary();
+}
+
+/// The exact source range occupied by the neighboring rendered grapheme.
+final class FlarkProjectedDeletionSource extends FlarkProjectedDeletionPlan {
+  const FlarkProjectedDeletionSource(this.sourceUtf16);
+
+  final FlarkSourceRange sourceUtf16;
+}
 
 /// Immutable inputs for constructing one controller surface publication.
 ///
@@ -295,6 +313,224 @@ final class FlarkSurfaceProjector {
       return currentMapped;
     }
     return FlarkSourceRange(currentMapped.start, split.rowEndUtf16);
+  }
+
+  /// Normalizes a platform selection onto legal rendered caret stops without
+  /// moving exact block edges or either canonical side of hidden delimiters.
+  FlarkTextSelection normalizeProjectedSelection(
+    FlarkViewportRow row,
+    FlarkEditorInputValue value,
+  ) {
+    final selection = value.selection;
+    if (!selection.isValid || !value.composing.isCollapsed) return selection;
+    if (selection.isCollapsed) {
+      final globalCaret = inputGlobalUtf16Start + selection.extentOffset;
+      final structuralCaret = _structuralCanonicalCaretAt(globalCaret);
+      if (structuralCaret != null) {
+        final localCaret = structuralCaret - inputGlobalUtf16Start;
+        if (0 <= localCaret && localCaret <= value.text.length) {
+          return FlarkTextSelection.collapsed(
+            offset: localCaret,
+            affinity: selection.affinity,
+          );
+        }
+      }
+      if (exactTrailingWhitespaceRange(row, globalCaret) != null) {
+        return selection;
+      }
+      final dependency = pendingPresentation.dependency?.authority;
+      if (dependency is FlarkProjectionEditCellReceipt &&
+          dependency.resultCaretUtf16 == globalCaret) {
+        return selection;
+      }
+      if (dependency is FlarkBoundedPendingPresentationPlanReceipt &&
+          dependency.plan.triggerUtf16.start + dependency.prefixLength ==
+              globalCaret) {
+        return selection;
+      }
+      for (final state in pendingPresentation.structuralSurfaces) {
+        final continuity = state.continuity;
+        if (state.surface.rowOrdinal == row.ordinal &&
+            continuity?.resultCaretUtf16 == globalCaret) {
+          return selection;
+        }
+      }
+    }
+
+    final presentation = surfaceRow(row);
+    if (!surfaceHasProjection(row, presentation: presentation)) {
+      return selection;
+    }
+
+    int normalize(int localOffset) {
+      final global = inputGlobalUtf16Start + localOffset;
+      final exactRow = mappedExactRowRange(row);
+      if (global == exactRow.start || global == exactRow.end) {
+        return localOffset;
+      }
+      final display = presentation.textOffsetForSourceOffset(
+        global,
+        affinity: selection.affinity,
+      );
+      final upstream = presentation.sourceOffsetForTextOffset(
+        display,
+        affinity: FlarkTextAffinity.upstream,
+      );
+      final downstream = presentation.sourceOffsetForTextOffset(
+        display,
+        affinity: FlarkTextAffinity.downstream,
+      );
+      if (global == upstream || global == downstream) return localOffset;
+      final normalizedGlobal = selection.affinity == FlarkTextAffinity.upstream
+          ? upstream
+          : downstream;
+      return (normalizedGlobal - inputGlobalUtf16Start).clamp(
+        0,
+        value.text.length,
+      );
+    }
+
+    var normalized = FlarkTextSelection(
+      baseOffset: normalize(selection.baseOffset),
+      extentOffset: normalize(selection.extentOffset),
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+    if (!normalized.isCollapsed) {
+      final exactRow = mappedExactRowRange(row);
+      final globalBase = inputGlobalUtf16Start + normalized.baseOffset;
+      final globalExtent = inputGlobalUtf16Start + normalized.extentOffset;
+      final belongsToActiveRow =
+          exactRow.start <= globalBase &&
+          globalBase <= exactRow.end &&
+          exactRow.start <= globalExtent &&
+          globalExtent <= exactRow.end;
+      if (belongsToActiveRow &&
+          presentation.textOffsetForSourceOffset(
+                globalBase,
+                affinity: normalized.affinity,
+              ) ==
+              presentation.textOffsetForSourceOffset(
+                globalExtent,
+                affinity: normalized.affinity,
+              )) {
+        normalized = FlarkTextSelection.collapsed(
+          offset: normalized.baseOffset,
+          affinity: normalized.affinity,
+        );
+      }
+    }
+    return normalized;
+  }
+
+  /// Resolves Backspace/Delete against the neighboring rendered grapheme.
+  ///
+  /// Null means the row is not an active projected editing surface. A
+  /// boundary result consumes the command without touching hidden Markdown.
+  FlarkProjectedDeletionPlan? projectedDeletion(
+    FlarkViewportRow row, {
+    required bool backward,
+  }) {
+    final presentation = surfaceRow(row);
+    if (!presentation.active ||
+        !surfaceHasProjection(row, presentation: presentation) ||
+        !inputValue.selection.isCollapsed) {
+      return null;
+    }
+    final globalCaret =
+        inputGlobalUtf16Start + inputValue.selection.extentOffset;
+    final displayCaret = presentation.textOffsetForSourceOffset(
+      globalCaret,
+      affinity: inputValue.selection.affinity,
+    );
+    final cluster = backward
+        ? FlarkCoreGraphemePolicy.previousClusterRange(
+            presentation.text,
+            displayCaret,
+          )
+        : FlarkCoreGraphemePolicy.nextClusterRange(
+            presentation.text,
+            displayCaret,
+          );
+    if (cluster == null) return const FlarkProjectedDeletionBoundary();
+    final sourceStart = presentation.sourceOffsetForTextOffset(
+      cluster.$1,
+      affinity: FlarkTextAffinity.downstream,
+    );
+    final sourceEnd = presentation.sourceOffsetForTextOffset(
+      cluster.$2,
+      affinity: FlarkTextAffinity.upstream,
+    );
+    if (sourceStart >= sourceEnd) {
+      return const FlarkProjectedDeletionBoundary();
+    }
+    return FlarkProjectedDeletionSource(
+      FlarkSourceRange(sourceStart, sourceEnd),
+    );
+  }
+
+  /// Whether a nonempty exact source mutation selects no rendered content.
+  bool mutationTouchesOnlyHiddenProjection(
+    FlarkViewportRow row, {
+    required int sourceStartUtf16,
+    required int sourceEndUtf16,
+  }) {
+    if (sourceStartUtf16 >= sourceEndUtf16) return false;
+    final presentation = surfaceRow(row);
+    if (!surfaceHasProjection(row, presentation: presentation)) return false;
+    final displayStart = presentation.textOffsetForSourceOffset(
+      sourceStartUtf16,
+      affinity: FlarkTextAffinity.downstream,
+    );
+    final displayEnd = presentation.textOffsetForSourceOffset(
+      sourceEndUtf16,
+      affinity: FlarkTextAffinity.upstream,
+    );
+    return displayStart == displayEnd;
+  }
+
+  /// Whether this surface hides, synthesizes, or reorders any source in the
+  /// row's current activation range.
+  bool surfaceHasProjection(
+    FlarkViewportRow row, {
+    FlarkSurfaceRow? presentation,
+  }) {
+    presentation ??= surfaceRow(row);
+    if (presentation.runs.isEmpty) return false;
+    FlarkCoreCommittedPresentationSurfaceV1? committed;
+    for (final state in pendingPresentation.structuralSurfaces) {
+      final surface = state.surface;
+      if (surface.rowOrdinal == row.ordinal) {
+        committed = surface;
+        break;
+      }
+    }
+    final activation =
+        committed?.sourceUtf16 ??
+        optimisticRanges.mapRange(activationRange(row));
+    if (committed == null && !rowSemanticsCurrent(activation)) return false;
+    var sourceCursor = activation.start;
+    for (final run in presentation.runs) {
+      if (!run.sourceExact || run.sourceUtf16Start != sourceCursor) return true;
+      sourceCursor = run.sourceUtf16End;
+    }
+    return sourceCursor != activation.end;
+  }
+
+  int? _structuralCanonicalCaretAt(int globalCaret) {
+    for (final state in pendingPresentation.structuralSurfaces) {
+      final surface = state.surface;
+      for (final cell in surface.projectionEditCells) {
+        if (cell.triggerUtf16.start == cell.affectedUtf16.end &&
+            cell.triggerUtf16.end == cell.affectedUtf16.end &&
+            cell.affectedUtf16.start == globalCaret &&
+            cell.affectedUtf16.end > globalCaret &&
+            surface.presentation.globalUtf16Start == cell.affectedUtf16.end) {
+          return cell.affectedUtf16.end;
+        }
+      }
+    }
+    return null;
   }
 
   /// Source range that owns activation for one parser row.

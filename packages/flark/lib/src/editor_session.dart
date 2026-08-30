@@ -1,8 +1,7 @@
 import 'dart:convert';
 
-import 'package:characters/characters.dart';
-
 import 'document.dart';
+import 'editor_text.dart';
 import 'markdown_scalar_tables.dart';
 
 /// Which splice edge a caret or selection endpoint follows when an edit lands
@@ -13,54 +12,6 @@ enum FlarkCoreAffinity { upstream, downstream }
 /// selection. Frontends provide only a source position inside the target row;
 /// Rust owns the Markdown mutation and Core preserves canonical selection.
 enum FlarkCoreSemanticActionV1 { toggleTaskChecked }
-
-/// Extended-grapheme-cluster policy pinned to `package:characters` 1.4.1
-/// (Unicode 16.0.0). Pure functions over a caller-supplied bounded context:
-/// callers provide the text window, so no function here can scan a document.
-abstract final class FlarkCoreGraphemePolicy {
-  /// The cluster range that Backspace at [offset] removes, or null at the
-  /// window start.
-  static (int, int)? previousClusterRange(String text, int offset) {
-    if (offset <= 0 || offset > text.length) return null;
-    final cluster = CharacterRange.at(text, offset);
-    if (cluster.isEmpty && !cluster.moveBack()) return null;
-    return (cluster.stringBeforeLength, offset);
-  }
-
-  /// The cluster range that forward Delete at [offset] removes, or null at
-  /// the window end.
-  static (int, int)? nextClusterRange(String text, int offset) {
-    if (offset < 0 || offset >= text.length) return null;
-    final cluster = CharacterRange.at(text, offset);
-    if (cluster.isEmpty && !cluster.moveNext()) return null;
-    return (offset, text.length - cluster.stringAfterLength);
-  }
-
-  static bool isSingleCluster(String text) =>
-      text.isNotEmpty && text.characters.length == 1;
-
-  /// The largest extended-grapheme-cluster boundary at or before [offset].
-  ///
-  /// Hosts that must cut a text window — a render surface splitting a long
-  /// row into bounded fragments, for example — use this so a cut never lands
-  /// inside a cluster and render one cluster as two.
-  static int clusterBoundaryAtOrBefore(String text, int offset) {
-    if (offset <= 0) return 0;
-    if (offset >= text.length) return text.length;
-    // `CharacterRange.at` is empty exactly when the index already sits on a
-    // cluster boundary, and otherwise expands to the containing cluster.
-    final cluster = CharacterRange.at(text, offset);
-    return cluster.isEmpty ? offset : cluster.stringBeforeLength;
-  }
-
-  /// The smallest extended-grapheme-cluster boundary at or after [offset].
-  static int clusterBoundaryAtOrAfter(String text, int offset) {
-    if (offset <= 0) return 0;
-    if (offset >= text.length) return text.length;
-    final cluster = CharacterRange.at(text, offset);
-    return cluster.isEmpty ? offset : text.length - cluster.stringAfterLength;
-  }
-}
 
 /// Typed next-write intent left by deleting the final visible grapheme from a
 /// supported inline owner. It is recorded atomically with source, selection,
