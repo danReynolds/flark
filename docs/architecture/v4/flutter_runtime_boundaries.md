@@ -123,10 +123,13 @@ mapping or command reclassification itself.
     capabilities; Flutter neither reconstructs eligibility from Markdown row
     kinds nor carries command-specific boundary rules.
 
-## Controller reduction policy
+## Controller boundary policy and stop
 
-The controller is still larger than the intended facade. Remaining work should
-be extracted by authority, not by file length:
+The controller remains a large imperative facade. The architecture-stop review
+accepts that size because the application authorities below now have named
+owners and typed results; the remaining controller graph is the Flutter host
+bridge among those results, TextInput, timers, lifecycle, listeners, and
+publication. Any later extraction must still move authority, not file length:
 
 - structural-command admission now consumes parser-authored capabilities in
   one portable planner. The planner owns row/editable/projection/inline-owner
@@ -154,8 +157,8 @@ be extracted by authority, not by file length:
 - bounded parser pumping, streamed-head probes, edit-publication certification,
   phase-safe viewport proof, and edit/adoption barriers now return typed
   generation-bound Core publications. Flutter retains timer admission and
-  installs the resulting viewport; those are the next seams to judge
-  independently rather than folding lifecycle into the driver;
+  installs the resulting viewport; timer and installation stay in the host
+  shell unless either gains independently owned state and a closed result;
 - ordinary source edits now pass bounded host-neutral input facts to one
   portable planner. The planner evolves parser-authorized continuity,
   structural edit cells, paragraph gaps, and caret boundaries, then returns
@@ -194,6 +197,13 @@ controller, has no reverse dependency, adds a direct invariant test, preserves
 the full behavior suite, and does not regress the production-path performance
 gate. Moving methods into `part` files or sharing controller fields does not
 qualify.
+
+At the current stop, no remaining candidate meets that bar. Successor effect
+execution, history/composition host adoption, parser timer admission, and
+lifecycle/publication routing would require either controller callbacks or a
+shared state bag if separated today. They therefore remain visible in one
+imperative shell. Product testing may reveal a new cohesive owner later; a
+line-count target by itself will not.
 
 ## Review checklist
 

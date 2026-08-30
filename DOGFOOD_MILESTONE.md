@@ -117,8 +117,9 @@ reported italic Backspace case, forward Delete, delete-then-type, history, and
 every-frame marker exposure—is implemented and covered across native, Core,
 controller, and mounted-surface tests. The full local Core, controller, and
 mounted-paint suites pass, including the headless 1 MiB/5 MiB navigation and
-dense-block cases. The remaining proof is the clean-candidate profile/lifecycle
-matrix, attended native canaries, and final whole-candidate architecture review.
+dense-block cases. The whole-candidate architecture review and separate 5 MiB
+dense certification stress pass. The remaining proof is the clean-candidate
+profile/lifecycle matrix and attended native canaries.
 Broader composition, arbitrary cross-owner ranges, deep structural editing, and
 mobile qualification remain outside this milestone unless investigation
 reveals a B0 or B1 in the supported core loop.

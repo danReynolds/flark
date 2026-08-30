@@ -75,9 +75,9 @@ container, service locator, or reducer framework.
   and transactions from an imperative, viewport-rendered view.
 - [ProseMirror](https://prosemirror.net/docs/guide/) separates model, state,
   transforms, and view around one transaction path.
-- [Lexical](https://github.com/facebook/lexical/blob/main/AGENTS.md) keeps an
-  immutable committed editor state in a framework-agnostic core with separate
-  headless and framework integration packages.
+- [Lexical](https://lexical.dev/docs/concepts/editor-state) keeps immutable
+  committed editor-state snapshots in a framework-agnostic core and batches
+  pending state into one reconciled update.
 
 Flark adopts the state/update/view separation, not a peer's canonical rich-text
 tree or plugin surface. Exact Markdown source and bounded parser-certified
@@ -182,9 +182,8 @@ advance through one directly tested Flutter input-state owner, while pure
 activation, neutral-line ownership, pending boundary restoration, and exact
 same-row/cross-row/oversized selection restoration shared by any future host
 adapter. Capacity-exceeding history selections retain their exact canonical
-endpoints behind a bounded collapsed platform surrogate. The controller-facade
-work is therefore smaller but
-not complete. Typed source edits, semantic edits/actions, history, and
+endpoints behind a bounded collapsed platform surrogate. Typed source edits,
+semantic edits/actions, history, and
 composition cancellation now enter one portable command executor that owns
 native invocation, ordering, and private coordinator tickets; Flutter retains
 receipt-to-input/viewport adoption rather than native command authority.
@@ -233,14 +232,16 @@ Current audit:
 
 | Module | Verdict | Reason |
 | --- | --- | --- |
-| Flutter controller | Further boundary work required | Bounded input-window state and literal mutation planning, platform successor lineage mutation, native command execution, native parse progression, edit-publication proof, ordinary source-edit planning, and committed semantic-receipt publication have moved, but the controller still executes successor effects and combines parser timer admission, history/composition host adoption, and lifecycle/publication routing. |
+| Flutter controller | Retain as the imperative adapter shell | Portable owners now hold bounded input state, command and parse lifetimes, source and semantic planning/adoption, projected edit topology, viewport progression/adoption, and successor reconciliation. The controller composes those owners and executes their fixed Flutter effects alongside input connection, timer, listener, lifecycle, and outward publication work. Splitting those effects into state-sharing wrappers would hide rather than remove the remaining graph. |
 | Pure command executor | Retain | It is a closed typed native-command lane with private coordinator tickets and direct lifetime/ordering tests. It owns no host adoption state, callback registry, or generic dispatch. |
 | Pure parse driver | Retain | It owns bounded native pumping, streamed-open certification probing, edit-publication phase proof, generation barriers, and owned parse publications. It has no timer, callback, Flutter, or host-state dependency and is directly contract-tested. |
 | Pure source-edit planner | Retain | It synchronously evolves the coordinator's one pending-presentation snapshot from bounded portable input facts and returns one publication requirement. It has no Flutter, native-I/O, callback, or timer dependency; direct tests cover authorized continuity, exact fallback, single structural advancement, barriers, invalid input, and ambiguous-authority failure. |
+| Pure semantic-command planner | Retain | It consumes parser-authored capabilities and exact projected geometry to admit Return, Backspace, and Delete. It does not infer Markdown or execute host fallbacks, and direct tests cover stale selections, dependency boundaries, structural gaps, and inline-owner edges. |
 | Pure semantic receipt adopter | Retain | It owns one synchronous, identity-checked committed-receipt transaction across source publication, pending presentation, refresh navigation, and bounded viewport state. It returns only the caret, continuation, and certification obligation a host must install, and direct native tests reject superseded receipts. |
 | Pure viewport adopter | Retain | It settles one pager receipt and atomically advances navigation, bounded source/rows, source publication generation, refresh origin, and certified retirement of provisional presentation. It returns only input-restoration and first-certified evidence to the host. |
 | Flutter platform input bridge | Retain | It owns connection epochs, the serialized shadow, atomic delta validation, and one immutable normal form shared by delta/full-value callbacks against current or provisional input. It knows no Markdown, viewport, or source-mutation policy. |
 | Flutter input transaction state | Retain | It is the sole mutable owner of callback scopes, paired actions, provisional/late successor lineage, capture and deferral transitions, certification-completer lifetime, and successor accounting. It returns typed shadow, resync, and late-promotion effects; it knows no Markdown, viewport, native document, or rendered presentation. |
+| Flutter input successor planner | Retain | It maps one provisional successor onto the committed bounded window and returns a closed history, replacement, command, selection, mutation, or rejection effect. It has no callback injection, source authority, Markdown policy, or outward publication access. |
 | Pure input-window and mutation planners | Retain | They own capacity, scalar-aligned cuts, local-to-canonical selection equivalence, collapsed/same-row/cross-row/oversized restoration from parser and pending surface geometry, exact literal splice validation, parser-authored continuation rewrite, structural-certification classification, and composition activity without a frontend dependency. |
 | Pure surface projector | Retain | It is the bounded source/display topology in both directions: immutable rows, legal caret normalization, hidden-only mutation classification, and rendered-grapheme deletion mapping. It owns no document, timer, callback, or frontend type. |
 | Flutter input state | Retain | It owns one `TextEditingValue` window and its canonical mirrors, adapting immutable plans through named transitions. It imports no controller and its oversized-selection invariants have direct tests. |
@@ -290,9 +291,19 @@ Atomic viewport publication is accepted: all queried results now settle through
 one generation-checked portable adopter before Flutter restores its input
 window. Direct tests prove both the current transaction and stale-receipt
 no-op, while Flutter no longer advances pager, viewport, source generation, and
-certified retirement independently. The next review must remove another
-complete authority—successor effect execution, history/composition adoption, or
-lifecycle admission—rather than reshuffling facade methods.
+certified retirement independently. Parser-capability-driven semantic command
+admission is accepted because it moved the coupled source/display boundary
+rules without recreating Markdown in Dart. Provisional successor adoption is
+accepted because coordinate reconciliation and command reclassification now
+produce one closed effect instead of branching through controller callbacks.
+
+The stop review found no further complete authority that can move without
+either sharing controller state or introducing a callback-oriented wrapper.
+Successor effect execution, history/composition host adoption, parser timer
+admission, input-connection lifecycle, and notification remain together as the
+imperative Flutter shell. A later extraction is justified only when one of
+those concerns can own its state and invariants behind a narrow typed result;
+file length alone does not reopen this program.
 
 ### M5 — qualification and architecture stop
 
@@ -306,14 +317,40 @@ lifecycle admission—rather than reshuffling facade methods.
 The architecture program stops when the criteria below hold. Further work
 returns to product testing and dogfood findings.
 
+Final local measurement at the architecture stop:
+
+| Measure | M0 | M5 |
+| --- | ---: | ---: |
+| Flutter controller | 7,587 lines | 4,336 lines |
+| Approximate controller method declarations | 220 | 162 |
+| Controller notification call sites | 49 | 43 |
+| Flutter production Dart under `lib/src` | 14,905 lines | 10,761 lines |
+| Pure-Dart production Dart under `lib/src` | 14,455 lines | 21,089 lines |
+
+The controller reduction is 3,251 lines, or 42.8%. More importantly, the
+remaining mutable application authorities have named owners and direct tests;
+the controller imports and composes them rather than reaching into their state.
+`flark` has no Flutter import, there are no `part`-file controller splits, and
+the render object captures immutable snapshots before layout and paint.
+
+The complete local `verify_v4.sh` gate passes at this stop: every active Rust
+crate and doctest, 77 qualification tests, 247 Core tests with 4 explicit
+skips, 398 Flutter tests with 7 explicit skips, and both analyzers. The Flutter
+lane includes the mounted 1 MiB and 5 MiB navigation/paint scenarios. The
+separate 5 MiB dense certification stress also converges inside its fixed
+payload budget. Native attended input and the sealed production profile remain
+D0 candidate evidence, not architecture-stop claims.
+
 ## Completion criteria
 
 - Pure Dart can use `flark` without Flutter in its dependency graph.
 - `flark_flutter` contains all Flutter imports and no Markdown policy.
 - One typed command/receipt cycle produces one immutable bounded snapshot.
 - Renderer and platform input consume that snapshot without controller reads.
-- The Flutter controller is a small facade with one outward publication path;
-  it contains no application state machine or asynchronous Core effect logic.
+- The Flutter controller is a narrow facade with one outward publication path;
+  it contains no parallel host-neutral application state machine or
+  asynchronous command-identity/adoption policy. It may execute fixed host
+  effects and own Flutter timers, listeners, input connections, and lifecycle.
 - Rust remains the only source and Markdown authority.
 - No old/new dual path, mutable compatibility layer, or controller-sharing
   extraction remains.
