@@ -6,18 +6,6 @@ pub enum SyntaxProfile {
     Gfm,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Position {
-    pub line: usize,
-    pub column: usize,
-}
-
-impl Position {
-    pub const fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ListType {
     Bullet,
@@ -221,8 +209,6 @@ pub struct BlockNode {
     /// without remaining permanently zero. This parser-only field preserves
     /// donor output metadata while making the intended safety transition real.
     pub table_autocompleted_cells: usize,
-    pub source_start: Position,
-    pub source_end: Position,
     /// Closed children that precede the transient children in `children`.
     /// Empty during a one-shot parse; populated only by continuation restore.
     pub historical_children: ChildSequenceFold,
@@ -251,8 +237,6 @@ impl BlockTree {
                 last_line_blank: false,
                 table_visited: false,
                 table_autocompleted_cells: 0,
-                source_start: Position::new(1, 1),
-                source_end: Position::new(1, 1),
                 historical_children: ChildSequenceFold::default(),
                 folded_children: 0,
             }],
@@ -269,12 +253,7 @@ impl BlockTree {
     }
 
     /// Append parser scratch for the direct command driver.
-    pub(crate) fn append_scratch(
-        &mut self,
-        parent: NodeId,
-        kind: BlockKind,
-        start: Position,
-    ) -> NodeId {
+    pub(crate) fn append_scratch(&mut self, parent: NodeId, kind: BlockKind) -> NodeId {
         let id = NodeId(u32::try_from(self.nodes.len()).expect("node id below u32"));
         self.nodes.push(BlockNode {
             id,
@@ -285,8 +264,6 @@ impl BlockTree {
             last_line_blank: false,
             table_visited: false,
             table_autocompleted_cells: 0,
-            source_start: start,
-            source_end: start,
             historical_children: ChildSequenceFold::default(),
             folded_children: 0,
         });

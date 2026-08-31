@@ -17,9 +17,7 @@ use crate::reference_prefix::{
     DirectReferencePrefixTerminalAck, DirectReferencePrefixWork,
 };
 use crate::table;
-use crate::tree::{
-    BlockKind, BlockTree, ListData, ListDelimiter, ListType, NodeId, Position, SyntaxProfile,
-};
+use crate::tree::{BlockKind, BlockTree, ListData, ListDelimiter, ListType, NodeId, SyntaxProfile};
 
 const TAB_STOP: usize = 4;
 const CODE_INDENT: usize = 4;
@@ -4678,11 +4676,7 @@ impl ValueBlockParser {
                         }
                     }
                     _ => {
-                        container = self.add_child(
-                            container,
-                            BlockKind::Paragraph,
-                            self.first_nonspace + 1,
-                        )?;
+                        container = self.add_child(container, BlockKind::Paragraph)?;
                         let count = self.first_nonspace - self.offset;
                         self.advance_offset(line, count, false);
                         self.add_line(container, line)?;
@@ -5165,11 +5159,10 @@ impl ValueBlockParser {
             return Ok(false);
         }
         let claim_start = self.offset;
-        let start = self.first_nonspace;
         // `add_child` may pause to finalize a reference-bearing Paragraph.
         // Resolve that structural parent before advancing the line cursor so
         // replaying this coroutine stage after the rendezvous is idempotent.
-        let child = self.add_child(*container, BlockKind::BlockQuote, start + 1)?;
+        let child = self.add_child(*container, BlockKind::BlockQuote)?;
         let offset = self.first_nonspace + 1 - self.offset;
         self.advance_offset(line, offset, false);
         if byte_matches(line.as_bytes(), self.offset, is_space_or_tab) {
@@ -5220,12 +5213,7 @@ impl ValueBlockParser {
             return Ok(false);
         };
         self.advance_offset(line, matched.opener_end - offset, false);
-        *container = self.add_atx_heading(
-            *container,
-            matched.level,
-            matched.closed,
-            matched.opener_start + 1,
-        )?;
+        *container = self.add_atx_heading(*container, matched.level, matched.closed)?;
         self.direct_claim_atx_heading_match(*container, matched.claim_start, matched)?;
         Ok(true)
     }
@@ -5235,7 +5223,6 @@ impl ValueBlockParser {
         container: NodeId,
         level: u8,
         closed: bool,
-        start_column: usize,
     ) -> Result<NodeId, ParseError> {
         if !(1..=6).contains(&level) {
             return Err(ParseError::Invariant(
@@ -5249,7 +5236,6 @@ impl ValueBlockParser {
                 setext: false,
                 closed,
             },
-            start_column,
         )
     }
 
@@ -5357,7 +5343,6 @@ impl ValueBlockParser {
                 fence_offset: first - offset,
                 closed: false,
             },
-            first + 1,
         )?;
         self.advance_offset(line, first + matched - offset, false);
         let direct = &mut self.direct;
@@ -5392,11 +5377,7 @@ impl ValueBlockParser {
         let Some(block_type) = self.detect_html_block(*container, line)? else {
             return Ok(false);
         };
-        *container = self.add_child(
-            *container,
-            BlockKind::HtmlBlock { block_type },
-            self.first_nonspace + 1,
-        )?;
+        *container = self.add_child(*container, BlockKind::HtmlBlock { block_type })?;
         Ok(true)
     }
 
@@ -5511,14 +5492,9 @@ impl ValueBlockParser {
         let Some(_) = self.detect_thematic_break(*container, line, all_matched) else {
             return Ok(false);
         };
-        *container = self.add_child(
-            *container,
-            BlockKind::ThematicBreak,
-            self.first_nonspace + 1,
-        )?;
+        *container = self.add_child(*container, BlockKind::ThematicBreak)?;
         let content_end = line.len() - newlines_of(line);
         let advance = content_end - self.offset;
-        self.tree.node_mut(*container).source_end = Position::new(self.line_number, advance);
         let leaf = *container;
         let direct = &mut self.direct;
         if direct.pending_terminator {
@@ -5679,14 +5655,10 @@ impl ValueBlockParser {
         if needs_list {
             let mut list_container = list;
             list_container.task_checked = None;
-            *container = self.add_child(
-                *container,
-                BlockKind::List(list_container),
-                self.first_nonspace + 1,
-            )?;
+            *container = self.add_child(*container, BlockKind::List(list_container))?;
         }
         list.task_checked = task_checked;
-        *container = self.add_child(*container, BlockKind::Item(list), self.first_nonspace + 1)?;
+        *container = self.add_child(*container, BlockKind::Item(list))?;
         let direct = &mut self.direct;
         if direct.claimed_offset != claim_start {
             return Err(ParseError::Invariant(
@@ -5749,7 +5721,6 @@ impl ValueBlockParser {
                 fence_offset: 0,
                 closed: true,
             },
-            self.offset + 1,
         )?;
         let direct = &mut self.direct;
         if direct.claimed_offset != claim_start {
@@ -5845,17 +5816,12 @@ impl ValueBlockParser {
         &mut self,
         mut parent: NodeId,
         kind: BlockKind,
-        start_column: usize,
     ) -> Result<NodeId, ParseError> {
         while !self.tree.node(parent).kind.can_contain(&kind) {
             parent = self.finalize(parent)?;
         }
-        if start_column == 0 {
-            return Err(ParseError::Invariant("block start column is one-based"));
-        }
         let direct_kind = direct_block_kind(&kind)?;
-        let start = Position::new(self.line_number, start_column);
-        let child = self.tree.append_scratch(parent, kind, start);
+        let child = self.tree.append_scratch(parent, kind);
         self.opened_this_line.insert(child);
         self.direct.push_body(DirectIntent::Open {
             node: child,
@@ -6597,27 +6563,6 @@ impl ValueBlockParser {
         let parent = self.tree.parent(node).unwrap_or(self.tree.root);
         let direct_last_line_blank = self.tree.node(node).last_line_blank;
         self.tree.close_scratch(node);
-        if self.curline_len == 0 {
-            self.tree.node_mut(node).source_end =
-                Position::new(self.line_number, self.last_line_length);
-        } else if matches!(
-            self.tree.node(node).kind,
-            BlockKind::Document
-                | BlockKind::CodeBlock {
-                    fenced: true,
-                    closed: true,
-                    ..
-                }
-        ) {
-            self.tree.node_mut(node).source_end =
-                Position::new(self.line_number, self.curline_end_col);
-        } else if !matches!(
-            self.tree.node(node).kind,
-            BlockKind::ThematicBreak | BlockKind::TableRow { .. } | BlockKind::Table(_)
-        ) {
-            self.tree.node_mut(node).source_end =
-                Position::new(self.line_number.saturating_sub(1), self.last_line_length);
-        }
 
         match self.tree.node(node).kind.clone() {
             BlockKind::Paragraph => {
@@ -6826,7 +6771,7 @@ impl ValueBlockParser {
             } else {
                 let parent = compact_path[depth - 1];
                 let node = old_tree.node(old_id);
-                let id = compact.append_scratch(parent, node.kind.clone(), node.source_start);
+                let id = compact.append_scratch(parent, node.kind.clone());
                 compact_path.push(id);
                 id
             };
@@ -6837,8 +6782,6 @@ impl ValueBlockParser {
             new.last_line_blank = old.last_line_blank;
             new.table_visited = old.table_visited;
             new.table_autocompleted_cells = old.table_autocompleted_cells;
-            new.source_start = old.source_start;
-            new.source_end = old.source_end;
             new.historical_children = old.historical_children;
             new.folded_children = 0;
         }
@@ -7702,12 +7645,7 @@ impl DirectValueBlockParser {
                 .children
                 .try_reserve_exact(1)
                 .map_err(|_| ParseError::Invariant("direct pause child allocation failed"))?;
-            // Donor line/column positions are deliberately not control state.
-            // The direct writer is the source-position authority.
-            let node =
-                parser
-                    .tree
-                    .append_scratch(parent, kinds[depth].clone(), Position::new(1, 1));
+            let node = parser.tree.append_scratch(parent, kinds[depth].clone());
             let frame = frames[depth];
             let scratch = parser.tree.node_mut(node);
             scratch.last_line_blank = frame.last_line_blank;
@@ -8362,12 +8300,9 @@ impl DirectValueBlockParser {
             .checked_add(1)
             .ok_or(ParseError::Invariant("direct line ordinal overflow"))?;
 
-        let heading = self.parser.add_atx_heading(
-            root,
-            matched.level,
-            matched.closed,
-            matched.opener_start + 1,
-        )?;
+        let heading = self
+            .parser
+            .add_atx_heading(root, matched.level, matched.closed)?;
         self.parser
             .direct_claim_atx_heading_match(heading, matched.claim_start, matched)?;
         self.parser.tree.node_mut(heading).last_line_blank = false;
