@@ -1752,7 +1752,7 @@ impl SegmentedReferencePrefix {
                 self.definition_count += 1;
                 match consumed {
                     None => self.scanner = Some(ReferenceOne::new(source_end)),
-                    Some((before, after, byte)) if source_end == after => {
+                    Some((_, after, _)) if source_end == after => {
                         self.scanner = Some(ReferenceOne::new(source_end));
                     }
                     Some((before, _, byte @ b'[')) if source_end == before => {

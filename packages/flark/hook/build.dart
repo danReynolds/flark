@@ -6,6 +6,7 @@ import 'package:hooks/hooks.dart';
 const _assetName = 'src/native/bindings.dart';
 const _crateRelativePath = 'native/comrak_bridge';
 const _libraryBaseName = 'flark_abi';
+const _rustToolchain = '1.98.0';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {
@@ -164,15 +165,28 @@ Future<_CargoCommand> _cargoCommand() async {
     }
     return _CargoCommand(rustup, const [
       'run',
-      'stable',
+      _rustToolchain,
       'cargo',
     ], rustupExecutable: rustup);
   }
   final cargo = await _which('cargo');
-  if (cargo != null) return _CargoCommand(cargo, const []);
+  final rustc = await _which('rustc');
+  if (cargo != null && rustc != null) {
+    final version = await Process.run(rustc, const ['--version']);
+    if (version.exitCode == 0 &&
+        (version.stdout as String).startsWith('rustc $_rustToolchain ')) {
+      return _CargoCommand(
+        cargo,
+        const [],
+        rustcExecutable: rustc,
+        toolchainBinPath: File(rustc).parent.path,
+      );
+    }
+  }
   throw BuildError(
     message:
-        'Unable to find cargo or rustup on PATH. Flark compiles its native '
+        'Flark requires Rust $_rustToolchain through rustup or matching cargo '
+        'and rustc binaries on PATH. Flark compiles its native '
         'Comrak bridge from the bundled Rust crate, so building for this '
         'target requires a Rust toolchain (https://rustup.rs). See '
         'https://github.com/danReynolds/flark/blob/main/docs/'
@@ -194,7 +208,7 @@ Future<void> _ensureRustTargetInstalled(
     'list',
     '--installed',
     '--toolchain',
-    'stable',
+    _rustToolchain,
   ], workingDirectory: workingDirectory);
   if (installed.exitCode == 0 &&
       (installed.stdout as String)
@@ -208,7 +222,7 @@ Future<void> _ensureRustTargetInstalled(
     'add',
     triple,
     '--toolchain',
-    'stable',
+    _rustToolchain,
   ], workingDirectory: workingDirectory);
 }
 
@@ -224,7 +238,7 @@ Future<String?> _rustupWhich(String rustup, String executable) async {
     'which',
     executable,
     '--toolchain',
-    'stable',
+    _rustToolchain,
   ]);
   if (result.exitCode != 0) return null;
   final path = (result.stdout as String).trim();
