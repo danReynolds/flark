@@ -26,6 +26,8 @@ mod mersenne61;
 mod recursive_green;
 #[cfg(feature = "parser-internal")]
 mod reference_journal;
+#[cfg(feature = "parser-internal")]
+mod reference_resolver;
 mod reference_root;
 mod source;
 mod source_facts;

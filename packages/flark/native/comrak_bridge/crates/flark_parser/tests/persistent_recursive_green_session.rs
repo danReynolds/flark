@@ -211,6 +211,30 @@ fn clean_session_retains_green_and_reference_authority_for_late_queries() {
 }
 
 #[test]
+fn reference_resolver_rejects_a_stale_same_runtime_source_before_lookup() {
+    let source = "[a]: /target\n\n[a]\n";
+    let mut runtime =
+        DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("document runtime");
+    let mut session = build_session(&mut runtime);
+    let resolver = session
+        .reference_resolver(&runtime)
+        .expect("live reference resolver");
+    let base = runtime.current_source_version().expect("base source");
+    runtime
+        .apply_edit(base, source.len()..source.len(), "tail")
+        .expect("advance source revision");
+
+    assert!(
+        resolver.resolve(&runtime, "", usize::MAX).is_err(),
+        "even an empty lookup must validate exact current source authority"
+    );
+
+    release_session(&mut runtime, &mut session);
+    runtime.begin_close().expect("begin runtime close");
+    while !runtime.poll_close(64).expect("poll close").complete {}
+}
+
+#[test]
 fn eof_paragraph_append_retains_contiguous_editable_geometry() {
     const BASE: &str = "alpha";
     const TARGET: &str = "alpha beta";

@@ -12,8 +12,8 @@ use std::ops::Range;
 
 use comrak::block_spine_facade;
 use flark_engine::parser_internal::{
-    M11ParserPageError, M11ParserRangeCursor, M11ParserRangeStatus, M11PublicationError,
-    M11ReferenceResolution, M11ReferenceResolver, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
+    M11ParserPageError, M11ParserRangeCursor, M11ParserRangeStatus, M11ReferenceResolution,
+    M11ReferenceResolver, M11ReferenceResolverError, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
     M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
@@ -208,7 +208,7 @@ pub(crate) enum M11InlineDirectError {
     Opaque(M11InlineAutolinkError),
     Source(M11ParserPageError),
     Cleaner(ReferenceValueCleanerError),
-    Reference(M11PublicationError),
+    Reference(M11ReferenceResolverError),
     ZeroFuel,
     PollLimitExceeded,
     CoordinateOverflow,
@@ -266,8 +266,8 @@ impl From<ReferenceValueCleanerError> for M11InlineDirectError {
     }
 }
 
-impl From<M11PublicationError> for M11InlineDirectError {
-    fn from(value: M11PublicationError) -> Self {
+impl From<M11ReferenceResolverError> for M11InlineDirectError {
+    fn from(value: M11ReferenceResolverError) -> Self {
         Self::Reference(value)
     }
 }

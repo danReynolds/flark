@@ -109,6 +109,9 @@ pub use crate::parser_scratch::{
 };
 pub use crate::recursive_green::*;
 pub use crate::reference_journal::*;
+pub use crate::reference_resolver::{
+    M11ReferenceResolution, M11ReferenceResolver, M11ReferenceResolverError, M11ResolvedReference,
+};
 
 /// Maximum canonical bytes in each parser role record.
 ///
@@ -2362,193 +2365,6 @@ impl M11ReferenceResolverPoll {
     }
 }
 
-/// Cooked target authority for one exact reference-label winner.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct M11ResolvedReference {
-    definition_ordinal: u64,
-    destination_source: Range<u64>,
-    title_source: Option<Range<u64>>,
-    cooked_destination: Box<str>,
-    cooked_title: Option<Box<str>>,
-}
-
-/// Definitive result of one root-bound normalized-label lookup.
-///
-/// `ValueTooLarge` is intentionally distinct from `Missing`: the former is a
-/// real CommonMark reference whose cooked payload cannot fit the caller's
-/// bounded sidecar envelope. Inline parsing must fail that leaf closed rather
-/// than misclassifying the use as literal text.
-///
-/// `Unknown` is the committed-prefix analog of that rule: the resolver's
-/// authority covers only an admitted prefix, the label has no committed
-/// winner there, and a later definition could still bind it. Absence before
-/// EOF is never literalness, so inline parsing must fail the leaf closed
-/// rather than emit literal-text facts a suffix could falsify. A resolver
-/// with final (EOF) authority never returns it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum M11ReferenceResolution {
-    Missing,
-    Unknown,
-    ValueTooLarge,
-    Resolved(M11ResolvedReference),
-}
-
-impl M11ResolvedReference {
-    /// Constructs parser-authenticated reference authority from an alternate
-    /// exact winner index. The caller remains responsible for binding every
-    /// range and cooked value to the same current source revision.
-    #[doc(hidden)]
-    #[must_use]
-    pub fn new(
-        definition_ordinal: u64,
-        destination_source: Range<u64>,
-        title_source: Option<Range<u64>>,
-        cooked_destination: Box<str>,
-        cooked_title: Option<Box<str>>,
-    ) -> Self {
-        Self {
-            definition_ordinal,
-            destination_source,
-            title_source,
-            cooked_destination,
-            cooked_title,
-        }
-    }
-
-    #[must_use]
-    pub const fn definition_ordinal(&self) -> u64 {
-        self.definition_ordinal
-    }
-
-    #[must_use]
-    pub const fn destination_source(&self) -> &Range<u64> {
-        &self.destination_source
-    }
-
-    #[must_use]
-    pub const fn title_source(&self) -> Option<&Range<u64>> {
-        self.title_source.as_ref()
-    }
-
-    #[must_use]
-    pub const fn cooked_destination(&self) -> &str {
-        &self.cooked_destination
-    }
-
-    #[must_use]
-    pub fn cooked_title(&self) -> Option<&str> {
-        self.cooked_title.as_deref()
-    }
-}
-
-/// Cloneable, root-bound lookup capability minted from live exact reference
-/// authority after the winner index has completed. The capability owns no
-/// arena pages; its caller must keep the associated publication or journal
-/// root alive.
-#[derive(Clone)]
-pub struct M11ReferenceResolver {
-    runtime_identity: RuntimeIdentity,
-    authority: CandidateAuthority,
-    root: crate::ArenaId,
-    index: Arc<ReferenceWinnerIndex>,
-}
-
-impl fmt::Debug for M11ReferenceResolver {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("M11ReferenceResolver")
-            .field("runtime_identity", &self.runtime_identity)
-            .field("root", &self.root)
-            .finish_non_exhaustive()
-    }
-}
-
-impl M11ReferenceResolver {
-    /// Mints a cheap resolver from the parser's already-complete live
-    /// reference journal. No document-sized winner-index rebuild occurs.
-    #[doc(hidden)]
-    pub fn from_live_reference_journal(
-        runtime: &DocumentRuntime,
-        journal: &M11ReferenceJournalRoot,
-    ) -> Result<Self, M11ReferenceJournalError> {
-        let (runtime_identity, authority, root, index) = journal.resolver_parts(runtime)?;
-        Ok(Self {
-            runtime_identity,
-            authority,
-            root,
-            index: Arc::new(index),
-        })
-    }
-
-    /// Resolves one already-normalized exact label. Oversized cooked values
-    /// return `ValueTooLarge` before allocation so a hostile definition cannot
-    /// escape the caller's bounded sidecar envelope or masquerade as missing.
-    pub fn resolve(
-        &self,
-        runtime: &DocumentRuntime,
-        normalized_label: &str,
-        maximum_cooked_bytes: usize,
-    ) -> Result<M11ReferenceResolution, M11PublicationError> {
-        validate_runtime(self.runtime_identity, runtime)?;
-        if self.index.root() != self.root {
-            return Err(M11PublicationError::invalid_state());
-        }
-        let Some(winner) = self.index.winner(
-            runtime.producer_arena(),
-            self.authority,
-            self.root,
-            normalized_label.as_bytes(),
-        )?
-        else {
-            return Ok(M11ReferenceResolution::Missing);
-        };
-        let destination_len = usize::try_from(winner.cooked_destination.len())
-            .map_err(|_| M11PublicationError::invalid_state())?;
-        let title_len = winner
-            .cooked_title
-            .as_ref()
-            .map(|title| usize::try_from(title.len()))
-            .transpose()
-            .map_err(|_| M11PublicationError::invalid_state())?
-            .unwrap_or(0);
-        let maximum_cooked_bytes = maximum_cooked_bytes.min(
-            crate::inline_projection::M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES.saturating_sub(32),
-        );
-        if destination_len
-            .checked_add(title_len)
-            .is_none_or(|total| total > maximum_cooked_bytes)
-        {
-            return Ok(M11ReferenceResolution::ValueTooLarge);
-        }
-        let cooked_destination = read_reference_utf8(winner.cooked_destination)?;
-        let cooked_title = winner.cooked_title.map(read_reference_utf8).transpose()?;
-        Ok(M11ReferenceResolution::Resolved(M11ResolvedReference {
-            definition_ordinal: winner.ordinal,
-            destination_source: winner.destination_source.bytes,
-            title_source: winner.title_source.map(|source| source.bytes),
-            cooked_destination,
-            cooked_title,
-        }))
-    }
-}
-
-fn read_reference_utf8(
-    value: crate::reference_root::PersistentBytesView<'_>,
-) -> Result<Box<str>, M11PublicationError> {
-    let len = usize::try_from(value.len()).map_err(|_| M11PublicationError::invalid_state())?;
-    let mut bytes = Vec::new();
-    bytes
-        .try_reserve_exact(len)
-        .map_err(|_| M11PublicationError(ErrorInner::Arena(ArenaError::AllocationFailed)))?;
-    bytes.resize(len, 0);
-    if value.read(0, &mut bytes)? != len {
-        return Err(M11PublicationError::invalid_state());
-    }
-    String::from_utf8(bytes)
-        .map(String::into_boxed_str)
-        .map_err(|_| M11PublicationError::invalid_state())
-}
-
 /// One completely traversed producer publication retained for exact-base use
 /// and bounded same-revision semantic refinement.
 ///
@@ -2653,12 +2469,14 @@ impl M11RetainedCandidatePublication {
         if winner.root != root {
             return Err(M11PublicationError::invalid_state());
         }
-        Ok(Some(M11ReferenceResolver {
-            runtime_identity: self.runtime_identity,
+        M11ReferenceResolver::from_retained_candidate(
+            self.runtime_identity,
             authority,
             root,
-            index: Arc::clone(index),
-        }))
+            Arc::clone(index),
+        )
+        .map(Some)
+        .map_err(|_| M11PublicationError::invalid_state())
     }
 
     /// Moves reference-index progress from a superseded exact base into the
