@@ -125,6 +125,7 @@ pub(crate) const MAX_SEQUENCE_AVL_HEIGHT: u16 = (AVL_MIN_LEAVES_BY_HEIGHT.len() 
 // structural node, or allocated branch. The maximum is 138,384 units at
 // height 92; production SourceFacts admission is far below this machine-domain
 // adversary, but the absolute bound keeps the accepted worker quantum finite.
+#[cfg(test)]
 pub(crate) const MAX_SEQUENCE_ATOMIC_SPLICE_WORK_UNITS: u64 = {
     let levels = MAX_SEQUENCE_AVL_HEIGHT as u64 + 1;
     16 * levels * levels
@@ -333,16 +334,6 @@ pub(crate) struct SequenceLeafVisitReceipt {
     visitor_stopped: bool,
 }
 
-impl SequenceLeafVisitReceipt {
-    pub(crate) const fn leaves_visited(self) -> u64 {
-        self.leaves_visited
-    }
-
-    pub(crate) const fn visitor_stopped(self) -> bool {
-        self.visitor_stopped
-    }
-}
-
 #[derive(Clone, Copy)]
 struct PendingSequenceSubtree<Summary> {
     id: ArenaId,
@@ -469,94 +460,6 @@ fn sequence_node_shared<Spec: SequenceSpec>(
             })
         }
     }
-}
-
-/// Validates one immutable sequence node and its direct measure relationship.
-///
-/// Snapshot hosts call this for every postorder node as it is admitted. Since
-/// children are admitted before their parent, validating every node once
-/// proves the complete measured closure incrementally without flattening it or
-/// turning final installation into an unbounded traversal.
-pub(crate) fn validate_measured_sequence_node<Spec: SequenceSpec>(
-    arena: &PageArena,
-    id: ArenaId,
-    inspection: &mut SequenceInspectionReceipt,
-) -> Result<SequenceMeasure<Spec::Summary>, Spec::Error> {
-    sequence_node::<Spec>(arena, id, inspection).map(|node| node.measure)
-}
-
-/// Locates one leaf from a raw root that has already passed incremental
-/// measured-sequence admission.
-///
-/// Typed producer roots use [`MeasuredSequenceRef`]. Independent hosts own an
-/// arena root rather than a producer capability, so bounded role queries need
-/// the same checked descent without pretending to own a typed committed root.
-pub(crate) fn locate_measured_sequence_leaf_with_prefix<Spec: SequenceSpec>(
-    arena: &PageArena,
-    root: ArenaId,
-    leaf_index: u64,
-    inspection: &mut SequenceInspectionReceipt,
-) -> Result<Option<LocatedSequenceLeaf<Spec::Summary>>, Spec::Error> {
-    let mut id = root;
-    let root = sequence_node::<Spec>(arena, id, inspection)?;
-    if leaf_index >= root.measure.leaves {
-        return Ok(None);
-    }
-
-    let mut expected = root.measure;
-    let mut index = leaf_index;
-    let mut prefix = None;
-    for _ in 0..usize::from(root.measure.height) {
-        let node = sequence_node::<Spec>(arena, id, inspection)?;
-        if node.measure != expected {
-            return Err(Spec::invalid(
-                "sequence child measure changed during descent",
-            ));
-        }
-        match node.kind {
-            SequenceNodeKind::Leaf => {
-                if index != 0 {
-                    return Err(Spec::invalid(
-                        "sequence leaf routing retained a nonzero index",
-                    ));
-                }
-                return Ok(Some(LocatedSequenceLeaf {
-                    id,
-                    ordinal: leaf_index,
-                    summary: node.measure.summary,
-                    prefix,
-                }));
-            }
-            SequenceNodeKind::Branch {
-                left,
-                left_measure,
-                right,
-                right_measure,
-            } => {
-                if index < left_measure.leaves {
-                    id = left;
-                    expected = left_measure;
-                } else {
-                    index = index
-                        .checked_sub(left_measure.leaves)
-                        .ok_or_else(|| Spec::invalid("sequence index underflow"))?;
-                    prefix = Some(match prefix {
-                        Some(prefix) => {
-                            inspection.summary_combinations =
-                                inspection.summary_combinations.checked_add(1).ok_or_else(
-                                    || Spec::invalid("sequence summary combination count overflow"),
-                                )?;
-                            Spec::combine(prefix, left_measure.summary)?
-                        }
-                        None => left_measure.summary,
-                    });
-                    id = right;
-                    expected = right_measure;
-                }
-            }
-        }
-    }
-    Err(Spec::invalid("sequence descent exceeded its AVL height"))
 }
 
 /// Folds one ordered leaf range from a validated immutable root.
@@ -786,14 +689,6 @@ pub(crate) fn maximum_avl_height(leaves: u64) -> u16 {
 /// both direct child headers. The loop then does the same for every branch on
 /// the root-to-leaf path and reads the terminal leaf once:
 /// `3 + 3 * (height - 1) + 1`.
-pub(crate) const fn maximum_metric_lookup_node_headers(height: u16) -> u64 {
-    match height {
-        0 => 0,
-        1 => 2,
-        _ => 3 * height as u64 + 1,
-    }
-}
-
 /// Typed non-owning view derived from a live committed owner.
 #[derive(Debug)]
 pub(crate) struct MeasuredSequenceRef<'root, Spec> {
@@ -810,23 +705,15 @@ impl<Spec> Clone for MeasuredSequenceRef<'_, Spec> {
 impl<Spec> Copy for MeasuredSequenceRef<'_, Spec> {}
 
 impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
-    /// Reopens a raw root owned by an independently validated arena closure.
+    /// Reopens a raw root for corruption and authority-boundary tests.
     ///
-    /// Only schema-owned host import code may call this after every postorder
-    /// node has passed [`validate_measured_sequence_node`]. The returned view
-    /// owns nothing and must not outlive that arena root.
-    pub(crate) const fn from_imported_root(
-        root: Option<ArenaId>,
-    ) -> MeasuredSequenceRef<'static, Spec> {
+    /// The returned view owns nothing and must not outlive the test arena root.
+    #[cfg(test)]
+    const fn from_raw_root(root: Option<ArenaId>) -> MeasuredSequenceRef<'static, Spec> {
         MeasuredSequenceRef {
             root,
             marker: PhantomData,
         }
-    }
-
-    #[cfg(test)]
-    const fn from_raw_root(root: Option<ArenaId>) -> MeasuredSequenceRef<'static, Spec> {
-        Self::from_imported_root(root)
     }
 
     pub(crate) const fn root_id(self) -> Option<ArenaId> {
@@ -1466,12 +1353,6 @@ pub(crate) struct MeasuredSequenceBuildRoot<Spec> {
 }
 
 impl<Spec> MeasuredSequenceBuildRoot<Spec> {
-    /// Erases only the sequence type after the spec has validated the retained
-    /// root. Ownership remains journalled by the same active arena build.
-    pub(crate) fn into_owner(self) -> ArenaBuildOwner {
-        self.owner
-    }
-
     /// Borrows this still-journalled root for authenticated read-only routing.
     ///
     /// The returned view cannot escape the matching arena session. This is the
@@ -1496,6 +1377,7 @@ impl<Spec> MeasuredSequenceBuildRoot<Spec> {
 /// successful promotion. On failure its arena reference remains owned by the
 /// caller's active build journal, so aborting that journal is the sole cleanup
 /// path; no raw [`ArenaId`] is ever promoted into typed authority.
+#[cfg(test)]
 pub(crate) fn validate_measured_sequence_build_owner<Spec: SequenceSpec>(
     session: &ArenaBuildSession<'_>,
     owner: ArenaBuildOwner,

@@ -103,7 +103,7 @@ impl SourceDocumentId {
     }
 }
 
-/// Stable parser/publication authority for one logical source revision.
+/// Stable authority for one logical source revision.
 ///
 /// This deliberately omits the immutable root and its current admitted
 /// dimensions. Those belong to a readable snapshot, not to semantic
@@ -137,14 +137,6 @@ impl SourceAuthority {
 pub struct SourceRootId(u64);
 
 impl SourceRootId {
-    pub(crate) const fn from_wire(value: u64) -> Option<Self> {
-        if value == 0 {
-            None
-        } else {
-            Some(Self(value))
-        }
-    }
-
     pub(crate) fn allocate() -> Option<Self> {
         NEXT_SOURCE_ROOT_ID
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
@@ -183,34 +175,6 @@ impl SourceLoadId {
     }
 
     /// Returns the process-local load identity.
-    #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-}
-
-/// Identifies one parse-candidate attempt within a document.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CandidateGeneration(u64);
-
-impl CandidateGeneration {
-    #[cfg(test)]
-    pub(crate) const FIRST: Self = Self(1);
-
-    pub(crate) const fn from_wire(value: u64) -> Option<Self> {
-        if value == 0 {
-            None
-        } else {
-            Some(Self(value))
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn checked_next(self) -> Option<Self> {
-        self.0.checked_add(1).map(Self)
-    }
-
-    /// Returns the numeric generation.
     #[must_use]
     pub const fn get(self) -> u64 {
         self.0

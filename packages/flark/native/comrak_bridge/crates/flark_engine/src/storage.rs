@@ -294,6 +294,7 @@ pub(crate) struct CommittedArenaRootReleaseFailure {
 /// One bounded root-seal poll.
 pub(crate) struct SealPoll {
     pub(crate) transitions: usize,
+    #[cfg(test)]
     pub(crate) remaining_non_root_owners: usize,
     pub(crate) root: Option<CommittedArenaRoot>,
 }
@@ -560,6 +561,7 @@ impl PageArena {
         self.validate_build(seal.id, BuildState::Sealing)
     }
 
+    #[cfg(test)]
     pub(crate) fn suspended_build_owner_count(
         &self,
         build: &CandidateBuild,
@@ -673,6 +675,7 @@ impl PageArena {
             transitions += 1;
             return Ok(SealPoll {
                 transitions,
+                #[cfg(test)]
                 remaining_non_root_owners: 0,
                 root: Some(CommittedArenaRoot {
                     owner: root,
@@ -680,10 +683,13 @@ impl PageArena {
                 }),
             });
         }
-        let remaining = self.build_slot(seal.id.slot).owners.len().saturating_sub(1);
+        #[cfg(test)]
+        let remaining_non_root_owners =
+            self.build_slot(seal.id.slot).owners.len().saturating_sub(1);
         Ok(SealPoll {
             transitions,
-            remaining_non_root_owners: remaining,
+            #[cfg(test)]
+            remaining_non_root_owners,
             root: None,
         })
     }
@@ -1955,10 +1961,9 @@ mod tests {
             (build, root)
         };
         let mut seal = arena.begin_seal(build, root).expect("begin seal");
-        for remaining in (1..=12).rev() {
+        for _ in (1..=12).rev() {
             let receipt = arena.poll_seal(&mut seal, 1).expect("seal poll");
             assert_eq!(receipt.transitions, 1);
-            assert_eq!(receipt.remaining_non_root_owners, remaining - 1);
             assert!(receipt.root.is_none());
         }
         let receipt = arena.poll_seal(&mut seal, 1).expect("root transfer");

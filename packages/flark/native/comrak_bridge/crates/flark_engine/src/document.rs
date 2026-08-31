@@ -2461,12 +2461,6 @@ impl DocumentRuntime {
     /// The facts root remains immutably owned by this runtime while the
     /// reference journal retains its measured root in the same arena.
     #[cfg(feature = "parser-internal")]
-    pub(crate) fn producer_arena_and_persistent_source_facts(
-        &mut self,
-    ) -> (&mut PageArena, Option<&PersistentSourceFactsRoot>) {
-        (&mut self.arena, self.persistent_source_facts.as_ref())
-    }
-
     /// Stable capability identity used to reject parser work presented
     /// with a different document runtime after the arena borrow has ended.
     pub(crate) const fn producer_identity(&self) -> RuntimeIdentity {

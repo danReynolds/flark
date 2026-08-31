@@ -16,7 +16,7 @@ use std::ops::Range;
 
 use flark_engine::parser_internal::{
     M11InlineLinkValue, M11InlineProjectionCaptureValidator, M11InlineProjectionError,
-    M11InlineProjectionFact, M11InlineProjectionKind, M11ParserPageError, M11ParserRangeCursor,
+    M11InlineProjectionFact, M11InlineProjectionKind, M11ParserRangeCursor, M11ParserRangeError,
     M11ParserRangeStatus, M11ParserSourceRangeAuthority, M11ReferenceResolver,
     M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
@@ -225,7 +225,7 @@ enum M11InlineProjectionJobErrorInner {
     Emphasis(M11InlineEmphasisError),
     Lex(M11InlineLexError),
     Projection(M11InlineProjectionError),
-    Page(M11ParserPageError),
+    Page(M11ParserRangeError),
     ZeroFuel,
     PollLimitExceeded,
     CoordinateOverflow,
@@ -395,8 +395,8 @@ impl From<M11InlineProjectionError> for M11InlineProjectionJobError {
     }
 }
 
-impl From<M11ParserPageError> for M11InlineProjectionJobError {
-    fn from(value: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11InlineProjectionJobError {
+    fn from(value: M11ParserRangeError) -> Self {
         Self(M11InlineProjectionJobErrorInner::Page(value))
     }
 }

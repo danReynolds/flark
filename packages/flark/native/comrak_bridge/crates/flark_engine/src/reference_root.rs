@@ -7,12 +7,9 @@
 //! only a bounded working set; each parent edge is followed by transfer of the
 //! superseded owner. Final root transfer uses the arena's fuelled seal.
 //!
-//! This builder emits an unsealed reference subtree into the caller-owned
-//! candidate arena/journal. Only the five-role manifest may seal that journal.
-//! Ordinal lookup, winner lookup, and multi-page blob reads are synchronous
-//! immutable queries. Winner lookup is exact but linear in occurrence pages;
-//! the host-facing path still needs a resumable query cursor or indexed winner
-//! root with an explicit work budget before it may run on a UI isolate.
+//! The builder emits an unsealed subtree into the live reference journal,
+//! which fuel-seals the final root. Ordinal replay is cursor-driven; exact
+//! winner lookup uses the incrementally maintained first-winner index.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -21,11 +18,10 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::candidate_manifest::{
-    decode_canonical_node_header, encode_canonical_node_header, finalize_role_digest,
-    hash_record_digest, preflight_remaining, role_hasher, CandidateAuthority, CandidateRole,
-    ManifestError, ReferenceReserve, RoleMetadata, CANDIDATE_FORMAT_VERSION,
-    CANONICAL_NODE_HEADER_BYTES, REFERENCES_SCHEMA, STRONG_DIGEST_BYTES,
+use crate::reference_authority::{
+    decode_reference_node_header, encode_reference_node_header, preflight_reference_capacity,
+    ReferenceAuthority, ReferenceAuthorityError, ReferenceReserve,
+    REFERENCE_CANONICAL_NODE_HEADER_BYTES,
 };
 use crate::storage::{ArenaBuildOwner, ArenaError, ArenaLimits, PageArena, ARENA_PAGE_BYTES};
 use crate::ArenaId;
@@ -35,7 +31,7 @@ const FACT_TAG: u8 = 0xd2;
 const PAGE_TAG: u8 = 0xd3;
 const ROOT_TAG: u8 = 0xd4;
 pub(crate) const INLINE_FACT_TAG: u8 = 0xd5;
-const NODE_HEADER_BYTES: usize = CANONICAL_NODE_HEADER_BYTES;
+const NODE_HEADER_BYTES: usize = REFERENCE_CANONICAL_NODE_HEADER_BYTES;
 const BLOB_METADATA_BYTES: usize = 32;
 pub(crate) const BLOB_CHUNK_BYTES: usize =
     ARENA_PAGE_BYTES - NODE_HEADER_BYTES - BLOB_METADATA_BYTES;
@@ -43,12 +39,10 @@ const FACT_PAYLOAD_BYTES: usize = NODE_HEADER_BYTES + 8 + (4 * 32) + 32;
 pub(crate) const INLINE_FACT_VALUE_BYTES: usize = ARENA_PAGE_BYTES - FACT_PAYLOAD_BYTES;
 const PAGE_PAYLOAD_BYTES: usize = NODE_HEADER_BYTES + 24;
 const ROOT_PAYLOAD_BYTES: usize = NODE_HEADER_BYTES + 16;
-pub(crate) const REFERENCE_ROOT_PAYLOAD_BYTES: usize = ROOT_PAYLOAD_BYTES;
 const DEFAULT_FACTS_PER_PAGE: usize = 64;
+const REFERENCE_WINNER_DIGEST_BYTES: usize = 32;
 const REFERENCE_WINNER_LABEL_DIGEST_DOMAIN: &[u8] = b"flark.reference-winner-label.v1\0";
 const REFERENCE_WINNER_MAX_DIGEST_BUCKET_LABELS: usize = 4;
-const REFERENCE_WINNER_ACCOUNTED_BYTES_PER_OCCURRENCE: usize = 128;
-const REFERENCE_WINNER_ACCOUNTED_FIXED_BYTES: usize = 8 * 1024;
 
 /// CommonMark admits at most 999 Unicode scalars in a reference label. The
 /// production label service pins Unicode default case folding to at most six
@@ -56,39 +50,6 @@ const REFERENCE_WINNER_ACCOUNTED_FIXED_BYTES: usize = 8 * 1024;
 /// Keeping the index on that finite bound makes every transition bounded while
 /// still admitting expanding labels such as repeated U+0130.
 pub(crate) const REFERENCE_WINNER_INDEX_MAX_NORMALIZED_LABEL_BYTES: u64 = 5_994;
-
-type ReferenceAuthority = CandidateAuthority;
-
-/// Returns whether a payload claims one authority-free canonical References
-/// storage node. Exact shape and closure validation still happen in the typed
-/// decoders; this predicate is only the snapshot host's header-routing seam.
-pub(crate) fn is_canonical_reference_node_payload(payload: &[u8]) -> bool {
-    matches!(
-        payload.get(..CANONICAL_NODE_HEADER_BYTES),
-        Some(&[BLOB_TAG, CANDIDATE_FORMAT_VERSION, 0, 0])
-            | Some(&[FACT_TAG, CANDIDATE_FORMAT_VERSION, 0, 0])
-            | Some(&[PAGE_TAG, CANDIDATE_FORMAT_VERSION, 0, 0])
-            | Some(&[ROOT_TAG, CANDIDATE_FORMAT_VERSION, 0, 0])
-            | Some(&[INLINE_FACT_TAG, CANDIDATE_FORMAT_VERSION, 0, 0])
-    )
-}
-
-/// Returns whether `payload` is one canonical v1 reference-fact node rather
-/// than a blob, occurrence page, or reference root.
-pub(crate) fn is_canonical_reference_record_payload(payload: &[u8]) -> bool {
-    let title_flag = NODE_HEADER_BYTES + 8 + (4 * 32);
-    let common = payload.len() >= FACT_PAYLOAD_BYTES
-        && matches!(payload.get(title_flag), Some(0 | 1))
-        && payload.get(title_flag + 1..title_flag + 8) == Some(&[0; 7]);
-    if !common {
-        return false;
-    }
-    match payload.get(..4) {
-        Some(&[FACT_TAG, 1, 0, 0]) => payload.len() == FACT_PAYLOAD_BYTES,
-        Some(&[INLINE_FACT_TAG, 1, 0, 0]) => inline_value_ranges(payload).is_some(),
-        _ => false,
-    }
-}
 
 fn inline_value_ranges(payload: &[u8]) -> Option<[Range<usize>; 3]> {
     if payload.len() < FACT_PAYLOAD_BYTES || payload.len() > ARENA_PAGE_BYTES {
@@ -277,14 +238,12 @@ impl From<ArenaError> for ReferenceRootError {
     }
 }
 
-impl From<ManifestError> for ReferenceRootError {
-    fn from(error: ManifestError) -> Self {
+impl From<ReferenceAuthorityError> for ReferenceRootError {
+    fn from(error: ReferenceAuthorityError) -> Self {
         match error {
-            ManifestError::InvalidAuthority => Self::InvalidAuthority,
-            ManifestError::CapacityPreflight => Self::CapacityPreflight,
-            ManifestError::ZeroFuel => Self::ZeroFuel,
-            ManifestError::Arena(error) => Self::Arena(error),
-            _ => Self::Corrupt("candidate manifest rejected reference storage"),
+            ReferenceAuthorityError::InvalidAuthority => Self::InvalidAuthority,
+            ReferenceAuthorityError::CapacityPreflight => Self::CapacityPreflight,
+            ReferenceAuthorityError::Corrupt(message) => Self::Corrupt(message),
         }
     }
 }
@@ -393,13 +352,10 @@ struct PendingFact {
     destination_len: u64,
     title_len: Option<u64>,
     storage: PendingFactStorage,
-    canonical_bytes: u64,
-    canonical_digest: [u8; STRONG_DIGEST_BYTES],
 }
 
 impl PendingFact {
     fn new(ordinal: u64, fact: AuthoritativeReferenceFact) -> Result<Self, ReferenceRootError> {
-        let (canonical_bytes, canonical_digest) = canonical_fact_digest(ordinal, &fact)?;
         let label_len = u64::try_from(fact.normalized_label.len())
             .map_err(|_| ReferenceRootError::FactTooLarge)?;
         let destination_len = u64::try_from(fact.cooked_destination.len())
@@ -442,8 +398,6 @@ impl PendingFact {
             destination_len,
             title_len,
             storage,
-            canonical_bytes,
-            canonical_digest,
         })
     }
 
@@ -627,10 +581,6 @@ impl StreamBlobBuild {
         Ok(take)
     }
 
-    fn retained_bytes(&self) -> usize {
-        self.buffer.len()
-    }
-
     fn drive_one(
         &mut self,
         authority: ReferenceAuthority,
@@ -697,8 +647,6 @@ struct PendingStreamFact {
     label_root: Option<ArenaBuildOwner>,
     destination_root: Option<ArenaBuildOwner>,
     title_root: Option<ArenaBuildOwner>,
-    canonical_bytes: u64,
-    canonical_hasher: blake3::Hasher,
 }
 
 enum StreamFactPoll {
@@ -721,24 +669,6 @@ impl PendingStreamFact {
             .map(u64::try_from)
             .transpose()
             .map_err(|_| ReferenceRootError::FactTooLarge)?;
-        let canonical_bytes = canonical_fact_bytes(
-            fact.title_source.is_some(),
-            label_len,
-            destination_len,
-            title_len.unwrap_or(0),
-        )?;
-        let mut canonical_hasher = canonical_fact_hasher(
-            fact.authority,
-            ordinal,
-            &fact.source,
-            &fact.label_source,
-            &fact.destination_source,
-            fact.title_source.as_ref(),
-            label_len,
-            destination_len,
-            title_len.unwrap_or(0),
-        );
-        canonical_hasher.update(&fact.normalized_label);
         let inline = inline_fact_fits(
             fact.normalized_label.len(),
             fact.destination_len,
@@ -786,8 +716,6 @@ impl PendingStreamFact {
             label_root: None,
             destination_root: None,
             title_root: None,
-            canonical_bytes,
-            canonical_hasher,
         })
     }
 
@@ -866,25 +794,7 @@ impl PendingStreamFact {
                 ))?
                 .offer(bytes)?
         };
-        self.canonical_hasher.update(&bytes[..consumed]);
         Ok(consumed)
-    }
-
-    fn retained_bytes(&self) -> usize {
-        if let Some(label) = &self.inline_label {
-            return label.len()
-                + self.inline_destination.as_ref().map_or(0, Vec::len)
-                + self.inline_title.as_ref().map_or(0, Vec::len);
-        }
-        self.label.as_ref().map_or(0, |label| label.bytes.len())
-            + self
-                .value
-                .as_ref()
-                .map_or(0, StreamBlobBuild::retained_bytes)
-    }
-
-    fn canonical_digest(&self) -> [u8; STRONG_DIGEST_BYTES] {
-        *self.canonical_hasher.clone().finalize().as_bytes()
     }
 
     fn drive_one(
@@ -1018,94 +928,6 @@ impl PendingStreamFact {
     }
 }
 
-fn canonical_fact_digest(
-    ordinal: u64,
-    fact: &AuthoritativeReferenceFact,
-) -> Result<(u64, [u8; STRONG_DIGEST_BYTES]), ReferenceRootError> {
-    let label_len =
-        u64::try_from(fact.normalized_label.len()).map_err(|_| ReferenceRootError::FactTooLarge)?;
-    let destination_len = u64::try_from(fact.cooked_destination.len())
-        .map_err(|_| ReferenceRootError::FactTooLarge)?;
-    let title_len = u64::try_from(fact.cooked_title.as_ref().map_or(0, |title| title.len()))
-        .map_err(|_| ReferenceRootError::FactTooLarge)?;
-    let canonical_bytes = canonical_fact_bytes(
-        fact.title_source.is_some(),
-        label_len,
-        destination_len,
-        title_len,
-    )?;
-
-    let mut hasher = canonical_fact_hasher(
-        fact.authority,
-        ordinal,
-        &fact.source,
-        &fact.label_source,
-        &fact.destination_source,
-        fact.title_source.as_ref(),
-        label_len,
-        destination_len,
-        title_len,
-    );
-    hasher.update(&fact.normalized_label);
-    hasher.update(&fact.cooked_destination);
-    if let Some(title) = &fact.cooked_title {
-        hasher.update(title);
-    }
-    Ok((canonical_bytes, *hasher.finalize().as_bytes()))
-}
-
-fn canonical_fact_bytes(
-    has_title: bool,
-    label_len: u64,
-    destination_len: u64,
-    title_len: u64,
-) -> Result<u64, ReferenceRootError> {
-    8_u64
-        .checked_add(3 * 32)
-        .and_then(|bytes| bytes.checked_add(1))
-        .and_then(|bytes| bytes.checked_add(if has_title { 32 } else { 0 }))
-        .and_then(|bytes| bytes.checked_add(3 * 8))
-        .and_then(|bytes| bytes.checked_add(label_len))
-        .and_then(|bytes| bytes.checked_add(destination_len))
-        .and_then(|bytes| bytes.checked_add(title_len))
-        .ok_or(ReferenceRootError::FactTooLarge)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn canonical_fact_hasher(
-    _authority: CandidateAuthority,
-    ordinal: u64,
-    source: &ReferenceSourceRange,
-    label_source: &ReferenceSourceRange,
-    destination_source: &ReferenceSourceRange,
-    title_source: Option<&ReferenceSourceRange>,
-    label_len: u64,
-    destination_len: u64,
-    title_len: u64,
-) -> blake3::Hasher {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"flark.reference.fact.v2\0");
-    hasher.update(&ordinal.to_le_bytes());
-    for range in [source, label_source, destination_source] {
-        hash_source_range(&mut hasher, range);
-    }
-    hasher.update(&[u8::from(title_source.is_some())]);
-    if let Some(range) = title_source {
-        hash_source_range(&mut hasher, range);
-    }
-    hasher.update(&label_len.to_le_bytes());
-    hasher.update(&destination_len.to_le_bytes());
-    hasher.update(&title_len.to_le_bytes());
-    hasher
-}
-
-fn hash_source_range(hasher: &mut blake3::Hasher, range: &ReferenceSourceRange) {
-    hasher.update(&range.bytes.start.to_le_bytes());
-    hasher.update(&range.bytes.end.to_le_bytes());
-    hasher.update(&range.utf16.start.to_le_bytes());
-    hasher.update(&range.utf16.end.to_le_bytes());
-}
-
 struct PageRelease {
     page: ArenaBuildOwner,
     owners: Vec<ArenaBuildOwner>,
@@ -1120,9 +942,9 @@ enum BuildPhase {
 }
 
 pub(crate) struct ReferenceSubtreeRoot {
-    pub(crate) authority: CandidateAuthority,
+    pub(crate) authority: ReferenceAuthority,
     pub(crate) owner: ArenaBuildOwner,
-    pub(crate) metadata: RoleMetadata,
+    pub(crate) occurrence_count: u64,
     pub(crate) _not_sync: PhantomData<Cell<()>>,
 }
 
@@ -1153,8 +975,6 @@ pub(crate) struct ReferenceRootBuilder {
     last_source_byte_end: u64,
     last_source_utf16_end: u64,
     finish_requested: bool,
-    canonical_bytes: u64,
-    digest: blake3::Hasher,
     committed_occurrence: Option<ReferenceCommittedOccurrence>,
     _not_sync: PhantomData<Cell<()>>,
 }
@@ -1167,7 +987,6 @@ impl fmt::Debug for ReferenceRootBuilder {
             .field("next_ordinal", &self.next_ordinal)
             .field("active_facts", &self.active_facts.len())
             .field("finish_requested", &self.finish_requested)
-            .field("canonical_bytes", &self.canonical_bytes)
             .finish_non_exhaustive()
     }
 }
@@ -1201,8 +1020,6 @@ impl ReferenceRootBuilder {
             last_source_byte_end: 0,
             last_source_utf16_end: 0,
             finish_requested: false,
-            canonical_bytes: 0,
-            digest: role_hasher(authority, CandidateRole::References, REFERENCES_SCHEMA),
             committed_occurrence: None,
             _not_sync: PhantomData,
         })
@@ -1277,13 +1094,6 @@ impl ReferenceRootBuilder {
         fact.offer(kind, bytes)
     }
 
-    pub(crate) fn stream_retained_bytes(&self) -> usize {
-        match &self.phase {
-            BuildPhase::StreamFact(fact) => fact.retained_bytes(),
-            _ => 0,
-        }
-    }
-
     pub(crate) fn finish(
         &mut self,
         arena: &PageArena,
@@ -1303,7 +1113,7 @@ impl ReferenceRootBuilder {
             .checked_add(page_nodes * PAGE_PAYLOAD_BYTES)
             .and_then(|value| value.checked_add(ROOT_PAYLOAD_BYTES))
             .ok_or(ReferenceRootError::CapacityPreflight)?;
-        preflight_remaining(arena, self.limits.arena, nodes, payload_bytes)?;
+        preflight_reference_capacity(arena, self.limits.arena, nodes, payload_bytes)?;
         self.finish_requested = true;
         Ok(())
     }
@@ -1337,23 +1147,12 @@ impl ReferenceRootBuilder {
                 }
                 Ok(DriveOutcome::Root(owner)) => {
                     transitions += 1;
-                    let metadata = RoleMetadata {
-                        role: CandidateRole::References,
-                        schema: REFERENCES_SCHEMA,
-                        record_count: self.next_ordinal,
-                        canonical_bytes: self.canonical_bytes,
-                        digest: finalize_role_digest(
-                            self.digest.clone(),
-                            self.next_ordinal,
-                            self.canonical_bytes,
-                        ),
-                    };
                     return Ok(ReferenceBuildPoll::Complete {
                         transitions,
                         root: ReferenceSubtreeRoot {
                             authority: self.authority,
                             owner,
-                            metadata,
+                            occurrence_count: self.next_ordinal,
                             _not_sync: PhantomData,
                         },
                     });
@@ -1380,15 +1179,6 @@ impl ReferenceRootBuilder {
                             ordinal: self.next_ordinal,
                             fact: owner.id(),
                         };
-                        self.canonical_bytes = self
-                            .canonical_bytes
-                            .checked_add(pending.canonical_bytes)
-                            .ok_or(ReferenceRootError::FactTooLarge)?;
-                        hash_record_digest(
-                            &mut self.digest,
-                            pending.canonical_bytes,
-                            pending.canonical_digest,
-                        );
                         self.last_source_byte_end = pending.source.bytes.end;
                         self.last_source_utf16_end = pending.source.utf16.end;
                         self.next_ordinal = self
@@ -1417,15 +1207,6 @@ impl ReferenceRootBuilder {
                             ordinal: self.next_ordinal,
                             fact: owner.id(),
                         };
-                        self.canonical_bytes = self
-                            .canonical_bytes
-                            .checked_add(pending.canonical_bytes)
-                            .ok_or(ReferenceRootError::FactTooLarge)?;
-                        hash_record_digest(
-                            &mut self.digest,
-                            pending.canonical_bytes,
-                            pending.canonical_digest(),
-                        );
                         self.last_source_byte_end = pending.source.bytes.end;
                         self.last_source_utf16_end = pending.source.utf16.end;
                         self.next_ordinal = self
@@ -1536,8 +1317,8 @@ impl ReferenceRootBuilder {
                 .as_ref()
                 .is_some_and(|range| !fact.source.contains(range))
             || fact.title_source.is_some() != fact.cooked_title.is_some()
-            || fact.source.bytes.end > self.authority.source_bytes
-            || fact.source.utf16.end > self.authority.source_utf16
+            || fact.source.bytes.end > self.authority.source.byte_len() as u64
+            || fact.source.utf16.end > self.authority.source.utf16_len() as u64
         {
             return Err(ReferenceRootError::InvalidRange);
         }
@@ -1578,8 +1359,8 @@ impl ReferenceRootBuilder {
                 .as_ref()
                 .is_some_and(|range| !fact.source.contains(range))
             || fact.title_source.is_some() != fact.title_len.is_some()
-            || fact.source.bytes.end > self.authority.source_bytes
-            || fact.source.utf16.end > self.authority.source_utf16
+            || fact.source.bytes.end > self.authority.source.byte_len() as u64
+            || fact.source.utf16.end > self.authority.source.utf16_len() as u64
         {
             return Err(ReferenceRootError::InvalidRange);
         }
@@ -1629,7 +1410,7 @@ impl ReferenceRootBuilder {
             .checked_add(PAGE_PAYLOAD_BYTES + ROOT_PAYLOAD_BYTES)
             .and_then(|bytes| bytes.checked_add(reserve.payload_bytes))
             .ok_or(ReferenceRootError::CapacityPreflight)?;
-        preflight_remaining(arena, self.limits.arena, required_nodes, required_payload)
+        preflight_reference_capacity(arena, self.limits.arena, required_nodes, required_payload)
             .map_err(Into::into)
     }
 
@@ -1661,7 +1442,7 @@ impl ReferenceRootBuilder {
             .checked_add(PAGE_PAYLOAD_BYTES + ROOT_PAYLOAD_BYTES)
             .and_then(|bytes| bytes.checked_add(reserve.payload_bytes))
             .ok_or(ReferenceRootError::CapacityPreflight)?;
-        preflight_remaining(arena, self.limits.arena, required_nodes, required_payload)
+        preflight_reference_capacity(arena, self.limits.arena, required_nodes, required_payload)
             .map_err(Into::into)
     }
 }
@@ -1806,7 +1587,7 @@ pub(crate) struct PersistentBytesCopyPoll {
 impl<'a> ReferenceRootView<'a> {
     pub(crate) fn open(
         arena: &'a PageArena,
-        authority: CandidateAuthority,
+        authority: ReferenceAuthority,
         root: ArenaId,
     ) -> Result<Self, ReferenceRootError> {
         let descriptor = decode_root(arena, root, authority)?;
@@ -1885,51 +1666,6 @@ impl<'a> ReferenceRootView<'a> {
         Err(ReferenceRootError::Corrupt(
             "occurrence missing from page chain",
         ))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn winner(
-        &self,
-        normalized_label: &str,
-    ) -> Result<Option<ReferenceOccurrenceView<'a>>, ReferenceRootError> {
-        // Intentionally synchronous in this storage proof. The production
-        // host query must wrap this traversal in a resumable cursor or replace
-        // it with the planned paged winner directory.
-        let mut page = self.page_root;
-        let mut winner = None;
-        let mut expected_end = self.count;
-        while let Some(page_id) = page {
-            let descriptor = decode_page(self.arena, page_id, self.authority)?;
-            let page_end = descriptor
-                .start
-                .checked_add(u64::from(descriptor.count))
-                .ok_or(ReferenceRootError::Corrupt("page ordinal overflow"))?;
-            if page_end != expected_end {
-                return Err(ReferenceRootError::Corrupt(
-                    "occurrence pages are not contiguous",
-                ));
-            }
-            let first_fact = usize::from(descriptor.has_previous);
-            for index in 0..usize::from(descriptor.count) {
-                let fact_id = self.arena.child_at(page_id, first_fact + index)?;
-                let fact = decode_fact(self.arena, fact_id, self.authority)?;
-                if fact.normalized_label.equals(normalized_label.as_bytes())?
-                    && winner.is_none_or(|(_, ordinal)| fact.ordinal < ordinal)
-                {
-                    winner = Some((fact_id, fact.ordinal));
-                }
-            }
-            expected_end = descriptor.start;
-            page = descriptor.previous;
-        }
-        if expected_end != 0 {
-            return Err(ReferenceRootError::Corrupt(
-                "occurrence page chain is incomplete",
-            ));
-        }
-        winner
-            .map(|(id, _)| decode_fact(self.arena, id, self.authority))
-            .transpose()
     }
 }
 
@@ -2046,16 +1782,16 @@ impl ReferenceWinnerBucket {
 
 /// Authority-bound acceleration over one immutable canonical References root.
 /// Entries retain only generation-checked arena ids; the enclosing journal or
-/// publication independently owns the referenced pages. The immutable payload
-/// may be rebound only through [`Self::rebind_authority`] after its caller proves that a
-/// fresh authority retains those exact canonical fact ids.
+/// adopted root independently owns the referenced pages. The immutable payload
+/// may be rebound only through [`Self::rebind_authority`] after its caller
+/// proves that a fresh authority retains those exact canonical fact ids.
 ///
 /// A B-tree is intentional here. Its insertion cost grows logarithmically and
 /// never hides a whole-table resize inside one editor quantum. Digest buckets
 /// still exact-compare canonical normalized-label bytes, so a digest collision
 /// cannot change Markdown semantics.
 pub(crate) struct ReferenceWinnerIndex {
-    authority: CandidateAuthority,
+    authority: ReferenceAuthority,
     root: ArenaId,
     payload: Arc<ReferenceWinnerIndexPayload>,
 }
@@ -2064,7 +1800,7 @@ struct ReferenceWinnerIndexPayload {
     occurrence_count: u64,
     indexed_occurrences: u64,
     skipped_oversized_occurrences: u64,
-    buckets: BTreeMap<[u8; STRONG_DIGEST_BYTES], ReferenceWinnerBucket>,
+    buckets: BTreeMap<[u8; REFERENCE_WINNER_DIGEST_BYTES], ReferenceWinnerBucket>,
 }
 
 impl fmt::Debug for ReferenceWinnerIndex {
@@ -2085,33 +1821,12 @@ impl fmt::Debug for ReferenceWinnerIndex {
 }
 
 impl ReferenceWinnerIndex {
-    pub(crate) fn is_bound_to(&self, authority: CandidateAuthority, root: ArenaId) -> bool {
+    pub(crate) fn is_bound_to(&self, authority: ReferenceAuthority, root: ArenaId) -> bool {
         self.authority == authority && self.root == root
     }
 
     pub(crate) const fn root(&self) -> ArenaId {
         self.root
-    }
-
-    pub(crate) fn occurrence_count(&self) -> u64 {
-        self.payload.occurrence_count
-    }
-
-    pub(crate) fn indexed_occurrences(&self) -> u64 {
-        self.payload.indexed_occurrences
-    }
-
-    #[cfg(test)]
-    pub(crate) fn skipped_oversized_occurrences(&self) -> u64 {
-        self.payload.skipped_oversized_occurrences
-    }
-
-    pub(crate) fn unique_label_count(&self) -> u64 {
-        self.payload
-            .buckets
-            .values()
-            .map(|bucket| 1_u64 + bucket.collisions.len() as u64)
-            .sum()
     }
 
     pub(crate) fn winner<'a>(
@@ -2147,7 +1862,7 @@ impl ReferenceWinnerIndex {
     /// Rebinds revision-local lookup authority to another retained wrapper
     /// over the exact same canonical fact ids. The immutable buckets are
     /// shared in O(1); the last owner alone performs fuelled reclamation.
-    pub(crate) fn rebind_authority(&self, authority: CandidateAuthority) -> Self {
+    pub(crate) fn rebind_authority(&self, authority: ReferenceAuthority) -> Self {
         Self {
             authority,
             root: self.root,
@@ -2162,15 +1877,14 @@ impl ReferenceWinnerIndex {
 /// storage page per poll and the first occurrence for an exactly equal label
 /// is retained. Later duplicates never replace that first winner.
 ///
-/// This is the build-local counterpart of [`ReferenceWinnerIndexBuilder`]. It
-/// avoids rescanning every prior occurrence after each paragraph while still
-/// deriving all equality decisions from persistent canonical bytes.
+/// It avoids rescanning prior occurrences while still deriving all equality
+/// decisions from persistent canonical bytes.
 pub(crate) struct ReferenceWinnerIndexJournal {
     pending: Option<ReferenceWinnerFactVisit>,
     occurrence_count: u64,
     indexed_occurrences: u64,
     skipped_oversized_occurrences: u64,
-    buckets: BTreeMap<[u8; STRONG_DIGEST_BYTES], ReferenceWinnerBucket>,
+    buckets: BTreeMap<[u8; REFERENCE_WINNER_DIGEST_BYTES], ReferenceWinnerBucket>,
     label_scratch: Vec<u8>,
 }
 
@@ -2205,7 +1919,7 @@ impl ReferenceWinnerIndexJournal {
     pub(crate) fn begin_occurrence(
         &mut self,
         arena: &PageArena,
-        authority: CandidateAuthority,
+        authority: ReferenceAuthority,
         committed: ReferenceCommittedOccurrence,
     ) -> Result<(), ReferenceRootError> {
         if self.pending.is_some() {
@@ -2240,7 +1954,7 @@ impl ReferenceWinnerIndexJournal {
     pub(crate) fn poll(
         &mut self,
         arena: &PageArena,
-        authority: CandidateAuthority,
+        authority: ReferenceAuthority,
         fuel: usize,
     ) -> Result<ReferenceWinnerIndexBuildPoll, ReferenceRootError> {
         if fuel == 0 {
@@ -2280,7 +1994,7 @@ impl ReferenceWinnerIndexJournal {
     pub(crate) fn finish(
         self,
         arena: &PageArena,
-        authority: CandidateAuthority,
+        authority: ReferenceAuthority,
         root: ArenaId,
     ) -> Result<ReferenceWinnerIndex, ReferenceRootError> {
         if self.pending.is_some() {
@@ -2318,9 +2032,9 @@ impl ReferenceWinnerIndexJournal {
     fn install_first_fact(
         &mut self,
         arena: &PageArena,
-        authority: CandidateAuthority,
+        authority: ReferenceAuthority,
         fact_id: ArenaId,
-        digest: [u8; STRONG_DIGEST_BYTES],
+        digest: [u8; REFERENCE_WINNER_DIGEST_BYTES],
     ) -> Result<(), ReferenceRootError> {
         let occurrence = decode_fact(arena, fact_id, authority)?;
         let label_len = usize::try_from(occurrence.normalized_label.len())
@@ -2340,11 +2054,11 @@ impl ReferenceWinnerIndexJournal {
             ));
         }
 
-        let candidate = ReferenceWinnerEntry { fact: fact_id };
+        let winner = ReferenceWinnerEntry { fact: fact_id };
         match self.buckets.entry(digest) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(ReferenceWinnerBucket {
-                    first: candidate,
+                    first: winner,
                     collisions: Vec::new(),
                     overflowed: false,
                 });
@@ -2367,7 +2081,7 @@ impl ReferenceWinnerIndexJournal {
                         .collisions
                         .try_reserve(1)
                         .map_err(|_| ReferenceRootError::Arena(ArenaError::AllocationFailed))?;
-                    bucket.collisions.push(candidate);
+                    bucket.collisions.push(winner);
                 }
             }
         }
@@ -2379,7 +2093,7 @@ impl ReferenceWinnerIndexJournal {
 /// map. Arena pages are not owned here; this cursor exists so closing a huge
 /// document never recursively frees an entire B-tree in one UI quantum.
 pub(crate) struct ReferenceWinnerIndexReclaimer {
-    buckets: Option<BTreeMap<[u8; STRONG_DIGEST_BYTES], ReferenceWinnerBucket>>,
+    buckets: Option<BTreeMap<[u8; REFERENCE_WINNER_DIGEST_BYTES], ReferenceWinnerBucket>>,
 }
 
 impl fmt::Debug for ReferenceWinnerIndexReclaimer {
@@ -2439,14 +2153,6 @@ impl Drop for ReferenceWinnerIndexReclaimer {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ReferenceWinnerPageVisit {
-    id: ArenaId,
-    start: u64,
-    first_fact: usize,
-    next_fact: usize,
-}
-
 struct ReferenceWinnerFactVisit {
     id: ArenaId,
     digest: PersistentBytesDigestCursor,
@@ -2462,382 +2168,17 @@ impl fmt::Debug for ReferenceWinnerFactVisit {
     }
 }
 
-/// Fuel-driven builder for [`ReferenceWinnerIndex`]. One transition decodes
-/// one occurrence page, starts one fact, hashes at most one bounded label
-/// storage page, or commits one digest bucket update.
-pub(crate) struct ReferenceWinnerIndexBuilder {
-    authority: CandidateAuthority,
-    root: ArenaId,
-    occurrence_count: u64,
-    next_page: Option<ArenaId>,
-    expected_page_end: u64,
-    page: Option<ReferenceWinnerPageVisit>,
-    fact: Option<ReferenceWinnerFactVisit>,
-    indexed_occurrences: u64,
-    skipped_oversized_occurrences: u64,
-    buckets: BTreeMap<[u8; STRONG_DIGEST_BYTES], ReferenceWinnerBucket>,
-    label_scratch: Vec<u8>,
-    complete: bool,
-}
-
-impl fmt::Debug for ReferenceWinnerIndexBuilder {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ReferenceWinnerIndexBuilder")
-            .field("root", &self.root)
-            .field("occurrence_count", &self.occurrence_count)
-            .field("indexed_occurrences", &self.indexed_occurrences)
-            .field(
-                "skipped_oversized_occurrences",
-                &self.skipped_oversized_occurrences,
-            )
-            .field("digest_bucket_count", &self.buckets.len())
-            .field("complete", &self.complete)
-            .finish_non_exhaustive()
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ReferenceWinnerIndexBuildPoll {
     pub(crate) transitions: usize,
     pub(crate) complete: bool,
 }
 
-impl ReferenceWinnerIndexBuilder {
-    pub(crate) fn new(
-        arena: &PageArena,
-        authority: CandidateAuthority,
-        root: ArenaId,
-    ) -> Result<Self, ReferenceRootError> {
-        let view = ReferenceRootView::open(arena, authority, root)?;
-        Ok(Self {
-            authority,
-            root,
-            occurrence_count: view.count,
-            next_page: view.page_root,
-            expected_page_end: view.count,
-            page: None,
-            fact: None,
-            indexed_occurrences: 0,
-            skipped_oversized_occurrences: 0,
-            buckets: BTreeMap::new(),
-            label_scratch: Vec::new(),
-            complete: false,
-        })
-    }
-
-    pub(crate) fn maximum_external_payload_bytes(&self) -> Result<usize, ReferenceRootError> {
-        usize::try_from(self.occurrence_count)
-            .ok()
-            .and_then(|count| count.checked_mul(REFERENCE_WINNER_ACCOUNTED_BYTES_PER_OCCURRENCE))
-            .and_then(|bytes| bytes.checked_add(REFERENCE_WINNER_ACCOUNTED_FIXED_BYTES))
-            .ok_or(ReferenceRootError::FactTooLarge)
-    }
-
-    pub(crate) fn is_bound_to(&self, authority: CandidateAuthority, root: ArenaId) -> bool {
-        self.authority == authority && self.root == root
-    }
-
-    pub(crate) fn poll(
-        &mut self,
-        arena: &PageArena,
-        authority: CandidateAuthority,
-        root: ArenaId,
-        fuel: usize,
-    ) -> Result<ReferenceWinnerIndexBuildPoll, ReferenceRootError> {
-        if fuel == 0 {
-            return Err(ReferenceRootError::ZeroFuel);
-        }
-        if authority != self.authority {
-            return Err(ReferenceRootError::CrossAuthority);
-        }
-        if root != self.root {
-            return Err(ReferenceRootError::Corrupt(
-                "reference winner builder is bound to another root",
-            ));
-        }
-        if self.complete {
-            return Ok(ReferenceWinnerIndexBuildPoll {
-                transitions: 0,
-                complete: true,
-            });
-        }
-
-        let mut transitions = 0_usize;
-        while transitions < fuel {
-            if let Some(fact) = self.fact.as_mut() {
-                let complete = fact.digest.drive_one(arena, authority, &mut fact.hasher)?;
-                transitions += 1;
-                if complete {
-                    let visit = self.fact.take().ok_or(ReferenceRootError::Corrupt(
-                        "reference winner fact disappeared",
-                    ))?;
-                    let digest = *visit.hasher.finalize().as_bytes();
-                    self.install_fact(arena, authority, visit.id, digest)?;
-                }
-                continue;
-            }
-
-            if let Some(page) = self.page.as_mut() {
-                if page.next_fact == 0 {
-                    self.page = None;
-                    transitions += 1;
-                    continue;
-                }
-                page.next_fact -= 1;
-                let local = page.next_fact;
-                let fact_id = arena.child_at(page.id, page.first_fact + local)?;
-                let occurrence = decode_fact(arena, fact_id, authority)?;
-                let expected_ordinal =
-                    page.start
-                        .checked_add(local as u64)
-                        .ok_or(ReferenceRootError::Corrupt(
-                            "reference winner ordinal overflow",
-                        ))?;
-                if occurrence.ordinal != expected_ordinal {
-                    return Err(ReferenceRootError::Corrupt(
-                        "reference winner fact ordinal changed",
-                    ));
-                }
-                if occurrence.normalized_label.len()
-                    > REFERENCE_WINNER_INDEX_MAX_NORMALIZED_LABEL_BYTES
-                {
-                    self.skipped_oversized_occurrences = self
-                        .skipped_oversized_occurrences
-                        .checked_add(1)
-                        .ok_or(ReferenceRootError::FactTooLarge)?;
-                } else {
-                    let digest = PersistentBytesDigestCursor::new(occurrence.normalized_label)?;
-                    let mut hasher = blake3::Hasher::new();
-                    hasher.update(REFERENCE_WINNER_LABEL_DIGEST_DOMAIN);
-                    self.fact = Some(ReferenceWinnerFactVisit {
-                        id: fact_id,
-                        digest,
-                        hasher,
-                    });
-                }
-                transitions += 1;
-                continue;
-            }
-
-            if let Some(page_id) = self.next_page {
-                let descriptor = decode_page(arena, page_id, authority)?;
-                let page_end = descriptor
-                    .start
-                    .checked_add(u64::from(descriptor.count))
-                    .ok_or(ReferenceRootError::Corrupt(
-                        "reference winner page ordinal overflow",
-                    ))?;
-                if page_end != self.expected_page_end {
-                    return Err(ReferenceRootError::Corrupt(
-                        "reference winner pages are not contiguous",
-                    ));
-                }
-                self.next_page = descriptor.previous;
-                self.expected_page_end = descriptor.start;
-                self.page = Some(ReferenceWinnerPageVisit {
-                    id: page_id,
-                    start: descriptor.start,
-                    first_fact: usize::from(descriptor.has_previous),
-                    next_fact: usize::from(descriptor.count),
-                });
-                transitions += 1;
-                continue;
-            }
-
-            if self.expected_page_end != 0
-                || self.indexed_occurrences + self.skipped_oversized_occurrences
-                    != self.occurrence_count
-            {
-                return Err(ReferenceRootError::Corrupt(
-                    "reference winner page chain is incomplete",
-                ));
-            }
-            self.complete = true;
-            transitions += 1;
-            return Ok(ReferenceWinnerIndexBuildPoll {
-                transitions,
-                complete: true,
-            });
-        }
-        Ok(ReferenceWinnerIndexBuildPoll {
-            transitions,
-            complete: false,
-        })
-    }
-
-    pub(crate) fn into_index(self) -> Result<ReferenceWinnerIndex, ReferenceRootError> {
-        if !self.complete || self.page.is_some() || self.fact.is_some() {
-            return Err(ReferenceRootError::Busy);
-        }
-        Ok(ReferenceWinnerIndex {
-            authority: self.authority,
-            root: self.root,
-            payload: Arc::new(ReferenceWinnerIndexPayload {
-                occurrence_count: self.occurrence_count,
-                indexed_occurrences: self.indexed_occurrences,
-                skipped_oversized_occurrences: self.skipped_oversized_occurrences,
-                buckets: self.buckets,
-            }),
-        })
-    }
-
-    pub(crate) fn rebind_authority(&mut self, authority: CandidateAuthority) {
-        self.authority = authority;
-    }
-
-    pub(crate) fn into_reclaimer(mut self) -> ReferenceWinnerIndexReclaimer {
-        self.fact = None;
-        self.page = None;
-        self.label_scratch.clear();
-        ReferenceWinnerIndexReclaimer {
-            buckets: Some(std::mem::take(&mut self.buckets)),
-        }
-    }
-
-    fn install_fact(
-        &mut self,
-        arena: &PageArena,
-        authority: CandidateAuthority,
-        fact_id: ArenaId,
-        digest: [u8; STRONG_DIGEST_BYTES],
-    ) -> Result<(), ReferenceRootError> {
-        let occurrence = decode_fact(arena, fact_id, authority)?;
-        let label_len = usize::try_from(occurrence.normalized_label.len())
-            .map_err(|_| ReferenceRootError::FactTooLarge)?;
-        if label_len as u64 > REFERENCE_WINNER_INDEX_MAX_NORMALIZED_LABEL_BYTES {
-            return Err(ReferenceRootError::Corrupt(
-                "oversized reference entered winner bucket",
-            ));
-        }
-        self.label_scratch.clear();
-        self.label_scratch
-            .try_reserve_exact(label_len)
-            .map_err(|_| ReferenceRootError::Arena(ArenaError::AllocationFailed))?;
-        self.label_scratch.resize(label_len, 0);
-        if occurrence
-            .normalized_label
-            .read(0, &mut self.label_scratch)?
-            != label_len
-        {
-            return Err(ReferenceRootError::Corrupt(
-                "reference winner label read was truncated",
-            ));
-        }
-
-        let candidate = ReferenceWinnerEntry { fact: fact_id };
-        match self.buckets.entry(digest) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(ReferenceWinnerBucket {
-                    first: candidate,
-                    collisions: Vec::new(),
-                    overflowed: false,
-                });
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let bucket = entry.get_mut();
-                if bucket.overflowed {
-                    self.indexed_occurrences = self
-                        .indexed_occurrences
-                        .checked_add(1)
-                        .ok_or(ReferenceRootError::FactTooLarge)?;
-                    return Ok(());
-                }
-                let mut matching = None;
-                for (index, existing) in bucket.entries().enumerate() {
-                    let existing = decode_fact(arena, existing.fact, authority)?;
-                    if existing.normalized_label.equals(&self.label_scratch)? {
-                        matching = Some(index);
-                        break;
-                    }
-                }
-                match matching {
-                    Some(0) => bucket.first = candidate,
-                    Some(index) => bucket.collisions[index - 1] = candidate,
-                    None => {
-                        if 1 + bucket.collisions.len() >= REFERENCE_WINNER_MAX_DIGEST_BUCKET_LABELS
-                        {
-                            bucket.overflowed = true;
-                            self.indexed_occurrences = self
-                                .indexed_occurrences
-                                .checked_add(1)
-                                .ok_or(ReferenceRootError::FactTooLarge)?;
-                            return Ok(());
-                        }
-                        bucket
-                            .collisions
-                            .try_reserve(1)
-                            .map_err(|_| ReferenceRootError::Arena(ArenaError::AllocationFailed))?;
-                        bucket.collisions.push(candidate);
-                    }
-                }
-            }
-        }
-        self.indexed_occurrences = self
-            .indexed_occurrences
-            .checked_add(1)
-            .ok_or(ReferenceRootError::FactTooLarge)?;
-        Ok(())
-    }
-}
-
-fn reference_winner_label_digest(label: &[u8]) -> [u8; STRONG_DIGEST_BYTES] {
+fn reference_winner_label_digest(label: &[u8]) -> [u8; REFERENCE_WINNER_DIGEST_BYTES] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(REFERENCE_WINNER_LABEL_DIGEST_DOMAIN);
     hasher.update(label);
     *hasher.finalize().as_bytes()
-}
-
-/// Fuel-bounded independent verification of the canonical References role.
-///
-/// The manifest stores the claimed role digest, while the arena stores the
-/// paged fact/blob closure. A host must recompute the former from the latter;
-/// merely copying the manifest payload would trust an unverified claim. This
-/// cursor walks pages and cooked-value chains without flattening either.
-pub(crate) struct ReferenceRoleDigestValidator {
-    authority: CandidateAuthority,
-    expected: RoleMetadata,
-    next_page: Option<ArenaId>,
-    expected_page_end: u64,
-    pages: Vec<ArenaId>,
-    page: Option<ReferencePageVisit>,
-    fact: Option<ReferenceFactDigestCursor>,
-    next_ordinal: u64,
-    last_source_byte_end: u64,
-    last_source_utf16_end: u64,
-    canonical_bytes: u64,
-    digest: blake3::Hasher,
-    phase: ReferenceValidationPhase,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ReferenceValidationPhase {
-    DescendPages,
-    VisitFacts,
-    Complete,
-}
-
-struct ReferencePageVisit {
-    id: ArenaId,
-    next_fact: usize,
-    count: usize,
-    first_fact: usize,
-}
-
-struct ReferenceFactDigestCursor {
-    canonical_bytes: u64,
-    hasher: blake3::Hasher,
-    destination: Option<PersistentBytesDigestCursor>,
-    title: Option<PersistentBytesDigestCursor>,
-    value: PersistentBytesDigestCursor,
-    stage: FactDigestStage,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FactDigestStage {
-    Label,
-    Destination,
-    Title,
 }
 
 struct BlobDigestCursor {
@@ -2857,264 +2198,6 @@ enum PersistentBytesDigestCursor {
         complete: bool,
     },
     Blob(BlobDigestCursor),
-}
-
-pub(crate) struct ReferenceRoleValidationPoll {
-    pub(crate) transitions: usize,
-    pub(crate) complete: bool,
-}
-
-impl ReferenceRoleDigestValidator {
-    pub(crate) fn new(
-        arena: &PageArena,
-        authority: CandidateAuthority,
-        root: ArenaId,
-        expected: RoleMetadata,
-    ) -> Result<Self, ReferenceRootError> {
-        if expected.role != CandidateRole::References || expected.schema != REFERENCES_SCHEMA {
-            return Err(ReferenceRootError::Corrupt(
-                "invalid reference role metadata",
-            ));
-        }
-        let descriptor = decode_root(arena, root, authority)?;
-        if descriptor.count != expected.record_count {
-            return Err(ReferenceRootError::Corrupt("reference role count changed"));
-        }
-        Ok(Self {
-            authority,
-            expected,
-            next_page: descriptor.page_root,
-            expected_page_end: descriptor.count,
-            pages: Vec::new(),
-            page: None,
-            fact: None,
-            next_ordinal: 0,
-            last_source_byte_end: 0,
-            last_source_utf16_end: 0,
-            canonical_bytes: 0,
-            digest: role_hasher(authority, CandidateRole::References, REFERENCES_SCHEMA),
-            phase: ReferenceValidationPhase::DescendPages,
-        })
-    }
-
-    pub(crate) fn poll(
-        &mut self,
-        arena: &PageArena,
-        fuel: usize,
-    ) -> Result<ReferenceRoleValidationPoll, ReferenceRootError> {
-        if fuel == 0 {
-            return Err(ReferenceRootError::ZeroFuel);
-        }
-        let mut transitions = 0;
-        while transitions < fuel && self.phase != ReferenceValidationPhase::Complete {
-            self.drive_one(arena)?;
-            transitions += 1;
-        }
-        Ok(ReferenceRoleValidationPoll {
-            transitions,
-            complete: self.phase == ReferenceValidationPhase::Complete,
-        })
-    }
-
-    fn drive_one(&mut self, arena: &PageArena) -> Result<(), ReferenceRootError> {
-        if let Some(fact) = self.fact.as_mut() {
-            if let Some((canonical_bytes, digest)) = fact.drive_one(arena, self.authority)? {
-                self.canonical_bytes = self
-                    .canonical_bytes
-                    .checked_add(canonical_bytes)
-                    .ok_or(ReferenceRootError::FactTooLarge)?;
-                hash_record_digest(&mut self.digest, canonical_bytes, digest);
-                self.next_ordinal = self
-                    .next_ordinal
-                    .checked_add(1)
-                    .ok_or(ReferenceRootError::OccurrenceLimit)?;
-                self.fact = None;
-            }
-            return Ok(());
-        }
-
-        if let Some(page) = self.page.as_mut() {
-            if page.next_fact == page.count {
-                self.page = None;
-                return Ok(());
-            }
-            let fact_id = arena.child_at(page.id, page.first_fact + page.next_fact)?;
-            let occurrence = decode_fact(arena, fact_id, self.authority)?;
-            if occurrence.ordinal != self.next_ordinal
-                || !occurrence.source.is_valid()
-                || !occurrence.label_source.is_valid()
-                || !occurrence.destination_source.is_valid()
-                || occurrence
-                    .title_source
-                    .as_ref()
-                    .is_some_and(|range| !range.is_valid())
-                || !occurrence.source.contains(&occurrence.label_source)
-                || !occurrence.source.contains(&occurrence.destination_source)
-                || occurrence
-                    .title_source
-                    .as_ref()
-                    .is_some_and(|range| !occurrence.source.contains(range))
-                || occurrence.source.bytes.start < self.last_source_byte_end
-                || occurrence.source.utf16.start < self.last_source_utf16_end
-                || occurrence.source.bytes.end > self.authority.source_bytes
-                || occurrence.source.utf16.end > self.authority.source_utf16
-            {
-                return Err(ReferenceRootError::Corrupt(
-                    "reference fact authority or source order changed",
-                ));
-            }
-            self.last_source_byte_end = occurrence.source.bytes.end;
-            self.last_source_utf16_end = occurrence.source.utf16.end;
-            self.fact = Some(ReferenceFactDigestCursor::new(self.authority, occurrence)?);
-            page.next_fact += 1;
-            return Ok(());
-        }
-
-        match self.phase {
-            ReferenceValidationPhase::DescendPages => {
-                if let Some(page_id) = self.next_page {
-                    let descriptor = decode_page(arena, page_id, self.authority)?;
-                    let page_end = descriptor
-                        .start
-                        .checked_add(u64::from(descriptor.count))
-                        .ok_or(ReferenceRootError::Corrupt("page ordinal overflow"))?;
-                    if page_end != self.expected_page_end {
-                        return Err(ReferenceRootError::Corrupt(
-                            "occurrence pages are not contiguous",
-                        ));
-                    }
-                    self.pages
-                        .try_reserve(1)
-                        .map_err(|_| ReferenceRootError::Arena(ArenaError::AllocationFailed))?;
-                    self.pages.push(page_id);
-                    self.expected_page_end = descriptor.start;
-                    self.next_page = descriptor.previous;
-                } else {
-                    if self.expected_page_end != 0 {
-                        return Err(ReferenceRootError::Corrupt(
-                            "occurrence page chain is incomplete",
-                        ));
-                    }
-                    self.phase = ReferenceValidationPhase::VisitFacts;
-                }
-            }
-            ReferenceValidationPhase::VisitFacts => {
-                if let Some(page_id) = self.pages.pop() {
-                    let descriptor = decode_page(arena, page_id, self.authority)?;
-                    self.page = Some(ReferencePageVisit {
-                        id: page_id,
-                        next_fact: 0,
-                        count: usize::from(descriptor.count),
-                        first_fact: usize::from(descriptor.has_previous),
-                    });
-                } else {
-                    let digest = finalize_role_digest(
-                        self.digest.clone(),
-                        self.next_ordinal,
-                        self.canonical_bytes,
-                    );
-                    if self.next_ordinal != self.expected.record_count
-                        || self.canonical_bytes != self.expected.canonical_bytes
-                        || digest != self.expected.digest
-                    {
-                        return Err(ReferenceRootError::Corrupt("reference role digest changed"));
-                    }
-                    self.phase = ReferenceValidationPhase::Complete;
-                }
-            }
-            ReferenceValidationPhase::Complete => {}
-        }
-        Ok(())
-    }
-}
-
-impl ReferenceFactDigestCursor {
-    fn new(
-        authority: CandidateAuthority,
-        occurrence: ReferenceOccurrenceView<'_>,
-    ) -> Result<Self, ReferenceRootError> {
-        let label_len = occurrence.normalized_label.len;
-        let destination_len = occurrence.cooked_destination.len;
-        let title_len = occurrence
-            .cooked_title
-            .as_ref()
-            .map_or(0, |title| title.len);
-        let canonical_bytes = 8_u64
-            .checked_add(3 * 32)
-            .and_then(|bytes| bytes.checked_add(1))
-            .and_then(|bytes| {
-                bytes.checked_add(if occurrence.title_source.is_some() {
-                    32
-                } else {
-                    0
-                })
-            })
-            .and_then(|bytes| bytes.checked_add(3 * 8))
-            .and_then(|bytes| bytes.checked_add(label_len))
-            .and_then(|bytes| bytes.checked_add(destination_len))
-            .and_then(|bytes| bytes.checked_add(title_len))
-            .ok_or(ReferenceRootError::FactTooLarge)?;
-        let hasher = canonical_fact_hasher(
-            authority,
-            occurrence.ordinal,
-            &occurrence.source,
-            &occurrence.label_source,
-            &occurrence.destination_source,
-            occurrence.title_source.as_ref(),
-            label_len,
-            destination_len,
-            title_len,
-        );
-        let label = PersistentBytesDigestCursor::new(occurrence.normalized_label)?;
-        let destination = PersistentBytesDigestCursor::new(occurrence.cooked_destination)?;
-        let title = occurrence
-            .cooked_title
-            .map(PersistentBytesDigestCursor::new)
-            .transpose()?;
-        Ok(Self {
-            canonical_bytes,
-            hasher,
-            destination: Some(destination),
-            title,
-            value: label,
-            stage: FactDigestStage::Label,
-        })
-    }
-
-    fn drive_one(
-        &mut self,
-        arena: &PageArena,
-        authority: CandidateAuthority,
-    ) -> Result<Option<(u64, [u8; STRONG_DIGEST_BYTES])>, ReferenceRootError> {
-        if !self.value.drive_one(arena, authority, &mut self.hasher)? {
-            return Ok(None);
-        }
-        match self.stage {
-            FactDigestStage::Label => {
-                self.value = self.destination.take().ok_or(ReferenceRootError::Corrupt(
-                    "reference digest lost destination",
-                ))?;
-                self.stage = FactDigestStage::Destination;
-                Ok(None)
-            }
-            FactDigestStage::Destination => {
-                if let Some(title) = self.title.take() {
-                    self.value = title;
-                    self.stage = FactDigestStage::Title;
-                    Ok(None)
-                } else {
-                    Ok(Some((
-                        self.canonical_bytes,
-                        *self.hasher.finalize().as_bytes(),
-                    )))
-                }
-            }
-            FactDigestStage::Title => Ok(Some((
-                self.canonical_bytes,
-                *self.hasher.finalize().as_bytes(),
-            ))),
-        }
-    }
 }
 
 impl PersistentBytesDigestCursor {
@@ -3137,7 +2220,7 @@ impl PersistentBytesDigestCursor {
     fn drive_one(
         &mut self,
         arena: &PageArena,
-        authority: CandidateAuthority,
+        authority: ReferenceAuthority,
         hasher: &mut blake3::Hasher,
     ) -> Result<bool, ReferenceRootError> {
         match self {
@@ -3182,7 +2265,7 @@ impl BlobDigestCursor {
     fn drive_one(
         &mut self,
         arena: &PageArena,
-        authority: CandidateAuthority,
+        authority: ReferenceAuthority,
         hasher: &mut blake3::Hasher,
     ) -> Result<bool, ReferenceRootError> {
         if !self.hashing {
@@ -3555,7 +2638,7 @@ struct BlobDescriptor {
 
 fn encode_header(tag: u8, authority: ReferenceAuthority) -> Vec<u8> {
     let _ = authority;
-    encode_canonical_node_header(tag)
+    encode_reference_node_header(tag)
 }
 
 fn encode_blob(
@@ -3739,7 +2822,7 @@ fn decode_header(
     expected: ReferenceAuthority,
 ) -> Result<(), ReferenceRootError> {
     let _ = expected;
-    decode_canonical_node_header(payload, expected_tag).map_err(Into::into)
+    decode_reference_node_header(payload, expected_tag).map_err(Into::into)
 }
 
 fn decode_root(
@@ -4026,284 +3109,17 @@ fn read_u64(input: &[u8], offset: usize) -> Result<u64, ReferenceRootError> {
 mod tests {
     use super::*;
     use crate::identity::RuntimeIdentity;
-    use crate::{CandidateGeneration, SourceStore};
+    use crate::SourceStore;
 
-    struct ReferenceIndexFixture {
-        arena: PageArena,
-        build: crate::storage::CandidateBuild,
-        authority: CandidateAuthority,
-        root: ArenaId,
-    }
-
-    fn authority() -> CandidateAuthority {
+    fn authority() -> ReferenceAuthority {
         let source = SourceStore::new("0123456789abcdef").expect("source");
-        CandidateAuthority::new(
+        ReferenceAuthority::new(
             RuntimeIdentity::new([31; 16]).expect("document"),
-            RuntimeIdentity::new([63; 16]).expect("publication"),
+            RuntimeIdentity::new([63; 16]).expect("journal"),
             source.version(),
-            CandidateGeneration::FIRST,
             1,
         )
         .expect("authority")
-    }
-
-    fn build_reference_index_fixture(
-        facts: Vec<(Vec<u8>, Vec<u8>)>,
-        facts_per_page: usize,
-    ) -> ReferenceIndexFixture {
-        assert!(!facts.is_empty());
-        let source = SourceStore::new(&"x".repeat(facts.len() * 16)).expect("source");
-        let authority = CandidateAuthority::new(
-            RuntimeIdentity::new([41; 16]).expect("document"),
-            RuntimeIdentity::new([73; 16]).expect("publication"),
-            source.version(),
-            CandidateGeneration::FIRST,
-            1,
-        )
-        .expect("authority");
-        let mut arena = PageArena::new(ArenaLimits::default()).expect("arena");
-        let mut builder = ReferenceRootBuilder::new(
-            authority,
-            ReferenceRootLimits {
-                arena: arena.limits(),
-                max_occurrences: facts.len() as u64,
-                max_cooked_bytes_per_fact: 16 * 1024 * 1024,
-                facts_per_page,
-            },
-        )
-        .expect("reference builder");
-        let reserve = ReferenceReserve {
-            nodes: 0,
-            payload_bytes: 0,
-        };
-        let mut build = None;
-
-        for (ordinal, (label, destination)) in facts.into_iter().enumerate() {
-            let start = ordinal as u64 * 16;
-            builder
-                .offer(
-                    AuthoritativeReferenceFact {
-                        authority,
-                        source: ReferenceSourceRange {
-                            bytes: start..start + 16,
-                            utf16: start..start + 16,
-                        },
-                        label_source: ReferenceSourceRange {
-                            bytes: start + 1..start + 4,
-                            utf16: start + 1..start + 4,
-                        },
-                        destination_source: ReferenceSourceRange {
-                            bytes: start + 6..start + 12,
-                            utf16: start + 6..start + 12,
-                        },
-                        title_source: None,
-                        normalized_label: label.into_boxed_slice(),
-                        cooked_destination: destination.into_boxed_slice(),
-                        cooked_title: None,
-                        _not_sync: PhantomData,
-                    },
-                    &arena,
-                    reserve,
-                )
-                .expect("reference fact");
-            let mut session = match build.take() {
-                Some(build) => arena.resume_build(build).expect("resume build"),
-                None => arena.begin_build().expect("begin build"),
-            };
-            loop {
-                match builder.poll(&mut session, 17).expect("reference poll") {
-                    ReferenceBuildPoll::Pending { idle: true, .. } => break,
-                    ReferenceBuildPoll::Pending { idle: false, .. } => {}
-                    ReferenceBuildPoll::Complete { .. } => {
-                        panic!("reference root completed before finish")
-                    }
-                }
-            }
-            build = Some(session.suspend().expect("suspend build"));
-        }
-
-        builder.finish(&arena, reserve).expect("finish references");
-        let mut session = arena
-            .resume_build(build.take().expect("suspended reference build"))
-            .expect("resume finishing build");
-        let subtree = loop {
-            match builder.poll(&mut session, 17).expect("finish poll") {
-                ReferenceBuildPoll::Pending { .. } => {}
-                ReferenceBuildPoll::Complete { root, .. } => break root,
-            }
-        };
-        let root = subtree.owner.id();
-        drop(subtree);
-        let build = session.suspend().expect("suspend completed build");
-        ReferenceIndexFixture {
-            arena,
-            build,
-            authority,
-            root,
-        }
-    }
-
-    fn reference_page_count(
-        arena: &PageArena,
-        authority: CandidateAuthority,
-        root: ArenaId,
-    ) -> usize {
-        let mut page = decode_root(arena, root, authority)
-            .expect("reference root")
-            .page_root;
-        let mut count = 0;
-        while let Some(id) = page {
-            let descriptor = decode_page(arena, id, authority).expect("reference page");
-            page = descriptor.previous;
-            count += 1;
-        }
-        count
-    }
-
-    #[test]
-    fn winner_index_is_fuel_bounded_exact_and_reclaims_incrementally() {
-        // U+0130 case-folds to `i` + U+0307. Five hundred repetitions are
-        // only 1,000 raw UTF-8 bytes but produce 1,500 normalized bytes, so a
-        // byte-capped approximation of CommonMark's scalar limit rejects a
-        // valid key that the normative service and this index must retain.
-        let expanded_label = "i\u{0307}".repeat(500).into_bytes();
-        assert_eq!(expanded_label.len(), 1_500);
-        assert!(expanded_label.len() as u64 <= REFERENCE_WINNER_INDEX_MAX_NORMALIZED_LABEL_BYTES);
-
-        let facts = vec![
-            (b"duplicate".to_vec(), b"/first".to_vec()),
-            (b"alpha".to_vec(), b"/alpha".to_vec()),
-            (b"beta".to_vec(), b"/beta".to_vec()),
-            (b"duplicate".to_vec(), b"/later-page".to_vec()),
-            (expanded_label.clone(), b"/expanded".to_vec()),
-            (b"omega".to_vec(), b"/omega".to_vec()),
-        ];
-        let ReferenceIndexFixture {
-            mut arena,
-            build,
-            authority,
-            root,
-        } = build_reference_index_fixture(facts, 2);
-        assert_eq!(reference_page_count(&arena, authority, root), 3);
-
-        let mut builder = ReferenceWinnerIndexBuilder::new(&arena, authority, root)
-            .expect("winner index builder");
-        assert!(matches!(
-            builder.poll(&arena, authority, root, 0),
-            Err(ReferenceRootError::ZeroFuel)
-        ));
-        let crossed_authority = CandidateAuthority {
-            publication: RuntimeIdentity::new([75; 16]).expect("crossed publication"),
-            ..authority
-        };
-        assert!(matches!(
-            builder.poll(&arena, crossed_authority, root, 1),
-            Err(ReferenceRootError::CrossAuthority)
-        ));
-        let mut build_polls = 0;
-        loop {
-            let receipt = builder
-                .poll(&arena, authority, root, 1)
-                .expect("winner index poll");
-            assert_eq!(receipt.transitions, 1);
-            build_polls += 1;
-            assert!(build_polls < 128, "winner index did not converge");
-            if receipt.complete {
-                break;
-            }
-        }
-
-        let index = builder.into_index().expect("completed winner index");
-        assert_eq!(index.root(), root);
-        assert!(index.is_bound_to(authority, root));
-        assert_eq!(index.occurrence_count(), 6);
-        assert_eq!(index.indexed_occurrences(), 6);
-        assert_eq!(index.skipped_oversized_occurrences(), 0);
-        assert_eq!(index.unique_label_count(), 5);
-
-        let indexed_duplicate = index
-            .winner(&arena, b"duplicate")
-            .expect("indexed duplicate")
-            .expect("duplicate winner");
-        assert_eq!(indexed_duplicate.ordinal, 0);
-        assert!(indexed_duplicate
-            .cooked_destination
-            .equals(b"/first")
-            .expect("winner destination"));
-        let linear_duplicate = ReferenceRootView::open(&arena, authority, root)
-            .expect("linear root view")
-            .winner("duplicate")
-            .expect("linear winner")
-            .expect("linear duplicate");
-        assert_eq!(indexed_duplicate.ordinal, linear_duplicate.ordinal);
-
-        let indexed_expanded = index
-            .winner(&arena, &expanded_label)
-            .expect("expanded lookup")
-            .expect("expanded winner");
-        assert_eq!(indexed_expanded.ordinal, 4);
-        assert!(indexed_expanded
-            .cooked_destination
-            .equals(b"/expanded")
-            .expect("expanded destination"));
-        assert!(index
-            .winner(&arena, b"DUPLICATE")
-            .expect("exact-case miss")
-            .is_none());
-        assert!(index
-            .winner(&arena, b"missing")
-            .expect("missing label")
-            .is_none());
-        let truncated_expanded = &expanded_label[..expanded_label.len() - 3];
-        assert!(index
-            .winner(&arena, truncated_expanded)
-            .expect("near expanded miss")
-            .is_none());
-
-        let rebound_authority = CandidateAuthority {
-            publication: RuntimeIdentity::new([74; 16]).expect("rebound publication"),
-            ..authority
-        };
-        let rebound = index.rebind_authority(rebound_authority);
-        assert!(rebound.is_bound_to(rebound_authority, root));
-        assert!(!rebound.is_bound_to(authority, root));
-        assert_eq!(
-            rebound
-                .winner(&arena, b"duplicate")
-                .expect("rebound lookup")
-                .expect("rebound winner")
-                .ordinal,
-            0,
-        );
-        drop(rebound);
-
-        let expected_reclaim_transitions = index.unique_label_count() as usize;
-        let mut reclaimer = index.into_reclaimer();
-        assert!(matches!(
-            reclaimer.poll(0),
-            Err(ReferenceRootError::ZeroFuel)
-        ));
-        let mut reclaimed = 0;
-        loop {
-            let receipt = reclaimer.poll(1).expect("winner index reclaim");
-            assert!(receipt.transitions <= 1);
-            reclaimed += receipt.transitions;
-            if receipt.complete {
-                break;
-            }
-        }
-        assert_eq!(reclaimed, expected_reclaim_transitions);
-        drop(reclaimer);
-
-        arena.abort_build(build).expect("abort fixture build");
-        loop {
-            let receipt = arena.poll_reclaim(1);
-            assert!(receipt.transitions <= 1);
-            if receipt.complete {
-                break;
-            }
-        }
-        assert_eq!(arena.metrics().resident_nodes, 0);
     }
 
     #[test]
@@ -4334,12 +3150,9 @@ mod tests {
             None,
         );
         valid.extend_from_slice(b"xu");
-        assert!(is_canonical_reference_record_payload(&valid));
-
         let mut invalid_length = valid.clone();
         invalid_length[NODE_HEADER_BYTES + 144..NODE_HEADER_BYTES + 152]
             .copy_from_slice(&2_u64.to_le_bytes());
-        assert!(!is_canonical_reference_record_payload(&invalid_length));
 
         let mut arena = PageArena::new(ArenaLimits::default()).expect("arena");
         let (build, valid_id, invalid_length_id, invalid_child_id) = {

@@ -10,20 +10,13 @@
 // enforce the crate's deny-level dead/unused lint boundary without exception.
 #![cfg_attr(not(feature = "parser-internal"), allow(dead_code, unused_imports))]
 
-mod block_quote_projection;
-mod block_sequence;
-mod candidate_manifest;
 mod document;
-mod host_store;
 mod identity;
-mod indented_code_projection;
-mod inline_overlay;
 mod inline_projection;
-#[doc(hidden)]
-pub mod m11_host;
 mod measured_sequence;
 mod mersenne61;
 mod recursive_green;
+mod reference_authority;
 #[cfg(feature = "parser-internal")]
 mod reference_journal;
 #[cfg(feature = "parser-internal")]
@@ -33,14 +26,14 @@ mod source;
 mod source_facts;
 mod storage;
 
-/// Narrow workspace-only parser/publication seam.
+/// Narrow workspace-only parser seam.
 ///
 /// This feature is enabled by `flark-parser`; it is not part of the default
 /// engine surface and deliberately exposes no arena identities.
 #[cfg(feature = "parser-internal")]
 #[doc(hidden)]
 pub mod parser_internal;
-mod parser_pages;
+mod parser_range;
 #[cfg(feature = "parser-internal")]
 mod parser_scratch;
 
@@ -55,8 +48,7 @@ pub use document::{
 #[cfg(feature = "progressive-source-probe")]
 pub use identity::SourceLoadId;
 pub use identity::{
-    ArenaId, ArenaIdentity, CandidateGeneration, SourceAuthority, SourceDocumentId, SourceRevision,
-    SourceRootId,
+    ArenaId, ArenaIdentity, SourceAuthority, SourceDocumentId, SourceRevision, SourceRootId,
 };
 pub use source::{
     LineDescriptor, LineEnding, LinePoll, PhysicalLineCursor, PlannedSourceEditIntent,

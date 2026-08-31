@@ -36,23 +36,6 @@ pub struct SourceVersion {
 }
 
 impl SourceVersion {
-    /// Reconstructs a source identity already authenticated by an external
-    /// owner. The candidate host stores metrics and identity only; it never
-    /// receives or aliases the parser's source rope.
-    pub(crate) fn from_authenticated_parts(
-        revision: SourceRevision,
-        root: SourceRootId,
-        byte_len: usize,
-        utf16_len: usize,
-    ) -> Self {
-        Self {
-            revision,
-            root,
-            byte_len,
-            utf16_len,
-        }
-    }
-
     /// Returns the document-local revision.
     #[must_use]
     pub const fn revision(self) -> SourceRevision {
@@ -2916,12 +2899,12 @@ fn version_for(revision: SourceRevision, root: &SourceRoot) -> SourceVersion {
 
 #[cfg(feature = "progressive-source-probe")]
 fn source_version_for_opening(opening: OpeningSourceVersion) -> SourceVersion {
-    SourceVersion::from_authenticated_parts(
-        opening.revision,
-        opening.root,
-        opening.current_bytes,
-        opening.current_utf16,
-    )
+    SourceVersion {
+        revision: opening.revision,
+        root: opening.root,
+        byte_len: opening.current_bytes,
+        utf16_len: opening.current_utf16,
+    }
 }
 
 fn validate_range(rope: &Rope, range: &Range<usize>) -> Result<(), SourceEditError> {
@@ -3477,12 +3460,12 @@ mod tests {
             .into_parts_with_lineage();
         let current = source.version();
         let foreign_root = SourceStore::new("same").expect("foreign").version();
-        let crossed_revision = SourceVersion::from_authenticated_parts(
-            SourceRevision::new(99),
-            previous.root(),
-            previous.byte_len(),
-            previous.utf16_len(),
-        );
+        let crossed_revision = SourceVersion {
+            revision: SourceRevision::new(99),
+            root: previous.root(),
+            byte_len: previous.byte_len(),
+            utf16_len: previous.utf16_len(),
+        };
 
         assert_eq!(
             lineage.map_unchanged_byte_range(foreign_root, current, 1..4),

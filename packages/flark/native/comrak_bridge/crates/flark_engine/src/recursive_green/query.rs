@@ -7,7 +7,7 @@ use crate::measured_sequence::{
     MeasuredSequenceRef, SequenceInspectionReceipt, SequenceLeafVisitControl, SequenceNodeCache,
     SequenceSpecInspection, SequenceSummaryPartitionDirection,
 };
-use crate::parser_pages::{M11ParserPageError, M11ParserSourceRangeAuthority};
+use crate::parser_range::{M11ParserRangeError, M11ParserSourceRangeAuthority};
 use crate::source::{SourceBoundaryAffinity, SourceVersion};
 
 use super::build::{
@@ -194,7 +194,7 @@ pub enum M11RecursiveGreenFrameQueryBound {
 pub enum M11RecursiveGreenFrameQueryError {
     BoundExceeded(M11RecursiveGreenFrameQueryBound),
     Green(M11RecursiveGreenError),
-    SourceAuthority(M11ParserPageError),
+    SourceAuthority(M11ParserRangeError),
 }
 
 impl std::fmt::Display for M11RecursiveGreenFrameQueryError {
@@ -217,8 +217,8 @@ impl From<M11RecursiveGreenError> for M11RecursiveGreenFrameQueryError {
     }
 }
 
-impl From<M11ParserPageError> for M11RecursiveGreenFrameQueryError {
-    fn from(error: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11RecursiveGreenFrameQueryError {
+    fn from(error: M11ParserRangeError) -> Self {
         Self::SourceAuthority(error)
     }
 }
@@ -463,6 +463,7 @@ pub struct M11RecursiveGreenPointBudgetExceeded {
     receipt: M11RecursiveGreenQueryReceipt,
 }
 
+#[cfg(test)]
 impl M11RecursiveGreenPointBudgetExceeded {
     #[must_use]
     pub const fn receipt(self) -> M11RecursiveGreenQueryReceipt {
@@ -696,62 +697,6 @@ impl M11RecursiveGreenRowWindow {
     }
     #[must_use]
     pub const fn receipt(&self) -> M11RecursiveGreenQueryReceipt {
-        self.receipt
-    }
-}
-
-/// Exact physical cuts for a half-open global renderable-row ordinal window.
-///
-/// The cuts are selected by the measured `renderable_row_exits` monoid, so
-/// lookup work depends on tree height and bounded packed pages rather than on
-/// the number of rows skipped.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct M11RecursiveGreenRowOrdinalWindow {
-    total_rows: u64,
-    start_ordinal: u64,
-    next_ordinal: u64,
-    start_bytes: u64,
-    start_utf16: u64,
-    next_bytes: u64,
-    next_utf16: u64,
-    receipt: M11RecursiveGreenQueryReceipt,
-}
-
-impl M11RecursiveGreenRowOrdinalWindow {
-    #[must_use]
-    pub const fn total_rows(self) -> u64 {
-        self.total_rows
-    }
-    #[must_use]
-    pub const fn start_ordinal(self) -> u64 {
-        self.start_ordinal
-    }
-    #[must_use]
-    pub const fn next_ordinal(self) -> u64 {
-        self.next_ordinal
-    }
-    #[must_use]
-    pub const fn start_bytes(self) -> u64 {
-        self.start_bytes
-    }
-    #[must_use]
-    pub const fn start_utf16(self) -> u64 {
-        self.start_utf16
-    }
-    #[must_use]
-    pub const fn next_bytes(self) -> u64 {
-        self.next_bytes
-    }
-    #[must_use]
-    pub const fn next_utf16(self) -> u64 {
-        self.next_utf16
-    }
-    #[must_use]
-    pub const fn complete(self) -> bool {
-        self.next_ordinal == self.total_rows
-    }
-    #[must_use]
-    pub const fn receipt(self) -> M11RecursiveGreenQueryReceipt {
         self.receipt
     }
 }
@@ -2423,6 +2368,7 @@ pub(super) fn locate_point_in_arena(
     }
 }
 
+#[cfg(test)]
 pub(super) fn locate_point_in_arena_bounded(
     arena: &crate::storage::PageArena,
     tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
@@ -2703,62 +2649,6 @@ pub(super) fn locate_renderable_rows_in_arena(
             receipt,
         },
     ))
-}
-
-pub(super) fn locate_renderable_row_ordinal_window_in_arena(
-    arena: &crate::storage::PageArena,
-    tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
-    summary: RecursiveGreenSummary,
-    start_ordinal: u64,
-    maximum_rows: u32,
-) -> Result<M11RecursiveGreenRowOrdinalWindow, M11RecursiveGreenError> {
-    let total_rows = summary.renderable_row_exits;
-    if maximum_rows == 0 || start_ordinal > total_rows {
-        return Err(M11RecursiveGreenError::InvalidPoint);
-    }
-    let next_ordinal = start_ordinal
-        .saturating_add(u64::from(maximum_rows))
-        .min(total_rows);
-    let mut work = PointZipperWork::default();
-    let terminal_cut = (summary.physical_bytes, summary.physical_utf16);
-    let start_cut = if start_ordinal == total_rows {
-        terminal_cut
-    } else {
-        let open = point_zipper_open_for_row_ordinal(arena, tree, start_ordinal, &mut work)?
-            .ok_or(M11RecursiveGreenError::Corrupt(
-                "renderable-row start ordinal omitted its Enter",
-            ))?;
-        (open.byte_start, open.utf16_start)
-    };
-    let next_cut = if next_ordinal == start_ordinal {
-        start_cut
-    } else if next_ordinal == total_rows {
-        terminal_cut
-    } else {
-        let open = point_zipper_open_for_row_ordinal(arena, tree, next_ordinal, &mut work)?.ok_or(
-            M11RecursiveGreenError::Corrupt("renderable-row next ordinal omitted its Enter"),
-        )?;
-        (open.byte_start, open.utf16_start)
-    };
-    if start_cut.0 > next_cut.0
-        || start_cut.1 > next_cut.1
-        || (start_ordinal == next_ordinal) != (start_cut == next_cut)
-        || (next_ordinal == total_rows) != (next_cut == terminal_cut)
-    {
-        return Err(M11RecursiveGreenError::Corrupt(
-            "renderable-row ordinal cuts disagree with measured coverage",
-        ));
-    }
-    Ok(M11RecursiveGreenRowOrdinalWindow {
-        total_rows,
-        start_ordinal,
-        next_ordinal,
-        start_bytes: start_cut.0,
-        start_utf16: start_cut.1,
-        next_bytes: next_cut.0,
-        next_utf16: next_cut.1,
-        receipt: work.finish_receipt(0)?,
-    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

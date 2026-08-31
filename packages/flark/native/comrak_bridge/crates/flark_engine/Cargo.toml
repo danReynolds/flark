@@ -17,16 +17,6 @@ blake3 = "1.8"
 crop = { git = "https://github.com/noib3/crop", rev = "d0234ce772eb34c7a3878d4ed57dc864da291cfb", features = ["utf16-metric"] }
 
 [[test]]
-name = "inline_projection"
-path = "tests/inline_projection.rs"
-required-features = ["parser-internal"]
-
-[[test]]
-name = "parser_pages"
-path = "tests/parser_pages.rs"
-required-features = ["parser-internal"]
-
-[[test]]
 name = "parser_scratch"
 path = "tests/parser_scratch.rs"
 required-features = ["parser-internal"]

@@ -18,7 +18,7 @@ use std::fmt;
 use std::ops::Range;
 
 use flark_engine::parser_internal::{
-    M11ParserPageError, M11ParserRangeStatus,
+    M11ParserRangeError, M11ParserRangeStatus,
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
@@ -94,7 +94,7 @@ impl M11InlineAutolinkReleasePoll {
 
 #[derive(Debug)]
 pub(crate) enum M11InlineAutolinkError {
-    Source(M11ParserPageError),
+    Source(M11ParserRangeError),
     Code(M11InlineCodeError),
     Scratch(M11InlineRadixError),
     ZeroFuel,
@@ -132,8 +132,8 @@ impl std::error::Error for M11InlineAutolinkError {
     }
 }
 
-impl From<M11ParserPageError> for M11InlineAutolinkError {
-    fn from(value: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11InlineAutolinkError {
+    fn from(value: M11ParserRangeError) -> Self {
         Self::Source(value)
     }
 }

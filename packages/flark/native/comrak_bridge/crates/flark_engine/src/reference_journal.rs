@@ -11,11 +11,9 @@ use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::candidate_manifest::{
-    CandidateAuthority, ManifestError, ReferenceReserve, RoleMetadata,
-};
 use crate::document::{DocumentRuntime, DocumentRuntimeError};
 use crate::identity::{RuntimeIdentity, RuntimeIdentityError};
+use crate::reference_authority::{ReferenceAuthority, ReferenceAuthorityError, ReferenceReserve};
 use crate::reference_root::{
     AuthoritativeReferenceFact, AuthoritativeReferenceFactStart, DetachedReferenceOccurrence,
     PersistentBytesCopyCursor, ReferenceBuildPoll, ReferenceOccurrenceCursor,
@@ -24,13 +22,8 @@ use crate::reference_root::{
     ReferenceWinnerIndexJournal, ReferenceWinnerIndexReclaimer, StreamedReferenceValueKind,
     BLOB_CHUNK_BYTES,
 };
-use crate::storage::{
-    ArenaBuildOwner, ArenaBuildSession, ArenaError, CandidateBuild, CandidateSeal,
-    CommittedArenaRoot,
-};
-use crate::{
-    CandidateGeneration, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness, SourceVersion,
-};
+use crate::storage::{ArenaError, CandidateBuild, CandidateSeal, CommittedArenaRoot};
+use crate::{ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness, SourceVersion};
 
 const JOURNAL_ANCHOR: [u8; 4] = [0xe0, 1, 0, 0];
 
@@ -42,7 +35,7 @@ enum ErrorInner {
     ZeroFuel,
     Document(DocumentRuntimeError),
     Arena(ArenaError),
-    Manifest(ManifestError),
+    Authority(ReferenceAuthorityError),
     Reference(ReferenceRootError),
 }
 
@@ -106,7 +99,7 @@ impl fmt::Display for M11ReferenceJournalError {
             ErrorInner::ZeroFuel => formatter.write_str("reference journal requires nonzero fuel"),
             ErrorInner::Document(error) => error.fmt(formatter),
             ErrorInner::Arena(error) => error.fmt(formatter),
-            ErrorInner::Manifest(error) => error.fmt(formatter),
+            ErrorInner::Authority(error) => error.fmt(formatter),
             ErrorInner::Reference(error) => error.fmt(formatter),
         }
     }
@@ -126,15 +119,17 @@ impl From<DocumentRuntimeError> for M11ReferenceJournalError {
     }
 }
 
-impl From<ManifestError> for M11ReferenceJournalError {
-    fn from(error: ManifestError) -> Self {
-        Self(ErrorInner::Manifest(error))
+impl From<ReferenceAuthorityError> for M11ReferenceJournalError {
+    fn from(error: ReferenceAuthorityError) -> Self {
+        Self(ErrorInner::Authority(error))
     }
 }
 
 impl From<RuntimeIdentityError> for M11ReferenceJournalError {
     fn from(_: RuntimeIdentityError) -> Self {
-        Self(ErrorInner::Manifest(ManifestError::InvalidAuthority))
+        Self(ErrorInner::Authority(
+            ReferenceAuthorityError::InvalidAuthority,
+        ))
     }
 }
 
@@ -321,14 +316,14 @@ enum JournalPhase {
 pub struct M11ReferenceJournal {
     runtime_identity: RuntimeIdentity,
     source: SourceVersion,
-    authority: CandidateAuthority,
+    authority: ReferenceAuthority,
     phase: JournalPhase,
     builder: Option<ReferenceRootBuilder>,
     winner: Option<ReferenceWinnerIndexJournal>,
     winner_reclaimer: Option<ReferenceWinnerIndexReclaimer>,
     build: Option<CandidateBuild>,
     subtree: Option<ReferenceSubtreeRoot>,
-    metadata: Option<RoleMetadata>,
+    occurrence_count: Option<u64>,
     seal: Option<CandidateSeal>,
     sealed_root: Option<CommittedArenaRoot>,
     output: Option<M11ReferenceJournalRoot>,
@@ -363,12 +358,10 @@ impl M11ReferenceJournal {
             return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
         }
         let runtime_identity = runtime.producer_identity();
-        let authority = CandidateAuthority::new(
+        let authority = ReferenceAuthority::new(
             runtime_identity,
             RuntimeIdentity::allocate(b"reference-journal")?,
             source,
-            CandidateGeneration::from_wire(1)
-                .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?,
             syntax_profile,
         )?;
         let limits = ReferenceRootLimits {
@@ -391,7 +384,7 @@ impl M11ReferenceJournal {
             winner_reclaimer: None,
             build: Some(build),
             subtree: None,
-            metadata: None,
+            occurrence_count: None,
             seal: None,
             sealed_root: None,
             output: None,
@@ -680,12 +673,12 @@ impl M11ReferenceJournal {
         let ReferenceSubtreeRoot {
             authority,
             owner,
-            metadata,
+            occurrence_count,
             _not_sync: _,
         } = subtree;
         match runtime.producer_arena_mut().begin_seal(build, owner) {
             Ok(seal) => {
-                self.metadata = Some(metadata);
+                self.occurrence_count = Some(occurrence_count);
                 self.seal = Some(seal);
                 self.phase = JournalPhase::Sealing;
                 Ok(())
@@ -695,7 +688,7 @@ impl M11ReferenceJournal {
                 self.subtree = Some(ReferenceSubtreeRoot {
                     authority,
                     owner: failure.root,
-                    metadata,
+                    occurrence_count,
                     _not_sync: PhantomData,
                 });
                 self.fail(failure.error.into())
@@ -735,8 +728,8 @@ impl M11ReferenceJournal {
                 source: self.source,
                 authority: self.authority,
                 root: Some(root),
-                metadata: self
-                    .metadata
+                occurrence_count: self
+                    .occurrence_count
                     .take()
                     .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?,
                 winner: Some(Arc::new(winner)),
@@ -1159,7 +1152,7 @@ pub struct M11ReferenceJournalRangeReplacement {
     runtime_identity: RuntimeIdentity,
     base_source: SourceVersion,
     target: SourceVersion,
-    base_authority: CandidateAuthority,
+    base_authority: ReferenceAuthority,
     base_count: u64,
     prefix_byte_end: u64,
     prefix_utf16_end: u64,
@@ -1617,13 +1610,13 @@ impl Drop for M11ReferenceJournalRangeReplacement {
 }
 
 /// Committed canonical occurrence root plus its exact first-winner authority.
-#[must_use = "reference roots require explicit release or publication transfer"]
+#[must_use = "reference roots require explicit release or ownership transfer"]
 pub struct M11ReferenceJournalRoot {
     runtime_identity: RuntimeIdentity,
     source: SourceVersion,
-    authority: CandidateAuthority,
+    authority: ReferenceAuthority,
     root: Option<CommittedArenaRoot>,
-    metadata: RoleMetadata,
+    occurrence_count: u64,
     winner: Option<Arc<ReferenceWinnerIndex>>,
     winner_reclaimer: Option<ReferenceWinnerIndexReclaimer>,
     released: bool,
@@ -1638,7 +1631,7 @@ impl fmt::Debug for M11ReferenceJournalRoot {
         formatter
             .debug_struct("M11ReferenceJournalRoot")
             .field("source", &self.source)
-            .field("occurrences", &self.metadata.record_count)
+            .field("occurrences", &self.occurrence_count)
             .finish_non_exhaustive()
     }
 }
@@ -1651,7 +1644,7 @@ impl M11ReferenceJournalRoot {
 
     #[must_use]
     pub const fn occurrence_count(&self) -> u64 {
-        self.metadata.record_count
+        self.occurrence_count
     }
 
     /// Start of the first parser-authenticated reference occurrence.
@@ -1666,17 +1659,6 @@ impl M11ReferenceJournalRoot {
     #[must_use]
     pub const fn first_source_utf16_start(&self) -> u64 {
         self.first_source_utf16_start
-    }
-
-    /// Returns the complete canonical role identity to engine-owned
-    /// publication code without exposing its representation across the
-    /// parser boundary.
-    pub(crate) fn canonical_metadata(
-        &self,
-        runtime: &DocumentRuntime,
-    ) -> Result<RoleMetadata, M11ReferenceJournalError> {
-        self.ensure_live(runtime)?;
-        Ok(self.metadata)
     }
 
     /// End of the last parser-authenticated reference occurrence.
@@ -1738,28 +1720,6 @@ impl M11ReferenceJournalRoot {
             return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
         }
         Ok((self.runtime_identity, Arc::clone(current)))
-    }
-
-    pub(crate) fn retain_for_publication(
-        &self,
-        session: &mut ArenaBuildSession<'_>,
-        runtime_identity: RuntimeIdentity,
-        source: SourceVersion,
-    ) -> Result<(ArenaBuildOwner, RoleMetadata), M11ReferenceJournalError> {
-        if self.released
-            || self.runtime_identity != runtime_identity
-            || self.source != source
-            || self.root.is_none()
-        {
-            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
-        }
-        let owner = session.retain(
-            self.root
-                .as_ref()
-                .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
-                .id(),
-        )?;
-        Ok((owner, self.metadata))
     }
 
     /// Begins a parser-owned range replacement in the current target source.
@@ -1840,7 +1800,7 @@ impl M11ReferenceJournalRoot {
             base_source: self.source,
             target,
             base_authority: self.authority,
-            base_count: self.metadata.record_count,
+            base_count: self.occurrence_count,
             prefix_byte_end,
             prefix_utf16_end,
             phase: M11ReferenceJournalRangeReplacementPhase::RetainingBase,
@@ -1967,7 +1927,7 @@ impl M11ReferenceJournalRoot {
         if target == self.source {
             return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
         }
-        if self.metadata.record_count == 0 {
+        if self.occurrence_count == 0 {
             if prefix.is_some() || self.last_source_byte_end != 0 || self.last_source_utf16_end != 0
             {
                 return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
@@ -1987,18 +1947,10 @@ impl M11ReferenceJournalRoot {
             }
         }
 
-        let generation = self
-            .authority
-            .parse_generation
-            .get()
-            .checked_add(1)
-            .and_then(CandidateGeneration::from_wire)
-            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
-        let authority = CandidateAuthority::new(
+        let authority = ReferenceAuthority::new(
             self.runtime_identity,
             RuntimeIdentity::allocate(b"reference-prefix-adoption")?,
             target,
-            generation,
             self.authority.syntax_profile,
         )?;
         let root_id = self
@@ -2028,7 +1980,7 @@ impl M11ReferenceJournalRoot {
             runtime_identity: self.runtime_identity,
             target,
             authority,
-            metadata: self.metadata,
+            occurrence_count: self.occurrence_count,
             first_source_byte_start: self.first_source_byte_start,
             first_source_utf16_start: self.first_source_utf16_start,
             last_source_byte_end: self.last_source_byte_end,
@@ -2075,14 +2027,14 @@ impl M11ReferenceJournalAdoptionPoll {
     }
 }
 
-/// Fuelled target wrapper and first-winner-index rebuild for one unchanged
-/// canonical reference prefix.
+/// Fuelled authority rebind for one unchanged canonical reference prefix and
+/// its retained first-winner index.
 #[must_use = "reference adoption requires root transfer or explicit cancellation"]
 pub struct M11ReferenceJournalUnchangedPrefixAdoption {
     runtime_identity: RuntimeIdentity,
     target: SourceVersion,
-    authority: CandidateAuthority,
-    metadata: RoleMetadata,
+    authority: ReferenceAuthority,
+    occurrence_count: u64,
     first_source_byte_start: u64,
     first_source_utf16_start: u64,
     last_source_byte_end: u64,
@@ -2144,7 +2096,7 @@ impl M11ReferenceJournalUnchangedPrefixAdoption {
                         source: self.target,
                         authority: self.authority,
                         root: Some(root),
-                        metadata: self.metadata,
+                        occurrence_count: self.occurrence_count,
                         winner: Some(winner),
                         winner_reclaimer: None,
                         released: false,
@@ -2275,7 +2227,7 @@ impl Drop for M11ReferenceJournalRoot {
         if !std::thread::panicking() {
             assert!(
                 self.released,
-                "reference roots require explicit release or publication transfer"
+                "reference roots require explicit release or ownership transfer"
             );
         }
     }
@@ -2472,7 +2424,7 @@ mod tests {
         );
         let mut clean_root = finish_journal(&mut clean_journal, &mut clean_runtime);
 
-        assert_eq!(target_root.metadata, clean_root.metadata);
+        assert_eq!(target_root.occurrence_count, clean_root.occurrence_count);
         assert_eq!(target_root.occurrence_count(), 2);
         assert_eq!(target_root.winner_ordinal(&runtime, b"a").unwrap(), Some(0));
         assert_eq!(target_root.winner_ordinal(&runtime, b"b").unwrap(), Some(1));

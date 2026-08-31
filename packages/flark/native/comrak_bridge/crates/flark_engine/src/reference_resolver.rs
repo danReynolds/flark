@@ -1,14 +1,12 @@
 //! Immutable reference lookup capability for the live parser session.
 //!
-//! This is intentionally separate from candidate publication. A resolver is
-//! valid only while its exact source revision and reference journal remain
-//! current in the originating document runtime.
+//! A resolver is valid only while its exact source revision and reference
+//! journal remain current in the originating document runtime.
 
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::candidate_manifest::CandidateAuthority;
 use crate::document::DocumentRuntime;
 use crate::identity::RuntimeIdentity;
 use crate::reference_journal::{M11ReferenceJournalError, M11ReferenceJournalRoot};
@@ -168,33 +166,6 @@ impl M11ReferenceResolver {
         Ok(Self {
             runtime_identity,
             source: journal.source(),
-            index,
-        })
-    }
-
-    /// Temporary compatibility bridge for the legacy retained-candidate
-    /// transport. Live parser sessions use [`Self::from_live_reference_journal`].
-    pub(crate) fn from_retained_candidate(
-        runtime_identity: RuntimeIdentity,
-        authority: CandidateAuthority,
-        root: crate::ArenaId,
-        index: Arc<ReferenceWinnerIndex>,
-    ) -> Result<Self, M11ReferenceResolverError> {
-        let byte_len = usize::try_from(authority.source_bytes)
-            .map_err(|_| M11ReferenceResolverError(ErrorInner::InvalidData))?;
-        let utf16_len = usize::try_from(authority.source_utf16)
-            .map_err(|_| M11ReferenceResolverError(ErrorInner::InvalidData))?;
-        if !index.is_bound_to(authority, root) {
-            return Err(M11ReferenceResolverError(ErrorInner::InvalidData));
-        }
-        Ok(Self {
-            runtime_identity,
-            source: SourceVersion::from_authenticated_parts(
-                authority.source_revision,
-                authority.source_root,
-                byte_len,
-                utf16_len,
-            ),
             index,
         })
     }

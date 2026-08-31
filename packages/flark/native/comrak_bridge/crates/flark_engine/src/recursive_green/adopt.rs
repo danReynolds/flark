@@ -738,6 +738,7 @@ struct FarSpanningExitRepairLeaf {
 /// numbering.
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub fn splice_m11_recursive_green_structural_atomic(
     runtime: &mut DocumentRuntime,
     base: &M11RecursiveGreenRoot,

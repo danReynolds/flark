@@ -3,22 +3,28 @@
 use std::ops::Range;
 
 use crate::document::{DocumentRuntime, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness};
+#[cfg(test)]
+use crate::measured_sequence::{begin_measured_sequence_seal, splice_measured_sequence_atomic};
 use crate::measured_sequence::{
-    begin_measured_sequence_seal, splice_measured_sequence_atomic, MeasuredSequenceBuildRoot,
-    ResumableMeasuredSequenceBuilder, ResumableSequenceProgress, SequenceInspectionReceipt,
-    SequenceMutationReceipt,
+    MeasuredSequenceBuildRoot, ResumableMeasuredSequenceBuilder, ResumableSequenceProgress,
+    SequenceInspectionReceipt, SequenceMutationReceipt,
 };
 use crate::source::SourceSnapshotLease;
-use crate::storage::{ArenaBuildSession, PageArena, ARENA_PAGE_BYTES};
+#[cfg(test)]
+use crate::storage::PageArena;
+use crate::storage::{ArenaBuildSession, ARENA_PAGE_BYTES};
 
+#[cfg(test)]
 use super::build::{
     allocate_recursive_green_identity, M11RecursiveGreenBuildReceipt, M11RecursiveGreenRoot,
 };
+#[cfg(test)]
+use super::codec::{decode_leaf, decode_packed_event};
 use super::codec::{
-    decode_leaf, decode_packed_event, encode_leaf_header, encode_packed_event, packed_event_len,
-    packed_event_summary, LogicalAtom, M11RecursiveGreenCoveragePart, M11RecursiveGreenError,
-    M11RecursiveGreenLogicalAction, M11RecursiveGreenSourceMetric, PackedGreenEvent,
-    RecursiveGreenSpec, RecursiveGreenSummary, GREEN_EVENTS_PER_PAGE_MAX, GREEN_LEAF_HEADER_BYTES,
+    encode_leaf_header, encode_packed_event, packed_event_len, packed_event_summary, LogicalAtom,
+    M11RecursiveGreenCoveragePart, M11RecursiveGreenError, M11RecursiveGreenLogicalAction,
+    M11RecursiveGreenSourceMetric, PackedGreenEvent, RecursiveGreenSpec, RecursiveGreenSummary,
+    GREEN_EVENTS_PER_PAGE_MAX, GREEN_LEAF_HEADER_BYTES,
 };
 
 type GreenSequenceBuilder = ResumableMeasuredSequenceBuilder<RecursiveGreenSpec>;
@@ -30,41 +36,20 @@ pub(super) type GreenSequenceBuildRoot = MeasuredSequenceBuildRoot<RecursiveGree
 /// coverage atom while retaining every Enter, Property, Retype, and Exit event.
 /// Structural edits deliberately use a wider parser restart/convergence cut.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg(test)]
 pub struct M11RecursiveGreenCoverageSpliceReceipt {
-    base_events: u64,
-    replacement_coverage_events: u64,
-    unchanged_events_preserved: u64,
     boundary_events_decoded: u64,
     boundary_events_reencoded: u64,
-    base_storage_pages: u64,
     deleted_storage_pages: u64,
     replacement_storage_pages: u64,
     reused_storage_pages: u64,
-    node_headers_decoded: u64,
-    summary_combinations: u64,
-    payload_bytes_inspected: u64,
-    events_authenticated: u64,
     tree_nodes_visited: usize,
     branches_allocated: usize,
-    branch_payload_bytes: usize,
-    maximum_atomic_height: u16,
-    seal_transitions: usize,
     lineage_transitions: usize,
 }
 
+#[cfg(test)]
 impl M11RecursiveGreenCoverageSpliceReceipt {
-    #[must_use]
-    pub const fn base_events(self) -> u64 {
-        self.base_events
-    }
-    #[must_use]
-    pub const fn replacement_coverage_events(self) -> u64 {
-        self.replacement_coverage_events
-    }
-    #[must_use]
-    pub const fn unchanged_events_preserved(self) -> u64 {
-        self.unchanged_events_preserved
-    }
     #[must_use]
     pub const fn boundary_events_decoded(self) -> u64 {
         self.boundary_events_decoded
@@ -72,10 +57,6 @@ impl M11RecursiveGreenCoverageSpliceReceipt {
     #[must_use]
     pub const fn boundary_events_reencoded(self) -> u64 {
         self.boundary_events_reencoded
-    }
-    #[must_use]
-    pub const fn base_storage_pages(self) -> u64 {
-        self.base_storage_pages
     }
     #[must_use]
     pub const fn deleted_storage_pages(self) -> u64 {
@@ -90,22 +71,6 @@ impl M11RecursiveGreenCoverageSpliceReceipt {
         self.reused_storage_pages
     }
     #[must_use]
-    pub const fn node_headers_decoded(self) -> u64 {
-        self.node_headers_decoded
-    }
-    #[must_use]
-    pub const fn summary_combinations(self) -> u64 {
-        self.summary_combinations
-    }
-    #[must_use]
-    pub const fn payload_bytes_inspected(self) -> u64 {
-        self.payload_bytes_inspected
-    }
-    #[must_use]
-    pub const fn events_authenticated(self) -> u64 {
-        self.events_authenticated
-    }
-    #[must_use]
     pub const fn tree_nodes_visited(self) -> usize {
         self.tree_nodes_visited
     }
@@ -114,23 +79,12 @@ impl M11RecursiveGreenCoverageSpliceReceipt {
         self.branches_allocated
     }
     #[must_use]
-    pub const fn branch_payload_bytes(self) -> usize {
-        self.branch_payload_bytes
-    }
-    #[must_use]
-    pub const fn maximum_atomic_height(self) -> u16 {
-        self.maximum_atomic_height
-    }
-    #[must_use]
-    pub const fn seal_transitions(self) -> usize {
-        self.seal_transitions
-    }
-    #[must_use]
     pub const fn lineage_transitions(self) -> usize {
         self.lineage_transitions
     }
 }
 
+#[cfg(test)]
 struct CoverageSplicePlan {
     storage_page_ordinal: u64,
     events: Vec<PackedGreenEvent>,
@@ -154,6 +108,7 @@ struct CoverageSplicePlan {
 /// Prefix/suffix witnesses may be absent only at document start/end.
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub fn splice_m11_recursive_green_coverage_atomic(
     runtime: &mut DocumentRuntime,
     base: &M11RecursiveGreenRoot,
@@ -320,12 +275,10 @@ pub fn splice_m11_recursive_green_coverage_atomic(
 
     let receipt = match make_receipt(
         base,
-        replacement_coverage_events,
         plan.boundary_events_decoded,
         boundary_events_reencoded,
         replacement_storage_pages,
         mutation,
-        seal_transitions,
         lineage_transitions,
     ) {
         Ok(receipt) => receipt,
@@ -414,6 +367,7 @@ pub(super) fn validate_lineage(
     Ok(prefix_transitions.max(suffix_transitions))
 }
 
+#[cfg(test)]
 fn plan_coverage_splice(
     arena: &PageArena,
     tree: &super::build::GreenSequenceTree,
@@ -713,14 +667,13 @@ pub(super) fn read_small(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn make_receipt(
     base: &M11RecursiveGreenRoot,
-    replacement_coverage_events: u64,
     boundary_events_decoded: u64,
     boundary_events_reencoded: u64,
     replacement_storage_pages: u64,
     mutation: SequenceMutationReceipt,
-    seal_transitions: usize,
     lineage_transitions: usize,
 ) -> Result<M11RecursiveGreenCoverageSpliceReceipt, M11RecursiveGreenError> {
     let base_storage_pages = base.storage_page_count();
@@ -743,27 +696,13 @@ fn make_receipt(
         ));
     }
     Ok(M11RecursiveGreenCoverageSpliceReceipt {
-        base_events: base.event_count(),
-        replacement_coverage_events,
-        unchanged_events_preserved: base
-            .event_count()
-            .checked_sub(1)
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?,
         boundary_events_decoded,
         boundary_events_reencoded,
-        base_storage_pages,
         deleted_storage_pages: 1,
         replacement_storage_pages,
         reused_storage_pages,
-        node_headers_decoded: mutation.inspection.node_headers_decoded,
-        summary_combinations: mutation.inspection.summary_combinations,
-        payload_bytes_inspected: mutation.inspection.spec.payload_bytes_inspected,
-        events_authenticated: mutation.inspection.spec.spec_items_hashed,
         tree_nodes_visited: mutation.nodes_visited,
         branches_allocated: mutation.branches_allocated,
-        branch_payload_bytes: mutation.branch_payload_bytes,
-        maximum_atomic_height: mutation.maximum_atomic_height,
-        seal_transitions,
         lineage_transitions,
     })
 }
