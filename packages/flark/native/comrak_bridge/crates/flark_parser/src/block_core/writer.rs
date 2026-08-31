@@ -2639,6 +2639,7 @@ impl M11CompactProbeOutput {
         }
     }
 
+    #[cfg(test)]
     const fn first_slice_over_cap(&self) -> bool {
         matches!(self.first_slice, M11CompactProbeFirstSliceState::OverCap)
     }
@@ -2959,7 +2960,7 @@ impl fmt::Debug for M11BlockRestartCheckpoint {
 }
 
 impl M11BlockRestartCheckpoint {
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
         self.parser
             .heap_allocated_bytes_for_diagnostics()
@@ -3228,7 +3229,7 @@ impl fmt::Debug for M11BlockTerminalConvergenceCheckpoint {
 }
 
 impl M11BlockTerminalConvergenceCheckpoint {
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
         self.open
             .len()
@@ -3779,7 +3780,7 @@ impl M11BlockWriter {
         }
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn compact_probe_first_slice_over_cap(&self) -> Result<bool, M11BlockWriterError> {
         match &self.output {
             WriterOutput::CompactProbe(probe) => Ok(probe.first_slice_over_cap()),

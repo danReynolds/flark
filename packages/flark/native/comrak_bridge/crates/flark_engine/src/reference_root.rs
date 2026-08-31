@@ -45,7 +45,6 @@ const PAGE_PAYLOAD_BYTES: usize = NODE_HEADER_BYTES + 24;
 const ROOT_PAYLOAD_BYTES: usize = NODE_HEADER_BYTES + 16;
 pub(crate) const REFERENCE_ROOT_PAYLOAD_BYTES: usize = ROOT_PAYLOAD_BYTES;
 const DEFAULT_FACTS_PER_PAGE: usize = 64;
-const MAX_WORKING_OWNERS: usize = DEFAULT_FACTS_PER_PAGE + 8;
 const REFERENCE_WINNER_LABEL_DIGEST_DOMAIN: &[u8] = b"flark.reference-winner-label.v1\0";
 const REFERENCE_WINNER_MAX_DIGEST_BUCKET_LABELS: usize = 4;
 const REFERENCE_WINNER_ACCOUNTED_BYTES_PER_OCCURRENCE: usize = 128;
@@ -1719,7 +1718,10 @@ fn fact_storage_requirements(
 }
 
 pub(crate) struct ReferenceRootView<'a> {
+    #[cfg(test)]
     arena: &'a PageArena,
+    #[cfg(not(test))]
+    _arena: PhantomData<&'a PageArena>,
     authority: ReferenceAuthority,
     count: u64,
     page_root: Option<ArenaId>,
@@ -1751,23 +1753,17 @@ struct ReferenceOccurrenceCursorPage {
 }
 
 pub(crate) enum ReferenceOccurrenceCursorPoll {
-    Pending {
-        transitions: usize,
-    },
+    Pending {},
     Occurrence {
-        transitions: usize,
         occurrence: DetachedReferenceOccurrence,
     },
-    Complete {
-        transitions: usize,
-    },
+    Complete {},
 }
 
 /// One occurrence detached from the arena borrow that produced it. Cooked
 /// values remain represented by bounded copy cursors rather than contiguous
 /// allocations.
 pub(crate) struct DetachedReferenceOccurrence {
-    pub(crate) ordinal: u64,
     pub(crate) source: ReferenceSourceRange,
     pub(crate) label_source: ReferenceSourceRange,
     pub(crate) destination_source: ReferenceSourceRange,
@@ -1804,9 +1800,7 @@ enum PersistentBytesCopyStorage {
 }
 
 pub(crate) struct PersistentBytesCopyPoll {
-    pub(crate) transitions: usize,
     pub(crate) written: usize,
-    pub(crate) complete: bool,
 }
 
 impl<'a> ReferenceRootView<'a> {
@@ -1829,7 +1823,10 @@ impl<'a> ReferenceRootView<'a> {
             }
         }
         Ok(Self {
+            #[cfg(test)]
             arena,
+            #[cfg(not(test))]
+            _arena: PhantomData,
             authority,
             count: descriptor.count,
             page_root: descriptor.page_root,
@@ -1854,6 +1851,7 @@ impl<'a> ReferenceRootView<'a> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn occurrence(
         &self,
         ordinal: u64,
@@ -1889,6 +1887,7 @@ impl<'a> ReferenceRootView<'a> {
         ))
     }
 
+    #[cfg(test)]
     pub(crate) fn winner(
         &self,
         normalized_label: &str,
@@ -1990,9 +1989,7 @@ impl ReferenceOccurrenceCursor {
                         .next_ordinal
                         .checked_add(1)
                         .ok_or(ReferenceRootError::OccurrenceLimit)?;
-                    transitions += 1;
                     return Ok(ReferenceOccurrenceCursorPoll::Occurrence {
-                        transitions,
                         occurrence: occurrence.detach(),
                     });
                 }
@@ -2023,9 +2020,9 @@ impl ReferenceOccurrenceCursor {
                     "occurrence replay ended before the root count",
                 ));
             }
-            return Ok(ReferenceOccurrenceCursorPoll::Complete { transitions });
+            return Ok(ReferenceOccurrenceCursorPoll::Complete {});
         }
-        Ok(ReferenceOccurrenceCursorPoll::Pending { transitions })
+        Ok(ReferenceOccurrenceCursorPoll::Pending {})
     }
 }
 
@@ -2096,6 +2093,7 @@ impl ReferenceWinnerIndex {
         self.payload.indexed_occurrences
     }
 
+    #[cfg(test)]
     pub(crate) fn skipped_oversized_occurrences(&self) -> u64 {
         self.payload.skipped_oversized_occurrences
     }
@@ -2521,10 +2519,6 @@ impl ReferenceWinnerIndexBuilder {
             label_scratch: Vec::new(),
             complete: false,
         })
-    }
-
-    pub(crate) const fn root(&self) -> ArenaId {
-        self.root
     }
 
     pub(crate) fn maximum_external_payload_bytes(&self) -> Result<usize, ReferenceRootError> {
@@ -3239,7 +3233,6 @@ enum PersistentBytesStorage {
 impl ReferenceOccurrenceView<'_> {
     fn detach(self) -> DetachedReferenceOccurrence {
         DetachedReferenceOccurrence {
-            ordinal: self.ordinal,
             source: self.source,
             label_source: self.label_source,
             destination_source: self.destination_source,
@@ -3414,11 +3407,7 @@ impl PersistentBytesCopyCursor {
             return Err(ReferenceRootError::ZeroFuel);
         }
         if self.complete() {
-            return Ok(PersistentBytesCopyPoll {
-                transitions: 0,
-                written: 0,
-                complete: true,
-            });
+            return Ok(PersistentBytesCopyPoll { written: 0 });
         }
 
         let mut transitions = 0;
@@ -3523,11 +3512,7 @@ impl PersistentBytesCopyCursor {
                 }
             }
         }
-        Ok(PersistentBytesCopyPoll {
-            transitions,
-            written,
-            complete: self.complete(),
-        })
+        Ok(PersistentBytesCopyPoll { written })
     }
 }
 

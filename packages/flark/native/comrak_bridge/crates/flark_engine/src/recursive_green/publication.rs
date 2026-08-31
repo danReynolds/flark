@@ -48,10 +48,6 @@ impl PersistentM11RecursiveGreenRoleDescriptor {
         self.events
     }
 
-    pub(crate) const fn renderable_row_count(self) -> u64 {
-        self.renderable_row_exits
-    }
-
     pub(crate) const fn record_count(self) -> u64 {
         self.events
     }
@@ -64,20 +60,8 @@ impl PersistentM11RecursiveGreenRoleDescriptor {
         self.canonical_event_bytes
     }
 
-    pub(crate) const fn source_bytes(self) -> u64 {
-        self.source_bytes
-    }
-
-    pub(crate) const fn source_utf16(self) -> u64 {
-        self.source_utf16
-    }
-
     pub(crate) const fn storage_page_count(self) -> u64 {
         self.storage_page_count
-    }
-
-    pub(crate) const fn tree_height(self) -> u16 {
-        self.tree_height
     }
 
     pub(crate) const fn canonical_commitment256(self) -> [u8; 32] {
@@ -128,7 +112,6 @@ pub(crate) struct M11RetainedRecursiveGreenRoot {
     summary: RecursiveGreenSummary,
     page_count: u64,
     tree_height: u16,
-    inspection: SequenceInspectionReceipt,
 }
 
 impl M11RetainedRecursiveGreenRoot {
@@ -138,22 +121,6 @@ impl M11RetainedRecursiveGreenRoot {
 
     pub(crate) const fn event_count(&self) -> u64 {
         self.summary.events
-    }
-
-    pub(crate) const fn canonical_event_bytes(&self) -> u64 {
-        self.summary.canonical_event_bytes
-    }
-
-    pub(crate) const fn page_count(&self) -> u64 {
-        self.page_count
-    }
-
-    pub(crate) const fn tree_height(&self) -> u16 {
-        self.tree_height
-    }
-
-    pub(crate) const fn inspection(&self) -> SequenceInspectionReceipt {
-        self.inspection
     }
 
     pub(crate) fn descriptor(&self) -> PersistentM11RecursiveGreenRoleDescriptor {
@@ -210,7 +177,6 @@ impl M11RecursiveGreenRoot {
             summary: self.summary,
             page_count: self.page_count,
             tree_height: self.tree_height,
-            inspection: mutation.inspection,
         })
     }
 }

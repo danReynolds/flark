@@ -550,16 +550,17 @@ pub(crate) struct M11InlineCodeRuns {
 }
 
 impl M11InlineCodeRuns {
+    #[cfg(test)]
+    pub(crate) const fn raw_run_len(&self) -> u32 {
+        self.raw_run_count
+    }
+
     pub(crate) const fn source(&self) -> SourceVersion {
         self.source
     }
 
     pub(crate) fn source_range(&self) -> Range<u32> {
         self.source_range.clone()
-    }
-
-    pub(crate) const fn raw_run_len(&self) -> u32 {
-        self.raw_run_count
     }
 
     pub(crate) fn raw_run(&self, index: u32) -> Result<Option<CodeRun>, M11InlineCodeError> {

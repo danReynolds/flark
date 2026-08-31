@@ -104,11 +104,6 @@ pub(crate) struct M11InlineDirectCandidates {
     exhaustive_bracket_classification: bool,
 }
 
-pub(crate) struct M11InlineDirectStorage {
-    pub(crate) facts: Vec<M11InlineDirectFact>,
-    pub(crate) syntax: Vec<Range<u32>>,
-}
-
 impl fmt::Debug for M11InlineDirectCandidates {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -154,10 +149,6 @@ impl M11InlineDirectCandidates {
         self.facts.get(usize::try_from(index).ok()?)
     }
 
-    pub(crate) fn syntax_len(&self) -> u32 {
-        u32::try_from(self.syntax.len()).expect("syntax count was checked while building")
-    }
-
     pub(crate) fn syntax_range(&self, index: u32) -> Option<Range<u32>> {
         self.syntax.get(usize::try_from(index).ok()?).cloned()
     }
@@ -187,27 +178,6 @@ impl M11InlineDirectCandidates {
         self.syntax
             .iter()
             .any(|syntax| syntax.start < range.end && range.start < syntax.end)
-    }
-
-    pub(crate) fn take_storage_for_bare(
-        &mut self,
-    ) -> Result<M11InlineDirectStorage, M11InlineDirectError> {
-        Ok(M11InlineDirectStorage {
-            facts: std::mem::take(&mut self.facts),
-            syntax: std::mem::take(&mut self.syntax),
-        })
-    }
-
-    pub(crate) fn install_storage_after_bare(
-        &mut self,
-        storage: M11InlineDirectStorage,
-    ) -> Result<(), M11InlineDirectError> {
-        if !self.facts.is_empty() || !self.syntax.is_empty() {
-            return Err(M11InlineDirectError::InvalidState);
-        }
-        self.facts = storage.facts;
-        self.syntax = storage.syntax;
-        Ok(())
     }
 }
 

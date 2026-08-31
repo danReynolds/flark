@@ -19,22 +19,15 @@ mod exact_clean;
 mod gfm_inline_projection;
 mod gfm_table_projection;
 mod indented_code_projection_job;
-#[allow(dead_code)] // Staged angle-autolink stage for M11InlineProjectionJob.
 mod inline_autolink;
-#[allow(dead_code)] // Staged strict GFM bare-autolink stage.
 mod inline_bare_autolink;
-#[allow(dead_code)] // Staged code-span stage for M11InlineProjectionJob.
 mod inline_code;
-#[allow(dead_code)] // Staged direct-link/image stage for M11InlineProjectionJob.
 mod inline_direct;
 mod inline_edit_component;
-#[allow(dead_code)] // Staged emphasis stage for M11InlineProjectionJob.
 mod inline_emphasis;
-#[allow(dead_code)] // Staged precedence gate for M11InlineProjectionJob.
 mod inline_hazard;
 mod inline_lex;
 mod inline_projection_job;
-#[allow(dead_code)] // Staged storage foundation for M11InlineProjectionJob.
 mod inline_radix;
 mod pending_presentation_plan;
 mod persistent_recursive_green_session;

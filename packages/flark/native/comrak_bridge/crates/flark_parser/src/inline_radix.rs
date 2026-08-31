@@ -61,10 +61,12 @@ pub(crate) struct M11InlineRadixAllocationReceipt {
 }
 
 impl M11InlineRadixAllocationReceipt {
+    #[cfg(test)]
     pub(crate) const fn allocations(self) -> usize {
         self.allocations
     }
 
+    #[cfg(test)]
     pub(crate) const fn admitted_bytes(self) -> usize {
         self.admitted_bytes
     }
@@ -83,10 +85,12 @@ impl M11InlineRadixReclaimPoll {
         self.transitions
     }
 
+    #[cfg(test)]
     pub(crate) const fn allocations_reclaimed(self) -> usize {
         self.allocations_reclaimed
     }
 
+    #[cfg(test)]
     pub(crate) const fn admitted_bytes_reclaimed(self) -> usize {
         self.admitted_bytes_reclaimed
     }
@@ -423,10 +427,12 @@ impl<T: Copy + Default, const PAGE_RECORDS: usize> M11InlineRadixPages<T, PAGE_R
         Ok(self.page(coordinates).map(|page| page.records[slot]))
     }
 
+    #[cfg(test)]
     pub(crate) const fn retained_allocations(&self) -> usize {
         self.retained_allocations
     }
 
+    #[cfg(test)]
     pub(crate) const fn retained_admitted_bytes(&self) -> usize {
         self.retained_admitted_bytes
     }

@@ -910,10 +910,6 @@ impl M11RecursiveGreenParagraphFence {
         self.inner.receipt()
     }
 
-    pub(crate) fn into_inline_authority(self) -> (M11ParserSourceRangeAuthority, Range<u64>) {
-        self.inner.into_inline_authority()
-    }
-
     pub(crate) fn into_inline_leaf(self) -> M11RecursiveGreenInlineLeafFence {
         self.inner
     }

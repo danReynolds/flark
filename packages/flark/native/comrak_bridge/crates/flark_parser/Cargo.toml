@@ -27,6 +27,10 @@ entities = "=1.0.1"
 sha2 = "0.10"
 
 [lints.rust]
+dead_code = "deny"
+unused_assignments = "deny"
+unused_imports = "deny"
+unused_variables = "deny"
 unsafe_code = "forbid"
 
 [lints.clippy]

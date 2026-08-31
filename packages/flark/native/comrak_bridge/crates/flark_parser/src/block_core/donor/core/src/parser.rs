@@ -4,8 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use comrak::block_spine_facade::{
     FacadeError, FacadeSetextChar, atx_heading_start, chop_trailing_hashes, close_code_fence,
-    html_block_end, html_block_start, open_code_fence, reference_definitions, setext_heading_line,
-    task_list_marker,
+    html_block_end, html_block_start, open_code_fence, setext_heading_line, task_list_marker,
 };
 use generated_scanner_gate::{
     AtxLineCuts, CURSOR_ATX_MAX_LOOKAHEAD_SLACK, CursorScanError,
@@ -17,11 +16,11 @@ use crate::reference_prefix::{
     DirectReferenceLogicalPosition, DirectReferencePrefixDisposition,
     DirectReferencePrefixTerminalAck, DirectReferencePrefixWork,
 };
-use crate::source::{LogicalProjection, OriginTransform, SourceDocument};
+use crate::source::{LogicalProjection, OriginTransform};
 use crate::table;
 use crate::tree::{
-    BlockDocument, BlockEvent, BlockKind, BlockTree, ListData, ListDelimiter, ListType, NodeId,
-    Position, ReferenceOccurrence, SyntaxProfile,
+    BlockEvent, BlockKind, BlockTree, ListData, ListDelimiter, ListType, NodeId, Position,
+    ReferenceOccurrence, SyntaxProfile,
 };
 
 const TAB_STOP: usize = 4;
@@ -584,50 +583,9 @@ struct DirectHooks {
     reference_current_rebase: Option<DirectReferenceCurrentRebase>,
     next_reference_rendezvous: u64,
     #[cfg(test)]
-    recipe_admission: Option<DirectRecipeAdmissionReceipt>,
-    #[cfg(test)]
     retired_insertions: usize,
     #[cfg(test)]
     retired_stack_probes: usize,
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct DirectRecipeAdmissionReceipt {
-    physical_line_bytes: usize,
-    open_depth: usize,
-    intent_limit: usize,
-    requested_previous_slots: usize,
-    requested_retired_slots: usize,
-    requested_old_source_slots: usize,
-    requested_body_slots: usize,
-    requested_depth_index_slots: usize,
-    requested_last_use_slots: usize,
-}
-
-#[cfg(test)]
-impl DirectRecipeAdmissionReceipt {
-    const fn requested_slots(self) -> usize {
-        self.requested_previous_slots
-            + self.requested_retired_slots
-            + self.requested_old_source_slots
-            + self.requested_body_slots
-            + self.requested_depth_index_slots
-            + self.requested_last_use_slots
-    }
-
-    const fn line_length_independent_part(self) -> (usize, usize, usize, usize, usize, usize) {
-        (
-            self.open_depth,
-            self.intent_limit,
-            self.requested_previous_slots,
-            self.requested_retired_slots,
-            self.requested_old_source_slots,
-            self.requested_body_slots
-                + self.requested_depth_index_slots
-                + self.requested_last_use_slots,
-        )
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -758,8 +716,6 @@ impl DirectHooks {
             reference_current_rebase: None,
             next_reference_rendezvous: 1,
             #[cfg(test)]
-            recipe_admission: None,
-            #[cfg(test)]
             retired_insertions: 0,
             #[cfg(test)]
             retired_stack_probes: 0,
@@ -859,20 +815,6 @@ impl DirectHooks {
         {
             self.retired_insertions = 0;
             self.retired_stack_probes = 0;
-        }
-        #[cfg(test)]
-        {
-            self.recipe_admission = Some(DirectRecipeAdmissionReceipt {
-                physical_line_bytes: line_bytes,
-                open_depth,
-                intent_limit: self.intent_limit,
-                requested_previous_slots: DIRECT_INITIAL_PREVIOUS_INTENTS,
-                requested_retired_slots: open_depth,
-                requested_old_source_slots: open_depth,
-                requested_body_slots: DIRECT_INITIAL_BODY_INTENTS,
-                requested_depth_index_slots: open_depth,
-                requested_last_use_slots: open_depth,
-            });
         }
         Ok(())
     }
@@ -1296,74 +1238,10 @@ impl DirectHooks {
     }
 }
 
-/// Independent budgets for one cooperative parser poll.
-///
-/// `output_events` meters the exact [`BlockEvent`] stream produced by the
-/// correspondent parser. A single grammar transition can emit more than one
-/// event (a list marker opens both a list and an item), so callers that require
-/// a hard event cap should leave enough room for one transition's fan-out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WorkBudget {
-    pub transitions: usize,
-    pub output_events: usize,
-    pub index_operations: usize,
-}
-
-impl WorkBudget {
-    #[must_use]
-    pub const fn new(transitions: usize, output_events: usize, index_operations: usize) -> Self {
-        Self {
-            transitions,
-            output_events,
-            index_operations,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum WorkStatus {
-    #[default]
-    Pending,
-    Complete,
-    Cancelled,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct WorkPollReceipt {
-    pub transitions: usize,
-    /// Events made visible to the downstream consumer this poll. This is hard
-    /// capped by `WorkBudget::output_events` even when one transition queues a
-    /// larger fan-out internally.
-    pub output_events: usize,
-    /// Events appended to the parser's internal exact event queue this poll.
-    /// A value above the delivery budget identifies an atomic producer kernel
-    /// that still needs decomposition (notably dense table rows).
-    pub generated_output_events: usize,
-    pub max_transition_event_fanout: usize,
-    pub index_operations: usize,
-    /// Polling retains the live tree in place and never serializes its open
-    /// semantic path.
-    pub open_frames_copied: usize,
-    pub status: WorkStatus,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CancellationReceipt {
-    pub abandoned_line: bool,
-    pub abandoned_finish: bool,
-    /// The live parser/tree is dropped in place; cancellation does not walk or
-    /// serialize the open semantic path.
-    pub open_frames_copied: usize,
-    /// Nodes still owned by the cancelled job. Dropping/reclaiming this arena
-    /// is deliberately outside this parser-loop gate and is not yet fuelled.
-    pub tree_nodes_awaiting_reclaim: usize,
-    pub tree_reclaim_is_fuelled: bool,
-    /// Raw code/HTML payload still referenced by the abandoned tree.
-    pub source_backed_logical_bytes_awaiting_reclaim: usize,
-    /// Aggregate raw-block payload owned by semantic nodes. This must remain
-    /// zero even when cancellation interrupts a giant open raw block.
-    pub owned_aggregate_literal_bytes_awaiting_reclaim: usize,
-    pub raw_block_origin_runs_awaiting_reclaim: usize,
+struct WorkPollReceipt {
+    transitions: usize,
+    index_operations: usize,
 }
 
 #[derive(Debug)]
@@ -1441,13 +1319,6 @@ enum OpenNewScheduler {
     LegacyAtomic,
 }
 
-#[derive(Debug)]
-struct LineWork {
-    line: String,
-    transition: LineTransition,
-    semantic_complete: bool,
-}
-
 /// Parser-owned physical-line control state.  Scheduling wrappers may retain
 /// this value between polls, but they do not own any grammar phase ordering.
 #[derive(Debug)]
@@ -1478,31 +1349,10 @@ enum FinishPhase {
     },
 }
 
-#[derive(Debug)]
-struct FinishWork {
-    transition: FinishTransition,
-    semantic_complete: bool,
-}
-
 /// Parser-owned EOF control state, shared by unlimited and fuelled drivers.
 #[derive(Debug)]
 struct FinishTransition {
     phase: FinishPhase,
-}
-
-/// Cooperative execution gate around the exact correspondent block parser.
-///
-/// This owns one parser and its live tree for the entire job. Polling moves
-/// only the small phase cursor; it never checkpoints, serializes, rebuilds, or
-/// copies the open frame stack. All grammar decisions still call the same
-/// handler/scanner functions as [`ValueBlockParser::process_line`].
-pub struct FuelledValueBlockParser {
-    parser: ValueBlockParser,
-    line_work: Option<LineWork>,
-    finish_work: Option<FinishWork>,
-    delivered_event_cursor: usize,
-    finished: bool,
-    cancelled: bool,
 }
 
 #[derive(Debug)]
@@ -4567,10 +4417,6 @@ impl From<FacadeError> for ParseError {
     }
 }
 
-pub fn parse_document(source: &str, profile: SyntaxProfile) -> Result<BlockDocument, ParseError> {
-    ValueBlockParser::new(source, profile).parse()
-}
-
 enum PrefixResult {
     Matched,
     Unmatched,
@@ -4579,7 +4425,6 @@ enum PrefixResult {
 
 pub struct ValueBlockParser {
     pub(crate) profile: SyntaxProfile,
-    pub(crate) source: SourceDocument,
     pub(crate) tree: BlockTree,
     pub(crate) references: Vec<ReferenceOccurrence>,
     pub(crate) current: NodeId,
@@ -4617,12 +4462,11 @@ pub struct ValueBlockParser {
 }
 
 impl ValueBlockParser {
-    pub fn new(source: &str, profile: SyntaxProfile) -> Self {
+    fn new(profile: SyntaxProfile) -> Self {
         let tree = BlockTree::new();
         let current = tree.root;
         Self {
             profile,
-            source: SourceDocument::new(source),
             tree,
             references: Vec::new(),
             current,
@@ -4646,36 +4490,6 @@ impl ValueBlockParser {
             #[cfg(test)]
             open_new_scheduler: OpenNewScheduler::Resumable,
         }
-    }
-
-    pub fn parse(mut self) -> Result<BlockDocument, ParseError> {
-        // One immutable coverage leaf is one physical line. Cloning the small
-        // line descriptor here avoids coupling parser mutation to source-page
-        // ownership; persistent output stores only leaf-relative origins.
-        let lines = self
-            .source
-            .leaves
-            .iter()
-            .map(|leaf| (leaf.id, leaf.text.clone()))
-            .collect::<Vec<_>>();
-        for (leaf_id, line) in lines {
-            self.line_leaf_id = leaf_id;
-            self.process_line(&line)?;
-        }
-        self.finalize_document()?;
-        Ok(BlockDocument {
-            profile: self.profile,
-            source: self.source,
-            tree: self.tree,
-            references: self.references,
-        })
-    }
-
-    pub(crate) fn process_line(&mut self, line: &str) -> Result<(), ParseError> {
-        let mut transition = self.begin_line_transition(line);
-        let mut receipt = WorkPollReceipt::default();
-        while !self.step_line_transition(&mut transition, line, &mut receipt)? {}
-        Ok(())
     }
 
     fn begin_line_transition(&mut self, line: &str) -> LineTransition {
@@ -6889,13 +6703,6 @@ impl ValueBlockParser {
         Ok(())
     }
 
-    pub(crate) fn finalize_document(&mut self) -> Result<(), ParseError> {
-        let mut transition = self.begin_finish_transition();
-        let mut receipt = WorkPollReceipt::default();
-        while !self.step_finish_transition(&mut transition, &mut receipt)? {}
-        Ok(())
-    }
-
     fn begin_finish_transition(&self) -> FinishTransition {
         FinishTransition {
             phase: FinishPhase::CloseCurrent,
@@ -7349,21 +7156,6 @@ impl ValueBlockParser {
         Err(ParseError::DirectUnsupported(
             DirectUnsupported::AggregateContent,
         ))
-    }
-
-    #[allow(dead_code)]
-    fn parse_reference_inline(&mut self, input: &str) -> Result<Option<usize>, ParseError> {
-        Ok(reference_definitions(input)?
-            .first()
-            .map(|definition| definition.source.end))
-    }
-
-    pub(crate) fn new_detached_node(&mut self, kind: BlockKind, start: Position) -> NodeId {
-        let temporary_parent = self.tree.root;
-        let node = self.tree.append(temporary_parent, kind, start);
-        self.opened_this_line.insert(node);
-        self.tree.detach(node);
-        node
     }
 
     fn direct_prepare_pending_blank_gap(&mut self) -> Result<(), ParseError> {
@@ -7875,7 +7667,7 @@ impl DirectValueBlockParser {
     pub const MAX_LINE_BYTES: usize = DIRECT_MAX_LINE_BYTES;
 
     pub fn new(profile: SyntaxProfile) -> Result<Self, ParseError> {
-        let mut parser = ValueBlockParser::new("", profile);
+        let mut parser = ValueBlockParser::new(profile);
         parser.defer_output_repairs = true;
         parser.direct = Some(DirectHooks::new());
         parser
@@ -8007,7 +7799,6 @@ impl DirectValueBlockParser {
         // the donor state require a fresh pause audit at compile time.
         let ValueBlockParser {
             profile,
-            source,
             tree,
             references,
             current,
@@ -8032,7 +7823,6 @@ impl DirectValueBlockParser {
                 open_new_scheduler: _,
         } = parser;
         if !*defer_output_repairs
-            || !source.leaves.is_empty()
             || !references.is_empty()
             || !opened_this_line.is_empty()
             || !tree.events.is_empty()
@@ -8077,8 +7867,6 @@ impl DirectValueBlockParser {
             reference_finalize_resume_once,
             reference_current_rebase,
             next_reference_rendezvous: _,
-            #[cfg(test)]
-                recipe_admission: _,
             #[cfg(test)]
                 retired_insertions: _,
             #[cfg(test)]
@@ -8445,7 +8233,7 @@ impl DirectValueBlockParser {
         // `ValueBlockParser::new` retains its existing fixed one-root
         // allocation. Every pause-depth-proportional allocation below uses
         // `try_reserve_exact`; failure drops the private partial rebuild.
-        let mut parser = ValueBlockParser::new("", profile);
+        let mut parser = ValueBlockParser::new(profile);
         parser.defer_output_repairs = true;
         parser
             .tree
@@ -9554,208 +9342,6 @@ impl DirectValueBlockParser {
     #[must_use]
     pub fn legacy_event_count(&self) -> usize {
         self.parser.tree.events.len()
-    }
-}
-
-impl FuelledValueBlockParser {
-    #[must_use]
-    pub fn new(source: &str, profile: SyntaxProfile) -> Self {
-        Self {
-            parser: ValueBlockParser::new(source, profile),
-            line_work: None,
-            finish_work: None,
-            delivered_event_cursor: 0,
-            finished: false,
-            cancelled: false,
-        }
-    }
-
-    /// Begin one physical line by moving its text into the live work cursor.
-    /// The source document remains the canonical owner used by the final
-    /// document; this gate deliberately performs no open-stack checkpoint.
-    pub fn begin_line(&mut self, coverage_leaf_id: u64, line: String) -> Result<(), ParseError> {
-        if self.cancelled {
-            return Err(ParseError::Invariant("fuelled parser was cancelled"));
-        }
-        if self.finished {
-            return Err(ParseError::Invariant("fuelled parser already finished"));
-        }
-        if self.line_work.is_some() || self.finish_work.is_some() {
-            return Err(ParseError::Invariant("parser work already active"));
-        }
-
-        self.parser.line_leaf_id = coverage_leaf_id;
-        let transition = self.parser.begin_line_transition(&line);
-
-        self.line_work = Some(LineWork {
-            line,
-            transition,
-            semantic_complete: false,
-        });
-        Ok(())
-    }
-
-    pub fn poll_line(&mut self, budget: WorkBudget) -> Result<WorkPollReceipt, ParseError> {
-        if self.cancelled {
-            return Ok(WorkPollReceipt {
-                status: WorkStatus::Cancelled,
-                ..WorkPollReceipt::default()
-            });
-        }
-        let Some(mut work) = self.line_work.take() else {
-            return Err(ParseError::Invariant("no fuelled line is active"));
-        };
-        let mut receipt = WorkPollReceipt::default();
-        loop {
-            self.deliver_pending_events(&mut receipt, budget.output_events);
-            if work.semantic_complete {
-                if self.delivered_event_cursor == self.parser.tree.events.len() {
-                    receipt.status = WorkStatus::Complete;
-                    return Ok(receipt);
-                }
-                break;
-            }
-            if receipt.transitions >= budget.transitions
-                || receipt.output_events >= budget.output_events
-            {
-                break;
-            }
-            let needs_index = matches!(work.transition.phase, LinePhase::ClearAncestors { .. });
-            if needs_index && receipt.index_operations >= budget.index_operations {
-                break;
-            }
-            let before_events = self.parser.tree.events.len();
-            let complete = self.parser.step_line_transition(
-                &mut work.transition,
-                work.line.as_str(),
-                &mut receipt,
-            )?;
-            let generated = self.parser.tree.events.len() - before_events;
-            receipt.generated_output_events += generated;
-            receipt.max_transition_event_fanout =
-                receipt.max_transition_event_fanout.max(generated);
-            if complete {
-                work.semantic_complete = true;
-            }
-        }
-        self.line_work = Some(work);
-        Ok(receipt)
-    }
-
-    fn deliver_pending_events(&mut self, receipt: &mut WorkPollReceipt, event_budget: usize) {
-        let remaining_budget = event_budget.saturating_sub(receipt.output_events);
-        let pending = self
-            .parser
-            .tree
-            .events
-            .len()
-            .saturating_sub(self.delivered_event_cursor);
-        let delivered = pending.min(remaining_budget);
-        self.delivered_event_cursor += delivered;
-        receipt.output_events += delivered;
-    }
-
-    pub fn begin_finish(&mut self) -> Result<(), ParseError> {
-        if self.cancelled {
-            return Err(ParseError::Invariant("fuelled parser was cancelled"));
-        }
-        if self.finished {
-            return Err(ParseError::Invariant("fuelled parser already finished"));
-        }
-        if self.line_work.is_some() || self.finish_work.is_some() {
-            return Err(ParseError::Invariant("parser work already active"));
-        }
-        self.finish_work = Some(FinishWork {
-            transition: self.parser.begin_finish_transition(),
-            semantic_complete: false,
-        });
-        Ok(())
-    }
-
-    pub fn poll_finish(&mut self, budget: WorkBudget) -> Result<WorkPollReceipt, ParseError> {
-        if self.cancelled {
-            return Ok(WorkPollReceipt {
-                status: WorkStatus::Cancelled,
-                ..WorkPollReceipt::default()
-            });
-        }
-        let Some(mut work) = self.finish_work.take() else {
-            return Err(ParseError::Invariant("no fuelled finish is active"));
-        };
-        let mut receipt = WorkPollReceipt::default();
-        loop {
-            self.deliver_pending_events(&mut receipt, budget.output_events);
-            if work.semantic_complete {
-                if self.delivered_event_cursor == self.parser.tree.events.len() {
-                    self.finished = true;
-                    receipt.status = WorkStatus::Complete;
-                    return Ok(receipt);
-                }
-                break;
-            }
-            let needs_index = matches!(work.transition.phase, FinishPhase::Propagate { .. });
-            if needs_index {
-                if receipt.index_operations >= budget.index_operations {
-                    break;
-                }
-            } else if receipt.transitions >= budget.transitions
-                || receipt.output_events >= budget.output_events
-            {
-                break;
-            }
-            let before_events = self.parser.tree.events.len();
-            let complete = self
-                .parser
-                .step_finish_transition(&mut work.transition, &mut receipt)?;
-            let generated = self.parser.tree.events.len() - before_events;
-            receipt.generated_output_events += generated;
-            receipt.max_transition_event_fanout =
-                receipt.max_transition_event_fanout.max(generated);
-            if complete {
-                work.semantic_complete = true;
-            }
-        }
-        self.finish_work = Some(work);
-        Ok(receipt)
-    }
-
-    /// Permanently abandon the current job. Production cancellation drops the
-    /// obsolete revision in exactly this fashion; rollback is intentionally
-    /// absent because it would require copying the live semantic stack.
-    pub fn cancel(&mut self) -> CancellationReceipt {
-        let literal_ownership = self.parser.tree.literal_ownership_receipt();
-        let receipt = CancellationReceipt {
-            abandoned_line: self.line_work.is_some(),
-            abandoned_finish: self.finish_work.is_some(),
-            open_frames_copied: 0,
-            tree_nodes_awaiting_reclaim: self.parser.tree.nodes.len(),
-            tree_reclaim_is_fuelled: false,
-            source_backed_logical_bytes_awaiting_reclaim: literal_ownership
-                .referenced_logical_bytes,
-            owned_aggregate_literal_bytes_awaiting_reclaim: literal_ownership
-                .owned_aggregate_literal_bytes,
-            raw_block_origin_runs_awaiting_reclaim: literal_ownership.origin_runs,
-        };
-        self.line_work = None;
-        self.finish_work = None;
-        self.cancelled = true;
-        receipt
-    }
-
-    pub fn into_document(self) -> Result<BlockDocument, ParseError> {
-        if self.cancelled
-            || !self.finished
-            || self.line_work.is_some()
-            || self.finish_work.is_some()
-        {
-            return Err(ParseError::Invariant("fuelled parser is not complete"));
-        }
-        Ok(BlockDocument {
-            profile: self.parser.profile,
-            source: self.parser.source,
-            tree: self.parser.tree,
-            references: self.parser.references,
-        })
     }
 }
 

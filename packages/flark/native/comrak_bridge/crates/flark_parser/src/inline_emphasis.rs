@@ -107,14 +107,11 @@ impl M11EmphasisCandidate {
         self.kind
     }
 
-    pub(crate) const fn marker(self) -> u8 {
-        self.marker
-    }
-
     pub(crate) fn relative_range(self) -> Range<u32> {
         self.range_start..self.range_end
     }
 
+    #[cfg(test)]
     pub(crate) fn relative_opener_range(self) -> Range<u32> {
         self.range_start..self.content_start
     }
@@ -123,6 +120,7 @@ impl M11EmphasisCandidate {
         self.content_start..self.content_end
     }
 
+    #[cfg(test)]
     pub(crate) fn relative_closer_range(self) -> Range<u32> {
         self.content_end..self.range_end
     }
@@ -338,6 +336,7 @@ impl fmt::Debug for M11InlineEmphasisJob {
 }
 
 impl M11InlineEmphasisJob {
+    #[cfg(test)]
     pub(crate) fn new(opaque: M11InlineOpaqueCandidates) -> Result<Self, M11InlineEmphasisError> {
         Self::new_with_syntax(opaque, Vec::new())
     }

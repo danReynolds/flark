@@ -156,6 +156,7 @@ pub(crate) struct M11InlineHazardJob {
 }
 
 impl M11InlineHazardJob {
+    #[cfg(test)]
     pub(crate) fn new(
         runtime: &DocumentRuntime,
         opaque: &M11InlineOpaqueCandidates,

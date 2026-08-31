@@ -140,60 +140,38 @@ pub(crate) struct M11RecursiveGreenHostSpliceWork {
     maximum_atomic_height: u16,
 }
 
-#[allow(dead_code)] // Endpoint receipts are wired by the exact-base transport layer.
+#[cfg(test)]
 impl M11RecursiveGreenHostSpliceWork {
     pub(crate) const fn base_events(self) -> u64 {
         self.base_events
     }
-
     pub(crate) const fn deleted_events(self) -> u64 {
         self.deleted_events
     }
-
     pub(crate) const fn replacement_events(self) -> u64 {
         self.replacement_events
     }
-
     pub(crate) const fn base_storage_pages(self) -> u64 {
         self.base_storage_pages
     }
-
     pub(crate) const fn transferred_storage_pages(self) -> u64 {
         self.transferred_storage_pages
     }
-
     pub(crate) const fn reused_storage_pages(self) -> u64 {
         self.reused_storage_pages
     }
-
     pub(crate) const fn transferred_payload_bytes(self) -> u64 {
         self.transferred_payload_bytes
     }
-
-    pub(crate) const fn boundary_events_decoded(self) -> u64 {
-        self.boundary_events_decoded
-    }
-
     pub(crate) const fn node_headers_decoded(self) -> u64 {
         self.node_headers_decoded
     }
-
-    pub(crate) const fn events_authenticated(self) -> u64 {
-        self.events_authenticated
-    }
-
     pub(crate) const fn tree_nodes_visited(self) -> usize {
         self.tree_nodes_visited
     }
-
     pub(crate) const fn branches_allocated(self) -> usize {
         self.branches_allocated
     }
-
-    pub(crate) const fn branch_payload_bytes(self) -> usize {
-        self.branch_payload_bytes
-    }
-
     pub(crate) const fn maximum_atomic_height(self) -> u16 {
         self.maximum_atomic_height
     }

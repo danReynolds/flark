@@ -54,20 +54,6 @@ pub(crate) struct M11AngleAutolinkCandidate {
     reserved: [u8; 3],
 }
 
-impl M11AngleAutolinkCandidate {
-    pub(crate) const fn kind(self) -> M11AngleAutolinkKind {
-        self.kind
-    }
-
-    pub(crate) fn relative_range(self) -> Range<u32> {
-        self.range_start..self.range_end
-    }
-
-    pub(crate) fn relative_content_range(self) -> Range<u32> {
-        self.content_start..self.content_end
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum M11InlineAutolinkPollStatus {
     Pending,
@@ -510,8 +496,6 @@ impl M11InlineAutolinkJob {
         let pages = self.pages.take()?;
         self.phase = AutolinkPhase::Transferred;
         Some(M11AngleAutolinkCandidates {
-            source: self.source,
-            source_range: self.source_range.clone(),
             count: self.candidate_count,
             pages: Some(pages),
             reclaim_started: false,
@@ -583,26 +567,12 @@ impl Drop for M11InlineAutolinkJob {
 }
 
 pub(crate) struct M11AngleAutolinkCandidates {
-    source: SourceVersion,
-    source_range: Range<u32>,
     count: u32,
     pages: Option<M11InlineRadixPages<M11AngleAutolinkCandidate, AUTOLINK_PAGE_RECORDS>>,
     reclaim_started: bool,
 }
 
 impl M11AngleAutolinkCandidates {
-    pub(crate) const fn source(&self) -> SourceVersion {
-        self.source
-    }
-
-    pub(crate) fn source_range(&self) -> Range<u32> {
-        self.source_range.clone()
-    }
-
-    pub(crate) const fn len(&self) -> u32 {
-        self.count
-    }
-
     pub(crate) fn candidate(
         &self,
         index: u32,

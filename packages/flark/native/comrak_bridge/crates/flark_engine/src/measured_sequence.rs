@@ -135,8 +135,11 @@ const MAX_SEQUENCE_BUILDER_OWNER_RESERVATION: usize =
 // double-rotation schedule: two height reads, one decomposition, two child
 // height reads, and one pivot decomposition. Each shallow sequence-node read
 // decodes at most three headers and combines at most one branch summary.
+#[cfg(test)]
 const MAX_SEQUENCE_POLL_NODE_HEADERS: u64 = 18;
+#[cfg(test)]
 const MAX_SEQUENCE_POLL_SUMMARY_COMBINATIONS: u64 = 6;
+#[cfg(test)]
 const MAX_SEQUENCE_POLL_PAYLOAD_BYTES: u64 =
     MAX_SEQUENCE_POLL_NODE_HEADERS * ARENA_PAGE_BYTES as u64;
 
@@ -1592,6 +1595,7 @@ pub(crate) struct AbortMeasuredSequenceSealFailure<Spec> {
 
 pub(crate) struct MeasuredSequenceSealPoll<Spec> {
     pub(crate) transitions: usize,
+    #[cfg(test)]
     pub(crate) remaining_non_root_owners: usize,
     pub(crate) root: Option<CommittedMeasuredSequenceRoot<Spec>>,
 }
@@ -1630,6 +1634,7 @@ impl<Spec> MeasuredSequenceSeal<Spec> {
         }
         Ok(MeasuredSequenceSealPoll {
             transitions: poll.transitions,
+            #[cfg(test)]
             remaining_non_root_owners: poll.remaining_non_root_owners,
             root: poll.root.map(|root| CommittedMeasuredSequenceRoot {
                 root: Some(root),

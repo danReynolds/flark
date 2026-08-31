@@ -5,33 +5,27 @@
 //! can build on without placing unbounded work on a UI caller.
 
 #![forbid(unsafe_code)]
+// The standalone engine profile intentionally omits the parser consumer of
+// persistent construction APIs. Runtime builds enable `parser-internal` and
+// enforce the crate's deny-level dead/unused lint boundary without exception.
+#![cfg_attr(not(feature = "parser-internal"), allow(dead_code, unused_imports))]
 
-#[allow(dead_code)] // Typed transport is activated by the block-quote parser/host join.
 mod block_quote_projection;
-#[cfg_attr(not(feature = "parser-internal"), allow(dead_code))]
 mod block_sequence;
-#[allow(dead_code)] // Private until parser records and host decoding join the engine.
 mod candidate_manifest;
 mod document;
-#[allow(dead_code)] // Private until the M1.1 parser endpoint owns publication offers.
 mod host_store;
 mod identity;
-#[allow(dead_code)] // Typed transport is activated by the indented-code parser/host join.
 mod indented_code_projection;
-#[allow(dead_code)] // Sidecar primitives await generic closure transport extraction.
 mod inline_overlay;
-#[cfg_attr(not(feature = "parser-internal"), allow(dead_code))]
 mod inline_projection;
 #[doc(hidden)]
 pub mod m11_host;
-#[allow(dead_code)] // Activated by the M1.2 SourceFacts persistent-root cutover.
 mod measured_sequence;
 mod mersenne61;
-#[cfg_attr(not(feature = "parser-internal"), allow(dead_code))]
 mod recursive_green;
 #[cfg(feature = "parser-internal")]
 mod reference_journal;
-#[allow(dead_code)] // Private production substrate until the exact controller owns admission.
 mod reference_root;
 mod source;
 mod source_facts;
@@ -44,7 +38,6 @@ mod storage;
 #[cfg(feature = "parser-internal")]
 #[doc(hidden)]
 pub mod parser_internal;
-#[cfg_attr(not(feature = "parser-internal"), allow(dead_code))]
 mod parser_pages;
 #[cfg(feature = "parser-internal")]
 mod parser_scratch;

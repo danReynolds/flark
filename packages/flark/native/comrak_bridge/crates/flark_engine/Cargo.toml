@@ -47,4 +47,8 @@ path = "examples/progressive_source_probe.rs"
 required-features = ["progressive-source-probe"]
 
 [lints.rust]
+dead_code = "deny"
+unused_assignments = "deny"
+unused_imports = "deny"
+unused_variables = "deny"
 unsafe_code = "forbid"

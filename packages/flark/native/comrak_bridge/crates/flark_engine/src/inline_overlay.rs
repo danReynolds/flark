@@ -164,14 +164,6 @@ impl M11InlineOverlayBase {
         })
     }
 
-    pub(crate) const fn candidate(&self) -> CandidateAuthority {
-        self.candidate
-    }
-
-    pub(crate) const fn source(&self) -> SourceVersion {
-        self.source
-    }
-
     pub(crate) const fn parser_profile(&self) -> ParserProfileId {
         self.parser_profile
     }
@@ -371,17 +363,6 @@ enum PersistentM11LeafProjectionDescriptor {
 }
 
 impl PersistentM11LeafProjectionDescriptor {
-    const fn projection_kind(self) -> M11InlineOverlayProjectionKind {
-        match self {
-            Self::Inline(_) => M11InlineOverlayProjectionKind::Inline,
-            Self::ProjectedInline(_) => M11InlineOverlayProjectionKind::ProjectedInline,
-            Self::IndentedCode(_) => M11InlineOverlayProjectionKind::IndentedCode,
-            Self::BlockQuote(_) => M11InlineOverlayProjectionKind::BlockQuote,
-            Self::BulletList(_) => M11InlineOverlayProjectionKind::BulletList,
-            Self::OrderedList(_) => M11InlineOverlayProjectionKind::OrderedList,
-        }
-    }
-
     const fn logical_page_count(self) -> u64 {
         match self {
             Self::Inline(descriptor) => descriptor.logical_page_count(),
@@ -2130,6 +2111,7 @@ impl Drop for ImportedInlineOverlay {
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum M11InlineOverlayHostMatch<'host> {
     InlineAuthoritative {
+        #[cfg(test)]
         envelope: &'host M11InlineOverlayEnvelope,
         descriptor: PersistentM11InlineProjectionDescriptor,
         cursor: PersistentM11InlineProjectionHostCursor<'host>,
@@ -2137,17 +2119,14 @@ pub(crate) enum M11InlineOverlayHostMatch<'host> {
         link_value_root: Option<crate::ArenaId>,
     },
     ProjectedInlineAuthoritative {
-        envelope: &'host M11InlineOverlayEnvelope,
         descriptor: PersistentM11ProjectedInlineProjectionDescriptor,
         cursor: PersistentM11InlineProjectionHostCursor<'host>,
     },
     IndentedCodeAuthoritative {
-        envelope: &'host M11InlineOverlayEnvelope,
         descriptor: PersistentM11IndentedCodeProjectionDescriptor,
         cursor: PersistentM11IndentedCodeProjectionHostCursor<'host>,
     },
     BlockQuoteAuthoritative {
-        envelope: &'host M11InlineOverlayEnvelope,
         descriptor: PersistentM11BlockQuoteProjectionDescriptor,
         cursor: PersistentM11BlockQuoteProjectionHostCursor<'host>,
     },
@@ -2162,6 +2141,7 @@ pub(crate) enum M11InlineOverlayHostMatch<'host> {
         cursor: PersistentM11BlockQuoteProjectionHostCursor<'host>,
     },
     Unsupported {
+        #[cfg(test)]
         envelope: &'host M11InlineOverlayEnvelope,
         metadata: &'host [u8],
     },
@@ -2361,7 +2341,9 @@ impl M11InlineOverlayHostStore {
                     }
                 };
                 install.map_err(|failure| {
-                    M11InlineOverlayTransportError::Install(match failure.error {
+                    let M11InlineOverlayInstallFailure { error, owner } = failure;
+                    drop(owner);
+                    M11InlineOverlayTransportError::Install(match error {
                         M11InlineOverlaySlotError::BaseMismatch => "base mismatch",
                         M11InlineOverlaySlotError::StaleGeneration => "stale generation",
                         M11InlineOverlaySlotError::RetirementPending => "retirement pending",
@@ -2659,6 +2641,7 @@ impl M11InlineOverlayHostStore {
                             owner.root.as_ref().map(CommittedArenaRoot::id),
                         )?;
                         M11InlineOverlayHostMatch::InlineAuthoritative {
+                            #[cfg(test)]
                             envelope,
                             descriptor,
                             cursor,
@@ -2680,7 +2663,6 @@ impl M11InlineOverlayHostStore {
                             ));
                         }
                         M11InlineOverlayHostMatch::ProjectedInlineAuthoritative {
-                            envelope,
                             descriptor,
                             cursor,
                         }
@@ -2688,19 +2670,13 @@ impl M11InlineOverlayHostStore {
                     (
                         PersistentM11LeafProjectionDescriptor::IndentedCode(descriptor),
                         PersistentM11LeafProjectionHostCursor::IndentedCode(cursor),
-                    ) => M11InlineOverlayHostMatch::IndentedCodeAuthoritative {
-                        envelope,
-                        descriptor,
-                        cursor,
-                    },
+                    ) => {
+                        M11InlineOverlayHostMatch::IndentedCodeAuthoritative { descriptor, cursor }
+                    }
                     (
                         PersistentM11LeafProjectionDescriptor::BlockQuote(descriptor),
                         PersistentM11LeafProjectionHostCursor::BlockQuote(cursor),
-                    ) => M11InlineOverlayHostMatch::BlockQuoteAuthoritative {
-                        envelope,
-                        descriptor,
-                        cursor,
-                    },
+                    ) => M11InlineOverlayHostMatch::BlockQuoteAuthoritative { descriptor, cursor },
                     (
                         PersistentM11LeafProjectionDescriptor::BulletList(descriptor),
                         PersistentM11LeafProjectionHostCursor::BulletList(cursor),
@@ -2724,16 +2700,18 @@ impl M11InlineOverlayHostStore {
                     }
                 })
             }
-            Some(M11InlineOverlayMatch::Unsupported { envelope, owner }) => {
-                Some(M11InlineOverlayHostMatch::Unsupported {
-                    envelope,
-                    metadata: owner.unsupported_metadata()?.ok_or(
-                        M11InlineOverlayTransportError::InvalidProgram(
-                            "unsupported hot-inline root lost metadata",
-                        ),
-                    )?,
-                })
-            }
+            Some(M11InlineOverlayMatch::Unsupported {
+                envelope: _unsupported_envelope,
+                owner,
+            }) => Some(M11InlineOverlayHostMatch::Unsupported {
+                #[cfg(test)]
+                envelope: _unsupported_envelope,
+                metadata: owner.unsupported_metadata()?.ok_or(
+                    M11InlineOverlayTransportError::InvalidProgram(
+                        "unsupported hot-inline root lost metadata",
+                    ),
+                )?,
+            }),
             None => None,
         })
     }

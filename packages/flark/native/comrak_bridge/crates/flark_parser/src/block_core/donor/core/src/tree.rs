@@ -1,7 +1,4 @@
-use crate::source::{
-    LeafContent, LogicalProjection, LogicalProjectionCursor, ProjectionReadError,
-    SourceBackedContent, SourceDocument,
-};
+use crate::source::{LeafContent, LogicalProjection, SourceBackedContent};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,13 +99,6 @@ impl BlockKind {
         matches!(
             self,
             Self::Paragraph | Self::Heading { .. } | Self::CodeBlock { .. }
-        )
-    }
-
-    pub fn contains_inlines(&self) -> bool {
-        matches!(
-            self,
-            Self::Paragraph | Self::Heading { .. } | Self::TableCell
         )
     }
 
@@ -266,10 +256,6 @@ pub enum BlockEvent {
         /// earlier append delta when several lines are delivered together.
         source_backed: Option<SourceBackedContent>,
     },
-    DrainContentPrefix {
-        node: NodeId,
-        bytes: u32,
-    },
     Promote {
         node: NodeId,
         from: &'static str,
@@ -336,23 +322,6 @@ impl BlockTree {
         &mut self.nodes[id.index()]
     }
 
-    #[must_use]
-    pub fn literal_ownership_receipt(&self) -> LiteralOwnershipReceipt {
-        let mut receipt = LiteralOwnershipReceipt::default();
-        for node in &self.nodes {
-            if matches!(
-                node.kind,
-                BlockKind::CodeBlock { .. } | BlockKind::HtmlBlock { .. }
-            ) {
-                receipt.blocks += 1;
-                receipt.referenced_logical_bytes += node.content.logical_len();
-                receipt.owned_aggregate_literal_bytes += node.content.logical.capacity();
-                receipt.origin_runs += node.content.origins.len();
-            }
-        }
-        receipt
-    }
-
     pub fn append(&mut self, parent: NodeId, kind: BlockKind, start: Position) -> NodeId {
         let id = self.append_scratch(parent, kind, start);
         self.events.push(BlockEvent::Open { node: id, parent });
@@ -411,13 +380,6 @@ impl BlockTree {
             .is_some_and(|child| self.node(child).open)
     }
 
-    pub fn next_sibling(&self, id: NodeId) -> Option<NodeId> {
-        let parent = self.parent(id)?;
-        let siblings = &self.node(parent).children;
-        let index = siblings.iter().position(|candidate| *candidate == id)?;
-        siblings.get(index + 1).copied()
-    }
-
     pub fn detach(&mut self, id: NodeId) {
         let Some(parent) = self.parent(id) else {
             return;
@@ -456,20 +418,6 @@ impl BlockTree {
             .position(|candidate| *candidate == sibling)
             .expect("sibling present");
         siblings.insert(index + 1, node);
-        self.nodes[node.index()].parent = Some(parent);
-    }
-
-    pub fn insert_before(&mut self, sibling: NodeId, node: NodeId) {
-        let parent = self.parent(sibling).expect("sibling has parent");
-        if let Some(old_parent) = self.parent(node) {
-            self.remove_unfolded_child(old_parent, node);
-        }
-        let siblings = &mut self.nodes[parent.index()].children;
-        let index = siblings
-            .iter()
-            .position(|candidate| *candidate == sibling)
-            .expect("sibling present");
-        siblings.insert(index, node);
         self.nodes[node.index()].parent = Some(parent);
     }
 
@@ -573,10 +521,6 @@ impl BlockTree {
         }
     }
 
-    pub fn ends_with_blank_line(&self, id: NodeId) -> bool {
-        self.closed_child_summary(id).ends_blank
-    }
-
     pub fn child_sequence_fold(&self, id: NodeId) -> ChildSequenceFold {
         let mut fold = self.node(id).historical_children;
         for child in self
@@ -637,50 +581,5 @@ impl BlockTree {
 impl Default for BlockTree {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlockDocument {
-    pub profile: SyntaxProfile,
-    pub source: SourceDocument,
-    pub tree: BlockTree,
-    pub references: Vec<ReferenceOccurrence>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct LiteralOwnershipReceipt {
-    pub blocks: usize,
-    pub referenced_logical_bytes: usize,
-    pub owned_aggregate_literal_bytes: usize,
-    pub origin_runs: usize,
-}
-
-impl BlockDocument {
-    pub fn projection_cursor(
-        &self,
-        node: NodeId,
-        projection: LogicalProjection,
-    ) -> Result<LogicalProjectionCursor<'_>, ProjectionReadError> {
-        self.tree
-            .node(node)
-            .content
-            .projection_cursor(&self.source, projection)
-    }
-
-    pub fn materialize_projection(
-        &self,
-        node: NodeId,
-        projection: LogicalProjection,
-    ) -> Result<String, ProjectionReadError> {
-        self.tree
-            .node(node)
-            .content
-            .materialize_projection(&self.source, projection)
-    }
-
-    #[must_use]
-    pub fn literal_ownership_receipt(&self) -> LiteralOwnershipReceipt {
-        self.tree.literal_ownership_receipt()
     }
 }

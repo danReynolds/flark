@@ -10,15 +10,14 @@
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use flark_reference_label_service::{
-    MAX_NORMALIZED_REFERENCE_LABEL_BYTES, ReferenceLabelAccumulator, is_reference_label_whitespace,
-};
+#[cfg(test)]
+use flark_reference_label_service::MAX_NORMALIZED_REFERENCE_LABEL_BYTES;
+use flark_reference_label_service::{ReferenceLabelAccumulator, is_reference_label_whitespace};
 
-/// Maximum raw source bytes retained while one UTF-8 scalar straddles refills.
-/// Complete label text is never retained.
-pub const DIRECT_REFERENCE_LABEL_MAX_RETAINED_BYTES: usize = 4;
-/// Complete normalized-output allocation admitted before scanner polling.
-pub const DIRECT_REFERENCE_LABEL_MAX_NORMALIZED_BYTES: usize = MAX_NORMALIZED_REFERENCE_LABEL_BYTES;
+#[cfg(test)]
+const DIRECT_REFERENCE_LABEL_MAX_RETAINED_BYTES: usize = 4;
+#[cfg(test)]
+const DIRECT_REFERENCE_LABEL_MAX_NORMALIZED_BYTES: usize = MAX_NORMALIZED_REFERENCE_LABEL_BYTES;
 static DIRECT_REFERENCE_WORK_IDS: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

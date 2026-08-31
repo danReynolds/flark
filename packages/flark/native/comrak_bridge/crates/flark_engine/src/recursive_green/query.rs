@@ -756,12 +756,14 @@ impl M11RecursiveGreenRowOrdinalWindow {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy)]
 struct QueryOpenFrame {
     frame: M11RecursiveGreenFrameId,
     kind: M11RecursiveGreenKind,
 }
 
+#[cfg(test)]
 struct PendingLocation {
     byte_range: Range<u64>,
     utf16_range: Range<u64>,
@@ -3320,25 +3322,6 @@ fn point_zipper_final_kind(
     Ok(point_zipper_frame_boundary(arena, tree, root_leaf_count, open, work)?.final_kind)
 }
 
-fn point_zipper_open_property(
-    arena: &crate::storage::PageArena,
-    open: PointZipperOpenFrame,
-    work: &mut PointZipperWork,
-) -> Result<Option<super::codec::M11RecursiveGreenPropertyChunk>, M11RecursiveGreenError> {
-    let events = work.decode_leaf_events(arena, open.enter_leaf)?;
-    if events.get(open.enter_event_index).is_none_or(
-        |event| !matches!(event, PackedGreenEvent::Enter { frame, .. } if *frame == open.frame),
-    ) {
-        return Err(M11RecursiveGreenError::Corrupt(
-            "Green frame property lost its Enter",
-        ));
-    }
-    Ok(match events.get(open.enter_event_index + 1) {
-        Some(PackedGreenEvent::Property(property)) => Some(*property),
-        _ => None,
-    })
-}
-
 fn point_zipper_open_for_row_ordinal(
     arena: &crate::storage::PageArena,
     tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
@@ -4451,6 +4434,7 @@ fn accumulate_query_spec_inspection(
     Ok(())
 }
 
+#[cfg(test)]
 fn update_captured_kind(
     location: &mut Option<PendingLocation>,
     frame: M11RecursiveGreenFrameId,

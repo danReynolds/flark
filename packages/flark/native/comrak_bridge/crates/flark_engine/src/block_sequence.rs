@@ -2806,33 +2806,36 @@ pub(crate) fn m11_block_sequence_canonical_record_count(payload: &[u8]) -> u32 {
 ///
 /// The retained owner is intentionally crate-private until the manifest owns
 /// the paired Green/Projection wrapper special-case.
-#[allow(dead_code)] // Consumed by the paired manifest-wrapper integration.
 pub(crate) struct M11RetainedBlockSequenceRoot {
     owner: Option<ArenaBuildOwner>,
     summary: BlockSequenceSummary,
     page_count: u64,
     tree_height: u16,
+    #[cfg(test)]
     inspection: SequenceInspectionReceipt,
 }
 
-#[allow(dead_code)] // Consumed by the paired manifest-wrapper integration.
 impl M11RetainedBlockSequenceRoot {
     pub(crate) fn take_owner(&mut self) -> Option<ArenaBuildOwner> {
         self.owner.take()
     }
 
+    #[cfg(test)]
     pub(crate) const fn entry_count(&self) -> u64 {
         self.summary.entries
     }
 
+    #[cfg(test)]
     pub(crate) const fn page_count(&self) -> u64 {
         self.page_count
     }
 
+    #[cfg(test)]
     pub(crate) const fn tree_height(&self) -> u16 {
         self.tree_height
     }
 
+    #[cfg(test)]
     pub(crate) const fn inspection(&self) -> SequenceInspectionReceipt {
         self.inspection
     }
@@ -3573,7 +3576,6 @@ impl M11BlockSequenceRoot {
         locate_point_in_arena(runtime.producer_arena(), tree.as_ref(), self.summary, point)
     }
 
-    #[allow(dead_code)] // Consumed by the paired manifest-wrapper integration.
     pub(crate) fn retain_for_publication(
         &self,
         session: &mut ArenaBuildSession<'_>,
@@ -3622,6 +3624,7 @@ impl M11BlockSequenceRoot {
             summary: self.summary,
             page_count: self.page_count,
             tree_height: self.tree_height,
+            #[cfg(test)]
             inspection: mutation.inspection,
         })
     }
@@ -3788,56 +3791,44 @@ pub(crate) struct M11BlockSequenceHostSpliceWork {
     maximum_atomic_height: u16,
 }
 
-#[allow(dead_code)] // Read by the isolated host proof; endpoint receipts are not wired yet.
+#[cfg(test)]
 impl M11BlockSequenceHostSpliceWork {
     pub(crate) const fn base_entries(self) -> u64 {
         self.base_entries
     }
-
     pub(crate) const fn deleted_entries(self) -> u64 {
         self.deleted_entries
     }
-
     pub(crate) const fn replacement_entries(self) -> u64 {
         self.replacement_entries
     }
-
     pub(crate) const fn base_storage_pages(self) -> u64 {
         self.base_storage_pages
     }
-
     pub(crate) const fn transferred_storage_pages(self) -> u64 {
         self.transferred_storage_pages
     }
-
     pub(crate) const fn reused_storage_pages(self) -> u64 {
         self.reused_storage_pages
     }
-
     pub(crate) const fn transferred_payload_bytes(self) -> u64 {
         self.transferred_payload_bytes
     }
-
     pub(crate) const fn boundary_entries_decoded(self) -> u64 {
         self.boundary_entries_decoded
     }
-
     pub(crate) const fn node_headers_decoded(self) -> u64 {
         self.node_headers_decoded
     }
-
     pub(crate) const fn tree_nodes_visited(self) -> usize {
         self.tree_nodes_visited
     }
-
     pub(crate) const fn branches_allocated(self) -> usize {
         self.branches_allocated
     }
-
     pub(crate) const fn branch_payload_bytes(self) -> usize {
         self.branch_payload_bytes
     }
-
     pub(crate) const fn maximum_atomic_height(self) -> u16 {
         self.maximum_atomic_height
     }

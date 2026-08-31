@@ -78,17 +78,17 @@ pub(crate) struct M11InlineProjectionUnsupported {
 }
 
 impl M11InlineProjectionUnsupported {
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn source_range(&self) -> Range<u32> {
         self.source_range.clone()
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn first_blocker_range(&self) -> Range<u32> {
         self.first_blocker_range.clone()
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) const fn reason(&self) -> M11InlineProjectionUnsupportedReason {
         self.reason
     }
@@ -258,7 +258,7 @@ impl M11InlineProjectionOutput {
         self.parser_profile
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) const fn disposition(&self) -> &M11InlineProjectionDisposition {
         &self.disposition
     }

@@ -4,8 +4,10 @@
 //! delegates document authority to `flark-runtime` and keeps raw-pointer work in
 //! this crate only.
 
+#[cfg(not(feature = "declarations"))]
 mod implementation;
 
+#[cfg(not(feature = "declarations"))]
 pub use implementation::{
     flark_v4_anchor_create, flark_v4_anchor_release, flark_v4_anchor_resolve,
     flark_v4_anchor_transform, flark_v4_bulk_abort, flark_v4_bulk_append, flark_v4_bulk_begin,

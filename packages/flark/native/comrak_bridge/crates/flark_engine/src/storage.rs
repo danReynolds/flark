@@ -774,7 +774,6 @@ impl PageArena {
     }
 
     /// Acquires another explicit owner for a live node.
-    #[allow(dead_code)] // Shared persistent roots land with the parser slice.
     fn retain_owned(&mut self, id: ArenaId) -> Result<OwnedArenaRef, ArenaError> {
         self.validate_owned_retain(id)?;
         let slot = self.slot_mut(id.slot);
@@ -820,7 +819,6 @@ impl PageArena {
     }
 
     /// Returns a live node's payload.
-    #[allow(dead_code)] // Query consumers land with the parser/Green slice.
     pub(crate) fn payload(&self, id: ArenaId) -> Result<&[u8], ArenaError> {
         self.validate_live(id)?;
         Ok(self
@@ -1232,7 +1230,6 @@ impl ArenaBuildSession<'_> {
     /// Every later [`Self::retain`] or [`Self::allocate`] within that reserved
     /// owner count still performs the ordinary logical-cap check, but its
     /// journal push cannot grow the backing allocation.
-    #[allow(dead_code)] // Consumed by resumable persistent-sequence pollers.
     pub(crate) fn reserve_owner_capacity(&mut self, additional: usize) -> Result<(), ArenaError> {
         self.arena.validate_build(self.id, BuildState::Active)?;
         self.arena.reserve_build_owners(self.id, additional)
@@ -1262,7 +1259,6 @@ impl ArenaBuildSession<'_> {
     /// The session retains its exclusive actor-local arena borrow, so callers
     /// can inspect an existing root while constructing a replacement but
     /// cannot mutate storage outside the journalled build operations.
-    #[allow(dead_code)] // Used by persistent measured-sequence builders.
     pub(crate) const fn arena(&self) -> &PageArena {
         self.arena
     }
@@ -1292,7 +1288,6 @@ impl ArenaBuildSession<'_> {
     /// incremented. Therefore every error leaves the node refcount and the
     /// journal's logical owner set unchanged; after the increment, the
     /// pre-reserved `push` cannot fail.
-    #[allow(dead_code)] // Used by persistent measured-sequence builders.
     pub(crate) fn retain(&mut self, id: ArenaId) -> Result<ArenaBuildOwner, ArenaError> {
         self.arena.validate_build(self.id, BuildState::Active)?;
         self.arena.validate_owned_retain(id)?;
@@ -1312,7 +1307,6 @@ impl ArenaBuildSession<'_> {
     /// Resumable persistent-structure jobs call this before any mutation, so a
     /// handle restored with the wrong build capability cannot first retain
     /// nodes into an unrelated journal and fail only during release.
-    #[allow(dead_code)] // Used by persistent measured-sequence builders.
     pub(crate) fn validate_owner(&self, owner: &ArenaBuildOwner) -> Result<(), ArenaError> {
         self.arena.validate_build(self.id, BuildState::Active)?;
         if owner.build != self.id {

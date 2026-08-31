@@ -952,7 +952,6 @@ impl M11ReferenceReplayOccurrence {
         translation: Option<M11ReferenceJournalSuffixTranslation>,
     ) -> Result<Self, M11ReferenceJournalError> {
         let DetachedReferenceOccurrence {
-            ordinal: _,
             source,
             label_source,
             destination_source,

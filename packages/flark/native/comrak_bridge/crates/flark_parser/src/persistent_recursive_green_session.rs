@@ -13,7 +13,7 @@ use std::{
 
 #[cfg(feature = "m11-compact-probe")]
 use std::time::{Duration, Instant};
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(test)]
 use std::{collections::btree_map, slice};
 
 #[cfg(any(test, feature = "m11-compact-probe"))]
@@ -1248,7 +1248,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             .flatten()
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     fn take_compact_probe_receipt(
         &mut self,
     ) -> Option<(M11CompactProbeWriterReceipt, usize, usize)> {
@@ -1271,7 +1271,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
         })
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     fn compact_probe_current_writer_receipt(&self) -> Option<M11CompactProbeWriterReceipt> {
         self.compact_probe
             .then(|| self.writer.as_ref()?.compact_probe_receipt().ok())
@@ -1292,7 +1292,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             .ok()?
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     fn compact_probe_first_slice_over_cap(&self) -> bool {
         self.compact_probe
             && self
@@ -1672,7 +1672,7 @@ impl M11CheckpointStore {
         left - start.min(self.len())
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     fn iter(&self) -> M11CheckpointStoreIter<'_> {
         match self {
             Self::Contiguous(checkpoints) => M11CheckpointStoreIter::Contiguous(checkpoints.iter()),
@@ -1693,7 +1693,7 @@ impl Index<usize> for M11CheckpointStore {
     }
 }
 
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(test)]
 enum M11CheckpointStoreIter<'a> {
     Contiguous(slice::Iter<'a, M11BlockRestartCheckpoint>),
     Paged {
@@ -1702,7 +1702,7 @@ enum M11CheckpointStoreIter<'a> {
     },
 }
 
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(test)]
 impl<'a> Iterator for M11CheckpointStoreIter<'a> {
     type Item = &'a M11BlockRestartCheckpoint;
 
@@ -1931,6 +1931,7 @@ impl M11CompactCheckpointJournal {
         Ok(())
     }
 
+    #[cfg(test)]
     fn receipt(&self) -> CheckpointStorageReceipt {
         let retained_open_frames = self.entries.iter().fold(0_usize, |sum, entry| {
             sum.saturating_add(entry.open_depth as usize)
@@ -2237,7 +2238,7 @@ impl M11CompactCheckpointJournal {
     }
 }
 
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CheckpointStorageReceipt {
     checkpoints: usize,
@@ -2246,7 +2247,7 @@ struct CheckpointStorageReceipt {
     allocated_bytes: usize,
 }
 
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(test)]
 impl CheckpointStorageReceipt {
     #[must_use]
     const fn checkpoints(self) -> usize {
@@ -4256,7 +4257,7 @@ impl M11PersistentRecursiveGreenSession {
         })
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     fn checkpoint_storage_receipt_for_diagnostics(&self) -> CheckpointStorageReceipt {
         if let Some(compact) = &self.compact_checkpoints {
             return compact.receipt();
@@ -8705,8 +8706,6 @@ mod tests {
         let base_index_time = base_started.elapsed();
         let source = base_session.source();
         let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
-        let base_total = base_journal.entries.len();
-
         let edit = committed_revision_edit(base_source, edit_range.clone(), replacement, carried);
         runtime
             .apply_edit(source, edit_range.clone(), replacement)

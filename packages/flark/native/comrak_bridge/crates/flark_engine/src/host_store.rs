@@ -534,6 +534,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
     /// The target publication must already own the reused root beneath a fresh
     /// target References wrapper. Exact-base authority is independently
     /// authenticated by [`CandidateHostStore::begin_references_delta`].
+    #[cfg(test)]
     pub(crate) fn new_references_delta(
         arena: &'a PageArena,
         publication: &'a PublishedManifest,
@@ -552,6 +553,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
     /// 3. a hard replay barrier;
     /// 4. the remaining target closure with canonical References and
     ///    SourceFacts represented by virtual ordinals.
+    #[cfg(test)]
     pub(crate) fn new_exact_base_delta(
         arena: &'a PageArena,
         base: &'a PublishedManifest,
@@ -578,6 +580,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
     /// The semantic ranges are independently mapped to packed storage pages
     /// in both producer and host arenas. Only target pages intersecting the
     /// replacement plus fresh path/wrapper nodes cross the stream.
+    #[cfg(test)]
     pub(crate) fn new_exact_base_delta_with_block_splice(
         arena: &'a PageArena,
         base: &'a PublishedManifest,
@@ -605,6 +608,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
     /// Exact-base transaction whose structural authority is recursive Green.
     /// Only complete target RGL1 leaves intersecting the semantic event cut
     /// cross the wire; target RGB1 branches are reconstructed by the host.
+    #[cfg(test)]
     pub(crate) fn new_exact_base_delta_with_recursive_green_splice(
         arena: &'a PageArena,
         base: &'a PublishedManifest,
@@ -627,6 +631,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
     /// Exact-base transaction carrying multiple disjoint recursive-Green leaf
     /// replacements. The ranges remain semantic authority; complete RGL1
     /// leaves are selected independently before transport.
+    #[cfg(test)]
     pub(crate) fn new_exact_base_delta_with_recursive_green_splices(
         arena: &'a PageArena,
         base: &'a PublishedManifest,
@@ -652,6 +657,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
 
     /// Exact-base recursive-Green splice that transfers the target's complete
     /// References closure instead of virtualizing the installed base root.
+    #[cfg(test)]
     pub(crate) fn new_exact_base_delta_with_recursive_green_splices_replacing_references(
         arena: &'a PageArena,
         base: &'a PublishedManifest,
@@ -675,6 +681,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
         })
     }
 
+    #[cfg(test)]
     fn from_root(
         arena: &'a PageArena,
         authority: CandidateAuthority,
@@ -705,6 +712,7 @@ impl<'a> CandidateSnapshotEncoder<'a> {
         self.state.poll(self.arena, fuel)
     }
 
+    #[cfg(test)]
     pub(crate) fn resume_exact_base_delta(&mut self) -> Result<(), CandidateHostError> {
         self.state.resume_exact_base_delta()
     }
@@ -723,6 +731,7 @@ impl CandidateSnapshotEncoderState {
         Self::from_root(arena, authority, root, SnapshotProgram::Full, &[], None)
     }
 
+    #[cfg(test)]
     pub(crate) fn new_references_delta(
         arena: &PageArena,
         publication: &PublishedManifest,
@@ -780,25 +789,6 @@ impl CandidateSnapshotEncoderState {
                 base: base_block_entry_range,
                 target: target_block_entry_range,
             }),
-        )
-    }
-
-    pub(crate) fn new_exact_base_delta_with_recursive_green_splice(
-        arena: &PageArena,
-        base: &PublishedManifest,
-        target: &PublishedManifest,
-        base_source_facts_page_range: std::ops::Range<u64>,
-        target_source_facts_page_range: std::ops::Range<u64>,
-        base_green_event_range: std::ops::Range<u64>,
-        target_green_event_range: std::ops::Range<u64>,
-    ) -> Result<Self, CandidateHostError> {
-        Self::new_exact_base_delta_with_recursive_green_splices(
-            arena,
-            base,
-            target,
-            base_source_facts_page_range,
-            target_source_facts_page_range,
-            &[(base_green_event_range, target_green_event_range)],
         )
     }
 
@@ -4158,6 +4148,7 @@ impl CandidateHostStore {
 
     /// Returns the authenticated block-splice work once replay has reached
     /// the ordinary-node barrier.
+    #[cfg(test)]
     pub(crate) fn active_block_splice_work(&self) -> Option<M11BlockSequenceHostSpliceWork> {
         self.active
             .as_ref()
@@ -4169,6 +4160,7 @@ impl CandidateHostStore {
             })
     }
 
+    #[cfg(test)]
     pub(crate) fn active_recursive_green_splice_work(
         &self,
     ) -> Option<M11RecursiveGreenHostSpliceWork> {

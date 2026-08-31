@@ -1699,14 +1699,12 @@ mod persistent_sequence_codec {
 
 /// One derived M1.1-compatible absolute page. Canonical storage remains
 /// relative; this fixed buffer is materialized only at the publication edge.
-#[allow(dead_code)] // Activated by the production root cutover.
 pub(crate) struct SourceFactsAbsolutePage {
     content_digest: SourceFactPageDigest,
     checkpoints: [SourceFactCheckpoint; SOURCE_FACT_CHECKPOINTS_PER_PAGE_MAX],
     checkpoint_count: usize,
 }
 
-#[allow(dead_code)] // Activated by the production root cutover.
 impl SourceFactsAbsolutePage {
     pub(crate) const fn content_digest(&self) -> SourceFactPageDigest {
         self.content_digest
@@ -1720,7 +1718,6 @@ impl SourceFactsAbsolutePage {
 /// Locates one canonical leaf in logarithmic tree work and derives its
 /// absolute checkpoints into fixed caller-owned storage. No absolute suffix
 /// coordinates or page objects remain resident in the persistent root.
-#[allow(dead_code)] // Activated by the production root cutover.
 fn materialize_source_facts_absolute_page(
     sequence: crate::measured_sequence::MeasuredSequenceRef<
         '_,
@@ -2406,7 +2403,6 @@ impl PersistentSourceFactsRoot {
         }))
     }
 
-    #[allow(dead_code)] // Used by the Checkpoint B identity-reuse demo cut.
     pub(crate) fn page_id(
         &self,
         arena: &PageArena,
@@ -2422,7 +2418,6 @@ impl PersistentSourceFactsRoot {
             .map(|located| located.id))
     }
 
-    #[allow(dead_code)] // Used by the M1.1 publication projection cutover.
     pub(crate) fn materialize_page(
         &self,
         arena: &PageArena,
@@ -2593,7 +2588,6 @@ fn validate_persistent_source_facts_descriptor_claim(
 // This crate-private seam is activated by the host-store delta integration
 // slice. Keep the allowance local so that consumer integration removes it
 // without weakening dead-code checks for the rest of this module.
-#[allow(dead_code)]
 pub(crate) fn validate_persistent_source_facts_host_replay_descriptor(
     claim: PersistentSourceFactsHostReplayDescriptorClaim<'_>,
 ) -> Result<PersistentSourceFactsHostReplayDescriptor, SourceFactsAssemblyError> {
@@ -2678,7 +2672,6 @@ pub(crate) const PERSISTENT_SOURCE_FACTS_HOST_REPLAY_MAX_ATOMIC_WORK_UNITS: u64 
     16 * levels * levels
 };
 
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 impl PersistentSourceFactsHostReplayDescriptor {
     fn is_empty(self) -> bool {
         self.page_count == 0
@@ -2743,7 +2736,6 @@ impl PersistentSourceFactsHostReplayDescriptor {
 
 /// Progress of one allocation-granular replacement-builder operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 pub(crate) enum PersistentSourceFactsHostReplayPoll {
     Pending,
     Complete,
@@ -2751,7 +2743,6 @@ pub(crate) enum PersistentSourceFactsHostReplayPoll {
 
 /// Complete, phase-separated work proof for one SourceFacts host replay.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 pub(crate) struct PersistentSourceFactsHostReplayWork {
     base_validation: PersistentSourceFactsWork,
     replacement_build: PersistentSourceFactsWork,
@@ -2761,28 +2752,23 @@ pub(crate) struct PersistentSourceFactsHostReplayWork {
     atomic_splice_work_units: u64,
 }
 
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
+#[cfg(test)]
 impl PersistentSourceFactsHostReplayWork {
     pub(crate) const fn base_validation(self) -> PersistentSourceFactsWork {
         self.base_validation
     }
-
     pub(crate) const fn replacement_build(self) -> PersistentSourceFactsWork {
         self.replacement_build
     }
-
     pub(crate) const fn atomic_splice(self) -> PersistentSourceFactsWork {
         self.atomic_splice
     }
-
     pub(crate) const fn target_validation(self) -> PersistentSourceFactsWork {
         self.target_validation
     }
-
     pub(crate) const fn total(self) -> PersistentSourceFactsWork {
         self.total
     }
-
     pub(crate) const fn atomic_splice_work_units(self) -> u64 {
         self.atomic_splice_work_units
     }
@@ -2793,13 +2779,11 @@ impl PersistentSourceFactsHostReplayWork {
 /// `None` is the only representation of an empty target. A nonempty owner can
 /// be inserted directly as a virtual snapshot ordinal; no arena identity is
 /// exposed or reconstructed by this API.
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 pub(crate) struct PersistentSourceFactsHostReplayOutput {
     root: Option<ArenaBuildOwner>,
     work: PersistentSourceFactsHostReplayWork,
 }
 
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 impl PersistentSourceFactsHostReplayOutput {
     pub(crate) fn into_parts(
         self,
@@ -2808,7 +2792,6 @@ impl PersistentSourceFactsHostReplayOutput {
     }
 }
 
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 enum PersistentSourceFactsHostReplayPhase {
     Accepting {
         builder: Option<SourceFactsMeasuredBuilder>,
@@ -2829,7 +2812,6 @@ enum PersistentSourceFactsHostReplayPhase {
 /// SFL2 leaves are adopted by the resumable measured builder, and every error
 /// is terminal: the caller aborts the one surrounding journal to reclaim all
 /// retained and newly allocated nodes.
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 pub(crate) struct PersistentSourceFactsHostReplay {
     base: Option<SourceFactsMeasuredBuildRoot>,
     base_descriptor: PersistentSourceFactsHostReplayDescriptor,
@@ -2843,7 +2825,6 @@ pub(crate) struct PersistentSourceFactsHostReplay {
     target_validation_receipt: SequenceMutationReceipt,
 }
 
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 impl PersistentSourceFactsHostReplay {
     pub(crate) fn new(
         session: &ArenaBuildSession<'_>,
@@ -3124,7 +3105,6 @@ impl PersistentSourceFactsHostReplay {
     }
 }
 
-#[allow(dead_code)] // Activated by the host-store delta integration slice.
 fn persistent_source_facts_atomic_splice_work_units(
     receipt: SequenceMutationReceipt,
 ) -> Result<u64, SourceFactsAssemblyError> {
@@ -3387,13 +3367,7 @@ pub(crate) struct PersistentSourceFactsSpliceOutput {
     splice_work: PersistentSourceFactsWork,
 }
 
-impl PersistentSourceFactsSpliceOutput {
-    pub(crate) fn into_parts(self) -> (PersistentSourceFactsRoot, PersistentSourceFactsWork) {
-        (self.root, self.splice_work)
-    }
-}
-
-#[allow(dead_code)] // Kept as the root-only compatibility wrapper over the receipt-bearing seam.
+#[cfg(test)]
 pub(crate) fn splice_persistent_source_facts_atomic(
     arena: &mut PageArena,
     base: &PersistentSourceFactsRoot,
@@ -3410,6 +3384,12 @@ pub(crate) fn splice_persistent_source_facts_atomic(
     )
     .map(PersistentSourceFactsSpliceOutput::into_parts)
     .map(|(root, _splice_work)| root)
+}
+
+impl PersistentSourceFactsSpliceOutput {
+    pub(crate) fn into_parts(self) -> (PersistentSourceFactsRoot, PersistentSourceFactsWork) {
+        (self.root, self.splice_work)
+    }
 }
 
 pub(crate) fn splice_persistent_source_facts_atomic_with_receipt(

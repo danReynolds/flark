@@ -528,6 +528,7 @@ impl CanonicalRoleInputs {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn persistent(
         green: impl Into<Box<[u8]>>,
         projection: impl Into<Box<[u8]>>,
@@ -713,7 +714,6 @@ pub(crate) enum ManifestPoll {
 
 pub(crate) struct CandidateManifestAssembler {
     authority: CandidateAuthority,
-    arena_limits: ArenaLimits,
     build: Option<CandidateBuild>,
     phase: ManifestPhase,
     references: Option<ReferenceRootBuilder>,
@@ -1061,7 +1061,6 @@ impl CandidateManifestAssembler {
         };
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::References,
             references: Some(references),
@@ -1138,7 +1137,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::References,
             references: Some(references),
@@ -1238,7 +1236,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::References,
             references: Some(references),
@@ -1337,7 +1334,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::References,
             references: Some(references),
@@ -1464,7 +1460,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::WrapRetainedReference(RetainedReferenceContent {
                 owner: retained_references,
@@ -1611,7 +1606,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::WrapRetainedReference(RetainedReferenceContent {
                 owner: retained_references,
@@ -1728,7 +1722,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::References,
             references: Some(references),
@@ -1755,6 +1748,7 @@ impl CandidateManifestAssembler {
     /// absolute source ranges, remain exact for `authority`. The constructor
     /// authenticates the base manifest and role shape, then journals the
     /// canonical content root before any fresh target wrapper can refer to it.
+    #[cfg(test)]
     pub(crate) fn new_reusing_references(
         arena: &mut PageArena,
         authority: CandidateAuthority,
@@ -1817,7 +1811,6 @@ impl CandidateManifestAssembler {
         };
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::WrapRetainedReference(RetainedReferenceContent {
                 owner: retained,
@@ -1953,7 +1946,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::WrapRetainedReference(RetainedReferenceContent {
                 owner: retained_references,
@@ -2100,7 +2092,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::WrapRetainedReference(RetainedReferenceContent {
                 owner: retained_references,
@@ -2262,7 +2253,6 @@ impl CandidateManifestAssembler {
         let persistent_source_facts_setup = Some(retained_source_facts.inspection());
         Ok(Self {
             authority,
-            arena_limits: reference_limits.arena,
             build: Some(build),
             phase: ManifestPhase::WrapRetainedReference(RetainedReferenceContent {
                 owner: retained_references,
@@ -3014,11 +3004,10 @@ pub(crate) struct PersistentSourceFactsManifestRole<'arena> {
 /// Structural records remain ordinary schema-v2 record children. Inline
 /// logical pages live behind one measured root and therefore do not consume
 /// wrapper fanout.
-pub(crate) struct PersistentInlineProjectionManifestRole<'arena> {
+pub(crate) struct PersistentInlineProjectionManifestRole {
     pub(crate) fact_root: Option<ArenaId>,
     pub(crate) link_value_root: Option<ArenaId>,
     pub(crate) metadata: RoleMetadata,
-    pub(crate) descriptor_bytes: &'arena [u8],
     pub(crate) descriptor: PersistentM11InlineProjectionDescriptor,
     pub(crate) structural_record_count: u64,
 }
@@ -3048,11 +3037,9 @@ pub(crate) fn manifest_digest256(
     manifest_digest(authority, &descriptor.metadata)
 }
 
+#[cfg(test)]
 pub(crate) struct CandidateManifestSummary {
-    pub(crate) authority: CandidateAuthority,
-    pub(crate) canonical_record_count: u64,
     pub(crate) manifest_digest256: [u8; STRONG_DIGEST_BYTES],
-    pub(crate) maximum_snapshot_frames: u64,
 }
 
 fn decode_record_bytes(
@@ -3550,11 +3537,11 @@ pub(crate) fn persistent_reference_manifest_root(
     ))
 }
 
-pub(crate) fn persistent_inline_projection_manifest_role<'arena>(
-    arena: &'arena PageArena,
+pub(crate) fn persistent_inline_projection_manifest_role(
+    arena: &PageArena,
     descriptor: &ManifestDescriptor,
     authority: CandidateAuthority,
-) -> Result<PersistentInlineProjectionManifestRole<'arena>, ManifestError> {
+) -> Result<PersistentInlineProjectionManifestRole, ManifestError> {
     let index = role_index(CandidateRole::Projection);
     let metadata = descriptor.metadata[index];
     if metadata.role != CandidateRole::Projection
@@ -3598,7 +3585,6 @@ pub(crate) fn persistent_inline_projection_manifest_role<'arena>(
         fact_root,
         link_value_root,
         metadata,
-        descriptor_bytes,
         descriptor: inline_descriptor,
         structural_record_count,
     })
@@ -3711,15 +3697,6 @@ pub(crate) fn manifest_persistent_inline_projection_record_at(
     }
 }
 
-pub(crate) fn manifest_role_record_bytes<'a>(
-    arena: &'a PageArena,
-    authority: CandidateAuthority,
-    descriptor: &ManifestDescriptor,
-    role: CandidateRole,
-) -> Result<&'a [u8], ManifestError> {
-    manifest_role_record_bytes_at(arena, authority, descriptor, role, 0)
-}
-
 pub(crate) fn manifest_role_record_bytes_at<'a>(
     arena: &'a PageArena,
     authority: CandidateAuthority,
@@ -3790,6 +3767,7 @@ pub(crate) fn manifest_role_record_bytes_at<'a>(
     )
 }
 
+#[cfg(test)]
 struct ManifestView<'a> {
     arena: &'a PageArena,
     authority: CandidateAuthority,
@@ -3797,6 +3775,7 @@ struct ManifestView<'a> {
     _not_sync: PhantomData<Cell<()>>,
 }
 
+#[cfg(test)]
 impl<'a> ManifestView<'a> {
     fn open(
         arena: &'a PageArena,
@@ -3815,13 +3794,14 @@ impl<'a> ManifestView<'a> {
         self.descriptor.metadata[role_index(role)]
     }
 
-    fn references(&self) -> Result<ReferenceRootView<'a>, ManifestError> {
+    fn references(&self) -> Result<ReferenceRootView<'_>, ManifestError> {
         let wrapper = self.descriptor.children[role_index(CandidateRole::References)];
         let root = self.arena.child_at(wrapper, 0)?;
         ReferenceRootView::open(self.arena, self.authority, root).map_err(Into::into)
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ManifestDocumentState {
     Open,
@@ -3829,6 +3809,7 @@ enum ManifestDocumentState {
     Closed,
 }
 
+#[cfg(test)]
 pub(crate) struct CandidateManifestDocument {
     arena: PageArena,
     publication: Option<PublishedManifest>,
@@ -3836,6 +3817,7 @@ pub(crate) struct CandidateManifestDocument {
     _not_sync: PhantomData<Cell<()>>,
 }
 
+#[cfg(test)]
 impl Drop for CandidateManifestDocument {
     fn drop(&mut self) {
         #[cfg(debug_assertions)]
@@ -3849,6 +3831,7 @@ impl Drop for CandidateManifestDocument {
     }
 }
 
+#[cfg(test)]
 impl CandidateManifestDocument {
     pub(crate) fn new(
         arena: PageArena,
@@ -3874,10 +3857,6 @@ impl CandidateManifestDocument {
         ManifestView::open(&self.arena, publication.authority, publication.root_id())
     }
 
-    pub(crate) fn arena(&self) -> &PageArena {
-        &self.arena
-    }
-
     pub(crate) fn publication(&self) -> Result<&PublishedManifest, ManifestError> {
         if self.state != ManifestDocumentState::Open {
             return Err(ManifestError::Busy);
@@ -3894,22 +3873,8 @@ impl CandidateManifestDocument {
             publication.root_id(),
             publication.authority(),
         )?;
-        let canonical_record_count = descriptor
-            .metadata
-            .iter()
-            .try_fold(0_u64, |total, role| total.checked_add(role.record_count))
-            .ok_or(ManifestError::Corrupt(
-                "candidate canonical record count overflow",
-            ))?;
-        let maximum_snapshot_frames = u64::try_from(self.arena.limits().max_slots)
-            .map_err(|_| ManifestError::InvalidLimits)?
-            .checked_add(2)
-            .ok_or(ManifestError::InvalidLimits)?;
         Ok(CandidateManifestSummary {
-            authority: publication.authority(),
-            canonical_record_count,
             manifest_digest256: manifest_digest256(publication.authority(), &descriptor),
-            maximum_snapshot_frames,
         })
     }
 
@@ -4485,7 +4450,8 @@ mod tests {
         let mut document = publish(arena, assembler);
 
         assert_eq!(document.arena.metrics().resident_nodes, 14);
-        let references = document.view().unwrap().references().unwrap();
+        let view = document.view().unwrap();
+        let references = view.references().unwrap();
         let occurrence = references.occurrence(0).unwrap().unwrap();
         assert!(occurrence.normalized_label.equals(b"label").unwrap());
         assert!(occurrence
@@ -5200,14 +5166,8 @@ mod tests {
             .expect("large fact");
         drain_reference(&mut arena, &mut assembler);
         let mut document = publish(arena, assembler);
-        let occurrence = document
-            .view()
-            .unwrap()
-            .references()
-            .unwrap()
-            .occurrence(0)
-            .unwrap()
-            .unwrap();
+        let view = document.view().unwrap();
+        let occurrence = view.references().unwrap().occurrence(0).unwrap().unwrap();
         assert_eq!(
             occurrence.cooked_destination.len(),
             (BLOB_CHUNK_BYTES * 3 + 17) as u64
@@ -5556,7 +5516,7 @@ mod tests {
         assert_send::<ReferenceRootBuilder>();
         assert_send::<ReferenceSubtreeRoot>();
         assert_send::<ReferenceBuildPoll>();
-        assert_send::<ReferenceRootView<'static>>();
+        assert_send::<ReferenceRootView>();
         assert_send::<ReferenceOccurrenceView<'static>>();
         assert_send::<PersistentBytesView<'static>>();
     }
