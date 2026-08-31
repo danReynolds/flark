@@ -16,7 +16,6 @@ use crate::reference_prefix::{
     DirectReferenceLogicalPosition, DirectReferencePrefixDisposition,
     DirectReferencePrefixTerminalAck, DirectReferencePrefixWork,
 };
-use crate::source::LogicalProjection;
 use crate::table;
 use crate::tree::{
     BlockKind, BlockTree, ListData, ListDelimiter, ListType, NodeId, Position, SyntaxProfile,
@@ -4410,7 +4409,6 @@ pub struct ValueBlockParser {
     pub(crate) tree: BlockTree,
     pub(crate) current: NodeId,
     pub(crate) line_number: usize,
-    pub(crate) line_leaf_id: u64,
     pub(crate) offset: usize,
     pub(crate) column: usize,
     pub(crate) thematic_break_kill_pos: usize,
@@ -4447,7 +4445,6 @@ impl ValueBlockParser {
             tree,
             current,
             line_number: 0,
-            line_leaf_id: 0,
             offset: 0,
             column: 0,
             thematic_break_kill_pos: 0,
@@ -5043,7 +5040,6 @@ impl ValueBlockParser {
                 *closed = true;
             }
             self.advance_offset(line, matched, false);
-            let _ = self.fix_zero_end_columns(container);
             self.current = self.finalize(container)?;
             return Ok(PrefixResult::Consumed);
         }
@@ -5359,8 +5355,6 @@ impl ValueBlockParser {
                 fence_char: line.as_bytes()[first],
                 fence_length: matched,
                 fence_offset: first - offset,
-                info: LogicalProjection::default(),
-                literal: LogicalProjection::default(),
                 closed: false,
             },
             first + 1,
@@ -5400,10 +5394,7 @@ impl ValueBlockParser {
         };
         *container = self.add_child(
             *container,
-            BlockKind::HtmlBlock {
-                block_type,
-                literal: LogicalProjection::default(),
-            },
+            BlockKind::HtmlBlock { block_type },
             self.first_nonspace + 1,
         )?;
         Ok(true)
@@ -5756,8 +5747,6 @@ impl ValueBlockParser {
                 fence_char: 0,
                 fence_length: 0,
                 fence_offset: 0,
-                info: LogicalProjection::default(),
-                literal: LogicalProjection::default(),
                 closed: true,
             },
             self.offset + 1,
@@ -6686,43 +6675,6 @@ impl ValueBlockParser {
         Ok(parent)
     }
 
-    fn fix_zero_end_columns(&mut self, container: NodeId) -> Option<Position> {
-        let mut stack = Vec::new();
-        for child in self.tree.node(container).children.clone() {
-            stack.push((child, false));
-            while let Some((node, visited)) = stack.pop() {
-                if !visited {
-                    stack.push((node, true));
-                    for descendant in self.tree.node(node).children.clone() {
-                        stack.push((descendant, false));
-                    }
-                    continue;
-                }
-                if self.tree.node(node).source_end.column == 0 {
-                    let mut last = self.tree.last_child(node);
-                    while let Some(next) =
-                        last.and_then(|candidate| self.tree.last_child(candidate))
-                    {
-                        last = Some(next);
-                    }
-                    if let Some(last) = last {
-                        let position = self.tree.node(last).source_end;
-                        if position.column != 0 {
-                            self.tree.node_mut(node).source_end = position;
-                            continue;
-                        }
-                    }
-                    let start = self.tree.node(node).source_start;
-                    self.tree.node_mut(node).source_end = start;
-                }
-            }
-        }
-        self.tree
-            .last_child(container)
-            .map(|last| self.tree.node(last).source_end)
-            .filter(|end| end.column != 0)
-    }
-
     fn direct_prepare_pending_blank_gap(&mut self) -> Result<(), ParseError> {
         let (pending, floor, survivor) = {
             let direct = &self.direct;
@@ -6816,17 +6768,6 @@ impl ValueBlockParser {
     /// The retained tree contains only the open path plus constant-size child
     /// folds, so direct scratch is O(open depth), not O(document length).
     fn compact_direct_scratch(&mut self) -> Result<(), ParseError> {
-        if self
-            .tree
-            .nodes
-            .iter()
-            .any(|node| !node.content.logical.is_empty())
-        {
-            return Err(ParseError::DirectUnsupported(
-                DirectUnsupported::AggregateContent,
-            ));
-        }
-
         let mut path = vec![self.tree.root];
         let mut cursor = self.tree.root;
         while let Some(child) = self
@@ -6898,7 +6839,6 @@ impl ValueBlockParser {
             new.table_autocompleted_cells = old.table_autocompleted_cells;
             new.source_start = old.source_start;
             new.source_end = old.source_end;
-            new.content = old.content.clone();
             new.historical_children = old.historical_children;
             new.folded_children = 0;
         }
@@ -6938,10 +6878,8 @@ fn capture_direct_pause_kind(kind: &BlockKind) -> Result<Option<DirectBlockKind>
             fence_char: b'`' | b'~',
             fence_length,
             fence_offset,
-            info,
-            literal,
             closed: false,
-        } if *fence_length >= 3 && *fence_offset <= 3 && info.is_empty() && literal.is_empty()
+        } if *fence_length >= 3 && *fence_offset <= 3
     ) || matches!(
         kind,
         BlockKind::CodeBlock {
@@ -6949,10 +6887,8 @@ fn capture_direct_pause_kind(kind: &BlockKind) -> Result<Option<DirectBlockKind>
             fence_char: 0,
             fence_length: 0,
             fence_offset: 0,
-            info,
-            literal,
             closed: true,
-        } if info.is_empty() && literal.is_empty()
+        }
     );
     if !supported {
         return Ok(None);
@@ -7063,8 +6999,6 @@ fn direct_pause_block_kind(kind: DirectBlockKind) -> Result<BlockKind, ParseErro
             fence_char: 0,
             fence_length: 0,
             fence_offset: 0,
-            info: LogicalProjection::default(),
-            literal: LogicalProjection::default(),
             closed: true,
         }),
         DirectBlockKind::FencedCode(facts) => {
@@ -7079,15 +7013,12 @@ fn direct_pause_block_kind(kind: DirectBlockKind) -> Result<BlockKind, ParseErro
                 fence_length: usize::try_from(facts.minimum_closing_length)
                     .map_err(|_| ParseError::Invariant("direct fence length fits usize"))?,
                 fence_offset: usize::from(facts.fence_offset_columns),
-                info: LogicalProjection::default(),
-                literal: LogicalProjection::default(),
                 closed: false,
             })
         }
         DirectBlockKind::HtmlBlock(facts) if (1..=7).contains(&facts.block_type) => {
             Ok(BlockKind::HtmlBlock {
                 block_type: facts.block_type,
-                literal: LogicalProjection::default(),
             })
         }
         DirectBlockKind::HtmlBlock(_) => Err(ParseError::Invariant(
@@ -7327,7 +7258,6 @@ impl DirectValueBlockParser {
             tree,
             current,
             line_number,
-            line_leaf_id: _,
             offset: _,
             column: _,
             thematic_break_kill_pos: _,
@@ -7467,10 +7397,6 @@ impl DirectValueBlockParser {
                 || node.folded_children != 0
                 || node.table_visited
                 || node.table_autocompleted_cells != 0
-                || !node.content.logical.is_empty()
-                || !node.content.origins.is_empty()
-                || !node.content.line_offsets.is_empty()
-                || node.content.source_backed.is_some()
             {
                 return Err(ParseError::Invariant(
                     "direct pause frame is compact bounded scratch",
@@ -8353,13 +8279,6 @@ impl DirectValueBlockParser {
                 "segmented controller window is inside its physical line",
             ));
         }
-        self.parser.line_leaf_id = u64::try_from(
-            self.parser
-                .line_number
-                .checked_add(1)
-                .ok_or(ParseError::Invariant("direct line ordinal overflow"))?,
-        )
-        .map_err(|_| ParseError::Invariant("direct line id below u64"))?;
         self.parser.direct.begin_recipe(line_bytes)?;
         let transition = self.parser.begin_line_transition(&line.controller_window);
         self.parser.curline_len = line_bytes;
@@ -8399,13 +8318,6 @@ impl DirectValueBlockParser {
                 "direct source ATX match is inside the physical line",
             ));
         }
-        self.parser.line_leaf_id = u64::try_from(
-            self.parser
-                .line_number
-                .checked_add(1)
-                .ok_or(ParseError::Invariant("direct line ordinal overflow"))?,
-        )
-        .map_err(|_| ParseError::Invariant("direct line id below u64"))?;
         self.parser.direct.begin_recipe(line_bytes)?;
 
         let root = self.parser.tree.root;
@@ -8505,8 +8417,6 @@ impl DirectValueBlockParser {
             ));
         }
         let _ = direct_line_ending(&line)?;
-        self.parser.line_leaf_id = u64::try_from(self.parser.line_number + 1)
-            .map_err(|_| ParseError::Invariant("direct line id below u64"))?;
         self.parser.direct.begin_recipe(line.len())?;
         let transition = self.parser.begin_line_transition(&line);
         self.parser.direct_claim_initial_bom()?;
@@ -8766,16 +8676,6 @@ impl DirectValueBlockParser {
     #[must_use]
     pub fn scratch_node_count(&self) -> usize {
         self.parser.tree.nodes.len()
-    }
-
-    #[must_use]
-    pub fn retained_logical_bytes(&self) -> usize {
-        self.parser
-            .tree
-            .nodes
-            .iter()
-            .map(|node| node.content.logical.len())
-            .sum()
     }
 
     #[must_use]

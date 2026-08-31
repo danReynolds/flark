@@ -1,4 +1,3 @@
-use crate::source::{LeafContent, LogicalProjection};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,13 +71,10 @@ pub enum BlockKind {
         fence_char: u8,
         fence_length: usize,
         fence_offset: usize,
-        info: LogicalProjection,
-        literal: LogicalProjection,
         closed: bool,
     },
     HtmlBlock {
         block_type: u8,
-        literal: LogicalProjection,
     },
     Paragraph,
     Heading {
@@ -227,7 +223,6 @@ pub struct BlockNode {
     pub table_autocompleted_cells: usize,
     pub source_start: Position,
     pub source_end: Position,
-    pub content: LeafContent,
     /// Closed children that precede the transient children in `children`.
     /// Empty during a one-shot parse; populated only by continuation restore.
     pub historical_children: ChildSequenceFold,
@@ -258,7 +253,6 @@ impl BlockTree {
                 table_autocompleted_cells: 0,
                 source_start: Position::new(1, 1),
                 source_end: Position::new(1, 1),
-                content: LeafContent::default(),
                 historical_children: ChildSequenceFold::default(),
                 folded_children: 0,
             }],
@@ -293,7 +287,6 @@ impl BlockTree {
             table_autocompleted_cells: 0,
             source_start: start,
             source_end: start,
-            content: LeafContent::default(),
             historical_children: ChildSequenceFold::default(),
             folded_children: 0,
         });
