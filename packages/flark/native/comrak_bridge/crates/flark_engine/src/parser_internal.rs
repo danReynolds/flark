@@ -2227,6 +2227,11 @@ impl M11ReferenceWinnerHandle {
                 }
             }
         }
+        if let M11ReferenceWinnerState::Ready(index) = &self.state {
+            if !index.is_bound_to(authority, self.root) {
+                return Err(M11PublicationError::invalid_state());
+            }
+        }
         let (ready, occurrence_count, indexed_occurrences, unique_label_count) = match &self.state {
             M11ReferenceWinnerState::Ready(index) => (
                 true,
@@ -2499,29 +2504,59 @@ impl M11RetainedCandidatePublication {
         };
         let target_publication = self.publication()?;
         let base_publication = base.publication()?;
+        let target_authority = target_publication.authority();
+        let base_authority = base_publication.authority();
         let target_descriptor = decode_manifest_descriptor(
             runtime.producer_arena(),
             target_publication.root_id(),
-            target_publication.authority(),
+            target_authority,
         )?;
         let base_descriptor = decode_manifest_descriptor(
             runtime.producer_arena(),
             base_publication.root_id(),
-            base_publication.authority(),
+            base_authority,
         )?;
         let target_root = persistent_reference_manifest_root(
             runtime.producer_arena(),
             &target_descriptor,
-            target_publication.authority(),
+            target_authority,
         )?;
         let base_root = persistent_reference_manifest_root(
             runtime.producer_arena(),
             &base_descriptor,
-            base_publication.authority(),
+            base_authority,
         )?;
         if target_root != base_root || winner.root != base_root {
             return Err(M11PublicationError::invalid_state());
         }
+        match &mut base
+            .reference_winner
+            .as_mut()
+            .ok_or_else(M11PublicationError::invalid_state)?
+            .state
+        {
+            M11ReferenceWinnerState::Uninitialized => {}
+            M11ReferenceWinnerState::Building(builder) => {
+                if !builder.is_bound_to(base_authority, base_root) {
+                    return Err(M11PublicationError::invalid_state());
+                }
+                builder.rebind_authority(target_authority);
+            }
+            M11ReferenceWinnerState::Ready(index) => {
+                let index = Arc::get_mut(index).ok_or_else(M11PublicationError::invalid_state)?;
+                if !index.is_bound_to(base_authority, base_root) {
+                    return Err(M11PublicationError::invalid_state());
+                }
+                *index = index.rebind_authority(target_authority);
+            }
+            M11ReferenceWinnerState::Releasing(_) | M11ReferenceWinnerState::Released => {
+                return Err(M11PublicationError::invalid_state());
+            }
+        }
+        base.reference_winner
+            .as_mut()
+            .ok_or_else(M11PublicationError::invalid_state)?
+            .root = target_root;
         self.reference_winner = base.reference_winner.take();
         Ok(())
     }
@@ -5332,6 +5367,19 @@ mod persistent_projection_adoption_tests {
             .reference_resolver(&runtime)
             .expect("target resolver state")
             .is_none());
+        let held_base_resolver = superseded
+            .reference_resolver(&runtime)
+            .expect("base resolver authority")
+            .expect("ready base resolver");
+        assert!(
+            delivered
+                .adopt_exact_base_reference_resolver(&runtime, &mut superseded)
+                .is_err(),
+            "a live resolver lease must prevent rebinding its owned index"
+        );
+        assert!(delivered.reference_winner.is_none());
+        assert!(superseded.reference_winner.is_some());
+        drop(held_base_resolver);
         delivered
             .adopt_exact_base_reference_resolver(&runtime, &mut superseded)
             .expect("move ready resolver into delivered target");

@@ -144,8 +144,6 @@ impl From<ReferenceRootError> for M11ReferenceResolverError {
 pub struct M11ReferenceResolver {
     runtime_identity: RuntimeIdentity,
     source: SourceVersion,
-    authority: CandidateAuthority,
-    root: crate::ArenaId,
     index: Arc<ReferenceWinnerIndex>,
 }
 
@@ -154,7 +152,7 @@ impl fmt::Debug for M11ReferenceResolver {
         formatter
             .debug_struct("M11ReferenceResolver")
             .field("source", &self.source)
-            .field("root", &self.root)
+            .field("root", &self.index.root())
             .finish_non_exhaustive()
     }
 }
@@ -166,13 +164,11 @@ impl M11ReferenceResolver {
         runtime: &DocumentRuntime,
         journal: &M11ReferenceJournalRoot,
     ) -> Result<Self, M11ReferenceJournalError> {
-        let (runtime_identity, authority, root, index) = journal.resolver_parts(runtime)?;
+        let (runtime_identity, index) = journal.resolver_parts(runtime)?;
         Ok(Self {
             runtime_identity,
             source: journal.source(),
-            authority,
-            root,
-            index: Arc::new(index),
+            index,
         })
     }
 
@@ -188,6 +184,9 @@ impl M11ReferenceResolver {
             .map_err(|_| M11ReferenceResolverError(ErrorInner::InvalidData))?;
         let utf16_len = usize::try_from(authority.source_utf16)
             .map_err(|_| M11ReferenceResolverError(ErrorInner::InvalidData))?;
+        if !index.is_bound_to(authority, root) {
+            return Err(M11ReferenceResolverError(ErrorInner::InvalidData));
+        }
         Ok(Self {
             runtime_identity,
             source: SourceVersion::from_authenticated_parts(
@@ -196,8 +195,6 @@ impl M11ReferenceResolver {
                 byte_len,
                 utf16_len,
             ),
-            authority,
-            root,
             index,
         })
     }
@@ -218,15 +215,9 @@ impl M11ReferenceResolver {
                 ErrorInner::SourceAuthorityMismatch,
             ));
         }
-        if self.index.root() != self.root {
-            return Err(M11ReferenceResolverError(ErrorInner::InvalidData));
-        }
-        let Some(winner) = self.index.winner(
-            runtime.producer_arena(),
-            self.authority,
-            self.root,
-            normalized_label.as_bytes(),
-        )?
+        let Some(winner) = self
+            .index
+            .winner(runtime.producer_arena(), normalized_label.as_bytes())?
         else {
             return Ok(M11ReferenceResolution::Missing);
         };

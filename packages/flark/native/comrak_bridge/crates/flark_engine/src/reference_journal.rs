@@ -9,6 +9,7 @@
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::candidate_manifest::{
     CandidateAuthority, ManifestError, ReferenceReserve, RoleMetadata,
@@ -738,7 +739,7 @@ impl M11ReferenceJournal {
                     .metadata
                     .take()
                     .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?,
-                winner: Some(winner),
+                winner: Some(Arc::new(winner)),
                 winner_reclaimer: None,
                 released: false,
                 first_source_byte_start: self.first_source_byte_start,
@@ -1623,7 +1624,7 @@ pub struct M11ReferenceJournalRoot {
     authority: CandidateAuthority,
     root: Option<CommittedArenaRoot>,
     metadata: RoleMetadata,
-    winner: Option<ReferenceWinnerIndex>,
+    winner: Option<Arc<ReferenceWinnerIndex>>,
     winner_reclaimer: Option<ReferenceWinnerIndexReclaimer>,
     released: bool,
     first_source_byte_start: u64,
@@ -1704,15 +1705,15 @@ impl M11ReferenceJournalRoot {
             .root
             .as_ref()
             .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
-        self.winner
+        let winner = self
+            .winner
             .as_ref()
-            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
-            .winner(
-                runtime.producer_arena(),
-                self.authority,
-                root.id(),
-                normalized_label,
-            )
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+        if !winner.is_bound_to(self.authority, root.id()) {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        winner
+            .winner(runtime.producer_arena(), normalized_label)
             .map(|winner| winner.map(|occurrence| occurrence.ordinal))
             .map_err(Into::into)
     }
@@ -1722,27 +1723,21 @@ impl M11ReferenceJournalRoot {
     pub(crate) fn resolver_parts(
         &self,
         runtime: &DocumentRuntime,
-    ) -> Result<
-        (
-            RuntimeIdentity,
-            CandidateAuthority,
-            crate::ArenaId,
-            ReferenceWinnerIndex,
-        ),
-        M11ReferenceJournalError,
-    > {
+    ) -> Result<(RuntimeIdentity, Arc<ReferenceWinnerIndex>), M11ReferenceJournalError> {
         self.ensure_live(runtime)?;
         let root = self
             .root
             .as_ref()
             .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
             .id();
-        let winner = self
+        let current = self
             .winner
             .as_ref()
-            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
-            .rebind_root(root);
-        Ok((self.runtime_identity, self.authority, root, winner))
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+        if !current.is_bound_to(self.authority, root) {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        Ok((self.runtime_identity, Arc::clone(current)))
     }
 
     pub(crate) fn retain_for_publication(
@@ -1868,18 +1863,28 @@ impl M11ReferenceJournalRoot {
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceJournalError> {
         self.ensure_live(runtime)?;
-        if let Some(winner) = self.winner.take() {
-            self.winner_reclaimer = Some(winner.into_reclaimer());
-        }
+        let shared_winner = self
+            .winner
+            .take()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+        let winner = match Arc::try_unwrap(shared_winner) {
+            Ok(winner) => winner,
+            Err(shared_winner) => {
+                self.winner = Some(shared_winner);
+                return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+            }
+        };
         if let Some(root) = self.root.take() {
             match runtime.producer_arena_mut().release_committed_root(root) {
                 Ok(()) => {}
                 Err(failure) => {
                     self.root = Some(failure.root);
+                    self.winner = Some(Arc::new(winner));
                     return Err(failure.error.into());
                 }
             }
         }
+        self.winner_reclaimer = Some(winner.into_reclaimer());
         self.released = true;
         Ok(())
     }
@@ -2005,7 +2010,7 @@ impl M11ReferenceJournalRoot {
             .winner
             .as_ref()
             .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
-            .rebind_root(root_id);
+            .rebind_authority(authority);
         let (build, retained) = {
             let mut session = runtime.producer_arena_mut().begin_build()?;
             let retained = session.retain(root_id)?;
@@ -2031,7 +2036,7 @@ impl M11ReferenceJournalRoot {
             phase: M11ReferenceJournalAdoptionPhase::Sealing,
             seal: Some(seal),
             root: None,
-            winner: Some(winner),
+            winner: Some(Arc::new(winner)),
             winner_reclaimer: None,
             output: None,
         })
@@ -2085,7 +2090,7 @@ pub struct M11ReferenceJournalUnchangedPrefixAdoption {
     phase: M11ReferenceJournalAdoptionPhase,
     seal: Option<CandidateSeal>,
     root: Option<CommittedArenaRoot>,
-    winner: Option<ReferenceWinnerIndex>,
+    winner: Option<Arc<ReferenceWinnerIndex>>,
     winner_reclaimer: Option<ReferenceWinnerIndexReclaimer>,
     output: Option<M11ReferenceJournalRoot>,
 }
@@ -2122,12 +2127,11 @@ impl M11ReferenceJournalUnchangedPrefixAdoption {
                         .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
                     let Some(root) = polled.root else { break };
                     self.seal = None;
-                    if self
+                    if !self
                         .winner
                         .as_ref()
                         .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
-                        .root()
-                        != root.id()
+                        .is_bound_to(self.authority, root.id())
                     {
                         return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
                     }
@@ -2189,6 +2193,10 @@ impl M11ReferenceJournalUnchangedPrefixAdoption {
             output.released = true;
         }
         if let Some(winner) = self.winner.take() {
+            let winner = Arc::try_unwrap(winner).map_err(|winner| {
+                self.winner = Some(winner);
+                M11ReferenceJournalError(ErrorInner::InvalidState)
+            })?;
             self.winner_reclaimer = Some(winner.into_reclaimer());
         }
         if let Some(root) = self.root.take() {
@@ -2545,6 +2553,104 @@ mod tests {
         {}
 
         release_root(&mut runtime, &mut base_root);
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
+    }
+
+    #[test]
+    fn unchanged_prefix_adoption_rebinds_the_winner_to_target_authority() {
+        let source_text = "[a]: /target\nvisible";
+        let definition_end = source_text.find('\n').expect("definition end");
+        let mut runtime =
+            DocumentRuntime::new(source_text, DocumentRuntimeConfig::default()).expect("runtime");
+        let base_source = runtime.current_source_version().expect("base source");
+        let mut journal = M11ReferenceJournal::new(&mut runtime, base_source, 1).expect("journal");
+        offer_ascii_occurrence(
+            &mut journal,
+            &mut runtime,
+            0..definition_end as u64,
+            1..2,
+            5..definition_end as u64,
+            b"a",
+            b"/target",
+        );
+        let mut base_root = finish_journal(&mut journal, &mut runtime);
+
+        runtime
+            .apply_edit(base_source, source_text.len()..source_text.len(), "!")
+            .expect("append target edit");
+        let prefix = runtime
+            .mint_exact_unchanged_prefix_witness(base_source, definition_end, definition_end)
+            .expect("definition prefix");
+        let target_source = runtime.current_source_version().expect("target source");
+        let mut adoption = base_root
+            .begin_unchanged_prefix_adoption(&mut runtime, Some(prefix), true)
+            .expect("begin adoption");
+        loop {
+            let polled = adoption.poll(&mut runtime, 1).expect("poll adoption");
+            if polled.status() == M11ReferenceJournalAdoptionStatus::Complete {
+                break;
+            }
+            assert_eq!(polled.status(), M11ReferenceJournalAdoptionStatus::Pending);
+        }
+        let mut target_root = adoption.take_root().expect("adopted root");
+
+        assert_eq!(target_root.source(), target_source);
+        assert_eq!(target_root.winner_ordinal(&runtime, b"a").unwrap(), Some(0));
+
+        release_root(&mut runtime, &mut base_root);
+        release_root(&mut runtime, &mut target_root);
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
+    }
+
+    #[test]
+    fn live_resolver_lease_blocks_root_release_until_dropped() {
+        let source_text = "[a]: /target\nvisible";
+        let definition_end = source_text.find('\n').expect("definition end");
+        let mut runtime =
+            DocumentRuntime::new(source_text, DocumentRuntimeConfig::default()).expect("runtime");
+        let source = runtime.current_source_version().expect("source");
+        let mut journal = M11ReferenceJournal::new(&mut runtime, source, 1).expect("journal");
+        offer_ascii_occurrence(
+            &mut journal,
+            &mut runtime,
+            0..definition_end as u64,
+            1..2,
+            5..definition_end as u64,
+            b"a",
+            b"/target",
+        );
+        let mut root = finish_journal(&mut journal, &mut runtime);
+        let resolver =
+            crate::reference_resolver::M11ReferenceResolver::from_live_reference_journal(
+                &runtime, &root,
+            )
+            .expect("live resolver");
+
+        assert!(root.begin_release(&mut runtime).is_err());
+        assert!(!root.released);
+        assert!(root.root.is_some());
+        assert!(root.winner.is_some());
+        assert!(root.winner_reclaimer.is_none());
+        assert_eq!(root.winner_ordinal(&runtime, b"a").unwrap(), Some(0));
+        assert!(matches!(
+            resolver
+                .resolve(&runtime, "a", 64)
+                .expect("resolve after rejected release"),
+            crate::reference_resolver::M11ReferenceResolution::Resolved(_)
+        ));
+
+        drop(resolver);
+        root.begin_release(&mut runtime)
+            .expect("release after resolver drop");
+        assert!(root.released);
+        assert!(root.winner_reclaimer.is_some());
+        while !root
+            .poll_release(&mut runtime, 1)
+            .expect("poll root release")
+            .complete()
+        {}
         runtime.begin_close().expect("begin runtime close");
         while !runtime.poll_close(64).expect("poll runtime close").complete {}
     }

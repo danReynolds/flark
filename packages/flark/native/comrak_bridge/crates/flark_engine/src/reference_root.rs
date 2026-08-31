@@ -2044,15 +2044,18 @@ impl ReferenceWinnerBucket {
     }
 }
 
-/// Revision-independent acceleration over one immutable canonical References
-/// root. Entries retain only generation-checked arena ids; the publication
-/// remains the authority and independently owns the referenced pages.
+/// Authority-bound acceleration over one immutable canonical References root.
+/// Entries retain only generation-checked arena ids; the enclosing journal or
+/// publication independently owns the referenced pages. The immutable payload
+/// may be rebound only through [`Self::rebind_authority`] after its caller proves that a
+/// fresh authority retains those exact canonical fact ids.
 ///
 /// A B-tree is intentional here. Its insertion cost grows logarithmically and
 /// never hides a whole-table resize inside one editor quantum. Digest buckets
 /// still exact-compare canonical normalized-label bytes, so a digest collision
 /// cannot change Markdown semantics.
 pub(crate) struct ReferenceWinnerIndex {
+    authority: CandidateAuthority,
     root: ArenaId,
     payload: Arc<ReferenceWinnerIndexPayload>,
 }
@@ -2068,6 +2071,7 @@ impl fmt::Debug for ReferenceWinnerIndex {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ReferenceWinnerIndex")
+            .field("authority", &self.authority)
             .field("root", &self.root)
             .field("occurrence_count", &self.payload.occurrence_count)
             .field("indexed_occurrences", &self.payload.indexed_occurrences)
@@ -2081,6 +2085,10 @@ impl fmt::Debug for ReferenceWinnerIndex {
 }
 
 impl ReferenceWinnerIndex {
+    pub(crate) fn is_bound_to(&self, authority: CandidateAuthority, root: ArenaId) -> bool {
+        self.authority == authority && self.root == root
+    }
+
     pub(crate) const fn root(&self) -> ArenaId {
         self.root
     }
@@ -2109,15 +2117,8 @@ impl ReferenceWinnerIndex {
     pub(crate) fn winner<'a>(
         &self,
         arena: &'a PageArena,
-        authority: CandidateAuthority,
-        root: ArenaId,
         normalized_label: &[u8],
     ) -> Result<Option<ReferenceOccurrenceView<'a>>, ReferenceRootError> {
-        if root != self.root {
-            return Err(ReferenceRootError::Corrupt(
-                "reference winner index is bound to another root",
-            ));
-        }
         if normalized_label.is_empty()
             || normalized_label.len() as u64 > REFERENCE_WINNER_INDEX_MAX_NORMALIZED_LABEL_BYTES
         {
@@ -2131,7 +2132,7 @@ impl ReferenceWinnerIndex {
             return Ok(None);
         }
         for entry in bucket.entries() {
-            let occurrence = decode_fact(arena, entry.fact, authority)?;
+            let occurrence = decode_fact(arena, entry.fact, self.authority)?;
             if occurrence.normalized_label.equals(normalized_label)? {
                 return Ok(Some(occurrence));
             }
@@ -2146,9 +2147,10 @@ impl ReferenceWinnerIndex {
     /// Rebinds revision-local lookup authority to another retained wrapper
     /// over the exact same canonical fact ids. The immutable buckets are
     /// shared in O(1); the last owner alone performs fuelled reclamation.
-    pub(crate) fn rebind_root(&self, root: ArenaId) -> Self {
+    pub(crate) fn rebind_authority(&self, authority: CandidateAuthority) -> Self {
         Self {
-            root,
+            authority,
+            root: self.root,
             payload: Arc::clone(&self.payload),
         }
     }
@@ -2294,6 +2296,7 @@ impl ReferenceWinnerIndexJournal {
             ));
         }
         Ok(ReferenceWinnerIndex {
+            authority,
             root,
             payload: Arc::new(ReferenceWinnerIndexPayload {
                 occurrence_count: self.occurrence_count,
@@ -2463,6 +2466,7 @@ impl fmt::Debug for ReferenceWinnerFactVisit {
 /// one occurrence page, starts one fact, hashes at most one bounded label
 /// storage page, or commits one digest bucket update.
 pub(crate) struct ReferenceWinnerIndexBuilder {
+    authority: CandidateAuthority,
     root: ArenaId,
     occurrence_count: u64,
     next_page: Option<ArenaId>,
@@ -2507,6 +2511,7 @@ impl ReferenceWinnerIndexBuilder {
     ) -> Result<Self, ReferenceRootError> {
         let view = ReferenceRootView::open(arena, authority, root)?;
         Ok(Self {
+            authority,
             root,
             occurrence_count: view.count,
             next_page: view.page_root,
@@ -2529,6 +2534,10 @@ impl ReferenceWinnerIndexBuilder {
             .ok_or(ReferenceRootError::FactTooLarge)
     }
 
+    pub(crate) fn is_bound_to(&self, authority: CandidateAuthority, root: ArenaId) -> bool {
+        self.authority == authority && self.root == root
+    }
+
     pub(crate) fn poll(
         &mut self,
         arena: &PageArena,
@@ -2538,6 +2547,9 @@ impl ReferenceWinnerIndexBuilder {
     ) -> Result<ReferenceWinnerIndexBuildPoll, ReferenceRootError> {
         if fuel == 0 {
             return Err(ReferenceRootError::ZeroFuel);
+        }
+        if authority != self.authority {
+            return Err(ReferenceRootError::CrossAuthority);
         }
         if root != self.root {
             return Err(ReferenceRootError::Corrupt(
@@ -2659,6 +2671,7 @@ impl ReferenceWinnerIndexBuilder {
             return Err(ReferenceRootError::Busy);
         }
         Ok(ReferenceWinnerIndex {
+            authority: self.authority,
             root: self.root,
             payload: Arc::new(ReferenceWinnerIndexPayload {
                 occurrence_count: self.occurrence_count,
@@ -2667,6 +2680,10 @@ impl ReferenceWinnerIndexBuilder {
                 buckets: self.buckets,
             }),
         })
+    }
+
+    pub(crate) fn rebind_authority(&mut self, authority: CandidateAuthority) {
+        self.authority = authority;
     }
 
     pub(crate) fn into_reclaimer(mut self) -> ReferenceWinnerIndexReclaimer {
@@ -4175,6 +4192,14 @@ mod tests {
             builder.poll(&arena, authority, root, 0),
             Err(ReferenceRootError::ZeroFuel)
         ));
+        let crossed_authority = CandidateAuthority {
+            publication: RuntimeIdentity::new([75; 16]).expect("crossed publication"),
+            ..authority
+        };
+        assert!(matches!(
+            builder.poll(&arena, crossed_authority, root, 1),
+            Err(ReferenceRootError::CrossAuthority)
+        ));
         let mut build_polls = 0;
         loop {
             let receipt = builder
@@ -4190,13 +4215,14 @@ mod tests {
 
         let index = builder.into_index().expect("completed winner index");
         assert_eq!(index.root(), root);
+        assert!(index.is_bound_to(authority, root));
         assert_eq!(index.occurrence_count(), 6);
         assert_eq!(index.indexed_occurrences(), 6);
         assert_eq!(index.skipped_oversized_occurrences(), 0);
         assert_eq!(index.unique_label_count(), 5);
 
         let indexed_duplicate = index
-            .winner(&arena, authority, root, b"duplicate")
+            .winner(&arena, b"duplicate")
             .expect("indexed duplicate")
             .expect("duplicate winner");
         assert_eq!(indexed_duplicate.ordinal, 0);
@@ -4212,7 +4238,7 @@ mod tests {
         assert_eq!(indexed_duplicate.ordinal, linear_duplicate.ordinal);
 
         let indexed_expanded = index
-            .winner(&arena, authority, root, &expanded_label)
+            .winner(&arena, &expanded_label)
             .expect("expanded lookup")
             .expect("expanded winner");
         assert_eq!(indexed_expanded.ordinal, 4);
@@ -4221,18 +4247,35 @@ mod tests {
             .equals(b"/expanded")
             .expect("expanded destination"));
         assert!(index
-            .winner(&arena, authority, root, b"DUPLICATE")
+            .winner(&arena, b"DUPLICATE")
             .expect("exact-case miss")
             .is_none());
         assert!(index
-            .winner(&arena, authority, root, b"missing")
+            .winner(&arena, b"missing")
             .expect("missing label")
             .is_none());
         let truncated_expanded = &expanded_label[..expanded_label.len() - 3];
         assert!(index
-            .winner(&arena, authority, root, truncated_expanded)
+            .winner(&arena, truncated_expanded)
             .expect("near expanded miss")
             .is_none());
+
+        let rebound_authority = CandidateAuthority {
+            publication: RuntimeIdentity::new([74; 16]).expect("rebound publication"),
+            ..authority
+        };
+        let rebound = index.rebind_authority(rebound_authority);
+        assert!(rebound.is_bound_to(rebound_authority, root));
+        assert!(!rebound.is_bound_to(authority, root));
+        assert_eq!(
+            rebound
+                .winner(&arena, b"duplicate")
+                .expect("rebound lookup")
+                .expect("rebound winner")
+                .ordinal,
+            0,
+        );
+        drop(rebound);
 
         let expected_reclaim_transitions = index.unique_label_count() as usize;
         let mut reclaimer = index.into_reclaimer();
