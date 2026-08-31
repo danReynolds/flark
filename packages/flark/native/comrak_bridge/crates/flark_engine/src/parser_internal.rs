@@ -85,13 +85,14 @@ pub use crate::indented_code_projection::{
 };
 pub use crate::inline_projection::{
     M11InlineLinkValue, M11InlineProjectionBuild, M11InlineProjectionBuildPoll,
-    M11InlineProjectionBuildStatus, M11InlineProjectionCheckpointQuery,
-    M11InlineProjectionCheckpointQueryPoll, M11InlineProjectionCursor,
-    M11InlineProjectionCursorPoll, M11InlineProjectionDescriptor, M11InlineProjectionError,
-    M11InlineProjectionFact, M11InlineProjectionKind, M11InlineProjectionRoot,
-    M11ProjectedInlineProjectionRoot, M11_INLINE_CHARACTER_REFERENCE_SOURCE_MAX_BYTES,
-    M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES, M11_INLINE_LINK_VALUES_MAX_ENTRIES,
-    M11_INLINE_PROJECTION_FACTS_PER_PAGE_MAX, M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
+    M11InlineProjectionBuildStatus, M11InlineProjectionCaptureValidator,
+    M11InlineProjectionCheckpointQuery, M11InlineProjectionCheckpointQueryPoll,
+    M11InlineProjectionCursor, M11InlineProjectionCursorPoll, M11InlineProjectionDescriptor,
+    M11InlineProjectionError, M11InlineProjectionFact, M11InlineProjectionKind,
+    M11InlineProjectionRoot, M11ProjectedInlineProjectionRoot,
+    M11_INLINE_CHARACTER_REFERENCE_SOURCE_MAX_BYTES, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
+    M11_INLINE_LINK_VALUES_MAX_ENTRIES, M11_INLINE_PROJECTION_FACTS_PER_PAGE_MAX,
+    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };

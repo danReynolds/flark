@@ -935,6 +935,171 @@ impl From<M11ParserPageError> for M11InlineProjectionError {
     }
 }
 
+/// Allocation-free validation for capture-only inline projection.
+///
+/// This stamps a borrowed exact source authority while validating the same
+/// typed facts and cooked link values accepted by the persistent builder,
+/// without creating parser-page roots. Each offer is failure-atomic: counters
+/// and ordering state advance only after the complete fact/value batch passes.
+#[must_use = "capture validators must be finalized against the returned authority"]
+pub struct M11InlineProjectionCaptureValidator {
+    source: SourceVersion,
+    source_range: Range<u32>,
+    parser_profile: ParserProfileId,
+    fact_count: u64,
+    last_fact_start: Option<u32>,
+    link_value_entry_count: u32,
+    link_value_payload_bytes: usize,
+}
+
+impl M11InlineProjectionCaptureValidator {
+    pub fn new(
+        runtime: &DocumentRuntime,
+        authority: &M11ParserSourceRangeAuthority,
+        parser_profile: ParserProfileId,
+    ) -> Result<Self, M11InlineProjectionError> {
+        authority.validate(runtime)?;
+        let source = authority.source();
+        let range = authority.source_range();
+        let source_range = u32::try_from(range.start)
+            .map_err(|_| M11InlineProjectionError::CoordinateOverflow)?
+            ..u32::try_from(range.end).map_err(|_| M11InlineProjectionError::CoordinateOverflow)?;
+        Ok(Self {
+            source,
+            source_range,
+            parser_profile,
+            fact_count: 0,
+            last_fact_start: None,
+            link_value_entry_count: 0,
+            link_value_payload_bytes: 0,
+        })
+    }
+
+    pub fn offer(
+        &mut self,
+        facts: &[M11InlineProjectionFact],
+        link_values: &[M11InlineLinkValue],
+    ) -> Result<(), M11InlineProjectionError> {
+        let source_len = self
+            .source_range
+            .end
+            .checked_sub(self.source_range.start)
+            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+        let mut previous_start = self.last_fact_start;
+        let mut next_value = 0_usize;
+        let mut added_value_bytes = 0_usize;
+
+        for (local_ordinal, fact) in facts.iter().copied().enumerate() {
+            validate_fact(fact)?;
+            if previous_start.is_some_and(|start| fact.relative_start < start) {
+                return Err(M11InlineProjectionError::FactsOutOfOrder);
+            }
+            let end = fact
+                .relative_start
+                .checked_add(fact.relative_len)
+                .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+            if end > source_len {
+                return Err(M11InlineProjectionError::FactOutsideSourceRange);
+            }
+            if fact.kind.has_link_value() {
+                let value = link_values.get(next_value).ok_or(
+                    M11InlineProjectionError::InvalidLinkValue(
+                        "link/image fact has no companion value",
+                    ),
+                )?;
+                let expected_ordinal = self
+                    .fact_count
+                    .checked_add(
+                        u64::try_from(local_ordinal)
+                            .map_err(|_| M11InlineProjectionError::CoordinateOverflow)?,
+                    )
+                    .and_then(|ordinal| u32::try_from(ordinal).ok())
+                    .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+                if value.parent_fact_ordinal != expected_ordinal {
+                    return Err(M11InlineProjectionError::InvalidLinkValue(
+                        "inline link values are not keyed by strict fact ordinal",
+                    ));
+                }
+                value.validate_against_fact(fact, self.source.byte_len())?;
+                added_value_bytes = added_value_bytes
+                    .checked_add(value.encoded_len()?)
+                    .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+                next_value += 1;
+            }
+            previous_start = Some(fact.relative_start);
+        }
+        if next_value != link_values.len() {
+            return Err(M11InlineProjectionError::InvalidLinkValue(
+                "orphan inline link value has no link/image fact",
+            ));
+        }
+
+        let next_fact_count = self
+            .fact_count
+            .checked_add(
+                u64::try_from(facts.len())
+                    .map_err(|_| M11InlineProjectionError::CoordinateOverflow)?,
+            )
+            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+        let next_entry_count = self
+            .link_value_entry_count
+            .checked_add(
+                u32::try_from(link_values.len())
+                    .map_err(|_| M11InlineProjectionError::CoordinateOverflow)?,
+            )
+            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+        let next_payload_bytes = self
+            .link_value_payload_bytes
+            .checked_add(added_value_bytes)
+            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+        let next_encoded_bytes = if next_entry_count == 0 {
+            0
+        } else {
+            16_usize
+                .checked_add(next_payload_bytes)
+                .ok_or(M11InlineProjectionError::CoordinateOverflow)?
+        };
+        if next_entry_count > M11_INLINE_LINK_VALUES_MAX_ENTRIES
+            || next_encoded_bytes > M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES
+        {
+            return Err(M11InlineProjectionError::InvalidLinkValue(
+                "encoded inline link values exceed the bounded query envelope",
+            ));
+        }
+
+        self.fact_count = next_fact_count;
+        self.last_fact_start = previous_start;
+        self.link_value_entry_count = next_entry_count;
+        self.link_value_payload_bytes = next_payload_bytes;
+        Ok(())
+    }
+
+    pub fn finish(
+        self,
+        authority: M11ParserSourceRangeAuthority,
+        source: SourceVersion,
+        source_range: Range<u32>,
+        parser_profile: ParserProfileId,
+    ) -> Result<M11ParserSourceRangeAuthority, M11InlineProjectionError> {
+        let authority_range = authority.source_range();
+        let authority_range = u32::try_from(authority_range.start)
+            .map_err(|_| M11InlineProjectionError::CoordinateOverflow)?
+            ..u32::try_from(authority_range.end)
+                .map_err(|_| M11InlineProjectionError::CoordinateOverflow)?;
+        if source != self.source
+            || source_range != self.source_range
+            || authority.source() != self.source
+            || authority_range != self.source_range
+        {
+            return Err(M11InlineProjectionError::SourceAuthorityMismatch);
+        }
+        if parser_profile != self.parser_profile {
+            return Err(M11InlineProjectionError::ParserProfileMismatch);
+        }
+        Ok(authority)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum M11InlineProjectionBuildStatus {
     NeedsPage,
@@ -3524,6 +3689,226 @@ mod tests {
         runtime.begin_close().expect("begin runtime close");
         while !runtime.poll_close(64).expect("poll runtime close").complete {}
         assert_eq!(runtime.arena_metrics().resident_nodes, 0);
+    }
+
+    fn capture_validator(
+        runtime: &DocumentRuntime,
+        range: Range<usize>,
+    ) -> M11InlineProjectionCaptureValidator {
+        let authority = capture_authority(runtime, range);
+        M11InlineProjectionCaptureValidator::new(runtime, &authority, profile())
+            .expect("capture validator")
+    }
+
+    fn capture_authority(
+        runtime: &DocumentRuntime,
+        range: Range<usize>,
+    ) -> M11ParserSourceRangeAuthority {
+        M11ParserSourceRangeAuthority::new(
+            runtime,
+            runtime.snapshot_current_source().expect("source lease"),
+            range,
+        )
+        .expect("exact authority")
+    }
+
+    fn direct_link_fact() -> M11InlineProjectionFact {
+        M11InlineProjectionFact::new(M11InlineProjectionKind::DirectLink, 0, 0..12, 1..5)
+            .expect("direct link fact")
+    }
+
+    fn direct_link_value(parent: u32) -> M11InlineLinkValue {
+        M11InlineLinkValue::new(parent, 6..9, Some(9..12), "/x", Some("t".into()))
+            .expect("direct link value")
+    }
+
+    #[test]
+    fn capture_validator_accepts_exact_capture_without_arena_pages() {
+        let runtime = DocumentRuntime::new(
+            "[abc](/x t)....................",
+            DocumentRuntimeConfig::default(),
+        )
+        .expect("runtime");
+        let before = runtime.arena_metrics();
+        let source = runtime.current_source_version().expect("source");
+        let mut validator = capture_validator(&runtime, 0..12);
+        validator
+            .offer(&[direct_link_fact()], &[direct_link_value(0)])
+            .expect("valid capture");
+        assert_eq!(
+            runtime.arena_metrics().resident_nodes,
+            before.resident_nodes
+        );
+        let returned_authority = capture_authority(&runtime, 0..12);
+        let authority = validator
+            .finish(returned_authority, source, 0..12, profile())
+            .expect("matching final stamp");
+        authority
+            .validate(&runtime)
+            .expect("finished validator returns exact authority");
+        drop(authority);
+        close_runtime(runtime);
+    }
+
+    #[test]
+    fn capture_validator_rejects_malformed_order_and_extent_failure_atomically() {
+        let runtime = DocumentRuntime::new("0123456789abcdef", DocumentRuntimeConfig::default())
+            .expect("runtime");
+        let mut validator = capture_validator(&runtime, 0..16);
+        let malformed = M11InlineProjectionFact {
+            kind: M11InlineProjectionKind::Strong,
+            flags: 1,
+            relative_start: 0,
+            relative_len: 3,
+            payload: M11InlineProjectionFactPayload::Marked {
+                content_offset: 1,
+                content_len: 1,
+            },
+        };
+        assert!(matches!(
+            validator.offer(&[malformed], &[]),
+            Err(M11InlineProjectionError::InvalidFact(_))
+        ));
+        let later = M11InlineProjectionFact::new(M11InlineProjectionKind::Strong, 0, 8..13, 10..11)
+            .expect("later");
+        validator.offer(&[later], &[]).expect("first valid fact");
+        let before = (validator.fact_count, validator.last_fact_start);
+        let earlier =
+            M11InlineProjectionFact::new(M11InlineProjectionKind::Emphasis, 0, 2..7, 4..5)
+                .expect("earlier");
+        assert!(matches!(
+            validator.offer(&[earlier], &[]),
+            Err(M11InlineProjectionError::FactsOutOfOrder)
+        ));
+        let outside =
+            M11InlineProjectionFact::new(M11InlineProjectionKind::Strong, 0, 14..19, 16..17)
+                .expect("outside");
+        assert!(matches!(
+            validator.offer(&[outside], &[]),
+            Err(M11InlineProjectionError::FactOutsideSourceRange)
+        ));
+        assert_eq!((validator.fact_count, validator.last_fact_start), before);
+        drop(validator);
+        close_runtime(runtime);
+    }
+
+    #[test]
+    fn capture_validator_requires_one_strictly_keyed_value_per_link_fact() {
+        let runtime = DocumentRuntime::new(
+            "[abc](/x t)....................",
+            DocumentRuntimeConfig::default(),
+        )
+        .expect("runtime");
+        let fact = direct_link_fact();
+        let mut missing = capture_validator(&runtime, 0..12);
+        assert!(matches!(
+            missing.offer(&[fact], &[]),
+            Err(M11InlineProjectionError::InvalidLinkValue(_))
+        ));
+        let mut mis_keyed = capture_validator(&runtime, 0..12);
+        assert!(matches!(
+            mis_keyed.offer(&[fact], &[direct_link_value(1)]),
+            Err(M11InlineProjectionError::InvalidLinkValue(_))
+        ));
+        let non_link = M11InlineProjectionFact::new(M11InlineProjectionKind::Strong, 0, 0..5, 2..3)
+            .expect("strong");
+        let mut orphan = capture_validator(&runtime, 0..12);
+        assert!(matches!(
+            orphan.offer(&[non_link], &[direct_link_value(0)]),
+            Err(M11InlineProjectionError::InvalidLinkValue(_))
+        ));
+        drop((missing, mis_keyed, orphan));
+        close_runtime(runtime);
+    }
+
+    #[test]
+    fn capture_validator_checks_direct_and_reference_value_coordinate_bases() {
+        let runtime = DocumentRuntime::new(
+            "[abc](/x t)....................................................",
+            DocumentRuntimeConfig::default(),
+        )
+        .expect("runtime");
+        let mut direct = capture_validator(&runtime, 0..12);
+        let invalid_direct =
+            M11InlineLinkValue::new(0, 2..4, None, "/x", None).expect("shaped value");
+        assert!(matches!(
+            direct.offer(&[direct_link_fact()], &[invalid_direct]),
+            Err(M11InlineProjectionError::InvalidLinkValue(_))
+        ));
+
+        let reference_fact =
+            M11InlineProjectionFact::new(M11InlineProjectionKind::ReferenceLink, 0, 0..10, 1..4)
+                .expect("reference fact");
+        let mut reference = capture_validator(&runtime, 0..12);
+        let valid_reference =
+            M11InlineLinkValue::new(0, 40..43, Some(44..47), "/r", Some("r".into()))
+                .expect("reference value");
+        reference
+            .offer(&[reference_fact], &[valid_reference])
+            .expect("document-absolute reference cuts");
+        let mut invalid_reference = capture_validator(&runtime, 0..12);
+        let outside =
+            M11InlineLinkValue::new(0, 60..80, None, "/r", None).expect("shaped outside value");
+        assert!(matches!(
+            invalid_reference.offer(&[reference_fact], &[outside]),
+            Err(M11InlineProjectionError::InvalidLinkValue(_))
+        ));
+        drop((direct, reference, invalid_reference));
+        close_runtime(runtime);
+    }
+
+    #[test]
+    fn capture_validator_enforces_capacity_count_and_final_stamp() {
+        let runtime = DocumentRuntime::new(
+            "[abc](/x t)....................",
+            DocumentRuntimeConfig::default(),
+        )
+        .expect("runtime");
+        let mut capacity = capture_validator(&runtime, 0..12);
+        let oversized = "x".repeat(M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES);
+        let value = M11InlineLinkValue::new(0, 6..9, None, oversized, None)
+            .expect("oversized shaped value");
+        assert!(matches!(
+            capacity.offer(&[direct_link_fact()], &[value]),
+            Err(M11InlineProjectionError::InvalidLinkValue(_))
+        ));
+        assert_eq!(capacity.fact_count, 0);
+
+        let mut overflow = capture_validator(&runtime, 0..12);
+        overflow.fact_count = u64::MAX;
+        let plain = M11InlineProjectionFact::new(M11InlineProjectionKind::Strong, 0, 0..5, 2..3)
+            .expect("plain fact");
+        assert!(matches!(
+            overflow.offer(&[plain], &[]),
+            Err(M11InlineProjectionError::CoordinateOverflow)
+        ));
+
+        let source = runtime.current_source_version().expect("source");
+        let wrong_range = capture_validator(&runtime, 0..12);
+        let authority = capture_authority(&runtime, 0..12);
+        assert!(matches!(
+            wrong_range.finish(authority, source, 0..11, profile()),
+            Err(M11InlineProjectionError::SourceAuthorityMismatch)
+        ));
+        let wrong_returned_authority = capture_validator(&runtime, 0..12);
+        let authority = capture_authority(&runtime, 0..11);
+        assert!(matches!(
+            wrong_returned_authority.finish(authority, source, 0..12, profile()),
+            Err(M11InlineProjectionError::SourceAuthorityMismatch)
+        ));
+        let wrong_profile = capture_validator(&runtime, 0..12);
+        let authority = capture_authority(&runtime, 0..12);
+        assert!(matches!(
+            wrong_profile.finish(
+                authority,
+                source,
+                0..12,
+                ParserProfileId::new(2).expect("other profile")
+            ),
+            Err(M11InlineProjectionError::ParserProfileMismatch)
+        ));
+        drop((capacity, overflow));
+        close_runtime(runtime);
     }
 
     #[test]

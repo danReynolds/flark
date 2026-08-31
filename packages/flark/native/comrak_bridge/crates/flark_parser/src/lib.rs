@@ -61,8 +61,9 @@ pub use inline_lex::{
     M11InlineLexScanner, M11_INLINE_LEX_MAX_POLL_TRANSITIONS,
 };
 pub use inline_projection_job::{
-    M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPoll,
-    M11InlineProjectionJobPollStatus, M11InlineProjectionJobReleasePoll,
+    M11InlineProjectionCapture, M11InlineProjectionJob, M11InlineProjectionJobError,
+    M11InlineProjectionJobPoll, M11InlineProjectionJobPollStatus,
+    M11InlineProjectionJobReleasePoll, M11InlineProjectionOutcome,
     M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
 };
 pub use parser_binding::{M11ParserBinding, M11_GRAMMAR_REVISION};

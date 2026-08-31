@@ -3,7 +3,7 @@ use std::mem;
 use std::ops::Range;
 
 use flark_engine::parser_internal::{
-    M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenPoint,
+    M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenPoint,
     M11RecursiveGreenRenderableRow, M11RecursiveGreenRowEditCapability,
     M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome, M11ReferenceResolver,
     M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
@@ -27,8 +27,9 @@ use flark_parser::{
     derive_m11_simple_block_prefix_plans, derive_m11_simple_block_transitions,
     m11_is_markdown_punctuation, project_m11_gfm_inline, project_m11_gfm_table, M11GfmInlineNode,
     M11GfmInlineOptions, M11GfmTableAlignment, M11InlineEditComponent,
-    M11InlineEditComponentMatcher, M11InlineProjectionJob, M11InlineProjectionJobError,
-    M11InlineProjectionJobPollStatus, M11ParserBinding, M11PersistentRecursiveGreenAdoption,
+    M11InlineEditComponentMatcher, M11InlineProjectionCapture, M11InlineProjectionJob,
+    M11InlineProjectionJobError, M11InlineProjectionJobPollStatus, M11InlineProjectionOutcome,
+    M11ParserBinding, M11PersistentRecursiveGreenAdoption,
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
@@ -5520,10 +5521,16 @@ fn map_document_semantic_target(
     captured: CapturedDocumentInlineProjection,
     requested: Range<u64>,
 ) -> Result<Option<DocumentSemanticTarget>, DocumentSessionError> {
-    let Some((ordinal, fact)) = captured.facts.iter().enumerate().find(|(_, fact)| {
-        absolute_inline_range(captured.inline_source.start, fact.relative_range())
-            .is_ok_and(|range| range == requested)
-    }) else {
+    let Some((ordinal, fact)) = captured
+        .capture
+        .facts()
+        .iter()
+        .enumerate()
+        .find(|(_, fact)| {
+            absolute_inline_range(captured.inline_source.start, fact.relative_range())
+                .is_ok_and(|range| range == requested)
+        })
+    else {
         return Ok(None);
     };
     let (kind, syntax) = match fact.kind() {
@@ -5572,7 +5579,8 @@ fn map_document_semantic_target(
         }
         DocumentSemanticTargetSyntax::Direct | DocumentSemanticTargetSyntax::Reference => {
             let value = captured
-                .link_values
+                .capture
+                .link_values()
                 .iter()
                 .find(|value| value.parent_fact_ordinal() as usize == ordinal)
                 .ok_or(DocumentSessionError::Faulted)?;
@@ -7205,9 +7213,7 @@ fn certified_empty_atx_heading_editable(
 struct CapturedDocumentInlineProjection {
     inline_source: Range<u32>,
     editable: Range<u64>,
-    facts: Vec<M11InlineProjectionFact>,
-    link_values: Vec<M11InlineLinkValue>,
-    edit_components: Vec<M11InlineEditComponent>,
+    capture: M11InlineProjectionCapture,
 }
 
 struct DocumentInlineProjectionAuthority {
@@ -7292,19 +7298,18 @@ fn capture_document_inline_projection_from_compact_probe(
     else {
         return Ok(None);
     };
-    if u64::from(captured.inline_source.start) != editable.start
-        || u64::from(captured.inline_source.end) != editable.end
-        || u64::from(captured.inline_source_utf16.start) != editable_utf16.start
-        || u64::from(captured.inline_source_utf16.end) != editable_utf16.end
+    let (inline_source, inline_source_utf16, capture) = captured.into_capture_parts();
+    if u64::from(inline_source.start) != editable.start
+        || u64::from(inline_source.end) != editable.end
+        || u64::from(inline_source_utf16.start) != editable_utf16.start
+        || u64::from(inline_source_utf16.end) != editable_utf16.end
     {
         return Ok(None);
     }
     Ok(Some(CapturedDocumentInlineProjection {
-        inline_source: captured.inline_source,
+        inline_source,
         editable,
-        facts: captured.facts,
-        link_values: captured.link_values,
-        edit_components: captured.edit_components,
+        capture,
     }))
 }
 
@@ -7404,14 +7409,14 @@ fn capture_prepared_inline_projection(
     let binding = M11ParserBinding::current(parser_profile);
     let mut job = match reference_resolver {
         Some(reference_resolver) => {
-            M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
+            M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver(
                 runtime,
                 prepared.into_fence(),
                 binding,
                 reference_resolver,
             )?
         }
-        None => M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_fact_capture(
+        None => M11InlineProjectionJob::new_for_recursive_green_inline_leaf(
             runtime,
             prepared.into_fence(),
             binding,
@@ -7421,7 +7426,7 @@ fn capture_prepared_inline_projection(
     loop {
         let remaining = VIEWPORT_INLINE_TOTAL_TRANSITIONS_MAX.saturating_sub(transitions);
         if remaining == 0 {
-            abort_inline_fact_job(runtime, &mut job)?;
+            release_inline_fact_job(runtime, &mut job)?;
             return Ok(None);
         }
         let poll = match job.poll(
@@ -7430,53 +7435,55 @@ fn capture_prepared_inline_projection(
         ) {
             Ok(poll) => poll,
             Err(error) => {
-                abort_inline_fact_job(runtime, &mut job)?;
+                release_inline_fact_job(runtime, &mut job)?;
                 return Err(error.into());
             }
         };
-        transitions = transitions
-            .checked_add(poll.transitions())
-            .ok_or(DocumentSessionError::Faulted)?;
+        let Some(next_transitions) = transitions.checked_add(poll.transitions()) else {
+            release_inline_fact_job(runtime, &mut job)?;
+            return Err(DocumentSessionError::Faulted);
+        };
+        transitions = next_transitions;
         if poll.status() == M11InlineProjectionJobPollStatus::Complete {
             break;
         }
         if poll.transitions() == 0 {
-            abort_inline_fact_job(runtime, &mut job)?;
+            release_inline_fact_job(runtime, &mut job)?;
             return Ok(None);
         }
     }
 
-    if job.projected_facts_are_authoritative() != Some(true) {
-        abort_inline_fact_job(runtime, &mut job)?;
-        return Ok(None);
+    let Some(outcome) = job.take_outcome() else {
+        release_inline_fact_job(runtime, &mut job)?;
+        return Err(DocumentSessionError::Faulted);
+    };
+    let current_source = runtime
+        .current_source_version()
+        .ok_or(DocumentSessionError::Faulted)?;
+    if outcome.source() != current_source
+        || outcome.source_range() != inline_source
+        || outcome.parser_profile() != parser_profile
+    {
+        return Err(DocumentSessionError::Faulted);
     }
-
-    let facts = job
-        .take_projected_facts()
-        .ok_or(DocumentSessionError::Faulted)?;
-    let link_values = job
-        .take_projected_link_values()
-        .ok_or(DocumentSessionError::Faulted)?;
-    let edit_components = job
-        .take_projected_edit_components()
-        .ok_or(DocumentSessionError::Faulted)?;
-    abort_inline_fact_job(runtime, &mut job)?;
+    let capture = match outcome {
+        M11InlineProjectionOutcome::Authoritative { capture, .. } => capture,
+        M11InlineProjectionOutcome::Unsupported { .. } => return Ok(None),
+    };
     Ok(Some(CapturedDocumentInlineProjection {
         inline_source,
         editable,
-        facts,
-        link_values,
-        edit_components,
+        capture,
     }))
 }
 
-fn abort_inline_fact_job(
+fn release_inline_fact_job(
     runtime: &mut DocumentRuntime,
     job: &mut M11InlineProjectionJob,
 ) -> Result<(), M11InlineProjectionJobError> {
-    job.begin_abort(runtime)?;
+    job.begin_release(runtime)?;
     loop {
-        let poll = job.poll_abort(runtime, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS)?;
+        let poll = job.poll_release(runtime, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS)?;
         if poll.complete() {
             return Ok(());
         }
@@ -7487,18 +7494,19 @@ fn map_document_inline_projection(
     runtime: &DocumentRuntime,
     captured: CapturedDocumentInlineProjection,
 ) -> Result<Option<DocumentInlineProjectionAuthority>, DocumentSessionError> {
+    let CapturedDocumentInlineProjection {
+        inline_source,
+        editable,
+        capture,
+    } = captured;
+    let (facts, _link_values, edit_components) = capture.into_parts();
     let projection_edit_cells = map_parser_projection_edit_cells(
         runtime,
-        captured.inline_source.clone(),
-        &captured.editable,
-        captured.edit_components,
+        inline_source.clone(),
+        &editable,
+        edit_components,
     )?;
-    let Some(inline_facts) = map_document_inline_facts(
-        runtime,
-        captured.inline_source,
-        captured.editable,
-        captured.facts,
-    )?
+    let Some(inline_facts) = map_document_inline_facts(runtime, inline_source, editable, facts)?
     else {
         return Ok(None);
     };

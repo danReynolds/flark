@@ -4882,11 +4882,32 @@ impl From<crate::M11RecursiveGreenParagraphPreparationError> for M11CompactViewp
 
 #[cfg(feature = "m11-compact-probe")]
 pub struct M11CompactInlineProjectionProbe {
-    pub inline_source: Range<u32>,
-    pub inline_source_utf16: Range<u32>,
-    pub facts: Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
-    pub link_values: Vec<flark_engine::parser_internal::M11InlineLinkValue>,
-    pub edit_components: Vec<crate::M11InlineEditComponent>,
+    inline_source: Range<u32>,
+    inline_source_utf16: Range<u32>,
+    capture: crate::M11InlineProjectionCapture,
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl M11CompactInlineProjectionProbe {
+    #[must_use]
+    pub fn inline_source(&self) -> Range<u32> {
+        self.inline_source.clone()
+    }
+
+    #[must_use]
+    pub fn inline_source_utf16(&self) -> Range<u32> {
+        self.inline_source_utf16.clone()
+    }
+
+    #[must_use]
+    pub const fn capture(&self) -> &crate::M11InlineProjectionCapture {
+        &self.capture
+    }
+
+    #[must_use]
+    pub fn into_capture_parts(self) -> (Range<u32>, Range<u32>, crate::M11InlineProjectionCapture) {
+        (self.inline_source, self.inline_source_utf16, self.capture)
+    }
 }
 
 #[cfg(feature = "m11-compact-probe")]
@@ -4917,52 +4938,62 @@ impl M11CompactViewportProbe {
                 "compact viewport parser profile is nonzero",
             ),
         )?;
-        let mut job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+        let mut job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver(
             runtime,
             prepared.into_fence(),
             crate::M11ParserBinding::current(profile),
             self.reference_resolver.clone(),
         )?;
         loop {
-            let poll = job.poll(
+            let poll = match job.poll(
                 runtime,
                 crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
-            )?;
+            ) {
+                Ok(poll) => poll,
+                Err(error) => {
+                    release_incomplete_compact_inline_job(runtime, &mut job)?;
+                    return Err(error.into());
+                }
+            };
             if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
                 break;
             }
             if poll.transitions() == 0 {
+                release_incomplete_compact_inline_job(runtime, &mut job)?;
                 return Err(M11CompactViewportProbeError::InvalidState(
                     "compact inline capture stopped without completing",
                 ));
             }
         }
-        if job.projected_facts_are_authoritative() != Some(true) {
-            release_compact_inline_job(runtime, &mut job)?;
-            return Ok(None);
+        let outcome = match job.take_outcome() {
+            Some(outcome) => outcome,
+            None => {
+                release_incomplete_compact_inline_job(runtime, &mut job)?;
+                return Err(M11CompactViewportProbeError::InvalidState(
+                    "compact inline capture omitted its terminal outcome",
+                ));
+            }
+        };
+        if outcome.source()
+            != runtime.current_source_version().ok_or(
+                M11CompactViewportProbeError::InvalidState(
+                    "compact inline capture runtime omitted its source",
+                ),
+            )?
+            || outcome.source_range() != inline_source
+            || outcome.parser_profile() != profile
+        {
+            return Err(M11CompactViewportProbeError::InvalidState(
+                "compact inline capture outcome changed its exact source authority",
+            ));
         }
-        let facts =
-            job.take_projected_facts()
-                .ok_or(M11CompactViewportProbeError::InvalidState(
-                    "compact inline capture omitted its facts",
-                ))?;
-        let link_values =
-            job.take_projected_link_values()
-                .ok_or(M11CompactViewportProbeError::InvalidState(
-                    "compact inline capture omitted its link values",
-                ))?;
-        let edit_components = job.take_projected_edit_components().ok_or(
-            M11CompactViewportProbeError::InvalidState(
-                "compact inline capture omitted its edit components",
-            ),
-        )?;
-        release_compact_inline_job(runtime, &mut job)?;
+        let crate::M11InlineProjectionOutcome::Authoritative { capture, .. } = outcome else {
+            return Ok(None);
+        };
         Ok(Some(M11CompactInlineProjectionProbe {
             inline_source,
             inline_source_utf16,
-            facts,
-            link_values,
-            edit_components,
+            capture,
         }))
     }
 
@@ -4995,13 +5026,13 @@ impl M11CompactViewportProbe {
 }
 
 #[cfg(feature = "m11-compact-probe")]
-fn release_compact_inline_job(
+fn release_incomplete_compact_inline_job(
     runtime: &mut DocumentRuntime,
     job: &mut crate::M11InlineProjectionJob,
 ) -> Result<(), M11CompactViewportProbeError> {
-    job.begin_abort(runtime)?;
+    job.begin_release(runtime)?;
     loop {
-        let poll = job.poll_abort(
+        let poll = job.poll_release(
             runtime,
             crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
         )?;
@@ -5828,9 +5859,8 @@ fn early_compact_viewport_is_certifiable(
 }
 
 /// Runs one bounded fact-capture job purely for its resolver traffic; the
-/// caller reads the shared `Unknown` counter afterward. The job is released
-/// unconditionally, and non-authoritative outcomes are legal here — only the
-/// counter decides certifiability.
+/// caller reads the shared `Unknown` counter afterward. Non-authoritative
+/// outcomes are legal here — only the counter decides certifiability.
 #[cfg(feature = "m11-compact-probe")]
 fn audit_prepared_inline_capture(
     runtime: &mut DocumentRuntime,
@@ -5841,34 +5871,54 @@ fn audit_prepared_inline_capture(
     let profile = flark_engine::ParserProfileId::new(u64::from(syntax_profile)).ok_or(
         M11CompactViewportProbeError::InvalidState("compact viewport parser profile is nonzero"),
     )?;
-    let mut job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+    let expected_range = prepared.inline_source_range();
+    let mut job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver(
         runtime,
         prepared.into_fence(),
         crate::M11ParserBinding::current(profile),
         resolver.clone(),
     )?;
-    let drive = (|| -> Result<(), M11CompactViewportProbeError> {
-        loop {
-            let poll = job.poll(
-                runtime,
-                crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
-            )?;
-            if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
+    loop {
+        let poll = match job.poll(
+            runtime,
+            crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+        ) {
+            Ok(poll) => poll,
+            Err(error) => {
+                release_incomplete_compact_inline_job(runtime, &mut job)?;
+                return Err(error.into());
+            }
+        };
+        if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
+            if let Some(outcome) = job.take_outcome() {
+                if outcome.source()
+                    != runtime.current_source_version().ok_or(
+                        M11CompactViewportProbeError::InvalidState(
+                            "early audit runtime omitted its source",
+                        ),
+                    )?
+                    || outcome.source_range() != expected_range
+                    || outcome.parser_profile() != profile
+                {
+                    return Err(M11CompactViewportProbeError::InvalidState(
+                        "early audit outcome changed its exact source authority",
+                    ));
+                }
+                drop(outcome);
                 return Ok(());
             }
-            if poll.transitions() == 0 {
-                return Err(M11CompactViewportProbeError::InvalidState(
-                    "early audit inline capture stopped without completing",
-                ));
-            }
+            release_incomplete_compact_inline_job(runtime, &mut job)?;
+            return Err(M11CompactViewportProbeError::InvalidState(
+                "early audit inline capture omitted its terminal outcome",
+            ));
         }
-    })();
-    // The job owns a projection builder; reclaim it on every path so a
-    // failed audit surfaces as its typed error, not a drop assertion.
-    let release = release_compact_inline_job(runtime, &mut job);
-    drive?;
-    release?;
-    Ok(())
+        if poll.transitions() == 0 {
+            release_incomplete_compact_inline_job(runtime, &mut job)?;
+            return Err(M11CompactViewportProbeError::InvalidState(
+                "early audit inline capture stopped without completing",
+            ));
+        }
+    }
 }
 
 #[cfg(feature = "m11-compact-probe")]
@@ -6108,14 +6158,14 @@ mod tests {
     ) {
         let profile =
             ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
-        let job =
-            crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_fact_capture(
-                runtime,
-                prepared.into_fence(),
-                crate::M11ParserBinding::current(profile),
-            )
-            .expect("start inline fact capture");
-        finish_inline_fact_capture(runtime, job)
+        let expected_range = prepared.inline_source_range();
+        let job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf(
+            runtime,
+            prepared.into_fence(),
+            crate::M11ParserBinding::current(profile),
+        )
+        .expect("start inline fact capture");
+        finish_inline_fact_capture(runtime, job, expected_range, profile)
     }
 
     fn capture_inline_facts_with_compact_references(
@@ -6128,14 +6178,15 @@ mod tests {
     ) {
         let profile =
             ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
-        let job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+        let expected_range = prepared.inline_source_range();
+        let job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver(
             runtime,
             prepared.into_fence(),
             crate::M11ParserBinding::current(profile),
             resolver,
         )
         .expect("start compact-reference inline fact capture");
-        finish_inline_fact_capture(runtime, job)
+        finish_inline_fact_capture(runtime, job, expected_range, profile)
     }
 
     fn capture_inline_facts_with_persistent_references(
@@ -6148,19 +6199,22 @@ mod tests {
     ) {
         let profile =
             ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
-        let job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
+        let expected_range = prepared.inline_source_range();
+        let job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver(
             runtime,
             prepared.into_fence(),
             crate::M11ParserBinding::current(profile),
             resolver,
         )
         .expect("start persistent-reference inline fact capture");
-        finish_inline_fact_capture(runtime, job)
+        finish_inline_fact_capture(runtime, job, expected_range, profile)
     }
 
     fn finish_inline_fact_capture(
         runtime: &mut DocumentRuntime,
         mut job: crate::M11InlineProjectionJob,
+        expected_range: Range<u32>,
+        expected_profile: ParserProfileId,
     ) -> (
         Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
         Vec<flark_engine::parser_internal::M11InlineLinkValue>,
@@ -6172,17 +6226,14 @@ mod tests {
             }
             assert!(poll.transitions() > 0, "inline fact capture must progress");
         }
-        assert_eq!(job.projected_facts_are_authoritative(), Some(true));
-        let facts = job.take_projected_facts().expect("captured inline facts");
-        let links = job
-            .take_projected_link_values()
-            .expect("captured inline link values");
-        job.begin_abort(runtime).expect("begin inline cleanup");
-        while !job
-            .poll_abort(runtime, 4_096)
-            .expect("poll inline cleanup")
-            .complete()
-        {}
+        let outcome = job.take_outcome().expect("captured inline outcome");
+        assert_eq!(outcome.source(), runtime.current_source_version().unwrap());
+        assert_eq!(outcome.source_range(), expected_range);
+        assert_eq!(outcome.parser_profile(), expected_profile);
+        let crate::M11InlineProjectionOutcome::Authoritative { capture, .. } = outcome else {
+            panic!("slice differential requires authoritative inline capture");
+        };
+        let (facts, links, _) = capture.into_parts();
         (facts, links)
     }
 

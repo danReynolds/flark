@@ -27,9 +27,9 @@ use flark_parser::block_core::{
 use flark_parser::{
     project_m11_gfm_inline, project_m11_gfm_table, M11ExactController, M11GfmInlineNode,
     M11GfmInlineOptions, M11GfmInlineReference, M11GfmTableAlignment, M11GfmTableProjection,
-    M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11ParserBinding,
-    M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll, SnapshotLineScanner,
-    SnapshotLineSource, SourceAdapterError,
+    M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11InlineProjectionOutcome,
+    M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
+    SnapshotLineScanner, SnapshotLineSource, SourceAdapterError,
 };
 use sha2::{Digest, Sha256};
 
@@ -1371,16 +1371,21 @@ fn project_inline_leaf(
         )
         .ok_or_else(|| RenderFailure::Invalid("inline range is not a source UTF-8 cut".into()))?
         .to_owned();
+    let expected_outcome_range = u32::try_from(range.start)
+        .map_err(|_| RenderFailure::Invalid("inline range start exceeds u32".into()))?
+        ..u32::try_from(range.end)
+            .map_err(|_| RenderFailure::Invalid("inline range end exceeds u32".into()))?;
     let profile = ParserProfileId::new(1).expect("nonzero parser profile");
     let resolver = M11ReferenceResolver::from_live_reference_journal(runtime, references)
         .map_err(|error| RenderFailure::Invalid(format!("reference resolver: {error}")))?;
-    let mut job = M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
-        runtime,
-        fence,
-        M11ParserBinding::current(profile),
-        resolver,
-    )
-    .map_err(|error| RenderFailure::Invalid(format!("inline job creation: {error}")))?;
+    let mut job =
+        M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver(
+            runtime,
+            fence,
+            M11ParserBinding::current(profile),
+            resolver,
+        )
+        .map_err(|error| RenderFailure::Invalid(format!("inline job creation: {error}")))?;
     let mut complete = false;
     let mut poll_error = None;
     for _ in 0..MAX_POLLS {
@@ -1397,45 +1402,61 @@ fn project_inline_leaf(
         }
     }
     if let Some(error) = poll_error {
-        abort_inline_capture(&mut job, runtime)?;
+        release_inline_capture(&mut job, runtime)?;
         return Err(RenderFailure::Invalid(format!("inline job poll: {error}")));
     }
     if !complete {
-        abort_inline_capture(&mut job, runtime)?;
+        release_inline_capture(&mut job, runtime)?;
         return Err(RenderFailure::Invalid(
             "inline projection job did not converge".into(),
         ));
     }
-    let authoritative = job.projected_facts_are_authoritative();
-    let facts = job.take_projected_facts();
-    let link_values = job.take_projected_link_values();
-    abort_inline_capture(&mut job, runtime)?;
-    match authoritative {
-        Some(true) => Ok(InlineProjection {
-            source,
-            facts: facts.ok_or_else(|| {
-                RenderFailure::Invalid("inline job omitted captured facts".into())
-            })?,
-            link_values: link_values.ok_or_else(|| {
-                RenderFailure::Invalid("inline job omitted captured link values".into())
-            })?,
-        }),
-        Some(false) => Err(RenderFailure::Missing("inline-fail-closed")),
-        None => Err(RenderFailure::Invalid(
-            "completed inline job omitted its disposition".into(),
-        )),
+    match job.take_outcome() {
+        Some(M11InlineProjectionOutcome::Authoritative {
+            source: outcome_source,
+            source_range,
+            parser_profile,
+            capture,
+        }) => {
+            if outcome_source
+                != runtime.current_source_version().ok_or_else(|| {
+                    RenderFailure::Invalid("inline outcome source is no longer current".into())
+                })?
+                || source_range != expected_outcome_range
+                || parser_profile != profile
+            {
+                return Err(RenderFailure::Invalid(
+                    "inline outcome stamp differs from its recursive-Green fence".into(),
+                ));
+            }
+            let (facts, link_values, _) = capture.into_parts();
+            Ok(InlineProjection {
+                source,
+                facts,
+                link_values,
+            })
+        }
+        Some(M11InlineProjectionOutcome::Unsupported { .. }) => {
+            Err(RenderFailure::Missing("inline-fail-closed"))
+        }
+        None => {
+            release_inline_capture(&mut job, runtime)?;
+            Err(RenderFailure::Invalid(
+                "completed inline job omitted its disposition".into(),
+            ))
+        }
     }
 }
 
-fn abort_inline_capture(
+fn release_inline_capture(
     job: &mut M11InlineProjectionJob,
     runtime: &mut DocumentRuntime,
 ) -> Result<(), RenderFailure> {
-    job.begin_abort(runtime)
+    job.begin_release(runtime)
         .map_err(|error| RenderFailure::Invalid(format!("begin inline cleanup: {error}")))?;
     for _ in 0..MAX_POLLS {
         if job
-            .poll_abort(runtime, FUEL)
+            .poll_release(runtime, FUEL)
             .map_err(|error| RenderFailure::Invalid(format!("poll inline cleanup: {error}")))?
             .complete()
         {

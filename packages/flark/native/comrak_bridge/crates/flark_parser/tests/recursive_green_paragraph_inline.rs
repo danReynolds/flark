@@ -12,9 +12,9 @@ use flark_parser::block_core::{
     M11DirectBlockPollStatus,
 };
 use flark_parser::{
-    M11ExactController, M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11ParserBinding,
-    M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll, SnapshotLineScanner,
-    SnapshotLineSource,
+    M11ExactController, M11InlineProjectionJob, M11InlineProjectionJobPollStatus,
+    M11InlineProjectionOutcome, M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource,
+    SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource,
 };
 
 fn write_pending_command(
@@ -173,7 +173,7 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
     )
     .expect("bounded inline-leaf query")
     .expect("selected source belongs to an inline-bearing leaf");
-    let mut job = M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_fact_capture(
+    let mut job = M11InlineProjectionJob::new_for_recursive_green_inline_leaf(
         &runtime,
         inline_fence,
         M11ParserBinding::current(profile),
@@ -186,11 +186,22 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
             break;
         }
     }
-    assert_eq!(job.projected_facts_are_authoritative(), Some(true));
-    let kinds = job
-        .take_projected_facts()
-        .expect("captured inline facts")
-        .into_iter()
+    let M11InlineProjectionOutcome::Authoritative {
+        source,
+        source_range,
+        parser_profile,
+        capture,
+    } = job.take_outcome().expect("atomic inline outcome")
+    else {
+        panic!("bold/emphasis/code Paragraph must project authoritatively");
+    };
+    assert_eq!(source, green.source());
+    assert_eq!(source_range, 8..28);
+    assert_eq!(parser_profile, profile);
+    let kinds = capture
+        .facts()
+        .iter()
+        .copied()
         .map(|fact| fact.kind())
         .collect::<Vec<_>>();
     assert_eq!(
@@ -201,13 +212,7 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
             M11InlineProjectionKind::Code,
         ]
     );
-    job.begin_abort(&mut runtime)
-        .expect("begin inline capture cleanup");
-    while !job
-        .poll_abort(&mut runtime, 1)
-        .expect("poll inline capture cleanup")
-        .complete()
-    {}
+    drop(job);
 
     green
         .begin_release(&mut runtime)
