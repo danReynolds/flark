@@ -4,13 +4,9 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Range;
 
-use crate::candidate_manifest::{
-    CandidateAuthority, CandidateManifestAssembler, CanonicalRoleInputs, ManifestError,
-    StrongIdentity,
-};
-use crate::identity::{CandidateGeneration, SourceRevision};
+use crate::candidate_manifest::{ManifestError, StrongIdentity};
+use crate::identity::SourceRevision;
 use crate::measured_sequence::SequenceInspectionReceipt;
-use crate::reference_root::ReferenceRootLimits;
 #[cfg(feature = "progressive-source-probe")]
 use crate::source::{
     OpeningSourceAppendProof, OpeningSourceError, OpeningSourceSnapshot, SourceAppendReceipt,
@@ -66,50 +62,6 @@ impl Default for DocumentRuntimeConfig {
             arena_limits: ArenaLimits::default(),
         }
     }
-}
-
-/// The one newest parse request retained by the runtime.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ParsePlan {
-    generation: CandidateGeneration,
-    source: SourceVersion,
-}
-
-impl ParsePlan {
-    #[must_use]
-    pub const fn generation(self) -> CandidateGeneration {
-        self.generation
-    }
-
-    #[must_use]
-    pub const fn source(self) -> SourceVersion {
-        self.source
-    }
-}
-
-/// Observable identity of the one active candidate.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ActiveCandidateInfo {
-    generation: CandidateGeneration,
-    source: SourceVersion,
-}
-
-impl ActiveCandidateInfo {
-    #[must_use]
-    pub const fn generation(self) -> CandidateGeneration {
-        self.generation
-    }
-
-    #[must_use]
-    pub const fn source(self) -> SourceVersion {
-        self.source
-    }
-}
-
-struct ActiveCandidate {
-    plan: ParsePlan,
-    source: SourceSnapshotLease,
-    manifest: CandidateManifestAssembler,
 }
 
 struct RuntimeSourceFactsJob {
@@ -754,10 +706,10 @@ pub struct PersistentSourceFactsInfo {
 /// Move-only exact-source authority backed by the runtime's current
 /// clean-EOF persistent SourceFacts root.
 ///
-/// The persistent root remains actor-owned by [`DocumentRuntime`]. Candidate
-/// construction revalidates and retains that root later; this capability owns
-/// only the immutable source lease needed by a clean parser fallback plus the
-/// profiles that were authenticated when it was minted.
+/// The persistent root remains actor-owned by [`DocumentRuntime`]. A parser
+/// session revalidates that root before use; this capability owns only the
+/// immutable source lease needed by a clean fallback plus the profiles that
+/// were authenticated when it was minted.
 #[must_use = "persistent source certification must be consumed or deliberately dropped"]
 pub struct PersistentCertifiedSource {
     lease: SourceSnapshotLease,
@@ -798,8 +750,7 @@ impl PersistentCertifiedSource {
         self.lease.duplicate()
     }
 
-    /// Transfers the exact lease and authenticated profiles to parser
-    /// candidate derivation.
+    /// Transfers the exact lease and authenticated profiles to the parser.
     #[must_use]
     pub fn into_parts(self) -> (SourceSnapshotLease, ParserProfileId, SourceFactsScanProfile) {
         (self.lease, self.parser_profile, self.source_facts_profile)
@@ -913,9 +864,6 @@ pub enum DocumentRuntimeError {
     NotOpen {
         state: DocumentState,
     },
-    CandidateAlreadyActive,
-    NoCandidatePlan,
-    NoActiveCandidate,
     SourceFactsAlreadyActive,
     NoSourceFactsJob,
     SourceFactsAlreadyComplete,
@@ -934,10 +882,6 @@ pub enum DocumentRuntimeError {
     SourceReadWindowTooLarge {
         observed: usize,
         limit: usize,
-    },
-    StaleCandidate {
-        expected: CandidateGeneration,
-        actual: CandidateGeneration,
     },
     RetirementBackpressure {
         needed_leases: usize,
@@ -966,11 +910,6 @@ impl fmt::Display for DocumentRuntimeError {
             Self::InvalidConfig => formatter.write_str("document runtime configuration is invalid"),
             Self::AllocationFailed => formatter.write_str("document runtime allocation failed"),
             Self::NotOpen { state } => write!(formatter, "document is not open: {state:?}"),
-            Self::CandidateAlreadyActive => {
-                formatter.write_str("a parse candidate is already active")
-            }
-            Self::NoCandidatePlan => formatter.write_str("no parse candidate is planned"),
-            Self::NoActiveCandidate => formatter.write_str("no parse candidate is active"),
             Self::SourceFactsAlreadyActive => {
                 formatter.write_str("a source-fact job is already active")
             }
@@ -1018,7 +957,6 @@ impl fmt::Display for DocumentRuntimeError {
                 formatter,
                 "source read window has {observed} bytes but the limit is {limit}"
             ),
-            Self::StaleCandidate { .. } => formatter.write_str("candidate generation is stale"),
             Self::RetirementBackpressure {
                 needed_leases,
                 available_leases,
@@ -1036,7 +974,7 @@ impl fmt::Display for DocumentRuntimeError {
                 formatter,
                 "source has {source_bytes} logical bytes but the retirement budget is {limit}"
             ),
-            Self::IdentityExhausted => formatter.write_str("candidate identity space is exhausted"),
+            Self::IdentityExhausted => formatter.write_str("runtime identity space is exhausted"),
             #[cfg(feature = "progressive-source-probe")]
             Self::OpeningAppendBusy => {
                 formatter.write_str("opening append cannot cross an active root-bound runtime job")
@@ -1050,7 +988,7 @@ impl fmt::Display for DocumentRuntimeError {
             Self::SourceFactsAssembly(error) => {
                 write!(formatter, "source-fact assembly failed: {error}")
             }
-            Self::Arena(error) => write!(formatter, "candidate storage failed: {error}"),
+            Self::Arena(error) => write!(formatter, "parser storage failed: {error}"),
         }
     }
 }
@@ -1126,21 +1064,14 @@ impl From<ManifestError> for DocumentRuntimeError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EditReceipt {
     source: SourceEditReceipt,
-    superseded_active_candidate: bool,
     retired_source_leases: usize,
     retired_source_bytes: usize,
-    latest_plan: ParsePlan,
 }
 
 impl EditReceipt {
     #[must_use]
     pub const fn source(&self) -> &SourceEditReceipt {
         &self.source
-    }
-
-    #[must_use]
-    pub const fn superseded_active_candidate(&self) -> bool {
-        self.superseded_active_candidate
     }
 
     /// Returns the retirement leases admitted by this edit.
@@ -1154,21 +1085,14 @@ impl EditReceipt {
     pub const fn retired_source_bytes(&self) -> usize {
         self.retired_source_bytes
     }
-
-    #[must_use]
-    pub const fn latest_plan(&self) -> ParsePlan {
-        self.latest_plan
-    }
 }
 
 /// Receipt for an admitted atomic UTF-16 document edit intent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Utf16EditReceipt {
     source: SourceEditIntentReceipt,
-    superseded_active_candidate: bool,
     retired_source_leases: usize,
     retired_source_bytes: usize,
-    latest_plan: ParsePlan,
 }
 
 impl Utf16EditReceipt {
@@ -1178,12 +1102,6 @@ impl Utf16EditReceipt {
         &self.source
     }
 
-    /// Returns whether this edit superseded the one active parse candidate.
-    #[must_use]
-    pub const fn superseded_active_candidate(&self) -> bool {
-        self.superseded_active_candidate
-    }
-
     /// Returns the retirement leases admitted by this edit.
     #[must_use]
     pub const fn retired_source_leases(&self) -> usize {
@@ -1194,12 +1112,6 @@ impl Utf16EditReceipt {
     #[must_use]
     pub const fn retired_source_bytes(&self) -> usize {
         self.retired_source_bytes
-    }
-
-    /// Returns the one newest parse plan installed by this edit.
-    #[must_use]
-    pub const fn latest_plan(&self) -> ParsePlan {
-        self.latest_plan
     }
 }
 
@@ -1225,7 +1137,7 @@ struct RetirementDemand {
     bytes: usize,
 }
 
-/// Owns the source/candidate lifecycle without owning parser semantics.
+/// Owns the document source and bounded parser storage without parser semantics.
 ///
 /// The runtime is `Send` so a logically serialized Dart isolate may migrate
 /// the endpoint between host OS threads. It is deliberately `!Sync`: one owner
@@ -1244,9 +1156,6 @@ pub struct DocumentRuntime {
     pending_persistent_source_facts_delta: Option<PendingPersistentSourceFactsDelta>,
     live_source_facts_delta_serial: Option<u64>,
     last_source_facts_delta_serial: u64,
-    active_candidate: Option<ActiveCandidate>,
-    latest_plan: Option<ParsePlan>,
-    last_generation: CandidateGeneration,
     retired_sources: VecDeque<SourceSnapshotLease>,
     retained_source_edit_lineages: VecDeque<SourceEditLineage>,
     max_retained_source_edit_lineages: usize,
@@ -1255,7 +1164,6 @@ pub struct DocumentRuntime {
     max_retired_source_bytes: usize,
     arena: PageArena,
     document_identity: StrongIdentity,
-    syntax_profile: u32,
     next_retirement_lane: RetirementLane,
     _not_sync: PhantomData<Cell<()>>,
 }
@@ -1272,14 +1180,13 @@ impl Drop for DocumentRuntime {
                     && self.persistent_source_facts.is_none()
                     && self.pending_persistent_source_facts_delta.is_none()
                     && self.live_source_facts_delta_serial.is_none()
-                    && self.active_candidate.is_none()
                     && self.retired_sources.is_empty()
                     && self.retained_source_edit_lineages.is_empty()
                     && self.retired_source_bytes == 0
                     && arena.resident_nodes == 0
                     && arena.reserved_external_payload_bytes == 0
                     && arena.live_builds == 0,
-                "DocumentRuntime must be explicitly closed and fuel-drained by its parser endpoint; \
+                "DocumentRuntime must be explicitly closed and fuel-drained by its owner; \
                  ordinary Drop cannot yield while releasing persistent source/storage roots"
             );
         }
@@ -1311,8 +1218,6 @@ impl fmt::Debug for DocumentRuntime {
                     .as_ref()
                     .map(|pending| (pending.base.source(), pending.target)),
             )
-            .field("active_candidate", &self.active_candidate())
-            .field("latest_plan", &self.latest_plan)
             .field("retired_source_count", &self.retired_sources.len())
             .field("retired_source_bytes", &self.retired_source_bytes)
             .field(
@@ -1325,7 +1230,7 @@ impl fmt::Debug for DocumentRuntime {
 }
 
 impl DocumentRuntime {
-    /// Creates an open document with exactly one initial parse plan.
+    /// Creates an open document.
     pub fn new(text: &str, config: DocumentRuntimeConfig) -> Result<Self, DocumentRuntimeError> {
         Self::validate_initial_source(text.len(), config)?;
         let source = SourceStore::new(text)?;
@@ -1335,7 +1240,7 @@ impl DocumentRuntime {
     /// Creates an open document around one already validated source replica.
     ///
     /// The store's exact externally assigned revision and immutable root become
-    /// the source authority of the initial parse plan; this constructor never
+    /// the source authority; this constructor never
     /// re-materializes the source from a `String`.
     pub fn from_source_store(
         source: SourceStore,
@@ -1363,7 +1268,7 @@ impl DocumentRuntime {
     /// Advances the runtime's exact read replica through one append-only
     /// opening transition while retaining the same edit revision.
     ///
-    /// Root-bound candidate and source-fact jobs are rejected rather than
+    /// Root-bound source-fact jobs are rejected rather than
     /// silently rebound. The progressive compact-index builder is external to
     /// those jobs and consumes the returned receipt explicitly.
     #[cfg(feature = "progressive-source-probe")]
@@ -1372,8 +1277,7 @@ impl DocumentRuntime {
         proof: OpeningSourceAppendProof,
     ) -> Result<SourceAppendReceipt, DocumentRuntimeError> {
         self.ensure_open()?;
-        if self.active_candidate.is_some()
-            || self.source_facts_job.is_some()
+        if self.source_facts_job.is_some()
             || self.persistent_source_facts.is_some()
             || self.pending_persistent_source_facts_delta.is_some()
         {
@@ -1384,9 +1288,6 @@ impl DocumentRuntime {
             .as_ref()
             .expect("open documents always own a source")
             .version();
-        if self.latest_plan.is_some_and(|plan| plan.source != current) {
-            return Err(DocumentRuntimeError::OpeningAppendBusy);
-        }
         self.ensure_retirement_capacity(RetirementDemand {
             leases: 1,
             bytes: current.byte_len(),
@@ -1397,10 +1298,6 @@ impl DocumentRuntime {
             .expect("open documents always own a source")
             .adopt_opening_append(proof)?;
         let (receipt, retired) = commit.into_parts();
-        if let Some(plan) = &mut self.latest_plan {
-            debug_assert_eq!(plan.source, receipt.previous());
-            plan.source = receipt.current();
-        }
         self.enqueue_retired_source(retired);
         Ok(receipt)
     }
@@ -1430,11 +1327,6 @@ impl DocumentRuntime {
     ) -> Result<Self, DocumentRuntimeError> {
         let arena = PageArena::new(config.arena_limits)?;
         let document_identity = StrongIdentity::allocate(b"document")?;
-        let source_version = source.version();
-        let initial_plan = ParsePlan {
-            generation: CandidateGeneration::FIRST,
-            source: source_version,
-        };
         let mut retired_sources = VecDeque::new();
         let retirement_capacity = config
             .max_retired_sources
@@ -1452,9 +1344,6 @@ impl DocumentRuntime {
             pending_persistent_source_facts_delta: None,
             live_source_facts_delta_serial: None,
             last_source_facts_delta_serial: 0,
-            active_candidate: None,
-            latest_plan: Some(initial_plan),
-            last_generation: CandidateGeneration::FIRST,
             retired_sources,
             retained_source_edit_lineages,
             max_retained_source_edit_lineages: config.max_retained_source_edit_lineages,
@@ -1463,7 +1352,6 @@ impl DocumentRuntime {
             max_retired_source_bytes: config.max_retired_source_bytes,
             arena,
             document_identity,
-            syntax_profile: 1,
             next_retirement_lane: RetirementLane::Source,
             _not_sync: PhantomData,
         })
@@ -2272,8 +2160,8 @@ impl DocumentRuntime {
     ///
     /// This is the narrow clean-parser fallback seam after an incremental
     /// grammar crop declines to converge. It does not duplicate or transfer
-    /// the persistent root; candidate construction must still revalidate and
-    /// retain that root through this same runtime.
+    /// the persistent root; the parser must still revalidate it through this
+    /// same runtime.
     pub fn certify_current_persistent_source(
         &self,
     ) -> Result<PersistentCertifiedSource, DocumentRuntimeError> {
@@ -2541,21 +2429,6 @@ impl DocumentRuntime {
     }
 
     #[must_use]
-    pub const fn latest_plan(&self) -> Option<ParsePlan> {
-        self.latest_plan
-    }
-
-    #[must_use]
-    pub fn active_candidate(&self) -> Option<ActiveCandidateInfo> {
-        self.active_candidate
-            .as_ref()
-            .map(|candidate| ActiveCandidateInfo {
-                generation: candidate.plan.generation,
-                source: candidate.plan.source,
-            })
-    }
-
-    #[must_use]
     pub fn retired_source_count(&self) -> usize {
         self.retired_sources.len()
     }
@@ -2566,15 +2439,15 @@ impl DocumentRuntime {
         self.retired_source_bytes
     }
 
-    /// Returns candidate-arena residency without exposing mutation.
+    /// Returns parser-arena residency without exposing mutation.
     #[must_use]
     pub const fn arena_metrics(&self) -> ArenaMetrics {
         self.arena.metrics()
     }
 
-    /// Borrows the one document-owned arena used by parser publications.
+    /// Borrows the one document-owned arena used by parser roots.
     ///
-    /// Publication capabilities live outside the runtime state machine, but
+    /// Parser capabilities live outside the runtime state machine, but
     /// every read remains scoped to the document owner so no arena handle can
     /// escape into a long-lived producer object.
     pub(crate) const fn producer_arena(&self) -> &PageArena {
@@ -2582,16 +2455,16 @@ impl DocumentRuntime {
     }
 
     /// Mutably borrows the one document-owned arena used by parser builds and
-    /// explicit publication reclamation.
+    /// explicit root reclamation.
     pub(crate) fn producer_arena_mut(&mut self) -> &mut PageArena {
         &mut self.arena
     }
 
-    /// Splits the parser-internal publication borrow across the arena and the
+    /// Splits the parser-internal borrow across the arena and the
     /// current actor-owned persistent SourceFacts authority.
     ///
     /// The facts root remains immutably owned by this runtime while the
-    /// candidate journal retains its measured root in the same arena.
+    /// reference journal retains its measured root in the same arena.
     #[cfg(feature = "parser-internal")]
     pub(crate) fn producer_arena_and_persistent_source_facts(
         &mut self,
@@ -2599,59 +2472,13 @@ impl DocumentRuntime {
         (&mut self.arena, self.persistent_source_facts.as_ref())
     }
 
-    /// Stable capability identity used to reject publication work presented
+    /// Stable capability identity used to reject parser work presented
     /// with a different document runtime after the arena borrow has ended.
     pub(crate) const fn producer_identity(&self) -> StrongIdentity {
         self.document_identity
     }
 
-    /// Starts the latest plan, retaining exactly one candidate source lease.
-    pub fn begin_candidate(&mut self) -> Result<ActiveCandidateInfo, DocumentRuntimeError> {
-        self.ensure_open()?;
-        if self.active_candidate.is_some() {
-            return Err(DocumentRuntimeError::CandidateAlreadyActive);
-        }
-        let plan = self
-            .latest_plan
-            .ok_or(DocumentRuntimeError::NoCandidatePlan)?;
-        let source = self
-            .source
-            .as_ref()
-            .expect("open documents always own a source")
-            .snapshot();
-        let authority = CandidateAuthority::new(
-            self.document_identity,
-            StrongIdentity::allocate(b"publication")?,
-            plan.source,
-            plan.generation,
-            self.syntax_profile,
-        )?;
-        // Actual parser records enter through a private controller endpoint in
-        // the next slice. Empty canonical records keep this lifecycle join
-        // schema-correct without pretending placeholder bytes are parse truth.
-        let arena_limits = self.arena.limits();
-        let manifest = CandidateManifestAssembler::new(
-            &mut self.arena,
-            authority,
-            ReferenceRootLimits {
-                arena: arena_limits,
-                ..ReferenceRootLimits::default()
-            },
-            CanonicalRoleInputs::single(&[][..], &[][..], &[][..]),
-        )?;
-        self.latest_plan = None;
-        self.active_candidate = Some(ActiveCandidate {
-            plan,
-            source,
-            manifest,
-        });
-        Ok(ActiveCandidateInfo {
-            generation: plan.generation,
-            source: plan.source,
-        })
-    }
-
-    /// Admits an edit, keeping only the newest candidate plan.
+    /// Admits an edit and retires the previous immutable source root.
     pub fn apply_edit(
         &mut self,
         expected: SourceVersion,
@@ -2659,7 +2486,6 @@ impl DocumentRuntime {
         replacement: &str,
     ) -> Result<EditReceipt, DocumentRuntimeError> {
         self.ensure_open()?;
-        let generation = self.next_generation()?;
         let current = self
             .source
             .as_ref()
@@ -2701,24 +2527,11 @@ impl DocumentRuntime {
         self.invalidate_persistent_source_facts_delta();
         let (source_receipt, retired_source, lineage) = commit.into_parts_with_lineage();
         self.retain_source_edit_lineage(lineage);
-        let superseded_active_candidate = self.active_candidate.is_some();
-        if let Some(candidate) = self.active_candidate.take() {
-            self.retire_candidate(candidate);
-        }
         self.enqueue_retired_source(retired_source);
-
-        let latest_plan = ParsePlan {
-            generation,
-            source: source_receipt.current(),
-        };
-        self.last_generation = generation;
-        self.latest_plan = Some(latest_plan);
         Ok(EditReceipt {
             source: source_receipt,
-            superseded_active_candidate,
             retired_source_leases: retirement.leases,
             retired_source_bytes: retirement.bytes,
-            latest_plan,
         })
     }
 
@@ -2726,8 +2539,7 @@ impl DocumentRuntime {
     ///
     /// Source validation and target construction happen off-authority. The
     /// target-size and retirement budgets are then checked before the prepared
-    /// root can become current, so every rejection leaves the source,
-    /// candidate, and newest plan untouched.
+    /// root can become current, so every rejection leaves the source untouched.
     pub fn apply_utf16_edit_intent(
         &mut self,
         expected: SourceVersion,
@@ -2735,7 +2547,6 @@ impl DocumentRuntime {
         operations: &[SourceUtf16Operation<'_>],
     ) -> Result<Utf16EditReceipt, DocumentRuntimeError> {
         self.ensure_open()?;
-        let generation = self.next_generation()?;
         let current = self
             .source
             .as_ref()
@@ -2773,94 +2584,12 @@ impl DocumentRuntime {
         self.invalidate_persistent_source_facts_delta();
         let (source_receipt, retired_source, lineage) = commit.into_parts_with_lineage();
         self.retain_source_edit_lineage(lineage);
-        let superseded_active_candidate = self.active_candidate.is_some();
-        if let Some(candidate) = self.active_candidate.take() {
-            self.retire_candidate(candidate);
-        }
         self.enqueue_retired_source(retired_source);
-
-        let latest_plan = ParsePlan {
-            generation,
-            source: source_receipt.current(),
-        };
-        self.last_generation = generation;
-        self.latest_plan = Some(latest_plan);
         Ok(Utf16EditReceipt {
             source: source_receipt,
-            superseded_active_candidate,
             retired_source_leases: retirement.leases,
             retired_source_bytes: retirement.bytes,
-            latest_plan,
         })
-    }
-
-    /// Retires the active attempt and plans a fresh attempt on current source.
-    pub fn supersede_candidate(&mut self) -> Result<ParsePlan, DocumentRuntimeError> {
-        self.ensure_open()?;
-        if self.active_candidate.is_none() {
-            return Err(DocumentRuntimeError::NoActiveCandidate);
-        }
-        let retirement = RetirementDemand {
-            leases: 1,
-            bytes: self
-                .active_candidate
-                .as_ref()
-                .expect("candidate presence was checked")
-                .source
-                .version()
-                .byte_len(),
-        };
-        self.ensure_retirement_capacity(retirement)?;
-        let generation = self.next_generation()?;
-        let source = self
-            .source
-            .as_ref()
-            .expect("open documents always own a source")
-            .version();
-        let candidate = self
-            .active_candidate
-            .take()
-            .expect("candidate presence was checked");
-        self.rollback_pending_persistent_source_facts_delta();
-        self.invalidate_persistent_source_facts_delta();
-        self.retire_candidate(candidate);
-        let plan = ParsePlan { generation, source };
-        self.last_generation = generation;
-        self.latest_plan = Some(plan);
-        Ok(plan)
-    }
-
-    /// Ends and retires the named M1.0 attempt.
-    ///
-    /// This is cancellation-shaped until the parser supplies a typed manifest
-    /// owner and an atomic publication transaction; it must not be mistaken for
-    /// accepting parser output.
-    pub fn complete_candidate(
-        &mut self,
-        generation: CandidateGeneration,
-    ) -> Result<(), DocumentRuntimeError> {
-        self.ensure_open()?;
-        let active = self
-            .active_candidate
-            .as_ref()
-            .ok_or(DocumentRuntimeError::NoActiveCandidate)?;
-        if active.plan.generation != generation {
-            return Err(DocumentRuntimeError::StaleCandidate {
-                expected: generation,
-                actual: active.plan.generation,
-            });
-        }
-        let retirement = RetirementDemand {
-            leases: 1,
-            bytes: active.source.version().byte_len(),
-        };
-        self.ensure_retirement_capacity(retirement)?;
-        let active = self
-            .active_candidate
-            .take()
-            .expect("candidate presence was checked");
-        self.retire_candidate(active);
-        Ok(())
     }
 
     /// Transfers all live source leases into Closing. Repeated calls are no-ops.
@@ -2869,21 +2598,17 @@ impl DocumentRuntime {
             DocumentState::Closed | DocumentState::Closing => return Ok(false),
             DocumentState::Open => {}
         }
-        // Close is terminal and cannot admit more work, so its final one or two
+        // Close is terminal and cannot admit more work, so its final source
         // leases use the pre-reserved close margin rather than becoming
         // impossible solely because the open-state backlog is at its cap.
         self.cancel_source_facts();
         self.release_persistent_source_facts();
-        if let Some(candidate) = self.active_candidate.take() {
-            self.retire_candidate(candidate);
-        }
         let source = self
             .source
             .take()
             .expect("open documents always own a source")
             .into_snapshot();
         self.enqueue_retired_source(source);
-        self.latest_plan = None;
         self.retained_source_edit_lineages.clear();
         self.state = DocumentState::Closing;
         Ok(true)
@@ -2907,7 +2632,7 @@ impl DocumentRuntime {
         Ok(self.poll_retirement(fuel))
     }
 
-    /// Drains superseded source and candidate storage in both Open and Closing.
+    /// Drains superseded source and parser storage in both Open and Closing.
     pub fn poll_retirement(&mut self, fuel: usize) -> DrainPoll {
         let mut released_source_leases = 0;
         let mut released_source_bytes = 0;
@@ -3051,12 +2776,6 @@ impl DocumentRuntime {
         }
     }
 
-    fn next_generation(&self) -> Result<CandidateGeneration, DocumentRuntimeError> {
-        self.last_generation
-            .checked_next()
-            .ok_or(DocumentRuntimeError::IdentityExhausted)
-    }
-
     fn ensure_retirement_capacity(
         &self,
         needed: RetirementDemand,
@@ -3081,22 +2800,9 @@ impl DocumentRuntime {
 
     fn edit_retirement_demand(&self, current: SourceVersion) -> RetirementDemand {
         RetirementDemand {
-            leases: 1 + usize::from(self.active_candidate.is_some()),
-            bytes: current.byte_len().saturating_add(
-                self.active_candidate
-                    .as_ref()
-                    .map_or(0, |candidate| candidate.source.version().byte_len()),
-            ),
+            leases: 1,
+            bytes: current.byte_len(),
         }
-    }
-
-    fn retire_candidate(&mut self, candidate: ActiveCandidate) {
-        let mut manifest = candidate.manifest;
-        manifest
-            .begin_abort(&mut self.arena)
-            .expect("runtime-owned candidate manifests remain live in their arena");
-        drop(manifest);
-        self.enqueue_retired_source(candidate.source);
     }
 
     fn enqueue_retired_source(&mut self, source: SourceSnapshotLease) {

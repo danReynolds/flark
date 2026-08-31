@@ -508,6 +508,7 @@ pub(crate) struct CanonicalRoleInputs {
 }
 
 impl CanonicalRoleInputs {
+    #[cfg(test)]
     pub(crate) fn single(
         source_facts: impl Into<Box<[u8]>>,
         green: impl Into<Box<[u8]>>,

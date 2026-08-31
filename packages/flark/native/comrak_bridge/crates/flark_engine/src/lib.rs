@@ -43,12 +43,12 @@ mod parser_pages;
 mod parser_scratch;
 
 pub use document::{
-    ActiveCandidateInfo, DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError,
-    DocumentState, DrainPoll, EditReceipt, ExactUnchangedPrefixWitness,
-    ExactUnchangedSuffixWitness, IncrementalSourceFactsPlan, ParsePlan, PersistentCertifiedSource,
-    PersistentSourceFactsDeltaRootAuthority, PersistentSourceFactsDeltaScanWork,
-    PersistentSourceFactsDeltaWitness, PersistentSourceFactsInfo, PersistentSourceFactsPageInfo,
-    RuntimeSourceFactsPoll, Utf16EditReceipt,
+    DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError, DocumentState, DrainPoll,
+    EditReceipt, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness,
+    IncrementalSourceFactsPlan, PersistentCertifiedSource, PersistentSourceFactsDeltaRootAuthority,
+    PersistentSourceFactsDeltaScanWork, PersistentSourceFactsDeltaWitness,
+    PersistentSourceFactsInfo, PersistentSourceFactsPageInfo, RuntimeSourceFactsPoll,
+    Utf16EditReceipt,
 };
 #[cfg(feature = "progressive-source-probe")]
 pub use identity::SourceLoadId;

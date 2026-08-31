@@ -149,6 +149,7 @@ impl SourceLoadId {
 pub struct CandidateGeneration(u64);
 
 impl CandidateGeneration {
+    #[cfg(test)]
     pub(crate) const FIRST: Self = Self(1);
 
     pub(crate) const fn from_wire(value: u64) -> Option<Self> {
@@ -159,6 +160,7 @@ impl CandidateGeneration {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn checked_next(self) -> Option<Self> {
         self.0.checked_add(1).map(Self)
     }
