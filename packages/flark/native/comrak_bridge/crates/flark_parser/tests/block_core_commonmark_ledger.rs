@@ -8,17 +8,17 @@ use std::{
 
 use flark_engine::parser_internal::{
     M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenEvent,
-    M11RecursiveGreenFrameId, M11RecursiveGreenFrameQueryLimits, M11RecursiveGreenLogicalAction,
-    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11ReferenceJournal, M11ReferenceJournalRoot,
-    M11ReferenceJournalStatus, M11ReferenceResolution, M11ReferenceResolver,
-    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
+    M11RecursiveGreenFrameId, M11RecursiveGreenLogicalAction, M11RecursiveGreenPoint,
+    M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits, M11ReferenceJournal,
+    M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceResolution,
+    M11ReferenceResolver, M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity,
     SOURCE_CURSOR_WINDOW_BYTES,
 };
 use flark_parser::block_core::{
-    resolve_m11_recursive_green_inline_leaf_fence, M11BlockWriter, M11BlockWriterOfferStatus,
+    resolve_m11_recursive_green_inline_leaf_row_fence, M11BlockWriter, M11BlockWriterOfferStatus,
     M11BlockWriterPollStatus, M11DirectBlockController, M11DirectBlockControllerError,
     M11DirectBlockError, M11DirectBlockPollStatus, M11DirectBlockUnsupported,
     M11ReferenceRendezvous, M11ReferenceRendezvousStatus, M11_DIRECT_BLOCK_MAX_LEXICAL_SLACK,
@@ -1351,13 +1351,14 @@ fn project_inline_leaf(
         .ok_or_else(|| RenderFailure::Invalid("Paragraph point is not UTF-8 aligned".into()))?
         .encode_utf16()
         .count();
-    let limits = M11RecursiveGreenFrameQueryLimits::new(4096, 1_000_000, 4096, 1_000_000)
+    let limits = M11RecursiveGreenRowQueryLimits::new(1, 4096, 1_000_000, 4096, 1_000_000)
         .expect("nonzero semantic gate limits");
-    let fence = resolve_m11_recursive_green_inline_leaf_fence(
+    let fence = resolve_m11_recursive_green_inline_leaf_row_fence(
         runtime,
         green,
         M11RecursiveGreenPoint::new(point, utf16, SourceBoundaryAffinity::After),
         limits,
+        1_000_000,
     )
     .map_err(|_| RenderFailure::Missing("projected-inline-authority"))?
     .ok_or(RenderFailure::Missing("projected-inline-authority"))?;

@@ -1,6 +1,6 @@
 //! Session-owned recursive Green and reference authority.
 //!
-//! This is the production migration seam for the candidate endpoint.  A clean
+//! This is the production ownership boundary for the direct parser. A clean
 //! build is explicit caller-fuelled work performed once when a document is
 //! opened.  The resulting roots remain owned by the session, so hot-inline
 //! queries never rebuild or discard document structure.
@@ -19,9 +19,9 @@ use std::{collections::btree_map, slice};
 #[cfg(any(test, feature = "m11-compact-probe"))]
 use flark_engine::parser_internal::M11RecursiveGreenEvent;
 use flark_engine::parser_internal::{
-    M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
-    M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRoot,
-    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenRowWindow,
+    M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenLocation,
+    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
+    M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenRowWindow,
     M11RecursiveGreenStoragePageIdentity, M11RecursiveGreenStructuralSpliceSelection,
     M11ReferenceJournal, M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError,
     M11ReferenceJournalRangeReplacement, M11ReferenceJournalRangeReplacementStatus,
@@ -38,23 +38,21 @@ use flark_engine::{
 use flark_engine::{OpeningSourceAppendProof, OpeningSourceStore, OpeningSourceVersion};
 
 use crate::block_core::{
-    resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
-    BlockCommand, BlockKind, M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption,
-    M11BlockRestartCheckpoint, M11BlockRestartError, M11BlockStructuralAdoptionReceipt,
-    M11BlockTerminalCheckpointAdoption, M11BlockTerminalConvergenceCheckpoint, M11BlockWriter,
-    M11BlockWriterError, M11BlockWriterOfferStatus, M11BlockWriterPollStatus,
-    M11DirectBlockController, M11DirectBlockControllerError, M11DirectBlockError,
-    M11DirectBlockPollStatus, M11DirectSourceLineAdmission, M11ReferenceRendezvous,
-    M11ReferenceRendezvousError, M11ReferenceRendezvousStatus, SourceMetric,
+    resolve_m11_recursive_green_inline_leaf_row_fence, BlockCommand, BlockKind,
+    M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption, M11BlockRestartCheckpoint,
+    M11BlockRestartError, M11BlockStructuralAdoptionReceipt, M11BlockTerminalCheckpointAdoption,
+    M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterError,
+    M11BlockWriterOfferStatus, M11BlockWriterPollStatus, M11DirectBlockController,
+    M11DirectBlockControllerError, M11DirectBlockError, M11DirectBlockPollStatus,
+    M11DirectSourceLineAdmission, M11ReferenceRendezvous, M11ReferenceRendezvousError,
+    M11ReferenceRendezvousStatus, SourceMetric,
 };
 #[cfg(any(test, feature = "m11-compact-probe"))]
 use crate::block_core::{
     M11CompactProbeCheckpointFacts, M11CompactProbeFirstSlice, M11CompactProbeWriterReceipt,
     M11CompactReferenceJournal, M11CompactReferenceReceipt, M11DirectDurableBlockRestart,
 };
-use crate::recursive_green_paragraph_inline::{
-    M11RecursiveGreenInlineLeafPreparation, M11RecursiveGreenParagraphInlinePreparation,
-};
+use crate::recursive_green_inline_leaf::M11RecursiveGreenInlineLeafPreparation;
 use crate::source_adapter::SnapshotLineRetainedPoll;
 use crate::{
     M11ExactController, M11PhysicalLineFacts, M11SourceLinePollStatus, M11SourceLineSource,
@@ -78,11 +76,10 @@ const CHECKPOINT_PAGE_CAPACITY: usize = 64;
 #[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_RESTART_PAGE_BYTES: usize = 4 * 1024;
 
-// RFC 029 Experiment B: revision-local compact-index updates. Probe-only
-// machinery behind the compact-probe discipline; reachable from tests and the
-// probe feature, never from production builds.
-#[cfg(any(test, feature = "m11-compact-probe"))]
-#[cfg_attr(not(test), allow(dead_code))]
+// RFC 029 Experiment B: explicit non-product revision-local compact-index
+// experiment. Only its named test feature compiles this unintegrated prototype;
+// `m11-compact-probe` and progressive open do not.
+#[cfg(all(test, feature = "compact-revision-experiment"))]
 mod compact_index_revision;
 
 #[derive(Debug)]
@@ -1960,6 +1957,7 @@ impl M11CompactCheckpointJournal {
         }
     }
 
+    #[cfg(test)]
     fn encoded_entry(&self, index: usize) -> Result<Vec<u8>, &'static str> {
         let entry = self
             .entries
@@ -1994,6 +1992,7 @@ impl M11CompactCheckpointJournal {
         Ok(encoded)
     }
 
+    #[cfg(test)]
     fn encoded_writer_entry(&self, index: usize) -> Result<Vec<u8>, &'static str> {
         let entry = self
             .entries
@@ -2031,6 +2030,7 @@ impl M11CompactCheckpointJournal {
         Ok(encoded)
     }
 
+    #[cfg(test)]
     fn begin_cold_slice_probe(
         &self,
         index: usize,
@@ -2156,6 +2156,7 @@ impl M11CompactCheckpointJournal {
         ))
     }
 
+    #[cfg(test)]
     fn validate_metadata_and_durable_samples(&self) -> Result<(), &'static str> {
         let first = self
             .entries
@@ -4647,52 +4648,6 @@ impl M11PersistentRecursiveGreenSession {
         )
     }
 
-    pub fn prepare_paragraph_inline(
-        &self,
-        runtime: &DocumentRuntime,
-        point: M11RecursiveGreenPoint,
-    ) -> Result<M11RecursiveGreenParagraphInlinePreparation, M11PersistentRecursiveGreenSessionError>
-    {
-        if runtime.current_source_version() != Some(self.source) || self.release_begun {
-            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green session is not the current live source",
-            ));
-        }
-        let limits = M11RecursiveGreenFrameQueryLimits::new(64, 8192, 64, 8192).ok_or(
-            M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green query limits must be nonzero",
-            ),
-        )?;
-        let fence = resolve_m11_recursive_green_paragraph_fence(
-            runtime,
-            self.green
-                .as_ref()
-                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "recursive-Green session omitted its structural root",
-                ))?,
-            point,
-            limits,
-        )?
-        .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-            "recursive-Green point is not owned by a final Paragraph",
-        ))?;
-        let block_source = to_u32_range(fence.block_source_range())?;
-        let block_source_utf16 = to_u32_range(fence.block_source_utf16_range())?;
-        let inline_source = to_u32_range(fence.inline_source_range())?;
-        let inline_source_utf16 = to_u32_range(fence.inline_source_utf16_range())?;
-        let query_receipt = fence.receipt();
-        Ok(
-            M11RecursiveGreenParagraphInlinePreparation::from_persistent_session(
-                block_source,
-                block_source_utf16,
-                inline_source,
-                inline_source_utf16,
-                query_receipt,
-                fence,
-            ),
-        )
-    }
-
     pub fn begin_release(
         &mut self,
         runtime: &mut DocumentRuntime,
@@ -4812,7 +4767,7 @@ pub struct M11CompactViewportProbe {
 pub enum M11CompactViewportProbeError {
     Session(M11PersistentRecursiveGreenSessionError),
     Inline(crate::M11InlineProjectionJobError),
-    Preparation(crate::M11RecursiveGreenParagraphPreparationError),
+    Preparation(crate::M11RecursiveGreenInlineLeafPreparationError),
     InvalidState(&'static str),
 }
 
@@ -4874,8 +4829,8 @@ impl From<crate::M11InlineProjectionJobError> for M11CompactViewportProbeError {
 }
 
 #[cfg(feature = "m11-compact-probe")]
-impl From<crate::M11RecursiveGreenParagraphPreparationError> for M11CompactViewportProbeError {
-    fn from(error: crate::M11RecursiveGreenParagraphPreparationError) -> Self {
+impl From<crate::M11RecursiveGreenInlineLeafPreparationError> for M11CompactViewportProbeError {
+    fn from(error: crate::M11RecursiveGreenInlineLeafPreparationError) -> Self {
         Self::Preparation(error)
     }
 }
@@ -4926,7 +4881,7 @@ impl M11CompactViewportProbe {
             runtime, &self.root, point,
         ) {
             Ok(prepared) => prepared,
-            Err(crate::M11RecursiveGreenParagraphPreparationError::NotParagraph) => {
+            Err(crate::M11RecursiveGreenInlineLeafPreparationError::NotInlineLeaf) => {
                 return Ok(None)
             }
             Err(error) => return Err(error.into()),
@@ -6874,6 +6829,153 @@ mod tests {
     }
 
     #[test]
+    fn mixed_slice_batch_preserves_indexed_inline_admission() {
+        use crate::block_core::{
+            m11_recursive_green_row_presentation, M11RecursiveGreenInlineLeafKind,
+            M11RecursiveGreenRowPresentation,
+        };
+        use flark_engine::parser_internal::M11RecursiveGreenRowQueryLimits;
+
+        let source = (0..12)
+            .map(|index| {
+                format!(
+                    "Paragraph {index} has **bold**.\n\n\
+                     Heading 🦀 {index}\n---\n\n\
+                     ***\n\n\
+                     ```text\nliteral {index}\n```\n\n"
+                )
+            })
+            .collect::<String>();
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("mixed batch runtime");
+        let plan = M11PersistentRecursiveGreenCleanPlan::new(
+            runtime.snapshot_current_source().expect("scanner lease"),
+            runtime.snapshot_current_source().expect("writer lease"),
+            1,
+        )
+        .expect("mixed batch plan");
+        let mut build = plan
+            .begin_compact_probe(&mut runtime)
+            .expect("mixed batch compact build");
+        let slice = loop {
+            let poll = build.poll(&mut runtime, 64).expect("poll mixed slice");
+            if let Some(slice) = build.take_compact_probe_first_slice() {
+                break slice;
+            }
+            assert_ne!(
+                poll.status(),
+                M11PersistentRecursiveGreenBuildStatus::Complete,
+                "mixed source must publish its first slice before EOF"
+            );
+        };
+        assert_eq!(slice.physical_start, SourceMetric::default());
+        assert_eq!(slice.row_base, 0);
+        let slice_end = usize::try_from(slice.physical_end.bytes()).expect("mixed slice end");
+        let mut root = build_green_slice_from_primary_events(
+            &mut runtime,
+            0,
+            slice_end,
+            0,
+            &[],
+            &slice.events,
+        );
+        let limits = M11RecursiveGreenRowQueryLimits::new(64, 4_096, 32_768, 64, 32_768)
+            .expect("mixed batch query limits");
+        let (window, preparations) = crate::prepare_m11_recursive_green_slice_inline_leaf_rows(
+            &runtime,
+            &root,
+            M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+            limits,
+        )
+        .expect("mixed slice batch")
+        .into_parts();
+        assert_eq!(window.rows().len(), preparations.len());
+
+        let mut saw_paragraph = false;
+        let mut saw_heading = false;
+        let mut saw_thematic_break = false;
+        let mut saw_code_block = false;
+        for (row, batch_preparation) in window.rows().iter().zip(preparations) {
+            match m11_recursive_green_row_presentation(&runtime, row)
+                .expect("mixed row presentation")
+            {
+                M11RecursiveGreenRowPresentation::Plain => saw_paragraph = true,
+                M11RecursiveGreenRowPresentation::Heading { .. } => saw_heading = true,
+                M11RecursiveGreenRowPresentation::ThematicBreak => saw_thematic_break = true,
+                M11RecursiveGreenRowPresentation::CodeBlock { .. } => saw_code_block = true,
+                presentation => panic!("unexpected mixed-row presentation: {presentation:?}"),
+            }
+            let point = M11RecursiveGreenPoint::new(
+                usize::try_from(row.physical_range().start).expect("mixed row byte"),
+                usize::try_from(row.physical_utf16_range().start).expect("mixed row UTF-16"),
+                SourceBoundaryAffinity::After,
+            );
+            match M11RecursiveGreenInlineLeafKind::from_green_kind(row.kind()) {
+                Some(expected_kind) => {
+                    let batch_preparation = batch_preparation
+                        .expect("Paragraph and Heading rows have aligned batch preparations");
+                    let single = crate::prepare_m11_recursive_green_slice_inline_leaf(
+                        &runtime, &root, point,
+                    )
+                    .expect("mixed inline row per-point preparation");
+                    assert_eq!(batch_preparation.kind(), expected_kind);
+                    assert_eq!(single.kind(), batch_preparation.kind());
+                    assert_eq!(
+                        single.block_source_range(),
+                        batch_preparation.block_source_range()
+                    );
+                    assert_eq!(
+                        single.block_source_utf16_range(),
+                        batch_preparation.block_source_utf16_range()
+                    );
+                    assert_eq!(
+                        single.inline_source_range(),
+                        batch_preparation.inline_source_range()
+                    );
+                    assert_eq!(
+                        single.inline_source_utf16_range(),
+                        batch_preparation.inline_source_utf16_range()
+                    );
+                }
+                None => {
+                    assert!(
+                        batch_preparation.is_none(),
+                        "non-inline row retained an index-misaligned preparation"
+                    );
+                    match crate::prepare_m11_recursive_green_slice_inline_leaf(
+                        &runtime, &root, point,
+                    ) {
+                        Err(crate::M11RecursiveGreenInlineLeafPreparationError::NotInlineLeaf) => {}
+                        Err(error) => panic!("non-inline per-point rejection changed: {error}"),
+                        Ok(_) => panic!("non-inline row unexpectedly prepared per point"),
+                    }
+                }
+            }
+        }
+        assert!(saw_paragraph);
+        assert!(saw_heading);
+        assert!(saw_thematic_break);
+        assert!(saw_code_block);
+
+        while build
+            .poll(&mut runtime, 4_096)
+            .expect("finish mixed compact source")
+            .status()
+            != M11PersistentRecursiveGreenBuildStatus::Complete
+        {}
+        let mut session = build.take_session().expect("mixed compact session");
+        release_session(&mut runtime, &mut session);
+        root.begin_release(&mut runtime)
+            .expect("begin mixed slice release");
+        while !root
+            .poll_release(&mut runtime, 256)
+            .expect("poll mixed slice release")
+            .complete()
+        {}
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
     fn compact_probe_abandons_unbounded_first_slice() {
         let source = format!(
             "~~~markdown\n{}",
@@ -7642,7 +7744,8 @@ mod tests {
     /// as raw payload bytes (parser and writer records) and as manifest
     /// metadata under the expected uniform +1 byte/UTF-16 shift. The receipt
     /// prints as JSON; run explicitly in release mode:
-    /// `cargo test --release -p flark-parser --lib -- --ignored relocatability --nocapture`
+    /// `cargo test --release -p flark-parser --lib --features compact-revision-experiment compact_index_revision_ -- --include-ignored --nocapture`
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     #[ignore = "release-mode Experiment B relocatability probe"]
     fn compact_checkpoint_relocatability_under_bof_insertion() {
@@ -7689,10 +7792,12 @@ mod tests {
         reference_relocatability_cell("references", &reference_source);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn relocatability_cell(cell: &str, base_source: &str) {
         relocatability_cell_with_insertion(cell, base_source, "x");
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn reference_relocatability_cell(cell: &str, base_source: &str) {
         let edited_source = format!("x{base_source}");
         let byte_delta = 1_u32;
@@ -7774,6 +7879,7 @@ mod tests {
         close_runtime(&mut edited_runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn relocatability_cell_with_insertion(cell: &str, base_source: &str, insertion: &str) {
         let edited_source = format!("{insertion}{base_source}");
         let byte_delta = insertion.len() as u64;
@@ -7986,6 +8092,7 @@ mod tests {
         close_runtime(&mut edited_runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     use super::compact_index_revision::{
         M11CompactIndexRevision, M11CompactIndexRevisionStatus, M11CompactIndexRevisionUpdate,
         M11CompactRevisionCarriedDeltas, M11CompactRevisionEdit, M11CompactRevisionReferences,
@@ -7994,6 +8101,7 @@ mod tests {
 
     /// Builds the committed-edit description for one literal replacement in
     /// `base_source`, deriving both coordinate dimensions from the fixture.
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn committed_revision_edit(
         base_source: &str,
         range: Range<usize>,
@@ -8013,6 +8121,7 @@ mod tests {
 
     /// Carried deltas for a plain paragraph-content edit: the replaced text
     /// appears verbatim in the logical projection, and nothing else moves.
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn paragraph_content_carried(
         byte_delta: i64,
         utf16_delta: i64,
@@ -8026,6 +8135,7 @@ mod tests {
 
     /// First byte at or after `from` that sits strictly inside an ASCII word,
     /// so replacing or extending it preserves block structure.
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn interior_word_letter_at_or_after(source: &str, from: usize) -> usize {
         let bytes = source.as_bytes();
         (from.max(1)..bytes.len().saturating_sub(1))
@@ -8037,6 +8147,7 @@ mod tests {
             .expect("fixture has an interior word letter")
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn replacement_letter_at(source: &str, index: usize) -> &'static str {
         if source.as_bytes()[index] == b'q' {
             "z"
@@ -8045,6 +8156,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn take_compact_index_parts(
         runtime: &mut DocumentRuntime,
         session: &mut M11PersistentRecursiveGreenSession,
@@ -8064,6 +8176,7 @@ mod tests {
         (journal, resolver)
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn drive_compact_index_revision(
         runtime: &mut DocumentRuntime,
         base: M11CompactCheckpointJournal,
@@ -8091,6 +8204,7 @@ mod tests {
     /// records and equal metadata after coordinate translation — and the
     /// carried reference index must equal the rebuilt one under the same
     /// translation.
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn assert_compact_revision_matches_clean_rebuild(
         revision: &M11CompactIndexRevision,
         rebuild: &M11PersistentRecursiveGreenSession,
@@ -8150,6 +8264,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_revision_remap_translates_dimensions_and_rejects_dead_coordinates() {
         let metric = |bytes, utf16| SourceMetric::new(bytes, utf16).expect("test metric");
@@ -8272,6 +8387,7 @@ mod tests {
         assert!(M11CompactRevisionRemap::from_edits(&[replace, overlapping]).is_err());
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_index_revision_middle_replacement_converges_and_splices() {
         const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
@@ -8329,6 +8445,7 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_index_revision_insertion_translates_suffix_through_remap() {
         const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
@@ -8364,6 +8481,7 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_index_revision_bof_edit_resumes_from_document_start() {
         const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
@@ -8402,6 +8520,7 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_index_revision_eof_edit_replays_bounded_tail() {
         const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
@@ -8436,6 +8555,7 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_index_revision_structural_edit_replays_to_eof_without_convergence() {
         const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
@@ -8483,6 +8603,7 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn reference_tail_fixture() -> (String, usize) {
         const BLOCK: &str = "Paragraph uses [ref3] with **bold** and plain words.\n\n";
         let mut source = repeat_ascii_exact("", BLOCK, 32 * 1024);
@@ -8499,6 +8620,7 @@ mod tests {
         (source, definitions_start)
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_index_revision_carries_references_past_a_definition_free_window() {
         let (base_source, definitions_start) = reference_tail_fixture();
@@ -8540,6 +8662,7 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     fn compact_index_revision_definition_bearing_window_requires_reference_rebuild() {
         let (base_source, definitions_start) = reference_tail_fixture();
@@ -8587,6 +8710,7 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     struct RevisionLocalityCellOutcome {
         receipt: super::compact_index_revision::M11CompactIndexRevisionReceipt,
     }
@@ -8595,6 +8719,7 @@ mod tests {
     /// index, commit one ordinary edit, converge the index through the
     /// revision updater, and verify entry-by-entry equality against a clean
     /// full rebuild of the edited source. Prints one JSON receipt line.
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     fn run_revision_locality_cell(
         cell: &str,
         base_source: &str,
@@ -8703,7 +8828,8 @@ mod tests {
     /// the bounded cells must also converge inside the 64 KiB replay gate,
     /// while the spanning-fence adversary is the declared no-restart-record
     /// class whose honest cost is the printed receipt, not a locality claim.
-    /// `cargo test --release -p flark-parser --lib -- --ignored revision_hostile --nocapture`
+    /// `cargo test --release -p flark-parser --lib --features compact-revision-experiment compact_index_revision_ -- --include-ignored --nocapture`
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     #[ignore = "release-mode Experiment B hostile-shape revision probe"]
     fn compact_index_revision_hostile_shapes() {
@@ -8953,7 +9079,8 @@ mod tests {
         );
     }
 
-    /// `cargo test --release -p flark-parser --lib -- --ignored revision_locality --nocapture`
+    /// `cargo test --release -p flark-parser --lib --features compact-revision-experiment compact_index_revision_ -- --include-ignored --nocapture`
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     #[test]
     #[ignore = "release-mode Experiment B revision-locality probe"]
     fn compact_index_revision_locality_under_ordinary_edits() {

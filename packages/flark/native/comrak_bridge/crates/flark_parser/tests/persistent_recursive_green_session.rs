@@ -178,31 +178,20 @@ fn clean_session_retains_green_and_reference_authority_for_late_queries() {
 
     let point = source.find("bold").expect("late paragraph point");
     let prepared = session
-        .prepare_paragraph_inline(
-            &runtime,
-            M11RecursiveGreenPoint::new(point, point, SourceBoundaryAffinity::After),
-        )
-        .expect("retained Green query");
-    assert_eq!(
-        &source[prepared.block_source_range().start as usize
-            ..prepared.block_source_range().end as usize],
-        "Late **bold** [a].\n"
-    );
-    assert_eq!(prepared.driver_work(), 0);
-
-    let prepared_leaf = session
         .prepare_inline_leaf(
             &runtime,
             M11RecursiveGreenPoint::new(point, point, SourceBoundaryAffinity::After),
         )
         .expect("bounded retained Green row query");
     assert_eq!(
-        prepared_leaf.block_source_range(),
-        prepared.block_source_range()
+        &source[prepared.block_source_range().start as usize
+            ..prepared.block_source_range().end as usize],
+        "Late **bold** [a].\n"
     );
+    let inline = prepared.inline_source_range();
     assert_eq!(
-        prepared_leaf.inline_source_range(),
-        prepared.inline_source_range()
+        &source[inline.start as usize..inline.end as usize],
+        "Late **bold** [a]."
     );
 
     release_session(&mut runtime, &mut session);
@@ -922,7 +911,7 @@ fn large_session_keeps_two_late_edits_local_and_reference_rebind_constant() {
     let target2_text = "Late **strong** and _fluid_ [a].\n";
     let target2_start = target1_start;
     let prepared = session2
-        .prepare_paragraph_inline(
+        .prepare_inline_leaf(
             &runtime,
             M11RecursiveGreenPoint::new(
                 target2_start + 10,
@@ -935,7 +924,6 @@ fn large_session_keeps_two_late_edits_local_and_reference_rebind_constant() {
         prepared.block_source_range(),
         target2_start as u32..(target2_start + target2_text.len()) as u32
     );
-    assert_eq!(prepared.driver_work(), 0);
 
     release_session(&mut runtime, &mut session2);
     runtime.begin_close().expect("begin close");

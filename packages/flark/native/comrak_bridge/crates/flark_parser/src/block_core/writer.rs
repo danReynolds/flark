@@ -571,7 +571,7 @@ fn encode_compact_container_restart(
     Ok(Some(encoded))
 }
 
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(test)]
 fn decode_compact_container_restart(
     encoded: &[u8],
     expected_kinds: &[BlockKind],
@@ -3556,7 +3556,7 @@ impl M11BlockWriter {
         Ok(())
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn resume_compact_probe_containers(
         runtime: &DocumentRuntime,
         lease: SourceSnapshotLease,

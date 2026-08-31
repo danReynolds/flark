@@ -330,7 +330,7 @@ impl M11CompactReferenceJournal {
 }
 
 /// One retained reference record flattened for relocatability probes.
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(all(test, feature = "compact-revision-experiment"))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct M11CompactReferenceProbeRecord {
     pub(crate) digest: [u8; 16],
@@ -414,6 +414,7 @@ impl M11CompactReferenceResolver {
     /// Flattens the retained record layout for relocatability probes: the
     /// digest and label identify a record across revisions, everything else
     /// is the exact stored coordinate payload under measurement.
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     pub(crate) fn probe_records(&self) -> Vec<M11CompactReferenceProbeRecord> {
         self.index
             .records

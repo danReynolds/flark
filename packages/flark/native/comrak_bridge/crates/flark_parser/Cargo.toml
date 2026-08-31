@@ -12,6 +12,10 @@ default = []
 # Internal only: compiles the sparse-index/cold-slice prototype so an upper
 # layer can run end-to-end product differentials before production cutover.
 m11-compact-probe = ["dep:blake3", "flark-engine/progressive-source-probe"]
+# Explicit, non-product RFC 029 Experiment B lane. This compiles the
+# revision-local compact-index prototype and its differential proof only in
+# test builds; it is deliberately independent of `m11-compact-probe`.
+compact-revision-experiment = []
 
 [dependencies]
 blake3 = { version = "1.8", optional = true }

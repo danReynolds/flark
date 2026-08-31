@@ -26,7 +26,7 @@ mod inline_radix;
 mod parser_binding;
 mod pending_presentation_plan;
 mod persistent_recursive_green_session;
-mod recursive_green_paragraph_inline;
+mod recursive_green_inline_leaf;
 mod reference_label;
 mod reference_value;
 mod segmented_lexical;
@@ -87,13 +87,10 @@ pub use persistent_recursive_green_session::{
     M11PersistentRecursiveGreenProjectionRegionKind, M11PersistentRecursiveGreenSession,
     M11PersistentRecursiveGreenSessionError, M11PersistentRecursiveGreenUpdate,
 };
-pub use recursive_green_paragraph_inline::{
-    prepare_m11_recursive_green_inline_leaf, prepare_m11_recursive_green_paragraph_inline,
+pub use recursive_green_inline_leaf::{
     prepare_m11_recursive_green_slice_inline_leaf,
     prepare_m11_recursive_green_slice_inline_leaf_rows, M11RecursiveGreenInlineLeafPreparation,
-    M11RecursiveGreenParagraphInlinePreparation, M11RecursiveGreenParagraphPreparationError,
-    M11RecursiveGreenSliceInlineLeafRowBatch,
-    M11_RECURSIVE_GREEN_PARAGRAPH_BRIDGE_MAX_SOURCE_BYTES,
+    M11RecursiveGreenInlineLeafPreparationError, M11RecursiveGreenSliceInlineLeafRowBatch,
 };
 pub use source_adapter::{
     SnapshotLineCancellation, SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource,

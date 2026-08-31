@@ -563,7 +563,7 @@ impl M11DirectBlockController {
         self.durable_restart_from_pause(pause)
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn resume_durable_encoded_restart(
         encoded: &[u8],
         line_ordinal: u64,

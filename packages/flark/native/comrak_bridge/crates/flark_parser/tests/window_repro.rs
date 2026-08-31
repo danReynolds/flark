@@ -5,7 +5,7 @@
 //! document root, so any over-window physical line that followed a non-blank
 //! line (paragraph continuation, the line after a reference definition, the
 //! line after an ATX heading) failed closed with
-//! `DirectUnsupported::SegmentedLine`. The candidate endpoint has no fallback
+//! `DirectUnsupported::SegmentedLine`. The direct parser has no fallback
 //! for that error, so it surfaced to callers as `Status::InternalFault`.
 //!
 //! Two over-window shapes are still deliberately unsupported and are therefore
