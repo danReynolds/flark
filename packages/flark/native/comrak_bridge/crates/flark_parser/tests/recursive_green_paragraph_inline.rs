@@ -1,19 +1,20 @@
 use flark_engine::parser_internal::{
-    M11InlineProjectionCursorPoll, M11InlineProjectionKind, M11RecursiveGreenFrameQueryLimits,
-    M11RecursiveGreenPoint, M11RecursiveGreenRoot,
+    M11InlineProjectionKind, M11RecursiveGreenFrameQueryLimits, M11RecursiveGreenPoint,
+    M11RecursiveGreenRoot,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity,
     SOURCE_CURSOR_WINDOW_BYTES,
 };
 use flark_parser::block_core::{
-    resolve_m11_recursive_green_paragraph_fence, M11BlockWriter, M11BlockWriterOfferStatus,
-    M11BlockWriterPollStatus, M11DirectBlockController, M11DirectBlockPollStatus,
+    resolve_m11_recursive_green_inline_leaf_fence, resolve_m11_recursive_green_paragraph_fence,
+    M11BlockWriter, M11BlockWriterOfferStatus, M11BlockWriterPollStatus, M11DirectBlockController,
+    M11DirectBlockPollStatus,
 };
 use flark_parser::{
-    M11ExactController, M11InlineProjectionJob, M11InlineProjectionJobPollStatus,
-    M11InlineProjectionPublication, M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource,
-    SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource,
+    M11ExactController, M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11ParserBinding,
+    M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll, SnapshotLineScanner,
+    SnapshotLineSource,
 };
 
 fn write_pending_command(
@@ -163,9 +164,18 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
     assert!(fence.receipt().maximum_open_depth() <= 64);
 
     let profile = ParserProfileId::new(1).expect("nonzero parser profile");
-    let mut job = M11InlineProjectionJob::new_for_recursive_green_paragraph(
+    drop(fence);
+    let inline_fence = resolve_m11_recursive_green_inline_leaf_fence(
         &runtime,
-        fence,
+        &green,
+        M11RecursiveGreenPoint::new(12, 12, SourceBoundaryAffinity::After),
+        limits,
+    )
+    .expect("bounded inline-leaf query")
+    .expect("selected source belongs to an inline-bearing leaf");
+    let mut job = M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_fact_capture(
+        &runtime,
+        inline_fence,
         M11ParserBinding::current(profile),
     )
     .expect("inline projection job accepts the minted authority");
@@ -176,39 +186,13 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
             break;
         }
     }
-    let output = job.take_output().expect("inline projection output");
-    assert_eq!(output.source_range(), 8..28);
-    let (_, range, actual_profile, authority, publication) =
-        output.into_publication_parts().into_parts();
-    assert_eq!(range, 8..28);
-    assert_eq!(actual_profile, profile);
-    authority
-        .validate(&runtime)
-        .expect("returned source authority remains exact");
-
-    let M11InlineProjectionPublication::Authoritative(mut inline) = publication else {
-        panic!("bold/emphasis/code Paragraph must project authoritatively");
-    };
-    assert_eq!(inline.descriptor().fact_count(), 3);
-    let mut cursor = inline
-        .cursor(&runtime, green.source(), profile)
-        .expect("inline projection cursor");
-    let mut kinds = Vec::new();
-    loop {
-        match cursor.poll(&runtime).expect("inline cursor poll") {
-            M11InlineProjectionCursorPoll::Pending { transitions } => {
-                assert!(transitions <= 1);
-            }
-            M11InlineProjectionCursorPoll::Fact { transitions, fact } => {
-                assert!(transitions <= 1);
-                kinds.push(fact.kind());
-            }
-            M11InlineProjectionCursorPoll::Complete { transitions } => {
-                assert!(transitions <= 1);
-                break;
-            }
-        }
-    }
+    assert_eq!(job.projected_facts_are_authoritative(), Some(true));
+    let kinds = job
+        .take_projected_facts()
+        .expect("captured inline facts")
+        .into_iter()
+        .map(|fact| fact.kind())
+        .collect::<Vec<_>>();
     assert_eq!(
         kinds,
         vec![
@@ -217,17 +201,13 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
             M11InlineProjectionKind::Code,
         ]
     );
-    drop(cursor);
-    inline
-        .begin_release(&mut runtime)
-        .expect("begin inline root release");
-    while !inline
-        .poll_release(&mut runtime, 1)
-        .expect("poll inline root release")
+    job.begin_abort(&mut runtime)
+        .expect("begin inline capture cleanup");
+    while !job
+        .poll_abort(&mut runtime, 1)
+        .expect("poll inline capture cleanup")
         .complete()
     {}
-    drop(authority);
-    drop(job);
 
     green
         .begin_release(&mut runtime)

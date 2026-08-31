@@ -26,9 +26,9 @@ use flark_engine::parser_internal::{
     M11ReferenceJournal, M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError,
     M11ReferenceJournalRangeReplacement, M11ReferenceJournalRangeReplacementStatus,
     M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
-    M11ReferenceResolver, BLOCK_QUOTE_WINDOW_MAX_BYTES,
+    M11ReferenceResolver,
 };
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(feature = "m11-compact-probe")]
 use flark_engine::SourceAuthority;
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
@@ -51,10 +51,6 @@ use crate::block_core::{
 use crate::block_core::{
     M11CompactProbeCheckpointFacts, M11CompactProbeFirstSlice, M11CompactProbeWriterReceipt,
     M11CompactReferenceJournal, M11CompactReferenceReceipt, M11DirectDurableBlockRestart,
-};
-use crate::recursive_green_block_quote_projection::{
-    resolve_m11_recursive_green_block_quote_projection_fence,
-    M11RecursiveGreenBlockQuoteProjectionPreparation,
 };
 use crate::recursive_green_paragraph_inline::{
     M11RecursiveGreenInlineLeafPreparation, M11RecursiveGreenParagraphInlinePreparation,
@@ -278,7 +274,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
             compact_probe_completion_slice: None,
             #[cfg(any(test, feature = "m11-compact-probe"))]
             progressive_probe: false,
-            #[cfg(any(test, feature = "m11-compact-probe"))]
+            #[cfg(feature = "m11-compact-probe")]
             progressive_authority: None,
             #[cfg(any(test, feature = "m11-compact-probe"))]
             progressive_source_lease: None,
@@ -347,6 +343,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
             compact_restart_captures: 0,
             compact_probe_completion_slice: None,
             progressive_probe: false,
+            #[cfg(feature = "m11-compact-probe")]
             progressive_authority: None,
             progressive_source_lease: None,
             progressive_frontier: 0,
@@ -532,7 +529,7 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     compact_probe_completion_slice: Option<M11CompactProbeFirstSlice>,
     #[cfg(any(test, feature = "m11-compact-probe"))]
     progressive_probe: bool,
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(feature = "m11-compact-probe")]
     progressive_authority: Option<SourceAuthority>,
     #[cfg(any(test, feature = "m11-compact-probe"))]
     progressive_source_lease: Option<SourceSnapshotLease>,
@@ -1301,7 +1298,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                 .is_some_and(|writer| writer.compact_probe_first_slice_over_cap().unwrap_or(false))
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(feature = "m11-compact-probe")]
     fn extend_progressive_frontier(
         &mut self,
         frontier: usize,
@@ -2145,6 +2142,7 @@ impl M11CompactCheckpointJournal {
                 compact_restart_captures: 0,
                 compact_probe_completion_slice: None,
                 progressive_probe: false,
+                #[cfg(feature = "m11-compact-probe")]
                 progressive_authority: None,
                 progressive_source_lease: None,
                 progressive_frontier: 0,
@@ -2437,35 +2435,6 @@ pub struct M11PersistentRecursiveGreenUpdate {
     recursive_green_splice: M11RecursiveGreenStructuralSpliceSelection,
 }
 
-/// Unforgeable, crate-private proof that both sides of an exact structural
-/// update and its adopted reference authority are still live.
-///
-/// Only a completed [`M11PersistentRecursiveGreenUpdate`] can mint this
-/// borrow. Publication uses it to join the retained base, authenticated target
-/// and exact Green event segment selection without accepting a caller-supplied
-/// reuse flag.
-pub(crate) struct M11PersistentRecursiveGreenExactPublication<'update> {
-    base: &'update M11PersistentRecursiveGreenSession,
-    target: &'update M11PersistentRecursiveGreenSession,
-    recursive_green_splice: &'update M11RecursiveGreenStructuralSpliceSelection,
-}
-
-impl M11PersistentRecursiveGreenExactPublication<'_> {
-    pub(crate) const fn base_session(&self) -> &M11PersistentRecursiveGreenSession {
-        self.base
-    }
-
-    pub(crate) const fn target_session(&self) -> &M11PersistentRecursiveGreenSession {
-        self.target
-    }
-
-    pub(crate) const fn recursive_green_splice_selection(
-        &self,
-    ) -> &M11RecursiveGreenStructuralSpliceSelection {
-        self.recursive_green_splice
-    }
-}
-
 impl M11PersistentRecursiveGreenUpdate {
     #[must_use]
     pub fn target_source(&self) -> SourceVersion {
@@ -2503,44 +2472,6 @@ impl M11PersistentRecursiveGreenUpdate {
     ) -> Result<M11RecursiveGreenStructuralSpliceSelection, M11PersistentRecursiveGreenSessionError>
     {
         self.recursive_green_splice.try_clone().map_err(Into::into)
-    }
-
-    pub(crate) fn exact_publication(
-        &self,
-    ) -> Result<
-        M11PersistentRecursiveGreenExactPublication<'_>,
-        M11PersistentRecursiveGreenSessionError,
-    > {
-        let base =
-            self.base
-                .as_ref()
-                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "recursive-Green exact publication omitted its base session",
-                ))?;
-        let target =
-            self.target
-                .as_ref()
-                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "recursive-Green exact publication omitted its target session",
-                ))?;
-        if base.release_begun
-            || target.release_begun
-            || base.source == target.source
-            || base.syntax_profile != target.syntax_profile
-            || base.green.is_none()
-            || target.green.is_none()
-            || base.references.is_none()
-            || target.references.is_none()
-        {
-            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green exact publication authority is no longer live",
-            ));
-        }
-        Ok(M11PersistentRecursiveGreenExactPublication {
-            base,
-            target,
-            recursive_green_splice: &self.recursive_green_splice,
-        })
     }
 
     #[must_use]
@@ -4171,33 +4102,8 @@ impl M11PersistentRecursiveGreenSession {
             .locate_point(runtime, point)?)
     }
 
-    /// Borrows the live structural root for one authority-checked parser-side
-    /// publication setup.
-    ///
-    /// The root remains owned by this session. Callers may only retain it into
-    /// another runtime-owned publication while the session still represents
-    /// the current source and release has not begun.
-    pub(crate) fn current_green_root<'session>(
-        &'session self,
-        runtime: &DocumentRuntime,
-    ) -> Result<&'session M11RecursiveGreenRoot, M11PersistentRecursiveGreenSessionError> {
-        if runtime.current_source_version() != Some(self.source) || self.release_begun {
-            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green session is not the current live source",
-            ));
-        }
-        self.green
-            .as_ref()
-            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green session omitted its structural root",
-            ))
-    }
-
     /// Borrows the live parser-authenticated reference root for the same
-    /// failure-atomic publication setup as [`Self::current_green_root`].
-    ///
-    /// The session keeps its committed owner; the candidate manifest retains
-    /// the canonical root and binds it to the publication's fresh authority.
+    /// authority-checked resolver setup used by inline capture.
     pub(crate) fn current_reference_root<'session>(
         &'session self,
         runtime: &DocumentRuntime,
@@ -4785,59 +4691,6 @@ impl M11PersistentRecursiveGreenSession {
                 fence,
             ),
         )
-    }
-
-    /// Authenticates one top-level single-Paragraph block quote for exact
-    /// marker projection. Unlike inline-leaf preparation, this authority spans
-    /// the physically disjoint container and carries Green-derived metrics.
-    pub fn prepare_block_quote_projection(
-        &self,
-        runtime: &DocumentRuntime,
-        point: M11RecursiveGreenPoint,
-    ) -> Result<
-        Option<M11RecursiveGreenBlockQuoteProjectionPreparation>,
-        M11PersistentRecursiveGreenSessionError,
-    > {
-        if runtime.current_source_version() != Some(self.source) || self.release_begun {
-            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green session is not the current live source",
-            ));
-        }
-        let limits = M11RecursiveGreenRowQueryLimits::new(1, 25, 3_200, 64, 512).ok_or(
-            M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green block-quote query limits must be nonzero",
-            ),
-        )?;
-        let fence = match resolve_m11_recursive_green_block_quote_projection_fence(
-            runtime,
-            self.green
-                .as_ref()
-                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "recursive-Green session omitted its structural root",
-                ))?,
-            point,
-            limits,
-            u64::try_from(BLOCK_QUOTE_WINDOW_MAX_BYTES).map_err(|_| {
-                M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "block-quote window cap exceeds recursive-Green metrics",
-                )
-            })?,
-        ) {
-            Ok(Some(fence)) => fence,
-            Ok(None) | Err(M11RecursiveGreenFrameQueryError::BoundExceeded(_)) => return Ok(None),
-            Err(error) => return Err(error.into()),
-        };
-        let block_source = to_u32_range(fence.block_source_range())?;
-        let block_source_utf16 = to_u32_range(fence.block_source_utf16_range())?;
-        let query_receipt = fence.receipt();
-        Ok(Some(
-            M11RecursiveGreenBlockQuoteProjectionPreparation::from_persistent_session(
-                block_source,
-                block_source_utf16,
-                query_receipt,
-                fence,
-            ),
-        ))
     }
 
     pub fn begin_release(
@@ -7218,9 +7071,7 @@ mod tests {
 
     #[test]
     fn compact_probe_cold_restart_uses_final_reference_winners() {
-        use flark_engine::parser_internal::{
-            M11RecursiveGreenRowQueryLimits, M11ReferenceResolver,
-        };
+        use flark_engine::parser_internal::M11RecursiveGreenRowQueryLimits;
 
         let mut source = String::from(
             "[dup]: /first \"first title\"\n[dup]: /second \"loses\"\n[MiXeD  Label]: /m\\*ixed&amp; \"ti&amp;tle\"\n[αλφα]: /δ \"τίτλος\"\n\n",
@@ -7386,14 +7237,6 @@ mod tests {
         release_session(&mut runtime, &mut compact);
 
         let mut complete = build_session(&mut runtime);
-        let persistent_resolver = M11ReferenceResolver::from_live_reference_journal(
-            &runtime,
-            complete
-                .references
-                .as_ref()
-                .expect("eventual reference authority"),
-        )
-        .expect("eventual reference resolver");
         let complete_rows = complete
             .query_renderable_rows(
                 &runtime,
@@ -7405,34 +7248,43 @@ mod tests {
             .rows()
             .to_vec();
         assert_eq!(rows.len(), complete_rows.len());
-        for ((row, expected), compact_inline) in rows.iter().zip(&complete_rows).zip(&inline) {
-            assert_eq!(row.ordinal(), expected.ordinal());
-            assert_eq!(row.frame(), expected.frame());
-            assert_eq!(row.kind(), expected.kind());
-            assert_eq!(row.physical_range(), expected.physical_range());
-            assert_eq!(row.physical_utf16_range(), expected.physical_utf16_range());
-            assert_eq!(row.edit_capability(), expected.edit_capability());
-            assert_eq!(row.editable_range(), expected.editable_range());
-            assert_eq!(row.editable_utf16_range(), expected.editable_utf16_range());
-            assert_eq!(row.editable_segments(), expected.editable_segments());
-            assert_eq!(&row.path()[1..], &expected.path()[1..]);
-            let point = M11RecursiveGreenPoint::new(
-                usize::try_from(row.physical_range().start).expect("reference row byte"),
-                usize::try_from(row.physical_utf16_range().start).expect("reference row UTF-16"),
-                SourceBoundaryAffinity::After,
-            );
-            let prepared = complete
-                .prepare_inline_leaf(&runtime, point)
-                .expect("prepare eventual reference inline leaf");
-            assert_eq!(
-                compact_inline,
-                &capture_inline_facts_with_persistent_references(
-                    &mut runtime,
-                    prepared,
-                    persistent_resolver.clone(),
-                ),
-                "compact final winners must match persistent reference authority"
-            );
+        {
+            // The resolver is an Arc-backed lease on this session's winner
+            // index. Keep its owner inside the comparison scope so the owner
+            // and every job clone are gone before session release begins.
+            let persistent_reference_lease = complete
+                .reference_resolver(&runtime)
+                .expect("eventual reference resolver");
+            for ((row, expected), compact_inline) in rows.iter().zip(&complete_rows).zip(&inline) {
+                assert_eq!(row.ordinal(), expected.ordinal());
+                assert_eq!(row.frame(), expected.frame());
+                assert_eq!(row.kind(), expected.kind());
+                assert_eq!(row.physical_range(), expected.physical_range());
+                assert_eq!(row.physical_utf16_range(), expected.physical_utf16_range());
+                assert_eq!(row.edit_capability(), expected.edit_capability());
+                assert_eq!(row.editable_range(), expected.editable_range());
+                assert_eq!(row.editable_utf16_range(), expected.editable_utf16_range());
+                assert_eq!(row.editable_segments(), expected.editable_segments());
+                assert_eq!(&row.path()[1..], &expected.path()[1..]);
+                let point = M11RecursiveGreenPoint::new(
+                    usize::try_from(row.physical_range().start).expect("reference row byte"),
+                    usize::try_from(row.physical_utf16_range().start)
+                        .expect("reference row UTF-16"),
+                    SourceBoundaryAffinity::After,
+                );
+                let prepared = complete
+                    .prepare_inline_leaf(&runtime, point)
+                    .expect("prepare eventual reference inline leaf");
+                assert_eq!(
+                    compact_inline,
+                    &capture_inline_facts_with_persistent_references(
+                        &mut runtime,
+                        prepared,
+                        persistent_reference_lease.clone(),
+                    ),
+                    "compact final winners must match persistent reference authority"
+                );
+            }
         }
 
         release_session(&mut runtime, &mut complete);

@@ -57,7 +57,7 @@ pub use reference_rendezvous::{
 };
 pub(crate) use writer::{
     M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption,
-    M11BlockTerminalCheckpointAdoption, KIND_BLOCK_QUOTE, KIND_DOCUMENT, KIND_PARAGRAPH,
+    M11BlockTerminalCheckpointAdoption,
 };
 pub use writer::{
     M11BlockRestartCheckpoint, M11BlockRestartError, M11BlockStructuralAdoptionReceipt,

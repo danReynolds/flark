@@ -229,6 +229,9 @@ fn reference_resolver_rejects_a_stale_same_runtime_source_before_lookup() {
         "even an empty lookup must validate exact current source authority"
     );
 
+    // The resolver deliberately remains a lease even after rejecting a stale
+    // source. End that lease before releasing its owning session.
+    drop(resolver);
     release_session(&mut runtime, &mut session);
     runtime.begin_close().expect("begin runtime close");
     while !runtime.poll_close(64).expect("poll close").complete {}

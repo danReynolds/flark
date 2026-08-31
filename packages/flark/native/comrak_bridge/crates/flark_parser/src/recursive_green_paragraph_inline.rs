@@ -1,10 +1,9 @@
-//! Bounded experimental bridge from the direct block controller to the
-//! established inline-projection publication path.
+//! Bounded bridge from the direct block controller to capture-only inline
+//! projection.
 //!
 //! This is intentionally a narrow checkpoint seam. It proves that the new
 //! recursive Green authority can select an exact Paragraph and mint the
-//! source capability consumed by `M11InlineProjectionJob`; it does not make
-//! the legacy structural publication authoritative for the selected ranges.
+//! source capability consumed by `M11InlineProjectionJob`.
 
 use std::{fmt, ops::Range};
 
@@ -120,8 +119,8 @@ impl From<M11RecursiveGreenFrameQueryError> for M11RecursiveGreenParagraphPrepar
     }
 }
 
-/// Exact new-parser result ready to enter the existing credited inline
-/// sidecar. All ranges and the move-only source capability come from the
+/// Exact new-parser result ready to enter bounded inline capture. All ranges
+/// and the move-only source capability come from the
 /// recursive Green fence; job construction stays inside endpoint staging so
 /// coalescing can discard an unstarted demand without violating job cleanup.
 pub struct M11RecursiveGreenParagraphInlinePreparation {

@@ -27,9 +27,9 @@ use flark_parser::block_core::{
 use flark_parser::{
     project_m11_gfm_inline, project_m11_gfm_table, M11ExactController, M11GfmInlineNode,
     M11GfmInlineOptions, M11GfmInlineReference, M11GfmTableAlignment, M11GfmTableProjection,
-    M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11InlineProjectionPublication,
-    M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
-    SnapshotLineScanner, SnapshotLineSource, SourceAdapterError,
+    M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11ParserBinding,
+    M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll, SnapshotLineScanner,
+    SnapshotLineSource, SourceAdapterError,
 };
 use sha2::{Digest, Sha256};
 
@@ -1361,6 +1361,16 @@ fn project_inline_leaf(
     )
     .map_err(|_| RenderFailure::Missing("projected-inline-authority"))?
     .ok_or(RenderFailure::Missing("projected-inline-authority"))?;
+    let range = fence.inline_source_range();
+    let source = markdown
+        .get(
+            usize::try_from(range.start)
+                .map_err(|_| RenderFailure::Invalid("inline range start exceeds usize".into()))?
+                ..usize::try_from(range.end)
+                    .map_err(|_| RenderFailure::Invalid("inline range end exceeds usize".into()))?,
+        )
+        .ok_or_else(|| RenderFailure::Invalid("inline range is not a source UTF-8 cut".into()))?
+        .to_owned();
     let profile = ParserProfileId::new(1).expect("nonzero parser profile");
     let resolver = M11ReferenceResolver::from_live_reference_journal(runtime, references)
         .map_err(|error| RenderFailure::Invalid(format!("reference resolver: {error}")))?;
@@ -1372,64 +1382,69 @@ fn project_inline_leaf(
     )
     .map_err(|error| RenderFailure::Invalid(format!("inline job creation: {error}")))?;
     let mut complete = false;
+    let mut poll_error = None;
     for _ in 0..MAX_POLLS {
-        let poll = job
-            .poll(runtime, FUEL)
-            .map_err(|error| RenderFailure::Invalid(format!("inline job poll: {error}")))?;
+        let poll = match job.poll(runtime, FUEL) {
+            Ok(poll) => poll,
+            Err(error) => {
+                poll_error = Some(error);
+                break;
+            }
+        };
         if poll.status() == M11InlineProjectionJobPollStatus::Complete {
             complete = true;
             break;
         }
     }
+    if let Some(error) = poll_error {
+        abort_inline_capture(&mut job, runtime)?;
+        return Err(RenderFailure::Invalid(format!("inline job poll: {error}")));
+    }
     if !complete {
+        abort_inline_capture(&mut job, runtime)?;
         return Err(RenderFailure::Invalid(
             "inline projection job did not converge".into(),
         ));
     }
-    let facts = job
-        .take_projected_facts()
-        .ok_or_else(|| RenderFailure::Invalid("inline job omitted captured facts".into()))?;
-    let link_values = job
-        .take_projected_link_values()
-        .ok_or_else(|| RenderFailure::Invalid("inline job omitted captured link values".into()))?;
-    let output = job
-        .take_output()
-        .ok_or_else(|| RenderFailure::Invalid("inline job omitted output".into()))?;
-    let (_, range, _, authority, publication) = output.into_publication_parts().into_parts();
-    let source = markdown
-        .get(
-            usize::try_from(range.start)
-                .map_err(|_| RenderFailure::Invalid("inline range start exceeds usize".into()))?
-                ..usize::try_from(range.end)
-                    .map_err(|_| RenderFailure::Invalid("inline range end exceeds usize".into()))?,
-        )
-        .ok_or_else(|| RenderFailure::Invalid("inline range is not a source UTF-8 cut".into()))?
-        .to_owned();
-    let result = match publication {
-        M11InlineProjectionPublication::Unsupported(record) => {
-            let _ = record.into_encoded();
-            Err(RenderFailure::Missing("inline-fail-closed"))
+    let authoritative = job.projected_facts_are_authoritative();
+    let facts = job.take_projected_facts();
+    let link_values = job.take_projected_link_values();
+    abort_inline_capture(&mut job, runtime)?;
+    match authoritative {
+        Some(true) => Ok(InlineProjection {
+            source,
+            facts: facts.ok_or_else(|| {
+                RenderFailure::Invalid("inline job omitted captured facts".into())
+            })?,
+            link_values: link_values.ok_or_else(|| {
+                RenderFailure::Invalid("inline job omitted captured link values".into())
+            })?,
+        }),
+        Some(false) => Err(RenderFailure::Missing("inline-fail-closed")),
+        None => Err(RenderFailure::Invalid(
+            "completed inline job omitted its disposition".into(),
+        )),
+    }
+}
+
+fn abort_inline_capture(
+    job: &mut M11InlineProjectionJob,
+    runtime: &mut DocumentRuntime,
+) -> Result<(), RenderFailure> {
+    job.begin_abort(runtime)
+        .map_err(|error| RenderFailure::Invalid(format!("begin inline cleanup: {error}")))?;
+    for _ in 0..MAX_POLLS {
+        if job
+            .poll_abort(runtime, FUEL)
+            .map_err(|error| RenderFailure::Invalid(format!("poll inline cleanup: {error}")))?
+            .complete()
+        {
+            return Ok(());
         }
-        M11InlineProjectionPublication::Authoritative(mut root) => {
-            root.begin_release(runtime)
-                .map_err(|error| RenderFailure::Invalid(format!("release inline root: {error}")))?;
-            while !root
-                .poll_release(runtime, 64)
-                .map_err(|error| {
-                    RenderFailure::Invalid(format!("poll inline root release: {error}"))
-                })?
-                .complete()
-            {}
-            Ok(InlineProjection {
-                source,
-                facts,
-                link_values,
-            })
-        }
-    };
-    drop(authority);
-    drop(job);
-    result
+    }
+    Err(RenderFailure::Invalid(
+        "inline projection cleanup did not converge".into(),
+    ))
 }
 
 fn normalize_inline_logical_source(source: &str) -> String {

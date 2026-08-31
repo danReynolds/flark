@@ -6,7 +6,6 @@ use caseless::Caseless;
 /// CommonMark 0.31.2 permits at most 999 Unicode scalar values between label
 /// brackets.
 pub(crate) const MAX_REFERENCE_LABEL_CODEPOINTS: usize = 999;
-pub(crate) const MAX_RAW_REFERENCE_LABEL_UTF8_BYTES: usize = MAX_REFERENCE_LABEL_CODEPOINTS * 4;
 
 /// Exhaustively pinned against `caseless` 0.2.2 / Unicode 16 in the tests.
 pub(crate) const MAX_CASE_FOLD_UTF8_BYTES_PER_SCALAR: usize = 6;
@@ -75,6 +74,7 @@ impl ReferenceLabelAccumulator {
     }
 
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.normalized.is_empty()
     }
@@ -89,6 +89,7 @@ impl ReferenceLabelAccumulator {
 /// profile: only space, tab, CR, and LF collapse; all other Unicode
 /// whitespace remains significant.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn normalize_reference_label(label: &str) -> String {
     let mut accumulator = ReferenceLabelAccumulator::with_source_byte_hint(label.len());
     for ch in label.chars() {
@@ -106,6 +107,7 @@ pub(crate) fn normalize_reference_label(label: &str) -> String {
 }
 
 #[must_use]
+#[cfg(test)]
 pub(crate) fn reference_label_length_is_valid(label: &str) -> bool {
     label
         .chars()

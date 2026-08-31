@@ -909,10 +909,6 @@ impl M11RecursiveGreenParagraphFence {
     pub const fn receipt(&self) -> M11RecursiveGreenQueryReceipt {
         self.inner.receipt()
     }
-
-    pub(crate) fn into_inline_leaf(self) -> M11RecursiveGreenInlineLeafFence {
-        self.inner
-    }
 }
 
 /// Resolves an exact final Paragraph or Heading owner and mints its contiguous

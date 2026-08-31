@@ -230,6 +230,7 @@ impl M11CompactReferenceJournal {
     /// the GFM first-winner rule; missing labels stay `Unknown`. A definition
     /// still pending at the frontier is deliberately absent: it follows every
     /// committed record, so ignoring it can only defer, never misresolve.
+    #[cfg(feature = "m11-compact-probe")]
     pub(crate) fn committed_prefix_resolver(
         &self,
         source: flark_engine::SourceVersion,
@@ -393,6 +394,7 @@ impl M11CompactReferenceResolver {
     /// Returns how many lookups this resolver (including every clone sharing
     /// its counter) answered with `Unknown`. Zero after a bounded capture
     /// pass proves no captured fact depended on an absent winner.
+    #[cfg(feature = "m11-compact-probe")]
     pub(crate) fn unknown_lookups(&self) -> u64 {
         self.unknown_lookups
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -402,6 +404,7 @@ impl M11CompactReferenceResolver {
     /// definition's exact range. Definition text is suffix-independent — its
     /// presentation is fixed and its first-winner status is final — so
     /// bracket bytes inside it are not reference-use hazards.
+    #[cfg(feature = "m11-compact-probe")]
     pub(crate) fn byte_is_inside_committed_definition(&self, byte: usize) -> bool {
         self.index.records.iter().any(|record| {
             (record.source_start as usize) <= byte && byte < record.source_end as usize
