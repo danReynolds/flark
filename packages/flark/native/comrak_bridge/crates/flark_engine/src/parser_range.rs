@@ -44,7 +44,6 @@ pub enum M11ParserRangeError {
     ZeroFuel,
     PollLimitExceeded,
     OutputTooLarge,
-    CounterOverflow,
     Source(SourceEditError),
 }
 
@@ -66,7 +65,6 @@ impl fmt::Display for M11ParserRangeError {
             Self::OutputTooLarge => {
                 formatter.write_str("parser source output exceeds the bounded copy limit")
             }
-            Self::CounterOverflow => formatter.write_str("parser source counter overflow"),
             Self::Source(error) => write!(formatter, "parser source failure: {error}"),
         }
     }
@@ -77,37 +75,6 @@ impl std::error::Error for M11ParserRangeError {}
 impl From<SourceEditError> for M11ParserRangeError {
     fn from(value: SourceEditError) -> Self {
         Self::Source(value)
-    }
-}
-
-/// Exact bounded source-window work.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct M11ParserRangeReceipt {
-    transitions: usize,
-    bytes_read: usize,
-    refill_count: usize,
-    maximum_refill_bytes: usize,
-}
-
-impl M11ParserRangeReceipt {
-    #[must_use]
-    pub const fn transitions(self) -> usize {
-        self.transitions
-    }
-
-    #[must_use]
-    pub const fn bytes_read(self) -> usize {
-        self.bytes_read
-    }
-
-    #[must_use]
-    pub const fn refill_count(self) -> usize {
-        self.refill_count
-    }
-
-    #[must_use]
-    pub const fn maximum_refill_bytes(self) -> usize {
-        self.maximum_refill_bytes
     }
 }
 
@@ -144,7 +111,6 @@ impl M11ParserRangePoll {
 /// Resumable bounded-copy cursor over an exact immutable source range.
 pub struct M11ParserRangeCursor {
     cursor: Option<SourceCursor>,
-    receipt: M11ParserRangeReceipt,
     complete: bool,
 }
 
@@ -152,7 +118,6 @@ impl fmt::Debug for M11ParserRangeCursor {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("M11ParserRangeCursor")
-            .field("receipt", &self.receipt)
             .field("complete", &self.complete)
             .finish_non_exhaustive()
     }
@@ -162,7 +127,6 @@ impl M11ParserRangeCursor {
     fn new(lease: SourceSnapshotLease, range: Range<usize>) -> Result<Self, M11ParserRangeError> {
         Ok(Self {
             cursor: Some(lease.cursor_in(range)?),
-            receipt: M11ParserRangeReceipt::default(),
             complete: false,
         })
     }
@@ -195,18 +159,6 @@ impl M11ParserRangeCursor {
             .ok_or(M11ParserRangeError::InvalidState)?;
         let bytes_read = cursor.read(&mut output[..limit]);
         let complete = cursor.position() == cursor.end();
-        self.receipt.transitions = self
-            .receipt
-            .transitions
-            .checked_add(bytes_read)
-            .ok_or(M11ParserRangeError::CounterOverflow)?;
-        self.receipt.bytes_read = self
-            .receipt
-            .bytes_read
-            .checked_add(bytes_read)
-            .ok_or(M11ParserRangeError::CounterOverflow)?;
-        self.receipt.refill_count = cursor.refill_count();
-        self.receipt.maximum_refill_bytes = cursor.max_refill_bytes();
         if complete {
             let lease = self
                 .cursor
@@ -232,11 +184,6 @@ impl M11ParserRangeCursor {
             drop(cursor.cancel());
         }
         self.complete = true;
-    }
-
-    #[must_use]
-    pub const fn receipt(&self) -> M11ParserRangeReceipt {
-        self.receipt
     }
 }
 

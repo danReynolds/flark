@@ -13,8 +13,8 @@ pub use crate::inline_projection::{
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
 pub use crate::parser_range::{
-    M11ParserRangeCursor, M11ParserRangeError, M11ParserRangePoll, M11ParserRangeReceipt,
-    M11ParserRangeStatus, M11ParserSourceRangeAuthority, M11_PARSER_RANGE_MAX_POLL_BYTES,
+    M11ParserRangeCursor, M11ParserRangeError, M11ParserRangePoll, M11ParserRangeStatus,
+    M11ParserSourceRangeAuthority, M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 pub use crate::parser_scratch::{
     M11ParserScratchAdmission, M11ParserScratchError, M11ParserScratchReleaseFailure,
