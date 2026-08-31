@@ -3,7 +3,7 @@
 //! Grammar-specific users define only leaf payloads and one associative
 //! semantic summary. This module owns structural measures, AVL balancing,
 //! typed root authority, bounded resumable construction, and logarithmic
-//! routing so SourceFacts, Green, projection, and reference indexes cannot
+//! routing so Green, projection, and reference indexes cannot
 //! grow subtly different persistent sequence machinery.
 
 use std::fmt;
@@ -123,7 +123,7 @@ pub(crate) const MAX_SEQUENCE_AVL_HEIGHT: u16 = (AVL_MIN_LEAVES_BY_HEIGHT.len() 
 // conservative absolute budget is quadratic in the fixed u64-domain height.
 // A work unit is one decoded node header, summary combination, visited
 // structural node, or allocated branch. The maximum is 138,384 units at
-// height 92; production SourceFacts admission is far below this machine-domain
+// height 92; production callers stay far below this machine-domain
 // adversary, but the absolute bound keeps the accepted worker quantum finite.
 #[cfg(test)]
 pub(crate) const MAX_SEQUENCE_ATOMIC_SPLICE_WORK_UNITS: u64 = {
@@ -178,8 +178,8 @@ impl<Summary: Copy> SequenceMeasure<Summary> {
 }
 
 /// Spec-owned inspection charged while decoding one immutable payload.
-/// `spec_items_hashed` is intentionally grammar-neutral; SourceFacts defines
-/// one item as one checkpoint fed to its content hasher.
+/// `spec_items_hashed` is intentionally grammar-neutral so each spec can count
+/// its own canonical item.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct SequenceSpecInspection {
     pub(crate) payload_bytes_inspected: u64,
@@ -714,10 +714,6 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
             root,
             marker: PhantomData,
         }
-    }
-
-    pub(crate) const fn root_id(self) -> Option<ArenaId> {
-        self.root
     }
 
     pub(crate) fn summary(
@@ -1632,7 +1628,7 @@ pub(crate) fn retain_committed_measured_sequence_root_with_measure<Spec: Sequenc
 /// Retains one committed base and delegates to the owned-root splice.
 ///
 /// Recursion is hard-bounded by the authenticated AVL height (at most 92 in
-/// the u64 leaf domain, and far smaller under SourceFacts admission). Any
+/// the u64 leaf domain, and far smaller under production admission). Any
 /// failure after the retain is terminal for the caller's build journal;
 /// aborting that journal releases every intermediate owner without bespoke
 /// rollback.

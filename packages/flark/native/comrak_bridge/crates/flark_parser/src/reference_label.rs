@@ -124,6 +124,11 @@ pub(crate) const fn is_reference_label_whitespace(ch: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flark_engine::parser_internal::{
+        M11ReferenceJournal, M11ReferenceJournalOccurrence, M11ReferenceJournalRange,
+        M11ReferenceJournalStatus, M11ReferenceResolution, M11ReferenceResolver,
+    };
+    use flark_engine::{DocumentRuntime, DocumentRuntimeConfig};
 
     #[test]
     fn normalization_uses_only_commonmark_whitespace_and_full_case_fold() {
@@ -163,6 +168,126 @@ mod tests {
         }
         assert_eq!(maximum_bytes, MAX_CASE_FOLD_UTF8_BYTES_PER_SCALAR);
         assert_eq!(maximum_scalars, 3);
+    }
+
+    #[test]
+    fn maximum_unicode_case_fold_expansion_survives_live_journal_resolution() {
+        // U+0390 folds to U+03B9 + U+0308 + U+0301: six UTF-8 bytes for one
+        // valid raw scalar. Repeating it to CommonMark's 999-scalar limit
+        // reaches the complete derived winner-key envelope exactly.
+        let raw_scalar = '\u{0390}';
+        let raw_label = raw_scalar
+            .to_string()
+            .repeat(MAX_REFERENCE_LABEL_CODEPOINTS);
+        let scalar_fold = normalize_reference_label(&raw_scalar.to_string());
+        assert_eq!(scalar_fold, "\u{03b9}\u{0308}\u{0301}");
+        assert_eq!(scalar_fold.len(), MAX_CASE_FOLD_UTF8_BYTES_PER_SCALAR);
+        assert!(reference_label_length_is_valid(&raw_label));
+
+        let normalized = normalize_reference_label(&raw_label);
+        assert_eq!(normalized.len(), MAX_NORMALIZED_REFERENCE_LABEL_BYTES);
+        assert_eq!(normalized.len(), 5_994);
+
+        let destination = "/expanded";
+        let definition = format!("[{raw_label}]: {destination}");
+        let label_byte_start = 1_usize;
+        let label_byte_end = label_byte_start + raw_label.len();
+        let destination_byte_start = label_byte_end + "]: ".len();
+        let destination_byte_end = destination_byte_start + destination.len();
+        assert_eq!(
+            &definition[destination_byte_start..destination_byte_end],
+            destination
+        );
+
+        let label_utf16_start = 1_usize;
+        let label_utf16_end = label_utf16_start + raw_label.encode_utf16().count();
+        let destination_utf16_start = label_utf16_end + "]: ".encode_utf16().count();
+        let destination_utf16_end = destination_utf16_start + destination.encode_utf16().count();
+        let range = |start: usize, end: usize| {
+            u64::try_from(start).expect("test range start")
+                ..u64::try_from(end).expect("test range end")
+        };
+
+        let mut runtime =
+            DocumentRuntime::new(&definition, DocumentRuntimeConfig::default()).expect("runtime");
+        let source = runtime.current_source_version().expect("source");
+        let mut journal =
+            M11ReferenceJournal::new(&mut runtime, source, 1).expect("reference journal");
+        journal
+            .offer_occurrence(
+                &runtime,
+                M11ReferenceJournalOccurrence::new(
+                    M11ReferenceJournalRange::new(
+                        range(0, definition.len()),
+                        range(0, definition.encode_utf16().count()),
+                    ),
+                    M11ReferenceJournalRange::new(
+                        range(label_byte_start, label_byte_end),
+                        range(label_utf16_start, label_utf16_end),
+                    ),
+                    M11ReferenceJournalRange::new(
+                        range(destination_byte_start, destination_byte_end),
+                        range(destination_utf16_start, destination_utf16_end),
+                    ),
+                    None,
+                    normalized.as_bytes(),
+                    destination.as_bytes(),
+                    None,
+                ),
+            )
+            .expect("offer expanded occurrence");
+        loop {
+            let poll = journal.poll(&mut runtime, 1).expect("build live journal");
+            if poll.status() == M11ReferenceJournalStatus::NeedsInput {
+                break;
+            }
+            assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
+        }
+        journal
+            .finish_input(&runtime)
+            .expect("finish journal input");
+        loop {
+            let poll = journal.poll(&mut runtime, 1).expect("seal live journal");
+            if poll.status() == M11ReferenceJournalStatus::Complete {
+                break;
+            }
+            assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
+        }
+        let mut root = journal.take_root().expect("live journal root");
+        let resolver = M11ReferenceResolver::from_live_reference_journal(&runtime, &root)
+            .expect("live resolver");
+
+        let resolved = resolver
+            .resolve(&runtime, &normalized, 64)
+            .expect("expanded lookup");
+        let M11ReferenceResolution::Resolved(resolved) = resolved else {
+            panic!("maximum valid expanded label did not resolve");
+        };
+        assert_eq!(resolved.definition_ordinal(), 0);
+        assert_eq!(resolved.cooked_destination(), destination);
+        assert_eq!(
+            resolved.destination_source(),
+            &range(destination_byte_start, destination_byte_end)
+        );
+
+        let near_miss = &normalized[..normalized.len() - scalar_fold.len()];
+        assert_eq!(
+            resolver
+                .resolve(&runtime, near_miss, 64)
+                .expect("near-bound miss"),
+            M11ReferenceResolution::Missing
+        );
+
+        drop(resolver);
+        root.begin_release(&mut runtime)
+            .expect("begin root release");
+        while !root
+            .poll_release(&mut runtime, 1)
+            .expect("poll root release")
+            .complete()
+        {}
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
     }
 
     #[test]

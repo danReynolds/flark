@@ -1,7 +1,7 @@
 # M1.1 exact-controller production-promotion audit
 
 Status: production-shaped exact-clean slice and source-backed cooked-reference
-publication implemented; M1.1 remains open.
+live journal implemented; M1.1 remains open.
 
 ## Selected donor boundary
 
@@ -107,7 +107,8 @@ cancellation after 17 unique bytes with no partial grammar publication.
 ## Source-backed cooked reference values
 
 Accepted destination/title cuts now remain tied to the certified immutable
-source lease through publication. One caller-fuelled `ReferenceCooker` performs
+source lease through live-journal completion. One caller-fuelled
+`ReferenceCooker` performs
 three bounded passes over each exact cut:
 
 1. probe destination trim or title delimiters;
@@ -119,9 +120,9 @@ The count pass lets the persistent reference root preflight exact page and byte
 capacity before accepting any value bytes. Neither destination nor title is
 flattened into a document-sized `String` or `Box<[u8]>`; the active state is one
 4 KiB source window, one 32-byte entity/replay candidate, one 16-byte output
-chunk, and one arena blob page. Candidate abort returns or drops the source
-baton, clears bounded cleaner output, and transfers every partial arena owner
-to fuelled reclamation.
+chunk, and one arena blob page. Journal cancellation returns or drops the
+source baton, clears bounded cleaner output, and transfers every partial arena
+owner to fuelled reclamation.
 
 Value semantics are pinned to Comrak 0.54's `clean_url`, `clean_title`,
 backslash `unescape`, and exact generated entity table. Production calls the
@@ -132,12 +133,11 @@ archive can replay that receipt explicitly. The active gate then
 differentially checks all 2,000+ semicolon entities, 10,000 random accepted
 values, Unicode and invalid-entity edges against the atomic Comrak oracle.
 
-The storage gate proves atomic and streamed multi-page facts have identical
-canonical role metadata and queryable values. The parser publication gate
-proves exact UTF-8/UTF-16 cuts through an independent host install, complete 10
-MiB destination and 10 MiB title publication with writer fuel one and at most
-three 4 KiB windows of conservatively reported retained value bytes, plus
-cancellation both during a 10 MiB probe and after partial multi-page emission.
+The live-journal gate proves atomic and streamed multi-page facts resolve to
+identical cooked values under the same source authority. Parser tests cover
+exact UTF-8/UTF-16 cuts, large destination/title values, fuel-one progress, the
+bounded source-window envelope, cancellation during probing, and cancellation
+after partial multi-page emission.
 
 ## Honest open boundary
 
@@ -156,11 +156,10 @@ adversary remains explicit rather than taking a narrow-grammar shortcut.
 The source-backed GFM Table detector must still replace the current
 conservative candidate Unknown.
 
-The sibling `publication` boundary now turns exact-clean results into canonical
-multi-page SourceFacts, Green, Projection, paged References, and CleanEof roles,
-streams their self-contained closure through both credited production
-endpoints, installs it in independent native/main-context-Wasm hosts, and
-answers the same Rust-authored bounded public point query. A product-facing
-resumable reference-query cursor, archive consumers, broader lifecycle stress,
-the exact Table join, and final combined release gates remain; these focused
-results are not a launch claim.
+The former sibling candidate-publication/host boundary is no longer active, so
+this audit makes no SourceFacts-role, snapshot-transport, or independent-host
+installation claim. Current promotion proof ends at parser-owned Green and
+References plus atomic inline capture under the live document authority. A
+product-facing resumable reference-query cursor, broader lifecycle stress, the
+exact Table join, and final combined release gates remain; these focused results
+are not a launch claim.

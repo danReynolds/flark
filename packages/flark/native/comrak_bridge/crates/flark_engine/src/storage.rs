@@ -540,19 +540,6 @@ impl PageArena {
         })
     }
 
-    /// Checks a suspended capability without consuming it.
-    ///
-    /// Move-only controller code uses this before a transfer whose legacy
-    /// `Result` shape cannot return the capability on failure. Once this
-    /// succeeds, the matching transfer is infallible on the same worker: no
-    /// intervening operation can mutate the arena lifecycle state.
-    pub(crate) fn validate_suspended_build(
-        &self,
-        build: &CandidateBuild,
-    ) -> Result<(), ArenaError> {
-        self.validate_build(build.id, BuildState::Suspended)
-    }
-
     /// Checks a sealing capability without consuming it.
     pub(crate) fn validate_seal(&self, seal: &CandidateSeal) -> Result<(), ArenaError> {
         if seal.complete {

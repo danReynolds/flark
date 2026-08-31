@@ -15,6 +15,7 @@ mod identity;
 mod inline_projection;
 mod measured_sequence;
 mod mersenne61;
+mod parser_profile;
 mod recursive_green;
 mod reference_authority;
 #[cfg(feature = "parser-internal")]
@@ -23,7 +24,6 @@ mod reference_journal;
 mod reference_resolver;
 mod reference_root;
 mod source;
-mod source_facts;
 mod storage;
 
 /// Narrow workspace-only parser seam.
@@ -39,17 +39,14 @@ mod parser_scratch;
 
 pub use document::{
     DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError, DocumentState, DrainPoll,
-    EditReceipt, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness,
-    IncrementalSourceFactsPlan, PersistentCertifiedSource, PersistentSourceFactsDeltaRootAuthority,
-    PersistentSourceFactsDeltaScanWork, PersistentSourceFactsDeltaWitness,
-    PersistentSourceFactsInfo, PersistentSourceFactsPageInfo, RuntimeSourceFactsPoll,
-    Utf16EditReceipt,
+    EditReceipt, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness, Utf16EditReceipt,
 };
 #[cfg(feature = "progressive-source-probe")]
 pub use identity::SourceLoadId;
 pub use identity::{
     ArenaId, ArenaIdentity, SourceAuthority, SourceDocumentId, SourceRevision, SourceRootId,
 };
+pub use parser_profile::ParserProfileId;
 pub use source::{
     LineDescriptor, LineEnding, LinePoll, PhysicalLineCursor, PlannedSourceEditIntent,
     PreparedSourceEdit, PreparedSourceEditIntent, SourceBoundaryAffinity, SourceCommit,
@@ -64,18 +61,5 @@ pub use source::{
 pub use source::{
     OpeningSourceAppendProof, OpeningSourceError, OpeningSourceSnapshot, OpeningSourceStore,
     OpeningSourceVersion, SourceAppendCommit, SourceAppendReceipt,
-};
-pub use source_facts::{
-    CertifiedSource, ParserProfileId, PersistentSourceFactsWork, SourceContentFingerprint,
-    SourceContentHash128, SourceFactCanonicalPage, SourceFactCheckpoint, SourceFactCheckpointPage,
-    SourceFactPageDigest, SourceFactRelativeCheckpoint, SourceFactRootPage,
-    SourceFactSegmentSummary, SourceFactSequenceDigest, SourceFactsAssemblyError,
-    SourceFactsCompletion, SourceFactsCoverage, SourceFactsError, SourceFactsPoll, SourceFactsRoot,
-    SourceFactsRootAdmission, SourceFactsRootBuilder, SourceFactsRootLimits, SourceFactsScanId,
-    SourceFactsScanProfile, SourceFactsScanner, SourceFactsWork,
-    PERSISTENT_SOURCE_FACTS_CHECKPOINT_ROOT_GUARD_ALGORITHM, SOURCE_CONTENT_FINGERPRINT_ALGORITHM,
-    SOURCE_FACT_CHECKPOINTS_PER_PAGE_MAX, SOURCE_FACT_CHECKPOINT_SPACING_MAX_UTF16,
-    SOURCE_FACT_ROOT_DEFAULT_MAX_CHECKPOINTS, SOURCE_FACT_ROOT_DEFAULT_MAX_PAGES,
-    SOURCE_FACT_ROOT_DEFAULT_MAX_RESIDENT_BYTES, SOURCE_FACT_SOURCE_BYTES_PER_POLL_MAX,
 };
 pub use storage::{ArenaError, ArenaLimits, ArenaMetrics, ReclaimReceipt, ARENA_PAGE_BYTES};
