@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use comrak::block_spine_facade::{
-    FacadeError, FacadeSetextChar, atx_heading_start, chop_trailing_hashes, close_code_fence,
-    html_block_end, html_block_start, open_code_fence, setext_heading_line, task_list_marker,
+    FacadeError, FacadeSetextChar, close_code_fence, html_block_end, html_block_start,
+    open_code_fence, setext_heading_line, task_list_marker,
 };
 use generated_scanner_gate::{
     AtxLineCuts, CURSOR_ATX_MAX_LOOKAHEAD_SLACK, CursorScanError,
@@ -16,11 +16,10 @@ use crate::reference_prefix::{
     DirectReferenceLogicalPosition, DirectReferencePrefixDisposition,
     DirectReferencePrefixTerminalAck, DirectReferencePrefixWork,
 };
-use crate::source::{LogicalProjection, OriginTransform};
+use crate::source::LogicalProjection;
 use crate::table;
 use crate::tree::{
-    BlockEvent, BlockKind, BlockTree, ListData, ListDelimiter, ListType, NodeId, Position,
-    ReferenceOccurrence, SyntaxProfile,
+    BlockKind, BlockTree, ListData, ListDelimiter, ListType, NodeId, Position, SyntaxProfile,
 };
 
 const TAB_STOP: usize = 4;
@@ -1326,27 +1325,10 @@ struct LineTransition {
     phase: LinePhase,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct TreeCursorFrame {
-    node: NodeId,
-    next_child: usize,
-}
-
-#[derive(Debug)]
-struct ListPositionScan {
-    list: NodeId,
-    max_end: Position,
-    stack: Vec<TreeCursorFrame>,
-}
-
 #[derive(Debug)]
 enum FinishPhase {
     CloseCurrent,
     CloseRoot,
-    Propagate {
-        postorder: Vec<TreeCursorFrame>,
-        active_list: Option<ListPositionScan>,
-    },
 }
 
 /// Parser-owned EOF control state, shared by unlimited and fuelled drivers.
@@ -4426,7 +4408,6 @@ enum PrefixResult {
 pub struct ValueBlockParser {
     pub(crate) profile: SyntaxProfile,
     pub(crate) tree: BlockTree,
-    pub(crate) references: Vec<ReferenceOccurrence>,
     pub(crate) current: NodeId,
     pub(crate) line_number: usize,
     pub(crate) line_leaf_id: u64,
@@ -4441,15 +4422,11 @@ pub struct ValueBlockParser {
     pub(crate) curline_len: usize,
     pub(crate) curline_end_col: usize,
     pub(crate) last_line_length: usize,
-    /// Continuation mode delegates historical-tree-only source-position
-    /// repair to the write-only materializer, which owns the complete output.
-    pub(crate) defer_output_repairs: bool,
     /// Ephemeral grammar fact for the physical line currently being parsed.
     /// Restored frames are necessarily older than the next pushed line.
     pub(crate) opened_this_line: HashSet<NodeId>,
-    /// Present only for the direct stack-command driver. The ordinary parser
-    /// keeps producing its exact legacy tree/events unchanged.
-    direct: Option<DirectHooks>,
+    /// Command and restart state for the sole supported direct driver.
+    direct: DirectHooks,
     /// Full physical metrics for the source-backed line currently being
     /// decided by `LineTransition`. The bounded text window remains owned by
     /// the direct wrapper; this value carries no grammar classification.
@@ -4468,7 +4445,6 @@ impl ValueBlockParser {
         Self {
             profile,
             tree,
-            references: Vec::new(),
             current,
             line_number: 0,
             line_leaf_id: 0,
@@ -4483,9 +4459,8 @@ impl ValueBlockParser {
             curline_len: 0,
             curline_end_col: 0,
             last_line_length: 0,
-            defer_output_repairs: false,
             opened_this_line: HashSet::new(),
-            direct: None,
+            direct: DirectHooks::new(),
             direct_segmented_line: None,
             #[cfg(test)]
             open_new_scheduler: OpenNewScheduler::Resumable,
@@ -4529,10 +4504,7 @@ impl ValueBlockParser {
             return Ok(());
         }
         let root = self.tree.root;
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset != 0 {
             return Err(ParseError::Invariant(
                 "initial BOM precedes all direct source claims",
@@ -4701,19 +4673,7 @@ impl ValueBlockParser {
                     }
                     _ if self.blank => {}
                     _ if self.tree.node(container).kind.accepts_lines() => {
-                        let mut effective_line = line;
-                        if let BlockKind::Heading {
-                            setext: false,
-                            closed,
-                            ..
-                        } = &mut self.tree.node_mut(container).kind
-                        {
-                            if self.direct.is_none() {
-                                let (chopped, was_closed) = chop_trailing_hashes(line)?;
-                                effective_line = chopped;
-                                *closed = was_closed;
-                            }
-                        }
+                        let effective_line = line;
                         let count = self.first_nonspace - self.offset;
                         if self.first_nonspace <= effective_line.len() {
                             self.advance_offset(effective_line, count, false);
@@ -4806,11 +4766,7 @@ impl ValueBlockParser {
             ),
         };
 
-        if let Some(rebase) = self
-            .direct
-            .as_mut()
-            .and_then(|direct| direct.reference_current_rebase.take())
-        {
+        if let Some(rebase) = self.direct.reference_current_rebase.take() {
             open.apply_reference_current_rebase(rebase)?;
         }
 
@@ -4960,24 +4916,23 @@ impl ValueBlockParser {
                 self.advance_offset(line, 1, true);
             }
             let end = self.offset;
-            if let Some(direct) = &mut self.direct {
-                if direct.claimed_offset != start {
-                    return Err(ParseError::Invariant(
-                        "quote continuation follows the claimed prefix",
-                    ));
-                }
-                direct.push_old_source(DirectIntent::Consume {
-                    owner: container,
-                    part: DirectCoveragePart::ContainerMarker,
-                    range: u32::try_from(start)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                        ..u32::try_from(end)
-                            .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                    logical: DirectLogicalAction::None,
-                })?;
-                direct.claimed_offset = end;
-                direct.line_marker_floor = Some(container);
+            let direct = &mut self.direct;
+            if direct.claimed_offset != start {
+                return Err(ParseError::Invariant(
+                    "quote continuation follows the claimed prefix",
+                ));
             }
+            direct.push_old_source(DirectIntent::Consume {
+                owner: container,
+                part: DirectCoveragePart::ContainerMarker,
+                range: u32::try_from(start)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                    ..u32::try_from(end)
+                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+                logical: DirectLogicalAction::None,
+            })?;
+            direct.claimed_offset = end;
+            direct.line_marker_floor = Some(container);
             return Ok(true);
         }
         Ok(false)
@@ -4997,49 +4952,47 @@ impl ValueBlockParser {
             let start = self.offset;
             self.advance_offset(line, list.marker_offset + list.padding, true);
             let end = self.offset;
-            if let Some(direct) = &mut self.direct {
-                if direct.claimed_offset != start {
-                    return Err(ParseError::Invariant(
-                        "item continuation follows the claimed prefix",
-                    ));
-                }
-                direct.push_old_source(DirectIntent::Consume {
-                    owner: container,
-                    part: DirectCoveragePart::ContainerMarker,
-                    range: u32::try_from(start)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                        ..u32::try_from(end)
-                            .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                    logical: DirectLogicalAction::None,
-                })?;
-                direct.claimed_offset = end;
-                direct.line_marker_floor = Some(container);
+            let direct = &mut self.direct;
+            if direct.claimed_offset != start {
+                return Err(ParseError::Invariant(
+                    "item continuation follows the claimed prefix",
+                ));
             }
+            direct.push_old_source(DirectIntent::Consume {
+                owner: container,
+                part: DirectCoveragePart::ContainerMarker,
+                range: u32::try_from(start)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                    ..u32::try_from(end)
+                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+                logical: DirectLogicalAction::None,
+            })?;
+            direct.claimed_offset = end;
+            direct.line_marker_floor = Some(container);
             Ok(PrefixResult::Matched)
         } else if self.blank && self.tree.has_any_child(container) {
             let start = self.offset;
             let offset = self.first_nonspace - self.offset;
             self.advance_offset(line, offset, false);
-            if let Some(direct) = &mut self.direct {
-                if direct.claimed_offset != start {
-                    return Err(ParseError::Invariant(
-                        "blank item continuation follows the claimed prefix",
-                    ));
-                }
-                if start < self.offset {
-                    direct.push_old_source(DirectIntent::Consume {
-                        owner: container,
-                        part: DirectCoveragePart::ContainerMarker,
-                        range: u32::try_from(start)
-                            .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                            ..u32::try_from(self.offset)
-                                .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                        logical: DirectLogicalAction::None,
-                    })?;
-                    direct.line_marker_floor = Some(container);
-                }
-                direct.claimed_offset = self.offset;
+            let direct = &mut self.direct;
+            if direct.claimed_offset != start {
+                return Err(ParseError::Invariant(
+                    "blank item continuation follows the claimed prefix",
+                ));
             }
+            if start < self.offset {
+                direct.push_old_source(DirectIntent::Consume {
+                    owner: container,
+                    part: DirectCoveragePart::ContainerMarker,
+                    range: u32::try_from(start)
+                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                        ..u32::try_from(self.offset)
+                            .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+                    logical: DirectLogicalAction::None,
+                })?;
+                direct.line_marker_floor = Some(container);
+            }
+            direct.claimed_offset = self.offset;
             Ok(PrefixResult::Matched)
         } else {
             Ok(PrefixResult::Unmatched)
@@ -5065,18 +5018,14 @@ impl ValueBlockParser {
             if self.indent >= CODE_INDENT {
                 let start = self.offset;
                 self.advance_offset(line, CODE_INDENT, true);
-                if self.direct.is_some() {
-                    self.direct_claim_indented_code_deindent(container, start)?;
-                }
+                self.direct_claim_indented_code_deindent(container, start)?;
                 return Ok(PrefixResult::Matched);
             }
             if self.blank {
                 let start = self.offset;
                 let offset = self.first_nonspace - self.offset;
                 self.advance_offset(line, offset, false);
-                if self.direct.is_some() {
-                    self.direct_claim_indented_code_deindent(container, start)?;
-                }
+                self.direct_claim_indented_code_deindent(container, start)?;
                 return Ok(PrefixResult::Matched);
             }
             return Ok(PrefixResult::Unmatched);
@@ -5089,9 +5038,7 @@ impl ValueBlockParser {
             0
         };
         if matched >= fence_length {
-            if self.direct.is_some() {
-                self.direct_claim_fenced_code_closer(container, line)?;
-            }
+            self.direct_claim_fenced_code_closer(container, line)?;
             if let BlockKind::CodeBlock { closed, .. } = &mut self.tree.node_mut(container).kind {
                 *closed = true;
             }
@@ -5106,9 +5053,7 @@ impl ValueBlockParser {
             self.advance_offset(line, 1, true);
             remaining -= 1;
         }
-        if self.direct.is_some() {
-            self.direct_claim_fenced_code_deindent(container, marker_start)?;
-        }
+        self.direct_claim_fenced_code_deindent(container, marker_start)?;
         Ok(PrefixResult::Matched)
     }
 
@@ -5117,10 +5062,7 @@ impl ValueBlockParser {
         container: NodeId,
         start: usize,
     ) -> Result<(), ParseError> {
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset != start || start > self.offset {
             return Err(ParseError::Invariant(
                 "indented-code deindent follows the claimed source prefix",
@@ -5152,10 +5094,7 @@ impl ValueBlockParser {
         line: &str,
     ) -> Result<(), ParseError> {
         let (content_end, ending) = direct_line_ending(line)?;
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset != self.offset || self.offset > content_end {
             return Err(ParseError::Invariant(
                 "fence closer follows the claimed container prefix",
@@ -5191,10 +5130,7 @@ impl ValueBlockParser {
         container: NodeId,
         marker_start: usize,
     ) -> Result<(), ParseError> {
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset != marker_start {
             return Err(ParseError::Invariant(
                 "fence body deindent follows the claimed container prefix",
@@ -5244,24 +5180,23 @@ impl ValueBlockParser {
             self.advance_offset(line, 1, true);
         }
         *container = child;
-        if let Some(direct) = &mut self.direct {
-            if direct.claimed_offset != claim_start {
-                return Err(ParseError::Invariant(
-                    "new quote follows the claimed prefix",
-                ));
-            }
-            direct.push_body(DirectIntent::Consume {
-                owner: *container,
-                part: DirectCoveragePart::ContainerMarker,
-                range: u32::try_from(claim_start)
-                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                    ..u32::try_from(self.offset)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                logical: DirectLogicalAction::None,
-            })?;
-            direct.claimed_offset = self.offset;
-            direct.line_marker_floor = Some(*container);
+        let direct = &mut self.direct;
+        if direct.claimed_offset != claim_start {
+            return Err(ParseError::Invariant(
+                "new quote follows the claimed prefix",
+            ));
         }
+        direct.push_body(DirectIntent::Consume {
+            owner: *container,
+            part: DirectCoveragePart::ContainerMarker,
+            range: u32::try_from(claim_start)
+                .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                ..u32::try_from(self.offset)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+            logical: DirectLogicalAction::None,
+        })?;
+        direct.claimed_offset = self.offset;
+        direct.line_marker_floor = Some(*container);
         Ok(true)
     }
 
@@ -5274,50 +5209,28 @@ impl ValueBlockParser {
         container: &mut NodeId,
         line: &str,
     ) -> Result<bool, ParseError> {
-        let start = self.first_nonspace;
         let offset = self.offset;
-        if self.direct.is_some() {
-            let document_bom = self.line_number == 1
-                && offset == '\u{feff}'.len_utf8()
-                && line.starts_with('\u{feff}');
-            let scan_start = if document_bom { 0 } else { offset };
-            let Some(matched) = direct_atx_match_from_slice(
-                &line[scan_start..],
-                scan_start,
-                self.column,
-                document_bom,
-            )?
-            else {
-                return Ok(false);
-            };
-            self.advance_offset(line, matched.opener_end - offset, false);
-            *container = self.add_atx_heading(
-                *container,
-                matched.level,
-                matched.closed,
-                matched.opener_start + 1,
-            )?;
-            self.direct_claim_atx_heading_match(*container, matched.claim_start, matched)?;
-            return Ok(true);
-        }
-
-        let Some(matched) = self.detect_atx_heading(line)? else {
+        let document_bom = self.line_number == 1
+            && offset == '\u{feff}'.len_utf8()
+            && line.starts_with('\u{feff}');
+        let scan_start = if document_bom { 0 } else { offset };
+        let Some(matched) = direct_atx_match_from_slice(
+            &line[scan_start..],
+            scan_start,
+            self.column,
+            document_bom,
+        )?
+        else {
             return Ok(false);
         };
-        let bytes = line.as_bytes();
-        let mut hash = start;
-        while hash < bytes.len() && bytes[hash] == b'#' {
-            hash += 1;
-        }
-        let level = u8::try_from(hash - start)
-            .map_err(|_| ParseError::Invariant("ATX heading level fits u8"))?;
-        if !(1..=6).contains(&level) {
-            return Err(ParseError::Invariant(
-                "ATX scanner returns a heading level from one through six",
-            ));
-        }
-        self.advance_offset(line, start + matched - offset, false);
-        *container = self.add_atx_heading(*container, level, false, start + 1)?;
+        self.advance_offset(line, matched.opener_end - offset, false);
+        *container = self.add_atx_heading(
+            *container,
+            matched.level,
+            matched.closed,
+            matched.opener_start + 1,
+        )?;
+        self.direct_claim_atx_heading_match(*container, matched.claim_start, matched)?;
         Ok(true)
     }
 
@@ -5363,10 +5276,7 @@ impl ValueBlockParser {
                 "direct ATX cuts form an ordered non-EOL partition",
             ));
         }
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset != claim_start {
             return Err(ParseError::Invariant(
                 "direct ATX opener follows the claimed container prefix",
@@ -5431,10 +5341,6 @@ impl ValueBlockParser {
         Ok(())
     }
 
-    fn detect_atx_heading(&self, line: &str) -> Result<Option<usize>, ParseError> {
-        Ok(atx_heading_start(&line[self.first_nonspace..])?)
-    }
-
     fn handle_code_fence(
         &mut self,
         container: &mut NodeId,
@@ -5460,24 +5366,23 @@ impl ValueBlockParser {
             first + 1,
         )?;
         self.advance_offset(line, first + matched - offset, false);
-        if let Some(direct) = &mut self.direct {
-            if direct.claimed_offset != claim_start {
-                return Err(ParseError::Invariant(
-                    "new fence follows the claimed container prefix",
-                ));
-            }
-            direct.push_body(DirectIntent::Consume {
-                owner: *container,
-                part: DirectCoveragePart::BlockMarker,
-                range: u32::try_from(claim_start)
-                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                    ..u32::try_from(self.offset)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                logical: DirectLogicalAction::None,
-            })?;
-            direct.claimed_offset = self.offset;
-            direct.line_marker_floor = Some(*container);
+        let direct = &mut self.direct;
+        if direct.claimed_offset != claim_start {
+            return Err(ParseError::Invariant(
+                "new fence follows the claimed container prefix",
+            ));
         }
+        direct.push_body(DirectIntent::Consume {
+            owner: *container,
+            part: DirectCoveragePart::BlockMarker,
+            range: u32::try_from(claim_start)
+                .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                ..u32::try_from(self.offset)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+            logical: DirectLogicalAction::None,
+        })?;
+        direct.claimed_offset = self.offset;
+        direct.line_marker_floor = Some(*container);
         Ok(true)
     }
 
@@ -5524,95 +5429,73 @@ impl ValueBlockParser {
             FacadeSetextChar::Equals => 1,
             FacadeSetextChar::Hyphen => 2,
         };
-        if self.direct.is_some() {
-            // Stock donor resolves reference definitions against the already
-            // completed Paragraph before deciding whether this underline can
-            // promote it.  The underline itself is never finalizer lookahead.
-            if self.direct_require_reference_finalizer(
-                *container,
-                DirectReferencePrefixContext::SetextCandidate,
-            )? == DirectReferenceFinalizeResume::ReferenceOnly
-            {
-                self.direct_retain_reference_only_paragraph(*container)?;
-                // A definitions-only prefix leaves an empty Paragraph shell.
-                // CommonMark treats the candidate underline as literal text
-                // in that same Paragraph, so claim the Setext opener as
-                // handled and let PrepareText append the complete line.
-                return Ok(true);
-            }
-            let (content_end, ending) = direct_line_ending(line)?;
-            let direct = self
-                .direct
-                .as_mut()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
-            if !direct.paragraph_has_content {
-                return Err(ParseError::Invariant(
-                    "direct Setext requires visible Paragraph content",
-                ));
-            }
-            if direct.claimed_offset != self.offset || self.offset > content_end {
-                return Err(ParseError::Invariant(
-                    "direct Setext begins at the exact unclaimed line suffix",
-                ));
-            }
-            if direct.pending_terminator {
-                direct.push_previous(DirectIntent::ResolveTerminator {
-                    resolution: DirectTerminatorResolution::CloseNone,
-                })?;
-                direct.pending_terminator = false;
-            }
-            direct.push_body(DirectIntent::FinalizeParagraph {
-                node: *container,
-                outcome: DirectParagraphOutcome::SetextHeading { level },
-            })?;
-            if direct.claimed_offset < content_end {
-                direct.push_body(DirectIntent::Consume {
-                    owner: *container,
-                    part: DirectCoveragePart::BlockMarker,
-                    range: u32::try_from(direct.claimed_offset)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                        ..u32::try_from(content_end)
-                            .map_err(|_| ParseError::Invariant("direct line below u32"))?,
-                    logical: DirectLogicalAction::None,
-                })?;
-                direct.claimed_offset = content_end;
-            }
-            if ending.is_some() {
-                direct.push_body(DirectIntent::Consume {
-                    owner: *container,
-                    part: DirectCoveragePart::Terminal,
-                    range: u32::try_from(content_end)
-                        .map_err(|_| ParseError::Invariant("direct line below u32"))?
-                        ..u32::try_from(line.len())
-                            .map_err(|_| ParseError::Invariant("direct line below u32"))?,
-                    logical: DirectLogicalAction::None,
-                })?;
-                direct.claimed_offset = line.len();
-            }
-            self.tree.node_mut(*container).kind = BlockKind::Heading {
-                level,
-                setext: true,
-                closed: false,
-            };
-            let advance = content_end - self.offset;
-            self.advance_offset(line, advance, false);
+        // Stock donor resolves reference definitions against the already
+        // completed Paragraph before deciding whether this underline can
+        // promote it. The underline itself is never finalizer lookahead.
+        if self.direct_require_reference_finalizer(
+            *container,
+            DirectReferencePrefixContext::SetextCandidate,
+        )? == DirectReferenceFinalizeResume::ReferenceOnly
+        {
+            self.direct_retain_reference_only_paragraph(*container)?;
+            // A definitions-only prefix leaves an empty Paragraph shell.
+            // CommonMark treats the candidate underline as literal text in
+            // that same Paragraph, so PrepareText appends the complete line.
             return Ok(true);
         }
-        let has_content = self.resolve_reference_link_definitions(*container)?;
-        if has_content {
-            self.tree.node_mut(*container).kind = BlockKind::Heading {
-                level,
-                setext: true,
-                closed: false,
-            };
-            self.tree.events.push(BlockEvent::Promote {
-                node: *container,
-                from: "paragraph",
-                to: "heading",
-            });
-            let advance = line.len() - newlines_of(line) - self.offset;
-            self.advance_offset(line, advance, false);
+        let (content_end, ending) = direct_line_ending(line)?;
+        let direct = &mut self.direct;
+        if !direct.paragraph_has_content {
+            return Err(ParseError::Invariant(
+                "direct Setext requires visible Paragraph content",
+            ));
         }
+        if direct.claimed_offset != self.offset || self.offset > content_end {
+            return Err(ParseError::Invariant(
+                "direct Setext begins at the exact unclaimed line suffix",
+            ));
+        }
+        if direct.pending_terminator {
+            direct.push_previous(DirectIntent::ResolveTerminator {
+                resolution: DirectTerminatorResolution::CloseNone,
+            })?;
+            direct.pending_terminator = false;
+        }
+        direct.push_body(DirectIntent::FinalizeParagraph {
+            node: *container,
+            outcome: DirectParagraphOutcome::SetextHeading { level },
+        })?;
+        if direct.claimed_offset < content_end {
+            direct.push_body(DirectIntent::Consume {
+                owner: *container,
+                part: DirectCoveragePart::BlockMarker,
+                range: u32::try_from(direct.claimed_offset)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                    ..u32::try_from(content_end)
+                        .map_err(|_| ParseError::Invariant("direct line below u32"))?,
+                logical: DirectLogicalAction::None,
+            })?;
+            direct.claimed_offset = content_end;
+        }
+        if ending.is_some() {
+            direct.push_body(DirectIntent::Consume {
+                owner: *container,
+                part: DirectCoveragePart::Terminal,
+                range: u32::try_from(content_end)
+                    .map_err(|_| ParseError::Invariant("direct line below u32"))?
+                    ..u32::try_from(line.len())
+                        .map_err(|_| ParseError::Invariant("direct line below u32"))?,
+                logical: DirectLogicalAction::None,
+            })?;
+            direct.claimed_offset = line.len();
+        }
+        self.tree.node_mut(*container).kind = BlockKind::Heading {
+            level,
+            setext: true,
+            closed: false,
+        };
+        let advance = content_end - self.offset;
+        self.advance_offset(line, advance, false);
         Ok(true)
     }
 
@@ -5645,58 +5528,50 @@ impl ValueBlockParser {
         let content_end = line.len() - newlines_of(line);
         let advance = content_end - self.offset;
         self.tree.node_mut(*container).source_end = Position::new(self.line_number, advance);
-        if self.direct.is_some() {
-            let leaf = *container;
-            let direct = self
-                .direct
-                .as_mut()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
-            if direct.pending_terminator {
-                // A thematic leaf cannot continue the previous paragraph's
-                // logical line ending. Resolve that old deferred source before
-                // emitting this line's instantaneous body recipe.
-                direct.push_previous(DirectIntent::ResolveTerminator {
-                    resolution: DirectTerminatorResolution::CloseNone,
-                })?;
-                direct.pending_terminator = false;
-            }
-            if direct.claimed_offset > content_end {
-                return Err(ParseError::Invariant(
-                    "direct thematic break starts after the line content cut",
-                ));
-            }
-            if direct.claimed_offset < content_end {
-                direct.push_body(DirectIntent::Consume {
-                    owner: leaf,
-                    part: DirectCoveragePart::BlockMarker,
-                    range: u32::try_from(direct.claimed_offset)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                        ..u32::try_from(content_end)
-                            .map_err(|_| ParseError::Invariant("direct line below u32"))?,
-                    logical: DirectLogicalAction::None,
-                })?;
-                direct.claimed_offset = content_end;
-            }
-            if content_end < line.len() {
-                direct.push_body(DirectIntent::Consume {
-                    owner: leaf,
-                    part: DirectCoveragePart::Terminal,
-                    range: u32::try_from(content_end)
-                        .map_err(|_| ParseError::Invariant("direct line below u32"))?
-                        ..u32::try_from(line.len())
-                            .map_err(|_| ParseError::Invariant("direct line below u32"))?,
-                    logical: DirectLogicalAction::None,
-                })?;
-                direct.claimed_offset = line.len();
-            }
+        let leaf = *container;
+        let direct = &mut self.direct;
+        if direct.pending_terminator {
+            // A thematic leaf cannot continue the previous paragraph's
+            // logical line ending. Resolve that old deferred source before
+            // emitting this line's instantaneous body recipe.
+            direct.push_previous(DirectIntent::ResolveTerminator {
+                resolution: DirectTerminatorResolution::CloseNone,
+            })?;
+            direct.pending_terminator = false;
+        }
+        if direct.claimed_offset > content_end {
+            return Err(ParseError::Invariant(
+                "direct thematic break starts after the line content cut",
+            ));
+        }
+        if direct.claimed_offset < content_end {
+            direct.push_body(DirectIntent::Consume {
+                owner: leaf,
+                part: DirectCoveragePart::BlockMarker,
+                range: u32::try_from(direct.claimed_offset)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                    ..u32::try_from(content_end)
+                        .map_err(|_| ParseError::Invariant("direct line below u32"))?,
+                logical: DirectLogicalAction::None,
+            })?;
+            direct.claimed_offset = content_end;
+        }
+        if content_end < line.len() {
+            direct.push_body(DirectIntent::Consume {
+                owner: leaf,
+                part: DirectCoveragePart::Terminal,
+                range: u32::try_from(content_end)
+                    .map_err(|_| ParseError::Invariant("direct line below u32"))?
+                    ..u32::try_from(line.len())
+                        .map_err(|_| ParseError::Invariant("direct line below u32"))?,
+                logical: DirectLogicalAction::None,
+            })?;
+            direct.claimed_offset = line.len();
         }
         self.advance_offset(line, advance, false);
-        if self.direct.is_some() {
-            // A thematic break has no continuation state. Closing it in the
-            // same recipe prevents a leaf from leaking into the durable open
-            // path while retaining the donor's precedence decision.
-            *container = self.finalize(*container)?;
-        }
+        // A thematic break has no continuation state. Closing it in the same
+        // recipe prevents a leaf from leaking into the durable open path.
+        *container = self.finalize(*container)?;
         Ok(true)
     }
 
@@ -5821,24 +5696,23 @@ impl ValueBlockParser {
         }
         list.task_checked = task_checked;
         *container = self.add_child(*container, BlockKind::Item(list), self.first_nonspace + 1)?;
-        if let Some(direct) = &mut self.direct {
-            if direct.claimed_offset != claim_start {
-                return Err(ParseError::Invariant(
-                    "new list item follows the claimed prefix",
-                ));
-            }
-            direct.push_body(DirectIntent::Consume {
-                owner: *container,
-                part: DirectCoveragePart::ContainerMarker,
-                range: u32::try_from(claim_start)
-                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                    ..u32::try_from(self.offset)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                logical: DirectLogicalAction::None,
-            })?;
-            direct.claimed_offset = self.offset;
-            direct.line_marker_floor = Some(*container);
+        let direct = &mut self.direct;
+        if direct.claimed_offset != claim_start {
+            return Err(ParseError::Invariant(
+                "new list item follows the claimed prefix",
+            ));
         }
+        direct.push_body(DirectIntent::Consume {
+            owner: *container,
+            part: DirectCoveragePart::ContainerMarker,
+            range: u32::try_from(claim_start)
+                .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                ..u32::try_from(self.offset)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+            logical: DirectLogicalAction::None,
+        })?;
+        direct.claimed_offset = self.offset;
+        direct.line_marker_floor = Some(*container);
         Ok(true)
     }
 
@@ -5888,24 +5762,23 @@ impl ValueBlockParser {
             },
             self.offset + 1,
         )?;
-        if let Some(direct) = &mut self.direct {
-            if direct.claimed_offset != claim_start {
-                return Err(ParseError::Invariant(
-                    "new indented code follows the claimed source prefix",
-                ));
-            }
-            direct.push_body(DirectIntent::Consume {
-                owner: *container,
-                part: DirectCoveragePart::BlockMarker,
-                range: u32::try_from(claim_start)
-                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?
-                    ..u32::try_from(self.offset)
-                        .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                logical: DirectLogicalAction::None,
-            })?;
-            direct.claimed_offset = self.offset;
-            direct.line_marker_floor = Some(*container);
+        let direct = &mut self.direct;
+        if direct.claimed_offset != claim_start {
+            return Err(ParseError::Invariant(
+                "new indented code follows the claimed source prefix",
+            ));
         }
+        direct.push_body(DirectIntent::Consume {
+            owner: *container,
+            part: DirectCoveragePart::BlockMarker,
+            range: u32::try_from(claim_start)
+                .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                ..u32::try_from(self.offset)
+                    .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+            logical: DirectLogicalAction::None,
+        })?;
+        direct.claimed_offset = self.offset;
+        direct.line_marker_floor = Some(*container);
         Ok(true)
     }
 
@@ -5924,7 +5797,7 @@ impl ValueBlockParser {
         };
         if opening.replace {
             self.tree.insert_after(*container, opening.container);
-            self.tree.detach(*container);
+            self.tree.detach_scratch(*container);
             *container = opening.container;
         } else {
             *container = opening.container;
@@ -5991,115 +5864,22 @@ impl ValueBlockParser {
         if start_column == 0 {
             return Err(ParseError::Invariant("block start column is one-based"));
         }
-        let direct_kind = self
-            .direct
-            .as_ref()
-            .map(|_| direct_block_kind(&kind))
-            .transpose()?;
+        let direct_kind = direct_block_kind(&kind)?;
         let start = Position::new(self.line_number, start_column);
-        let child = if self.direct.is_some() {
-            self.tree.append_scratch(parent, kind, start)
-        } else {
-            self.tree.append(parent, kind, start)
-        };
+        let child = self.tree.append_scratch(parent, kind, start);
         self.opened_this_line.insert(child);
-        if let (Some(direct), Some(kind)) = (&mut self.direct, direct_kind) {
-            direct.push_body(DirectIntent::Open { node: child, kind })?;
-            if kind == DirectBlockKind::Paragraph {
-                direct.paragraph_has_content = false;
-            }
+        self.direct.push_body(DirectIntent::Open {
+            node: child,
+            kind: direct_kind,
+        })?;
+        if direct_kind == DirectBlockKind::Paragraph {
+            self.direct.paragraph_has_content = false;
         }
         Ok(child)
     }
 
     pub(crate) fn add_line(&mut self, node: NodeId, line: &str) -> Result<(), ParseError> {
-        if self.direct.is_some() {
-            return self.direct_add_line(node, line);
-        }
-        let source_backed = matches!(
-            self.tree.node(node).kind,
-            BlockKind::CodeBlock { .. } | BlockKind::HtmlBlock { .. }
-        );
-        let logical_start = self.tree.node(node).content.logical_len();
-        let origin_start = self.tree.node(node).content.origins.len();
-        let line_offsets_start = self.tree.node(node).content.line_offsets.len();
-        let original_offset = self.offset;
-        if source_backed {
-            self.tree.node_mut(node).content.ensure_source_backed();
-            if self.partially_consumed_tab {
-                self.offset += 1;
-            }
-            if self.partially_consumed_tab || self.offset < line.len() {
-                let line_start = self
-                    .tree
-                    .node_mut(node)
-                    .content
-                    .start_source_backed_line(self.offset);
-                if self.partially_consumed_tab {
-                    let chars_to_tab = TAB_STOP - (self.column % TAB_STOP);
-                    self.tree.node_mut(node).content.push_source_backed(
-                        self.line_leaf_id,
-                        original_offset..self.offset,
-                        chars_to_tab,
-                        OriginTransform::TabExpansion,
-                    );
-                }
-                if self.offset < line.len() {
-                    self.tree.node_mut(node).content.push_source_backed(
-                        self.line_leaf_id,
-                        self.offset..line.len(),
-                        line.len() - self.offset,
-                        OriginTransform::Identity,
-                    );
-                }
-                self.tree
-                    .node_mut(node)
-                    .content
-                    .finish_source_backed_line(line_start, &line[self.offset..]);
-            }
-        } else {
-            if self.partially_consumed_tab {
-                self.offset += 1;
-                let chars_to_tab = TAB_STOP - (self.column % TAB_STOP);
-                let spaces = " ".repeat(chars_to_tab);
-                self.tree.node_mut(node).content.push_source(
-                    self.line_leaf_id,
-                    original_offset..self.offset,
-                    &spaces,
-                    OriginTransform::TabExpansion,
-                );
-            }
-            if self.offset < line.len() {
-                self.tree
-                    .node_mut(node)
-                    .content
-                    .line_offsets
-                    .push(self.offset);
-                self.tree.node_mut(node).content.push_source(
-                    self.line_leaf_id,
-                    self.offset..line.len(),
-                    &line[self.offset..],
-                    OriginTransform::Identity,
-                );
-            }
-        }
-        let logical_end = self.tree.node(node).content.logical_len();
-        if logical_end > logical_start {
-            self.tree.events.push(BlockEvent::AppendContent {
-                node,
-                logical_start: u32::try_from(logical_start).expect("logical below u32"),
-                logical_end: u32::try_from(logical_end).expect("logical below u32"),
-                origin_start: u32::try_from(origin_start).expect("origin count below u32"),
-                origin_end: u32::try_from(self.tree.node(node).content.origins.len())
-                    .expect("origin count below u32"),
-                line_offsets_start: u32::try_from(line_offsets_start)
-                    .expect("line offset count below u32"),
-                line_offsets_end: u32::try_from(self.tree.node(node).content.line_offsets.len())
-                    .expect("line offset count below u32"),
-                source_backed: self.tree.node(node).content.source_backed,
-            });
-        }
-        Ok(())
+        self.direct_add_line(node, line)
     }
 
     /// Prove that a truncated source window is sufficient for the *existing*
@@ -6194,11 +5974,7 @@ impl ValueBlockParser {
             return true;
         }
         let node = self.current;
-        matches!(self.tree.node(node).kind, BlockKind::Paragraph)
-            && self
-                .direct
-                .as_ref()
-                .is_some_and(|direct| direct.commands.is_empty())
+        matches!(self.tree.node(node).kind, BlockKind::Paragraph) && self.direct.commands.is_empty()
     }
 
     fn direct_add_line(&mut self, node: NodeId, line: &str) -> Result<(), ParseError> {
@@ -6222,10 +5998,7 @@ impl ValueBlockParser {
             BlockKind::Heading { setext: true, .. }
         ) {
             let (content_end, _) = direct_line_ending(line)?;
-            let direct = self
-                .direct
-                .as_ref()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
+            let direct = &self.direct;
             if self.offset == content_end && direct.claimed_offset == line.len() {
                 return Ok(());
             }
@@ -6262,10 +6035,7 @@ impl ValueBlockParser {
             .parent(node)
             .ok_or(ParseError::Invariant("paragraph has a parent"))?;
         let opened_this_line = self.opened_this_line.contains(&node);
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if !direct.paragraph_has_content
             && line[self.offset..content_end].trim_start().starts_with('[')
         {
@@ -6375,10 +6145,7 @@ impl ValueBlockParser {
         if self.offset > content_end {
             return Err(ParseError::InvalidUtf8Boundary);
         }
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.pending_terminator {
             direct.push_previous(DirectIntent::ResolveTerminator {
                 resolution: DirectTerminatorResolution::ContinueCanonicalNewline,
@@ -6464,10 +6231,7 @@ impl ValueBlockParser {
         };
         let retiring_old = !self.opened_this_line.contains(&node)
             && html_block_end(block_type, &line[self.first_nonspace..])?;
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.pending_terminator {
             direct.push_previous(DirectIntent::ResolveTerminator {
                 resolution: DirectTerminatorResolution::CloseNone,
@@ -6550,10 +6314,7 @@ impl ValueBlockParser {
             .parent(node)
             .ok_or(ParseError::Invariant("segmented Paragraph has a parent"))?;
         let opened_this_line = self.opened_this_line.contains(&node);
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if !direct.paragraph_has_content
             && controller_window[self.offset..]
                 .trim_start()
@@ -6622,10 +6383,7 @@ impl ValueBlockParser {
             return Err(ParseError::InvalidUtf8Boundary);
         }
         let opened_this_line = self.opened_this_line.contains(&node);
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset != self.offset {
             return Err(ParseError::Invariant(
                 "fenced content follows its exact marker prefix",
@@ -6729,71 +6487,7 @@ impl ValueBlockParser {
             FinishPhase::CloseRoot => {
                 receipt.transitions += 1;
                 let _ = self.finalize(self.tree.root)?;
-                if self.defer_output_repairs {
-                    return Ok(true);
-                }
-                transition.phase = FinishPhase::Propagate {
-                    postorder: vec![TreeCursorFrame {
-                        node: self.tree.root,
-                        next_child: 0,
-                    }],
-                    active_list: None,
-                };
-            }
-            FinishPhase::Propagate {
-                postorder,
-                active_list,
-            } => {
-                receipt.index_operations += 1;
-                if let Some(scan) = active_list {
-                    let Some(frame) = scan.stack.last_mut() else {
-                        if scan.max_end.column != 0 {
-                            self.tree.node_mut(scan.list).source_end = scan.max_end;
-                        }
-                        *active_list = None;
-                        return Ok(false);
-                    };
-                    let children = &self.tree.node(frame.node).children;
-                    if let Some(child) = children.get(frame.next_child).copied() {
-                        frame.next_child += 1;
-                        let candidate = self.tree.node(child).source_end;
-                        if candidate.column != 0 && candidate > scan.max_end {
-                            scan.max_end = candidate;
-                        }
-                        scan.stack.push(TreeCursorFrame {
-                            node: child,
-                            next_child: 0,
-                        });
-                    } else {
-                        scan.stack.pop();
-                    }
-                    return Ok(false);
-                }
-
-                let Some(frame) = postorder.last_mut() else {
-                    return Ok(true);
-                };
-                let children = &self.tree.node(frame.node).children;
-                if let Some(child) = children.get(frame.next_child).copied() {
-                    frame.next_child += 1;
-                    postorder.push(TreeCursorFrame {
-                        node: child,
-                        next_child: 0,
-                    });
-                    return Ok(false);
-                }
-
-                let node = postorder.pop().expect("postorder frame exists").node;
-                if matches!(self.tree.node(node).kind, BlockKind::List(_)) {
-                    *active_list = Some(ListPositionScan {
-                        list: node,
-                        max_end: self.tree.node(node).source_end,
-                        stack: vec![TreeCursorFrame {
-                            node,
-                            next_child: 0,
-                        }],
-                    });
-                }
+                return Ok(true);
             }
         }
         Ok(false)
@@ -6808,13 +6502,10 @@ impl ValueBlockParser {
         node: NodeId,
         context: DirectReferencePrefixContext,
     ) -> Result<DirectReferenceFinalizeResume, ParseError> {
-        if self.direct.is_none() || !matches!(self.tree.node(node).kind, BlockKind::Paragraph) {
+        if !matches!(self.tree.node(node).kind, BlockKind::Paragraph) {
             return Ok(DirectReferenceFinalizeResume::Continue);
         }
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if !direct.paragraph_may_have_reference_prefix {
             return Ok(DirectReferenceFinalizeResume::Continue);
         }
@@ -6841,10 +6532,7 @@ impl ValueBlockParser {
         let parent = self.tree.parent(node).ok_or(ParseError::Invariant(
             "reference-only Paragraph has a parent",
         ))?;
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.emission_stack.last().copied() != Some(node) {
             return Err(ParseError::Invariant(
                 "reference-only Paragraph is the emitted open leaf",
@@ -6874,11 +6562,7 @@ impl ValueBlockParser {
         discarded: NodeId,
         current: NodeId,
     ) -> Result<(), ParseError> {
-        let Some(rebase) = self
-            .direct
-            .as_mut()
-            .and_then(|direct| direct.reference_current_rebase.take())
-        else {
+        let Some(rebase) = self.direct.reference_current_rebase.take() else {
             return Ok(());
         };
         if rebase.discarded != discarded || rebase.current != current {
@@ -6895,10 +6579,7 @@ impl ValueBlockParser {
                 "reference-only Setext disposition targets a Paragraph",
             ));
         }
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.emission_stack.last().copied() != Some(node)
             || direct.paragraph_may_have_reference_prefix
         {
@@ -6925,15 +6606,8 @@ impl ValueBlockParser {
             return self.direct_discard_reference_only_paragraph(node);
         }
         let parent = self.tree.parent(node).unwrap_or(self.tree.root);
-        let direct_last_line_blank = self
-            .direct
-            .as_ref()
-            .map(|_| self.tree.node(node).last_line_blank);
-        if self.direct.is_some() {
-            self.tree.close_scratch(node);
-        } else {
-            self.tree.close(node);
-        }
+        let direct_last_line_blank = self.tree.node(node).last_line_blank;
+        self.tree.close_scratch(node);
         if self.curline_len == 0 {
             self.tree.node_mut(node).source_end =
                 Position::new(self.line_number, self.last_line_length);
@@ -6958,154 +6632,57 @@ impl ValueBlockParser {
 
         match self.tree.node(node).kind.clone() {
             BlockKind::Paragraph => {
-                if let Some(direct) = &mut self.direct {
+                let direct = &mut self.direct;
+                if direct.pending_terminator {
+                    direct.push_previous(DirectIntent::ResolveTerminator {
+                        resolution: DirectTerminatorResolution::CloseNone,
+                    })?;
+                    direct.pending_terminator = false;
+                }
+                direct.paragraph_has_content = false;
+                direct.paragraph_may_have_reference_prefix = false;
+            }
+            BlockKind::CodeBlock { fenced, .. } => {
+                if !fenced {
+                    let direct = &mut self.direct;
                     if direct.pending_terminator {
                         direct.push_previous(DirectIntent::ResolveTerminator {
                             resolution: DirectTerminatorResolution::CloseNone,
                         })?;
                         direct.pending_terminator = false;
                     }
-                    direct.paragraph_has_content = false;
-                    direct.paragraph_may_have_reference_prefix = false;
-                } else if !self.resolve_reference_link_definitions(node)? {
-                    self.tree.detach(node);
                 }
+                // The direct writer owns source-backed projection and snapshots
+                // parser-certified info/literal boundaries.
             }
-            BlockKind::CodeBlock { fenced, .. } => {
-                if self.direct.is_some() {
-                    if !fenced {
-                        let direct = self
-                            .direct
-                            .as_mut()
-                            .ok_or(ParseError::Invariant("direct hooks are present"))?;
-                        if direct.pending_terminator {
-                            direct.push_previous(DirectIntent::ResolveTerminator {
-                                resolution: DirectTerminatorResolution::CloseNone,
-                            })?;
-                            direct.pending_terminator = false;
-                        }
-                    }
-                    // The direct writer owns the source-backed projection and
-                    // snapshots the parser-certified info/literal boundaries.
-                    // Retaining donor `LeafContent` here would duplicate the
-                    // aggregate raw stream and defeat direct scratch compaction.
-                } else {
-                    let metadata =
-                        self.tree
-                            .node(node)
-                            .content
-                            .source_backed
-                            .ok_or(ParseError::Invariant(
-                                "code block content is not source-backed",
-                            ))?;
-                    if fenced {
-                        if let BlockKind::CodeBlock { info, literal, .. } =
-                            &mut self.tree.node_mut(node).kind
-                        {
-                            *info = LogicalProjection::new(0, metadata.first_line_content_end);
-                            *literal = LogicalProjection::new(
-                                metadata.first_line_end,
-                                metadata.logical_len,
-                            );
-                        }
-                    } else if let BlockKind::CodeBlock { literal, .. } =
-                        &mut self.tree.node_mut(node).kind
-                    {
-                        *literal = LogicalProjection::new(0, metadata.trimmed_end).with_newline();
-                    }
-                }
-            }
-            BlockKind::HtmlBlock { .. } => {
-                if self.direct.is_none() {
-                    let metadata =
-                        self.tree
-                            .node(node)
-                            .content
-                            .source_backed
-                            .ok_or(ParseError::Invariant(
-                                "HTML block content is not source-backed",
-                            ))?;
-                    let line_count = usize::try_from(metadata.trimmed_line_index)
-                        .expect("HTML line count fits usize");
-                    let last_line_length = usize::try_from(metadata.trimmed_last_line_len)
-                        .expect("HTML line length fits usize");
-                    let start_line = self.tree.node(node).source_start.line;
-                    let line_offset = self
-                        .tree
-                        .node(node)
-                        .content
-                        .line_offsets
-                        .get(line_count)
-                        .copied()
-                        .unwrap_or(0);
-                    self.tree.node_mut(node).source_end =
-                        Position::new(start_line + line_count, line_offset + last_line_length);
-                    if let BlockKind::HtmlBlock { literal, .. } = &mut self.tree.node_mut(node).kind
-                    {
-                        *literal = LogicalProjection::new(0, metadata.logical_len);
-                    }
-                }
-            }
+            BlockKind::HtmlBlock { .. } => {}
             BlockKind::List(mut list) => {
-                if self.direct.is_some() {
-                    // Direct source coverage is the position authority. The
-                    // donor tree's descendant position-repair chronology must
-                    // never enter the normalized writer port.
-                } else if self.defer_output_repairs {
-                    let mut scratch_positions = Vec::new();
-                    let mut stack = vec![node];
-                    while let Some(scratch) = stack.pop() {
-                        let value = self.tree.node(scratch);
-                        scratch_positions.push((scratch, value.source_start, value.source_end));
-                        stack.extend(value.children.iter().rev().copied());
-                    }
-                    self.tree
-                        .events
-                        .push(BlockEvent::RepairListSourcePositions {
-                            node,
-                            scratch_positions,
-                        });
-                } else if let Some(candidate_end) = self.fix_zero_end_columns(node) {
-                    self.tree.node_mut(node).source_end = candidate_end;
-                }
                 list.tight = self.tree.list_is_tight(node);
                 self.tree.node_mut(node).kind = BlockKind::List(list);
             }
             _ => {}
         }
-        if self.direct.is_some() {
-            let kind = direct_block_kind(&self.tree.node(node).kind)?;
-            let final_facts = direct_final_facts(&self.tree.node(node).kind);
-            let summary = self.tree.closed_child_summary(node);
-            let intent = DirectIntent::Close {
-                node,
-                kind,
-                final_facts,
-                last_line_blank: direct_last_line_blank.ok_or(ParseError::Invariant(
-                    "direct close captured intrinsic blank state",
-                ))?,
-                child: DirectClosedChild {
-                    ends_blank: summary.ends_blank,
-                    item_loose_if_nonlast: summary.item_loose_if_nonlast,
-                    item_loose_if_last: summary.item_loose_if_last,
-                },
-            };
-            let opened_this_line = self.opened_this_line.contains(&node);
-            let direct = self
-                .direct
-                .as_mut()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
-            if opened_this_line {
-                direct.push_body(intent)?;
-            } else {
-                direct.push_retired(intent)?;
-            }
-        }
-        if self.direct.is_some() {
-            self.tree.fold_finalized_direct_child(node);
+        let kind = direct_block_kind(&self.tree.node(node).kind)?;
+        let final_facts = direct_final_facts(&self.tree.node(node).kind);
+        let summary = self.tree.closed_child_summary(node);
+        let intent = DirectIntent::Close {
+            node,
+            kind,
+            final_facts,
+            last_line_blank: direct_last_line_blank,
+            child: DirectClosedChild {
+                ends_blank: summary.ends_blank,
+                item_loose_if_nonlast: summary.item_loose_if_nonlast,
+                item_loose_if_last: summary.item_loose_if_last,
+            },
+        };
+        let opened_this_line = self.opened_this_line.contains(&node);
+        if opened_this_line {
+            self.direct.push_body(intent)?;
         } else {
-            self.tree.fold_finalized_child(node);
+            self.direct.push_retired(intent)?;
         }
+        self.tree.fold_finalized_direct_child(node);
         Ok(parent)
     }
 
@@ -7146,24 +6723,9 @@ impl ValueBlockParser {
             .filter(|end| end.column != 0)
     }
 
-    fn resolve_reference_link_definitions(&mut self, node: NodeId) -> Result<bool, ParseError> {
-        let _ = node;
-        // The production promotion exposes only DirectValueBlockParser. Its
-        // source-backed reference-prefix rendezvous resolves this case before
-        // the legacy aggregate parser can reach this method. Keep the legacy
-        // path fail-closed instead of recreating cooked URL/title Strings from
-        // the production facade's source ranges merely to compile dead code.
-        Err(ParseError::DirectUnsupported(
-            DirectUnsupported::AggregateContent,
-        ))
-    }
-
     fn direct_prepare_pending_blank_gap(&mut self) -> Result<(), ParseError> {
         let (pending, floor, survivor) = {
-            let direct = self
-                .direct
-                .as_ref()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
+            let direct = &self.direct;
             let survivor = direct
                 .emission_stack
                 .iter()
@@ -7182,10 +6744,7 @@ impl ValueBlockParser {
         let owner = floor
             .or(survivor)
             .ok_or(ParseError::Invariant("pending blank gap has an old owner"))?;
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if !direct.pending_blank_gap {
             return Err(ParseError::Invariant(
                 "line-start blank gap remains pending",
@@ -7203,10 +6762,7 @@ impl ValueBlockParser {
         if !self.blank {
             return Ok(());
         }
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset > line_bytes {
             return Err(ParseError::Invariant(
                 "blank-line claims remain within the line",
@@ -7238,10 +6794,7 @@ impl ValueBlockParser {
         physical_bytes: u32,
         physical_utf16: u32,
     ) -> Result<(), ParseError> {
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         if direct.claimed_offset
             != usize::try_from(physical_bytes)
                 .map_err(|_| ParseError::Invariant("direct FinishLine physical bytes fit usize"))?
@@ -7263,11 +6816,6 @@ impl ValueBlockParser {
     /// The retained tree contains only the open path plus constant-size child
     /// folds, so direct scratch is O(open depth), not O(document length).
     fn compact_direct_scratch(&mut self) -> Result<(), ParseError> {
-        if self.direct.is_none() {
-            return Err(ParseError::Invariant(
-                "direct compaction requires direct mode",
-            ));
-        }
         if self
             .tree
             .nodes
@@ -7294,10 +6842,7 @@ impl ValueBlockParser {
             .position(|candidate| *candidate == self.current)
             .ok_or(ParseError::Invariant("direct current is on the open path"))?;
         let pending_floor_depth = {
-            let direct = self
-                .direct
-                .as_ref()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
+            let direct = &self.direct;
             if direct.emission_stack != path {
                 return Err(ParseError::Invariant(
                     "direct emitted stack matches the semantic open path",
@@ -7318,14 +6863,8 @@ impl ValueBlockParser {
                 })
                 .transpose()?
         };
-        if self
-            .direct
-            .as_ref()
-            .is_some_and(|direct| direct.pending_blank_gap != pending_floor_depth.is_some())
-            && self
-                .direct
-                .as_ref()
-                .is_some_and(|direct| direct.pending_blank_gap_floor.is_some())
+        if self.direct.pending_blank_gap != pending_floor_depth.is_some()
+            && self.direct.pending_blank_gap_floor.is_some()
         {
             return Err(ParseError::Invariant(
                 "pending blank-gap floor accompanies pending gap state",
@@ -7363,13 +6902,9 @@ impl ValueBlockParser {
             new.historical_children = old.historical_children;
             new.folded_children = 0;
         }
-        debug_assert!(compact.events.is_empty());
         self.current = compact_path[current_depth];
         self.tree = compact;
-        let direct = self
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.direct;
         direct.pending_blank_gap_floor = pending_floor_depth.map(|depth| compact_path[depth]);
         direct.line_marker_floor = None;
         direct.emission_stack = compact_path;
@@ -7668,18 +7203,12 @@ impl DirectValueBlockParser {
 
     pub fn new(profile: SyntaxProfile) -> Result<Self, ParseError> {
         let mut parser = ValueBlockParser::new(profile);
-        parser.defer_output_repairs = true;
-        parser.direct = Some(DirectHooks::new());
-        parser
-            .direct
-            .as_mut()
-            .expect("direct hooks installed")
-            .push_command(
-                DirectCommand::Open {
-                    kind: DirectBlockKind::Document,
-                },
-                Some(DirectStackEffect::Push(parser.tree.root)),
-            )?;
+        parser.direct.push_command(
+            DirectCommand::Open {
+                kind: DirectBlockKind::Document,
+            },
+            Some(DirectStackEffect::Push(parser.tree.root)),
+        )?;
         Ok(Self {
             parser,
             line_work: None,
@@ -7698,7 +7227,7 @@ impl DirectValueBlockParser {
     /// Callers use this only at an acknowledged physical-line boundary. Once
     /// false, the donor will not request reference-prefix replay for the
     /// current Paragraph, so a compact output may discard its provisional
-    /// event window without guessing from source text.
+    /// command window without guessing from source text.
     #[doc(hidden)]
     pub fn paragraph_may_have_reference_prefix(&self) -> Result<bool, ParseError> {
         if !self.line_complete
@@ -7711,11 +7240,7 @@ impl DirectValueBlockParser {
                 "reference-prefix possibility is observed at a quiescent line boundary",
             ));
         }
-        let direct = self
-            .parser
-            .direct
-            .as_ref()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &self.parser.direct;
         Ok(direct.paragraph_may_have_reference_prefix)
     }
 
@@ -7800,7 +7325,6 @@ impl DirectValueBlockParser {
         let ValueBlockParser {
             profile,
             tree,
-            references,
             current,
             line_number,
             line_leaf_id: _,
@@ -7815,17 +7339,13 @@ impl DirectValueBlockParser {
             curline_len: _,
             curline_end_col: _,
             last_line_length,
-            defer_output_repairs,
             opened_this_line,
             direct,
             direct_segmented_line,
             #[cfg(test)]
                 open_new_scheduler: _,
         } = parser;
-        if !*defer_output_repairs
-            || !references.is_empty()
-            || !opened_this_line.is_empty()
-            || !tree.events.is_empty()
+        if !opened_this_line.is_empty()
             || direct_segmented_line.is_some()
             || (*line_number == 0 && !is_document_start)
         {
@@ -7833,9 +7353,6 @@ impl DirectValueBlockParser {
                 "direct pause has canonical parser-owned boundary state",
             ));
         }
-        let direct = direct
-            .as_ref()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
         // Recipe cursors and allocation scratch are likewise resettable. Keep
         // this pattern exhaustive so hook additions cannot bypass review.
         let DirectHooks {
@@ -8234,7 +7751,6 @@ impl DirectValueBlockParser {
         // allocation. Every pause-depth-proportional allocation below uses
         // `try_reserve_exact`; failure drops the private partial rebuild.
         let mut parser = ValueBlockParser::new(profile);
-        parser.defer_output_repairs = true;
         parser
             .tree
             .nodes
@@ -8285,7 +7801,7 @@ impl DirectValueBlockParser {
         direct.paragraph_has_content = paragraph_has_content;
         direct.paragraph_may_have_reference_prefix =
             paragraph.is_some_and(|paragraph| paragraph.may_have_reference_prefix);
-        parser.direct = Some(direct);
+        parser.direct = direct;
 
         Ok(Self {
             parser,
@@ -8405,10 +7921,7 @@ impl DirectValueBlockParser {
 
     #[must_use]
     pub fn pending_external_work(&self) -> Option<&DirectExternalWork> {
-        self.parser
-            .direct
-            .as_ref()
-            .and_then(|direct| direct.pending_external_work.as_ref())
+        self.parser.direct.pending_external_work.as_ref()
     }
 
     /// Consume the recognition half of the active parser rendezvous and mint
@@ -8424,11 +7937,7 @@ impl DirectValueBlockParser {
                 "reference work begins before command emission",
             ));
         }
-        let direct = self
-            .parser
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.parser.direct;
         if direct.reference_work_id.is_some()
             || !matches!(
                 direct.pending_external_work,
@@ -8459,11 +7968,7 @@ impl DirectValueBlockParser {
         ack: DirectReferencePrefixTerminalAck<I>,
         expected_source_identity: I,
     ) -> Result<DirectReferencePrefixCommitStatus, ParseError> {
-        let direct = self
-            .parser
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &mut self.parser.direct;
         let request = match &direct.pending_external_work {
             Some(DirectExternalWork::ReferencePrefixFinalizer { request }) => *request,
             None => {
@@ -8534,11 +8039,7 @@ impl DirectValueBlockParser {
         {
             return Ok(None);
         }
-        let direct = self
-            .parser
-            .direct
-            .as_ref()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &self.parser.direct;
         if direct.reference_finalize_resume_once
             != Some(DirectReferencePrefixDisposition::VisibleRemainder)
             || direct.pending_external_work.is_some()
@@ -8603,10 +8104,7 @@ impl DirectValueBlockParser {
 
     #[must_use]
     pub fn pending_command(&self) -> Option<&DirectCommand> {
-        self.parser
-            .direct
-            .as_ref()
-            .and_then(|direct| direct.commands.front())
+        self.parser.direct.commands.front()
     }
 
     /// Acknowledge exactly the currently visible command.
@@ -8614,11 +8112,7 @@ impl DirectValueBlockParser {
     /// Parser grammar never advances while an unacknowledged command exists.
     pub fn acknowledge_command(&mut self) -> Result<(), ParseError> {
         let command = {
-            let direct = self
-                .parser
-                .direct
-                .as_mut()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
+            let direct = &mut self.parser.direct;
             let command = direct
                 .commands
                 .pop_front()
@@ -8637,11 +8131,7 @@ impl DirectValueBlockParser {
                         "finish-line command follows semantic completion",
                     ));
                 }
-                let direct = self
-                    .parser
-                    .direct
-                    .as_ref()
-                    .ok_or(ParseError::Invariant("direct hooks are present"))?;
+                let direct = &self.parser.direct;
                 if direct.emission_phase != DirectEmissionPhase::Complete
                     || !direct.recipe_is_empty()
                 {
@@ -8662,11 +8152,7 @@ impl DirectValueBlockParser {
                         "finish-document command follows semantic completion",
                     ));
                 }
-                let direct = self
-                    .parser
-                    .direct
-                    .as_ref()
-                    .ok_or(ParseError::Invariant("direct hooks are present"))?;
+                let direct = &self.parser.direct;
                 if direct.emission_phase != DirectEmissionPhase::Complete
                     || !direct.recipe_is_empty()
                     || !direct.emission_stack.is_empty()
@@ -8694,11 +8180,7 @@ impl DirectValueBlockParser {
             ));
         }
         let root = self.parser.tree.root;
-        let direct = self
-            .parser
-            .direct
-            .as_ref()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        let direct = &self.parser.direct;
         if !direct.recipe_is_empty()
             || direct.pending_stack_effect.is_some()
             || !self.parser.opened_this_line.is_empty()
@@ -8878,11 +8360,7 @@ impl DirectValueBlockParser {
                 .ok_or(ParseError::Invariant("direct line ordinal overflow"))?,
         )
         .map_err(|_| ParseError::Invariant("direct line id below u64"))?;
-        self.parser
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?
-            .begin_recipe(line_bytes)?;
+        self.parser.direct.begin_recipe(line_bytes)?;
         let transition = self.parser.begin_line_transition(&line.controller_window);
         self.parser.curline_len = line_bytes;
         self.parser.curline_end_col = line.content_end;
@@ -8928,11 +8406,7 @@ impl DirectValueBlockParser {
                 .ok_or(ParseError::Invariant("direct line ordinal overflow"))?,
         )
         .map_err(|_| ParseError::Invariant("direct line id below u64"))?;
-        self.parser
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?
-            .begin_recipe(line_bytes)?;
+        self.parser.direct.begin_recipe(line_bytes)?;
 
         let root = self.parser.tree.root;
         if matched.claim_start > 0 {
@@ -8943,11 +8417,7 @@ impl DirectValueBlockParser {
                     "direct source prefix claim is the initial UTF-8 BOM",
                 ));
             }
-            let direct = self
-                .parser
-                .direct
-                .as_mut()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?;
+            let direct = &mut self.parser.direct;
             if direct.claimed_offset != 0 {
                 return Err(ParseError::Invariant(
                     "source-backed BOM precedes all direct source claims",
@@ -9037,11 +8507,7 @@ impl DirectValueBlockParser {
         let _ = direct_line_ending(&line)?;
         self.parser.line_leaf_id = u64::try_from(self.parser.line_number + 1)
             .map_err(|_| ParseError::Invariant("direct line id below u64"))?;
-        self.parser
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?
-            .begin_recipe(line.len())?;
+        self.parser.direct.begin_recipe(line.len())?;
         let transition = self.parser.begin_line_transition(&line);
         self.parser.direct_claim_initial_bom()?;
         self.line_work = Some(DirectLineWork {
@@ -9155,12 +8621,7 @@ impl DirectValueBlockParser {
             work.output_prepared = true;
         }
         if work.semantic_complete && self.pending_command().is_none() && !work.finish_queued {
-            let queued = self
-                .parser
-                .direct
-                .as_mut()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?
-                .queue_next_intent()?;
+            let queued = self.parser.direct.queue_next_intent()?;
             if !queued {
                 match &work.input {
                     DirectLineInput::Buffered(line) => {
@@ -9218,11 +8679,7 @@ impl DirectValueBlockParser {
                 "acknowledge direct command before finishing",
             ));
         }
-        self.parser
-            .direct
-            .as_mut()
-            .ok_or(ParseError::Invariant("direct hooks are present"))?
-            .begin_recipe(0)?;
+        self.parser.direct.begin_recipe(0)?;
         self.parser.direct_prepare_pending_blank_gap()?;
         self.finish_work = Some(DirectFinishWork {
             transition: self.parser.begin_finish_transition(),
@@ -9284,17 +8741,10 @@ impl DirectValueBlockParser {
             }
         }
         if work.semantic_complete && self.pending_command().is_none() && !work.finish_queued {
-            let queued = self
-                .parser
-                .direct
-                .as_mut()
-                .ok_or(ParseError::Invariant("direct hooks are present"))?
-                .queue_next_intent()?;
+            let queued = self.parser.direct.queue_next_intent()?;
             if !queued {
                 self.parser
                     .direct
-                    .as_mut()
-                    .ok_or(ParseError::Invariant("direct hooks are present"))?
                     .push_command(DirectCommand::FinishDocument, None)?;
                 work.finish_queued = true;
             }
@@ -9337,11 +8787,6 @@ impl DirectValueBlockParser {
             } => controller_window.len(),
             DirectLineInput::SourceMetrics { .. } => 0,
         })
-    }
-
-    #[must_use]
-    pub fn legacy_event_count(&self) -> usize {
-        self.parser.tree.events.len()
     }
 }
 

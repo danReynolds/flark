@@ -1,4 +1,4 @@
-use crate::source::{LeafContent, LogicalProjection, SourceBackedContent};
+use crate::source::{LeafContent, LogicalProjection};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,56 +238,9 @@ pub struct BlockNode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BlockEvent {
-    Open {
-        node: NodeId,
-        parent: NodeId,
-    },
-    AppendContent {
-        node: NodeId,
-        logical_start: u32,
-        logical_end: u32,
-        origin_start: u32,
-        origin_end: u32,
-        line_offsets_start: u32,
-        line_offsets_end: u32,
-        /// Event-time scalar fold for a source-backed raw block. Keeping this
-        /// on the event prevents a later parser state from leaking into an
-        /// earlier append delta when several lines are delivered together.
-        source_backed: Option<SourceBackedContent>,
-    },
-    Promote {
-        node: NodeId,
-        from: &'static str,
-        to: &'static str,
-    },
-    Close {
-        node: NodeId,
-    },
-    /// Output-only full-tree source-position fold. A continuation parser emits
-    /// this instead of reading historical output from scratch.
-    RepairListSourcePositions {
-        node: NodeId,
-        scratch_positions: Vec<(NodeId, Position, Position)>,
-    },
-    Detach {
-        node: NodeId,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReferenceOccurrence {
-    pub normalized_label: String,
-    pub url: String,
-    pub title: String,
-    pub origins: Vec<crate::source::OriginRun>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockTree {
     pub nodes: Vec<BlockNode>,
     pub root: NodeId,
-    pub events: Vec<BlockEvent>,
 }
 
 impl BlockTree {
@@ -310,7 +263,6 @@ impl BlockTree {
                 folded_children: 0,
             }],
             root,
-            events: Vec::new(),
         }
     }
 
@@ -322,17 +274,7 @@ impl BlockTree {
         &mut self.nodes[id.index()]
     }
 
-    pub fn append(&mut self, parent: NodeId, kind: BlockKind, start: Position) -> NodeId {
-        let id = self.append_scratch(parent, kind, start);
-        self.events.push(BlockEvent::Open { node: id, parent });
-        id
-    }
-
-    /// Append parser scratch without creating the legacy node-id event stream.
-    ///
-    /// The direct command driver owns its own stack-shaped protocol. Keeping
-    /// this operation separate prevents that path from accidentally routing
-    /// through `BlockEvent` and a later tree materialization pass.
+    /// Append parser scratch for the direct command driver.
     pub(crate) fn append_scratch(
         &mut self,
         parent: NodeId,
@@ -380,25 +322,7 @@ impl BlockTree {
             .is_some_and(|child| self.node(child).open)
     }
 
-    pub fn detach(&mut self, id: NodeId) {
-        let Some(parent) = self.parent(id) else {
-            return;
-        };
-        let index = self.nodes[parent.index()]
-            .children
-            .iter()
-            .position(|child| *child == id)
-            .expect("detached child present");
-        assert!(
-            index >= self.nodes[parent.index()].folded_children,
-            "cannot detach a child already committed to the parent fold"
-        );
-        self.nodes[parent.index()].children.remove(index);
-        self.nodes[id.index()].parent = None;
-        self.events.push(BlockEvent::Detach { node: id });
-    }
-
-    /// Detach direct-parser scratch without producing a legacy node-id event.
+    /// Detach direct-parser scratch.
     pub(crate) fn detach_scratch(&mut self, id: NodeId) {
         let Some(parent) = self.parent(id) else {
             return;
@@ -421,12 +345,7 @@ impl BlockTree {
         self.nodes[node.index()].parent = Some(parent);
     }
 
-    pub fn close(&mut self, id: NodeId) {
-        self.close_scratch(id);
-        self.events.push(BlockEvent::Close { node: id });
-    }
-
-    /// Close parser scratch without creating a legacy node-id event.
+    /// Close parser scratch.
     pub(crate) fn close_scratch(&mut self, id: NodeId) {
         self.nodes[id.index()].open = false;
     }
@@ -442,26 +361,6 @@ impl BlockTree {
             "cannot move a child already committed to the parent fold"
         );
         self.nodes[parent.index()].children.remove(index);
-    }
-
-    /// Commit one finalized direct child into its parent's constant-size fold.
-    pub fn fold_finalized_child(&mut self, id: NodeId) {
-        let Some(parent) = self.parent(id) else {
-            return;
-        };
-        // Atomic table construction can leave completed sibling cells/rows
-        // before the parser's last-child close path. Commit that prefix once
-        // before committing the explicitly finalized child.
-        self.fold_children_before(parent, Some(id));
-        let next = self.nodes[parent.index()].folded_children;
-        assert_eq!(
-            self.nodes[parent.index()].children.get(next),
-            Some(&id),
-            "children must finalize in source order"
-        );
-        let summary = self.closed_child_summary(id);
-        self.nodes[parent.index()].historical_children.push(summary);
-        self.nodes[parent.index()].folded_children += 1;
     }
 
     /// Commit the maximal contiguous closed child prefix in source order.
