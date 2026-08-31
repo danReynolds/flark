@@ -21,7 +21,7 @@ use crate::candidate_manifest::{
     decode_manifest_descriptor, manifest_digest256, persistent_block_manifest_roles,
     persistent_recursive_green_manifest_role, persistent_reference_manifest_root, role_index,
     CandidateAuthority, CandidateManifestAssembler, CandidateRole, CanonicalRoleInputs,
-    ManifestError, ManifestPoll, PublishedManifest, StrongIdentity,
+    ManifestError, ManifestPoll, PublishedManifest,
 };
 use crate::document::{DocumentRuntime, DocumentRuntimeError, PersistentSourceFactsDeltaWitness};
 use crate::host_store::{
@@ -31,6 +31,7 @@ use crate::host_store::{
     M11_MAXIMUM_RECURSIVE_GREEN_SPLICE_SEGMENTS, M11_MAXIMUM_SNAPSHOT_CHILDREN,
     M11_MAXIMUM_SNAPSHOT_FRAME_BYTES, SNAPSHOT_CHILD_ORDINAL_BYTES, SNAPSHOT_NODE_HEADER_BYTES,
 };
+use crate::identity::{RuntimeIdentity, RuntimeIdentityError};
 use crate::indented_code_projection::PERSISTENT_INDENTED_CODE_PROJECTION_DESCRIPTOR_BYTES;
 use crate::inline_overlay::{
     M11InlineOverlayBase, M11InlineOverlayBinding, M11InlineOverlayCanonicalLineEnding,
@@ -245,6 +246,12 @@ impl From<DocumentRuntimeError> for M11PublicationError {
 impl From<ManifestError> for M11PublicationError {
     fn from(error: ManifestError) -> Self {
         Self(ErrorInner::Manifest(error))
+    }
+}
+
+impl From<RuntimeIdentityError> for M11PublicationError {
+    fn from(_: RuntimeIdentityError) -> Self {
+        Self(ErrorInner::Manifest(ManifestError::InvalidAuthority))
     }
 }
 
@@ -495,7 +502,7 @@ impl M11PersistentSourceFactsSetupReceipt {
 
 /// Fuelled construction of one five-role candidate in its producer arena.
 pub struct M11CandidateBuild {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     assembler: Option<CandidateManifestAssembler>,
     publication: Option<crate::candidate_manifest::PublishedManifest>,
     persistent_source_facts_setup: Option<M11PersistentSourceFactsSetupReceipt>,
@@ -528,8 +535,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("parse generation must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -579,8 +586,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -649,8 +656,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -725,8 +732,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -805,8 +812,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -887,8 +894,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -968,8 +975,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -1048,8 +1055,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -1128,8 +1135,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -1211,8 +1218,8 @@ impl M11CandidateBuild {
             M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
         )?;
         let authority = CandidateAuthority::new(
-            StrongIdentity::new(document)?,
-            StrongIdentity::new(publication)?,
+            RuntimeIdentity::new(document)?,
+            RuntimeIdentity::new(publication)?,
             source,
             parse_generation,
             syntax_profile,
@@ -1512,7 +1519,7 @@ pub enum M11CandidateBuildPoll {
 
 /// One sealed producer publication. It must be explicitly fuel-closed.
 pub struct M11CandidatePublication {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     publication: Option<PublishedManifest>,
     closing_root: Option<CommittedArenaRoot>,
     exact_block_splice: Option<(
@@ -2149,7 +2156,7 @@ impl fmt::Debug for M11ReferenceWinnerState {
 }
 
 struct M11ReferenceWinnerHandle {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     root: crate::ArenaId,
     state: M11ReferenceWinnerState,
     reservation: Option<ExternalPayloadReservation>,
@@ -2166,7 +2173,7 @@ impl fmt::Debug for M11ReferenceWinnerHandle {
 }
 
 impl M11ReferenceWinnerHandle {
-    fn new(runtime_identity: StrongIdentity, root: crate::ArenaId) -> Self {
+    fn new(runtime_identity: RuntimeIdentity, root: crate::ArenaId) -> Self {
         Self {
             runtime_identity,
             root,
@@ -2440,7 +2447,7 @@ impl M11ResolvedReference {
 /// root alive.
 #[derive(Clone)]
 pub struct M11ReferenceResolver {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     authority: CandidateAuthority,
     root: crate::ArenaId,
     index: Arc<ReferenceWinnerIndex>,
@@ -2553,7 +2560,7 @@ fn read_reference_utf8(
 /// one bounded semantic range walk for sibling viewport work without exposing
 /// storage topology.
 pub struct M11RetainedCandidatePublication {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     publication: Option<PublishedManifest>,
     closing_root: Option<CommittedArenaRoot>,
     reference_winner: Option<M11ReferenceWinnerHandle>,
@@ -3311,7 +3318,7 @@ fn descriptor_from_publication(
 }
 
 fn validate_runtime(
-    expected: StrongIdentity,
+    expected: RuntimeIdentity,
     runtime: &DocumentRuntime,
 ) -> Result<(), M11PublicationError> {
     if runtime.producer_identity() != expected {
@@ -4317,7 +4324,7 @@ fn sidecar_descriptor(
 
 /// Owned producer stream that can live directly in an endpoint state machine.
 pub struct M11OwnedSnapshotStream {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     publication: Option<PublishedManifest>,
     closing_root: Option<CommittedArenaRoot>,
     exact_base_publication: Option<PublishedManifest>,
@@ -4701,7 +4708,7 @@ impl M11CandidateHost {
         syntax_profile: u32,
     ) -> Result<Self, M11PublicationError> {
         Ok(Self(CandidateHostStore::new(
-            StrongIdentity::new(document)?,
+            RuntimeIdentity::new(document)?,
             source,
             syntax_profile,
             CandidateHostLimits::default(),

@@ -7,9 +7,9 @@
 use std::fmt;
 use std::ops::Range;
 
-use crate::candidate_manifest::StrongIdentity;
 use crate::document::DocumentRuntime;
 use crate::identity::ArenaId;
+use crate::identity::RuntimeIdentity;
 use crate::measured_sequence::{
     begin_measured_sequence_seal, retain_committed_measured_sequence_root_with_measure,
     validate_measured_sequence_node, BeginMeasuredSequenceSealFailure,
@@ -46,7 +46,7 @@ fn validate_source_range_authority(
     runtime: &DocumentRuntime,
     lease: &SourceSnapshotLease,
     source_range: &Range<usize>,
-) -> Result<(StrongIdentity, SourceVersion), M11ParserPageError> {
+) -> Result<(RuntimeIdentity, SourceVersion), M11ParserPageError> {
     let source = lease.version();
     if runtime.current_source_version() != Some(source) {
         return Err(M11ParserPageError::SourceAuthorityMismatch);
@@ -591,7 +591,7 @@ impl Drop for M11ParserRangeCursor {
 /// }
 /// ```
 pub struct M11ParserSourceRangeAuthority {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     lease: SourceSnapshotLease,
     source: SourceVersion,
     source_range: Range<usize>,
@@ -819,7 +819,7 @@ enum BuildPhase {
 /// Resumable builder for one exact-source-bound stream of opaque records.
 #[must_use = "parser page builds require completion or explicit cancellation"]
 pub struct M11ParserPageBuild {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     lease: Option<SourceSnapshotLease>,
     source: SourceVersion,
     source_range: Range<usize>,
@@ -1547,7 +1547,7 @@ impl Drop for M11ParserPageBuild {
 /// Immutable exact-source-bound generic parser page root.
 #[must_use = "parser page roots require transfer or explicit fuelled release"]
 pub struct M11ParserPageRoot {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     lease: Option<SourceSnapshotLease>,
     source: SourceVersion,
     source_range: Range<usize>,
@@ -1574,7 +1574,7 @@ impl fmt::Debug for M11ParserPageRoot {
 
 impl M11ParserPageRoot {
     fn empty(
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         lease: SourceSnapshotLease,
         source_range: Range<usize>,
         stream_tag: u32,
@@ -1692,7 +1692,7 @@ impl M11ParserPageRoot {
     pub(crate) fn retain_for_publication(
         &self,
         session: &mut ArenaBuildSession<'_>,
-        expected_runtime_identity: StrongIdentity,
+        expected_runtime_identity: RuntimeIdentity,
         expected_source: SourceVersion,
         expected_source_range: Range<usize>,
         expected_stream_tag: u32,
@@ -2067,7 +2067,7 @@ impl fmt::Debug for M11ParserPageCursorPoll {
 
 /// Fixed-state source-order cursor over one immutable parser page root.
 pub struct M11ParserPageCursor<'root> {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     tree: Option<MeasuredSequenceRef<'root, ParserPageSpec>>,
     page_count: u64,
     record_count: u64,
@@ -2157,7 +2157,7 @@ impl M11ParserPageDrain {
 }
 
 fn poll_page_cursor(
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     tree: Option<MeasuredSequenceRef<'_, ParserPageSpec>>,
     page_count: u64,
     record_count: u64,

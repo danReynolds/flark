@@ -30,9 +30,9 @@
 use std::fmt;
 use std::ops::Range;
 
-use crate::candidate_manifest::StrongIdentity;
 use crate::document::DocumentRuntime;
 use crate::identity::ArenaId;
+use crate::identity::RuntimeIdentity;
 use crate::measured_sequence::{maximum_avl_height, SequenceInspectionReceipt};
 use crate::parser_pages::{
     imported_m11_parser_page_record_at, imported_m11_parser_page_record_at_inspected,
@@ -1748,7 +1748,7 @@ impl M11InlineProjectionRoot {
     pub(crate) fn retain_for_publication(
         &self,
         session: &mut ArenaBuildSession<'_>,
-        expected_runtime_identity: StrongIdentity,
+        expected_runtime_identity: RuntimeIdentity,
         expected_source: SourceVersion,
         expected_profile: ParserProfileId,
     ) -> Result<RetainedM11InlineProjectionRole, M11InlineProjectionError> {

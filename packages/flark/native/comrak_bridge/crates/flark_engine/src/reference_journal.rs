@@ -11,9 +11,10 @@ use std::marker::PhantomData;
 use std::ops::Range;
 
 use crate::candidate_manifest::{
-    CandidateAuthority, ManifestError, ReferenceReserve, RoleMetadata, StrongIdentity,
+    CandidateAuthority, ManifestError, ReferenceReserve, RoleMetadata,
 };
 use crate::document::{DocumentRuntime, DocumentRuntimeError};
+use crate::identity::{RuntimeIdentity, RuntimeIdentityError};
 use crate::reference_root::{
     AuthoritativeReferenceFact, AuthoritativeReferenceFactStart, DetachedReferenceOccurrence,
     PersistentBytesCopyCursor, ReferenceBuildPoll, ReferenceOccurrenceCursor,
@@ -127,6 +128,12 @@ impl From<DocumentRuntimeError> for M11ReferenceJournalError {
 impl From<ManifestError> for M11ReferenceJournalError {
     fn from(error: ManifestError) -> Self {
         Self(ErrorInner::Manifest(error))
+    }
+}
+
+impl From<RuntimeIdentityError> for M11ReferenceJournalError {
+    fn from(_: RuntimeIdentityError) -> Self {
+        Self(ErrorInner::Manifest(ManifestError::InvalidAuthority))
     }
 }
 
@@ -311,7 +318,7 @@ enum JournalPhase {
 /// Persistent References journal built alongside the writer's Green journal.
 #[must_use = "reference journals require root transfer or explicit cancellation"]
 pub struct M11ReferenceJournal {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     source: SourceVersion,
     authority: CandidateAuthority,
     phase: JournalPhase,
@@ -357,7 +364,7 @@ impl M11ReferenceJournal {
         let runtime_identity = runtime.producer_identity();
         let authority = CandidateAuthority::new(
             runtime_identity,
-            StrongIdentity::allocate(b"reference-journal")?,
+            RuntimeIdentity::allocate(b"reference-journal")?,
             source,
             CandidateGeneration::from_wire(1)
                 .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?,
@@ -1148,7 +1155,7 @@ fn translate_reference_range(
 /// the ordinary journal; no second recognition or normalization path exists.
 #[must_use = "reference range replacement requires root transfer or explicit cancellation"]
 pub struct M11ReferenceJournalRangeReplacement {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     base_source: SourceVersion,
     target: SourceVersion,
     base_authority: CandidateAuthority,
@@ -1611,7 +1618,7 @@ impl Drop for M11ReferenceJournalRangeReplacement {
 /// Committed canonical occurrence root plus its exact first-winner authority.
 #[must_use = "reference roots require explicit release or publication transfer"]
 pub struct M11ReferenceJournalRoot {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     source: SourceVersion,
     authority: CandidateAuthority,
     root: Option<CommittedArenaRoot>,
@@ -1717,7 +1724,7 @@ impl M11ReferenceJournalRoot {
         runtime: &DocumentRuntime,
     ) -> Result<
         (
-            StrongIdentity,
+            RuntimeIdentity,
             CandidateAuthority,
             crate::ArenaId,
             ReferenceWinnerIndex,
@@ -1741,7 +1748,7 @@ impl M11ReferenceJournalRoot {
     pub(crate) fn retain_for_publication(
         &self,
         session: &mut ArenaBuildSession<'_>,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         source: SourceVersion,
     ) -> Result<(ArenaBuildOwner, RoleMetadata), M11ReferenceJournalError> {
         if self.released
@@ -1984,7 +1991,7 @@ impl M11ReferenceJournalRoot {
             .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
         let authority = CandidateAuthority::new(
             self.runtime_identity,
-            StrongIdentity::allocate(b"reference-prefix-adoption")?,
+            RuntimeIdentity::allocate(b"reference-prefix-adoption")?,
             target,
             generation,
             self.authority.syntax_profile,
@@ -2067,7 +2074,7 @@ impl M11ReferenceJournalAdoptionPoll {
 /// canonical reference prefix.
 #[must_use = "reference adoption requires root transfer or explicit cancellation"]
 pub struct M11ReferenceJournalUnchangedPrefixAdoption {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     target: SourceVersion,
     authority: CandidateAuthority,
     metadata: RoleMetadata,

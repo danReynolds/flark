@@ -4,8 +4,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Range;
 
-use crate::candidate_manifest::{ManifestError, StrongIdentity};
-use crate::identity::SourceRevision;
+use crate::identity::{RuntimeIdentity, RuntimeIdentityError, SourceRevision};
 use crate::measured_sequence::SequenceInspectionReceipt;
 #[cfg(feature = "progressive-source-probe")]
 use crate::source::{
@@ -300,7 +299,7 @@ impl IncrementalSourceFactsPlan {
 #[must_use = "an exact-prefix witness must be consumed or deliberately dropped"]
 #[derive(Eq, PartialEq)]
 pub struct ExactUnchangedPrefixWitness {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     base: SourceVersion,
     target: SourceVersion,
     byte_end: usize,
@@ -365,7 +364,7 @@ impl ExactUnchangedPrefixWitness {
 #[must_use = "an exact-suffix witness must be consumed or deliberately dropped"]
 #[derive(Eq, PartialEq)]
 pub struct ExactUnchangedSuffixWitness {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     base: SourceVersion,
     target: SourceVersion,
     base_byte_start: usize,
@@ -528,7 +527,7 @@ impl fmt::Debug for PersistentSourceFactsDeltaRootAuthority {
 #[must_use = "a SourceFacts delta witness must be consumed or deliberately dropped"]
 #[derive(Eq, PartialEq)]
 pub struct PersistentSourceFactsDeltaWitness {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     serial: u64,
     base: SourceVersion,
     target: SourceVersion,
@@ -1050,13 +1049,9 @@ impl From<ArenaError> for DocumentRuntimeError {
     }
 }
 
-impl From<ManifestError> for DocumentRuntimeError {
-    fn from(error: ManifestError) -> Self {
-        match error {
-            ManifestError::Arena(error) => Self::Arena(error),
-            ManifestError::InvalidAuthority => Self::IdentityExhausted,
-            _ => Self::InvalidConfig,
-        }
+impl From<RuntimeIdentityError> for DocumentRuntimeError {
+    fn from(_: RuntimeIdentityError) -> Self {
+        Self::IdentityExhausted
     }
 }
 
@@ -1163,7 +1158,7 @@ pub struct DocumentRuntime {
     retired_source_bytes: usize,
     max_retired_source_bytes: usize,
     arena: PageArena,
-    document_identity: StrongIdentity,
+    document_identity: RuntimeIdentity,
     next_retirement_lane: RetirementLane,
     _not_sync: PhantomData<Cell<()>>,
 }
@@ -1326,7 +1321,7 @@ impl DocumentRuntime {
         config: DocumentRuntimeConfig,
     ) -> Result<Self, DocumentRuntimeError> {
         let arena = PageArena::new(config.arena_limits)?;
-        let document_identity = StrongIdentity::allocate(b"document")?;
+        let document_identity = RuntimeIdentity::allocate(b"document")?;
         let mut retired_sources = VecDeque::new();
         let retirement_capacity = config
             .max_retired_sources
@@ -2474,7 +2469,7 @@ impl DocumentRuntime {
 
     /// Stable capability identity used to reject parser work presented
     /// with a different document runtime after the arena borrow has ended.
-    pub(crate) const fn producer_identity(&self) -> StrongIdentity {
+    pub(crate) const fn producer_identity(&self) -> RuntimeIdentity {
         self.document_identity
     }
 

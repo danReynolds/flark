@@ -4008,7 +4008,7 @@ fn read_u64(input: &[u8], offset: usize) -> Result<u64, ReferenceRootError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::candidate_manifest::StrongIdentity;
+    use crate::identity::RuntimeIdentity;
     use crate::{CandidateGeneration, SourceStore};
 
     struct ReferenceIndexFixture {
@@ -4021,8 +4021,8 @@ mod tests {
     fn authority() -> CandidateAuthority {
         let source = SourceStore::new("0123456789abcdef").expect("source");
         CandidateAuthority::new(
-            StrongIdentity::new([31; 16]).expect("document"),
-            StrongIdentity::new([63; 16]).expect("publication"),
+            RuntimeIdentity::new([31; 16]).expect("document"),
+            RuntimeIdentity::new([63; 16]).expect("publication"),
             source.version(),
             CandidateGeneration::FIRST,
             1,
@@ -4037,8 +4037,8 @@ mod tests {
         assert!(!facts.is_empty());
         let source = SourceStore::new(&"x".repeat(facts.len() * 16)).expect("source");
         let authority = CandidateAuthority::new(
-            StrongIdentity::new([41; 16]).expect("document"),
-            StrongIdentity::new([73; 16]).expect("publication"),
+            RuntimeIdentity::new([41; 16]).expect("document"),
+            RuntimeIdentity::new([73; 16]).expect("publication"),
             source.version(),
             CandidateGeneration::FIRST,
             1,

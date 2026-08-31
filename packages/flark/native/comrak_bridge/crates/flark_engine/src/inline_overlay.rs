@@ -26,11 +26,12 @@ use crate::block_quote_projection::{
     PersistentM11BlockQuoteProjectionHostValidator,
     PERSISTENT_BLOCK_QUOTE_PROJECTION_DESCRIPTOR_BYTES,
 };
-use crate::candidate_manifest::{CandidateAuthority, StrongIdentity};
+use crate::candidate_manifest::CandidateAuthority;
 use crate::host_store::{
     ArenaClosureCheckPoll, ArenaClosureSnapshotEncodePoll, ArenaClosureSnapshotEncoder,
     ArenaClosureSnapshotReceiver, CandidateHostError, CandidateHostLimits,
 };
+use crate::identity::RuntimeIdentity;
 use crate::indented_code_projection::{
     decode_persistent_indented_code_projection_descriptor,
     validate_persistent_indented_code_projection_root, M11IndentedCodeProjectionError,
@@ -1649,7 +1650,7 @@ pub(crate) enum M11InlineOverlaySnapshotEncodePoll {
 /// one literal leaf through the same Node frame, so the independent host owns
 /// and authenticates the raw terminal record rather than only its digest.
 pub(crate) struct M11InlineOverlaySnapshotEncoder {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     source: SourceVersion,
     closure: ArenaClosureSnapshotEncoder,
     begin: Box<[u8]>,
@@ -3189,8 +3190,8 @@ mod tests {
         BlockQuoteLineV1, M11BlockQuoteProjectionBuild, M11BlockQuoteProjectionBuildStatus,
         PersistentM11BlockQuoteProjectionHostCursorPoll,
     };
-    use crate::candidate_manifest::StrongIdentity;
     use crate::identity::CandidateGeneration;
+    use crate::identity::RuntimeIdentity;
     use crate::indented_code_projection::{
         IndentedCodeLineV1, M11IndentedCodeProjectionBuild, M11IndentedCodeProjectionBuildStatus,
         PersistentM11IndentedCodeProjectionHostCursorPoll,
@@ -3434,7 +3435,7 @@ mod tests {
         let source = runtime.current_source_version().expect("source");
         let authority = CandidateAuthority::new(
             runtime.producer_identity(),
-            StrongIdentity::new([publication_seed; 16]).expect("publication"),
+            RuntimeIdentity::new([publication_seed; 16]).expect("publication"),
             source,
             CandidateGeneration::from_wire(generation).expect("generation"),
             u32::try_from(profile.get()).expect("profile"),

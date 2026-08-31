@@ -1,7 +1,7 @@
 //! Authority-bound publication and independent-host access for recursive Green.
 
-use crate::candidate_manifest::StrongIdentity;
 use crate::identity::ArenaId;
+use crate::identity::RuntimeIdentity;
 use crate::measured_sequence::{
     retain_committed_measured_sequence_root_with_measure, validate_measured_sequence_node,
     MeasuredSequenceRef, SequenceInspectionReceipt, SequenceMutationReceipt,
@@ -132,7 +132,7 @@ impl M11RecursiveGreenRoot {
     pub(crate) fn retain_for_publication(
         &self,
         session: &mut ArenaBuildSession<'_>,
-        expected_runtime_identity: StrongIdentity,
+        expected_runtime_identity: RuntimeIdentity,
         expected_source: SourceVersion,
     ) -> Result<M11RetainedRecursiveGreenRoot, M11RecursiveGreenError> {
         if self.released

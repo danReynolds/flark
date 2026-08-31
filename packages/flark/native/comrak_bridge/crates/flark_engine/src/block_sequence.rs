@@ -8,9 +8,9 @@
 use std::fmt;
 use std::ops::Range;
 
-use crate::candidate_manifest::StrongIdentity;
 use crate::document::DocumentRuntime;
 use crate::identity::ArenaId;
+use crate::identity::RuntimeIdentity;
 use crate::measured_sequence::{
     begin_measured_sequence_seal, maximum_metric_lookup_node_headers,
     retain_committed_measured_sequence_root_with_measure, splice_measured_sequence_atomic,
@@ -1461,7 +1461,7 @@ enum BuildPhase {
 /// Resumable builder for one exact-source block coverage sequence.
 #[must_use = "block sequence builds require completion or explicit cancellation"]
 pub struct M11BlockSequenceBuild {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     lease: Option<SourceSnapshotLease>,
     source: SourceVersion,
     phase: BuildPhase,
@@ -3402,7 +3402,7 @@ pub(crate) fn persistent_m11_block_locate_byte(
 /// Immutable, exact-source persistent block coverage.
 #[must_use = "block sequence roots require explicit release"]
 pub struct M11BlockSequenceRoot {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     lease: Option<SourceSnapshotLease>,
     source: SourceVersion,
     summary: BlockSequenceSummary,
@@ -3432,7 +3432,7 @@ impl fmt::Debug for M11BlockSequenceRoot {
 
 impl M11BlockSequenceRoot {
     fn empty(
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         lease: SourceSnapshotLease,
         receipt: M11BlockSequenceBuildReceipt,
     ) -> Self {
@@ -3579,7 +3579,7 @@ impl M11BlockSequenceRoot {
     pub(crate) fn retain_for_publication(
         &self,
         session: &mut ArenaBuildSession<'_>,
-        expected_runtime_identity: StrongIdentity,
+        expected_runtime_identity: RuntimeIdentity,
         expected_source: SourceVersion,
     ) -> Result<M11RetainedBlockSequenceRoot, M11BlockSequenceError> {
         if self.released
@@ -4660,7 +4660,7 @@ pub(crate) fn splice_persistent_m11_block_sequence_atomic(
 #[allow(clippy::too_many_arguments)]
 fn splice_m11_block_sequence_from_base_atomic(
     runtime: &mut DocumentRuntime,
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     base_summary: BlockSequenceSummary,
     base_page_count: u64,
     base_tree: BlockSequenceSpliceBase<'_>,

@@ -9,7 +9,6 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::block_sequence::{
     decode_persistent_m11_block_role_descriptor, encode_persistent_m11_block_role_descriptor,
@@ -19,7 +18,9 @@ use crate::block_sequence::{
     PERSISTENT_BLOCK_GREEN_ROLE_SCHEMA, PERSISTENT_BLOCK_PROJECTION_ROLE_SCHEMA,
     PERSISTENT_BLOCK_ROLE_DESCRIPTOR_BYTES,
 };
-use crate::identity::{CandidateGeneration, SourceRevision, SourceRootId};
+use crate::identity::{
+    CandidateGeneration, RuntimeIdentity, RuntimeIdentityError, SourceRevision, SourceRootId,
+};
 use crate::inline_projection::{
     decode_persistent_inline_projection_descriptor, persistent_inline_link_value_record_at,
     persistent_inline_projection_record_at, validate_persistent_inline_projection_role,
@@ -78,42 +79,12 @@ pub(crate) const REFERENCES_SCHEMA: u32 = 1;
 pub(crate) const CLEAN_EOF_SCHEMA: u32 = 1;
 
 const AUTHORITY_RESERVED_OFFSET: usize = 60;
-static NEXT_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
-
-/// Full-width identity. Byte interpretation remains an endpoint concern; the
-/// engine compares and hashes all 128 bits without truncation.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct StrongIdentity(pub(crate) [u8; 16]);
-
-impl StrongIdentity {
-    pub(crate) fn new(bytes: [u8; 16]) -> Result<Self, ManifestError> {
-        if bytes == [0; 16] {
-            return Err(ManifestError::InvalidAuthority);
-        }
-        Ok(Self(bytes))
-    }
-
-    pub(crate) fn allocate(domain: &[u8]) -> Result<Self, ManifestError> {
-        let ordinal = NEXT_RUNTIME_IDENTITY
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-                value.checked_add(1)
-            })
-            .map_err(|_| ManifestError::InvalidAuthority)?;
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"flark.runtime.identity.v1\0");
-        hasher.update(domain);
-        hasher.update(&ordinal.to_le_bytes());
-        let mut bytes = [0_u8; 16];
-        bytes.copy_from_slice(&hasher.finalize().as_bytes()[..16]);
-        Self::new(bytes)
-    }
-}
 
 /// Authority shared by every node of one candidate publication.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct CandidateAuthority {
-    pub(crate) document: StrongIdentity,
-    pub(crate) publication: StrongIdentity,
+    pub(crate) document: RuntimeIdentity,
+    pub(crate) publication: RuntimeIdentity,
     pub(crate) source_root: SourceRootId,
     pub(crate) source_revision: SourceRevision,
     pub(crate) parse_generation: CandidateGeneration,
@@ -124,8 +95,8 @@ pub(crate) struct CandidateAuthority {
 
 impl CandidateAuthority {
     pub(crate) fn new(
-        document: StrongIdentity,
-        publication: StrongIdentity,
+        document: RuntimeIdentity,
+        publication: RuntimeIdentity,
         source: SourceVersion,
         parse_generation: CandidateGeneration,
         syntax_profile: u32,
@@ -238,6 +209,12 @@ impl fmt::Display for ManifestError {
 }
 
 impl std::error::Error for ManifestError {}
+
+impl From<RuntimeIdentityError> for ManifestError {
+    fn from(_: RuntimeIdentityError) -> Self {
+        Self::InvalidAuthority
+    }
+}
 
 impl From<ArenaError> for ManifestError {
     fn from(error: ArenaError) -> Self {
@@ -1163,7 +1140,7 @@ impl CandidateManifestAssembler {
         arena: &mut PageArena,
         persistent: &PersistentSourceFactsRoot,
         blocks: &M11BlockSequenceRoot,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         authority: CandidateAuthority,
         source: SourceVersion,
         parser_profile: ParserProfileId,
@@ -1262,7 +1239,7 @@ impl CandidateManifestAssembler {
         arena: &mut PageArena,
         persistent: &PersistentSourceFactsRoot,
         recursive_green: &M11RecursiveGreenRoot,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         authority: CandidateAuthority,
         source: SourceVersion,
         parser_profile: ParserProfileId,
@@ -1370,7 +1347,7 @@ impl CandidateManifestAssembler {
         persistent: &PersistentSourceFactsRoot,
         recursive_green: &M11RecursiveGreenRoot,
         references: &M11ReferenceJournalRoot,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         authority: CandidateAuthority,
         source: SourceVersion,
         parser_profile: ParserProfileId,
@@ -1498,7 +1475,7 @@ impl CandidateManifestAssembler {
         arena: &mut PageArena,
         persistent: &PersistentSourceFactsRoot,
         recursive_green: &M11RecursiveGreenRoot,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         authority: CandidateAuthority,
         source: SourceVersion,
         parser_profile: ParserProfileId,
@@ -1639,7 +1616,7 @@ impl CandidateManifestAssembler {
         arena: &mut PageArena,
         persistent: &PersistentSourceFactsRoot,
         inline_projection: &M11InlineProjectionRoot,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         authority: CandidateAuthority,
         source: SourceVersion,
         parser_profile: ParserProfileId,
@@ -1987,7 +1964,7 @@ impl CandidateManifestAssembler {
         arena: &mut PageArena,
         persistent: &PersistentSourceFactsRoot,
         blocks: &M11BlockSequenceRoot,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         authority: CandidateAuthority,
         source: SourceVersion,
         parser_profile: ParserProfileId,
@@ -2134,7 +2111,7 @@ impl CandidateManifestAssembler {
         arena: &mut PageArena,
         persistent: &PersistentSourceFactsRoot,
         inline_projection: &M11InlineProjectionRoot,
-        runtime_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
         authority: CandidateAuthority,
         source: SourceVersion,
         parser_profile: ParserProfileId,
@@ -3945,8 +3922,8 @@ mod tests {
         let source_text = "x".repeat(source_bytes);
         let source = SourceStore::new(&source_text).expect("source");
         CandidateAuthority::new(
-            StrongIdentity::new([seed; 16]).expect("document identity"),
-            StrongIdentity::new([seed.wrapping_add(64); 16]).expect("publication identity"),
+            RuntimeIdentity::new([seed; 16]).expect("document identity"),
+            RuntimeIdentity::new([seed.wrapping_add(64); 16]).expect("publication identity"),
             source.version(),
             CandidateGeneration::FIRST,
             1,
@@ -3984,7 +3961,7 @@ mod tests {
     fn persistent_block_role_digest_binds_fresh_publication_authority() {
         let first = authority(7, 4);
         let second = CandidateAuthority {
-            publication: StrongIdentity::new([0xe7; 16]).expect("fresh publication"),
+            publication: RuntimeIdentity::new([0xe7; 16]).expect("fresh publication"),
             ..first
         };
         let descriptor = [0x5a; PERSISTENT_BLOCK_ROLE_DESCRIPTOR_BYTES];
@@ -4059,8 +4036,8 @@ mod tests {
         generation: u64,
     ) -> CandidateAuthority {
         CandidateAuthority::new(
-            StrongIdentity::new([document_seed; 16]).expect("document identity"),
-            StrongIdentity::new([publication_seed; 16]).expect("publication identity"),
+            RuntimeIdentity::new([document_seed; 16]).expect("document identity"),
+            RuntimeIdentity::new([publication_seed; 16]).expect("publication identity"),
             store.version(),
             CandidateGeneration::from_wire(generation).expect("generation"),
             1,
@@ -4232,7 +4209,7 @@ mod tests {
         );
         CandidateAuthority::new(
             base.document,
-            StrongIdentity::new([publication_seed; 16]).expect("publication identity"),
+            RuntimeIdentity::new([publication_seed; 16]).expect("publication identity"),
             source,
             base.parse_generation
                 .checked_next()
@@ -4740,10 +4717,10 @@ mod tests {
         let mut arena = PageArena::new(arena_limits).expect("arena");
         let mut store = SourceStore::new(&"x".repeat(4_000)).expect("source");
         let base_source = store.version();
-        let document = StrongIdentity::new([45; 16]).expect("document");
+        let document = RuntimeIdentity::new([45; 16]).expect("document");
         let base_authority = CandidateAuthority::new(
             document,
-            StrongIdentity::new([85; 16]).expect("base publication"),
+            RuntimeIdentity::new([85; 16]).expect("base publication"),
             base_source,
             CandidateGeneration::FIRST,
             1,
@@ -4771,7 +4748,7 @@ mod tests {
             .expect("persistent target root");
         let target_authority = CandidateAuthority::new(
             document,
-            StrongIdentity::new([86; 16]).expect("target publication"),
+            RuntimeIdentity::new([86; 16]).expect("target publication"),
             target_source,
             CandidateGeneration::from_wire(2).expect("target generation"),
             1,
@@ -4853,10 +4830,10 @@ mod tests {
         let mut arena = PageArena::new(arena_limits).expect("arena");
         let store = SourceStore::new(&"x".repeat(4_000)).expect("source");
         let source = store.version();
-        let document = StrongIdentity::new([46; 16]).expect("document");
+        let document = RuntimeIdentity::new([46; 16]).expect("document");
         let base_authority = CandidateAuthority::new(
             document,
-            StrongIdentity::new([87; 16]).expect("base publication"),
+            RuntimeIdentity::new([87; 16]).expect("base publication"),
             source,
             CandidateGeneration::FIRST,
             1,
@@ -4876,7 +4853,7 @@ mod tests {
         let baseline = arena.metrics();
         let target_authority = CandidateAuthority::new(
             document,
-            StrongIdentity::new([88; 16]).expect("target publication"),
+            RuntimeIdentity::new([88; 16]).expect("target publication"),
             source,
             CandidateGeneration::from_wire(2).expect("target generation"),
             1,
@@ -4997,10 +4974,10 @@ mod tests {
         let mut arena = PageArena::new(arena_limits).expect("arena");
         let mut store = SourceStore::new(&"x".repeat(source_bytes)).expect("source");
         let base_source = store.version();
-        let document = StrongIdentity::new([document_seed; 16]).expect("document");
+        let document = RuntimeIdentity::new([document_seed; 16]).expect("document");
         let base_authority = CandidateAuthority::new(
             document,
-            StrongIdentity::new([document_seed.wrapping_add(40); 16]).expect("base publication"),
+            RuntimeIdentity::new([document_seed.wrapping_add(40); 16]).expect("base publication"),
             base_source,
             CandidateGeneration::FIRST,
             1,
@@ -5022,7 +4999,7 @@ mod tests {
         let baseline = arena.metrics();
         let target_authority = CandidateAuthority::new(
             document,
-            StrongIdentity::new([document_seed.wrapping_add(41); 16]).expect("target publication"),
+            RuntimeIdentity::new([document_seed.wrapping_add(41); 16]).expect("target publication"),
             target_source,
             CandidateGeneration::from_wire(2).expect("target generation"),
             1,

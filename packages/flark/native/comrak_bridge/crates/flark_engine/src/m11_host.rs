@@ -17,7 +17,7 @@ use crate::block_sequence::{
     M11BlockSequenceVisitControl, M11BlockSequenceVisitDisposition, M11BlockSequenceVisitEntry,
     M11BlockSequenceVisitStart, M11_BLOCK_SEQUENCE_ENTRIES_PER_PAGE_MAX,
 };
-use crate::candidate_manifest::{CandidateRole, ManifestError, StrongIdentity};
+use crate::candidate_manifest::{CandidateRole, ManifestError};
 use crate::host_store::{
     classify_snapshot_frame, CandidateHostError, CandidateHostInstallPoll, CandidateHostLimits,
     CandidateHostReplayPoll, CandidateHostStore, InstalledCandidateSnapshot,
@@ -25,7 +25,7 @@ use crate::host_store::{
     InstalledPersistentRecursiveGreenDescriptor, SnapshotFrameKind, SnapshotFrameMetadata,
     M11_MAXIMUM_SNAPSHOT_CHILDREN, M11_MAXIMUM_SNAPSHOT_FRAME_BYTES,
 };
-use crate::identity::{SourceRevision, SourceRootId};
+use crate::identity::{RuntimeIdentity, SourceRevision, SourceRootId};
 use crate::indented_code_projection::{
     IndentedCodeLineV1, PersistentM11IndentedCodeProjectionDescriptor,
     PersistentM11IndentedCodeProjectionHostCursor,
@@ -2710,7 +2710,8 @@ impl M11CandidateHost {
         limits: M11HostLimits,
     ) -> Result<Self, M11HostError> {
         Ok(Self(CandidateHostStore::new(
-            StrongIdentity::new(document).map_err(|_| M11HostError::invalid("invalid document"))?,
+            RuntimeIdentity::new(document)
+                .map_err(|_| M11HostError::invalid("invalid document"))?,
             source.engine()?,
             syntax_profile,
             limits.engine(),
