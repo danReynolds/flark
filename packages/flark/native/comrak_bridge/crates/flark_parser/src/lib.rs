@@ -21,6 +21,7 @@ mod inline_edit_component;
 mod inline_emphasis;
 mod inline_hazard;
 mod inline_lex;
+mod inline_projection;
 mod inline_projection_job;
 mod inline_radix;
 mod parser_binding;
@@ -59,6 +60,12 @@ pub use inline_lex::{
     m11_is_markdown_punctuation, M11InlineLexError, M11InlineLexEvent, M11InlineLexEventKind,
     M11InlineLexHazardKind, M11InlineLexPoll, M11InlineLexPollStatus, M11InlineLexReceipt,
     M11InlineLexScanner, M11_INLINE_LEX_MAX_POLL_TRANSITIONS,
+};
+pub use inline_projection::{
+    M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind,
+    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
+    M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
+    M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
 pub use inline_projection_job::{
     M11InlineProjectionCapture, M11InlineProjectionJob, M11InlineProjectionJobError,

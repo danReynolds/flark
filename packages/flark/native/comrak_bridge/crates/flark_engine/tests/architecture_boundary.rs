@@ -72,12 +72,25 @@ fn parser_seam_contains_only_live_editing_services() {
         "M11InlineProjectionDescriptor",
         "M11InlineProjectionCursor",
         "M11InlineProjectionCheckpointQuery",
+        "M11InlineProjectionFact",
+        "M11InlineProjectionKind",
+        "M11InlineLinkValue",
+        "M11InlineProjectionCaptureValidator",
     ] {
         assert!(
             !PARSER_SEAM.contains(forbidden),
             "retired parser seam identifier returned: {forbidden}"
         );
     }
+}
+
+#[test]
+fn markdown_inline_semantics_belong_to_the_parser() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    assert!(
+        !manifest.join("src/inline_projection.rs").exists(),
+        "Markdown inline semantics returned to the parser-independent engine"
+    );
 }
 
 #[test]

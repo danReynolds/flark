@@ -6,7 +6,7 @@
 
 use std::ops::Range;
 
-use flark_engine::parser_internal::{M11InlineProjectionFact, M11InlineProjectionKind};
+use crate::inline_projection::{M11InlineProjectionFact, M11InlineProjectionKind};
 
 pub const M11_INLINE_EDIT_COMPONENTS_MAX: usize = 128;
 pub const M11_INLINE_EDIT_COMPONENT_SOURCE_MAX_BYTES: usize = 4 * 1024;

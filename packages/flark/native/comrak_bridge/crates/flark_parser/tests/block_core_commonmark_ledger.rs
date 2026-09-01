@@ -7,11 +7,10 @@ use std::{
 };
 
 use flark_engine::parser_internal::{
-    M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenEvent,
-    M11RecursiveGreenFrameId, M11RecursiveGreenLogicalAction, M11RecursiveGreenPoint,
-    M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits, M11ReferenceJournal,
-    M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceResolution,
-    M11ReferenceResolver, M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
+    M11RecursiveGreenEvent, M11RecursiveGreenFrameId, M11RecursiveGreenLogicalAction,
+    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
+    M11ReferenceJournal, M11ReferenceJournalRoot, M11ReferenceJournalStatus,
+    M11ReferenceResolution, M11ReferenceResolver,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity,
@@ -27,9 +26,11 @@ use flark_parser::block_core::{
 use flark_parser::{
     project_m11_gfm_inline, project_m11_gfm_table, M11ExactController, M11GfmInlineNode,
     M11GfmInlineOptions, M11GfmInlineReference, M11GfmTableAlignment, M11GfmTableProjection,
-    M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11InlineProjectionOutcome,
+    M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionJob,
+    M11InlineProjectionJobPollStatus, M11InlineProjectionKind, M11InlineProjectionOutcome,
     M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
     SnapshotLineScanner, SnapshotLineSource, SourceAdapterError,
+    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
 };
 use sha2::{Digest, Sha256};
 

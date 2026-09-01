@@ -3,9 +3,8 @@
 use std::fmt;
 use std::ops::Range;
 
-use crate::document::DocumentRuntime;
-use crate::parser_range::{M11ParserRangeError, M11ParserSourceRangeAuthority};
-use crate::{ParserProfileId, SourceVersion};
+use flark_engine::parser_internal::{M11ParserRangeError, M11ParserSourceRangeAuthority};
+use flark_engine::{DocumentRuntime, ParserProfileId, SourceVersion};
 
 const INLINE_LINK_VALUE_ENTRY_BYTES: usize = 32;
 
@@ -67,8 +66,8 @@ const M11_INLINE_PROJECTION_AUTOLINK_URI_FLAGS: u8 = M11_INLINE_PROJECTION_FLAG_
 /// character-reference decoder: one leading ampersand plus at most 32 bytes
 /// examined by the decoder.
 pub const M11_INLINE_CHARACTER_REFERENCE_SOURCE_MAX_BYTES: u32 = 33;
-/// Maximum public `FLKIV001` payload returned for one certified leaf.
-pub const M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES: usize = 64 * 1024;
+/// Maximum cooked link-value payload retained for one certified leaf.
+pub(crate) const M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES: usize = 64 * 1024;
 /// The 16-byte header plus at least one 32-byte entry bounds entry density.
 pub const M11_INLINE_LINK_VALUES_MAX_ENTRIES: u32 =
     ((M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES - 16) / INLINE_LINK_VALUE_ENTRY_BYTES) as u32;
@@ -92,7 +91,7 @@ pub struct M11InlineLinkValue {
 }
 
 impl M11InlineLinkValue {
-    pub fn new(
+    pub(crate) fn new(
         parent_fact_ordinal: u32,
         destination_source_range: Range<u32>,
         title_source_range: Option<Range<u32>>,
@@ -207,11 +206,10 @@ enum M11InlineProjectionFactPayload {
     },
 }
 
-/// One typed fact in root-relative UTF-8 byte coordinates.
+/// One parser-authored fact in exact-leaf-relative UTF-8 byte coordinates.
 ///
-/// Canonical pages do not store `relative_start` directly. They store a
-/// logical-page anchor delta and then this fact's start relative to that
-/// anchor, keeping suffix page bytes independent of absolute document offset.
+/// The representation remains independent of the leaf's absolute document
+/// offset so a captured fact cannot silently claim a second source authority.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct M11InlineProjectionFact {
     kind: M11InlineProjectionKind,
@@ -222,7 +220,7 @@ pub struct M11InlineProjectionFact {
 }
 
 impl M11InlineProjectionFact {
-    pub fn new(
+    pub(crate) fn new(
         kind: M11InlineProjectionKind,
         flags: u8,
         relative_range: Range<u32>,
@@ -315,7 +313,7 @@ impl M11InlineProjectionFact {
     /// ranges are identical. A URI beginning with `www.` carries
     /// [`M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW`]; scheme URIs and email
     /// autolinks carry no flags and need no variable-width value companion.
-    pub fn new_bare_autolink(
+    pub(crate) fn new_bare_autolink(
         kind: M11InlineProjectionKind,
         flags: u8,
         relative_range: Range<u32>,
@@ -353,7 +351,7 @@ impl M11InlineProjectionFact {
     /// scalar values. Carrying those scalars directly keeps the canonical
     /// 20-byte fact fixed-width and gives every decoder constant work without
     /// asking another runtime to interpret the source spelling.
-    pub fn new_character_reference(
+    pub(crate) fn new_character_reference(
         relative_range: Range<u32>,
         first: char,
         second: Option<char>,
@@ -426,7 +424,7 @@ impl M11InlineProjectionFact {
 }
 
 #[derive(Debug)]
-pub enum M11InlineProjectionError {
+pub(crate) enum M11InlineProjectionError {
     InvalidFact(&'static str),
     InvalidLinkValue(&'static str),
     FactsOutOfOrder,
@@ -481,7 +479,7 @@ impl From<M11ParserRangeError> for M11InlineProjectionError {
 /// failure-atomic: counters and ordering state advance only after the complete
 /// fact/value batch passes.
 #[must_use = "capture validators must be finalized against the returned authority"]
-pub struct M11InlineProjectionCaptureValidator {
+pub(crate) struct M11InlineProjectionCaptureValidator {
     source: SourceVersion,
     source_range: Range<u32>,
     parser_profile: ParserProfileId,
@@ -760,7 +758,7 @@ fn validate_fact(fact: M11InlineProjectionFact) -> Result<(), M11InlineProjectio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::DocumentRuntimeConfig;
+    use flark_engine::DocumentRuntimeConfig;
 
     fn profile() -> ParserProfileId {
         ParserProfileId::new(1).expect("parser profile")

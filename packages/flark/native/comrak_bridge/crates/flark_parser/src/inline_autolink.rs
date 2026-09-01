@@ -17,12 +17,13 @@
 use std::fmt;
 use std::ops::Range;
 
-use flark_engine::parser_internal::{
-    M11ParserRangeError, M11ParserRangeStatus,
+use flark_engine::parser_internal::{M11ParserRangeError, M11ParserRangeStatus};
+use flark_engine::{DocumentRuntime, SourceVersion};
+
+use crate::inline_projection::{
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
-use flark_engine::{DocumentRuntime, SourceVersion};
 
 use crate::inline_code::{M11InlineCodeError, M11InlineCodeRuns};
 use crate::inline_radix::{

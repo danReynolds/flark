@@ -6108,8 +6108,8 @@ mod tests {
         runtime: &mut DocumentRuntime,
         prepared: M11RecursiveGreenInlineLeafPreparation,
     ) -> (
-        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
-        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+        Vec<crate::M11InlineProjectionFact>,
+        Vec<crate::M11InlineLinkValue>,
     ) {
         let profile =
             ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
@@ -6128,8 +6128,8 @@ mod tests {
         prepared: M11RecursiveGreenInlineLeafPreparation,
         resolver: crate::block_core::M11CompactReferenceResolver,
     ) -> (
-        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
-        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+        Vec<crate::M11InlineProjectionFact>,
+        Vec<crate::M11InlineLinkValue>,
     ) {
         let profile =
             ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
@@ -6149,8 +6149,8 @@ mod tests {
         prepared: M11RecursiveGreenInlineLeafPreparation,
         resolver: flark_engine::parser_internal::M11ReferenceResolver,
     ) -> (
-        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
-        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+        Vec<crate::M11InlineProjectionFact>,
+        Vec<crate::M11InlineLinkValue>,
     ) {
         let profile =
             ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
@@ -6171,8 +6171,8 @@ mod tests {
         expected_range: Range<u32>,
         expected_profile: ParserProfileId,
     ) -> (
-        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
-        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+        Vec<crate::M11InlineProjectionFact>,
+        Vec<crate::M11InlineLinkValue>,
     ) {
         loop {
             let poll = job.poll(runtime, 4_096).expect("poll inline fact capture");

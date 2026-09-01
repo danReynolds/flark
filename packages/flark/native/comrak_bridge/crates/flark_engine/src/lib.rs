@@ -12,7 +12,6 @@
 
 mod document;
 mod identity;
-mod inline_projection;
 mod measured_sequence;
 mod mersenne61;
 mod parser_profile;

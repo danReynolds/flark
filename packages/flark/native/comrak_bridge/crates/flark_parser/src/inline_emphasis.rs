@@ -1460,12 +1460,14 @@ mod tests {
     };
     use crate::inline_code::{M11InlineCodeJob, M11InlineCodePollStatus, M11InlineCodeRuns};
     use comrak::{markdown_to_html, Options as ComrakOptions};
-    use flark_engine::parser_internal::{
-        M11ParserSourceRangeAuthority, M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
-        M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
-    };
+    use flark_engine::parser_internal::M11ParserSourceRangeAuthority;
     use flark_engine::{ArenaLimits, DocumentRuntimeConfig};
     use std::cmp::Reverse;
+
+    use crate::inline_projection::{
+        M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
+        M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
+    };
 
     #[derive(Debug, Eq, PartialEq)]
     struct Resolution {

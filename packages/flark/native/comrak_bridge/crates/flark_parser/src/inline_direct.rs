@@ -13,8 +13,7 @@ use std::ops::Range;
 use comrak::block_spine_facade;
 use flark_engine::parser_internal::{
     M11ParserRangeCursor, M11ParserRangeError, M11ParserRangeStatus, M11ReferenceResolution,
-    M11ReferenceResolver, M11ReferenceResolverError, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
-    M11_PARSER_RANGE_MAX_POLL_BYTES,
+    M11ReferenceResolver, M11ReferenceResolverError, M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
 
@@ -25,6 +24,7 @@ use crate::inline_autolink::{
     M11InlineAutolinkError, M11InlineOpaqueCandidate, M11InlineOpaqueCandidates,
     M11InlineOpaqueKind,
 };
+use crate::inline_projection::M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES;
 use crate::reference_label::{ReferenceLabelAccumulator, ReferenceLabelAccumulatorError};
 use crate::reference_value::{
     clean_title_body_range, ReferenceValueBodyCleaner, ReferenceValueCleanerError,

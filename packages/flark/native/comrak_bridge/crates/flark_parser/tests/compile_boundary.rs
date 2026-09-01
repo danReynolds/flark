@@ -76,6 +76,19 @@ fn public_root_does_not_expose_donor_storage_or_a_classifier() {
 }
 
 #[test]
+fn inline_semantic_contract_is_parser_owned() {
+    const ENGINE_PARSER_SEAM: &str = include_str!("../../flark_engine/src/parser_internal.rs");
+
+    assert!(PUBLIC_ROOT.contains("M11InlineProjectionFact"));
+    assert!(PUBLIC_ROOT.contains("M11InlineProjectionKind"));
+    assert!(!PUBLIC_ROOT.contains("M11InlineProjectionCaptureValidator"));
+    assert!(!PUBLIC_ROOT.contains("M11InlineProjectionError"));
+    assert!(!PUBLIC_ROOT.contains("M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES"));
+    assert!(!ENGINE_PARSER_SEAM.contains("M11InlineProjectionFact"));
+    assert!(!ENGINE_PARSER_SEAM.contains("M11InlineProjectionKind"));
+}
+
+#[test]
 fn retired_candidate_transport_stays_out_of_the_parser_boundary() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     for relative in [

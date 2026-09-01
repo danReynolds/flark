@@ -1,6 +1,5 @@
 use flark_engine::parser_internal::{
-    M11InlineProjectionKind, M11RecursiveGreenPoint, M11RecursiveGreenRoot,
-    M11RecursiveGreenRowQueryLimits,
+    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity,
@@ -13,8 +12,8 @@ use flark_parser::block_core::{
 };
 use flark_parser::{
     M11ExactController, M11InlineProjectionJob, M11InlineProjectionJobPollStatus,
-    M11InlineProjectionOutcome, M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource,
-    SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource,
+    M11InlineProjectionKind, M11InlineProjectionOutcome, M11ParserBinding, M11SourceLinePollStatus,
+    M11SourceLineSource, SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource,
 };
 
 fn write_pending_command(

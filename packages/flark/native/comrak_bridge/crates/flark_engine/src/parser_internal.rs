@@ -1,17 +1,9 @@
 //! Narrow workspace-only seam for the exact parser.
 //!
 //! `flark-parser` consumes bounded source access, scratch admission,
-//! recursive-Green storage, the live References journal, and atomic inline
-//! capture validation. Candidate publication, snapshot transport, and
-//! projection storage are deliberately not part of this boundary.
-
-pub use crate::inline_projection::{
-    M11InlineLinkValue, M11InlineProjectionCaptureValidator, M11InlineProjectionError,
-    M11InlineProjectionFact, M11InlineProjectionKind, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
-    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
-    M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
-    M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
-};
+//! recursive-Green storage, and the live References journal. Candidate
+//! publication, snapshot transport, parser semantics, and projection storage
+//! are deliberately not part of this boundary.
 pub use crate::parser_range::{
     M11ParserRangeCursor, M11ParserRangeError, M11ParserRangePoll, M11ParserRangeStatus,
     M11ParserSourceRangeAuthority, M11_PARSER_RANGE_MAX_POLL_BYTES,

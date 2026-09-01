@@ -15,10 +15,8 @@ use std::fmt;
 use std::ops::Range;
 
 use flark_engine::parser_internal::{
-    M11InlineLinkValue, M11InlineProjectionCaptureValidator, M11InlineProjectionError,
-    M11InlineProjectionFact, M11InlineProjectionKind, M11ParserRangeCursor, M11ParserRangeError,
-    M11ParserRangeStatus, M11ParserSourceRangeAuthority, M11ReferenceResolver,
-    M11_PARSER_RANGE_MAX_POLL_BYTES,
+    M11ParserRangeCursor, M11ParserRangeError, M11ParserRangeStatus, M11ParserSourceRangeAuthority,
+    M11ReferenceResolver, M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 use flark_engine::{DocumentRuntime, ParserProfileId, SourceVersion};
 
@@ -52,6 +50,10 @@ use crate::inline_hazard::{
 use crate::inline_lex::{
     M11InlineLexError, M11InlineLexEvent, M11InlineLexEventKind, M11InlineLexHazardKind,
     M11InlineLexPollStatus, M11InlineLexScanner,
+};
+use crate::inline_projection::{
+    M11InlineLinkValue, M11InlineProjectionCaptureValidator, M11InlineProjectionError,
+    M11InlineProjectionFact, M11InlineProjectionKind,
 };
 use crate::parser_binding::{M11ParserBinding, M11_GRAMMAR_REVISION};
 
@@ -294,7 +296,10 @@ impl fmt::Display for M11InlineProjectionJobError {
                 write!(formatter, "inline Projection emission scan failed: {error}")
             }
             M11InlineProjectionJobErrorInner::Projection(error) => {
-                write!(formatter, "inline Projection persistence failed: {error}")
+                write!(
+                    formatter,
+                    "inline Projection capture validation failed: {error}"
+                )
             }
             M11InlineProjectionJobErrorInner::Page(error) => {
                 write!(

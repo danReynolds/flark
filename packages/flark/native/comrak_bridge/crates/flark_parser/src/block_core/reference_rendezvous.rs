@@ -20,9 +20,7 @@ use flark_engine::parser_internal::{
     M11ReferenceJournalOccurrenceStart, M11ReferenceJournalRange, M11ReferenceJournalValueKind,
 };
 #[cfg(any(test, feature = "m11-compact-probe"))]
-use flark_engine::parser_internal::{
-    M11ReferenceResolution, M11ResolvedReference, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
-};
+use flark_engine::parser_internal::{M11ReferenceResolution, M11ResolvedReference};
 use flark_engine::DocumentRuntime;
 
 use super::controller::M11DirectLeadingReferenceRemainderContinuation;
@@ -32,6 +30,8 @@ use super::writer::{
     M11ReferenceStagedTerminator,
 };
 use super::{M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError};
+#[cfg(any(test, feature = "m11-compact-probe"))]
+use crate::inline_projection::M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES;
 use crate::reference_value::{
     ReferenceValueBodyCleaner, ReferenceValueCleanerError, ReferenceValueCleanerStatus,
 };

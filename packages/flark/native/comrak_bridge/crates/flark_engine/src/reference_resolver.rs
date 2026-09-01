@@ -201,9 +201,6 @@ impl M11ReferenceResolver {
             .transpose()
             .map_err(|_| M11ReferenceResolverError(ErrorInner::InvalidData))?
             .unwrap_or(0);
-        let maximum_cooked_bytes = maximum_cooked_bytes.min(
-            crate::inline_projection::M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES.saturating_sub(32),
-        );
         if destination_len
             .checked_add(title_len)
             .is_none_or(|total| total > maximum_cooked_bytes)
