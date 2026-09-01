@@ -27,9 +27,9 @@ pub struct M11ResolvedReference {
 /// Definitive result of one source-bound normalized-label lookup.
 ///
 /// `ValueTooLarge` is distinct from `Missing`: a real reference whose cooked
-/// payload exceeds the bounded sidecar envelope must fail closed rather than
-/// be reclassified as literal text. `Unknown` is used by a committed-prefix
-/// resolver whose authority has not reached EOF.
+/// payload exceeds the caller-supplied cooked-value budget must fail closed
+/// rather than be reclassified as literal text. `Unknown` is used by a
+/// committed-prefix resolver whose authority has not reached EOF.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum M11ReferenceResolution {
     Missing,
