@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Build, run, verify, or profile the physical Android product path. flark_core's
+# Build, run, verify, or profile the physical Android product path. flark's
 # build hook owns the Rust compilation and APK native-asset delivery; this
 # script must never stage a parallel jniLibs copy.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXAMPLE="$ROOT/packages/flark/example"
+EXAMPLE="$ROOT/packages/flark_flutter/example"
 ACTION="${1:-verify}"
 DEVICE="${2:-${FLARK_ANDROID_DEVICE:-}}"
 PROFILE_SHAPE="${FLARK_PROFILE_SHAPE:-ordinary}"

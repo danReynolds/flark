@@ -4,7 +4,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-import '../packages/flark/example/lib/dogfood_documents.dart';
+import '../packages/flark_flutter/example/lib/dogfood_documents.dart';
 
 Map<String, Object> dogfoodFixtureIdentity(String cellId) {
   final preset = switch (cellId) {

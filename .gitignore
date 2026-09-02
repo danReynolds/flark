@@ -6,8 +6,8 @@ build/
 coverage/
 pubspec.lock
 
-packages/flark_core/native/comrak_bridge/target/
-packages/flark_core/native/comrak_bridge/dist/
+packages/flark/native/comrak_bridge/target/
+packages/flark/native/comrak_bridge/dist/
 
 # Parser R&D is a disposable local lab. Curated findings and proof receipts are
 # force-added explicitly; prototype crates, vendored donors, and build products

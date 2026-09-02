@@ -1,7 +1,8 @@
 # Parser and platforms
 
 Flark v4 has one grammar and source authority: the Rust workspace bundled in
-`flark_core`. Dart and Flutter communicate with it through the fixed v4 C ABI.
+the headless `flark` package. Dart and Flutter communicate with it through the
+fixed v4 C ABI.
 There is no Dart fallback parser and no active Web backend.
 
 ## Active product targets

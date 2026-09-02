@@ -1,7 +1,7 @@
 # Development and verification
 
-Flark v4 is split into `packages/flark_core` (Dart plus Rust runtime) and
-`packages/flark` (Flutter). The repository root is a non-publishable
+Flark v4 is split into `packages/flark` (Dart plus Rust runtime) and
+`packages/flark_flutter` (Flutter). The repository root is a non-publishable
 qualification workspace.
 
 ## Prerequisites

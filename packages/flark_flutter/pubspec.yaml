@@ -1,0 +1,26 @@
+name: flark_flutter
+description: Flutter's high-performance live Markdown editor, powered by flark.
+version: 0.1.0-dev.1
+publish_to: none
+homepage: https://github.com/danReynolds/flark
+repository: https://github.com/danReynolds/flark
+issue_tracker: https://github.com/danReynolds/flark/issues
+
+environment:
+  sdk: ^3.10.4
+  flutter: '>=3.38.0'
+
+dependencies:
+  # SHA-256 window-text identity for the bounded input-window contract.
+  crypto: ^3.0.6
+  flark: ^0.1.0-dev.1
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^6.0.0
+
+flutter:
+  uses-material-design: false

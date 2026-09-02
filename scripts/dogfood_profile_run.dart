@@ -6,8 +6,8 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 
-import '../packages/flark/example/lib/dogfood_documents.dart';
-import '../packages/flark/test/support/macos_native_canary_driver.dart';
+import '../packages/flark_flutter/example/lib/dogfood_documents.dart';
+import '../packages/flark_flutter/test/support/macos_native_canary_driver.dart';
 import 'dogfood_fixture_identity.dart';
 import 'dogfood_host_identity.dart';
 import 'verify_v4_dogfood_receipt.dart';
@@ -199,7 +199,7 @@ Future<_ProfileRunResult> _runCell({
     appExecutable: appExecutable.path,
     libraryPath: embeddedAbi.path,
     actuatorScript: File(
-      'packages/flark/tool/live_editor_macos_canary.swift',
+      'packages/flark_flutter/tool/live_editor_macos_canary.swift',
     ).absolute.path,
     initialPresetName: initialPreset.name,
     initialWindowWidth: _windowWidth,

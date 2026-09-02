@@ -21,7 +21,7 @@ trap 'exit 143' TERM
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-EXAMPLE_DIR="$REPO_ROOT/packages/flark/example"
+EXAMPLE_DIR="$REPO_ROOT/packages/flark_flutter/example"
 ANDROID_SMOKE_TARGET="integration_test/android_device_smoke_test.dart"
 
 platform=""

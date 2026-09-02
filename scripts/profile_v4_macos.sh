@@ -18,7 +18,7 @@ START_DELAY_MS="${FLARK_PROFILE_START_DELAY_MS:-0}"
 # vsync at all.
 caffeinate -u -t 2 || true
 
-cd "$ROOT/packages/flark/example"
+cd "$ROOT/packages/flark_flutter/example"
 exec caffeinate -dis flutter drive \
   --profile \
   --driver=test_driver/integration_test.dart \

@@ -218,7 +218,7 @@ Future<_GateRecipe> _gateRecipe(
     _ => throw ArgumentError.value(lane, 'lane', 'unknown D0 gate lane'),
   };
   final workingDirectory = lane == 'actual-paint'
-      ? Directory('${repository.path}/packages/flark')
+      ? Directory('${repository.path}/packages/flark_flutter')
       : repository;
   final runnerArtifacts = <Map<String, Object>>[];
   Map<String, Object>? abiIdentity;
@@ -329,7 +329,7 @@ Future<void> _verifyFrozenRecipe(
     _ => throw StateError('Unknown gate lane $lane.'),
   };
   final expectedWorkingDirectory = lane == 'actual-paint'
-      ? Directory('${repository.path}/packages/flark').absolute.path
+      ? Directory('${repository.path}/packages/flark_flutter').absolute.path
       : repository.absolute.path;
   final command = (receipt['command'] as List?)?.cast<String>();
   if (command == null ||

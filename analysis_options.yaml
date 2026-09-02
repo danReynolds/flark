@@ -2,8 +2,8 @@ include: package:lints/recommended.yaml
 
 analyzer:
   exclude:
-    - packages/flark_core/native/comrak_bridge/target/**
-    - packages/flark_core/native/comrak_bridge/dist/**
+    - packages/flark/native/comrak_bridge/target/**
+    - packages/flark/native/comrak_bridge/dist/**
     - benchmark/**
     # Retired v2/v3 sources are preserved as historical evidence, not as an
     # active workspace package. Their dependencies and APIs were intentionally

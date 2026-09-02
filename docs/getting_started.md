@@ -10,7 +10,7 @@ consumers need a stable Rust toolchain with `cargo` or `rustup` on `PATH`.
 From a checkout:
 
 ```sh
-cd packages/flark/example
+cd packages/flark_flutter/example
 flutter pub get
 flutter run -d macos --profile
 ```
@@ -20,13 +20,13 @@ architectures and build-only smoke commands.
 
 ## Open an editor
 
-Apps import the supported `flark` barrel. The caller owns the asynchronous
-controller lifecycle.
+Flutter apps import the supported `flark_flutter` barrel. The caller owns the
+asynchronous controller lifecycle.
 
 ```dart
 import 'dart:async';
 
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 import 'package:flutter/widgets.dart';
 
 final class MarkdownEditor extends StatefulWidget {

@@ -307,6 +307,14 @@ post-seal build) is gated on B2 plus the two findings above.
 
 ### Experiment B revision-locality receipt (2026-08-17): partial
 
+This proof is retained in the explicit non-product
+`compact-revision-experiment` lane. Run it with
+`cargo test --release -p flark-parser --lib --features compact-revision-experiment compact_index_revision_ -- --include-ignored --nocapture`.
+Neither normal tests nor `m11-compact-probe`/progressive open compile the
+unintegrated updater. Reference-local invalidation, B2 frame-identity
+translation, and the editing-authority cutover remain required before it can
+become product architecture.
+
 The compact index now updates through bounded convergence instead of BOF
 rebuilds. The build follows the measurement-determined design exactly: a
 piecewise revision remap layer (the section 5 explicit remapping layer)

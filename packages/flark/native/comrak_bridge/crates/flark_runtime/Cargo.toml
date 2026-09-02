@@ -1,0 +1,33 @@
+[package]
+name = "flark-runtime"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# RFC 029 A3 experiment surface: progressive opening sessions over the
+# compact parser path. Dormant unless a consumer opts in; the production
+# begin() path is unchanged either way.
+opening-session = ["flark-parser/m11-compact-probe"]
+
+[dependencies]
+flark-engine = { path = "../flark_engine", features = ["parser-internal"] }
+flark-parser = { path = "../flark_parser" }
+unicode-segmentation = "1.13.3"
+
+[dev-dependencies]
+flark-parser = { path = "../flark_parser", features = ["m11-compact-probe"] }
+
+[lints.rust]
+dead_code = "deny"
+unused_assignments = "deny"
+unused_imports = "deny"
+unused_variables = "deny"
+
+[[test]]
+name = "opening_session"
+path = "tests/opening_session.rs"
+required-features = ["opening-session"]

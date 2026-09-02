@@ -6,7 +6,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 
-import '../../../packages/flark/example/lib/dogfood_documents.dart';
+import '../../../packages/flark_flutter/example/lib/dogfood_documents.dart';
 import '../../../scripts/dogfood_fixture_identity.dart';
 import '../../../scripts/verify_v4_dogfood_receipt.dart';
 import '../../../scripts/dogfood_performance_receipt.dart';
