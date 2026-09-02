@@ -4,6 +4,12 @@
 production cutover is forbidden until the source-admission and incremental-index
 experiments in section 11 pass. 2026-08-16.
 
+**Reading rule:** this RFC records the large-document architecture and its
+decision history. The active product bar lives in
+[NORTH_STAR.md](../../../NORTH_STAR.md), the measured handoff bar in
+[DOGFOOD_MILESTONE.md](../../../DOGFOOD_MILESTONE.md), and test policy in
+[live_editor_test_strategy.md](../../testing/live_editor_test_strategy.md).
+
 **Amends:**
 [RFC 026](rfc_026_flark_v4_product_architecture.md),
 [RFC 027](rfc_027_continuously_rendered_markdown.md), and

@@ -1,14 +1,14 @@
 import 'package:flark/flark.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
-  test('opens the bundled flark_core native asset transitively', () async {
-    final controller = await FlarkEditorController.open('# packaged\n\ntext');
+  test('opens the bundled v4 native asset without a library path', () async {
+    final document = await FlarkCoreDocument.open('# packaged\n\ntext');
     try {
-      expect(controller.sourceUtf16Length, '# packaged\n\ntext'.length);
-      expect(controller.status, isNot(FlarkEditorStatus.faulted));
+      expect(await document.readSource(), '# packaged\n\ntext');
+      expect(document.revision, 1);
     } finally {
-      await controller.close();
+      await document.dispose();
     }
   });
 }

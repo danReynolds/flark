@@ -4,6 +4,13 @@
 H2 framework-neutral structural transitions passed the full v4 gate and are
 ready for focused dogfood. 2026-08-12.
 
+**Reading rule:** this RFC records transaction architecture and its decision
+history. Current user-visible behavior lives in
+[edit_profile_v1.md](../v4/contracts/edit_profile_v1.md), test policy in
+[live_editor_test_strategy.md](../../testing/live_editor_test_strategy.md), and
+the handoff bar in [DOGFOOD_MILESTONE.md](../../../DOGFOOD_MILESTONE.md). This
+RFC is not a second product contract or testing taxonomy.
+
 **Amends:**
 [RFC 026](rfc_026_flark_v4_product_architecture.md) and
 [RFC 027](rfc_027_continuously_rendered_markdown.md).
@@ -88,6 +95,12 @@ Every semantic intent request names its edit-profile version. Unknown versions
 are rejected without mutation. Profile behavior is fixture-backed and may not
 be inferred independently in Dart or Flutter.
 
+The normative user-facing behavior of `flark-edit-v1` is now specified by the
+[rendered-editing profile](../v4/contracts/edit_profile_v1.md). This RFC owns
+the transaction, receipt, package-boundary, and failure mechanism used to
+implement that behavior. Parser recipes prove a profile result; they do not
+choose the product result.
+
 `flark-edit-v1` initially pins these choices:
 
 - exact line-ending policy, including LF, CRLF, CR, and mixed-source handling;
@@ -109,9 +122,9 @@ The dominant-ending fact is maintained as bounded document metadata. A command
 may inspect its bounded row neighborhood but may not scan the document to choose
 a line ending.
 
-### 3.1 E1 construct matrix
+### 3.1 E1 implementation slice
 
-The first end-to-end slice covers only:
+The first end-to-end implementation slice covers only:
 
 - Return at a collapsed caret in a plain paragraph;
 - Return in a simple unordered or ordered list item;
@@ -129,6 +142,12 @@ the next selection increment; excluding it keeps E1 inverse size and anchor
 behavior statically bounded. Existing temporary Dart handlers may be removed
 only as their exact cases move into the native matrix; they are tracked
 migration debt and may not gain new behavior.
+
+This is a historical implementation checkpoint, not the complete
+`flark-edit-v1` support envelope. Inline deletion, formatting continuity,
+literal provenance, semantic closure, links, replacements, objects, and the
+conformance rules live in the standalone profile and must not be inferred from
+this smaller E1 list.
 
 `notApplicable` means the named profile has no semantic handling for the exact
 case and no state changed. It does not authorize Flutter to guess an equivalent
@@ -379,6 +398,15 @@ cases whose canonical selection anchors mechanically transform to the expected
 result. More general selection replacement waits for the atomic anchor-retarget
 primitive described in section 4.3.
 
+That description is the historical E1 migration lane, not the complete
+rendered-editing destination. Once the complete `flark-edit-v1` command
+capability is negotiated, ordinary rendered-mode keyboard input, paste,
+replacement, and deletion use the rendered command below even when their final
+splice happens to be literal. `apply_source_transaction` remains only for an
+explicit exact-source surface or a runtime-authenticated exact/literal island
+whose canonical source edit is already completely known. Core never selects
+the literal route by scanning the payload for Markdown punctuation.
+
 ### 6.2 Semantic intent request
 
 ```text
@@ -408,6 +436,107 @@ rejected without mutation while composition is active. Native validates handle
 ownership and revision and resolves the handles once inside the transaction;
 the generation is echoed correlation data. Caller work/output caps are clamped
 by negotiated session maxima, so a host cannot opt out of bounded work.
+
+#### 6.2.1 Complete rendered-command destination
+
+`EditIntentRequestV1` is the finite structural E1 wire record. It is not
+stretched into a generic flag bag. The next negotiated capability adds one
+finite rendered-command request whose variants correspond to normalized
+product commands rather than Markdown constructs:
+
+```text
+RenderedEditCommandRequest {
+  common transaction identity, expected revision, anchors, selection,
+  Core selection generation as correlation data,
+  profile and support-domain identity, work/output caps
+
+  command =
+      keyboardText(exactPayload, orderedInputBoundaries)
+    | replaceSelection(origin, exactPayload)
+    | deleteSelection(direction)
+    | deleteAdjacent(direction, granularity)
+    | structuralReturn
+    | plainTextPaste(exactPayload)
+    | composition(update | commit | cancel, groupIdentity, exactPayload)
+    | history(undo | redo, storedSemanticIntentDigest)
+    | semanticAction(actionKind, optionalActionPayload)
+    | prepareCut
+
+  targetAuthority =
+      collapsed(currentCaretContextAuthority,
+                optionalEmptyOwnerIntentAndSourceRecipeAuthority)
+    | range(authenticatedSelectionAnchors, rangeTopologyIdentity)
+    | compositionRange(authenticatedRange, capturedStartIntentAndAuthority)
+    | historyToken
+    | semanticActionAuthority
+}
+```
+
+The target-authority variant must match the command. Collapsed insertion and
+adjacent deletion require collapsed authority. Range replacement, range
+deletion, paste-over-range, and `prepareCut` require noncollapsed `range(...)`
+authority, derive their longest common owner path from the authenticated range
+topology, and forbid an empty-owner context. Composition
+alone may carry its captured starting intent while its composing selection is
+noncollapsed. History and semantic actions use only their native tokens plus
+the common transaction identity.
+
+Navigation, pointer placement, selection extension/collapse, and other
+selection-only adoption do not enter this native source-mutation request. Core
+mechanically adopts one parser-authored topology alternative and publishes no
+source revision or history entry, as required by
+`EP1-COMMAND-RESOLUTION-001`.
+
+The enum is closed by the negotiated ABI/domain. Constructs do not become
+command variants: the runtime resolves the command's rendered target and owner
+path from current parser-authored topology, then runs the six-stage reducer in
+`edit_profile_v1`. This prevents both a controller-side Markdown dispatcher and
+an ever-growing per-bug recipe DSL.
+
+Every rendered text request carries its exact origin and payload. Rust decides
+whether that origin is source-authoring or rendered-content intent, applies
+separator/owner lifecycle, realizes valid source, and returns one complete
+result. The host cannot switch paths because the payload contains `*`, `_`,
+backticks, brackets, whitespace, or any other delimiter-shaped text.
+
+History carries Core's stored semantic-intent digest alongside the native
+history token. Native validates it against the token's before/after intent,
+resolves the restored revision, and returns freshly issued caret and optional
+empty-owner authority before any restored state is published. Native authority
+binds revision/topology/intent, not Core's selection-generation namespace; Core
+mechanically wraps the fresh token with its newly adopted local generation.
+Historical authority bytes are never accepted as current.
+
+`prepareCut` is the one closed two-phase exception required by an external,
+non-rollbackable side effect. It resolves the selected visible `text/plain`
+payload and performs every fallible validation/reservation required for the
+same range deletion, but does not mutate source or history. Its bounded result
+contains the payload plus a single-use opaque `PreparedCutToken` bound to the
+session, expected revision, exact range authority, request digest, edit profile,
+support domain, reserved inverse/history capacity, and complete rendered-result
+proof. Core keeps its ordinary command gate while `flark` writes that payload
+to the clipboard, then sends exactly one of:
+
+```text
+commitPreparedCut(token) | releasePreparedCut(token)
+```
+
+The reservation is tentative capacity owned by the token: preparation creates
+no history entry and evicts no existing history token. Commit revalidates only
+token/session/revision identity and crosses the already prepared source
+linearization point; it does not rerun Markdown policy or allocate. Release
+consumes the token without mutation. A failed clipboard write
+therefore leaves source unchanged. A commit rejection proved to be before
+linearization is reported as explicit copy-only/no-mutation and is not retried.
+Once dispatch may have crossed linearization, a lost/corrupt reply follows the
+ordinary `postCommitUnknown` path: the consumed token's logical edit ID and
+request digest retain one idempotent terminal receipt, Core freezes publication,
+and recovery adopts the committed result or proves no commit without executing
+a second deletion. The host never reports copy-only while source state is
+uncertain. Only one prepared token may exist per session, it cannot cross a
+command-gate release or revision, and timeout/session close consumes an
+undispatched token. This is not a general construct recipe, speculative cache,
+or public prepare API.
 
 ### 6.3 Applied receipt
 
@@ -458,6 +587,65 @@ to interpret.
 
 The receipt does not claim certification. Parser-authored certification arrives
 later through the normal incremental projection path.
+
+That limitation is valid for the implemented structural E1 slice but is not
+sufficient for the complete `flark-edit-v1` profile. Any accepted command that
+creates, changes, or removes a projected construct or hidden syntax must
+negotiate a new receipt capability and return, in the same logical result,
+both a fresh typing-context directive and the bounded result-presentation
+proof required by
+[EP1-RESULT-PRESENTATION-001](../v4/contracts/edit_profile_v1.md#ep1-result-presentation-001).
+The current `CommittedEditReceiptV1` and its reserved fields are not
+reinterpreted.
+
+Conceptually, the capability adds this typed companion result:
+
+```text
+CommittedRenderedEditResultV1 {
+  edit_profile_id
+  support_envelope_id
+  predecessor_publication_id
+  result_revision
+  base_and_result_source_closure
+  complete_affected_partition {
+    row_shells
+    rendered_runs_and_semantic_owner_paths
+    source_rendered_mapping
+    legal_caret_context_alternatives
+    objects_and_action_authority
+  }
+  retained_partition_references {
+    predecessor_fact_ids
+    bounded_range_transforms
+  }
+  result_selection_anchors
+  typing_context_transition {
+    semantic_intent
+    current_caret_context_authority
+    preserve | set(fresh_empty_owner_recipe) | clear
+  }
+  inverse_and_history_identity
+}
+```
+
+The affected and retained partitions must form a complete non-overlapping
+surface for the command closure. There is no open-ended `outside facts` bag and
+no truncation of required proof data: cap exhaustion fails before mutation.
+Core validates this companion and installs it in the existing immutable
+pending-presentation slot; the capability does not add a third controller
+semantic state.
+
+The exact fixed-layout wire record belongs to the next ABI minor. Session
+negotiation must separately name `flark-gfm-0.29-v2`, `flark-edit-v1`, and the
+supported envelope/capabilities; parser-profile code 2 remains permanently
+`flark-gfm-0.29-v1`. A mismatch fails before session mutation. Native undo and
+redo return the same typed companion with a fresh result-revision recipe;
+history never replays an old authority token.
+
+Likewise `preserve` means preserve semantic layer intent while Rust reissues
+fresh authority whenever revision or topology stop changes; Core wraps that
+authority with its newly adopted local selection generation. It never means
+retain an earlier native or Core binding.
 
 ### 6.4 Semantic dispositions
 
@@ -590,6 +778,12 @@ cannot carry a required current-revision hint, H2 pulls forward only the
 `SOURCE_TRANSACTIONS_V1` receipt migration; it does not add a prepare round trip.
 Flutter generations remain admission checks in `flark`.
 
+That latency rule is separate from the correctness-mandated `prepareCut`
+handshake in Section 6.2.1. Cut spans a platform clipboard side effect that
+cannot participate in the native source transaction; its closed token exists
+only to order prevalidation, clipboard write, and source commit without
+pretending those systems share rollback.
+
 ### 8.1 Structural projection transition
 
 The current plain-text continuity policy does not cover paragraph splits or list
@@ -642,8 +836,9 @@ gateway. The common editing behavior is not reimplemented once per platform.
   bounded resolver, exclusive transaction, inverse/history reservation, source
   linearization, anchor transformation, terminal receipt slot.
 - **`flark_abi`**: capability negotiation, handle validation, fixed envelopes,
-  one-call dispatch, and bounded result serialization; no public prepare/commit
-  choreography.
+  one-call dispatch, and bounded result serialization; no general public
+  prepare/commit choreography. The closed `prepareCut`/commit-or-release token
+  is the sole external-side-effect ordering exception in this profile.
 - **`flark_core`**: canonical selection generation, one authoritative mutation
   gate, worker request, receipt validation/adoption, history grouping, ordered
   compact publication, `postCommitUnknown` recovery state, framework-neutral
@@ -681,7 +876,7 @@ pointer, clipboard, and scroll routing.
 Earlier Flark suites and public editor suites are mined for cases, but v4
 expected behavior comes from `flark-edit-v1`, not from preserving superseded
 implementations. The GFM/CommonMark data corpus remains an independent parser
-oracle; it is not an editor-interaction DSL.
+reference; it is not an editor-interaction DSL.
 
 Required perturbations include duplicate newline entrances, stale connection
 events, parser pending, an in-flight pump, backpressure, reply loss, history

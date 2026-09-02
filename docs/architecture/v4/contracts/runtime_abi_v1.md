@@ -6,9 +6,9 @@ decoder are contract-tested together; later product milestones still determine
 release readiness.
 
 The machine-readable authority is
-[`packages/flark_core/test/fixtures/v4/runtime_abi_v1.json`](../../../../packages/flark_core/test/fixtures/v4/runtime_abi_v1.json).
+[`packages/flark/test/fixtures/v4/runtime_abi_v1.json`](../../../../packages/flark/test/fixtures/v4/runtime_abi_v1.json).
 The C declaration is
-[`packages/flark_core/native/comrak_bridge/include/flark_v4.h`](../../../../packages/flark_core/native/comrak_bridge/include/flark_v4.h).
+[`packages/flark/native/comrak_bridge/include/flark_v4.h`](../../../../packages/flark/native/comrak_bridge/include/flark_v4.h).
 Rust and C constants or layouts that disagree with the manifest fail the
 contract tests.
 
@@ -34,10 +34,12 @@ filesystem path.
 
 ## 2. Version and capabilities
 
-The direct ABI is major 4, minor 31. `NEGOTIATE` is the only operation
-permitted without a session. The host supplies its requested version and all
-required capability bits. The runtime returns its supported version, supported
-bits, and actual hard caps in `FlarkV4AbiInfo`.
+The direct ABI is major 4, minor 37. `NEGOTIATE` is the only ordinary operation
+permitted without a session. ABI 4.32 also permits the explicitly flagged
+process-global `SESSION_INSPECT` form without a session so post-close lifecycle
+evidence cannot depend on a consumed handle. The host supplies its requested
+version and all required capability bits. The runtime returns its supported
+version, supported bits, and actual hard caps in `FlarkV4AbiInfo`.
 
 A major or minor mismatch returns `UNSUPPORTED_ABI_VERSION`; this stateless ABI
 accepts only its exact current minor because it cannot retain per-client
@@ -51,9 +53,10 @@ reserved fields to zero. Every output sets its actual size. Unknown nonzero
 reserved input is `INVALID_ARGUMENT`.
 
 ABI 4.0 assigns no request flags: every `flags`, `SessionConfig.flags`,
-`reserved_u32`, and reserved-array field must be zero. A later minor may assign
-a flag only behind a negotiated capability and cannot reinterpret 4.0 zero
-behavior.
+`reserved_u32`, and reserved-array field must be zero. ABI 4.32 assigns
+`SESSION_INSPECT.flags = GLOBAL_LIVE_STATE` behind its matching capability;
+all other nonzero flags remain invalid. A later minor may assign a flag only
+behind a negotiated capability and cannot reinterpret 4.0 zero behavior.
 
 `SessionConfig.parser_profile` is mandatory and stable across hosts. Code 1 is
 `COMMONMARK_0_31_2` (`commonmark-0.31.2`) and code 2 is the selected production
@@ -63,6 +66,26 @@ contract, not an alias for whatever options a parser dependency happens to
 enable. CommonMark-only operation is explicit code 1. Zero or an unknown code
 returns `INVALID_ARGUMENT`; a runtime that negotiated no matching profile bit
 returns `UNSUPPORTED_CAPABILITY`.
+
+The draft [rendered-editing profile](edit_profile_v1.md) selects
+`flark-gfm-0.29-v2` and requires explicit edit-profile/support-envelope
+negotiation. ABI 4.38 does not provide either. A future exact minor must assign
+a new parser-profile code rather than rename code 2, and must append the edit
+identity fields behind a new capability. Until then, ABI 4.38 cannot claim a
+`flark-edit-v1` support envelope even when an individual semantic command is
+implemented.
+
+That future minor is allocated only after the contract freeze; this document
+does not preassign a number. Its negotiation must bind the new parser-profile
+code, edit-profile ID/digest, closed support-domain ID/digest and hard caps,
+finite rendered-command capability set, caret-context topology capability,
+complete result-presentation proof capability, and fresh history-intent
+reauthorization. A session advertising rendered cut must additionally negotiate
+the closed single-use prepared-cut token capability required to order native
+prevalidation, the external clipboard write, and source commit; this does not
+create a general prepare/commit API. A partial subset remains explicitly named
+and cannot advertise the complete profile. No existing reserved field or ABI
+4.36 capability is reinterpreted to carry any of these records.
 
 ## 3. Handles, ownership, and call discipline
 
@@ -396,6 +419,13 @@ current Ready `PRESENTATION_PROVEN` receipt. Pending, oversized, non-ASCII,
 escape/entity/link/code/underscore/strike, or delimiter-crossing transitions
 omit the flag.
 
+Exact ABI 4.32 additionally permits `PRESENTATION_PROVEN` on the existing
+`INDENT_LIST` and `OUTDENT_LIST` transition codes when a current Ready
+parser-authored simple ListItem context resolves to a ListItem result through
+one bounded 2..14-byte ASCII-space prefix insertion or deletion. The retained
+row shell and inline runs are shifted through that exact prefix splice. This
+post-commit proof grants no authority to a subsequent text or structural edit.
+
 Exact ABI 4.31 also permits the existing `ASCII_WORD_INSERTION` record to cover
 parser-authored maximal ASCII letter/digit word leaves inside an eligible
 projected fact. Each leaf must be identity-mapped, bounded on both sides by the
@@ -407,6 +437,214 @@ facts and required projection-segment group before admitting edit cells or
 envelopes from the remaining shared 64 KiB payload, so optional continuity
 vocabulary cannot evict a later rendered row. If the baseline groups themselves
 do not fit, the ABI 4.5 complete-group fail-closed rule still applies.
+
+ABI 4.32 capability `GLOBAL_LIVE_STATE_INSPECTION_V1` assigns
+`SESSION_INSPECT.flags = GLOBAL_LIVE_STATE` (`0x1`). This form requires a zero
+session reference and remains callable after close consumes the final handle.
+The fixed `SESSION_INSPECTION` record sets session state, session, and revision
+to zero; its four `live_*` fields report process-global transaction,
+continuation, anchor, and history counts, while `reserved[0]` reports live
+sessions and `reserved[1..2]` remain zero. This is bounded lifecycle evidence,
+not document authority, and does not expose parser or allocator internals.
+
+ABI 4.32 also adds capability
+`PROJECTION_EDIT_CELLS_V3` without changing the kind-16 record layout. Matcher
+code 6, `INSERT_EXACT_SCALAR_AT_POINT`, uses `replacement_first` as one valid
+Unicode scalar parameter and requires `replacement_second == 0`; every older
+matcher still requires both replacement words to be zero. Its content ranges
+are one zero-width parser-authored trigger strictly inside the source-range
+dependency closure. The host admits only a collapsed insertion of exactly that
+scalar at exactly that point, retains only the declared block shell and outside
+partition, presents the transformed closure as exact current source, and
+consumes the record after one edit. The first bounded emitter covers `[` inside
+one conservatively isolated flat Strong fact on a single physical-line Plain
+row only when the parser's bracket
+classification is exhaustive and the leaf contains no existing bracket
+dependency. This is parser-owned proof data, not a Dart Markdown allowlist.
+
+The same matcher may parameterize one of the frozen D0 prose punctuation
+scalars (`.`, `,`, `;`, `:`, `!`, `?`, apostrophe, double quote, `(`, `)`,
+hyphen, en dash, or em dash) at an ASCII-alphanumeric guard pair inside a
+fact-free prefix before one authoritative Strong fact. The complete prefix is
+the affected closure; the outside Strong fact remains retained. These records
+are also one-shot, use the same V3 capability, and add no host punctuation
+classification.
+
+The same matcher encodes the frozen different-marker syntax set. Rust may emit
+`*`, backtick, `[` or `]` beside one Emphasis fact and `_` or `~` beside one
+Strong fact only when the complete prefix is fact-free ASCII prose, the trigger
+is between ASCII-alphanumeric guards, and the inserted marker is absent from
+the current source. `[` and `]` additionally require exhaustive bracket
+classification. The prefix is the affected exact closure, the different-marker
+fact is the retained outside partition, and the record is one-shot.
+
+The same V3 capability also permits matcher code 2's existing guarded literal
+cell to accept one nonempty ASCII-alphanumeric/U+0020 replacement when the edit
+is strictly interior to its parser-authored trigger and contains at least one
+alphanumeric unit. This closes a bounded multiword paste without granting line
+boundaries, punctuation, deletion, or newline authority. The parser's first
+emitter uses a complete fact-free physical-line gap as the affected closure
+and a maximal ASCII prose run as its interior trigger; unchanged interior
+guards isolate every retained outside fact. Older hosts reject this
+additional safe shape, while a 4.32 host requires the V3 capability before it
+can observe the record.
+
+ABI 4.33 added capability
+`PROJECTION_EDIT_CELLS_V4` without changing record kind 16 or query kind 6.
+Matcher code 7, `EXACT_SPLICE_REPLACE_BLOCK_SHELL`, declares one exact
+parser-authored insertion or deletion over a bounded physical-line closure.
+Its source ranges carry that complete closure and its content ranges carry the
+exact zero-width insertion point or nonempty deletion range.
+`replacement_first` is the required inserted Unicode scalar, or zero for a
+deletion. `replacement_second` packs a typed clean-result shell: bits 0–3 are
+Plain, ATX heading, BlockQuote, or ListItem; bits 4–11 are the result prefix's
+UTF-16 length; and bits 12–31 carry the heading level or quote depth when
+applicable. Flags require `RETAIN_OUTSIDE`, `PRESENT_EXACT`, and
+`REPLACE_BLOCK_SHELL`; retaining the predecessor shell and chaining are
+forbidden.
+
+Matcher code 8, `SIMPLE_BLOCK_PREFIX_PLAN`, covers the corresponding rapid
+prefix sequence before a fresh parser publication can interleave. Its content
+range is the zero-width physical-line start. `replacement_first` packs up to
+three nonzero ASCII plan bytes little-endian in bits 0–23 and the parser-proved
+1-based activation prefix length in bits 24–31; `replacement_second` carries
+the same typed final shell. It requires `CHAIN_RESULT` in addition to the V4
+replacement flags. Core advances only an exact nonempty prefix of the remaining
+plan at the carried point. Before activation it presents Plain exact content;
+from activation onward it presents the declared target shell using the consumed
+prefix length. A unique specialized plan match takes precedence over a generic
+literal cell for the same edit; multiple matching plans fail closed.
+
+The first emitter reruns the bounded donor-backed physical-line classifier on
+the exact counterfactual edit and publishes only a changed supported shell.
+It covers top-level Plain, canonical ATX heading, depth-1 BlockQuote, and simple
+depth-1 ListItem construction/removal. Core compares the declared splice and
+range mechanically, then materializes the typed shell through the same pending
+presentation lifecycle used by every other dependency authority. It neither
+recognizes a Markdown opener nor widens the parser result. Fresh certified rows
+supersede this authority over the prefix-inclusive physical range. The exact
+splice form is one-shot; the prefix-plan form expires when the finite sequence
+is complete or any different edit arrives.
+
+ABI 4.34 adds capability
+`BOUNDED_PENDING_PRESENTATION_PLANS_V1` and inline-record kinds 17 `PLAN`, 18
+`STEP`, and 19 `ROW`, all carried only by query kind 6. The new vocabulary
+represents one bounded exact insertion sequence together with a complete clean
+parser result snapshot for every admitted prefix. It is generic result
+authority, not a host-visible fence grammar.
+
+`PLAN.flags` packs sequence length in bits 0–7, step count in bits 8–15, and
+the number of replaced predecessor rows in bits 16–23. Its source ranges name
+the base affected range, its content ranges name the zero-width trigger, and
+the two replacement words carry the 1–8 ASCII sequence in little-endian byte
+order. Exactly one `STEP` follows for every sequence byte. `STEP.flags` packs
+the 1-based prefix length in bits 0–7 and result-row count in bits 8–15; its
+source ranges name that prefix result's affected range.
+
+Each `ROW` follows its owning step. `ROW.flags` packs the viewport row kind in
+bits 0–15 and ordinary inline-fact count in bits 16–31. Its source ranges name
+the clean result row, its content ranges name the editable projection, and its
+replacement words carry the ordinary row semantic variant/value. Exactly that
+many ordinary fact records immediately follow the row. V1 permits only
+complete Plain or fenced CodeBlock result rows, at most four rows per step,
+128 facts across the plan, a 16 KiB affected source, and no segments or nested
+plans. Rows are ordered and nonoverlapping; source gaps remain exact neutral
+source owned by the same affected result.
+
+The plan is encoded as one all-or-nothing optional group after all page rows'
+ordinary facts and required segments have been reserved. It may be omitted for
+capacity but cannot evict baseline presentation. Core matches only the next
+exact scalar at the carried point and selects the supplied clean step. An
+intermediate fresh parse does not discard still-declared successors; the plan
+retires after the complete sequence is freshly certified or synchronously on
+any mismatch, ambiguity, stale revision, malformed geometry, truncation, or
+out-of-window source. The initial emitter covers only the frozen D0 opening
+journey (three backticks, `dart`, Return) and closing journey (Return, three
+backticks); other fenced construction remains fail-closed.
+
+ABI 4.35 adds capability `PROJECTION_EDIT_CELLS_V5` on existing query kind 6
+and projection-edit-cell record kind 16. State flag `EMPTY_LITERAL_RESULT`
+(`0x4000`) may accompany a one-shot `DELETE_ONE_ASCII_UNIT_IN_LITERAL` cell
+only when deleting its exact one-UTF-16-unit trigger preserves the declared
+projection even though the literal result becomes empty. `replacement_first`
+carries the parser-authored nonnegative UTF-16 caret advance from the ordinary
+collapsed deletion result; `replacement_second` is zero. Trigger and affected
+closure are the same unit, and the result caret remains inside the parser-
+authorized block range. The initial emitter covers the final ASCII-alphanumeric
+unit in a parser-certified table cell, including parser-owned trailing padding.
+Core forwards the typed caret result; hosts do not infer table syntax or
+padding. V5 also assigns result-shell kind 5, `REMOVED`, only to the parser-
+certified exact deletion of the sole ASCII-alphanumeric unit in a Plain row
+whose result has no block shell. Its prefix and parameter fields are zero;
+hosts do not infer row removal.
+
+ABI 4.36 adds capability `LITERAL_SAFE_ENVELOPES_V3` on existing query kind 6
+and literal-safe-envelope record kind 15. Edit class 4,
+`SINGLE_ASCII_LITERAL_UNIT_DELETION`, authorizes one-shot deletion of exactly
+one ASCII unit. The parser may emit it for an ASCII letter or digit inside a
+certified inline word containing at least two units, or for parser-declared
+safe punctuation outside every inline fact when deletion leaves another non-
+whitespace unit on the same physical editable line. Core matches the exact
+one-unit deletion, consumes the proof, transforms only same-geometry insertion
+envelopes, and retains the parser-authored rendered run while the result
+revision is pending. Hosts do not infer Markdown or widen the declared range.
+
+Exact ABI 4.36 also assigns edit-presentation transition code 20,
+`JOIN_FENCED_CODE`, under `EDIT_INTENTS_V1` and
+`STRUCTURAL_PRESENTATION_PROOFS_V1`. It is returned only when Backspace at the
+start of a noninitial physical line in a parser-certified closed fenced-code
+body deletes exactly the preceding LF, CR, or CRLF, Rust proves the joined
+content cannot form a closing fence, and the result retains the same fence kind
+and minimum closing length. The host consumes this typed transition and does
+not infer fence grammar.
+
+Exact ABI 4.37 assigns edit-presentation transition code 21,
+`DELETE_INLINE_OWNER`, under `EDIT_INTENTS_V1`. For collapsed Backspace or
+Delete at the sole rendered grapheme of a parser-authored Emphasis, Strong,
+Strikethrough, Inline Code, nested supported wrapper, or BackslashEscape
+owner, Rust deletes the complete parser-authored source closure in one
+transaction. Unicode extended grapheme segmentation determines sole-content
+eligibility. Dart may route from parser-published inline boundaries but does
+not scan delimiters or widen the closure. The transition drops only rendered
+runs wholly contained by the committed closure and shifts unaffected runs
+while current-revision parsing catches up; ambiguous, stale, unsupported,
+partially overlapping, and multi-grapheme cases fail closed.
+
+Exact ABI 4.38 adds edit-intent receipt flag `HAS_INLINE_CONTINUATION`
+(`0x10`) for a continuable applied `DELETE_INLINE_OWNER`. The payload appends
+the exact parser-authored prefix, suffix, and delimiter-collision scalars after
+the ordinary replacement; `reserved[0]` packs their UTF-8 lengths into three
+16-bit fields. `reserved[1]` packs recipe version 1 into bits 0–15 and a
+parser-authored scalar policy into bits 16–31; higher bits are zero. Core wraps
+only the maximal admitted prefix of the next insertion and places the remainder
+outside the owner. This makes batch delivery equivalent to scalar delivery
+without letting Flutter infer Markdown syntax. `STABLE_NON_WHITESPACE` admits
+every non-whitespace, non-colliding scalar. `COMMONMARK_ORDINARY_ONLY`
+additionally exits before a Unicode punctuation or symbol scalar would change
+outer delimiter flanking, preserving ordinary intraword continuation such as
+`A*t*Z` → delete `t` → type `x` → `A*x*Z`. Delimiter-backed recipes classify
+backslash as a collision because it can escape the reconstructed closer;
+inline code admits it literally. An atomic BackslashEscape deletion
+deliberately omits the flag because an escape is not a persistent inline mode
+(`\\x` does not escape an ordinary letter); its next insertion is plain source.
+A missing flag grants no continuation authority, while malformed, stale, or
+oversized flagged recipes fail closed.
+
+The ABI 4.38 scalar policy is pinned to the parser dependency's
+`finl_unicode` 1.4.0 Unicode 17 punctuation/symbol categories and the Rust
+toolchain's `char::is_whitespace` classifier. Core consumes checked-in range
+tables generated by `generate_markdown_scalar_tables`; the parser test suite
+exhaustively compares every valid Unicode scalar in those Dart tables with the
+exact Rust classifiers. Updating either classifier requires regenerating the
+tables and passing that cross-language parity gate. A host Unicode regular
+expression is not policy authority.
+
+Exact ABI 4.32 also maps maximal ASCII-word triggers inside each physical line
+of a parser-certified closed fenced-code body. The affected closure is that
+authored code line without its line ending; the body publishes authoritative
+empty inline facts, so the host retains the code shell and paints only the
+changed line as exact current source. Neither fence is part of an admitted
+range, and no new matcher or record shape is introduced.
 
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust

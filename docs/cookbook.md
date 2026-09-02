@@ -3,7 +3,7 @@
 All examples use the supported Flutter barrel:
 
 ```dart
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 ```
 
 ## Open and close a document

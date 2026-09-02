@@ -2,8 +2,11 @@
 build/
 coverage/
 pubspec.lock
-pubspec_overrides.yaml
-**/pubspec_overrides.yaml
+benchmark/
 test/
 tool/
+native/comrak_bridge/target/
+native/comrak_bridge/dist/
+native/comrak_bridge/**/tests/
+native/comrak_bridge/**/benches/
 **/.DS_Store

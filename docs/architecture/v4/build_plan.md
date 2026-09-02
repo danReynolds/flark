@@ -307,6 +307,14 @@ post-seal build) is gated on B2 plus the two findings above.
 
 ### Experiment B revision-locality receipt (2026-08-17): partial
 
+This proof is retained in the explicit non-product
+`compact-revision-experiment` lane. Run it with
+`cargo test --release -p flark-parser --lib --features compact-revision-experiment compact_index_revision_ -- --include-ignored --nocapture`.
+Neither normal tests nor `m11-compact-probe`/progressive open compile the
+unintegrated updater. Reference-local invalidation, B2 frame-identity
+translation, and the editing-authority cutover remain required before it can
+become product architecture.
+
 The compact index now updates through bounded convergence instead of BOF
 rebuilds. The build follows the measurement-determined design exactly: a
 piecewise revision remap layer (the section 5 explicit remapping layer)
@@ -509,6 +517,78 @@ and required projection segments before spending its remaining payload on
 cells or envelopes, preventing proof-heavy early rows from forcing later rows
 to exact source. Oversized baseline groups retain the ABI's existing complete-
 group fail-closed behavior.
+
+ABI 4.34 was the former frozen D0 minor; that freeze is now invalid. ABI 4.32
+added one process-global live-state inspection mode to the existing fixed
+inspection record so close/lifecycle qualification can prove zero sessions,
+transactions, continuations, anchors, and histories after the last session
+handle has been consumed. Before any downstream Phase-2 receipt was frozen,
+the same draft minor was explicitly reopened and refrozen with
+`PROJECTION_EDIT_CELLS_V3`. That capability keeps kind 16 and adds a generic
+one-shot exact-scalar matcher parameterized by Rust.
+The first parser emitter closes the D0 `[`-inside-Strong case on one
+single-physical-line Plain row with a complete Strong dependency closure and
+zero-width guarded trigger; Core compares only
+the scalar and transforms the supplied ranges. No Dart Markdown rule or
+construct-specific wire record was added.
+
+Before Phase-2 evidence was frozen, the block-construction actual-paint matrix
+then found a distinct missing consequence: an exact edit could change the
+block shell itself. Architecture review re-opened the boundary and refroze it
+at 4.33 with `PROJECTION_EDIT_CELLS_V4`. The existing kind-16 record now carries
+one exact parser-authored splice or finite rapid prefix plan plus a typed
+clean-result shell; Core and the single pending-presentation snapshot apply it
+mechanically. This replaces the observed Plain-shell flash for bounded heading,
+quote, and list construction at human cadence and before one vsync
+without adding a Dart marker rule or a parallel authority state.
+
+The fenced-code construction/removal journey then demonstrated that a
+single changed row shell was still insufficient: one admitted prefix can
+replace several predecessor rows and produce several clean result rows. The
+ABI 4.34 `BOUNDED_PENDING_PRESENTATION_PLANS_V1` contract therefore
+carries one bounded exact insertion sequence and the complete clean parser
+result for every prefix. Core validates and materializes that parser-owned
+snapshot into the existing pending-presentation slot. It adds neither host
+fence recognition nor a second continuity lifecycle.
+
+That architecture-freeze exit was explicitly reopened for ABI 4.35 and 4.36.
+ABI 4.35 added `PROJECTION_EDIT_CELLS_V5`, including the typed empty-literal
+caret consequence and `REMOVED` result shell. ABI 4.36 added
+`LITERAL_SAFE_ENVELOPES_V3` and the parser-proved `JOIN_FENCED_CODE`
+presentation transition. Review found both to remain inside the parser-owned
+authority and unified pending-presentation lifecycle, but the changes still
+invalidate the 4.34 Phase-1 exit and every downstream receipt under the freeze
+rule. The D0 ABI freeze is open. Implementing `flark-edit-v1` requires a future
+exact minor with explicit profile/envelope negotiation and the complete result-
+presentation proof; that minor must receive architecture re-review before new
+D0 receipts are run or accepted.
+
+The frozen 4.32 structural receipt contract also proves simple-list indent and
+outdent presentation when the Ready parser context and typed resolver certify
+one bounded ASCII-space prefix splice and a ListItem result. This uses the
+existing transition codes and unified pending-presentation lifecycle; it adds
+no host Markdown rule or independent authority state.
+
+The generic exact-scalar path also carries the frozen D0 prose punctuation set
+at parser-guarded alphanumeric points in a fact-free prefix before one Strong
+fact. The full prefix is the affected exact closure and the outside Strong fact
+remains projected. Records are one-shot and bounded by the existing component
+cap; this is emitter breadth within V3, not another ABI revision.
+
+The same bounded emitter closes the frozen different-marker syntax rows: `*`,
+backtick, `[` and `]` beside one Emphasis fact, and `_` or `~` beside one
+Strong fact. The parser requires a fact-free ASCII prefix, an alphanumeric
+guard pair, and no current occurrence of the inserted marker; brackets also
+require exhaustive bracket classification. The complete prefix is exact and
+the outside sibling stays projected. These are one-shot V3 cells, not a
+general delimiter-graph claim.
+
+V3 also lets the same parser component seam supply a complete fact-free
+physical-line gap as the affected closure and a maximal ASCII prose run as the
+trigger for the existing ASCII-literal matcher. Core admits one nonempty
+ASCII-alphanumeric/U+0020 replacement only strictly inside that declared
+trigger, which closes the Product Tour multiword-paste row without widening to
+punctuation or line-boundary edits.
 
 The edit-cell seam is still bounded, not completion of continuously rendered
 editing. When no cell or envelope matches, the controller safely paints the

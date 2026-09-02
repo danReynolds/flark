@@ -6,8 +6,8 @@ trap 'exit 143' TERM
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CORE_PACKAGE_ROOT="$REPO_ROOT/packages/flark_core"
-FLUTTER_PACKAGE_ROOT="$REPO_ROOT/packages/flark"
+CORE_PACKAGE_ROOT="$REPO_ROOT/packages/flark"
+FLUTTER_PACKAGE_ROOT="$REPO_ROOT/packages/flark_flutter"
 EXAMPLE_ROOT="$FLUTTER_PACKAGE_ROOT/example"
 
 run_stress=1

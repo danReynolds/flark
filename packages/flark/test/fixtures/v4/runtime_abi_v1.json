@@ -1,0 +1,697 @@
+{
+  "schemaVersion": 1,
+  "contractId": "flark-v4-runtime-abi-v1",
+  "status": "implemented-direct-v4-boundary",
+  "abi": {
+    "major": 4,
+    "minor": 38,
+    "minorRule": "NEGOTIATE requires the exact current minor; any major or minor mismatch returns UNSUPPORTED_ABI_VERSION because the runtime retains no per-client negotiation state",
+    "header": "native/comrak_bridge/include/flark_v4.h",
+    "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
+    "abiCrate": "native/comrak_bridge/crates/flark_abi",
+    "integerEndianness": "native",
+    "recordRule": "repr(C), fixed-width integer fields, struct_size first where versioned, reserved fields zero on input",
+    "symbolPrefix": "flark_v4_"
+  },
+  "limits": {
+    "MAX_SMALL_EDIT_BYTES": 4096,
+    "MAX_BULK_CHUNK_BYTES": 65536,
+    "MAX_SOURCE_CHUNK_BYTES": 65536,
+    "MAX_RESULT_BYTES": 262144,
+    "MAX_QUERY_ITEMS": 4096,
+    "MAX_TRANSACTION_EDITS": 64,
+    "MAX_LIVE_ANCHORS": 4096
+  },
+  "capabilities": [
+    {"name": "SOURCE_STREAMING", "bit": 1},
+    {"name": "SMALL_EDITS", "bit": 2},
+    {"name": "BULK_TRANSACTIONS", "bit": 4},
+    {"name": "BOUNDED_PUMP", "bit": 8},
+    {"name": "RANGE_CERTIFICATION", "bit": 16},
+    {"name": "VIEWPORT_QUERIES", "bit": 32},
+    {"name": "STABLE_ANCHORS", "bit": 64},
+    {"name": "COORDINATE_CONVERSION", "bit": 128},
+    {"name": "REVERSIBLE_HISTORY", "bit": 256},
+    {"name": "RESUMABLE_CLOSE", "bit": 512},
+    {"name": "SNAPSHOT_CONTINUATIONS", "bit": 1024},
+    {"name": "CANCELLATION", "bit": 2048},
+    {"name": "PANIC_CONTAINMENT", "bit": 4096},
+    {"name": "COMMONMARK_0_31_2", "bit": 8192},
+    {"name": "SELECTED_GFM_V1", "bit": 16384},
+    {"name": "EDIT_INTENTS_V1", "bit": 32768},
+    {"name": "SOURCE_TRANSACTIONS_V1", "bit": 65536},
+    {"name": "NATIVE_COMPOSITE_HISTORY_V1", "bit": 131072},
+    {"name": "LIST_CONTAINER_COLUMNS_V1", "bit": 262144},
+    {"name": "INDENTED_CODE_EDITING_V1", "bit": 524288},
+    {"name": "SEMANTIC_ATOMS_V1", "bit": 1048576},
+    {"name": "NESTED_BLOCK_QUOTE_EDITING_V1", "bit": 2097152},
+    {"name": "SEMANTIC_ACTIONS_V1", "bit": 4194304},
+    {"name": "STAGED_SOURCE_TRANSACTIONS_V1", "bit": 8388608},
+    {"name": "LIST_INDENTATION_V1", "bit": 16777216},
+    {"name": "SEMANTIC_TARGETS_V1", "bit": 33554432},
+    {"name": "LITERAL_SAFE_ENVELOPES_V1", "bit": 67108864},
+    {"name": "LITERAL_SAFE_ENVELOPE_CLOSURE_V1", "bit": 134217728},
+    {"name": "PROJECTION_EDIT_CELLS_V1", "bit": 268435456},
+    {"name": "PROJECTION_EDIT_CELLS_V2", "bit": 536870912},
+    {"name": "LITERAL_SAFE_ENVELOPES_V2", "bit": 1073741824},
+    {"name": "STRUCTURAL_PRESENTATION_PROOFS_V1", "bit": 2147483648},
+    {"name": "GLOBAL_LIVE_STATE_INSPECTION_V1", "bit": 4294967296},
+    {"name": "PROJECTION_EDIT_CELLS_V3", "bit": 8589934592},
+    {"name": "PROJECTION_EDIT_CELLS_V4", "bit": 17179869184},
+    {"name": "BOUNDED_PENDING_PRESENTATION_PLANS_V1", "bit": 34359738368},
+    {"name": "PROJECTION_EDIT_CELLS_V5", "bit": 68719476736},
+    {"name": "LITERAL_SAFE_ENVELOPES_V3", "bit": 137438953472}
+  ],
+  "operations": [
+    {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},
+    {"name": "CREATE_BEGIN", "code": 1, "symbol": "flark_v4_create_begin", "requestRecord": "CREATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": true, "callerOutput": false},
+    {"name": "CREATE_APPEND", "code": 2, "symbol": "flark_v4_create_append", "requestRecord": "STAGE_REQUEST", "allowedSessionStates": ["CREATING"], "borrowedInput": true, "callerOutput": false},
+    {"name": "CREATE_COMMIT", "code": 3, "symbol": "flark_v4_create_commit", "requestRecord": "TRANSACTION_REQUEST", "allowedSessionStates": ["CREATING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "CREATE_ABORT", "code": 4, "symbol": "flark_v4_create_abort", "requestRecord": "TRANSACTION_REQUEST", "allowedSessionStates": ["CREATING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "SOURCE_READ", "code": 5, "symbol": "flark_v4_source_read", "requestRecord": "SOURCE_READ_REQUEST", "outputRecord": "RESULT_PAGE_HEADER", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": true},
+    {"name": "SMALL_EDIT", "code": 6, "symbol": "flark_v4_small_edit", "requestRecord": "SMALL_EDIT_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": true, "callerOutput": false},
+    {"name": "BULK_BEGIN", "code": 7, "symbol": "flark_v4_bulk_begin", "requestRecord": "BULK_BEGIN_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "BULK_APPEND", "code": 8, "symbol": "flark_v4_bulk_append", "requestRecord": "STAGE_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": true, "callerOutput": false},
+    {"name": "BULK_COMMIT", "code": 9, "symbol": "flark_v4_bulk_commit", "requestRecord": "TRANSACTION_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "BULK_ABORT", "code": 10, "symbol": "flark_v4_bulk_abort", "requestRecord": "TRANSACTION_REQUEST", "allowedSessionStates": ["OPEN", "CLOSING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "PUMP", "code": 11, "symbol": "flark_v4_pump", "requestRecord": "PUMP_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "QUERY_VIEWPORT", "code": 12, "symbol": "flark_v4_query_viewport", "requestRecord": "QUERY_REQUEST", "outputRecord": "RESULT_PAGE_HEADER", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": true},
+    {"name": "CONTINUATION_NEXT", "code": 13, "symbol": "flark_v4_continuation_next", "requestRecord": "CONTINUATION_REQUEST", "outputRecord": "RESULT_PAGE_HEADER", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": true},
+    {"name": "CONTINUATION_RELEASE", "code": 14, "symbol": "flark_v4_continuation_release", "requestRecord": "CONTINUATION_REQUEST", "allowedSessionStates": ["OPEN", "CLOSING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "ANCHOR_CREATE", "code": 15, "symbol": "flark_v4_anchor_create", "requestRecord": "ANCHOR_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "ANCHOR_TRANSFORM", "code": 16, "symbol": "flark_v4_anchor_transform", "requestRecord": "ANCHOR_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "ANCHOR_RESOLVE", "code": 17, "symbol": "flark_v4_anchor_resolve", "requestRecord": "ANCHOR_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "ANCHOR_RELEASE", "code": 18, "symbol": "flark_v4_anchor_release", "requestRecord": "ANCHOR_REQUEST", "allowedSessionStates": ["OPEN", "CLOSING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "COORDINATE_CONVERT", "code": 19, "symbol": "flark_v4_coordinate_convert", "requestRecord": "COORDINATE_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "HISTORY_REPLAY", "code": 20, "symbol": "flark_v4_history_replay", "requestRecord": "HISTORY_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "HISTORY_RELEASE", "code": 21, "symbol": "flark_v4_history_release", "requestRecord": "HISTORY_REQUEST", "allowedSessionStates": ["OPEN", "CLOSING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "CANCEL", "code": 22, "symbol": "flark_v4_cancel", "requestRecord": "CANCEL_REQUEST", "allowedSessionStates": ["OPEN", "CLOSING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "CLOSE_BEGIN", "code": 23, "symbol": "flark_v4_close_begin", "requestRecord": "CLOSE_REQUEST", "allowedSessionStates": ["OPEN", "FAULTED"], "borrowedInput": false, "callerOutput": false},
+    {"name": "CLOSE_PUMP", "code": 24, "symbol": "flark_v4_close_pump", "requestRecord": "CLOSE_REQUEST", "allowedSessionStates": ["CLOSING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "CLOSE_FINISH", "code": 25, "symbol": "flark_v4_close_finish", "requestRecord": "CLOSE_REQUEST", "allowedSessionStates": ["CLOSING"], "borrowedInput": false, "callerOutput": false},
+    {"name": "SESSION_TRANSFER_OWNER", "code": 26, "symbol": "flark_v4_session_transfer_owner", "requestRecord": "OWNER_TRANSFER_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
+    {"name": "SESSION_INSPECT", "code": 27, "symbol": "flark_v4_session_inspect", "requestRecord": "INSPECT_REQUEST", "outputRecord": "SESSION_INSPECTION", "allowedSessionStates": ["NONE", "CREATING", "OPEN", "CLOSING", "FAULTED"], "borrowedInput": false, "callerOutput": true},
+    {"name": "EDIT_INTENT_V1", "code": 28, "symbol": "flark_v4_edit_intent_v1", "requestRecord": "EDIT_INTENT_REQUEST_V1", "outputRecord": "EDIT_INTENT_RECEIPT_V1", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": true},
+    {"name": "SOURCE_TRANSACTION_V1", "code": 29, "symbol": "flark_v4_source_transaction_v1", "requestRecord": "SOURCE_TRANSACTION_REQUEST_V1", "outputRecord": "SOURCE_TRANSACTION_RECEIPT_V1", "allowedSessionStates": ["OPEN"], "borrowedInput": true, "callerOutput": true},
+    {"name": "STAGED_SOURCE_TRANSACTION_V1", "code": 30, "symbol": "flark_v4_staged_source_transaction_v1", "requestRecord": "STAGED_SOURCE_TRANSACTION_REQUEST_V1", "outputRecord": "SOURCE_TRANSACTION_RECEIPT_V1", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": true}
+  ],
+  "statuses": [
+    {"name": "OK", "code": 0, "category": "success", "sessionTerminal": false},
+    {"name": "NEEDS_INPUT", "code": 1, "category": "retry-external", "sessionTerminal": false, "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"name": "NEEDS_OUTPUT_BUFFER", "code": 2, "category": "retry-external", "sessionTerminal": false, "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"name": "NOT_CERTIFIED", "code": 3, "category": "pending-neutral", "sessionTerminal": false},
+    {"name": "CANCELLED", "code": 4, "category": "cancelled", "sessionTerminal": false},
+    {"name": "SUPERSEDED", "code": 5, "category": "superseded", "sessionTerminal": false},
+    {"name": "BUDGET_EXHAUSTED", "code": 6, "category": "bounded-progress", "sessionTerminal": false},
+    {"name": "RESULT_CAP_REACHED", "code": 7, "category": "bounded-result", "sessionTerminal": false},
+    {"name": "NOT_READY_SOURCE_GAP", "code": 8, "category": "retry-external", "sessionTerminal": false},
+    {"name": "BACKPRESSURE", "code": 9, "category": "retry-external", "sessionTerminal": false},
+    {"name": "INVALID_ARGUMENT", "code": 256, "category": "caller-error", "sessionTerminal": false},
+    {"name": "UNSUPPORTED_ABI_VERSION", "code": 257, "category": "caller-error", "sessionTerminal": false},
+    {"name": "UNSUPPORTED_CAPABILITY", "code": 258, "category": "caller-error", "sessionTerminal": false},
+    {"name": "INVALID_HANDLE", "code": 259, "category": "handle-error", "sessionTerminal": false},
+    {"name": "STALE_HANDLE", "code": 260, "category": "handle-error", "sessionTerminal": false},
+    {"name": "WRONG_HANDLE_KIND", "code": 261, "category": "handle-error", "sessionTerminal": false},
+    {"name": "OWNER_MISMATCH", "code": 262, "category": "ownership-error", "sessionTerminal": false},
+    {"name": "SESSION_BUSY", "code": 263, "category": "ownership-error", "sessionTerminal": false},
+    {"name": "SESSION_CLOSING", "code": 264, "category": "state-error", "sessionTerminal": false},
+    {"name": "SESSION_CLOSED", "code": 265, "category": "state-error", "sessionTerminal": false, "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"name": "MIGRATION_WHILE_ACTIVE", "code": 266, "category": "ownership-error", "sessionTerminal": false},
+    {"name": "STALE_REVISION", "code": 512, "category": "revision-error", "sessionTerminal": false},
+    {"name": "STALE_SNAPSHOT", "code": 513, "category": "revision-error", "sessionTerminal": false},
+    {"name": "STALE_CONTINUATION", "code": 514, "category": "revision-error", "sessionTerminal": false},
+    {"name": "INVALID_UTF8", "code": 515, "category": "source-error", "sessionTerminal": false},
+    {"name": "RANGE_OUT_OF_BOUNDS", "code": 516, "category": "source-error", "sessionTerminal": false},
+    {"name": "RANGE_NOT_SCALAR_BOUNDARY", "code": 517, "category": "source-error", "sessionTerminal": false},
+    {"name": "COORDINATE_OUT_OF_RANGE", "code": 518, "category": "source-error", "sessionTerminal": false},
+    {"name": "EDIT_TOO_LARGE", "code": 519, "category": "cap-error", "sessionTerminal": false},
+    {"name": "QUERY_LIMIT_EXCEEDED", "code": 520, "category": "cap-error", "sessionTerminal": false},
+    {"name": "BUFFER_TOO_SMALL", "code": 521, "category": "retry-external", "sessionTerminal": false},
+    {"name": "STALE_PROGRESS_TOKEN", "code": 522, "category": "revision-error", "sessionTerminal": false},
+    {"name": "INVALID_UTF16_HOST_INPUT", "code": 523, "category": "host-input-error", "sessionTerminal": false},
+    {"name": "TRANSACTION_CONFLICT", "code": 768, "category": "transaction-error", "sessionTerminal": false},
+    {"name": "TRANSACTION_INCOMPLETE", "code": 769, "category": "transaction-error", "sessionTerminal": false},
+    {"name": "TRANSACTION_ALREADY_COMMITTED", "code": 770, "category": "transaction-error", "sessionTerminal": false},
+    {"name": "TRANSACTION_ALREADY_ABORTED", "code": 771, "category": "transaction-error", "sessionTerminal": false},
+    {"name": "HISTORY_BUDGET_EXCEEDED", "code": 772, "category": "history-error", "sessionTerminal": false, "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"name": "HISTORY_TOKEN_EVICTED", "code": 773, "category": "history-error", "sessionTerminal": false},
+    {"name": "HISTORY_TOKEN_STALE", "code": 774, "category": "history-error", "sessionTerminal": false},
+    {"name": "CONTINUATION_LIMIT_EXCEEDED", "code": 775, "category": "cap-error", "sessionTerminal": false},
+    {"name": "PROGRESS_STALLED", "code": 1024, "category": "runtime-fault", "sessionTerminal": true},
+    {"name": "PANIC_CONTAINED", "code": 1025, "category": "runtime-fault", "sessionTerminal": true},
+    {"name": "INTERNAL_FAULT", "code": 1026, "category": "runtime-fault", "sessionTerminal": true},
+    {"name": "RESOURCE_LIMIT_EXCEEDED", "code": 1027, "category": "runtime-fault", "sessionTerminal": false},
+    {"name": "CLOSE_INCOMPLETE", "code": 1028, "category": "close-error", "sessionTerminal": false},
+    {"name": "PARSER_FAULT", "code": 1029, "category": "parser-fault", "sessionTerminal": true},
+    {"name": "ALLOCATION_FAILURE", "code": 1030, "category": "allocation-fault", "sessionTerminal": false}
+  ],
+  "progressStates": [
+    {"name": "NONE", "code": 0},
+    {"name": "ADVANCED", "code": 1},
+    {"name": "BUDGET_EXHAUSTED", "code": 2},
+    {"name": "RESULT_CAP_REACHED", "code": 3},
+    {"name": "PENDING_SOURCE_GAP", "code": 4},
+    {"name": "BACKPRESSURED", "code": 5},
+    {"name": "COMPLETE", "code": 6},
+    {"name": "CANCELLED", "code": 7},
+    {"name": "SUPERSEDED", "code": 8},
+    {"name": "FAULT", "code": 9}
+  ],
+  "sessionStates": [
+    {"name": "CREATING", "code": 1},
+    {"name": "OPEN", "code": 2},
+    {"name": "CLOSING", "code": 3},
+    {"name": "CLOSED", "code": 4},
+    {"name": "FAULTED", "code": 5}
+  ],
+  "transactionStates": [
+    {"name": "STAGING", "code": 1},
+    {"name": "COMMITTED", "code": 2},
+    {"name": "ABORTED", "code": 3}
+  ],
+  "certificationStates": [
+    {"name": "NOT_APPLICABLE", "code": 0},
+    {"name": "PENDING_NEUTRAL", "code": 1},
+    {"name": "CURRENT_CERTIFIED", "code": 2},
+    {"name": "MIXED_CURRENT", "code": 3}
+  ],
+  "parserProfiles": [
+    {"name": "COMMONMARK_0_31_2", "code": 1, "specId": "commonmark-0.31.2"},
+    {"name": "FLARK_GFM_0_29_V1", "code": 2, "specId": "flark-gfm-0.29-v1"}
+  ],
+  "coordinateKinds": [
+    {"name": "SOURCE_BYTE", "code": 1},
+    {"name": "UTF16_CODE_UNIT", "code": 2}
+  ],
+  "affinities": [
+    {"name": "UPSTREAM", "code": 1},
+    {"name": "DOWNSTREAM", "code": 2}
+  ],
+  "queryKinds": [
+    {"name": "SOURCE", "code": 1},
+    {"name": "SEMANTIC", "code": 2},
+    {"name": "SOURCE_AND_SEMANTIC", "code": 3},
+    {"name": "SEMANTIC_PROJECTED", "code": 4},
+    {"name": "SEMANTIC_TARGET", "code": 5},
+    {"name": "SEMANTIC_PROJECTED_LITERAL_SAFE", "code": 6}
+  ],
+  "resultRecordKinds": [
+    {"name": "SOURCE_BYTES", "code": 1},
+    {"name": "SEMANTIC_FACTS", "code": 2},
+    {"name": "SOURCE_AND_SEMANTIC", "code": 3},
+    {"name": "SEMANTIC_TARGET", "code": 4}
+  ],
+  "historyDispositions": [
+    {"name": "NOT_APPLICABLE", "code": 0},
+    {"name": "RETAINED", "code": 1},
+    {"name": "DISABLED", "code": 2},
+    {"name": "OVER_BUDGET", "code": 3}
+  ],
+  "handleKinds": [
+    {"name": "NONE", "code": 0},
+    {"name": "SESSION", "code": 1},
+    {"name": "TRANSACTION", "code": 2},
+    {"name": "CONTINUATION", "code": 3},
+    {"name": "ANCHOR", "code": 4},
+    {"name": "HISTORY_TOKEN", "code": 5}
+  ],
+  "ownershipKinds": [
+    {"name": "BORROWED_INPUT", "code": 1},
+    {"name": "CALLER_OUTPUT", "code": 2},
+    {"name": "RUNTIME_HANDLE", "code": 3},
+    {"name": "RUNTIME_STAGED_BYTES", "code": 4}
+  ],
+  "records": [
+    {"name": "ABI_INFO", "sizeBytes": 64},
+    {"name": "OUTCOME", "sizeBytes": 112},
+    {"name": "RESULT_PAGE_HEADER", "sizeBytes": 96},
+    {"name": "CERTIFICATION_RANGE_RECORD", "sizeBytes": 40},
+    {"name": "VIEWPORT_ROW_RECORD", "sizeBytes": 128},
+    {"name": "PROJECTION_SEGMENT_RECORD", "sizeBytes": 32},
+    {"name": "INLINE_FACT_RECORD", "sizeBytes": 80},
+    {"name": "SEMANTIC_TARGET_RECORD", "sizeBytes": 160},
+    {"name": "SOURCE_RANGE", "sizeBytes": 16},
+    {"name": "EDIT_DESCRIPTOR", "sizeBytes": 32},
+    {"name": "WORK_BUDGET", "sizeBytes": 24},
+    {"name": "SESSION_REF", "sizeBytes": 16},
+    {"name": "NEGOTIATE_REQUEST", "sizeBytes": 16},
+    {"name": "SESSION_CONFIG", "sizeBytes": 64},
+    {"name": "CREATE_REQUEST", "sizeBytes": 88},
+    {"name": "STAGE_REQUEST", "sizeBytes": 64},
+    {"name": "SOURCE_READ_REQUEST", "sizeBytes": 64},
+    {"name": "SMALL_EDIT_REQUEST", "sizeBytes": 88},
+    {"name": "EDIT_INTENT_REQUEST_V1", "sizeBytes": 128},
+    {"name": "EDIT_INTENT_RECEIPT_V1", "sizeBytes": 192},
+    {"name": "SOURCE_TRANSACTION_REQUEST_V1", "sizeBytes": 160},
+    {"name": "SOURCE_TRANSACTION_RECEIPT_V1", "sizeBytes": 200},
+    {"name": "STAGED_SOURCE_TRANSACTION_REQUEST_V1", "sizeBytes": 160},
+    {"name": "BULK_BEGIN_REQUEST", "sizeBytes": 72},
+    {"name": "TRANSACTION_REQUEST", "sizeBytes": 80},
+    {"name": "PUMP_REQUEST", "sizeBytes": 64},
+    {"name": "QUERY_REQUEST", "sizeBytes": 96},
+    {"name": "CONTINUATION_REQUEST", "sizeBytes": 80},
+    {"name": "ANCHOR_REQUEST", "sizeBytes": 96},
+    {"name": "COORDINATE_REQUEST", "sizeBytes": 96},
+    {"name": "HISTORY_REQUEST", "sizeBytes": 80},
+    {"name": "CANCEL_REQUEST", "sizeBytes": 64},
+    {"name": "CLOSE_REQUEST", "sizeBytes": 64},
+    {"name": "OWNER_TRANSFER_REQUEST", "sizeBytes": 64},
+    {"name": "INSPECT_REQUEST", "sizeBytes": 64},
+    {"name": "SESSION_INSPECTION", "sizeBytes": 64}
+  ],
+  "requestFieldRules": [
+    {"operation": "CREATE_COMMIT", "field": "expected_revision", "rule": "MUST_BE_ZERO"},
+    {"operation": "CREATE_COMMIT", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "CREATE_ABORT", "field": "expected_revision", "rule": "MUST_BE_ZERO"},
+    {"operation": "CREATE_ABORT", "field": "progress_token", "rule": "MUST_BE_ZERO"},
+    {"operation": "BULK_COMMIT", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "BULK_ABORT", "field": "progress_token", "rule": "MUST_BE_ZERO"},
+    {"operation": "PUMP", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "QUERY_VIEWPORT", "field": "continuation", "rule": "MUST_BE_ZERO"},
+    {"operation": "QUERY_VIEWPORT", "field": "snapshot", "rule": "ZERO_SELECTS_LATEST"},
+    {"operation": "ANCHOR_CREATE", "field": "anchor", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_CREATE", "field": "snapshot", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_CREATE", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "ANCHOR_TRANSFORM", "field": "coordinate_kind", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_TRANSFORM", "field": "snapshot", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_TRANSFORM", "field": "position", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_TRANSFORM", "field": "affinity", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_TRANSFORM", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "ANCHOR_RESOLVE", "field": "snapshot", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RESOLVE", "field": "position", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RESOLVE", "field": "affinity", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RESOLVE", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "ANCHOR_RELEASE", "field": "coordinate_kind", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RELEASE", "field": "revision", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RELEASE", "field": "snapshot", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RELEASE", "field": "position", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RELEASE", "field": "affinity", "rule": "MUST_BE_ZERO"},
+    {"operation": "ANCHOR_RELEASE", "field": "progress_token", "rule": "MUST_BE_ZERO"},
+    {"operation": "COORDINATE_CONVERT", "field": "snapshot", "rule": "MUST_BE_ZERO"},
+    {"operation": "COORDINATE_CONVERT", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "HISTORY_REPLAY", "field": "progress_token", "rule": "ZERO_BEGINS_PROGRESS"},
+    {"operation": "HISTORY_RELEASE", "field": "progress_token", "rule": "MUST_BE_ZERO"},
+    {"operation": "CLOSE_BEGIN", "field": "progress_token", "rule": "MUST_BE_ZERO"},
+    {"operation": "CLOSE_PUMP", "field": "progress_token", "rule": "MUST_BE_NONZERO"},
+    {"operation": "CLOSE_FINISH", "field": "progress_token", "rule": "MUST_BE_NONZERO"}
+  ],
+  "lengthAuthorityRules": [
+    {"operation": "CREATE_APPEND", "recordField": "chunk_len", "callArgument": "input_len", "rule": "MUST_MATCH_OR_INVALID_ARGUMENT"},
+    {"operation": "BULK_APPEND", "recordField": "chunk_len", "callArgument": "input_len", "rule": "MUST_MATCH_OR_INVALID_ARGUMENT"},
+    {"operation": "SMALL_EDIT", "recordField": "edit_count", "callArgument": "edit_count", "rule": "MUST_MATCH_OR_INVALID_ARGUMENT"},
+    {"operation": "SMALL_EDIT", "recordField": "replacement_bytes_len", "callArgument": "replacement_bytes_len", "rule": "MUST_MATCH_OR_INVALID_ARGUMENT"}
+  ],
+  "inputFlagRules": {
+    "abiMinor": 34,
+    "rule": "Every request flags field, SessionConfig.flags, reserved_u32 field, and reserved array element is zero unless this contract assigns a value. SESSION_INSPECT flag 1 selects process-global live-state inspection behind GLOBAL_LIVE_STATE_INSPECTION_V1 and requires a zero session reference. Any other nonzero value is INVALID_ARGUMENT."
+  },
+  "admissionRules": [
+    {"operation": "CREATE_BEGIN", "input": "optional first input chunk", "hardCapBytes": 65536, "overCapStatus": "INVALID_ARGUMENT"},
+    {"operation": "CREATE_APPEND", "input": "staged source chunk", "hardCapBytes": 65536, "overCapStatus": "INVALID_ARGUMENT"},
+    {"operation": "BULK_APPEND", "input": "staged replacement chunk", "hardCapBytes": 65536, "overCapStatus": "INVALID_ARGUMENT"},
+    {"operation": "SMALL_EDIT", "input": "descriptor bytes plus replacement bytes plus total deleted source bytes", "hardCapBytes": 4096, "overCapStatus": "EDIT_TOO_LARGE", "workUnitsOnSuccess": 1, "resumable": false}
+  ],
+  "pageContract": {
+    "runtimeAuthority": "flark_runtime::ResultPageReceipt",
+    "abiEncoder": "flark_abi::ResultPageHeader::from_runtime",
+    "sourceRead": "Requested range is at most MAX_SOURCE_CHUNK_BYTES. RESULT_PAGE_HEADER uses SOURCE_BYTES, NOT_APPLICABLE, snapshot zero, continuation zero, and payload bytes exactly equal covered-range bytes. The caller advances explicit ranges; SOURCE_READ never creates a continuation.",
+    "initialViewport": "QUERY_VIEWPORT requires continuation zero. Snapshot zero selects the latest revision snapshot atomically; every returned viewport page names the resulting nonzero pinned snapshot.",
+    "viewportRangeHints": "For query kinds 1, 2, 3, 4, and 6, requested start, requested end, and page start are bounded byte-window hints. The ABI floors them to UTF-8 scalar boundaries once, publishes that effective requested range, and preserves it through continuations. Query kind 5 semantic-target ranges remain exact and strict.",
+    "continuation": "CONTINUATION_NEXT and CONTINUATION_RELEASE must echo the exact nonzero revision, snapshot, and continuation from the prior page authority.",
+    "pending": "A SEMANTIC query that is not certified returns NOT_CERTIFIED plus a SOURCE_BYTES PENDING_NEUTRAL page. SOURCE_AND_SEMANTIC returns ordered certification-range records followed by exact current source bytes; the page is PENDING_NEUTRAL, MIXED_CURRENT, or CURRENT_CERTIFIED."
+  },
+  "viewportRowSemanticVariant": {
+    "abiMinor": 4,
+    "default": 0,
+    "headingKind": 12,
+    "headingLevelMask": 255,
+    "headingSetextBit": 256,
+    "listRowKinds": [5, 14],
+    "listMarkerMask": 7,
+    "listDepthMask": 2040,
+    "listMarkerOffsetMask": 6144,
+    "listSimpleContinuationBit": 8192,
+    "listStartsListBit": 16384,
+    "blockQuotePresentationBit": 65536,
+    "blockQuoteDepthMask": 33423360,
+    "blockQuoteSimpleContinuationBit": 33554432,
+    "codePresentationBit": 65536,
+    "codeFencedBit": 131072,
+    "codeTildeBit": 262144,
+    "codeClosedBit": 524288,
+    "codeFenceOffsetMask": 3145728,
+    "thematicBreakPresentationBit": 65536,
+    "rule": "For Heading rows, bits 0..7 contain parser-authored level 1..6 and bit 8 distinguishes Setext from ATX. For parser-authored List Item Paragraph and empty-item rows, marker code 1..5 occupies bits 0..2, nesting depth bits 3..10, marker offset bits 11..12, simple top-level continuation bit 13, and starts-list bit 14. ABI 4.4 gives BlockQuote Paragraph rows an explicit presentation bit, depth in bits 17..24, simple top-level continuation bit 25, and exact prefix ranges. Indented/Fenced Code rows carry the code presentation bit; fenced rows also carry fence family, closed state, offset, and minimum closing length. ThematicBreak rows carry their explicit presentation bit. ABI 4.7 gives bounded GFM Table Paragraph rows bit 26 and typed cell records. semantic_value is the literal ordered marker value, fenced minimum closing length, or zero otherwise. Other semantic bits are zero; ABI 4.5 assigns the former final reserved word to inline_fact_count."
+  },
+  "viewportInlineFacts": {
+    "abiMinor": 6,
+    "rowAuthoritativeBit": 8,
+    "recordSizeBytes": 80,
+    "maximumFactsPerRow": 64,
+    "kinds": {
+      "EMPHASIS": 1,
+      "STRONG": 2,
+      "CODE": 3,
+      "STRIKETHROUGH": 4,
+      "AUTOLINK_URI": 5,
+      "AUTOLINK_EMAIL": 6,
+      "BACKSLASH_ESCAPE": 7,
+      "HARD_LINE_BREAK": 8,
+      "REPLACEMENT": 9,
+      "DIRECT_LINK": 10,
+      "DIRECT_IMAGE": 11,
+      "REFERENCE_LINK": 12,
+      "REFERENCE_IMAGE": 13,
+      "TABLE_CELL": 14,
+      "LITERAL_SAFE_ENVELOPE": 15,
+      "PROJECTION_EDIT_CELL": 16
+    },
+    "rule": "SEMANTIC_FACTS payloads contain item_count fixed row records followed by 80-byte semantic records grouped in row order. A row with bit 3 set owns exactly inline_fact_count following records; zero is an authoritative empty set. A row without bit 3 must have count zero and render exact source for inline presentation. Every source and visible-content range is absolute, current-revision, and supplied in both UTF-8 bytes and UTF-16 code units. Replacement records carry one required and one optional Unicode scalar; those words are zero for every other kind. ABI 4.7 table-cell kind 14 uses flags bits 0..1 for alignment, bit 2 for header cells, bit 3 for the first cell of a row, and bit 4 for an autocompleted empty cell. ABI 4.26 kind 15 carries a literal-safe envelope in source ranges. ABI 4.28 kind 16 carries an affected projection closure in source ranges and its edit trigger in content ranges. No row publishes a partial semantic set."
+  },
+  "viewportLiteralSafeEnvelopes": {
+    "abiMinor": 26,
+    "recordKind": 15,
+    "editClasses": {
+      "ASCII_WORD_INSERTION": 1,
+      "SINGLE_ASCII_SPACE_INSERTION": 2
+    },
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "rule": "Only the capability-gated SEMANTIC_PROJECTED_LITERAL_SAFE query appends these records; SEMANTIC and SEMANTIC_PROJECTED retain their pre-envelope payload vocabulary, while a 4.25 negotiation is rejected because the ABI is stateless. In ABI 4.26, ASCII_WORD_INSERTION is emitted only when one eligible fact's complete nonempty content slice is a flat ASCII letter/digit word with identity byte-to-UTF-16 length and, for Code, zero normalization flags; SINGLE_ASCII_SPACE_INSERTION is a zero-width row-end proof. The host binds a match to one transaction and revision and waits for fresh parser authority before another edit unless the ABI 4.27 closure capability applies."
+  },
+  "viewportLiteralSafeEnvelopeClosure": {
+    "abiMinor": 27,
+    "capability": "LITERAL_SAFE_ENVELOPE_CLOSURE_V1",
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "rule": "ABI 4.27 retains query kind 6, inline-record kind 15, and edit-class codes 1 and 2. The current reusable word/space bundle is emitted only for a canonical single-line ATX heading with an authoritative empty inline-fact set, identity byte-to-UTF-16 geometry, and ASCII letter/digit-or-space content bounded by ASCII letters/digits. A nonempty SINGLE_ASCII_SPACE_INSERTION envelope authorizes one U+0020 only at positions start < p < end; a zero-width instance authorizes its exact position and is consumed by the matching edit. Reusable space authority must end before an existing trailing-space run, and a terminal zero-width proof must not be published when the row already ends in U+0020. A matched nonempty envelope grows through its declared edit, and nonempty envelopes with exactly equal byte and UTF-16 geometry form one parser-authored closure bundle that grows together. Unmatched envelopes strictly crossed by a foreign-class insertion are dropped; ranges wholly before the insertion stay, ranges at or after it shift, and no host source or Markdown classification may recreate authority. Any unmatched edit or failed transform waits for fresh parser authority."
+  },
+  "viewportProjectionEditCells": {
+    "abiMinor": 29,
+    "capability": "PROJECTION_EDIT_CELLS_V2",
+    "recordKind": 16,
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "matchers": {
+      "ANY_NO_CRLF_SPLICE": 1,
+      "ASCII_LITERAL_SPLICE_IN_LITERAL": 2,
+      "INSERT_SINGLE_ASCII_SPACE_AT_POINT": 3,
+      "DELETE_ONE_ASCII_UNIT_IN_LITERAL": 4,
+      "APPEND_ASCII_LITERAL_AT_LINE_END": 5
+    },
+    "retentionFlags": {
+      "RETAIN_BLOCK_SHELL": 256,
+      "RETAIN_OUTSIDE": 512,
+      "PRESENT_EXACT": 1024,
+      "CHAIN_RESULT": 2048
+    },
+    "stateFlags": {
+      "TERMINAL_SPACE_BLOCKED": 4096
+    },
+    "rule": "Source ranges carry one parser-authored affected dependency closure and content ranges carry its edit trigger; replacement words are zero. The host matches only the declared edit matcher, retains only the declared block shell and outside partition, paints the transformed closure as exact current source, and never reparses Markdown. ANY_NO_CRLF_SPLICE is chainable only when the closure and trigger are the complete canonical single-line ATX editable cell. ASCII_LITERAL_SPLICE_IN_LITERAL is chainable for nonempty ASCII-alphanumeric insertion/replacement or exactly one U+0020 insertion strictly inside its trimmed trigger; the affected closure may include harmless boundary spaces so equal-closure matchers form one partition, but those spaces are not edit authority. Triggers exclude neighboring inline-dependency boundaries, while a physical row boundary may be included for word edits. Leading and terminal space insertion is not admitted. DELETE_ONE_ASCII_UNIT_IN_LITERAL admits exactly one empty-replacement UTF-16 unit deletion and is never carried; under V2 it is emitted only when every admitted deletion leaves an alphanumeric unit in the cell. INSERT_SINGLE_ASCII_SPACE_AT_POINT requires a zero-width trigger, one U+0020 insertion, RETAIN_OUTSIDE, and no CHAIN_RESULT; it is consumed after one edit. APPEND_ASCII_LITERAL_AT_LINE_END is a zero-width trigger at the end of a parser-authored final physical-line plain gap; it admits collapsed ASCII-alphanumeric insertion, bounded ASCII prose punctuation (double quote, apostrophe, comma, period, colon, semicolon, or question mark), or one terminal U+0020 after certified non-whitespace terminal prose when the current Plain physical line begins, after ordinary paragraph padding, with an ASCII letter. Block-opener-shaped lines receive no terminal cell. The matcher carries the exact gap closure and disables another space until a later alphanumeric or admitted-punctuation insertion. A fresh row ending in exactly one U+0020 republishes the matcher with TERMINAL_SPACE_BLOCKED; two trailing spaces or other terminal whitespace suppress it. Partial-overlap closures are invalid. Fresh complete inline facts at the result revision supersede the temporary cell presentation."
+  },
+  "viewportProjectionEditCellsV3": {
+    "abiMinor": 32,
+    "capability": "PROJECTION_EDIT_CELLS_V3",
+    "recordKind": 16,
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "matchers": {
+      "INSERT_EXACT_SCALAR_AT_POINT": 6
+    },
+    "rule": "The parser may parameterize a one-shot exact-scalar insertion cell by storing one valid Unicode scalar in replacement_first and zero in replacement_second. Source ranges carry the complete affected dependency closure and content ranges carry its parser-authored edit trigger. The host admits only the declared edit, retains only the declared block shell and certified outside partition, paints the transformed closure as exact current source, and consumes one-shot authority after that edit. V3 permits INSERT_EXACT_SCALAR_AT_POINT to store one valid Unicode scalar in replacement_first, with one zero-width trigger strictly inside the closure. Initial emitters cover one isolated Strong bracket dependency, the frozen D0 prose punctuation set before one Strong fact, and the frozen different-marker syntax set before one Strong or Emphasis fact. All prefix triggers require ASCII-alphanumeric guards and a fact-free ASCII prefix; syntax records require the inserted marker to be absent, and brackets require exhaustive parser bracket classification. Core compares only the declared scalar. V3 also permits ASCII_LITERAL_SPLICE_IN_LITERAL to admit one nonempty ASCII-alphanumeric/U+0020 replacement containing at least one alphanumeric unit only strictly inside a parser-authored trigger. One emitter uses a complete fact-free physical-line gap as the affected closure and a maximal ASCII prose run as its interior trigger. Another maps maximal ASCII-word triggers inside each physical line of a parser-certified closed fenced-code body; its affected closure is that code line without the line ending, the body has authoritative empty inline facts, and neither fence is edit authority. These emitters never admit punctuation, deletion, or a line boundary. Every matcher except INSERT_EXACT_SCALAR_AT_POINT continues to require both replacement words zero."
+  },
+  "viewportProjectionEditCellsV4": {
+    "abiMinor": 33,
+    "capability": "PROJECTION_EDIT_CELLS_V4",
+    "recordKind": 16,
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "matchers": {
+      "EXACT_SPLICE_REPLACE_BLOCK_SHELL": 7,
+      "SIMPLE_BLOCK_PREFIX_PLAN": 8
+    },
+    "resultShellKinds": {
+      "PLAIN": 1,
+      "ATX_HEADING": 2,
+      "BLOCK_QUOTE": 3,
+      "LIST_ITEM": 4
+    },
+    "rule": "The parser may publish either one bounded exact splice or one bounded ASCII prefix plan whose clean result replaces the current physical-line block shell. Source ranges carry the complete affected physical-line closure. For EXACT_SPLICE_REPLACE_BLOCK_SHELL, content ranges carry the exact insertion point or deletion range and replacement_first is one exact inserted Unicode scalar or zero for deletion. For SIMPLE_BLOCK_PREFIX_PLAN, content is the zero-width line-start trigger; replacement_first packs up to three nonzero ASCII plan bytes little-endian in bits 0..23 and the 1-based activation prefix length in bits 24..31. replacement_second packs the typed target shell kind in bits 0..3, its final hidden prefix UTF-16 length in bits 4..11, and a heading level or quote depth parameter in bits 12..31. Both require RETAIN_OUTSIDE, PRESENT_EXACT, and REPLACE_BLOCK_SHELL; RETAIN_BLOCK_SHELL is forbidden. Exact splice is consumed after one edit. Prefix plan requires CHAIN_RESULT and advances only the exact remaining sequence; before activation it presents Plain, from activation onward it presents the declared target shell using the consumed prefix length. A specialized prefix-plan match takes precedence over a generic same-edit literal cell, and more than one matching prefix plan fails closed. V4 initially covers bounded donor-classified Plain, ATX heading, depth-1 block quote, and simple list transitions; it grants no host Markdown inference."
+  },
+  "viewportProjectionEditCellsV5": {
+    "abiMinor": 35,
+    "capability": "PROJECTION_EDIT_CELLS_V5",
+    "recordKind": 16,
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "stateFlags": {
+      "EMPTY_LITERAL_RESULT": 16384
+    },
+    "resultShellKinds": {
+      "REMOVED": 5
+    },
+    "rule": "The parser may add EMPTY_LITERAL_RESULT to a one-shot DELETE_ONE_ASCII_UNIT_IN_LITERAL cell only when deleting its exact one-unit trigger preserves the declared projection even though the literal becomes empty. replacement_first carries a parser-authored nonnegative UTF-16 caret advance from the ordinary collapsed deletion result and replacement_second is zero. The trigger and affected closure are the same single UTF-16 unit. The prescribed result caret must remain inside the parser-authorized block range. Core forwards that typed result-caret position; hosts do not inspect Markdown, table delimiters, or padding. The initial emitter covers the final ASCII-alphanumeric unit of a parser-certified table cell and advances across any parser-owned trailing cell padding so immediate successor commands are independent of parser completion timing. V5 also permits result-shell kind REMOVED only for the parser-certified exact deletion of the sole ASCII-alphanumeric unit in a Plain row whose result has no block shell; its prefix and parameter fields are zero, and the host does not infer row removal."
+  },
+  "viewportLiteralSafeEnvelopesV3": {
+    "abiMinor": 36,
+    "capability": "LITERAL_SAFE_ENVELOPES_V3",
+    "recordKind": 15,
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "editClasses": {
+      "SINGLE_ASCII_LITERAL_UNIT_DELETION": 4
+    },
+    "rule": "The parser may publish a one-shot deletion envelope for one ASCII letter or digit inside a certified inline word of at least two units, or for one parser-declared safe punctuation unit outside every inline fact when deleting it leaves another non-whitespace unit on the same physical editable line. Core matches an exact one-unit deletion, consumes the deletion proof, transforms only same-geometry insertion envelopes, and retains the parser-authored rendered run while the result revision is pending. Hosts never infer inline Markdown or widen the declared range."
+  },
+  "boundedPendingPresentationPlansV1": {
+    "abiMinor": 34,
+    "capability": "BOUNDED_PENDING_PRESENTATION_PLANS_V1",
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "recordKinds": {
+      "PLAN": 17,
+      "STEP": 18,
+      "ROW": 19
+    },
+    "limits": {
+      "sequenceBytes": 8,
+      "affectedBytes": 16384,
+      "rowsPerStep": 4,
+      "factsPerPlan": 128
+    },
+    "rule": "One optional parser-authored plan is an atomic nested INLINE_FACT_RECORD group on its owner row. PLAN flags pack sequence length in bits 0..7, step count in bits 8..15, and replaced predecessor row count in bits 16..23; source ranges carry the base affected range, content ranges the zero-width trigger, and replacement words the 1..8 ASCII sequence little-endian. Exactly one STEP follows per sequence prefix; flags pack the 1-based prefix length in bits 0..7 and result-row count in bits 8..15, while source ranges carry that prefix result's affected range. Each ROW follows its STEP; flags pack the viewport row kind in bits 0..15 and ordinary fact count in bits 16..31, source ranges carry the result row, content ranges its editable range, replacement_first its semantic variant, and replacement_second its semantic value. The ROW is followed by exactly that many ordinary inline facts. V1 admits only complete Plain or fenced CodeBlock clean-result rows, no segments or nested plans, and exact ASCII insertions at the carried point. Core selects the supplied step and never derives Markdown. Intermediate fresh results retain only the exact declared remaining sequence; completion, mismatch, ambiguity, stale revision, malformed geometry, truncation, or out-of-window source retires or omits the plan. The complete plan group may consume only optional kind-6 payload slack after every row's baseline presentation is reserved, so it cannot evict ordinary current-revision facts. The initial bounded emitter covers only the frozen D0 opening sequence ```dart plus Return and the matching Return plus three-backtick closing sequence."
+  },
+  "viewportLiteralSafeEnvelopesV2": {
+    "abiMinor": 30,
+    "capability": "LITERAL_SAFE_ENVELOPES_V2",
+    "recordKind": 15,
+    "queryKind": "SEMANTIC_PROJECTED_LITERAL_SAFE",
+    "editClasses": {"SINGLE_ASCII_ASTERISK_INSERTION": 3},
+    "rule": "One parser-proved isolated flat Strong fact publishes its complete content range as a one-shot SINGLE_ASCII_ASTERISK_INSERTION envelope only when no other asterisk dependency or overlapping fact escapes the Strong source. Exactly one collapsed U+002A insertion strictly inside that range transforms the existing projected Strong run, keeps its delimiters hidden and styling current, and consumes every same-geometry envelope so no successor can reuse predecessor authority; either content boundary is excluded."
+  },
+  "structuralPresentationProofsV1": {
+    "abiMinor": 31,
+    "capability": "STRUCTURAL_PRESENTATION_PROOFS_V1",
+    "receiptFlag": {"PRESENTATION_PROVEN": 8},
+    "extensions": {
+      "fencedCodeJoin": {
+        "abiMinor": 36,
+        "presentationTransition": {
+          "JOIN_FENCED_CODE": 20
+        }
+      }
+    },
+    "rule": "An applied edit-intent receipt may retain predecessor presentation only when Rust sets PRESENTATION_PROVEN from a current Ready parser result. V1 covers bounded Plain terminal paragraph split and paragraph merge whose parser-normalized inline partition is unchanged. A proved terminal split also types exactly one zero-width chainable ASCII literal cell for its newly empty Plain successor; the cell may carry ordinary typing but cannot authorize another structural transition, which requires its own current Ready PRESENTATION_PROVEN receipt. Exact ABI 4.32 also admits the existing INDENT_LIST and OUTDENT_LIST transitions for a current parser-authored simple ListItem context, a ListItem result context, and exactly one bounded 2..14-byte ASCII-space prefix insertion or deletion; the proof shifts the retained shell and runs but grants no successor authority. Exact ABI 4.31 also permits parser-authored maximal ASCII letter/digit word leaves inside eligible projected facts when each leaf is identity-mapped, bounded by the fact edge or U+0020, independent of overlapping facts, and Code has zero normalization flags; publication is capped at 128 literal-safe envelopes per row. Exact ABI 4.36 also permits JOIN_FENCED_CODE when Backspace at the start of a noninitial physical line in a parser-certified closed fenced-code body deletes exactly the preceding LF, CR, or CRLF; Rust proves that the joined content cannot form a closing fence and retains the same fence kind and minimum closing length. When the complete page baseline fits, kind-6 encoding reserves every row's ordinary inline facts and required projection-segment group before optional edit cells or envelopes consume the remaining shared payload, so proof density cannot evict later authoritative presentation; oversized baseline groups retain the ABI complete-group fail-closed behavior. Unsupported, pending, oversized, non-ASCII, escape, entity, link, code, underscore, strike, or delimiter-crossing transitions omit the structural flag and paint exact current source."
+  },
+  "globalLiveStateInspectionV1": {
+    "abiMinor": 32,
+    "capability": "GLOBAL_LIVE_STATE_INSPECTION_V1",
+    "requestFlag": 1,
+    "operation": "SESSION_INSPECT",
+    "rule": "SESSION_INSPECT with flag GLOBAL_LIVE_STATE and a zero session reference remains callable after every session handle is consumed. SESSION_INSPECTION sets session_state, session, and revision to zero; live_transactions, live_continuations, live_anchors, and live_history_tokens are process-global registry counts; reserved[0] is the process-global live-session count and reserved[1..2] remain zero."
+  },
+  "inlineOwnerDeletionV1": {
+    "abiMinor": 37,
+    "presentationTransition": {
+      "DELETE_INLINE_OWNER": 21
+    },
+    "rule": "For collapsed Backspace or Delete at the sole rendered grapheme of a parser-authored Emphasis, Strong, Strikethrough, Inline Code, nested supported wrapper, or BackslashEscape owner, Rust deletes the complete parser-authored source closure in one edit-intent transaction and returns DELETE_INLINE_OWNER. Unicode extended grapheme segmentation determines sole-content eligibility. Dart may route only from parser-published inline boundaries; it does not scan delimiters. The transition removes only painted runs wholly contained by the committed closure and shifts unaffected runs while current-revision parsing catches up. Ambiguous, stale, unsupported, partially overlapping, or multi-grapheme owners fail closed."
+  },
+  "inlineOwnerContinuationV1": {
+    "abiMinor": 38,
+    "receiptFlag": {"HAS_INLINE_CONTINUATION": 16},
+    "recipeVersion": 1,
+    "scalarPolicies": {"STABLE_NON_WHITESPACE": 1, "COMMONMARK_ORDINARY_ONLY": 2},
+    "rule": "A continuable applied DELETE_INLINE_OWNER receipt carries the parser-authored one-shot continuation prefix, suffix, delimiter-collision scalars, and scalar policy after the replacement payload. reserved[0] packs the UTF-8 byte lengths in 16-bit fields and bits 48..63 are zero; reserved[1] packs recipe version 1 in bits 0..15 and scalar policy in bits 16..31, with higher bits zero. Core wraps the maximal admitted prefix of the next insertion and places the remaining batch suffix outside the owner, so batch delivery matches scalar delivery without a frontend Markdown allowlist. STABLE_NON_WHITESPACE admits every non-whitespace, non-colliding scalar. COMMONMARK_ORDINARY_ONLY additionally exits before Unicode punctuation or symbols would change delimiter flanking. ABI 4.38 pins those categories to finl_unicode 1.4.0 / Unicode 17 and Core's generated scalar ranges are exhaustively checked against the Rust classifier. Delimiter-backed recipes classify backslash as a collision because it can escape the reconstructed closer; inline code may admit it literally. BackslashEscape deletion omits the flag because an escape atom is not a persistent inline mode; the next insertion is plain source. An absent flag grants no continuation authority, while malformed, stale, oversized, or non-delete flagged recipes fail closed."
+  },
+  "snapshotLifetime": {
+    "ownership": "NON_OWNING_EPOCH",
+    "rule": "A SnapshotId is an immutable epoch identifier, not a live handle and not independently released. It remains queryable only while its revision is current and the runtime still has that epoch; otherwise the result is STALE_SNAPSHOT. Only a nonzero continuation retains page-generation state and must be released. Releasing the last continuation permits immediate epoch reclamation."
+  },
+  "releaseDetachRule": "CREATE_ABORT, BULK_ABORT, CONTINUATION_RELEASE, ANCHOR_RELEASE, and HISTORY_RELEASE consume or detach their named handle in at most one work unit. Any nontrivial destruction moves to the session reclamation queue and is drained by PUMP or CLOSE_PUMP; these operations never return anonymous multi-call release progress.",
+  "closeStatusRules": [
+    {"operation": "CLOSE_BEGIN", "condition": "close entered and budget remains", "status": "OK", "progress": "COMPLETE", "token": "NEW_NONZERO"},
+    {"operation": "CLOSE_BEGIN", "condition": "close entered and work budget ended", "status": "BUDGET_EXHAUSTED", "progress": "BUDGET_EXHAUSTED", "token": "NEW_NONZERO"},
+    {"operation": "CLOSE_PUMP", "condition": "all reclaimable work drained", "status": "OK", "progress": "COMPLETE", "token": "CHANGED_NONZERO"},
+    {"operation": "CLOSE_PUMP", "condition": "work budget ended after progress", "status": "BUDGET_EXHAUSTED", "progress": "BUDGET_EXHAUSTED", "token": "CHANGED_NONZERO"},
+    {"operation": "CLOSE_FINISH", "condition": "all state drained", "status": "OK", "progress": "COMPLETE", "token": "ZERO_AND_SESSION_CONSUMED"},
+    {"operation": "CLOSE_FINISH", "condition": "state remains", "status": "CLOSE_INCOMPLETE", "progress": "NONE", "token": "ECHO_UNCHANGED_NONZERO"},
+    {"operation": "CLOSE_PUMP_OR_FINISH", "condition": "request token is not latest", "status": "STALE_PROGRESS_TOKEN", "progress": "NONE", "token": "ZERO"}
+  ],
+  "historyPolicy": {
+    "accounting": "The configured history_budget_bytes counts retained inverse source bytes plus fixed token and index overhead defined by the implementation receipt.",
+    "eviction": "Before retaining a new inverse, evict oldest committed tokens in commit order until it fits; released or replay-consumed tokens free their bytes first. A later use of an evicted token returns HISTORY_TOKEN_EVICTED.",
+    "oversizedSingleInverse": "The source edit still commits atomically. primary_handle is zero and detail_code is HISTORY_OVER_BUDGET; undo availability is never allowed to reject or roll back accepted source input.",
+    "disabled": "A zero history budget commits edits with primary_handle zero and HISTORY_DISABLED.",
+    "retained": "A retained inverse returns a nonzero primary_handle and HISTORY_RETAINED. HISTORY_REPLAY consumes its input token and, under the same policy, may return one inverse token for redo."
+  },
+  "semanticCapabilityFreeze": "ABI 4.1 freezes SOURCE_AND_SEMANTIC as ordered 40-byte certification-range records followed by exact current source bytes for covered_range. Records partition the covered byte and UTF-16 ranges and carry only PENDING_NEUTRAL or CURRENT_CERTIFIED; the aggregate header may also be MIXED_CURRENT. No parser identity or prior row ordinal crosses this payload.",
+  "outcomeEncodingRules": {
+    "default": "Every scalar Outcome field not named by the operation row is zero. Rust implementations return the named typed OperationResult variant; flark-abi alone maps it into C fields.",
+    "requiredBytes": "The host-neutral runtime reports required payload bytes only. For BUFFER_TOO_SMALL on a page operation, flark-abi always adds the fixed 96-byte page header, including when an empty page requires zero payload bytes. C Outcome.required_bytes is nonzero only for BUFFER_TOO_SMALL and is the exact minimum caller-output capacity for one complete record or page.",
+    "writtenBytes": "The host-neutral runtime reports payload bytes only. flark-abi adds the page header. C Outcome.written_bytes is zero when no caller output was produced and otherwise is the exact bytes written including the fixed output header.",
+    "detailCode": "Zero unless the operation row assigns a typed meaning. It never carries an undocumented internal error number."
+  },
+  "outcomeFieldRoles": [
+    {"operation": "NEGOTIATE", "runtimeResults": ["None"], "fields": {}, "separateOutput": "ABI_INFO"},
+    {"operation": "CREATE_BEGIN", "runtimeResults": ["SessionCreated"], "fields": {"primary_handle": "new session", "secondary_handle": "new create transaction"}},
+    {"operation": "CREATE_APPEND", "runtimeResults": ["TransactionStaged"], "fields": {"primary_handle": "echoed create transaction"}},
+    {"operation": "CREATE_COMMIT", "runtimeResults": ["RevisionCreated", "Progress"], "fields": {"primary_handle": "session on completion", "revision": "created revision on completion", "progress_token": "latest token when bounded validation remains"}},
+    {"operation": "CREATE_ABORT", "runtimeResults": ["None"], "fields": {}},
+    {"operation": "SOURCE_READ", "runtimeResults": ["Page"], "fields": {"revision": "exact source revision", "snapshot": "zero", "written_bytes": "result header plus source payload"}},
+    {"operation": "SMALL_EDIT", "runtimeResults": ["RevisionCommitted"], "fields": {"primary_handle": "history token or zero", "revision": "new committed revision", "detail_code": "HistoryDisposition"}},
+    {"operation": "BULK_BEGIN", "runtimeResults": ["TransactionStaged"], "fields": {"primary_handle": "new bulk transaction"}},
+    {"operation": "BULK_APPEND", "runtimeResults": ["TransactionStaged"], "fields": {"primary_handle": "echoed bulk transaction"}},
+    {"operation": "BULK_COMMIT", "runtimeResults": ["RevisionCommitted", "Progress"], "fields": {"primary_handle": "history token or zero on completion", "revision": "new revision or active base revision", "progress_token": "latest token while bounded commit work remains", "detail_code": "HistoryDisposition on completion"}},
+    {"operation": "BULK_ABORT", "runtimeResults": ["None"], "fields": {}},
+    {"operation": "PUMP", "runtimeResults": ["Progress"], "fields": {"revision": "pumped revision", "progress_token": "latest progress token"}},
+    {"operation": "QUERY_VIEWPORT", "runtimeResults": ["Page"], "fields": {"revision": "page revision", "snapshot": "nonzero page epoch", "written_bytes": "result header plus payload"}},
+    {"operation": "CONTINUATION_NEXT", "runtimeResults": ["Page"], "fields": {"revision": "page revision", "snapshot": "echoed nonzero page epoch", "written_bytes": "result header plus payload"}},
+    {"operation": "CONTINUATION_RELEASE", "runtimeResults": ["None"], "fields": {}},
+    {"operation": "ANCHOR_CREATE", "runtimeResults": ["Anchor", "Progress"], "fields": {"primary_handle": "new anchor on completion", "revision": "anchor revision", "progress_token": "latest token while bounded work remains"}},
+    {"operation": "ANCHOR_TRANSFORM", "runtimeResults": ["Anchor", "Progress"], "fields": {"primary_handle": "transformed anchor on completion", "revision": "target revision", "progress_token": "latest token while bounded work remains"}},
+    {"operation": "ANCHOR_RESOLVE", "runtimeResults": ["AnchorPosition", "Progress"], "fields": {"primary_handle": "resolved anchor", "revision": "resolved revision", "progress_token": "latest token while bounded work remains", "detail_code": "position in request coordinate kind"}},
+    {"operation": "ANCHOR_RELEASE", "runtimeResults": ["None"], "fields": {}},
+    {"operation": "COORDINATE_CONVERT", "runtimeResults": ["ConvertedPosition", "Progress"], "fields": {"revision": "converted revision", "progress_token": "latest token while bounded work remains", "detail_code": "position in request to_kind"}},
+    {"operation": "HISTORY_REPLAY", "runtimeResults": ["RevisionCommitted", "Progress"], "fields": {"primary_handle": "inverse history token or zero on completion", "revision": "new replay revision", "progress_token": "latest token while bounded work remains", "detail_code": "HistoryDisposition on completion"}},
+    {"operation": "HISTORY_RELEASE", "runtimeResults": ["None"], "fields": {}},
+    {"operation": "CANCEL", "runtimeResults": ["Progress"], "fields": {"revision": "affected revision", "progress_token": "cancelled or latest token"}},
+    {"operation": "CLOSE_BEGIN", "runtimeResults": ["CloseProgress"], "fields": {"progress_token": "first nonzero close token"}},
+    {"operation": "CLOSE_PUMP", "runtimeResults": ["CloseProgress"], "fields": {"progress_token": "latest nonzero close token"}},
+    {"operation": "CLOSE_FINISH", "runtimeResults": ["None", "CloseProgress"], "fields": {"progress_token": "echoed latest token only for CLOSE_INCOMPLETE; zero after successful handle consumption"}},
+    {"operation": "SESSION_TRANSFER_OWNER", "runtimeResults": ["OwnerTransferred"], "fields": {"primary_handle": "session whose owner changed"}},
+    {"operation": "SESSION_INSPECT", "runtimeResults": ["SessionInspection", "GlobalLiveStateInspection"], "fields": {"primary_handle": "inspected session for flags zero, otherwise zero", "revision": "current revision or zero while creating or in global mode", "detail_code": "SessionState for flags zero, otherwise zero"}, "separateOutput": "SESSION_INSPECTION"},
+    {"operation": "EDIT_INTENT_V1", "runtimeResults": ["None", "RevisionCommitted"], "fields": {"primary_handle": "required history token on commit", "revision": "result revision on commit", "detail_code": "HistoryDisposition on commit", "written_bytes": "fixed receipt plus exact committed replacement"}, "separateOutput": "EDIT_INTENT_RECEIPT_V1"},
+    {"operation": "SOURCE_TRANSACTION_V1", "runtimeResults": ["RevisionCommitted"], "fields": {"primary_handle": "required history token", "revision": "result revision", "detail_code": "HistoryDisposition", "written_bytes": "fixed receipt"}, "separateOutput": "SOURCE_TRANSACTION_RECEIPT_V1"},
+    {"operation": "STAGED_SOURCE_TRANSACTION_V1", "runtimeResults": ["RevisionCommitted", "Progress"], "fields": {"primary_handle": "required history token on completion", "revision": "base revision while pending or result revision on completion", "progress_token": "latest token while staged validation remains", "detail_code": "HistoryDisposition on completion", "written_bytes": "fixed receipt on completion"}, "separateOutput": "SOURCE_TRANSACTION_RECEIPT_V1"}
+  ],
+  "ownershipRules": [
+    "Input pointers are optional only when input_len is zero and are borrowed for that call only.",
+    "Output pointers and capacities are caller-owned for the entire call; the runtime writes at most capacity and reports written_bytes.",
+    "Every SOURCE_READ, QUERY_VIEWPORT, and CONTINUATION_NEXT output begins with a 96-byte RESULT_PAGE_HEADER; payload begins at struct_size and written_bytes includes header plus payload.",
+    "EDIT_INTENT_V1 requires capacity for its 192-byte receipt plus MAX_SMALL_EDIT_BYTES before admission. Its exact replacement payload begins at byte 192; an optional parser-authored inline-continuation recipe follows inside the same bounded payload, and written_bytes includes the receipt and every payload segment.",
+    "SOURCE_TRANSACTION_V1 requires capacity for its 200-byte receipt before admission. Replacement bytes are borrowed caller input and are not copied back in the receipt.",
+    "STAGED_SOURCE_TRANSACTION_V1 resumes the BULK_BEGIN/BULK_APPEND staging transaction and requires capacity for the same 200-byte source transaction receipt. Its v1 result selection is one collapsed downstream caret at the inserted range end.",
+    "A successful create/bulk append copies bytes into runtime-owned staging; commit or abort releases the staging transaction.",
+    "Opaque handles are generation checked. Zero is never a live object; requestFieldRules exhaustively names operations where zero means none, uncommitted, or select-latest.",
+    "StageRequest.chunk_len must equal its function input_len. SmallEditRequest.edit_count and replacement_bytes_len must equal the corresponding function arguments. A mismatch is INVALID_ARGUMENT.",
+    "A small edit is one atomic batch of 1..64 sorted non-overlapping EditDescriptor records plus one packed replacement-byte slice. Descriptor replacement ranges must form an exact descriptor-order partition of that slice: offset zero first, no gaps, no overlap or reuse, and no unreferenced tail. Descriptor bytes, replacement bytes, and total deleted source bytes together must not exceed MAX_SMALL_EDIT_BYTES.",
+    "One nonzero owner token serializes each session. Concurrent or reentrant calls return SESSION_BUSY or OWNER_MISMATCH.",
+    "SESSION_TRANSFER_OWNER succeeds only while no operation, transaction, or continuation is active.",
+    "Snapshot IDs are non-owning epochs. Only continuation handles retain result-generation state and require release.",
+    "Abort and release operations detach their handle in at most one work unit; queued destruction is drained by PUMP or CLOSE_PUMP.",
+    "No callback, filesystem path, Dart object, Flutter object, parser node, Rust layout, or recursive object graph crosses the ABI."
+  ],
+  "stateMachines": {
+    "session": [
+      "CREATE_BEGIN: NONE -> CREATING",
+      "CREATE_COMMIT: CREATING -> OPEN",
+      "CREATE_ABORT: CREATING -> CLOSED",
+      "CLOSE_BEGIN: OPEN|FAULTED -> CLOSING",
+      "CLOSE_BEGIN consumes progress token zero, rejects further source reads and writes, and returns the first nonzero close token.",
+      "CLOSE_PUMP requires the latest nonzero close token and may reclaim source as well as derived state.",
+      "CLOSE_FINISH requires the latest nonzero close token and atomically consumes the sole session handle only after zero live transaction, continuation, anchor, history-token, source, and derived state; no CLOSED session remains inspectable."
+    ],
+    "transaction": [
+      "BEGIN -> STAGING; BULK_BEGIN permits expected_total_bytes zero for a pure deletion and routes large source ranges through resumable BULK_COMMIT",
+      "SMALL_EDIT validates every descriptor, replacement slice, and aggregate deleted-source envelope against one expected revision before consuming exactly one work unit and committing all splices atomically; any error commits none and this operation never returns resumable progress.",
+      "APPEND preserves STAGING and source revision",
+      "COMMIT atomically changes source/revision and enters COMMITTED",
+      "ABORT preserves source/revision and enters ABORTED"
+    ],
+    "progress": [
+      "Every bounded pump returns ADVANCED, BUDGET_EXHAUSTED, RESULT_CAP_REACHED, COMPLETE, CANCELLED, SUPERSEDED, PENDING_SOURCE_GAP, BACKPRESSURED, or FAULT with its exact matching status.",
+      "Repeating the same nonterminal token without an external requirement returns PROGRESS_STALLED and FAULT.",
+      "Cancellation and supersession take effect only at pump boundaries."
+    ],
+    "certification": [
+      "Semantic output is usable only for its exact revision, snapshot, and certified source range.",
+      "NOT_CERTIFIED returns exact source with PENDING_NEUTRAL; stale semantics are never mapped forward.",
+      "SOURCE_AND_SEMANTIC may return MIXED_CURRENT with an ordered current-revision certification partition and exact source.",
+      "An edit invalidates or versions every prior continuation and snapshot."
+    ]
+  },
+  "ambiguousOutcomeCoverage": [
+    {"condition": "work budget consumed after progress", "status": "BUDGET_EXHAUSTED", "progressState": "BUDGET_EXHAUSTED"},
+    {"condition": "bounded result page full with more data", "status": "RESULT_CAP_REACHED", "progressState": "RESULT_CAP_REACHED"},
+    {"condition": "required staged source bytes not yet supplied", "status": "NOT_READY_SOURCE_GAP", "progressState": "PENDING_SOURCE_GAP"},
+    {"condition": "caller must perform bounded release or retirement work before retrying", "status": "BACKPRESSURE", "progressState": "BACKPRESSURED"},
+    {"condition": "provided caller output buffer cannot hold the minimum record", "status": "BUFFER_TOO_SMALL", "progressState": "NONE"},
+    {"condition": "pump or cancel names an old progress generation", "status": "STALE_PROGRESS_TOKEN", "progressState": "NONE"},
+    {"condition": "host binding receives an unpaired UTF-16 surrogate before byte conversion", "status": "INVALID_UTF16_HOST_INPUT", "progressState": "NONE"},
+    {"condition": "Markdown parser rejects its own invariant or typed parser terminal", "status": "PARSER_FAULT", "progressState": "FAULT"},
+    {"condition": "non-parser runtime invariant fails", "status": "INTERNAL_FAULT", "progressState": "FAULT"},
+    {"condition": "panic is caught at the ABI barrier", "status": "PANIC_CONTAINED", "progressState": "FAULT"},
+    {"condition": "fallible allocation cannot satisfy a bounded request", "status": "ALLOCATION_FAILURE", "progressState": "FAULT"},
+    {"condition": "same nonterminal token repeats with no named external requirement", "status": "PROGRESS_STALLED", "progressState": "FAULT"}
+  ],
+  "statusProgressRules": [
+    {"status": "OK", "allowedProgress": ["ADVANCED", "COMPLETE"]},
+    {"status": "NEEDS_INPUT", "allowedProgress": [], "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"status": "NEEDS_OUTPUT_BUFFER", "allowedProgress": [], "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"status": "NOT_CERTIFIED", "allowedProgress": ["COMPLETE"]},
+    {"status": "CANCELLED", "allowedProgress": ["CANCELLED"]},
+    {"status": "SUPERSEDED", "allowedProgress": ["SUPERSEDED"]},
+    {"status": "BUDGET_EXHAUSTED", "allowedProgress": ["BUDGET_EXHAUSTED"]},
+    {"status": "RESULT_CAP_REACHED", "allowedProgress": ["RESULT_CAP_REACHED"]},
+    {"status": "NOT_READY_SOURCE_GAP", "allowedProgress": ["PENDING_SOURCE_GAP"]},
+    {"status": "BACKPRESSURE", "allowedProgress": ["BACKPRESSURED"]},
+    {"status": "INVALID_ARGUMENT", "allowedProgress": ["NONE"]},
+    {"status": "UNSUPPORTED_ABI_VERSION", "allowedProgress": ["NONE"]},
+    {"status": "UNSUPPORTED_CAPABILITY", "allowedProgress": ["NONE"]},
+    {"status": "INVALID_HANDLE", "allowedProgress": ["NONE"]},
+    {"status": "STALE_HANDLE", "allowedProgress": ["NONE"]},
+    {"status": "WRONG_HANDLE_KIND", "allowedProgress": ["NONE"]},
+    {"status": "OWNER_MISMATCH", "allowedProgress": ["NONE"]},
+    {"status": "SESSION_BUSY", "allowedProgress": ["NONE"]},
+    {"status": "SESSION_CLOSING", "allowedProgress": ["NONE"]},
+    {"status": "SESSION_CLOSED", "allowedProgress": [], "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"status": "MIGRATION_WHILE_ACTIVE", "allowedProgress": ["NONE"]},
+    {"status": "STALE_REVISION", "allowedProgress": ["NONE"]},
+    {"status": "STALE_SNAPSHOT", "allowedProgress": ["NONE"]},
+    {"status": "STALE_CONTINUATION", "allowedProgress": ["NONE"]},
+    {"status": "INVALID_UTF8", "allowedProgress": ["NONE"]},
+    {"status": "RANGE_OUT_OF_BOUNDS", "allowedProgress": ["NONE"]},
+    {"status": "RANGE_NOT_SCALAR_BOUNDARY", "allowedProgress": ["NONE"]},
+    {"status": "COORDINATE_OUT_OF_RANGE", "allowedProgress": ["NONE"]},
+    {"status": "EDIT_TOO_LARGE", "allowedProgress": ["NONE"]},
+    {"status": "QUERY_LIMIT_EXCEEDED", "allowedProgress": ["NONE"]},
+    {"status": "BUFFER_TOO_SMALL", "allowedProgress": ["NONE"]},
+    {"status": "STALE_PROGRESS_TOKEN", "allowedProgress": ["NONE"]},
+    {"status": "INVALID_UTF16_HOST_INPUT", "allowedProgress": ["NONE"]},
+    {"status": "TRANSACTION_CONFLICT", "allowedProgress": ["NONE"]},
+    {"status": "TRANSACTION_INCOMPLETE", "allowedProgress": ["NONE"]},
+    {"status": "TRANSACTION_ALREADY_COMMITTED", "allowedProgress": ["NONE"]},
+    {"status": "TRANSACTION_ALREADY_ABORTED", "allowedProgress": ["NONE"]},
+    {"status": "HISTORY_BUDGET_EXCEEDED", "allowedProgress": [], "v1Disposition": "RESERVED_NEVER_RETURN"},
+    {"status": "HISTORY_TOKEN_EVICTED", "allowedProgress": ["NONE"]},
+    {"status": "HISTORY_TOKEN_STALE", "allowedProgress": ["NONE"]},
+    {"status": "CONTINUATION_LIMIT_EXCEEDED", "allowedProgress": ["NONE"]},
+    {"status": "PROGRESS_STALLED", "allowedProgress": ["FAULT"]},
+    {"status": "PANIC_CONTAINED", "allowedProgress": ["FAULT"]},
+    {"status": "INTERNAL_FAULT", "allowedProgress": ["FAULT"]},
+    {"status": "RESOURCE_LIMIT_EXCEEDED", "allowedProgress": ["NONE"]},
+    {"status": "CLOSE_INCOMPLETE", "allowedProgress": ["NONE"]},
+    {"status": "PARSER_FAULT", "allowedProgress": ["FAULT"]},
+    {"status": "ALLOCATION_FAILURE", "allowedProgress": ["FAULT"]}
+  ],
+  "returnCodeRule": "Every C entrypoint return value equals Outcome.status exactly. NEEDS_INPUT, NEEDS_OUTPUT_BUFFER, SESSION_CLOSED, and HISTORY_BUDGET_EXCEEDED retain numeric values for ABI stability but are reserved and never returned by ABI v4.0.",
+  "budgetAdmissionRules": {
+    "allBudgetedCalls": "max_work_units must be at least 1 and both result caps must not exceed the negotiated maxima; otherwise INVALID_ARGUMENT is returned before session state or borrowed input is consumed.",
+    "pagePumpCalls": "QUERY_VIEWPORT and CONTINUATION_NEXT additionally require max_result_items and max_result_bytes to be nonzero, preventing a nonempty query from entering a zero-progress result-cap loop."
+  },
+  "budgetClockRule": "max_work_units is the runtime-enforced hard bound. advisory_max_micros is a host scheduling hint recorded in receipts; the host measures elapsed wall time around each call and enforces product frame/span gates. Runtime correctness never depends on observing a wall clock."
+}

@@ -1,0 +1,2182 @@
+use std::ops::Range;
+use std::sync::Arc;
+
+use crate::{DocumentFenceCharacter, DocumentListDelimiter, DocumentListMarker};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentEditIntentV1 {
+    InsertParagraphBreak,
+    DeleteBackward,
+    DeleteForward,
+    ToggleTaskChecked,
+    IndentListItem,
+    OutdentListItem,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentEditIntentDispositionV1 {
+    Applied,
+    HandledNoChange,
+    NotApplicable,
+    NeedsCurrentSemantics,
+}
+
+/// Parser-authoritative presentation effect of an applied E1 command.
+/// Hosts may use this to retain unaffected projected source while the result
+/// revision is being certified; they never infer Markdown structure from the
+/// committed replacement bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentEditPresentationTransitionV1 {
+    None,
+    SplitParagraph,
+    ContinueList,
+    ExitList,
+    MergeParagraph,
+    LiftList,
+    ContinueBlockQuote,
+    ExitBlockQuote,
+    LiftBlockQuote,
+    ExitHeading,
+    LiftHeading,
+    OutdentList,
+    ContinueIndentedCode,
+    JoinIndentedCode,
+    LiftIndentedCode,
+    DeleteThematicBreak,
+    OutdentBlockQuote,
+    ToggleTaskChecked,
+    IndentList,
+    RetainParagraphGap,
+    JoinFencedCode,
+    DeleteInlineOwner,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentCommittedSpliceV1 {
+    pub base_byte_range: Range<usize>,
+    pub base_utf16_range: Range<usize>,
+    pub replacement: String,
+    pub result_byte_range: Range<usize>,
+    pub result_utf16_range: Range<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentEditIntentReceiptV1 {
+    pub disposition: DocumentEditIntentDispositionV1,
+    pub base_revision: u64,
+    pub result_revision: u64,
+    pub committed_splice: Option<DocumentCommittedSpliceV1>,
+    /// Exact deleted bytes captured before the source linearization point.
+    /// Hosts use this to retain one required inverse without a second actor
+    /// round trip. It is intentionally not part of the public C receipt.
+    pub inverse: Vec<u8>,
+    /// Exact post-splice byte caret used by the ABI to verify transformed
+    /// canonical anchors without a second actor coordinate query.
+    pub result_selection_byte: usize,
+    pub result_selection_utf16: usize,
+    pub result_source_byte_length: usize,
+    pub result_source_utf16_length: usize,
+    pub parser_pending: bool,
+    pub presentation_transition: DocumentEditPresentationTransitionV1,
+    /// The runtime compared the bounded result inline projection with the
+    /// predecessor partition and proved this transitional presentation current.
+    pub presentation_proven: bool,
+    /// Parser-authored one-shot recipe for the next insertion after deleting
+    /// the final rendered grapheme of a continuable inline owner. The strings
+    /// are exact source spelling, while `collision_scalars` names delimiter
+    /// scalars that end the continuation instead of being wrapped and
+    /// `scalar_policy` states which Unicode scalar classes preserve the
+    /// parser-proven delimiter flanking. Atomic non-mode owners such as
+    /// BackslashEscape deliberately omit this value.
+    pub inline_continuation: Option<DocumentInlineContinuationRecipeV1>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+pub enum DocumentInlineContinuationScalarPolicyV1 {
+    /// Every non-whitespace, non-colliding scalar preserves the owner.
+    StableNonWhitespace = 1,
+    /// Unicode punctuation and symbols would change outer delimiter flanking;
+    /// only ordinary non-whitespace scalars preserve the owner. ABI 4.38 pins
+    /// this to finl_unicode 1.4.0 / Unicode 17, with exhaustive generated-table
+    /// parity at the Rust/Core boundary.
+    CommonMarkOrdinaryOnly = 2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentInlineContinuationRecipeV1 {
+    pub prefix: String,
+    pub suffix: String,
+    pub collision_scalars: String,
+    pub scalar_policy: DocumentInlineContinuationScalarPolicyV1,
+}
+
+/// Result of one literal source transaction. The caller already knows the
+/// replacement bytes; the runtime still owns coordinate validation, inverse
+/// capture, and the single source commit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentSourceTransactionReceiptV1 {
+    pub base_revision: u64,
+    pub result_revision: u64,
+    pub committed_splice: DocumentCommittedSpliceV1,
+    pub inverse: Vec<u8>,
+    pub result_selection_base_utf16: usize,
+    pub result_selection_extent_utf16: usize,
+    pub result_selection_base_byte: usize,
+    pub result_selection_extent_byte: usize,
+    pub result_source_byte_length: usize,
+    pub result_source_utf16_length: usize,
+    pub parser_pending: bool,
+}
+
+/// Result of a replacement that was validated and buffered by the staged ABI
+/// before entering the document actor. Unlike the inline source transaction,
+/// this receipt deliberately carries neither replacement nor inverse bytes:
+/// both may be document-sized, and the ABI already owns them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentStagedSourceTransactionReceiptV1 {
+    pub base_revision: u64,
+    pub result_revision: u64,
+    pub base_byte_range: Range<usize>,
+    pub base_utf16_range: Range<usize>,
+    pub result_byte_range: Range<usize>,
+    pub result_utf16_range: Range<usize>,
+    pub result_selection_utf16: usize,
+    pub result_selection_byte: usize,
+    pub result_source_byte_length: usize,
+    pub result_source_utf16_length: usize,
+    pub parser_pending: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DocumentEditLineEnding {
+    Lf,
+    CrLf,
+    Cr,
+}
+
+impl DocumentEditLineEnding {
+    pub(crate) const fn text(self) -> &'static str {
+        match self {
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
+            Self::Cr => "\r",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum DocumentSimpleEditRow {
+    Plain,
+    ListItem {
+        marker: DocumentListMarker,
+        prefix_bytes: Range<usize>,
+        prefix_utf16: Range<usize>,
+        nesting_depth: u8,
+        marker_offset: u8,
+        item_padding: u8,
+        /// Parser-authored ancestor item padding widths, packed root-first as
+        /// four-bit values. Each CommonMark item padding is in 2..=14.
+        container_widths: u64,
+        container_count: u8,
+        /// Absolute source column of this row's marker.
+        marker_column: u8,
+        starts_list: bool,
+        task_checked: Option<bool>,
+        task_check: Option<DocumentTaskCheck>,
+        empty: bool,
+        indent: Option<DocumentListIndent>,
+        outdent: Option<DocumentListOutdent>,
+    },
+    AtxHeading {
+        prefix_bytes: Range<usize>,
+        prefix_utf16: Range<usize>,
+        empty: bool,
+    },
+    BlockQuote {
+        prefix_bytes: Range<usize>,
+        prefix_utf16: Range<usize>,
+        prefix_text: String,
+        nesting_depth: u8,
+        container_widths: u64,
+        container_count: u8,
+        starts_quote: bool,
+        empty: bool,
+        outdent: Option<DocumentBlockQuoteOutdent>,
+    },
+    IndentedCode {
+        prefix_bytes: Range<usize>,
+        prefix_utf16: Range<usize>,
+        prefix_text: String,
+        /// Previous physical line ending plus this line's hidden prefix.
+        /// Removing it joins two visible code lines without exposing source
+        /// indentation to the host.
+        join_bytes: Option<Range<usize>>,
+        join_utf16: Option<Range<usize>>,
+    },
+    FencedCode {
+        fence: DocumentFenceCharacter,
+        minimum_closing_length: u32,
+        closed: bool,
+        /// Exact content range of the physical code line containing the
+        /// caret. The following bytes are `ending`; neither fence belongs to
+        /// this range.
+        line_content_bytes: Range<usize>,
+        line_content_utf16: Range<usize>,
+        /// Exact preceding physical line ending when the caret line can be
+        /// joined without leaving the parser-authored fenced body.
+        join_bytes: Option<Range<usize>>,
+        join_utf16: Option<Range<usize>>,
+        /// Exact content of the physical predecessor. Together with the
+        /// current line this lets the document prove that a join cannot
+        /// synthesize a matching closing fence.
+        previous_line_content_bytes: Option<Range<usize>>,
+        previous_line_content_utf16: Option<Range<usize>>,
+    },
+    ThematicBreak {
+        atom_bytes: Range<usize>,
+        atom_utf16: Range<usize>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentListOutdent {
+    pub(crate) bytes: Range<usize>,
+    pub(crate) utf16: Range<usize>,
+    pub(crate) indentation: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentListIndent {
+    pub(crate) byte_offset: usize,
+    pub(crate) utf16_offset: usize,
+    pub(crate) width: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentBlockQuoteOutdent {
+    pub(crate) bytes: Range<usize>,
+    pub(crate) utf16: Range<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentTaskCheck {
+    pub(crate) bytes: Range<usize>,
+    pub(crate) utf16: Range<usize>,
+    pub(crate) checked: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentParagraphMerge {
+    pub(crate) previous_source_bytes: Range<usize>,
+    pub(crate) previous_source_utf16: Range<usize>,
+    pub(crate) separator_bytes: Range<usize>,
+    pub(crate) separator_utf16: Range<usize>,
+    /// Lets Backspace restore parser-owned pending semantics after removing
+    /// an editor-created separator. This is either the exact prior paragraph
+    /// context or a bounded successor context authored by a structural edit.
+    /// Hosts never infer the resulting Markdown ancestry.
+    pub(crate) restore_context: Option<Arc<DocumentSimpleEditContext>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentSimpleEditContext {
+    pub(crate) revision: u64,
+    pub(crate) source_bytes: Range<usize>,
+    pub(crate) source_utf16: Range<usize>,
+    pub(crate) editable_bytes: Range<usize>,
+    pub(crate) editable_utf16: Range<usize>,
+    pub(crate) ending: DocumentEditLineEnding,
+    pub(crate) row: DocumentSimpleEditRow,
+    /// Exact current editable content is empty or ASCII Markdown whitespace.
+    /// This keeps Return behavior independent of whether the parser has
+    /// published an otherwise non-renderable blank row yet.
+    pub(crate) content_is_blank: bool,
+    pub(crate) paragraph_merge: Option<DocumentParagraphMerge>,
+    /// Parser-authored closure for deleting the sole rendered grapheme of an
+    /// inline owner. The runtime captures this only for the active command;
+    /// hosts never scan Markdown delimiters or reconstruct the owner.
+    pub(crate) inline_empty_owner_delete: Option<DocumentInlineEmptyOwnerDelete>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentInlineEmptyOwnerDelete {
+    pub(crate) source_bytes: Range<usize>,
+    pub(crate) source_utf16: Range<usize>,
+    pub(crate) continuation: Option<DocumentInlineContinuationRecipeV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ResolvedDocumentEditIntentV1 {
+    pub(crate) disposition: DocumentEditIntentDispositionV1,
+    pub(crate) splice: Option<DocumentCommittedSpliceV1>,
+    pub(crate) result_selection_utf16: usize,
+    pub(crate) result_context: Option<DocumentSimpleEditContext>,
+    pub(crate) presentation_transition: DocumentEditPresentationTransitionV1,
+}
+
+pub(crate) fn resolve_document_edit_intent_v1(
+    intent: DocumentEditIntentV1,
+    selection_byte: usize,
+    selection_utf16: usize,
+    context: &DocumentSimpleEditContext,
+) -> ResolvedDocumentEditIntentV1 {
+    if context.revision == 0
+        || !document_edit_context_admits_target(intent, selection_byte, selection_utf16, context)
+    {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    }
+
+    if matches!(
+        intent,
+        DocumentEditIntentV1::DeleteBackward | DocumentEditIntentV1::DeleteForward
+    ) {
+        if let Some(owner) = &context.inline_empty_owner_delete {
+            return applied(
+                splice(
+                    owner.source_bytes.clone(),
+                    owner.source_utf16.clone(),
+                    String::new(),
+                ),
+                owner.source_utf16.start,
+                None,
+                DocumentEditPresentationTransitionV1::DeleteInlineOwner,
+            );
+        }
+    }
+
+    match (intent, &context.row) {
+        (
+            DocumentEditIntentV1::ToggleTaskChecked,
+            DocumentSimpleEditRow::ListItem {
+                task_checked: Some(checked),
+                task_check: Some(task_check),
+                ..
+            },
+        ) if task_check.checked == *checked => {
+            let replacement = if *checked { " " } else { "x" }.to_owned();
+            let mut result_context = context.clone();
+            if let DocumentSimpleEditRow::ListItem {
+                task_checked,
+                task_check,
+                ..
+            } = &mut result_context.row
+            {
+                *task_checked = Some(!checked);
+                if let Some(task_check) = task_check {
+                    task_check.checked = !checked;
+                }
+            }
+            result_context.revision += 1;
+            applied(
+                splice(
+                    task_check.bytes.clone(),
+                    task_check.utf16.clone(),
+                    replacement,
+                ),
+                selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ToggleTaskChecked,
+            )
+        }
+        (
+            DocumentEditIntentV1::IndentListItem,
+            DocumentSimpleEditRow::ListItem {
+                marker,
+                prefix_bytes,
+                prefix_utf16,
+                nesting_depth,
+                marker_offset,
+                item_padding,
+                container_widths,
+                container_count,
+                marker_column,
+                starts_list,
+                task_checked,
+                task_check,
+                empty,
+                indent,
+                ..
+            },
+        ) => {
+            if *starts_list {
+                return disposition(
+                    DocumentEditIntentDispositionV1::HandledNoChange,
+                    selection_utf16,
+                );
+            }
+            indent.as_ref().map_or_else(
+                || {
+                    disposition(
+                        DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                        selection_utf16,
+                    )
+                },
+                |indent| {
+                    indent_list_row(
+                        context,
+                        *marker,
+                        prefix_bytes,
+                        prefix_utf16,
+                        *nesting_depth,
+                        *marker_offset,
+                        *item_padding,
+                        *container_widths,
+                        *container_count,
+                        *marker_column,
+                        *task_checked,
+                        task_check.as_ref(),
+                        *empty,
+                        indent,
+                        selection_utf16,
+                    )
+                },
+            )
+        }
+        (
+            DocumentEditIntentV1::OutdentListItem,
+            DocumentSimpleEditRow::ListItem {
+                marker,
+                prefix_bytes,
+                prefix_utf16,
+                nesting_depth,
+                marker_offset,
+                item_padding,
+                container_widths,
+                container_count,
+                marker_column,
+                task_checked,
+                task_check,
+                empty,
+                outdent,
+                ..
+            },
+        ) => {
+            if *nesting_depth <= 1 {
+                return disposition(
+                    DocumentEditIntentDispositionV1::HandledNoChange,
+                    selection_utf16,
+                );
+            }
+            outdent.as_ref().map_or_else(
+                || {
+                    disposition(
+                        DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                        selection_utf16,
+                    )
+                },
+                |outdent| {
+                    outdent_list_row(
+                        context,
+                        *marker,
+                        prefix_bytes,
+                        prefix_utf16,
+                        *nesting_depth,
+                        *marker_offset,
+                        *item_padding,
+                        *container_widths,
+                        *container_count,
+                        *marker_column,
+                        *task_checked,
+                        task_check.as_ref(),
+                        *empty,
+                        outdent,
+                        selection_utf16,
+                    )
+                },
+            )
+        }
+        (
+            DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::FencedCode {
+                fence,
+                minimum_closing_length,
+                closed,
+                line_content_bytes,
+                line_content_utf16,
+                ..
+            },
+        ) => {
+            let ending = context.ending.text().to_owned();
+            let result_selection_byte = selection_byte + ending.len();
+            let result_selection_utf16 = selection_utf16 + ending.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                ending,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: context.source_bytes.start..context.source_bytes.end + byte_delta,
+                source_utf16: context.source_utf16.start..context.source_utf16.end + utf16_delta,
+                editable_bytes: context.editable_bytes.start
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: context.editable_utf16.start
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::FencedCode {
+                    fence: *fence,
+                    minimum_closing_length: *minimum_closing_length,
+                    closed: *closed,
+                    line_content_bytes: result_selection_byte..line_content_bytes.end + byte_delta,
+                    line_content_utf16: result_selection_utf16
+                        ..line_content_utf16.end + utf16_delta,
+                    join_bytes: Some(selection_byte..result_selection_byte),
+                    join_utf16: Some(selection_utf16..result_selection_utf16),
+                    previous_line_content_bytes: Some(line_content_bytes.start..selection_byte),
+                    previous_line_content_utf16: Some(line_content_utf16.start..selection_utf16),
+                },
+                content_is_blank: selection_byte == line_content_bytes.end,
+                paragraph_merge: None,
+                inline_empty_owner_delete: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::SplitParagraph,
+            )
+        }
+        (DocumentEditIntentV1::InsertParagraphBreak, DocumentSimpleEditRow::Plain) => {
+            let ending = context.ending.text();
+            // A nonempty Markdown paragraph needs two endings so typing at
+            // the result caret creates a distinct paragraph rather than a
+            // soft line break. Once that editor-owned successor is already
+            // empty, each further Return contributes exactly one row.
+            let empty_row = context.content_is_blank;
+            // A caret at the start of a parser-authored successor that already
+            // has a paragraph separator is also occupying an empty editor row.
+            // This is the exact-source fallback used while a newer parse is
+            // pending; treating the successor as ordinary nonempty prose would
+            // add two endings and make Return depend on parser timing.
+            let starts_after_paragraph_gap = selection_byte == context.editable_bytes.start
+                && selection_utf16 == context.editable_utf16.start
+                && context.paragraph_merge.is_some();
+            let replacement = if empty_row || starts_after_paragraph_gap {
+                ending.to_owned()
+            } else {
+                format!("{ending}{ending}")
+            };
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::Plain,
+                content_is_blank: true,
+                paragraph_merge: Some(DocumentParagraphMerge {
+                    previous_source_bytes: context.source_bytes.clone(),
+                    previous_source_utf16: context.source_utf16.clone(),
+                    separator_bytes: splice.result_byte_range.clone(),
+                    separator_utf16: splice.result_utf16_range.clone(),
+                    restore_context: Some(Arc::new(context.clone())),
+                }),
+                inline_empty_owner_delete: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::SplitParagraph,
+            )
+        }
+        (
+            DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::AtxHeading {
+                prefix_bytes,
+                prefix_utf16,
+                empty,
+            },
+        ) => {
+            if *empty || context.editable_bytes.is_empty() {
+                let replacement = if context.source_bytes.end == prefix_bytes.end {
+                    context.ending.text().to_owned()
+                } else {
+                    String::new()
+                };
+                return clear_prefixed_row(
+                    context,
+                    prefix_bytes.clone(),
+                    prefix_utf16.clone(),
+                    replacement,
+                    DocumentEditPresentationTransitionV1::ExitHeading,
+                );
+            }
+            let ending = context.ending.text();
+            let replacement = format!("{ending}{ending}");
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::Plain,
+                content_is_blank: true,
+                paragraph_merge: Some(DocumentParagraphMerge {
+                    previous_source_bytes: context.source_bytes.clone(),
+                    previous_source_utf16: context.source_utf16.clone(),
+                    separator_bytes: splice.result_byte_range.clone(),
+                    separator_utf16: splice.result_utf16_range.clone(),
+                    restore_context: Some(Arc::new(context.clone())),
+                }),
+                inline_empty_owner_delete: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::SplitParagraph,
+            )
+        }
+        (
+            DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::BlockQuote {
+                prefix_bytes,
+                prefix_utf16,
+                prefix_text,
+                nesting_depth,
+                container_widths,
+                container_count,
+                starts_quote,
+                empty,
+                outdent,
+            },
+        ) => {
+            if *empty || context.editable_bytes.is_empty() {
+                if *nesting_depth > 1 {
+                    return outdent.as_ref().map_or_else(
+                        || {
+                            disposition(
+                                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                                selection_utf16,
+                            )
+                        },
+                        |outdent| {
+                            outdent_block_quote_row(
+                                context,
+                                prefix_bytes,
+                                prefix_utf16,
+                                prefix_text,
+                                *nesting_depth,
+                                *container_widths,
+                                *container_count,
+                                *starts_quote,
+                                true,
+                                outdent,
+                            )
+                        },
+                    );
+                }
+                let existing_terminal_ending = prefix_bytes
+                    .end
+                    .checked_add(context.ending.text().len())
+                    .is_some_and(|ending_end| context.source_bytes.start == ending_end);
+                // When the empty quote line already owns an ending, replace
+                // only its marker with a new ending. The transformed caret
+                // then sits between that new blank separator and the existing
+                // line ending: typing produces a plain paragraph with a block
+                // boundary on both sides, never a lazy quote continuation or
+                // an accidental merge with the following block.
+                let clear_bytes = prefix_bytes.clone();
+                let clear_utf16 = prefix_utf16.clone();
+                let replacement = if context.source_bytes.end == prefix_bytes.end
+                    || existing_terminal_ending
+                    || !starts_quote
+                {
+                    context.ending.text().to_owned()
+                } else {
+                    String::new()
+                };
+                return clear_prefixed_row(
+                    context,
+                    clear_bytes,
+                    clear_utf16,
+                    replacement,
+                    DocumentEditPresentationTransitionV1::ExitBlockQuote,
+                );
+            }
+            let replacement = format!("{}{prefix_text}", context.ending.text());
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let ending_bytes = context.ending.text().len();
+            let ending_utf16 = context.ending.text().encode_utf16().count();
+            let prefix_start_byte = selection_byte + ending_bytes;
+            let prefix_start_utf16 = selection_utf16 + ending_utf16;
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::BlockQuote {
+                    prefix_bytes: prefix_start_byte..selection_byte + byte_delta,
+                    prefix_utf16: prefix_start_utf16..selection_utf16 + utf16_delta,
+                    prefix_text: prefix_text.clone(),
+                    nesting_depth: *nesting_depth,
+                    container_widths: *container_widths,
+                    container_count: *container_count,
+                    starts_quote: false,
+                    empty: selection_byte == context.editable_bytes.end,
+                    outdent: outdent.as_ref().and_then(|outdent| {
+                        let removed_width = outdent.bytes.len();
+                        let end_byte = selection_byte + byte_delta;
+                        let end_utf16 = selection_utf16 + utf16_delta;
+                        Some(DocumentBlockQuoteOutdent {
+                            bytes: end_byte.checked_sub(removed_width)?..end_byte,
+                            utf16: end_utf16.checked_sub(removed_width)?..end_utf16,
+                        })
+                    }),
+                },
+                content_is_blank: selection_byte == context.editable_bytes.end,
+                paragraph_merge: None,
+                inline_empty_owner_delete: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+            )
+        }
+        (
+            DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::ListItem {
+                marker,
+                prefix_bytes,
+                prefix_utf16,
+                nesting_depth,
+                marker_offset,
+                item_padding,
+                container_widths,
+                container_count,
+                marker_column,
+                starts_list,
+                task_checked,
+                task_check,
+                empty,
+                indent: _,
+                outdent,
+            },
+        ) => {
+            let marker_end_bytes = prefix_bytes.start
+                + usize::from(*marker_offset)
+                + document_list_marker_text_len(*marker);
+            let marker_end_utf16 = prefix_utf16.start
+                + usize::from(*marker_offset)
+                + document_list_marker_text_len(*marker);
+            let at_unpadded_marker_end = selection_byte == marker_end_bytes
+                && selection_utf16 == marker_end_utf16
+                && prefix_bytes.end == selection_byte + 1
+                && prefix_utf16.end == selection_utf16 + 1;
+            if at_unpadded_marker_end
+                && *nesting_depth == 1
+                && *container_count == 0
+                && task_checked.is_none()
+                && !*empty
+            {
+                // The parser can claim a just-typed marker together with the
+                // following source space before the host caret advances over
+                // that space. Split at the visible marker boundary: complete
+                // the current empty item, then reuse the existing space as the
+                // successor's parser-authored padding. This keeps the command
+                // semantic without admitting arbitrary prefix-interior carets.
+                let next_marker = next_marker(*marker);
+                let next_marker_text = next_marker_text(*marker);
+                let marker_indentation = " ".repeat(usize::from(*marker_offset));
+                let replacement = format!(
+                    " {}{marker_indentation}{next_marker_text}",
+                    context.ending.text()
+                );
+                let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+                let splice = splice(
+                    selection_byte..selection_byte,
+                    selection_utf16..selection_utf16,
+                    replacement,
+                );
+                let byte_delta = splice.replacement.len();
+                let utf16_delta = splice.replacement.encode_utf16().count();
+                let ending_bytes = context.ending.text().len();
+                let ending_utf16 = context.ending.text().encode_utf16().count();
+                let prefix_start_byte = selection_byte + 1 + ending_bytes;
+                let prefix_start_utf16 = selection_utf16 + 1 + ending_utf16;
+                let result_item_padding =
+                    u8::try_from(next_marker_text.len() + 1).unwrap_or(u8::MAX);
+                let result_context = DocumentSimpleEditContext {
+                    revision: context.revision + 1,
+                    source_bytes: context.source_bytes.start + byte_delta
+                        ..context.source_bytes.end + byte_delta,
+                    source_utf16: context.source_utf16.start + utf16_delta
+                        ..context.source_utf16.end + utf16_delta,
+                    editable_bytes: context.editable_bytes.start + byte_delta
+                        ..context.editable_bytes.end + byte_delta,
+                    editable_utf16: context.editable_utf16.start + utf16_delta
+                        ..context.editable_utf16.end + utf16_delta,
+                    ending: context.ending,
+                    row: DocumentSimpleEditRow::ListItem {
+                        marker: next_marker,
+                        prefix_bytes: prefix_start_byte..context.editable_bytes.start + byte_delta,
+                        prefix_utf16: prefix_start_utf16
+                            ..context.editable_utf16.start + utf16_delta,
+                        nesting_depth: *nesting_depth,
+                        marker_offset: *marker_offset,
+                        item_padding: result_item_padding,
+                        container_widths: *container_widths,
+                        container_count: *container_count,
+                        marker_column: *marker_column,
+                        starts_list: false,
+                        task_checked: None,
+                        task_check: None,
+                        empty: false,
+                        indent: Some(DocumentListIndent {
+                            byte_offset: prefix_start_byte,
+                            utf16_offset: prefix_start_utf16,
+                            width: *item_padding,
+                        }),
+                        outdent: None,
+                    },
+                    content_is_blank: false,
+                    paragraph_merge: None,
+                    inline_empty_owner_delete: None,
+                };
+                return applied(
+                    splice,
+                    result_selection_utf16,
+                    Some(result_context),
+                    DocumentEditPresentationTransitionV1::ContinueList,
+                );
+            }
+            if *empty || context.editable_bytes.is_empty() {
+                if *nesting_depth > 1 {
+                    return outdent.as_ref().map_or_else(
+                        || {
+                            disposition(
+                                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                                selection_utf16,
+                            )
+                        },
+                        |outdent| {
+                            outdent_list_row(
+                                context,
+                                *marker,
+                                prefix_bytes,
+                                prefix_utf16,
+                                *nesting_depth,
+                                *marker_offset,
+                                *item_padding,
+                                *container_widths,
+                                *container_count,
+                                *marker_column,
+                                *task_checked,
+                                task_check.as_ref(),
+                                true,
+                                outdent,
+                                context.editable_utf16.start,
+                            )
+                        },
+                    );
+                }
+                // Removing an empty marker must still leave a physical plain
+                // row. A continuing list row also needs separation from the
+                // preceding list; otherwise the next typed paragraph becomes
+                // a CommonMark lazy continuation of the prior item. Its owned
+                // line ending remains the new row's terminal ending. A list
+                // that starts on this row already has whatever separation its
+                // preceding context requires. An unterminated EOF row needs
+                // one physical ending in either case.
+                let replacement = if context.source_bytes.end == prefix_bytes.end || !starts_list {
+                    context.ending.text().to_owned()
+                } else {
+                    String::new()
+                };
+                return clear_prefixed_row(
+                    context,
+                    prefix_bytes.clone(),
+                    prefix_utf16.clone(),
+                    replacement,
+                    DocumentEditPresentationTransitionV1::ExitList,
+                );
+            }
+
+            let marker_text = next_marker_text(*marker);
+            let result_item_padding = u8::try_from(marker_text.len() + 1).unwrap_or(u8::MAX);
+            if !(2..=14).contains(&result_item_padding) {
+                return disposition(
+                    DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                    selection_utf16,
+                );
+            }
+            let task_prefix = task_checked.map_or("", |_| "[ ] ");
+            let container_indentation = outdent
+                .as_ref()
+                .map_or("", |outdent| outdent.indentation.as_str());
+            let prefix = format!(
+                "{container_indentation}{}{marker_text} {task_prefix}",
+                " ".repeat(usize::from(*marker_offset))
+            );
+            let replacement = format!("{}{prefix}", context.ending.text());
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let line_ending_bytes = context.ending.text().len();
+            let line_ending_utf16 = context.ending.text().encode_utf16().count();
+            let indentation_bytes = container_indentation.len();
+            let indentation_utf16 = container_indentation.encode_utf16().count();
+            let prefix_start_byte = selection_byte + line_ending_bytes + indentation_bytes;
+            let prefix_start_utf16 = selection_utf16 + line_ending_utf16 + indentation_utf16;
+            let result_outdent = if *container_count > 0 {
+                let Some(width) = last_container_width(*container_widths, *container_count) else {
+                    return disposition(
+                        DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                        selection_utf16,
+                    );
+                };
+                let (Some(bytes_start), Some(utf16_start)) = (
+                    prefix_start_byte.checked_sub(width),
+                    prefix_start_utf16.checked_sub(width),
+                ) else {
+                    return disposition(
+                        DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                        selection_utf16,
+                    );
+                };
+                Some(DocumentListOutdent {
+                    bytes: bytes_start..prefix_start_byte,
+                    utf16: utf16_start..prefix_start_utf16,
+                    indentation: container_indentation.to_owned(),
+                })
+            } else {
+                None
+            };
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::ListItem {
+                    marker: next_marker(*marker),
+                    prefix_bytes: prefix_start_byte..selection_byte + byte_delta,
+                    prefix_utf16: prefix_start_utf16..selection_utf16 + utf16_delta,
+                    nesting_depth: *nesting_depth,
+                    marker_offset: *marker_offset,
+                    item_padding: result_item_padding,
+                    container_widths: *container_widths,
+                    container_count: *container_count,
+                    marker_column: *marker_column,
+                    starts_list: false,
+                    task_checked: task_checked.map(|_| false),
+                    task_check: task_checked.map(|_| DocumentTaskCheck {
+                        bytes: selection_byte + byte_delta - 3..selection_byte + byte_delta - 2,
+                        utf16: selection_utf16 + utf16_delta - 3..selection_utf16 + utf16_delta - 2,
+                        checked: false,
+                    }),
+                    empty: selection_byte == context.editable_bytes.end,
+                    indent: Some(DocumentListIndent {
+                        byte_offset: selection_byte + line_ending_bytes,
+                        utf16_offset: selection_utf16 + line_ending_utf16,
+                        width: *item_padding,
+                    }),
+                    outdent: result_outdent,
+                },
+                content_is_blank: selection_byte == context.editable_bytes.end,
+                paragraph_merge: None,
+                inline_empty_owner_delete: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ContinueList,
+            )
+        }
+        (
+            DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::IndentedCode { prefix_text, .. },
+        ) => {
+            let ending = context.ending.text();
+            let replacement = format!("{ending}{prefix_text}");
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let ending_bytes = ending.len();
+            let ending_utf16 = ending.encode_utf16().count();
+            let prefix_start_byte = selection_byte + ending_bytes;
+            let prefix_start_utf16 = selection_utf16 + ending_utf16;
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::IndentedCode {
+                    prefix_bytes: prefix_start_byte..selection_byte + byte_delta,
+                    prefix_utf16: prefix_start_utf16..selection_utf16 + utf16_delta,
+                    prefix_text: prefix_text.clone(),
+                    join_bytes: Some(selection_byte..selection_byte + byte_delta),
+                    join_utf16: Some(selection_utf16..selection_utf16 + utf16_delta),
+                },
+                content_is_blank: selection_byte == context.editable_bytes.end,
+                paragraph_merge: None,
+                inline_empty_owner_delete: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::FencedCode {
+                fence,
+                minimum_closing_length,
+                closed,
+                line_content_bytes,
+                line_content_utf16,
+                join_bytes: Some(join_bytes),
+                join_utf16: Some(join_utf16),
+                previous_line_content_bytes: Some(previous_line_content_bytes),
+                previous_line_content_utf16: Some(previous_line_content_utf16),
+            },
+        ) if selection_byte == line_content_bytes.start
+            && selection_utf16 == line_content_utf16.start =>
+        {
+            let splice = splice(join_bytes.clone(), join_utf16.clone(), String::new());
+            let removed_bytes = join_bytes.len();
+            let removed_utf16 = join_utf16.len();
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: context.source_bytes.start..context.source_bytes.end - removed_bytes,
+                source_utf16: context.source_utf16.start..context.source_utf16.end - removed_utf16,
+                editable_bytes: context.editable_bytes.start
+                    ..context.editable_bytes.end - removed_bytes,
+                editable_utf16: context.editable_utf16.start
+                    ..context.editable_utf16.end - removed_utf16,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::FencedCode {
+                    fence: *fence,
+                    minimum_closing_length: *minimum_closing_length,
+                    closed: *closed,
+                    line_content_bytes: previous_line_content_bytes.start
+                        ..line_content_bytes.end - removed_bytes,
+                    line_content_utf16: previous_line_content_utf16.start
+                        ..line_content_utf16.end - removed_utf16,
+                    join_bytes: None,
+                    join_utf16: None,
+                    previous_line_content_bytes: None,
+                    previous_line_content_utf16: None,
+                },
+                content_is_blank: false,
+                paragraph_merge: None,
+                inline_empty_owner_delete: None,
+            };
+            applied(
+                splice,
+                join_utf16.start,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::JoinFencedCode,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::AtxHeading {
+                prefix_bytes,
+                prefix_utf16,
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                String::new(),
+                DocumentEditPresentationTransitionV1::LiftHeading,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::IndentedCode {
+                join_bytes: Some(join_bytes),
+                join_utf16: Some(join_utf16),
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            let splice = splice(join_bytes.clone(), join_utf16.clone(), String::new());
+            applied(
+                splice,
+                join_utf16.start,
+                None,
+                DocumentEditPresentationTransitionV1::JoinIndentedCode,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::IndentedCode {
+                prefix_bytes,
+                prefix_utf16,
+                join_bytes: None,
+                join_utf16: None,
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                String::new(),
+                DocumentEditPresentationTransitionV1::LiftIndentedCode,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward | DocumentEditIntentV1::DeleteForward,
+            DocumentSimpleEditRow::ThematicBreak {
+                atom_bytes,
+                atom_utf16,
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            applied(
+                splice(atom_bytes.clone(), atom_utf16.clone(), String::new()),
+                context.editable_utf16.start,
+                None,
+                DocumentEditPresentationTransitionV1::DeleteThematicBreak,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::BlockQuote {
+                prefix_bytes,
+                prefix_utf16,
+                prefix_text,
+                nesting_depth,
+                container_widths,
+                container_count,
+                starts_quote,
+                empty,
+                outdent,
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            if *nesting_depth > 1 {
+                return outdent.as_ref().map_or_else(
+                    || {
+                        disposition(
+                            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                            selection_utf16,
+                        )
+                    },
+                    |outdent| {
+                        outdent_block_quote_row(
+                            context,
+                            prefix_bytes,
+                            prefix_utf16,
+                            prefix_text,
+                            *nesting_depth,
+                            *container_widths,
+                            *container_count,
+                            *starts_quote,
+                            *empty,
+                            outdent,
+                        )
+                    },
+                );
+            }
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                if *starts_quote {
+                    String::new()
+                } else {
+                    context.ending.text().to_owned()
+                },
+                DocumentEditPresentationTransitionV1::LiftBlockQuote,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::ListItem {
+                marker,
+                prefix_bytes,
+                prefix_utf16,
+                nesting_depth,
+                marker_offset,
+                item_padding,
+                container_widths,
+                container_count,
+                marker_column,
+                starts_list,
+                task_checked,
+                task_check,
+                empty,
+                outdent,
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            if *nesting_depth > 1 {
+                return outdent.as_ref().map_or_else(
+                    || {
+                        disposition(
+                            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                            selection_utf16,
+                        )
+                    },
+                    |outdent| {
+                        outdent_list_row(
+                            context,
+                            *marker,
+                            prefix_bytes,
+                            prefix_utf16,
+                            *nesting_depth,
+                            *marker_offset,
+                            *item_padding,
+                            *container_widths,
+                            *container_count,
+                            *marker_column,
+                            *task_checked,
+                            task_check.as_ref(),
+                            *empty,
+                            outdent,
+                            context.editable_utf16.start,
+                        )
+                    },
+                );
+            }
+            let replacement = if *starts_list {
+                String::new()
+            } else {
+                context.ending.text().to_owned()
+            };
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                replacement,
+                DocumentEditPresentationTransitionV1::LiftList,
+            )
+        }
+        (DocumentEditIntentV1::DeleteBackward, DocumentSimpleEditRow::Plain)
+            if selection_byte == context.editable_bytes.start
+                && selection_utf16 == context.editable_utf16.start =>
+        {
+            let Some(merge) = &context.paragraph_merge else {
+                return disposition(
+                    if selection_byte == 0 {
+                        DocumentEditIntentDispositionV1::HandledNoChange
+                    } else {
+                        DocumentEditIntentDispositionV1::NotApplicable
+                    },
+                    selection_utf16,
+                );
+            };
+            let splice = splice(
+                merge.separator_bytes.clone(),
+                merge.separator_utf16.clone(),
+                String::new(),
+            );
+            let result_selection_utf16 = merge.separator_utf16.start;
+            let removed_bytes = merge.separator_bytes.end - merge.separator_bytes.start;
+            let removed_utf16 = merge.separator_utf16.end - merge.separator_utf16.start;
+            let reverses_neutral_editor_row = merge.separator_bytes.start
+                == merge.previous_source_bytes.end
+                && merge.separator_utf16.start == merge.previous_source_utf16.end
+                && removed_bytes == context.ending.text().len()
+                && removed_utf16 == context.ending.text().encode_utf16().count()
+                && merge.previous_source_bytes.end >= removed_bytes
+                && merge.previous_source_utf16.end >= removed_utf16;
+            let (result_context, transition) = if reverses_neutral_editor_row {
+                // The ready parser has no row for the neutral blank line, so
+                // its bounded exact context temporarily narrows the merge to
+                // the final physical ending. Removing that one ending leaves
+                // the successor at the start of the preceding ending, not a
+                // paragraph joined to the previous content. Preserve that
+                // exact start-of-line context so an immediate Return restores
+                // one editor row instead of inserting a two-ending split.
+                (
+                    DocumentSimpleEditContext {
+                        revision: context.revision + 1,
+                        source_bytes: context.source_bytes.start - removed_bytes
+                            ..context.source_bytes.end - removed_bytes,
+                        source_utf16: context.source_utf16.start - removed_utf16
+                            ..context.source_utf16.end - removed_utf16,
+                        editable_bytes: context.editable_bytes.start - removed_bytes
+                            ..context.editable_bytes.end - removed_bytes,
+                        editable_utf16: context.editable_utf16.start - removed_utf16
+                            ..context.editable_utf16.end - removed_utf16,
+                        ending: context.ending,
+                        row: DocumentSimpleEditRow::Plain,
+                        content_is_blank: context.content_is_blank,
+                        paragraph_merge: Some(DocumentParagraphMerge {
+                            previous_source_bytes: merge.previous_source_bytes.clone(),
+                            previous_source_utf16: merge.previous_source_utf16.clone(),
+                            separator_bytes: merge.previous_source_bytes.end - removed_bytes
+                                ..merge.previous_source_bytes.end,
+                            separator_utf16: merge.previous_source_utf16.end - removed_utf16
+                                ..merge.previous_source_utf16.end,
+                            restore_context: None,
+                        }),
+                        inline_empty_owner_delete: None,
+                    },
+                    DocumentEditPresentationTransitionV1::MergeParagraph,
+                )
+            } else if context.editable_bytes.is_empty()
+                && context.editable_utf16.is_empty()
+                && merge.restore_context.is_some()
+            {
+                let mut restored = merge.restore_context.as_deref().cloned().expect("checked");
+                restored.revision = context.revision + 1;
+                let retains_empty_editor_row = restored.editable_bytes.is_empty()
+                    && restored.editable_utf16.is_empty()
+                    && restored
+                        .paragraph_merge
+                        .as_ref()
+                        .is_some_and(|prior| prior.restore_context.is_some());
+                (
+                    restored,
+                    if retains_empty_editor_row {
+                        DocumentEditPresentationTransitionV1::RetainParagraphGap
+                    } else {
+                        DocumentEditPresentationTransitionV1::MergeParagraph
+                    },
+                )
+            } else {
+                (
+                    DocumentSimpleEditContext {
+                        revision: context.revision + 1,
+                        source_bytes: merge.previous_source_bytes.start
+                            ..context.source_bytes.end - removed_bytes,
+                        source_utf16: merge.previous_source_utf16.start
+                            ..context.source_utf16.end - removed_utf16,
+                        editable_bytes: merge.previous_source_bytes.start
+                            ..context.editable_bytes.end - removed_bytes,
+                        editable_utf16: merge.previous_source_utf16.start
+                            ..context.editable_utf16.end - removed_utf16,
+                        ending: context.ending,
+                        row: DocumentSimpleEditRow::Plain,
+                        content_is_blank: false,
+                        paragraph_merge: None,
+                        inline_empty_owner_delete: None,
+                    },
+                    DocumentEditPresentationTransitionV1::MergeParagraph,
+                )
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                transition,
+            )
+        }
+        _ => disposition(
+            DocumentEditIntentDispositionV1::NotApplicable,
+            selection_utf16,
+        ),
+    }
+}
+
+fn splice(
+    base_byte_range: Range<usize>,
+    base_utf16_range: Range<usize>,
+    replacement: String,
+) -> DocumentCommittedSpliceV1 {
+    let result_byte_end = base_byte_range.start + replacement.len();
+    let result_utf16_end = base_utf16_range.start + replacement.encode_utf16().count();
+    DocumentCommittedSpliceV1 {
+        result_byte_range: base_byte_range.start..result_byte_end,
+        result_utf16_range: base_utf16_range.start..result_utf16_end,
+        base_byte_range,
+        base_utf16_range,
+        replacement,
+    }
+}
+
+fn applied(
+    splice: DocumentCommittedSpliceV1,
+    result_selection_utf16: usize,
+    result_context: Option<DocumentSimpleEditContext>,
+    presentation_transition: DocumentEditPresentationTransitionV1,
+) -> ResolvedDocumentEditIntentV1 {
+    ResolvedDocumentEditIntentV1 {
+        disposition: DocumentEditIntentDispositionV1::Applied,
+        splice: Some(splice),
+        result_selection_utf16,
+        result_context,
+        presentation_transition,
+    }
+}
+
+fn clear_prefixed_row(
+    context: &DocumentSimpleEditContext,
+    prefix_bytes: Range<usize>,
+    prefix_utf16: Range<usize>,
+    replacement: String,
+    transition: DocumentEditPresentationTransitionV1,
+) -> ResolvedDocumentEditIntentV1 {
+    let splice = splice(prefix_bytes.clone(), prefix_utf16.clone(), replacement);
+    let replacement_bytes = splice.replacement.len();
+    let replacement_utf16 = splice.replacement.encode_utf16().count();
+    let byte_delta = replacement_bytes as isize - prefix_bytes.len() as isize;
+    let utf16_delta = replacement_utf16 as isize - prefix_utf16.len() as isize;
+    let content_start_byte = add_signed(prefix_bytes.start, replacement_bytes as isize);
+    let content_start_utf16 = add_signed(prefix_utf16.start, replacement_utf16 as isize);
+    // Collapsing the separator created while exiting a continuing list item
+    // makes the next nonempty physical line a CommonMark lazy continuation of
+    // that list. Preserve that parser-owned ancestry as a zero-prefix pending
+    // row so literal typing followed by Return agrees with a settled parse.
+    // A list that starts here has no preceding item and cannot become lazy.
+    let collapsed_list_context = match &context.row {
+        DocumentSimpleEditRow::ListItem {
+            starts_list: false, ..
+        } if !splice.result_byte_range.is_empty() => {
+            let mut row = context.row.clone();
+            if let DocumentSimpleEditRow::ListItem {
+                prefix_bytes,
+                prefix_utf16,
+                starts_list,
+                task_check,
+                empty,
+                indent,
+                ..
+            } = &mut row
+            {
+                *prefix_bytes = splice.base_byte_range.start..splice.base_byte_range.start;
+                *prefix_utf16 = splice.base_utf16_range.start..splice.base_utf16_range.start;
+                *starts_list = false;
+                *task_check = None;
+                *empty = true;
+                *indent = None;
+            }
+            Some(Arc::new(DocumentSimpleEditContext {
+                revision: context.revision + 2,
+                source_bytes: splice.base_byte_range.start..splice.base_byte_range.start,
+                source_utf16: splice.base_utf16_range.start..splice.base_utf16_range.start,
+                editable_bytes: splice.base_byte_range.start..splice.base_byte_range.start,
+                editable_utf16: splice.base_utf16_range.start..splice.base_utf16_range.start,
+                ending: context.ending,
+                row,
+                content_is_blank: true,
+                paragraph_merge: None,
+                inline_empty_owner_delete: None,
+            }))
+        }
+        _ => None,
+    };
+    let result_context = DocumentSimpleEditContext {
+        revision: context.revision + 1,
+        source_bytes: content_start_byte..add_signed(context.source_bytes.end, byte_delta),
+        source_utf16: content_start_utf16..add_signed(context.source_utf16.end, utf16_delta),
+        editable_bytes: content_start_byte..add_signed(context.editable_bytes.end, byte_delta),
+        editable_utf16: content_start_utf16..add_signed(context.editable_utf16.end, utf16_delta),
+        ending: context.ending,
+        row: DocumentSimpleEditRow::Plain,
+        content_is_blank: context.content_is_blank,
+        paragraph_merge: (!splice.result_byte_range.is_empty()).then(|| DocumentParagraphMerge {
+            previous_source_bytes: context.source_bytes.clone(),
+            previous_source_utf16: context.source_utf16.clone(),
+            separator_bytes: splice.result_byte_range.clone(),
+            separator_utf16: splice.result_utf16_range.clone(),
+            restore_context: collapsed_list_context,
+        }),
+        inline_empty_owner_delete: None,
+    };
+    applied(
+        splice,
+        content_start_utf16,
+        Some(result_context),
+        transition,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn outdent_block_quote_row(
+    context: &DocumentSimpleEditContext,
+    prefix_bytes: &Range<usize>,
+    prefix_utf16: &Range<usize>,
+    prefix_text: &str,
+    nesting_depth: u8,
+    container_widths: u64,
+    container_count: u8,
+    starts_quote: bool,
+    empty: bool,
+    outdent: &DocumentBlockQuoteOutdent,
+) -> ResolvedDocumentEditIntentV1 {
+    let Some(removed_width) = last_quote_container_width(container_widths, container_count) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            context.editable_utf16.start,
+        );
+    };
+    if nesting_depth <= 1
+        || container_count != nesting_depth
+        || outdent.bytes.end != prefix_bytes.end
+        || outdent.utf16.end != prefix_utf16.end
+        || outdent.bytes.len() != removed_width
+        || outdent.utf16.len() != removed_width
+        || prefix_text.len() != prefix_bytes.len()
+        || prefix_text.encode_utf16().count() != prefix_utf16.len()
+    {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            context.editable_utf16.start,
+        );
+    }
+    let result_depth = nesting_depth - 1;
+    let result_count = container_count - 1;
+    let result_widths = pop_container_width(container_widths, container_count);
+    let result_prefix_text = prefix_text[..prefix_text.len() - removed_width].to_owned();
+    // A noninitial nonempty physical line can remain a CommonMark lazy
+    // continuation of the deeper quote if its inner marker is merely removed.
+    // Replace the whole physical prefix with a block boundary plus the
+    // remaining outer prefix so the outdent is semantic, not just
+    // source-shaped. Empty rows already terminate lazy continuation, and an
+    // initial line has no preceding paragraph to escape.
+    let forces_lazy_boundary = !starts_quote && !empty;
+    let replacement = if forces_lazy_boundary {
+        format!("{}{}", context.ending.text(), result_prefix_text)
+    } else {
+        String::new()
+    };
+    let base_bytes = if forces_lazy_boundary {
+        prefix_bytes.clone()
+    } else {
+        outdent.bytes.clone()
+    };
+    let base_utf16 = if forces_lazy_boundary {
+        prefix_utf16.clone()
+    } else {
+        outdent.utf16.clone()
+    };
+    let replacement_bytes = replacement.len();
+    let replacement_utf16 = replacement.encode_utf16().count();
+    let byte_delta = replacement_bytes as isize - base_bytes.len() as isize;
+    let utf16_delta = replacement_utf16 as isize - base_utf16.len() as isize;
+    let splice = splice(base_bytes, base_utf16, replacement);
+
+    let (
+        result_source_start_byte,
+        result_source_start_utf16,
+        result_prefix_start_byte,
+        result_prefix_start_utf16,
+        result_prefix_end_byte,
+        result_prefix_end_utf16,
+        result_editable_start_byte,
+        result_editable_start_utf16,
+    ) = if forces_lazy_boundary {
+        let ending_bytes = context.ending.text().len();
+        let ending_utf16 = context.ending.text().encode_utf16().count();
+        let prefix_start_byte = prefix_bytes.start + ending_bytes;
+        let prefix_start_utf16 = prefix_utf16.start + ending_utf16;
+        let prefix_end_byte = prefix_bytes.start + replacement_bytes;
+        let prefix_end_utf16 = prefix_utf16.start + replacement_utf16;
+        (
+            prefix_start_byte,
+            prefix_start_utf16,
+            prefix_start_byte,
+            prefix_start_utf16,
+            prefix_end_byte,
+            prefix_end_utf16,
+            prefix_end_byte,
+            prefix_end_utf16,
+        )
+    } else {
+        let Some(prefix_end_byte) = prefix_bytes.end.checked_sub(removed_width) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        let Some(prefix_end_utf16) = prefix_utf16.end.checked_sub(removed_width) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        let Some(editable_start_byte) = context.editable_bytes.start.checked_sub(removed_width)
+        else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        let Some(editable_start_utf16) = context.editable_utf16.start.checked_sub(removed_width)
+        else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        (
+            context.source_bytes.start,
+            context.source_utf16.start,
+            prefix_bytes.start,
+            prefix_utf16.start,
+            prefix_end_byte,
+            prefix_end_utf16,
+            editable_start_byte,
+            editable_start_utf16,
+        )
+    };
+    let result_prefix_bytes = result_prefix_start_byte..result_prefix_end_byte;
+    let result_prefix_utf16 = result_prefix_start_utf16..result_prefix_end_utf16;
+    let result_source_end_byte = add_signed(context.source_bytes.end, byte_delta);
+    let result_source_end_utf16 = add_signed(context.source_utf16.end, utf16_delta);
+    let result_editable_end_byte = add_signed(context.editable_bytes.end, byte_delta);
+    let result_editable_end_utf16 = add_signed(context.editable_utf16.end, utf16_delta);
+    let result_outdent = if result_depth > 1 {
+        let Some(next_width) = last_quote_container_width(result_widths, result_count) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        let Some(start_byte) = result_prefix_end_byte.checked_sub(next_width) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        let Some(start_utf16) = result_prefix_end_utf16.checked_sub(next_width) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        Some(DocumentBlockQuoteOutdent {
+            bytes: start_byte..result_prefix_end_byte,
+            utf16: start_utf16..result_prefix_end_utf16,
+        })
+    } else {
+        None
+    };
+    let result_context = DocumentSimpleEditContext {
+        revision: context.revision + 1,
+        source_bytes: result_source_start_byte..result_source_end_byte,
+        source_utf16: result_source_start_utf16..result_source_end_utf16,
+        editable_bytes: result_editable_start_byte..result_editable_end_byte,
+        editable_utf16: result_editable_start_utf16..result_editable_end_utf16,
+        ending: context.ending,
+        row: DocumentSimpleEditRow::BlockQuote {
+            prefix_bytes: result_prefix_bytes,
+            prefix_utf16: result_prefix_utf16,
+            prefix_text: result_prefix_text,
+            nesting_depth: result_depth,
+            container_widths: result_widths,
+            container_count: result_count,
+            starts_quote: starts_quote || forces_lazy_boundary,
+            empty,
+            outdent: result_outdent,
+        },
+        content_is_blank: context.content_is_blank,
+        paragraph_merge: None,
+        inline_empty_owner_delete: None,
+    };
+    applied(
+        splice,
+        result_context.editable_utf16.start,
+        Some(result_context),
+        DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn indent_list_row(
+    context: &DocumentSimpleEditContext,
+    marker: DocumentListMarker,
+    prefix_bytes: &Range<usize>,
+    prefix_utf16: &Range<usize>,
+    nesting_depth: u8,
+    marker_offset: u8,
+    item_padding: u8,
+    container_widths: u64,
+    container_count: u8,
+    marker_column: u8,
+    task_checked: Option<bool>,
+    task_check: Option<&DocumentTaskCheck>,
+    empty: bool,
+    indent: &DocumentListIndent,
+    selection_utf16: usize,
+) -> ResolvedDocumentEditIntentV1 {
+    let width = usize::from(indent.width);
+    let Some(container_column) = marker_column.checked_sub(marker_offset) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let expected_byte_offset = prefix_bytes
+        .start
+        .checked_sub(usize::from(container_column));
+    let expected_utf16_offset = prefix_utf16
+        .start
+        .checked_sub(usize::from(container_column));
+    if !(2..=14).contains(&width)
+        || nesting_depth >= 17
+        || container_count >= 16
+        || container_count != nesting_depth.saturating_sub(1)
+        || Some(indent.byte_offset) != expected_byte_offset
+        || Some(indent.utf16_offset) != expected_utf16_offset
+    {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    }
+    let Ok(width_u8) = u8::try_from(width) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let Some(result_marker_column) = marker_column.checked_add(width_u8) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let shift = |value: usize| value.checked_add(width);
+    let shifted = (
+        shift(prefix_bytes.start),
+        shift(prefix_bytes.end),
+        shift(prefix_utf16.start),
+        shift(prefix_utf16.end),
+        shift(context.source_bytes.start),
+        shift(context.source_bytes.end),
+        shift(context.source_utf16.start),
+        shift(context.source_utf16.end),
+        shift(context.editable_bytes.start),
+        shift(context.editable_bytes.end),
+        shift(context.editable_utf16.start),
+        shift(context.editable_utf16.end),
+        shift(selection_utf16),
+    );
+    let (
+        Some(prefix_start_byte),
+        Some(prefix_end_byte),
+        Some(prefix_start_utf16),
+        Some(prefix_end_utf16),
+        Some(source_start_byte),
+        Some(source_end_byte),
+        Some(source_start_utf16),
+        Some(source_end_utf16),
+        Some(editable_start_byte),
+        Some(editable_end_byte),
+        Some(editable_start_utf16),
+        Some(editable_end_utf16),
+        Some(result_selection_utf16),
+    ) = shifted
+    else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let shift_amount = u32::from(container_count) * 4;
+    let result_container_widths = container_widths | (u64::from(width_u8) << shift_amount);
+    let result_task_check = task_check.map(|task_check| DocumentTaskCheck {
+        bytes: task_check.bytes.start + width..task_check.bytes.end + width,
+        utf16: task_check.utf16.start + width..task_check.utf16.end + width,
+        checked: task_check.checked,
+    });
+    let result_prefix_bytes = prefix_start_byte..prefix_end_byte;
+    let result_prefix_utf16 = prefix_start_utf16..prefix_end_utf16;
+    let result_outdent = DocumentListOutdent {
+        bytes: prefix_start_byte - width..prefix_start_byte,
+        utf16: prefix_start_utf16 - width..prefix_start_utf16,
+        indentation: " ".repeat(usize::from(container_column) + width),
+    };
+    let result_context = DocumentSimpleEditContext {
+        revision: context.revision + 1,
+        source_bytes: source_start_byte..source_end_byte,
+        source_utf16: source_start_utf16..source_end_utf16,
+        editable_bytes: editable_start_byte..editable_end_byte,
+        editable_utf16: editable_start_utf16..editable_end_utf16,
+        ending: context.ending,
+        row: DocumentSimpleEditRow::ListItem {
+            marker,
+            prefix_bytes: result_prefix_bytes,
+            prefix_utf16: result_prefix_utf16,
+            nesting_depth: nesting_depth + 1,
+            marker_offset,
+            item_padding,
+            container_widths: result_container_widths,
+            container_count: container_count + 1,
+            marker_column: result_marker_column,
+            starts_list: true,
+            task_checked,
+            task_check: result_task_check,
+            empty,
+            indent: None,
+            outdent: Some(result_outdent),
+        },
+        content_is_blank: context.content_is_blank,
+        paragraph_merge: None,
+        inline_empty_owner_delete: None,
+    };
+    applied(
+        splice(
+            indent.byte_offset..indent.byte_offset,
+            indent.utf16_offset..indent.utf16_offset,
+            " ".repeat(width),
+        ),
+        result_selection_utf16,
+        Some(result_context),
+        DocumentEditPresentationTransitionV1::IndentList,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn outdent_list_row(
+    context: &DocumentSimpleEditContext,
+    marker: DocumentListMarker,
+    prefix_bytes: &Range<usize>,
+    prefix_utf16: &Range<usize>,
+    nesting_depth: u8,
+    marker_offset: u8,
+    item_padding: u8,
+    container_widths: u64,
+    container_count: u8,
+    marker_column: u8,
+    task_checked: Option<bool>,
+    task_check: Option<&DocumentTaskCheck>,
+    empty: bool,
+    outdent: &DocumentListOutdent,
+    selection_utf16: usize,
+) -> ResolvedDocumentEditIntentV1 {
+    let Some(removed_width) = last_container_width(container_widths, container_count) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let Some(container_column) = marker_column.checked_sub(marker_offset) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    if nesting_depth <= 1
+        || container_count != nesting_depth.saturating_sub(1)
+        || outdent.bytes.end != prefix_bytes.start
+        || outdent.utf16.end != prefix_utf16.start
+        || outdent.bytes.len() != removed_width
+        || outdent.utf16.len() != removed_width
+        || outdent.indentation.len() != usize::from(container_column)
+        || outdent.indentation.encode_utf16().count() != usize::from(container_column)
+    {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    }
+    let removed_bytes = outdent.bytes.len();
+    let removed_utf16 = outdent.utf16.len();
+    let shifted = (
+        prefix_bytes.end.checked_sub(removed_bytes),
+        prefix_utf16.end.checked_sub(removed_utf16),
+        context.source_bytes.start.checked_sub(removed_bytes),
+        context.source_bytes.end.checked_sub(removed_bytes),
+        context.source_utf16.start.checked_sub(removed_utf16),
+        context.source_utf16.end.checked_sub(removed_utf16),
+        context.editable_bytes.start.checked_sub(removed_bytes),
+        context.editable_bytes.end.checked_sub(removed_bytes),
+        context.editable_utf16.start.checked_sub(removed_utf16),
+        context.editable_utf16.end.checked_sub(removed_utf16),
+    );
+    let (
+        Some(prefix_end_byte),
+        Some(prefix_end_utf16),
+        Some(source_start_byte),
+        Some(source_end_byte),
+        Some(source_start_utf16),
+        Some(source_end_utf16),
+        Some(editable_start_byte),
+        Some(editable_end_byte),
+        Some(editable_start_utf16),
+        Some(editable_end_utf16),
+    ) = shifted
+    else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let splice = splice(outdent.bytes.clone(), outdent.utf16.clone(), String::new());
+    let result_prefix_bytes = outdent.bytes.start..prefix_end_byte;
+    let result_prefix_utf16 = outdent.utf16.start..prefix_end_utf16;
+    let result_depth = nesting_depth.saturating_sub(1);
+    let result_container_count = container_count - 1;
+    let result_container_widths = pop_container_width(container_widths, container_count);
+    let Some(result_marker_column) =
+        marker_column.checked_sub(u8::try_from(removed_bytes).unwrap_or(u8::MAX))
+    else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let Some(result_container_column) = result_marker_column.checked_sub(marker_offset) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let remaining_indentation = &outdent.indentation[..usize::from(result_container_column)];
+    let result_outdent = if result_depth > 1 {
+        let Some(next_width) =
+            last_container_width(result_container_widths, result_container_count)
+        else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                selection_utf16,
+            );
+        };
+        let Some(bytes_start) = result_prefix_bytes.start.checked_sub(next_width) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                selection_utf16,
+            );
+        };
+        let Some(utf16_start) = result_prefix_utf16.start.checked_sub(next_width) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                selection_utf16,
+            );
+        };
+        Some(DocumentListOutdent {
+            bytes: bytes_start..result_prefix_bytes.start,
+            utf16: utf16_start..result_prefix_utf16.start,
+            indentation: remaining_indentation.to_owned(),
+        })
+    } else {
+        None
+    };
+    let result_task_check = task_check.map(|task_check| DocumentTaskCheck {
+        bytes: task_check.bytes.start - removed_bytes..task_check.bytes.end - removed_bytes,
+        utf16: task_check.utf16.start - removed_utf16..task_check.utf16.end - removed_utf16,
+        checked: task_check.checked,
+    });
+    let (Some(result_line_start_byte), Some(result_line_start_utf16), Some(result_selection_utf16)) = (
+        result_prefix_bytes
+            .start
+            .checked_sub(usize::from(result_container_column)),
+        result_prefix_utf16
+            .start
+            .checked_sub(usize::from(result_container_column)),
+        selection_utf16.checked_sub(removed_utf16),
+    ) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            selection_utf16,
+        );
+    };
+    let result_context = DocumentSimpleEditContext {
+        revision: context.revision + 1,
+        source_bytes: source_start_byte..source_end_byte,
+        source_utf16: source_start_utf16..source_end_utf16,
+        editable_bytes: editable_start_byte..editable_end_byte,
+        editable_utf16: editable_start_utf16..editable_end_utf16,
+        ending: context.ending,
+        row: DocumentSimpleEditRow::ListItem {
+            marker,
+            prefix_bytes: result_prefix_bytes,
+            prefix_utf16: result_prefix_utf16,
+            nesting_depth: result_depth,
+            marker_offset,
+            item_padding,
+            container_widths: result_container_widths,
+            container_count: result_container_count,
+            marker_column: result_marker_column,
+            starts_list: false,
+            task_checked,
+            task_check: result_task_check,
+            empty,
+            indent: Some(DocumentListIndent {
+                byte_offset: result_line_start_byte,
+                utf16_offset: result_line_start_utf16,
+                width: u8::try_from(removed_width).unwrap_or(u8::MAX),
+            }),
+            outdent: result_outdent,
+        },
+        content_is_blank: context.content_is_blank,
+        paragraph_merge: None,
+        inline_empty_owner_delete: None,
+    };
+    applied(
+        splice,
+        result_selection_utf16,
+        Some(result_context),
+        DocumentEditPresentationTransitionV1::OutdentList,
+    )
+}
+
+fn last_container_width(container_widths: u64, container_count: u8) -> Option<usize> {
+    if !(1..=16).contains(&container_count) {
+        return None;
+    }
+    let shift = u32::from(container_count - 1) * 4;
+    let width = usize::try_from((container_widths >> shift) & 0x0f).ok()?;
+    (2..=14).contains(&width).then_some(width)
+}
+
+fn last_quote_container_width(container_widths: u64, container_count: u8) -> Option<usize> {
+    if !(1..=16).contains(&container_count) {
+        return None;
+    }
+    let shift = u32::from(container_count - 1) * 4;
+    let width = usize::try_from((container_widths >> shift) & 0x0f).ok()?;
+    (1..=15).contains(&width).then_some(width)
+}
+
+fn pop_container_width(container_widths: u64, container_count: u8) -> u64 {
+    if container_count <= 1 {
+        return 0;
+    }
+    let retained_bits = u32::from(container_count - 1) * 4;
+    container_widths & ((1_u64 << retained_bits) - 1)
+}
+
+fn disposition(
+    disposition: DocumentEditIntentDispositionV1,
+    result_selection_utf16: usize,
+) -> ResolvedDocumentEditIntentV1 {
+    ResolvedDocumentEditIntentV1 {
+        disposition,
+        splice: None,
+        result_selection_utf16,
+        result_context: None,
+        presentation_transition: DocumentEditPresentationTransitionV1::None,
+    }
+}
+
+fn next_marker(marker: DocumentListMarker) -> DocumentListMarker {
+    match marker {
+        DocumentListMarker::Ordered { value, delimiter } => DocumentListMarker::Ordered {
+            value: value.saturating_add(1).min(999_999_999),
+            delimiter,
+        },
+        bullet => bullet,
+    }
+}
+
+pub(crate) fn document_list_marker_text_len(marker: DocumentListMarker) -> usize {
+    match marker {
+        DocumentListMarker::Bullet(_) => 1,
+        DocumentListMarker::Ordered { value, .. } => value.to_string().len() + 1,
+    }
+}
+
+pub(crate) fn document_edit_context_admits_target(
+    intent: DocumentEditIntentV1,
+    selection_byte: usize,
+    selection_utf16: usize,
+    context: &DocumentSimpleEditContext,
+) -> bool {
+    let inside_editable = selection_byte >= context.editable_bytes.start
+        && selection_byte <= context.editable_bytes.end
+        && selection_utf16 >= context.editable_utf16.start
+        && selection_utf16 <= context.editable_utf16.end;
+    if inside_editable {
+        return true;
+    }
+    if intent != DocumentEditIntentV1::InsertParagraphBreak {
+        return false;
+    }
+    let DocumentSimpleEditRow::ListItem {
+        marker,
+        prefix_bytes,
+        prefix_utf16,
+        marker_offset,
+        ..
+    } = &context.row
+    else {
+        return false;
+    };
+    let marker_length = document_list_marker_text_len(*marker);
+    selection_byte == prefix_bytes.start + usize::from(*marker_offset) + marker_length
+        && selection_utf16 == prefix_utf16.start + usize::from(*marker_offset) + marker_length
+}
+
+fn next_marker_text(marker: DocumentListMarker) -> String {
+    match next_marker(marker) {
+        DocumentListMarker::Bullet(crate::DocumentBulletMarker::Hyphen) => "-".to_owned(),
+        DocumentListMarker::Bullet(crate::DocumentBulletMarker::Plus) => "+".to_owned(),
+        DocumentListMarker::Bullet(crate::DocumentBulletMarker::Asterisk) => "*".to_owned(),
+        DocumentListMarker::Ordered { value, delimiter } => match delimiter {
+            DocumentListDelimiter::Period => format!("{value}."),
+            DocumentListDelimiter::Parenthesis => format!("{value})"),
+        },
+    }
+}
+
+fn add_signed(value: usize, delta: isize) -> usize {
+    if delta >= 0 {
+        value + delta as usize
+    } else {
+        value - delta.unsigned_abs()
+    }
+}

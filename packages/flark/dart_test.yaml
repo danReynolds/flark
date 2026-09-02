@@ -1,0 +1,3 @@
+# Core tests share one process-global native registry. Run one test isolate at
+# a time so lifecycle assertions observe only the owners created by that test.
+concurrency: 1

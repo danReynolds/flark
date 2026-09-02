@@ -2,6 +2,14 @@
 
 **Status:** ACCEPTED FOR IMPLEMENTATION. 2026-08-11.
 
+**Reading rule:** this RFC records the architectural decision and its history.
+Current product principles live in [NORTH_STAR.md](../../../NORTH_STAR.md),
+editing behavior in
+[edit_profile_v1.md](../v4/contracts/edit_profile_v1.md), and test policy in
+[live_editor_test_strategy.md](../../testing/live_editor_test_strategy.md).
+Those active documents take precedence over duplicated product or test wording
+below.
+
 **Amends:** [RFC 026](rfc_026_flark_v4_product_architecture.md).
 
 **Execution contract:**
@@ -362,6 +370,77 @@ delimiters stay hidden and the style remains rendered. The proof and every
 same-geometry sibling are consumed; they do not authorize a successor or any
 other delimiter shape.
 
+**ABI 4.32 parameterized dependency cell (2026-08-22).** Capability
+`PROJECTION_EDIT_CELLS_V3` keeps the existing kind-16 layout and adds matcher
+code 6, `INSERT_EXACT_SCALAR_AT_POINT`. Rust supplies a complete affected
+closure, one zero-width trigger, and one scalar parameter; Core only compares
+the declared parameter and transforms the declared ranges. The initial bounded
+emitter handles `[` inside one isolated flat Strong fact on a single
+physical-line Plain row when the parser has an
+exhaustive no-existing-bracket certificate. It exposes only the transformed
+Strong source exactly, retains the paragraph shell and outside projection, and
+is consumed after one edit. This is the first use of the generic parser-owned
+component seam, not a host bracket rule or general bracket-graph claim.
+
+The same exact-scalar matcher covers the frozen D0 prose punctuation set
+(`.`, `,`, `;`, `:`, `!`, `?`, apostrophe, double quote, `(`, `)`, hyphen,
+en dash, and em dash) only at an ASCII-alphanumeric guard pair inside a
+fact-free prefix before one authoritative Strong fact. The complete prefix is
+the exact affected closure, the outside Strong fact remains projected, and the
+record is consumed after one edit. This adds parser-owned proof breadth without
+changing the ABI vocabulary or teaching Core punctuation semantics.
+
+The frozen D0 syntax-construction cells use the same one-shot scalar protocol.
+Rust emits `*`, backtick, `[` or `]` only beside one Emphasis sibling and `_`
+or `~` only beside one Strong sibling, with a fact-free ASCII prefix, an
+alphanumeric guard pair, and no occurrence of the inserted marker in the
+current source. Brackets additionally require exhaustive parser bracket
+classification. The prefix becomes exact while the different-marker sibling
+remains projected; no successor authority is inferred.
+
+The same V3 seam may map a parser-authored complete fact-free physical-line
+gap onto the existing guarded ASCII-literal matcher, with a maximal ASCII
+prose run as its trigger. One nonempty ASCII-alphanumeric/U+0020 replacement
+is admitted only strictly inside the
+declared trigger and must contain an alphanumeric unit. This permits a bounded
+multiword paste while unchanged guards protect the outside inline partition;
+it does not authorize punctuation, deletion, line boundaries, or host-side
+Markdown classification.
+
+**ABI 4.33 result-shell transition cell (2026-08-22).** Capability
+`PROJECTION_EDIT_CELLS_V4` keeps kind 16 and query kind 6, and adds matcher codes
+7 and 8, `EXACT_SPLICE_REPLACE_BLOCK_SHELL` and
+`SIMPLE_BLOCK_PREFIX_PLAN`. The parser supplies a complete bounded
+physical-line closure, one exact insertion point or deletion range, and the
+typed clean-result Plain, ATX heading, depth-1 BlockQuote, or simple ListItem
+shell. Core compares the declared splice mechanically; Flutter presents the
+current result content under that shell through the existing pending snapshot.
+The exact-splice proof is one-shot, retains no predecessor shell, and is
+superseded by prefix-inclusive fresh parser certification.
+
+The prefix-plan form additionally supplies a finite ASCII sequence and the
+parser-classified activation point. Core may carry only that exact sequence at
+the declared line-start point, presenting Plain before activation and the typed
+target shell afterward. This closes the same prefixes when several platform
+deltas arrive before one vsync, while keeping the sequence and its Markdown
+meaning entirely parser-owned.
+
+This revision was not added for a new Markdown construct. The D0 actual-paint
+matrix demonstrated that ordinary human-cadence entry of the final space in
+`# `, `> `, `- `, and `1. ` exposed the old Plain row until recertification.
+The generic result-shell field closes that architectural gap without a host
+marker table and is reused for parser-proved removal geometry.
+
+**ABI 4.34 bounded pending-presentation plans (2026-08-23).** Capability
+`BOUNDED_PENDING_PRESENTATION_PLANS_V1` adds one generic parser-owned result
+plan for the bounded case where an exact insertion sequence changes several
+rows at once. Every admitted prefix carries its complete clean result rows;
+Core validates source geometry and materializes those rows, and Flutter stores
+the result in the same pending-presentation snapshot used by the existing
+dependency authorities. The first emitter is restricted to the frozen D0
+opening/closing fenced-code sources. No Dart fence grammar, alternate
+authority slot, or inference from a predecessor shell is permitted.
+
 **Envelope semantics.** Envelopes are class-qualified because safety is
 positional, not lexical. A space after an outer closing delimiter at row end is
 inert; the same space after an opening run can destroy the construct. Edits
@@ -394,6 +473,13 @@ proof. The cell may carry ordinary input but cannot authorize another Return;
 every structural successor requires a fresh Ready parser proof. Pending,
 oversized, non-ASCII, or hazard-bearing transitions and delimiter crossings
 omit the flag and remain exact-source fail-closed.
+
+The final ABI 4.32 contract extends that same post-commit flag to the existing
+typed simple-list indent and outdent transitions. Rust requires a current Ready
+ListItem context, a ListItem result context, and exactly one bounded ASCII-space
+prefix insertion or deletion. Core then shifts the certified runs through the
+prefix splice and retains the list shell; the receipt does not grant authority
+to a successor input or structural action.
 
 Exact 4.31 also permits the existing ASCII-word envelope to cover maximal
 parser-authored word leaves inside eligible projected facts. Leaves require

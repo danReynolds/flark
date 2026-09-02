@@ -1,0 +1,55 @@
+[package]
+name = "flark-parser"
+version = "0.0.0"
+edition = "2021"
+publish = false
+# Flark-authored code remains MIT. The mechanically correspondent block
+# controller/protocol retains Comrak's BSD-2-Clause terms and notice.
+license = "MIT AND BSD-2-Clause"
+
+[features]
+default = []
+# Internal only: compiles the sparse-index/cold-slice prototype so an upper
+# layer can run end-to-end product differentials before production cutover.
+m11-compact-probe = ["dep:blake3", "flark-engine/progressive-source-probe"]
+# Explicit, non-product RFC 029 Experiment B lane. This compiles the
+# revision-local compact-index prototype and its differential proof only in
+# test builds; it is deliberately independent of `m11-compact-probe`.
+compact-revision-experiment = []
+
+[dependencies]
+blake3 = { version = "1.8", optional = true }
+caseless = "=0.2.2"
+comrak = { version = "=0.54.0", default-features = false }
+finl_unicode = { version = "=1.4.0", features = ["categories"] }
+flark-engine = { path = "../flark_engine", features = ["parser-internal"] }
+flark-block-core-donor = { path = "src/block_core/donor/core" }
+
+[dev-dependencies]
+blake3 = "1.8"
+entities = "=1.0.1"
+sha2 = "0.10"
+
+[lints.rust]
+dead_code = "deny"
+unused_assignments = "deny"
+unused_imports = "deny"
+unused_variables = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+# Do not enable the toolchain-version-sensitive `pedantic` group wholesale.
+# Parser hot paths opt into individual pedantic lints when they encode a real
+# correctness or resource invariant; the workspace gate denies every selected
+# warning.
+
+[[test]]
+name = "progressive_parser"
+path = "tests/progressive_parser.rs"
+required-features = ["m11-compact-probe"]
+
+[[example]]
+name = "progressive_parser_probe"
+path = "examples/progressive_parser_probe.rs"
+required-features = ["m11-compact-probe"]
