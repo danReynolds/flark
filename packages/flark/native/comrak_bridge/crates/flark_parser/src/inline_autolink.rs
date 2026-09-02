@@ -17,12 +17,13 @@
 use std::fmt;
 use std::ops::Range;
 
-use flark_engine::parser_internal::{
-    M11ParserPageError, M11ParserRangeStatus,
+use flark_engine::parser_internal::{M11ParserRangeError, M11ParserRangeStatus};
+use flark_engine::{DocumentRuntime, SourceVersion};
+
+use crate::inline_projection::{
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
-use flark_engine::{DocumentRuntime, SourceVersion};
 
 use crate::inline_code::{M11InlineCodeError, M11InlineCodeRuns};
 use crate::inline_radix::{
@@ -52,20 +53,6 @@ pub(crate) struct M11AngleAutolinkCandidate {
     content_end: u32,
     kind: M11AngleAutolinkKind,
     reserved: [u8; 3],
-}
-
-impl M11AngleAutolinkCandidate {
-    pub(crate) const fn kind(self) -> M11AngleAutolinkKind {
-        self.kind
-    }
-
-    pub(crate) fn relative_range(self) -> Range<u32> {
-        self.range_start..self.range_end
-    }
-
-    pub(crate) fn relative_content_range(self) -> Range<u32> {
-        self.content_start..self.content_end
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,7 +95,7 @@ impl M11InlineAutolinkReleasePoll {
 
 #[derive(Debug)]
 pub(crate) enum M11InlineAutolinkError {
-    Source(M11ParserPageError),
+    Source(M11ParserRangeError),
     Code(M11InlineCodeError),
     Scratch(M11InlineRadixError),
     ZeroFuel,
@@ -146,8 +133,8 @@ impl std::error::Error for M11InlineAutolinkError {
     }
 }
 
-impl From<M11ParserPageError> for M11InlineAutolinkError {
-    fn from(value: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11InlineAutolinkError {
+    fn from(value: M11ParserRangeError) -> Self {
         Self::Source(value)
     }
 }
@@ -510,8 +497,6 @@ impl M11InlineAutolinkJob {
         let pages = self.pages.take()?;
         self.phase = AutolinkPhase::Transferred;
         Some(M11AngleAutolinkCandidates {
-            source: self.source,
-            source_range: self.source_range.clone(),
             count: self.candidate_count,
             pages: Some(pages),
             reclaim_started: false,
@@ -583,26 +568,12 @@ impl Drop for M11InlineAutolinkJob {
 }
 
 pub(crate) struct M11AngleAutolinkCandidates {
-    source: SourceVersion,
-    source_range: Range<u32>,
     count: u32,
     pages: Option<M11InlineRadixPages<M11AngleAutolinkCandidate, AUTOLINK_PAGE_RECORDS>>,
     reclaim_started: bool,
 }
 
 impl M11AngleAutolinkCandidates {
-    pub(crate) const fn source(&self) -> SourceVersion {
-        self.source
-    }
-
-    pub(crate) fn source_range(&self) -> Range<u32> {
-        self.source_range.clone()
-    }
-
-    pub(crate) const fn len(&self) -> u32 {
-        self.count
-    }
-
     pub(crate) fn candidate(
         &self,
         index: u32,

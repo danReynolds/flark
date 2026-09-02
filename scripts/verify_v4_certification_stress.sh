@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BRIDGE="$ROOT/packages/flark/native/comrak_bridge"
+source "$ROOT/scripts/pinned_rust_env.sh"
 
 cargo test \
   --manifest-path "$BRIDGE/Cargo.toml" \

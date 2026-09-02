@@ -21,6 +21,12 @@ unicode-segmentation = "1.13.3"
 [dev-dependencies]
 flark-parser = { path = "../flark_parser", features = ["m11-compact-probe"] }
 
+[lints.rust]
+dead_code = "deny"
+unused_assignments = "deny"
+unused_imports = "deny"
+unused_variables = "deny"
+
 [[test]]
 name = "opening_session"
 path = "tests/opening_session.rs"

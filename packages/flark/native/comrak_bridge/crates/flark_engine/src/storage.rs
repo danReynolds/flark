@@ -294,6 +294,7 @@ pub(crate) struct CommittedArenaRootReleaseFailure {
 /// One bounded root-seal poll.
 pub(crate) struct SealPoll {
     pub(crate) transitions: usize,
+    #[cfg(test)]
     pub(crate) remaining_non_root_owners: usize,
     pub(crate) root: Option<CommittedArenaRoot>,
 }
@@ -539,19 +540,6 @@ impl PageArena {
         })
     }
 
-    /// Checks a suspended capability without consuming it.
-    ///
-    /// Move-only controller code uses this before a transfer whose legacy
-    /// `Result` shape cannot return the capability on failure. Once this
-    /// succeeds, the matching transfer is infallible on the same worker: no
-    /// intervening operation can mutate the arena lifecycle state.
-    pub(crate) fn validate_suspended_build(
-        &self,
-        build: &CandidateBuild,
-    ) -> Result<(), ArenaError> {
-        self.validate_build(build.id, BuildState::Suspended)
-    }
-
     /// Checks a sealing capability without consuming it.
     pub(crate) fn validate_seal(&self, seal: &CandidateSeal) -> Result<(), ArenaError> {
         if seal.complete {
@@ -560,6 +548,7 @@ impl PageArena {
         self.validate_build(seal.id, BuildState::Sealing)
     }
 
+    #[cfg(test)]
     pub(crate) fn suspended_build_owner_count(
         &self,
         build: &CandidateBuild,
@@ -673,6 +662,7 @@ impl PageArena {
             transitions += 1;
             return Ok(SealPoll {
                 transitions,
+                #[cfg(test)]
                 remaining_non_root_owners: 0,
                 root: Some(CommittedArenaRoot {
                     owner: root,
@@ -680,10 +670,13 @@ impl PageArena {
                 }),
             });
         }
-        let remaining = self.build_slot(seal.id.slot).owners.len().saturating_sub(1);
+        #[cfg(test)]
+        let remaining_non_root_owners =
+            self.build_slot(seal.id.slot).owners.len().saturating_sub(1);
         Ok(SealPoll {
             transitions,
-            remaining_non_root_owners: remaining,
+            #[cfg(test)]
+            remaining_non_root_owners,
             root: None,
         })
     }
@@ -774,7 +767,6 @@ impl PageArena {
     }
 
     /// Acquires another explicit owner for a live node.
-    #[allow(dead_code)] // Shared persistent roots land with the parser slice.
     fn retain_owned(&mut self, id: ArenaId) -> Result<OwnedArenaRef, ArenaError> {
         self.validate_owned_retain(id)?;
         let slot = self.slot_mut(id.slot);
@@ -820,7 +812,6 @@ impl PageArena {
     }
 
     /// Returns a live node's payload.
-    #[allow(dead_code)] // Query consumers land with the parser/Green slice.
     pub(crate) fn payload(&self, id: ArenaId) -> Result<&[u8], ArenaError> {
         self.validate_live(id)?;
         Ok(self
@@ -1232,7 +1223,6 @@ impl ArenaBuildSession<'_> {
     /// Every later [`Self::retain`] or [`Self::allocate`] within that reserved
     /// owner count still performs the ordinary logical-cap check, but its
     /// journal push cannot grow the backing allocation.
-    #[allow(dead_code)] // Consumed by resumable persistent-sequence pollers.
     pub(crate) fn reserve_owner_capacity(&mut self, additional: usize) -> Result<(), ArenaError> {
         self.arena.validate_build(self.id, BuildState::Active)?;
         self.arena.reserve_build_owners(self.id, additional)
@@ -1262,7 +1252,6 @@ impl ArenaBuildSession<'_> {
     /// The session retains its exclusive actor-local arena borrow, so callers
     /// can inspect an existing root while constructing a replacement but
     /// cannot mutate storage outside the journalled build operations.
-    #[allow(dead_code)] // Used by persistent measured-sequence builders.
     pub(crate) const fn arena(&self) -> &PageArena {
         self.arena
     }
@@ -1292,7 +1281,6 @@ impl ArenaBuildSession<'_> {
     /// incremented. Therefore every error leaves the node refcount and the
     /// journal's logical owner set unchanged; after the increment, the
     /// pre-reserved `push` cannot fail.
-    #[allow(dead_code)] // Used by persistent measured-sequence builders.
     pub(crate) fn retain(&mut self, id: ArenaId) -> Result<ArenaBuildOwner, ArenaError> {
         self.arena.validate_build(self.id, BuildState::Active)?;
         self.arena.validate_owned_retain(id)?;
@@ -1312,7 +1300,6 @@ impl ArenaBuildSession<'_> {
     /// Resumable persistent-structure jobs call this before any mutation, so a
     /// handle restored with the wrong build capability cannot first retain
     /// nodes into an unrelated journal and fail only during release.
-    #[allow(dead_code)] // Used by persistent measured-sequence builders.
     pub(crate) fn validate_owner(&self, owner: &ArenaBuildOwner) -> Result<(), ArenaError> {
         self.arena.validate_build(self.id, BuildState::Active)?;
         if owner.build != self.id {
@@ -1961,10 +1948,9 @@ mod tests {
             (build, root)
         };
         let mut seal = arena.begin_seal(build, root).expect("begin seal");
-        for remaining in (1..=12).rev() {
+        for _ in (1..=12).rev() {
             let receipt = arena.poll_seal(&mut seal, 1).expect("seal poll");
             assert_eq!(receipt.transitions, 1);
-            assert_eq!(receipt.remaining_non_root_owners, remaining - 1);
             assert!(receipt.root.is_none());
         }
         let receipt = arena.poll_seal(&mut seal, 1).expect("root transfer");

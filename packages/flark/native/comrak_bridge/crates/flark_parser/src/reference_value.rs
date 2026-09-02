@@ -236,6 +236,7 @@ impl ReferenceValueBodyCleaner {
     }
 
     #[must_use]
+    #[cfg(test)]
     pub(crate) const fn receipt(&self) -> ReferenceValueCleanerReceipt {
         self.receipt
     }
@@ -358,12 +359,14 @@ impl Default for ReferenceValueBodyCleaner {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg(test)]
 pub(crate) struct DestinationTrimProbe {
     bytes: usize,
     first_non_space: Option<usize>,
     last_non_space_end: usize,
 }
 
+#[cfg(test)]
 impl DestinationTrimProbe {
     pub(crate) fn push(&mut self, byte: u8) -> Result<(), ReferenceValueCleanerError> {
         let start = self.bytes;
@@ -403,6 +406,7 @@ pub(crate) const fn clean_title_body_range(
     }
 }
 
+#[cfg(test)]
 const fn is_comrak_space(byte: u8) -> bool {
     matches!(byte, b'\t' | b'\n' | b'\r' | b' ')
 }

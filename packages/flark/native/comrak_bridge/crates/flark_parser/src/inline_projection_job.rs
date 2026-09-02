@@ -1,31 +1,26 @@
-//! End-to-end exact-source inline Projection derivation.
+//! End-to-end exact-source inline projection derivation.
 //!
 //! This private job is the only promotion boundary between fallible inline
-//! candidates and the engine's authenticated typed Projection root. Raw
+//! candidates and one atomic, source-stamped typed capture. Raw
 //! backtick runs and syntactic angle autolinks first resolve into one
 //! source-ordered opaque stream. The whole-leaf lexical hazard gate and
 //! emphasis resolver both consume that same shielding map; any unshielded
 //! hazard or ambiguous delimiter remainder fails the supplied range closed.
-//! Candidate scratch is reclaimed before the exact source authority baton is
-//! returned.
+//! Candidate scratch is reclaimed before completion. Successful transfer moves
+//! all facts, cooked link values, and edit components together; discarded or
+//! faulted work follows the explicit fuelled release path.
 
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Range;
 
 use flark_engine::parser_internal::{
-    M11InlineLinkValue, M11InlineProjectionBuild, M11InlineProjectionBuildStatus,
-    M11InlineProjectionError, M11InlineProjectionFact, M11InlineProjectionKind,
-    M11InlineProjectionRoot, M11ParserPageError, M11ParserRangeCursor, M11ParserRangeStatus,
-    M11ParserSourceRangeAuthority, M11ReferenceResolver, M11_PARSER_PAGE_MAX_POLL_TRANSITIONS,
-    M11_PARSER_RANGE_MAX_POLL_BYTES,
+    M11ParserRangeCursor, M11ParserRangeError, M11ParserRangeStatus, M11ParserSourceRangeAuthority,
+    M11ReferenceResolver, M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 use flark_engine::{DocumentRuntime, ParserProfileId, SourceVersion};
 
-use crate::block_core::{M11RecursiveGreenInlineLeafFence, M11RecursiveGreenParagraphFence};
-use crate::exact_clean::{
-    M11CleanDocumentKind, M11CleanDocumentResult, M11ParserBinding, M11_GRAMMAR_REVISION,
-};
+use crate::block_core::M11RecursiveGreenInlineLeafFence;
 use crate::inline_autolink::{
     M11InlineAutolinkError, M11InlineAutolinkJob, M11InlineAutolinkPollStatus,
     M11InlineOpaqueCandidate, M11InlineOpaqueCandidates, M11InlineOpaqueKind,
@@ -56,12 +51,13 @@ use crate::inline_lex::{
     M11InlineLexError, M11InlineLexEvent, M11InlineLexEventKind, M11InlineLexHazardKind,
     M11InlineLexPollStatus, M11InlineLexScanner,
 };
-use crate::publication::{
-    M11InlinePublicationError, M11PublishedInlineLeafFence, M11PublishedInlineRangeLeafFence,
+use crate::inline_projection::{
+    M11InlineLinkValue, M11InlineProjectionCaptureValidator, M11InlineProjectionError,
+    M11InlineProjectionFact, M11InlineProjectionKind,
 };
+use crate::parser_binding::{M11ParserBinding, M11_GRAMMAR_REVISION};
 
-pub const M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS: usize =
-    M11_PARSER_PAGE_MAX_POLL_TRANSITIONS;
+pub const M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS: usize = 4_096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum M11InlineProjectionUnsupportedReason {
@@ -78,235 +74,107 @@ pub(crate) struct M11InlineProjectionUnsupported {
 }
 
 impl M11InlineProjectionUnsupported {
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn source_range(&self) -> Range<u32> {
         self.source_range.clone()
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn first_blocker_range(&self) -> Range<u32> {
         self.first_blocker_range.clone()
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) const fn reason(&self) -> M11InlineProjectionUnsupportedReason {
         self.reason
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum M11InlineProjectionDisposition {
     Authoritative,
     Unsupported(M11InlineProjectionUnsupported),
 }
 
-/// Opaque, pre-encoded fail-closed Projection record.
+/// One complete authoritative inline result.
 ///
-/// Values are minted only by [`M11InlineProjectionOutput::into_publication_parts`]
-/// after the resumable job has reclaimed all transient candidate storage.
-/// Keeping the bytes behind this stamped wrapper prevents callers from
-/// accidentally joining an Unsupported record to a different source, range,
-/// or parser profile.
-#[derive(Debug)]
-pub struct M11InlineProjectionUnsupportedRecord {
-    source: SourceVersion,
-    source_range: Range<u32>,
-    parser_profile: ParserProfileId,
-    encoded: Box<[u8]>,
+/// These three vectors are transferred together so a caller can never observe
+/// facts without the cooked values or edit components derived from the same
+/// exact source range.
+#[derive(Debug, Default, Eq, PartialEq)]
+pub struct M11InlineProjectionCapture {
+    facts: Vec<M11InlineProjectionFact>,
+    link_values: Vec<M11InlineLinkValue>,
+    edit_components: Vec<M11InlineEditComponent>,
 }
 
-impl M11InlineProjectionUnsupportedRecord {
+impl M11InlineProjectionCapture {
     #[must_use]
-    pub const fn source(&self) -> SourceVersion {
-        self.source
-    }
-
-    #[must_use]
-    pub fn source_range(&self) -> Range<u32> {
-        self.source_range.clone()
+    pub fn facts(&self) -> &[M11InlineProjectionFact] {
+        &self.facts
     }
 
     #[must_use]
-    pub const fn parser_profile(&self) -> ParserProfileId {
-        self.parser_profile
-    }
-
-    /// Transfers the exact stamped schema-v2 metadata into candidate role
-    /// bytes.
-    ///
-    /// Callers must preserve the source, range, and parser-profile checks
-    /// exposed by this wrapper before joining these bytes to a candidate.
-    #[must_use]
-    pub fn into_encoded(self) -> Box<[u8]> {
-        self.encoded
-    }
-}
-
-/// The exact inline publication payload produced for one Paragraph.
-///
-/// An authoritative result carries the typed persistent root. A fail-closed
-/// result carries one already-encoded legacy Unsupported metadata record.
-/// Neither variant can be forged from raw bytes outside this crate.
-//
-// Keep the move-only authoritative root inline: `into_publication_parts`
-// promises an allocation-free handoff, and boxing would also change this
-// public ownership surface solely to shrink the Unsupported representation.
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum M11InlineProjectionPublication {
-    Authoritative(M11InlineProjectionRoot),
-    Unsupported(M11InlineProjectionUnsupportedRecord),
-}
-
-/// Move-only publication handoff after transient parser scratch is reclaimed.
-#[must_use = "inline Projection publication parts carry move-only source authority"]
-pub struct M11InlineProjectionPublicationParts {
-    source: SourceVersion,
-    source_range: Range<u32>,
-    parser_profile: ParserProfileId,
-    authority: M11ParserSourceRangeAuthority,
-    publication: M11InlineProjectionPublication,
-}
-
-impl fmt::Debug for M11InlineProjectionPublicationParts {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("M11InlineProjectionPublicationParts")
-            .field("source", &self.source)
-            .field("source_range", &self.source_range)
-            .field("parser_profile", &self.parser_profile)
-            .field("publication", &self.publication)
-            .finish_non_exhaustive()
-    }
-}
-
-impl M11InlineProjectionPublicationParts {
-    #[must_use]
-    pub const fn source(&self) -> SourceVersion {
-        self.source
+    pub fn link_values(&self) -> &[M11InlineLinkValue] {
+        &self.link_values
     }
 
     #[must_use]
-    pub fn source_range(&self) -> Range<u32> {
-        self.source_range.clone()
+    pub fn edit_components(&self) -> &[M11InlineEditComponent] {
+        &self.edit_components
     }
 
-    #[must_use]
-    pub const fn parser_profile(&self) -> ParserProfileId {
-        self.parser_profile
-    }
-
-    /// Transfers every move-only publication component in one infallible step.
     #[must_use]
     pub fn into_parts(
         self,
     ) -> (
-        SourceVersion,
-        Range<u32>,
-        ParserProfileId,
-        M11ParserSourceRangeAuthority,
-        M11InlineProjectionPublication,
+        Vec<M11InlineProjectionFact>,
+        Vec<M11InlineLinkValue>,
+        Vec<M11InlineEditComponent>,
     ) {
-        (
-            self.source,
-            self.source_range,
-            self.parser_profile,
-            self.authority,
-            self.publication,
-        )
+        (self.facts, self.link_values, self.edit_components)
     }
 }
 
-/// Move-only exact output after all transient candidate storage is reclaimed.
-#[must_use = "inline Projection outputs require publication-parts transfer"]
-pub struct M11InlineProjectionOutput {
-    source: SourceVersion,
-    source_range: Range<u32>,
-    parser_profile: ParserProfileId,
-    disposition: M11InlineProjectionDisposition,
-    root: Option<M11InlineProjectionRoot>,
-    unsupported_record: Option<M11InlineProjectionUnsupportedRecord>,
-    authority: Option<M11ParserSourceRangeAuthority>,
+/// Source-stamped terminal result from one exact inline leaf.
+#[derive(Debug, Eq, PartialEq)]
+pub enum M11InlineProjectionOutcome {
+    Authoritative {
+        source: SourceVersion,
+        source_range: Range<u32>,
+        parser_profile: ParserProfileId,
+        capture: M11InlineProjectionCapture,
+    },
+    Unsupported {
+        source: SourceVersion,
+        source_range: Range<u32>,
+        parser_profile: ParserProfileId,
+    },
 }
 
-impl fmt::Debug for M11InlineProjectionOutput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("M11InlineProjectionOutput")
-            .field("source", &self.source)
-            .field("source_range", &self.source_range)
-            .field("parser_profile", &self.parser_profile)
-            .field("disposition", &self.disposition)
-            .field("has_root", &self.root.is_some())
-            .finish_non_exhaustive()
-    }
-}
-
-impl M11InlineProjectionOutput {
+impl M11InlineProjectionOutcome {
     #[must_use]
     pub const fn source(&self) -> SourceVersion {
-        self.source
+        match self {
+            Self::Authoritative { source, .. } | Self::Unsupported { source, .. } => *source,
+        }
     }
 
     #[must_use]
     pub fn source_range(&self) -> Range<u32> {
-        self.source_range.clone()
+        match self {
+            Self::Authoritative { source_range, .. } | Self::Unsupported { source_range, .. } => {
+                source_range.clone()
+            }
+        }
     }
 
     #[must_use]
     pub const fn parser_profile(&self) -> ParserProfileId {
-        self.parser_profile
-    }
-
-    #[cfg(any(test, feature = "m11-compact-probe"))]
-    pub(crate) const fn disposition(&self) -> &M11InlineProjectionDisposition {
-        &self.disposition
-    }
-
-    /// Atomically transfers the recovered source baton and its publication
-    /// payload. Unsupported metadata was encoded before this output became
-    /// observable, so this conversion performs no allocation and cannot fail.
-    #[must_use = "inline Projection publication parts carry move-only source authority"]
-    pub fn into_publication_parts(mut self) -> M11InlineProjectionPublicationParts {
-        let authority = self
-            .authority
-            .take()
-            .expect("completed inline Projection output owns source authority");
-        let publication = match &self.disposition {
-            M11InlineProjectionDisposition::Authoritative => {
-                M11InlineProjectionPublication::Authoritative(
-                    self.root
-                        .take()
-                        .expect("authoritative inline Projection output owns typed root"),
-                )
-            }
-            M11InlineProjectionDisposition::Unsupported(_) => {
-                M11InlineProjectionPublication::Unsupported(
-                    self.unsupported_record
-                        .take()
-                        .expect("unsupported inline Projection output owns encoded metadata"),
-                )
-            }
-        };
-        M11InlineProjectionPublicationParts {
-            source: self.source,
-            source_range: self.source_range.clone(),
-            parser_profile: self.parser_profile,
-            authority,
-            publication,
-        }
-    }
-}
-
-impl Drop for M11InlineProjectionOutput {
-    fn drop(&mut self) {
-        if !std::thread::panicking() {
-            assert!(
-                self.root.is_none()
-                    && self.unsupported_record.is_none()
-                    && self.authority.is_none(),
-                "inline Projection outputs require publication-parts transfer"
-            );
+        match self {
+            Self::Authoritative { parser_profile, .. }
+            | Self::Unsupported { parser_profile, .. } => *parser_profile,
         }
     }
 }
@@ -359,14 +227,11 @@ enum M11InlineProjectionJobErrorInner {
     Emphasis(M11InlineEmphasisError),
     Lex(M11InlineLexError),
     Projection(M11InlineProjectionError),
-    Page(M11ParserPageError),
-    Publication(M11InlinePublicationError),
+    Page(M11ParserRangeError),
     ZeroFuel,
     PollLimitExceeded,
     CoordinateOverflow,
     CandidateOrder,
-    BlockFenceSourceMismatch,
-    BlockFenceNotParagraph,
     BlockFenceRangeMismatch,
     UnsupportedGrammarRevision { actual: u32 },
     InvalidState,
@@ -385,10 +250,6 @@ impl M11InlineProjectionJobError {
     const PollLimitExceeded: Self = Self(M11InlineProjectionJobErrorInner::PollLimitExceeded);
     const CoordinateOverflow: Self = Self(M11InlineProjectionJobErrorInner::CoordinateOverflow);
     const CandidateOrder: Self = Self(M11InlineProjectionJobErrorInner::CandidateOrder);
-    const BlockFenceSourceMismatch: Self =
-        Self(M11InlineProjectionJobErrorInner::BlockFenceSourceMismatch);
-    const BlockFenceNotParagraph: Self =
-        Self(M11InlineProjectionJobErrorInner::BlockFenceNotParagraph);
     const BlockFenceRangeMismatch: Self =
         Self(M11InlineProjectionJobErrorInner::BlockFenceRangeMismatch);
     const InvalidState: Self = Self(M11InlineProjectionJobErrorInner::InvalidState);
@@ -435,16 +296,16 @@ impl fmt::Display for M11InlineProjectionJobError {
                 write!(formatter, "inline Projection emission scan failed: {error}")
             }
             M11InlineProjectionJobErrorInner::Projection(error) => {
-                write!(formatter, "inline Projection persistence failed: {error}")
+                write!(
+                    formatter,
+                    "inline Projection capture validation failed: {error}"
+                )
             }
             M11InlineProjectionJobErrorInner::Page(error) => {
                 write!(
                     formatter,
                     "inline edit-component source capture failed: {error}"
                 )
-            }
-            M11InlineProjectionJobErrorInner::Publication(error) => {
-                write!(formatter, "inline Projection publication failed: {error}")
             }
             M11InlineProjectionJobErrorInner::ZeroFuel => {
                 formatter.write_str("inline Projection poll requires nonzero fuel")
@@ -457,12 +318,6 @@ impl fmt::Display for M11InlineProjectionJobError {
             }
             M11InlineProjectionJobErrorInner::CandidateOrder => {
                 formatter.write_str("inline Projection candidates are not in source preorder")
-            }
-            M11InlineProjectionJobErrorInner::BlockFenceSourceMismatch => {
-                formatter.write_str("inline Projection block fence crossed source authority")
-            }
-            M11InlineProjectionJobErrorInner::BlockFenceNotParagraph => {
-                formatter.write_str("inline Projection block fence is not an exact Paragraph")
             }
             M11InlineProjectionJobErrorInner::BlockFenceRangeMismatch => {
                 formatter.write_str("inline Projection range differs from the fenced Paragraph")
@@ -492,7 +347,6 @@ impl std::error::Error for M11InlineProjectionJobError {
             M11InlineProjectionJobErrorInner::Lex(error) => Some(error),
             M11InlineProjectionJobErrorInner::Projection(error) => Some(error),
             M11InlineProjectionJobErrorInner::Page(error) => Some(error),
-            M11InlineProjectionJobErrorInner::Publication(error) => Some(error),
             _ => None,
         }
     }
@@ -546,15 +400,9 @@ impl From<M11InlineProjectionError> for M11InlineProjectionJobError {
     }
 }
 
-impl From<M11ParserPageError> for M11InlineProjectionJobError {
-    fn from(value: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11InlineProjectionJobError {
+    fn from(value: M11ParserRangeError) -> Self {
         Self(M11InlineProjectionJobErrorInner::Page(value))
-    }
-}
-
-impl From<M11InlinePublicationError> for M11InlineProjectionJobError {
-    fn from(value: M11InlinePublicationError) -> Self {
-        Self(M11InlineProjectionJobErrorInner::Publication(value))
     }
 }
 
@@ -575,11 +423,8 @@ enum ProjectionJobPhase {
     Emphasis,
     TakeEmphasis,
     CheckRemainder,
-    BeginProjection,
+    BeginCapture,
     Emit,
-    PollOfferedPage,
-    FinishProjectionInput,
-    SealProjection,
     BeginEditComponents,
     CaptureEditComponentSource,
     BuildEditComponents,
@@ -588,13 +433,13 @@ enum ProjectionJobPhase {
     CleanupOpaque,
     CleanupCandidates,
     Complete,
+    OutcomeTaken,
     Faulted,
-    Aborting,
-    Aborted,
-    Transferred,
+    Releasing,
+    Released,
 }
 
-/// Resumable exact-source promotion from inline candidates to a typed root.
+/// Resumable exact-source promotion from inline candidates to an atomic capture.
 pub struct M11InlineProjectionJob {
     source: SourceVersion,
     source_range: Range<u32>,
@@ -615,10 +460,9 @@ pub struct M11InlineProjectionJob {
     emphasis_job: Option<Box<M11InlineEmphasisJob>>,
     candidates: Option<Box<M11InlineCandidates>>,
     leaf_scanner: Option<Box<M11InlineLexScanner>>,
-    projection: Option<Box<M11InlineProjectionBuild>>,
-    root: Option<M11InlineProjectionRoot>,
+    capture_validator: Option<M11InlineProjectionCaptureValidator>,
     unsupported: Option<M11InlineProjectionUnsupported>,
-    output: Option<M11InlineProjectionOutput>,
+    final_authority: Option<M11ParserSourceRangeAuthority>,
     code_job_abort_started: bool,
     code_release_started: bool,
     autolink_job_abort_started: bool,
@@ -626,9 +470,6 @@ pub struct M11InlineProjectionJob {
     opaque_release_started: bool,
     emphasis_abort_started: bool,
     candidate_release_started: bool,
-    projection_cancel_started: bool,
-    root_release_started: bool,
-    output_root_release_started: bool,
     opaque_index: u32,
     direct_index: u32,
     delimiter_index: u32,
@@ -642,10 +483,7 @@ pub struct M11InlineProjectionJob {
     leaf_opaque_index: u32,
     leaf_direct_syntax_index: u32,
     emphasis_visited: u32,
-    emitted_facts: u64,
-    projected_fact_capture: Option<Vec<M11InlineProjectionFact>>,
-    projected_link_value_capture: Option<Vec<M11InlineLinkValue>>,
-    projected_edit_component_capture: Option<Vec<M11InlineEditComponent>>,
+    capture: Option<M11InlineProjectionCapture>,
     edit_component_cursor: Option<M11ParserRangeCursor>,
     edit_component_source: Vec<u8>,
     edit_component_source_written: usize,
@@ -661,153 +499,25 @@ impl fmt::Debug for M11InlineProjectionJob {
             .field("source_range", &self.source_range)
             .field("parser_profile", &self.parser_profile)
             .field("phase", &self.phase)
-            .field("emitted_facts", &self.emitted_facts)
             .finish_non_exhaustive()
     }
 }
 
 impl M11InlineProjectionJob {
-    pub fn new(
-        runtime: &DocumentRuntime,
-        authority: M11ParserSourceRangeAuthority,
-        block_fence: &M11CleanDocumentResult,
-        binding: M11ParserBinding,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_with_optional_reference_resolver(runtime, authority, block_fence, binding, None)
-    }
-
-    /// Starts clean-Paragraph inline derivation with definitive document-level
-    /// reference winners available to the direct/reference candidate pass.
-    pub fn new_with_reference_resolver(
-        runtime: &DocumentRuntime,
-        authority: M11ParserSourceRangeAuthority,
-        block_fence: &M11CleanDocumentResult,
-        binding: M11ParserBinding,
-        reference_resolver: M11ReferenceResolver,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_with_optional_reference_resolver(
-            runtime,
-            authority,
-            block_fence,
-            binding,
-            Some(reference_resolver),
-        )
-    }
-
-    fn new_with_optional_reference_resolver(
-        runtime: &DocumentRuntime,
-        authority: M11ParserSourceRangeAuthority,
-        block_fence: &M11CleanDocumentResult,
-        binding: M11ParserBinding,
-        reference_resolver: Option<M11ReferenceResolver>,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        authority
-            .validate(runtime)
-            .map_err(M11InlineCodeError::from)?;
-        let source = authority.source();
-        let source_range = authority.source_range();
-        let source_range = u32::try_from(source_range.start)
-            .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?
-            ..u32::try_from(source_range.end)
-                .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
-        if binding.grammar_revision() != M11_GRAMMAR_REVISION {
-            return Err(M11InlineProjectionJobError::unsupported_grammar_revision(
-                binding.grammar_revision(),
-            ));
-        }
-        if block_fence.source_version() != source {
-            return Err(M11InlineProjectionJobError::BlockFenceSourceMismatch);
-        }
-        if block_fence.kind() != M11CleanDocumentKind::Paragraph {
-            return Err(M11InlineProjectionJobError::BlockFenceNotParagraph);
-        }
-        if block_fence.visible_source() != Some(source_range.clone()) {
-            return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
-        }
-        Self::new_from_exact_authority(runtime, authority, binding, reference_resolver, false)
-    }
-
-    /// Starts lazy inline derivation over one Paragraph or ATX Heading content
-    /// range selected from a retained segmented block publication.
-    ///
-    /// Unlike [`Self::new`], this path needs no whole-document clean result:
-    /// the move-only fence already owns the parser-minted exact range authority
-    /// and parser binding authenticated by the persistent block lookup.
-    pub fn new_for_published_inline_leaf(
-        runtime: &DocumentRuntime,
-        fence: M11PublishedInlineLeafFence,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        let (authority, binding, expected_range) = fence.into_inline_authority();
-        let actual_range = authority.source_range();
-        let actual_range = u32::try_from(actual_range.start)
-            .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?
-            ..u32::try_from(actual_range.end)
-                .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
-        if actual_range != expected_range {
-            return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
-        }
-        Self::new_from_exact_authority(runtime, authority, binding, None, false)
-    }
-
-    /// Starts inline derivation from one Paragraph selected directly from the
-    /// recursive-Green block root.
-    ///
-    /// The caller supplies parser identity but no source range. The move-only
-    /// Paragraph fence carries the storage-authenticated exact authority and
-    /// is rechecked against its minted inline range before work begins.
-    pub fn new_for_recursive_green_paragraph(
-        runtime: &DocumentRuntime,
-        fence: M11RecursiveGreenParagraphFence,
-        binding: M11ParserBinding,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_for_recursive_green_inline_leaf(runtime, fence.into_inline_leaf(), binding)
-    }
-
-    /// Starts one recursive-Green Paragraph with the definitive reference
-    /// winners owned by the same retained document publication.
-    pub fn new_for_recursive_green_paragraph_with_reference_resolver(
-        runtime: &DocumentRuntime,
-        fence: M11RecursiveGreenParagraphFence,
-        binding: M11ParserBinding,
-        reference_resolver: M11ReferenceResolver,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_for_recursive_green_inline_leaf_with_reference_resolver(
-            runtime,
-            fence.into_inline_leaf(),
-            binding,
-            reference_resolver,
-        )
-    }
-
-    /// Starts inline derivation from one parser-selected recursive-Green
-    /// Paragraph or Heading.
+    /// Starts one recursive-Green inline-bearing leaf and retains the emitted
+    /// typed facts for a bounded viewport consumer.
     pub fn new_for_recursive_green_inline_leaf(
         runtime: &DocumentRuntime,
         fence: M11RecursiveGreenInlineLeafFence,
         binding: M11ParserBinding,
     ) -> Result<Self, M11InlineProjectionJobError> {
         Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
-            runtime, fence, binding, None, false,
+            runtime, fence, binding, None,
         )
     }
 
-    /// Starts one recursive-Green inline-bearing leaf and retains the emitted
-    /// typed facts for a bounded viewport consumer. The ordinary persistent
-    /// Projection root is still built and authenticated; callers must finish
-    /// the job and then explicitly abort it after taking the captured facts so
-    /// all transient parser storage is reclaimed.
-    pub fn new_for_recursive_green_inline_leaf_with_fact_capture(
-        runtime: &DocumentRuntime,
-        fence: M11RecursiveGreenInlineLeafFence,
-        binding: M11ParserBinding,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
-            runtime, fence, binding, None, true,
-        )
-    }
-
-    /// Starts one recursive-Green inline-bearing leaf with the definitive
-    /// reference winners owned by the same retained document publication.
+    /// Starts one recursive-Green inline leaf with both definitive reference
+    /// winners and bounded typed-fact capture for a viewport consumer.
     pub fn new_for_recursive_green_inline_leaf_with_reference_resolver(
         runtime: &DocumentRuntime,
         fence: M11RecursiveGreenInlineLeafFence,
@@ -819,36 +529,18 @@ impl M11InlineProjectionJob {
             fence,
             binding,
             Some(reference_resolver),
-            false,
-        )
-    }
-
-    /// Starts one recursive-Green inline leaf with both definitive reference
-    /// winners and bounded typed-fact capture for a viewport consumer.
-    pub fn new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
-        runtime: &DocumentRuntime,
-        fence: M11RecursiveGreenInlineLeafFence,
-        binding: M11ParserBinding,
-        reference_resolver: M11ReferenceResolver,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
-            runtime,
-            fence,
-            binding,
-            Some(reference_resolver),
-            true,
         )
     }
 
     #[cfg(any(test, feature = "m11-compact-probe"))]
-    pub(crate) fn new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+    pub(crate) fn new_for_recursive_green_inline_leaf_with_compact_reference_resolver(
         runtime: &DocumentRuntime,
         fence: M11RecursiveGreenInlineLeafFence,
         binding: M11ParserBinding,
         reference_resolver: crate::block_core::M11CompactReferenceResolver,
     ) -> Result<Self, M11InlineProjectionJobError> {
         let mut job = Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
-            runtime, fence, binding, None, true,
+            runtime, fence, binding, None,
         )?;
         job.compact_reference_resolver = Some(reference_resolver);
         Ok(job)
@@ -859,7 +551,6 @@ impl M11InlineProjectionJob {
         fence: M11RecursiveGreenInlineLeafFence,
         binding: M11ParserBinding,
         reference_resolver: Option<M11ReferenceResolver>,
-        capture_projected_facts: bool,
     ) -> Result<Self, M11InlineProjectionJobError> {
         let (authority, expected_range) = fence.into_inline_authority();
         let expected_range = u32::try_from(expected_range.start)
@@ -874,87 +565,7 @@ impl M11InlineProjectionJob {
         if actual_range != expected_range {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(
-            runtime,
-            authority,
-            binding,
-            reference_resolver,
-            capture_projected_facts,
-        )
-    }
-
-    /// Starts one retained inline leaf with a definitive, root-bound
-    /// reference winner resolver. Endpoint scheduling builds that resolver
-    /// under poll fuel before this constructor is called.
-    pub fn new_for_published_inline_leaf_with_reference_resolver(
-        runtime: &DocumentRuntime,
-        fence: M11PublishedInlineLeafFence,
-        reference_resolver: M11ReferenceResolver,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        let (authority, binding, expected_range) = fence.into_inline_authority();
-        let actual_range = authority.source_range();
-        let actual_range = u32::try_from(actual_range.start)
-            .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?
-            ..u32::try_from(actual_range.end)
-                .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
-        if actual_range != expected_range {
-            return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
-        }
-        Self::new_from_exact_authority(runtime, authority, binding, Some(reference_resolver), false)
-    }
-
-    /// Starts lazy inline derivation from one leaf authority selected by a
-    /// bounded retained-publication range walk.
-    ///
-    /// The enclosing batch owns structural authentication and admission
-    /// receipts. This constructor consumes only the exact move-only leaf
-    /// authority; all subsequent work remains bounded by [`Self::poll`] fuel
-    /// and [`M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS`].
-    pub fn new_for_published_inline_range_leaf(
-        runtime: &DocumentRuntime,
-        fence: M11PublishedInlineRangeLeafFence,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        let (authority, binding, expected_range) = fence.into_inline_authority();
-        let actual_range = authority.source_range();
-        let actual_range = u32::try_from(actual_range.start)
-            .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?
-            ..u32::try_from(actual_range.end)
-                .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
-        if actual_range != expected_range {
-            return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
-        }
-        Self::new_from_exact_authority(runtime, authority, binding, None, false)
-    }
-
-    /// Resolver-aware range-leaf counterpart used by viewport batches.
-    pub fn new_for_published_inline_range_leaf_with_reference_resolver(
-        runtime: &DocumentRuntime,
-        fence: M11PublishedInlineRangeLeafFence,
-        reference_resolver: M11ReferenceResolver,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        let (authority, binding, expected_range) = fence.into_inline_authority();
-        let actual_range = authority.source_range();
-        let actual_range = u32::try_from(actual_range.start)
-            .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?
-            ..u32::try_from(actual_range.end)
-                .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
-        if actual_range != expected_range {
-            return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
-        }
-        Self::new_from_exact_authority(runtime, authority, binding, Some(reference_resolver), false)
-    }
-
-    /// Starts the parser over a private, exact logical projection source.
-    ///
-    /// This is intentionally resolver-free. The caller must reject any
-    /// link/reference fact before rebuilding captured facts under the owning
-    /// physical source authority.
-    pub fn new_for_exact_projected_source(
-        runtime: &DocumentRuntime,
-        authority: M11ParserSourceRangeAuthority,
-        binding: M11ParserBinding,
-    ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_from_exact_authority(runtime, authority, binding, None, true)
+        Self::new_from_exact_authority(runtime, authority, binding, reference_resolver)
     }
 
     fn new_from_exact_authority(
@@ -962,7 +573,6 @@ impl M11InlineProjectionJob {
         authority: M11ParserSourceRangeAuthority,
         binding: M11ParserBinding,
         reference_resolver: Option<M11ReferenceResolver>,
-        capture_projected_facts: bool,
     ) -> Result<Self, M11InlineProjectionJobError> {
         authority
             .validate(runtime)
@@ -1000,10 +610,9 @@ impl M11InlineProjectionJob {
             emphasis_job: None,
             candidates: None,
             leaf_scanner: None,
-            projection: None,
-            root: None,
+            capture_validator: None,
             unsupported: None,
-            output: None,
+            final_authority: None,
             code_job_abort_started: false,
             code_release_started: false,
             autolink_job_abort_started: false,
@@ -1011,9 +620,6 @@ impl M11InlineProjectionJob {
             opaque_release_started: false,
             emphasis_abort_started: false,
             candidate_release_started: false,
-            projection_cancel_started: false,
-            root_release_started: false,
-            output_root_release_started: false,
             opaque_index: 0,
             direct_index: 0,
             delimiter_index: 0,
@@ -1027,10 +633,7 @@ impl M11InlineProjectionJob {
             leaf_opaque_index: 0,
             leaf_direct_syntax_index: 0,
             emphasis_visited: 0,
-            emitted_facts: 0,
-            projected_fact_capture: capture_projected_facts.then(Vec::new),
-            projected_link_value_capture: capture_projected_facts.then(Vec::new),
-            projected_edit_component_capture: capture_projected_facts.then(Vec::new),
+            capture: Some(M11InlineProjectionCapture::default()),
             edit_component_cursor: None,
             edit_component_source: Vec::new(),
             edit_component_source_written: 0,
@@ -1064,9 +667,9 @@ impl M11InlineProjectionJob {
         if matches!(
             self.phase,
             ProjectionJobPhase::Faulted
-                | ProjectionJobPhase::Aborting
-                | ProjectionJobPhase::Aborted
-                | ProjectionJobPhase::Transferred
+                | ProjectionJobPhase::OutcomeTaken
+                | ProjectionJobPhase::Releasing
+                | ProjectionJobPhase::Released
         ) {
             return Err(M11InlineProjectionJobError::InvalidState);
         }
@@ -1097,19 +700,8 @@ impl M11InlineProjectionJob {
                 ProjectionJobPhase::Emphasis => self.poll_emphasis(runtime, fuel, &mut transitions),
                 ProjectionJobPhase::TakeEmphasis => self.take_emphasis(&mut transitions),
                 ProjectionJobPhase::CheckRemainder => self.check_remainder(&mut transitions),
-                ProjectionJobPhase::BeginProjection => {
-                    self.begin_projection(runtime, &mut transitions)
-                }
+                ProjectionJobPhase::BeginCapture => self.begin_capture(runtime, &mut transitions),
                 ProjectionJobPhase::Emit => self.poll_emit(fuel, &mut transitions),
-                ProjectionJobPhase::PollOfferedPage => {
-                    self.poll_offered_page(runtime, fuel, &mut transitions)
-                }
-                ProjectionJobPhase::FinishProjectionInput => {
-                    self.finish_projection_input(&mut transitions)
-                }
-                ProjectionJobPhase::SealProjection => {
-                    self.poll_projection_seal(runtime, fuel, &mut transitions)
-                }
                 ProjectionJobPhase::BeginEditComponents => {
                     self.begin_edit_components(runtime, &mut transitions)
                 }
@@ -1130,10 +722,10 @@ impl M11InlineProjectionJob {
                     self.poll_candidate_cleanup(runtime, fuel, &mut transitions)
                 }
                 ProjectionJobPhase::Complete => break,
-                ProjectionJobPhase::Faulted
-                | ProjectionJobPhase::Aborting
-                | ProjectionJobPhase::Aborted
-                | ProjectionJobPhase::Transferred => Err(M11InlineProjectionJobError::InvalidState),
+                ProjectionJobPhase::OutcomeTaken
+                | ProjectionJobPhase::Faulted
+                | ProjectionJobPhase::Releasing
+                | ProjectionJobPhase::Released => Err(M11InlineProjectionJobError::InvalidState),
             };
             if let Err(error) = step {
                 if let Some(hazard) = self.hazard_job.as_mut() {
@@ -1569,13 +1161,13 @@ impl M11InlineProjectionJob {
             });
             self.phase = ProjectionJobPhase::BeginCleanup;
         } else {
-            self.phase = ProjectionJobPhase::BeginProjection;
+            self.phase = ProjectionJobPhase::BeginCapture;
         }
         *transitions += 1;
         Ok(())
     }
 
-    fn begin_projection(
+    fn begin_capture(
         &mut self,
         runtime: &DocumentRuntime,
         transitions: &mut usize,
@@ -1585,13 +1177,11 @@ impl M11InlineProjectionJob {
             .as_ref()
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
         candidates.validate_source(runtime)?;
-        self.projection = Some(Box::new(
-            M11InlineProjectionBuild::new_from_source_authority(
-                runtime,
-                candidates.source_authority()?,
-                self.parser_profile,
-            )?,
-        ));
+        self.capture_validator = Some(M11InlineProjectionCaptureValidator::new(
+            runtime,
+            candidates.source_authority()?,
+            self.parser_profile,
+        )?);
         self.leaf_scanner = Some(Box::new(M11InlineLexScanner::new(
             candidates.source_cursor(runtime)?,
         )));
@@ -1749,7 +1339,7 @@ impl M11InlineProjectionJob {
             {
                 return Err(M11InlineProjectionJobError::CandidateOrder);
             }
-            self.phase = ProjectionJobPhase::FinishProjectionInput;
+            self.phase = ProjectionJobPhase::BeginEditComponents;
             *transitions += 1;
             return Ok(());
         }
@@ -1814,8 +1404,14 @@ impl M11InlineProjectionJob {
             }
             Choice::Direct { index, .. } => {
                 self.pending_direct = None;
-                let ordinal = u32::try_from(self.emitted_facts)
-                    .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
+                let ordinal = u32::try_from(
+                    self.capture
+                        .as_ref()
+                        .ok_or(M11InlineProjectionJobError::InvalidState)?
+                        .facts
+                        .len(),
+                )
+                .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
                 let direct = self
                     .direct
                     .as_ref()
@@ -1834,28 +1430,24 @@ impl M11InlineProjectionJob {
             }
         };
         self.validate_next_fact(fact)?;
-        let projection = self
-            .projection
+        let validator = self
+            .capture_validator
             .as_mut()
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
         if let Some(value) = link_value.as_ref() {
-            projection.offer_page_with_link_values(&[fact], std::slice::from_ref(value))?;
+            validator.offer(&[fact], std::slice::from_ref(value))?;
         } else {
-            projection.offer_page(&[fact])?;
+            validator.offer(&[fact], &[])?;
         }
-        if let Some(captured) = self.projected_fact_capture.as_mut() {
-            captured.push(fact);
+        let capture = self
+            .capture
+            .as_mut()
+            .ok_or(M11InlineProjectionJobError::InvalidState)?;
+        capture.facts.push(fact);
+        if let Some(value) = link_value {
+            capture.link_values.push(value);
         }
-        if let (Some(captured), Some(value)) =
-            (self.projected_link_value_capture.as_mut(), link_value)
-        {
-            captured.push(value);
-        }
-        self.emitted_facts = self
-            .emitted_facts
-            .checked_add(1)
-            .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
-        self.phase = ProjectionJobPhase::PollOfferedPage;
+        self.phase = ProjectionJobPhase::Emit;
         *transitions += 1;
         Ok(())
     }
@@ -1955,101 +1547,16 @@ impl M11InlineProjectionJob {
         Ok(())
     }
 
-    fn poll_offered_page(
-        &mut self,
-        runtime: &mut DocumentRuntime,
-        fuel: usize,
-        transitions: &mut usize,
-    ) -> Result<(), M11InlineProjectionJobError> {
-        let poll = self
-            .projection
-            .as_mut()
-            .ok_or(M11InlineProjectionJobError::InvalidState)?
-            .poll(runtime, fuel - *transitions)?;
-        *transitions = transitions
-            .checked_add(poll.transitions())
-            .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
-        match poll.status() {
-            M11InlineProjectionBuildStatus::NeedsPage => {
-                self.phase = ProjectionJobPhase::Emit;
-            }
-            M11InlineProjectionBuildStatus::Pending => {}
-            M11InlineProjectionBuildStatus::Complete
-            | M11InlineProjectionBuildStatus::Cancelled => {
-                return Err(M11InlineProjectionJobError::InvalidState);
-            }
-        }
-        Ok(())
-    }
-
-    fn finish_projection_input(
-        &mut self,
-        transitions: &mut usize,
-    ) -> Result<(), M11InlineProjectionJobError> {
-        self.projection
-            .as_mut()
-            .ok_or(M11InlineProjectionJobError::InvalidState)?
-            .finish_input()?;
-        self.phase = ProjectionJobPhase::SealProjection;
-        *transitions += 1;
-        Ok(())
-    }
-
-    fn poll_projection_seal(
-        &mut self,
-        runtime: &mut DocumentRuntime,
-        fuel: usize,
-        transitions: &mut usize,
-    ) -> Result<(), M11InlineProjectionJobError> {
-        let poll = self
-            .projection
-            .as_mut()
-            .ok_or(M11InlineProjectionJobError::InvalidState)?
-            .poll(runtime, fuel - *transitions)?;
-        *transitions = transitions
-            .checked_add(poll.transitions())
-            .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
-        match poll.status() {
-            M11InlineProjectionBuildStatus::Pending => {}
-            M11InlineProjectionBuildStatus::Complete => {
-                let root = self
-                    .projection
-                    .as_mut()
-                    .ok_or(M11InlineProjectionJobError::InvalidState)?
-                    .take_root()
-                    .ok_or(M11InlineProjectionJobError::InvalidState)?;
-                if root.descriptor().logical_page_count() != self.emitted_facts
-                    || root.descriptor().fact_count() != self.emitted_facts
-                {
-                    self.root = Some(root);
-                    return Err(M11InlineProjectionJobError::InvalidState);
-                }
-                self.root = Some(root);
-                drop(self.projection.take());
-                self.phase = ProjectionJobPhase::BeginEditComponents;
-            }
-            M11InlineProjectionBuildStatus::NeedsPage
-            | M11InlineProjectionBuildStatus::Cancelled => {
-                return Err(M11InlineProjectionJobError::InvalidState);
-            }
-        }
-        Ok(())
-    }
-
     fn begin_edit_components(
         &mut self,
         runtime: &DocumentRuntime,
         transitions: &mut usize,
     ) -> Result<(), M11InlineProjectionJobError> {
-        if self.projected_edit_component_capture.is_none() {
-            self.phase = ProjectionJobPhase::BeginCleanup;
-            *transitions += 1;
-            return Ok(());
-        }
         let facts = self
-            .projected_fact_capture
+            .capture
             .as_ref()
-            .ok_or(M11InlineProjectionJobError::InvalidState)?;
+            .ok_or(M11InlineProjectionJobError::InvalidState)?
+            .facts();
         let exhaustive_brackets = self
             .direct
             .as_ref()
@@ -2141,9 +1648,10 @@ impl M11InlineProjectionJob {
         transitions: &mut usize,
     ) -> Result<(), M11InlineProjectionJobError> {
         let facts = self
-            .projected_fact_capture
+            .capture
             .as_ref()
-            .ok_or(M11InlineProjectionJobError::InvalidState)?;
+            .ok_or(M11InlineProjectionJobError::InvalidState)?
+            .facts();
         let exhaustive_brackets = self
             .direct
             .as_ref()
@@ -2151,10 +1659,10 @@ impl M11InlineProjectionJob {
             .exhaustive_bracket_classification();
         let components =
             derive_inline_edit_components(&self.edit_component_source, facts, exhaustive_brackets);
-        *self
-            .projected_edit_component_capture
+        self.capture
             .as_mut()
-            .ok_or(M11InlineProjectionJobError::InvalidState)? = components;
+            .ok_or(M11InlineProjectionJobError::InvalidState)?
+            .edit_components = components;
         self.edit_component_source.clear();
         self.edit_component_source_written = 0;
         self.phase = ProjectionJobPhase::BeginCleanup;
@@ -2210,7 +1718,7 @@ impl M11InlineProjectionJob {
                 .take_source_authority()
                 .ok_or(M11InlineProjectionJobError::InvalidState)?;
             drop(self.opaque.take());
-            self.complete_output(authority)?;
+            self.complete(authority)?;
         }
         Ok(())
     }
@@ -2240,7 +1748,7 @@ impl M11InlineProjectionJob {
                 .take_source_authority()
                 .ok_or(M11InlineProjectionJobError::InvalidState)?;
             drop(self.code.take());
-            self.complete_output(authority)?;
+            self.complete(authority)?;
         }
         Ok(())
     }
@@ -2270,12 +1778,12 @@ impl M11InlineProjectionJob {
                 .take_source_authority()
                 .ok_or(M11InlineProjectionJobError::InvalidState)?;
             drop(self.candidates.take());
-            self.complete_output(authority)?;
+            self.complete(authority)?;
         }
         Ok(())
     }
 
-    fn complete_output(
+    fn complete(
         &mut self,
         authority: M11ParserSourceRangeAuthority,
     ) -> Result<(), M11InlineProjectionJobError> {
@@ -2288,122 +1796,83 @@ impl M11InlineProjectionJob {
         {
             return Err(M11InlineProjectionJobError::InvalidState);
         }
-        let disposition = self.unsupported.take().map_or(
-            M11InlineProjectionDisposition::Authoritative,
-            M11InlineProjectionDisposition::Unsupported,
-        );
-        if matches!(disposition, M11InlineProjectionDisposition::Unsupported(_))
-            && self.root.is_some()
-        {
+        if self.final_authority.is_some() || self.capture.is_none() {
             return Err(M11InlineProjectionJobError::InvalidState);
         }
-        let unsupported_record = match &disposition {
-            M11InlineProjectionDisposition::Authoritative => None,
-            M11InlineProjectionDisposition::Unsupported(_) => {
-                let profile_partition = u32::try_from(self.parser_profile.get())
-                    .map_err(|_| M11InlineProjectionJobError::CoordinateOverflow)?;
-                let encoded = crate::publication::encode_inline_projection_metadata(
-                    2,
-                    profile_partition,
-                    0,
-                    &self.source_range,
-                )?;
-                Some(M11InlineProjectionUnsupportedRecord {
-                    source: self.source,
-                    source_range: self.source_range.clone(),
-                    parser_profile: self.parser_profile,
-                    encoded,
-                })
+        let authority = match (self.capture_validator.take(), self.unsupported.is_some()) {
+            (Some(validator), false) => validator.finish(
+                authority,
+                self.source,
+                self.source_range.clone(),
+                self.parser_profile,
+            )?,
+            (None, true)
+                if self.capture.as_ref().is_some_and(|capture| {
+                    capture.facts.is_empty()
+                        && capture.link_values.is_empty()
+                        && capture.edit_components.is_empty()
+                }) =>
+            {
+                authority
             }
+            _ => return Err(M11InlineProjectionJobError::InvalidState),
         };
-        self.output = Some(M11InlineProjectionOutput {
-            source: self.source,
-            source_range: self.source_range.clone(),
-            parser_profile: self.parser_profile,
-            disposition,
-            root: self.root.take(),
-            unsupported_record,
-            authority: Some(authority),
-        });
+        self.final_authority = Some(authority);
         self.phase = ProjectionJobPhase::Complete;
         Ok(())
     }
 
-    pub fn take_output(&mut self) -> Option<M11InlineProjectionOutput> {
-        if self.phase != ProjectionJobPhase::Complete {
+    /// Atomically transfers the completed, source-stamped result.
+    ///
+    /// Authoritative capture is the normal terminal path and needs no release
+    /// ceremony. A completed result may instead be discarded through
+    /// [`Self::begin_release`].
+    #[must_use]
+    pub fn take_outcome(&mut self) -> Option<M11InlineProjectionOutcome> {
+        if self.phase != ProjectionJobPhase::Complete
+            || self.capture.is_none()
+            || self.final_authority.is_none()
+        {
             return None;
         }
-        let output = self.output.take()?;
-        self.phase = ProjectionJobPhase::Transferred;
-        Some(output)
+        let capture = self.capture.take().expect("preflighted capture");
+        drop(
+            self.final_authority
+                .take()
+                .expect("preflighted final authority"),
+        );
+        let outcome = if self.unsupported.take().is_some() {
+            M11InlineProjectionOutcome::Unsupported {
+                source: self.source,
+                source_range: self.source_range.clone(),
+                parser_profile: self.parser_profile,
+            }
+        } else {
+            M11InlineProjectionOutcome::Authoritative {
+                source: self.source,
+                source_range: self.source_range.clone(),
+                parser_profile: self.parser_profile,
+                capture,
+            }
+        };
+        self.phase = ProjectionJobPhase::OutcomeTaken;
+        Some(outcome)
     }
 
-    /// Whether captured facts represent a complete authoritative projection.
-    /// `Some(false)` means the parser deliberately failed the leaf closed;
-    /// callers must present exact source rather than treating an empty fact
-    /// vector as proof that no syntax exists.
-    #[must_use]
-    pub fn projected_facts_are_authoritative(&self) -> Option<bool> {
-        self.output.as_ref().map(|output| {
-            matches!(
-                output.disposition,
-                M11InlineProjectionDisposition::Authoritative
-            )
-        })
-    }
-
-    /// Transfers facts captured by [`Self::new_for_exact_projected_source`].
-    /// The authoritative/unsupported publication must still be transferred
-    /// separately so its scratch-runtime storage can be reclaimed correctly.
-    #[must_use]
-    pub fn take_projected_facts(&mut self) -> Option<Vec<M11InlineProjectionFact>> {
-        if !matches!(
-            self.phase,
-            ProjectionJobPhase::Complete | ProjectionJobPhase::Transferred
-        ) {
-            return None;
-        }
-        self.projected_fact_capture.take()
-    }
-
-    /// Transfers parser-authored edit components captured beside the exact
-    /// authoritative fact publication.
-    #[must_use]
-    pub fn take_projected_edit_components(&mut self) -> Option<Vec<M11InlineEditComponent>> {
-        if !matches!(
-            self.phase,
-            ProjectionJobPhase::Complete | ProjectionJobPhase::Transferred
-        ) {
-            return None;
-        }
-        self.projected_edit_component_capture.take()
-    }
-
-    /// Transfers cooked link/image values captured with the projected facts.
-    /// Entries identify their parent fact ordinal and retain the same bounded
-    /// sidecar contract as the authoritative Projection publication.
-    #[must_use]
-    pub fn take_projected_link_values(&mut self) -> Option<Vec<M11InlineLinkValue>> {
-        if !matches!(
-            self.phase,
-            ProjectionJobPhase::Complete | ProjectionJobPhase::Transferred
-        ) {
-            return None;
-        }
-        self.projected_link_value_capture.take()
-    }
-
-    pub fn begin_abort(
+    pub fn begin_release(
         &mut self,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11InlineProjectionJobError> {
         if matches!(
             self.phase,
-            ProjectionJobPhase::Transferred | ProjectionJobPhase::Aborted
+            ProjectionJobPhase::OutcomeTaken | ProjectionJobPhase::Released
         ) {
             return Err(M11InlineProjectionJobError::InvalidState);
         }
-        self.phase = ProjectionJobPhase::Aborting;
+        // Cleanup initialization is deliberately retryable. A child begin
+        // operation is fallible, and a caller must be able to resume the same
+        // move-only owners rather than strand a partially initialized release.
+        self.phase = ProjectionJobPhase::Releasing;
 
         if let Some(cursor) = self.edit_component_cursor.as_mut() {
             cursor.cancel();
@@ -2469,36 +1938,17 @@ impl M11InlineProjectionJob {
                 self.candidate_release_started = true;
             }
         }
-        if let Some(projection) = self.projection.as_mut() {
-            if !self.projection_cancel_started {
-                projection.begin_cancel(runtime)?;
-                self.projection_cancel_started = true;
-            }
-        }
-        if let Some(root) = self.root.as_mut() {
-            if !self.root_release_started {
-                root.begin_release(runtime)?;
-                self.root_release_started = true;
-            }
-        }
-        if let Some(output) = self.output.as_mut() {
-            if let Some(root) = output.root.as_mut() {
-                if !self.output_root_release_started {
-                    root.begin_release(runtime)?;
-                    self.output_root_release_started = true;
-                }
-            }
-        }
+        let _ = runtime;
         Ok(())
     }
 
-    pub fn poll_abort(
+    pub fn poll_release(
         &mut self,
         runtime: &mut DocumentRuntime,
         fuel: usize,
     ) -> Result<M11InlineProjectionJobReleasePoll, M11InlineProjectionJobError> {
         validate_fuel(fuel)?;
-        if self.phase != ProjectionJobPhase::Aborting {
+        if self.phase != ProjectionJobPhase::Releasing {
             return Err(M11InlineProjectionJobError::InvalidState);
         }
         let mut transitions = 0;
@@ -2622,64 +2072,11 @@ impl M11InlineProjectionJob {
                     complete: false,
                 });
             }
-            if let Some(projection) = self.projection.as_mut() {
-                if !self.projection_cancel_started {
-                    return Err(M11InlineProjectionJobError::InvalidState);
-                }
-                let poll = projection.poll_cancel(runtime, fuel - transitions)?;
-                transitions = transitions
-                    .checked_add(poll.receipt().transitions)
-                    .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
-                if poll.complete() {
-                    drop(self.projection.take());
-                    continue;
-                }
-                return Ok(M11InlineProjectionJobReleasePoll {
-                    transitions,
-                    complete: false,
-                });
-            }
-            if let Some(root) = self.root.as_ref() {
-                if !self.root_release_started {
-                    return Err(M11InlineProjectionJobError::InvalidState);
-                }
-                let poll = root.poll_release(runtime, fuel - transitions)?;
-                transitions = transitions
-                    .checked_add(poll.receipt().transitions)
-                    .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
-                if poll.complete() {
-                    drop(self.root.take());
-                    continue;
-                }
-                return Ok(M11InlineProjectionJobReleasePoll {
-                    transitions,
-                    complete: false,
-                });
-            }
-            if let Some(output) = self.output.as_mut() {
-                if let Some(root) = output.root.as_ref() {
-                    if !self.output_root_release_started {
-                        return Err(M11InlineProjectionJobError::InvalidState);
-                    }
-                    let poll = root.poll_release(runtime, fuel - transitions)?;
-                    transitions = transitions
-                        .checked_add(poll.receipt().transitions)
-                        .ok_or(M11InlineProjectionJobError::CoordinateOverflow)?;
-                    if poll.complete() {
-                        drop(output.root.take());
-                        continue;
-                    }
-                    return Ok(M11InlineProjectionJobReleasePoll {
-                        transitions,
-                        complete: false,
-                    });
-                }
-                drop(output.authority.take());
-                drop(output.unsupported_record.take());
-                drop(self.output.take());
-                continue;
-            }
-            self.phase = ProjectionJobPhase::Aborted;
+            drop(self.capture_validator.take());
+            drop(self.final_authority.take());
+            drop(self.unsupported.take());
+            drop(self.capture.take());
+            self.phase = ProjectionJobPhase::Released;
             return Ok(M11InlineProjectionJobReleasePoll {
                 transitions,
                 complete: true,
@@ -2698,9 +2095,9 @@ impl Drop for M11InlineProjectionJob {
             assert!(
                 matches!(
                     self.phase,
-                    ProjectionJobPhase::Aborted | ProjectionJobPhase::Transferred
+                    ProjectionJobPhase::OutcomeTaken | ProjectionJobPhase::Released
                 ),
-                "inline Projection jobs require output transfer or explicit fuelled abort"
+                "inline projection jobs require outcome transfer or explicit fuelled release"
             );
         }
     }
@@ -2834,21 +2231,12 @@ fn validate_fuel(fuel: usize) -> Result<(), M11InlineProjectionJobError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::publication::{
-        resolve_m11_published_inline_leaf_fence, M11CleanParseJob, M11CleanParsePoll,
-        M11ParserCandidate, M11ParserCandidateWriterPoll, M11PublishedInlineLeafFenceResolution,
-    };
     use comrak::{markdown_to_html, Options as ComrakOptions};
-    use flark_engine::m11_host::M11_CANDIDATE_ARENA_MAX_SLOTS;
     use flark_engine::parser_internal::{
-        M11BlockSequenceEntryKind, M11BlockSequencePoint, M11InlineProjectionCursorPoll,
-        M11OwnedSnapshotPoll, M11RetainedCandidatePublication, M11SnapshotFrameKind,
-        M11_MAX_ROLE_RECORDS,
+        M11ReferenceJournal, M11ReferenceJournalOccurrence, M11ReferenceJournalRange,
+        M11ReferenceJournalRoot, M11ReferenceJournalStatus,
     };
-    use flark_engine::{
-        ArenaLimits, DocumentRuntimeConfig, RuntimeSourceFactsPoll, SourceBoundaryAffinity,
-        SourceFactsRootLimits, SourceFactsScanProfile,
-    };
+    use flark_engine::DocumentRuntimeConfig;
 
     const TEST_PROFILE: u64 = 0x1703;
 
@@ -2857,16 +2245,84 @@ mod tests {
         assert!(std::mem::size_of::<M11InlineProjectionJob>() <= 8 * 1024);
     }
 
+    #[test]
+    fn successful_capture_never_leaves_a_transient_projection_root() {
+        let source = "[**link**](/target \"title\") and `code`";
+        let mut runtime =
+            DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
+        let baseline = runtime.arena_metrics();
+
+        for attempt in 0..3 {
+            let authority = M11ParserSourceRangeAuthority::new(
+                &runtime,
+                runtime.snapshot_current_source().expect("authority lease"),
+                0..source.len(),
+            )
+            .expect("range authority");
+            let mut job = M11InlineProjectionJob::new_from_exact_authority(
+                &runtime,
+                authority,
+                binding(),
+                None,
+            )
+            .expect("capture job");
+            loop {
+                let poll = job.poll(&mut runtime, 1).expect("capture poll");
+                assert!(poll.transitions() <= 1);
+                if poll.status() == M11InlineProjectionJobPollStatus::Complete {
+                    break;
+                }
+                assert_ne!(poll.transitions(), 0, "ready capture must progress");
+            }
+
+            let complete = runtime.arena_metrics();
+            assert_eq!(complete.resident_nodes, baseline.resident_nodes);
+            assert_eq!(complete.live_payload_bytes, baseline.live_payload_bytes);
+            assert_eq!(
+                complete.reserved_external_payload_bytes,
+                baseline.reserved_external_payload_bytes
+            );
+            assert_eq!(complete.live_builds, baseline.live_builds);
+            assert_eq!(complete.pending_reclaims, baseline.pending_reclaims);
+            assert_eq!(complete.pending_build_aborts, baseline.pending_build_aborts);
+
+            if attempt == 0 {
+                let authority = job.final_authority.take().expect("completed authority");
+                assert!(job.take_outcome().is_none());
+                assert!(job.capture.is_some(), "failed transfer retains capture");
+                job.final_authority = Some(authority);
+            }
+
+            let capture = take_authoritative_capture(&mut job);
+            assert_eq!(capture.facts().len(), 3);
+            assert_eq!(capture.link_values().len(), 1);
+            drop(job);
+
+            let transferred = runtime.arena_metrics();
+            assert_eq!(transferred.resident_nodes, baseline.resident_nodes);
+            assert_eq!(transferred.live_payload_bytes, baseline.live_payload_bytes);
+            assert_eq!(
+                transferred.reserved_external_payload_bytes,
+                baseline.reserved_external_payload_bytes
+            );
+            assert_eq!(transferred.live_builds, baseline.live_builds);
+            assert_eq!(transferred.pending_reclaims, baseline.pending_reclaims);
+            assert_eq!(
+                transferred.pending_build_aborts,
+                baseline.pending_build_aborts
+            );
+        }
+
+        close_runtime(runtime);
+    }
+
     #[derive(Debug, Eq, PartialEq)]
     struct Resolution {
         source_range: Range<u32>,
         parser_profile: ParserProfileId,
         disposition: M11InlineProjectionDisposition,
         facts: Vec<M11InlineProjectionFact>,
-        root_present: bool,
-        logical_page_count: u64,
-        fact_count: u64,
-        link_value_entry_count: u32,
+        link_values: Vec<M11InlineLinkValue>,
         maximum_poll_transitions: usize,
     }
 
@@ -2874,153 +2330,6 @@ mod tests {
         M11ParserBinding::current(
             ParserProfileId::new(TEST_PROFILE).expect("nonzero parser profile"),
         )
-    }
-
-    fn parse(runtime: &DocumentRuntime) -> M11CleanDocumentResult {
-        let mut job =
-            M11CleanParseJob::new(runtime.snapshot_current_source().expect("parse lease"))
-                .expect("clean parse job");
-        loop {
-            match job.poll(64).expect("clean parse poll") {
-                M11CleanParsePoll::Pending { transitions } => {
-                    assert!(transitions <= 64);
-                }
-                M11CleanParsePoll::Complete {
-                    transitions,
-                    result,
-                } => {
-                    assert!(transitions <= 64);
-                    return result;
-                }
-            }
-        }
-    }
-
-    fn prepare_source_facts(runtime: &mut DocumentRuntime) {
-        let scan_profile = SourceFactsScanProfile::new(32).expect("scan profile");
-        let expected = runtime
-            .begin_source_facts(
-                scan_profile,
-                binding().syntax_profile(),
-                SourceFactsRootLimits::default(),
-            )
-            .expect("begin source facts");
-        loop {
-            match runtime.poll_source_facts(17, 3).expect("source facts poll") {
-                RuntimeSourceFactsPoll::Pending(_)
-                | RuntimeSourceFactsPoll::PromotionPending { .. }
-                | RuntimeSourceFactsPoll::ScanComplete { .. } => {}
-                RuntimeSourceFactsPoll::Complete { completion, .. } => {
-                    assert_eq!(completion.source(), expected);
-                    break;
-                }
-                RuntimeSourceFactsPoll::IncrementalScanComplete { .. }
-                | RuntimeSourceFactsPoll::IncrementalComplete { .. } => {
-                    panic!("clean source-fact scan reported incremental progress")
-                }
-            }
-        }
-    }
-
-    fn segmented_runtime(source: &str) -> DocumentRuntime {
-        DocumentRuntime::new(
-            source,
-            DocumentRuntimeConfig {
-                arena_limits: ArenaLimits {
-                    max_slots: M11_CANDIDATE_ARENA_MAX_SLOTS,
-                    max_live_payload_bytes: 64 * 1024 * 1024,
-                    max_children_per_node: M11_MAX_ROLE_RECORDS,
-                },
-                ..DocumentRuntimeConfig::default()
-            },
-        )
-        .expect("segmented runtime")
-    }
-
-    fn retain_segmented_candidate(
-        runtime: &mut DocumentRuntime,
-    ) -> M11RetainedCandidatePublication {
-        prepare_source_facts(runtime);
-        let result = parse(runtime);
-        assert!(result.sole_paragraph().is_none());
-        let certified = runtime.take_certified_source().expect("certified source");
-        let candidate =
-            M11ParserCandidate::derive_segmented(certified, result).expect("segmented candidate");
-        let mut writer = candidate
-            .into_writer(runtime, [0x91; 16], [0x92; 16], 1)
-            .expect("candidate writer");
-        let publication = loop {
-            match writer.poll(runtime, 1).expect("candidate writer poll") {
-                M11ParserCandidateWriterPoll::Pending { transitions } => {
-                    assert!(transitions <= 1);
-                }
-                M11ParserCandidateWriterPoll::Published {
-                    transitions,
-                    publication,
-                } => {
-                    assert!(transitions <= 1);
-                    break publication;
-                }
-            }
-        };
-        drop(writer);
-        let mut stream = publication
-            .into_snapshot_stream(runtime)
-            .expect("owned snapshot stream");
-        assert_eq!(
-            stream.begin_frame().expect("snapshot Begin").kind,
-            M11SnapshotFrameKind::Begin
-        );
-        loop {
-            match stream.poll(runtime, 17).expect("snapshot traversal") {
-                M11OwnedSnapshotPoll::Pending { transitions } => {
-                    assert!(transitions <= 17);
-                }
-                M11OwnedSnapshotPoll::Frame { transitions, frame } => {
-                    assert!(transitions <= 17);
-                    if frame.kind == M11SnapshotFrameKind::End {
-                        break;
-                    }
-                }
-                M11OwnedSnapshotPoll::ReplayRequired { .. } => {
-                    panic!("full segmented snapshot requested exact-base replay")
-                }
-            }
-        }
-        stream
-            .into_retained_publication(runtime)
-            .expect("retained candidate publication")
-    }
-
-    fn close_retained(
-        retained: &mut M11RetainedCandidatePublication,
-        runtime: &mut DocumentRuntime,
-    ) {
-        retained.begin_close(runtime).expect("begin retained close");
-        while !retained.poll_close(runtime, 17).expect("retained close") {}
-    }
-
-    fn ready_reference_resolver(
-        retained: &mut M11RetainedCandidatePublication,
-        runtime: &mut DocumentRuntime,
-    ) -> M11ReferenceResolver {
-        loop {
-            let poll = retained
-                .poll_reference_resolver(runtime, 1)
-                .expect("reference resolver poll");
-            assert!(poll.transitions() <= 1);
-            if poll.ready() {
-                break;
-            }
-        }
-        retained
-            .reference_resolver(runtime)
-            .expect("reference resolver query")
-            .expect("ready reference resolver")
-    }
-
-    fn utf16_offset(source: &str, byte_offset: usize) -> usize {
-        source[..byte_offset].encode_utf16().count()
     }
 
     fn close_runtime(mut runtime: DocumentRuntime) {
@@ -3032,41 +2341,89 @@ mod tests {
         assert_eq!(metrics.live_builds, 0);
     }
 
-    fn release_root(root: &mut M11InlineProjectionRoot, runtime: &mut DocumentRuntime) {
-        root.begin_release(runtime).expect("begin root release");
+    fn settle_reference_input(journal: &mut M11ReferenceJournal, runtime: &mut DocumentRuntime) {
         loop {
-            let poll = root.poll_release(runtime, 1).expect("root release poll");
-            assert!(poll.receipt().transitions <= 1);
+            let poll = journal.poll(runtime, 1).expect("reference journal poll");
+            assert!(poll.transitions() <= 1);
+            if poll.status() == M11ReferenceJournalStatus::NeedsInput {
+                break;
+            }
+            assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn offer_reference(
+        journal: &mut M11ReferenceJournal,
+        runtime: &mut DocumentRuntime,
+        source: Range<u64>,
+        label_source: Range<u64>,
+        destination_source: Range<u64>,
+        title_source: Option<Range<u64>>,
+        normalized_label: &[u8],
+        destination: &[u8],
+        title: Option<&[u8]>,
+    ) {
+        let range = |range: Range<u64>| M11ReferenceJournalRange::new(range.clone(), range);
+        journal
+            .offer_occurrence(
+                runtime,
+                M11ReferenceJournalOccurrence::new(
+                    range(source),
+                    range(label_source),
+                    range(destination_source),
+                    title_source.map(range),
+                    normalized_label,
+                    destination,
+                    title.map(|title| title.into()),
+                ),
+            )
+            .expect("offer reference");
+        settle_reference_input(journal, runtime);
+    }
+
+    fn finish_reference_journal(
+        journal: &mut M11ReferenceJournal,
+        runtime: &mut DocumentRuntime,
+    ) -> M11ReferenceJournalRoot {
+        journal.finish_input(runtime).expect("finish references");
+        loop {
+            let poll = journal.poll(runtime, 1).expect("finish reference poll");
+            assert!(poll.transitions() <= 1);
+            if poll.status() == M11ReferenceJournalStatus::Complete {
+                return journal.take_root().expect("reference root");
+            }
+            assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
+        }
+    }
+
+    fn release_reference_root(root: &mut M11ReferenceJournalRoot, runtime: &mut DocumentRuntime) {
+        root.begin_release(runtime)
+            .expect("begin reference release");
+        loop {
+            let poll = root
+                .poll_release(runtime, 1)
+                .expect("reference release poll");
+            assert!(poll.transitions() <= 1);
             if poll.complete() {
                 break;
             }
         }
     }
 
-    fn resolve_in(
-        source_text: &str,
-        source_range: Range<usize>,
-        paragraph_start: Option<u32>,
-        fuel: usize,
-    ) -> Resolution {
+    fn resolve_in(source_text: &str, source_range: Range<usize>, fuel: usize) -> Resolution {
         let mut runtime =
             DocumentRuntime::new(source_text, DocumentRuntimeConfig::default()).expect("runtime");
         let source = runtime.current_source_version().expect("source");
-        let block_fence = paragraph_start.map_or_else(
-            || parse(&runtime),
-            |start| {
-                M11CleanDocumentResult::from_ordinary_paragraph_crop(source, start)
-                    .expect("crop fence")
-            },
-        );
         let authority = M11ParserSourceRangeAuthority::new(
             &runtime,
             runtime.snapshot_current_source().expect("authority lease"),
-            source_range,
+            source_range.clone(),
         )
         .expect("range authority");
         let mut job =
-            M11InlineProjectionJob::new(&runtime, authority, &block_fence, binding()).expect("job");
+            M11InlineProjectionJob::new_from_exact_authority(&runtime, authority, binding(), None)
+                .expect("capture job");
         let mut maximum_poll_transitions = 0;
         loop {
             let poll = job.poll(&mut runtime, fuel).expect("Projection poll");
@@ -3084,95 +2441,50 @@ mod tests {
                 break;
             }
         }
-        let output = job.take_output().expect("exact output");
-        assert_eq!(output.source(), source);
-        assert_eq!(output.parser_profile(), binding().syntax_profile());
-        let source_range = output.source_range();
-        let disposition = output.disposition().clone();
-        let parts = output.into_publication_parts();
-        assert_eq!(parts.source(), source);
-        assert_eq!(parts.source_range(), source_range);
-        assert_eq!(parts.parser_profile(), binding().syntax_profile());
-        let (_, _, _, authority, publication) = parts.into_parts();
-
-        let mut facts = Vec::new();
-        let (root_present, logical_page_count, fact_count, link_value_entry_count) =
-            match publication {
-                M11InlineProjectionPublication::Authoritative(mut root) => {
-                    assert_eq!(root.descriptor().source(), source);
-                    assert_eq!(root.descriptor().source_range(), &source_range);
-                    assert_eq!(
-                        root.descriptor().parser_profile(),
-                        binding().syntax_profile()
-                    );
-                    let mut cursor = root
-                        .cursor(&runtime, source, binding().syntax_profile())
-                        .expect("typed cursor");
-                    loop {
-                        match cursor.poll(&runtime).expect("typed cursor poll") {
-                            M11InlineProjectionCursorPoll::Pending { transitions } => {
-                                assert!(transitions <= 1);
-                            }
-                            M11InlineProjectionCursorPoll::Fact { transitions, fact } => {
-                                assert!(transitions <= 1);
-                                facts.push(fact);
-                            }
-                            M11InlineProjectionCursorPoll::Complete { transitions } => {
-                                assert!(transitions <= 1);
-                                break;
-                            }
-                        }
-                    }
-                    drop(cursor);
-                    let counts = (
-                        root.descriptor().logical_page_count(),
-                        root.descriptor().fact_count(),
-                        root.descriptor().link_value_entry_count(),
-                    );
-                    release_root(&mut root, &mut runtime);
-                    drop(root);
-                    (true, counts.0, counts.1, counts.2)
-                }
-                M11InlineProjectionPublication::Unsupported(record) => {
-                    assert_eq!(record.source(), source);
-                    assert_eq!(record.source_range(), source_range);
-                    assert_eq!(record.parser_profile(), binding().syntax_profile());
-                    let encoded = record.into_encoded();
-                    assert_eq!(&encoded[..8], crate::M11_INLINE_META_MAGIC);
-                    assert_eq!(
-                        u32::from_le_bytes(encoded[8..12].try_into().unwrap()),
-                        crate::M11_INLINE_SCHEMA
-                    );
-                    assert_eq!(encoded[12], 2);
-                    assert_eq!(
-                        u32::from_le_bytes(encoded[16..20].try_into().unwrap()),
-                        TEST_PROFILE as u32
-                    );
-                    assert_eq!(u32::from_le_bytes(encoded[20..24].try_into().unwrap()), 0);
-                    assert_eq!(
-                        u64::from_le_bytes(encoded[24..32].try_into().unwrap()),
-                        u64::from(source_range.start)
-                    );
-                    assert_eq!(
-                        u64::from_le_bytes(encoded[32..40].try_into().unwrap()),
-                        u64::from(source_range.end)
-                    );
-                    (false, 0, 0, 0)
-                }
-            };
-
-        authority.validate(&runtime).expect("exact baton");
-        assert_eq!(authority.source(), source);
-        assert_eq!(
-            authority.source_range(),
-            source_range.start as usize..source_range.end as usize
-        );
-        let mut cursor = authority.cursor(&runtime).expect("baton cursor");
-        cursor.cancel();
-        drop(cursor);
-        drop(authority);
+        assert_eq!(job.source, source);
+        assert_eq!(job.parser_profile, binding().syntax_profile());
+        let source_range =
+            u32::try_from(source_range.start).unwrap()..u32::try_from(source_range.end).unwrap();
+        assert_eq!(job.source_range, source_range);
+        let unsupported = job.unsupported.clone();
+        let (disposition, facts, link_values) = match job
+            .take_outcome()
+            .expect("completed capture has an outcome")
+        {
+            M11InlineProjectionOutcome::Authoritative {
+                source: outcome_source,
+                source_range: outcome_range,
+                parser_profile,
+                capture,
+            } => {
+                assert_eq!(outcome_source, source);
+                assert_eq!(outcome_range, source_range);
+                assert_eq!(parser_profile, binding().syntax_profile());
+                let (facts, link_values, _) = capture.into_parts();
+                (
+                    M11InlineProjectionDisposition::Authoritative,
+                    facts,
+                    link_values,
+                )
+            }
+            M11InlineProjectionOutcome::Unsupported {
+                source: outcome_source,
+                source_range: outcome_range,
+                parser_profile,
+            } => {
+                assert_eq!(outcome_source, source);
+                assert_eq!(outcome_range, source_range);
+                assert_eq!(parser_profile, binding().syntax_profile());
+                (
+                    M11InlineProjectionDisposition::Unsupported(
+                        unsupported.expect("fail-closed record"),
+                    ),
+                    Vec::new(),
+                    Vec::new(),
+                )
+            }
+        };
         drop(job);
-        drop(block_fence);
         close_runtime(runtime);
 
         Resolution {
@@ -3180,16 +2492,22 @@ mod tests {
             parser_profile: binding().syntax_profile(),
             disposition,
             facts,
-            root_present,
-            logical_page_count,
-            fact_count,
-            link_value_entry_count,
+            link_values,
             maximum_poll_transitions,
         }
     }
 
     fn resolve(source_text: &str, fuel: usize) -> Resolution {
-        resolve_in(source_text, 0..source_text.len(), None, fuel)
+        resolve_in(source_text, 0..source_text.len(), fuel)
+    }
+
+    fn take_authoritative_capture(job: &mut M11InlineProjectionJob) -> M11InlineProjectionCapture {
+        match job.take_outcome().expect("completed inline outcome") {
+            M11InlineProjectionOutcome::Authoritative { capture, .. } => capture,
+            M11InlineProjectionOutcome::Unsupported { .. } => {
+                panic!("expected authoritative inline capture")
+            }
+        }
     }
 
     fn assert_single_autolink(example: u32, source: &str, expected_kind: M11InlineProjectionKind) {
@@ -3226,7 +2544,6 @@ mod tests {
             "CommonMark example {example} must remain fail-closed"
         );
         assert!(result.facts.is_empty(), "CommonMark example {example}");
-        assert!(!result.root_present, "CommonMark example {example}");
     }
 
     fn assert_single_bare_autolink(
@@ -3268,10 +2585,7 @@ mod tests {
         assert_eq!(fact.relative_range(), 0..source.len() as u32);
         assert_eq!(fact.relative_content_range(), 1..5);
         assert_eq!(fact.flags(), 0);
-        assert_eq!(result.logical_page_count, 1);
-        assert_eq!(result.fact_count, 1);
-        assert_eq!(result.link_value_entry_count, 1);
-        assert!(result.root_present);
+        assert_eq!(result.link_values.len(), 1);
     }
 
     #[test]
@@ -3328,10 +2642,7 @@ mod tests {
                 content,
                 "CommonMark example {example}"
             );
-            assert_eq!(
-                result.link_value_entry_count, 1,
-                "CommonMark example {example}"
-            );
+            assert_eq!(result.link_values.len(), 1, "CommonMark example {example}");
         }
     }
 
@@ -3397,7 +2708,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(actual, expected, "CommonMark example {example}");
             assert_eq!(
-                result.link_value_entry_count,
+                result.link_values.len(),
                 expected
                     .iter()
                     .filter(|(kind, _, _)| {
@@ -3407,7 +2718,7 @@ mod tests {
                                 | M11InlineProjectionKind::DirectImage
                         )
                     })
-                    .count() as u32,
+                    .count(),
                 "CommonMark example {example}"
             );
         }
@@ -3432,36 +2743,67 @@ mod tests {
                 "{source:?} must remain fail-closed"
             );
             assert!(result.facts.is_empty(), "{source:?}");
-            assert_eq!(result.link_value_entry_count, 0, "{source:?}");
-            assert!(!result.root_present, "{source:?}");
+            assert!(result.link_values.is_empty(), "{source:?}");
         }
     }
 
     #[test]
-    fn resolver_backed_published_leaf_projects_reference_links_and_images() {
+    fn live_reference_resolver_projects_reference_links_and_images() {
         let source = "[text][BAR] and ![foo][] and [missing]\n\n[bar]: /bar \"B\"\n[foo]: /foo\n";
         let link_source = source.find("[text][BAR]").expect("reference link");
         let image_source = source.find("![foo][]").expect("reference image");
         let paragraph_end = source.find("\n\n").expect("Paragraph boundary") + 1;
-        let mut runtime = segmented_runtime(source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-        let resolver = ready_reference_resolver(&mut retained, &mut runtime);
-        let resolution = resolve_m11_published_inline_leaf_fence(
+        let mut runtime =
+            DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
+        let source_version = runtime.current_source_version().expect("source version");
+        let profile = u32::try_from(binding().syntax_profile().get()).expect("u32 profile");
+        let mut journal =
+            M11ReferenceJournal::new(&mut runtime, source_version, profile).expect("journal");
+        let bar_start = source.find("[bar]:").expect("bar definition");
+        let bar_end = source[bar_start..].find('\n').unwrap() + bar_start;
+        let bar_destination = source[bar_start..].find("/bar").unwrap() + bar_start;
+        let bar_title = source[bar_start..].find("\"B\"").unwrap() + bar_start;
+        offer_reference(
+            &mut journal,
+            &mut runtime,
+            bar_start as u64..bar_end as u64,
+            (bar_start + 1) as u64..(bar_start + 4) as u64,
+            bar_destination as u64..(bar_destination + 4) as u64,
+            Some(bar_title as u64..(bar_title + 3) as u64),
+            b"bar",
+            b"/bar",
+            Some(b"B"),
+        );
+        let foo_start = source.find("[foo]:").expect("foo definition");
+        let foo_end = source[foo_start..].find('\n').unwrap() + foo_start;
+        let foo_destination = source[foo_start..].find("/foo").unwrap() + foo_start;
+        offer_reference(
+            &mut journal,
+            &mut runtime,
+            foo_start as u64..foo_end as u64,
+            (foo_start + 1) as u64..(foo_start + 4) as u64,
+            foo_destination as u64..(foo_destination + 4) as u64,
+            None,
+            b"foo",
+            b"/foo",
+            None,
+        );
+        let mut references = finish_reference_journal(&mut journal, &mut runtime);
+        let resolver = M11ReferenceResolver::from_live_reference_journal(&runtime, &references)
+            .expect("live reference resolver");
+        let authority = M11ParserSourceRangeAuthority::new(
             &runtime,
-            &retained,
-            M11BlockSequencePoint::new(0, 0, SourceBoundaryAffinity::After),
+            runtime.snapshot_current_source().expect("authority lease"),
+            0..paragraph_end,
         )
-        .expect("published Paragraph fence");
-        let M11PublishedInlineLeafFenceResolution::InlineLeaf(fence) = resolution else {
-            panic!("first Paragraph must mint an inline fence");
-        };
-        assert_eq!(fence.inline_source_range(), 0..paragraph_end as u32);
-
-        let mut job =
-            M11InlineProjectionJob::new_for_published_inline_leaf_with_reference_resolver(
-                &runtime, fence, resolver,
-            )
-            .expect("reference-aware job");
+        .expect("paragraph authority");
+        let mut job = M11InlineProjectionJob::new_from_exact_authority(
+            &runtime,
+            authority,
+            binding(),
+            Some(resolver),
+        )
+        .expect("reference-aware capture job");
         assert!(job.reference_resolver.is_some());
         while job.phase != ProjectionJobPhase::TakeOpaque {
             let poll = job.poll(&mut runtime, 1).expect("Projection poll");
@@ -3483,43 +2825,9 @@ mod tests {
                 break;
             }
         }
-        let output = job.take_output().expect("inline output");
-        assert_eq!(
-            output.disposition(),
-            &M11InlineProjectionDisposition::Authoritative
-        );
-        let (_, range, profile, authority, publication) =
-            output.into_publication_parts().into_parts();
-        assert_eq!(range, 0..paragraph_end as u32);
-        assert_eq!(profile, binding().syntax_profile());
-        let M11InlineProjectionPublication::Authoritative(mut root) = publication else {
-            panic!("resolved references must be authoritative");
-        };
-        assert_eq!(root.descriptor().fact_count(), 2);
-        assert_eq!(root.descriptor().link_value_entry_count(), 2);
-        let mut cursor = root
-            .cursor(
-                &runtime,
-                runtime.current_source_version().unwrap(),
-                binding().syntax_profile(),
-            )
-            .expect("inline cursor");
-        let mut facts = Vec::new();
-        loop {
-            match cursor.poll(&runtime).expect("inline cursor poll") {
-                M11InlineProjectionCursorPoll::Pending { transitions } => {
-                    assert!(transitions <= 1);
-                }
-                M11InlineProjectionCursorPoll::Fact { transitions, fact } => {
-                    assert!(transitions <= 1);
-                    facts.push(fact);
-                }
-                M11InlineProjectionCursorPoll::Complete { transitions } => {
-                    assert!(transitions <= 1);
-                    break;
-                }
-            }
-        }
+        let capture = take_authoritative_capture(&mut job);
+        let (facts, link_values, _) = capture.into_parts();
+        assert_eq!(link_values.len(), 2);
         assert_eq!(
             facts
                 .iter()
@@ -3542,43 +2850,52 @@ mod tests {
                 ),
             ]
         );
-        drop(cursor);
-        release_root(&mut root, &mut runtime);
-        drop(root);
-        drop(authority);
         drop(job);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
+        release_reference_root(&mut references, &mut runtime);
+        drop(references);
         close_runtime(runtime);
     }
 
     #[test]
-    fn resolver_backed_clean_range_accepts_definition_value_before_leaf() {
+    fn live_reference_resolver_accepts_definition_value_before_leaf() {
         let source = "[foo]: /destination \"title\"\n\n[text][foo]";
         let paragraph_start = source.find("[text][foo]").expect("Paragraph");
-        let mut runtime = segmented_runtime(source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-        let resolver = ready_reference_resolver(&mut retained, &mut runtime);
+        let mut runtime =
+            DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
         let source_version = runtime.current_source_version().expect("current source");
-        let block_fence = M11CleanDocumentResult::from_ordinary_paragraph_crop(
-            source_version,
-            paragraph_start as u32,
-        )
-        .expect("ordinary Paragraph crop fence");
+        let profile = u32::try_from(binding().syntax_profile().get()).expect("u32 profile");
+        let mut journal =
+            M11ReferenceJournal::new(&mut runtime, source_version, profile).expect("journal");
+        let definition_end = source.find('\n').expect("definition end");
+        let destination_start = source.find("/destination").expect("destination");
+        let title_start = source.find("\"title\"").expect("title");
+        offer_reference(
+            &mut journal,
+            &mut runtime,
+            0..definition_end as u64,
+            1..4,
+            destination_start as u64..(destination_start + "/destination".len()) as u64,
+            Some(title_start as u64..(title_start + "\"title\"".len()) as u64),
+            b"foo",
+            b"/destination",
+            Some(b"title"),
+        );
+        let mut references = finish_reference_journal(&mut journal, &mut runtime);
+        let resolver = M11ReferenceResolver::from_live_reference_journal(&runtime, &references)
+            .expect("live reference resolver");
         let authority = M11ParserSourceRangeAuthority::new(
             &runtime,
             runtime.snapshot_current_source().expect("authority lease"),
             paragraph_start..source.len(),
         )
         .expect("Paragraph authority");
-        let mut job = M11InlineProjectionJob::new_with_reference_resolver(
+        let mut job = M11InlineProjectionJob::new_from_exact_authority(
             &runtime,
             authority,
-            &block_fence,
             binding(),
-            resolver,
+            Some(resolver),
         )
-        .expect("clean reference-aware job");
+        .expect("reference-aware capture job");
         loop {
             let poll = job.poll(&mut runtime, 1).expect("Projection poll");
             assert!(poll.transitions() <= 1);
@@ -3586,41 +2903,17 @@ mod tests {
                 break;
             }
         }
-        let output = job.take_output().expect("inline output");
-        let (_, range, _, authority, publication) = output.into_publication_parts().into_parts();
-        assert_eq!(range, paragraph_start as u32..source.len() as u32);
-        let M11InlineProjectionPublication::Authoritative(mut root) = publication else {
-            panic!("resolved reference must be authoritative");
-        };
-        assert_eq!(root.descriptor().fact_count(), 1);
-        assert_eq!(root.descriptor().link_value_entry_count(), 1);
-        let mut cursor = root
-            .cursor(&runtime, source_version, binding().syntax_profile())
-            .expect("inline cursor");
-        let fact = loop {
-            match cursor.poll(&runtime).expect("inline cursor poll") {
-                M11InlineProjectionCursorPoll::Pending { .. } => {}
-                M11InlineProjectionCursorPoll::Fact { fact, .. } => break fact,
-                M11InlineProjectionCursorPoll::Complete { .. } => {
-                    panic!("reference fact is absent")
-                }
-            }
-        };
+        let capture = take_authoritative_capture(&mut job);
+        let (facts, link_values, _) = capture.into_parts();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(link_values.len(), 1);
+        let fact = facts[0];
         assert_eq!(fact.kind(), M11InlineProjectionKind::ReferenceLink);
         assert_eq!(fact.relative_range(), 0.."[text][foo]".len() as u32);
         assert_eq!(fact.relative_content_range(), 1..5);
-        assert!(matches!(
-            cursor.poll(&runtime).expect("inline cursor complete"),
-            M11InlineProjectionCursorPoll::Complete { .. }
-        ));
-        drop(cursor);
-        release_root(&mut root, &mut runtime);
-        drop(root);
-        drop(authority);
         drop(job);
-        drop(block_fence);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
+        release_reference_root(&mut references, &mut runtime);
+        drop(references);
         close_runtime(runtime);
     }
 
@@ -3651,7 +2944,7 @@ mod tests {
                 (M11InlineProjectionKind::CharacterReference, 18..23, 18..23),
             ]
         );
-        assert_eq!(result.link_value_entry_count, 1);
+        assert_eq!(result.link_values.len(), 1);
     }
 
     #[test]
@@ -3667,7 +2960,7 @@ mod tests {
         assert_eq!(fact.kind(), M11InlineProjectionKind::AutolinkUri);
         assert_eq!(fact.relative_range(), 1..22);
         assert_eq!(fact.relative_content_range(), 2..21);
-        assert_eq!(result.link_value_entry_count, 0);
+        assert!(result.link_values.is_empty());
     }
 
     #[test]
@@ -3713,9 +3006,7 @@ mod tests {
                 char::from(*punctuation).to_string()
             );
         }
-        assert_eq!(result.logical_page_count, 32);
-        assert_eq!(result.fact_count, 32);
-        assert!(result.root_present);
+        assert_eq!(result.facts.len(), 32);
     }
 
     #[test]
@@ -3846,7 +3137,6 @@ mod tests {
                     )
                 );
                 assert!(result.facts.is_empty());
-                assert!(!result.root_present);
             }
         }
     }
@@ -3931,7 +3221,6 @@ mod tests {
                     "source={source:?}, fuel={fuel}"
                 );
                 assert!(result.facts.is_empty(), "source={source:?}, fuel={fuel}");
-                assert!(result.root_present, "source={source:?}, fuel={fuel}");
             }
         }
     }
@@ -4028,7 +3317,6 @@ mod tests {
             M11InlineProjectionDisposition::Authoritative,
             "escaped bracket openers are definitively literal without a reference index"
         );
-        assert!(result.root_present);
         assert!(result.facts.iter().all(|fact| {
             !matches!(
                 fact.kind(),
@@ -4131,7 +3419,7 @@ mod tests {
             let actual = resolve(&source, fuel);
             assert_eq!(actual.disposition, expected.disposition, "fuel={fuel}");
             assert_eq!(actual.facts, expected.facts, "fuel={fuel}");
-            assert_eq!(actual.fact_count, expected.fact_count, "fuel={fuel}");
+            assert_eq!(actual.facts.len(), expected.facts.len(), "fuel={fuel}");
             assert!(actual.maximum_poll_transitions <= fuel);
         }
     }
@@ -4387,7 +3675,6 @@ mod tests {
                 Some(('&', None)),
                 "fuel={fuel}"
             );
-            assert!(result.root_present, "fuel={fuel}");
         }
     }
 
@@ -4571,7 +3858,7 @@ mod tests {
     }
 
     #[test]
-    fn mixed_code_and_nested_emphasis_emit_source_preorder_one_fact_per_page() {
+    fn mixed_code_and_nested_emphasis_emit_one_source_preordered_fact_per_transition() {
         let source = "***bold*** and `code`";
         let result = resolve(source, 1);
         assert_eq!(
@@ -4598,9 +3885,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0..10, 1..9, 15..21]
         );
-        assert_eq!(result.logical_page_count, 3);
-        assert_eq!(result.fact_count, 3);
-        assert!(result.root_present);
+        assert_eq!(result.facts.len(), 3);
     }
 
     #[test]
@@ -4633,7 +3918,6 @@ mod tests {
             vec![0..10, 2..8, 15..21, 26..39]
         );
         assert!(result.facts.iter().all(|fact| fact.flags() == 0));
-        assert!(result.root_present);
 
         let incomplete = resolve("~~still typing", 1);
         assert_eq!(
@@ -4641,20 +3925,16 @@ mod tests {
             M11InlineProjectionDisposition::Authoritative
         );
         assert!(incomplete.facts.is_empty());
-        assert!(incomplete.root_present);
     }
 
     #[test]
-    fn plain_paragraph_produces_an_authoritative_empty_root() {
+    fn plain_paragraph_produces_an_authoritative_empty_capture() {
         let result = resolve("plain paragraph", 3);
         assert_eq!(
             result.disposition,
             M11InlineProjectionDisposition::Authoritative
         );
         assert!(result.facts.is_empty());
-        assert!(result.root_present);
-        assert_eq!(result.logical_page_count, 0);
-        assert_eq!(result.fact_count, 0);
     }
 
     #[test]
@@ -4664,7 +3944,7 @@ mod tests {
             result.disposition,
             M11InlineProjectionDisposition::Authoritative
         );
-        assert_eq!(result.fact_count, 1);
+        assert_eq!(result.facts.len(), 1);
     }
 
     #[test]
@@ -4683,13 +3963,10 @@ mod tests {
             )
         );
         assert!(result.facts.is_empty());
-        assert!(!result.root_present);
-        assert_eq!(result.logical_page_count, 0);
-        assert_eq!(result.fact_count, 0);
     }
 
     #[test]
-    fn ambiguous_emphasis_remainder_fails_the_whole_range_closed_with_no_root() {
+    fn ambiguous_emphasis_remainder_fails_the_whole_range_closed() {
         let source = "**wow*";
         let result = resolve(source, 1);
         let M11InlineProjectionDisposition::Unsupported(unsupported) = result.disposition else {
@@ -4702,9 +3979,6 @@ mod tests {
             M11InlineProjectionUnsupportedReason::AmbiguousEmphasisRemainder { marker: b'*' }
         );
         assert!(result.facts.is_empty());
-        assert!(!result.root_present);
-        assert_eq!(result.logical_page_count, 0);
-        assert_eq!(result.fact_count, 0);
     }
 
     #[test]
@@ -4715,7 +3989,6 @@ mod tests {
         let expected = resolve_in(
             &source,
             prefix.len()..source.len(),
-            Some(prefix.len() as u32),
             M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
         );
         assert_eq!(
@@ -4723,557 +3996,12 @@ mod tests {
             prefix.len() as u32..source.len() as u32
         );
         for fuel in [1, 2, 7, 31, 257] {
-            let actual = resolve_in(
-                &source,
-                prefix.len()..source.len(),
-                Some(prefix.len() as u32),
-                fuel,
-            );
+            let actual = resolve_in(&source, prefix.len()..source.len(), fuel);
             assert_eq!(actual.disposition, expected.disposition, "fuel={fuel}");
             assert_eq!(actual.facts, expected.facts, "fuel={fuel}");
-            assert_eq!(
-                actual.logical_page_count, expected.logical_page_count,
-                "fuel={fuel}"
-            );
-            assert_eq!(actual.fact_count, expected.fact_count, "fuel={fuel}");
-            assert_eq!(actual.root_present, expected.root_present, "fuel={fuel}");
+            assert_eq!(actual.link_values, expected.link_values, "fuel={fuel}");
             assert!(actual.maximum_poll_transitions <= fuel);
         }
-    }
-
-    #[test]
-    fn published_middle_paragraph_drives_exact_authoritative_inline_projection() {
-        let source = "p\n\n**bold**\n\nq";
-        let middle_start = source.find("**bold**").expect("middle Paragraph");
-        let middle_end = middle_start + "**bold**\n".len();
-        let mut runtime = segmented_runtime(source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-
-        let resolution = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                middle_start,
-                utf16_offset(source, middle_start),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("published Paragraph fence");
-        let M11PublishedInlineLeafFenceResolution::InlineLeaf(fence) = resolution else {
-            panic!("middle point must select a Paragraph");
-        };
-        assert_eq!(fence.source(), runtime.current_source_version().unwrap());
-        assert_eq!(
-            fence.block_source_range(),
-            middle_start as u32..middle_end as u32
-        );
-        assert_eq!(
-            fence.inline_source_range(),
-            middle_start as u32..middle_end as u32
-        );
-        assert_eq!(
-            fence.block_source_utf16_range(),
-            utf16_offset(source, middle_start) as u32..utf16_offset(source, middle_end) as u32
-        );
-        assert_eq!(
-            fence.inline_source_utf16_range(),
-            utf16_offset(source, middle_start) as u32..utf16_offset(source, middle_end) as u32
-        );
-        assert_eq!(fence.entry_ordinal(), 2);
-        assert_eq!(fence.binding(), binding());
-        assert!(fence.query_receipt().entries_scanned() <= 64);
-
-        let mut job =
-            M11InlineProjectionJob::new_for_published_inline_leaf(&runtime, fence).expect("job");
-        loop {
-            let poll = job.poll(&mut runtime, 1).expect("Projection poll");
-            assert!(poll.transitions() <= 1);
-            if poll.status() == M11InlineProjectionJobPollStatus::Complete {
-                break;
-            }
-        }
-        assert_eq!(
-            job.initial_lexical_source_bytes_read(),
-            u64::try_from(middle_end - middle_start).unwrap()
-        );
-        let output = job.take_output().expect("inline output");
-        assert_eq!(
-            output.source_range(),
-            middle_start as u32..middle_end as u32
-        );
-        let (_, output_range, profile, authority, publication) =
-            output.into_publication_parts().into_parts();
-        assert_eq!(output_range, middle_start as u32..middle_end as u32);
-        assert_eq!(profile, binding().syntax_profile());
-        assert_eq!(
-            authority.source_range(),
-            middle_start..middle_end,
-            "the returned source baton must remain fenced to the middle leaf"
-        );
-        let M11InlineProjectionPublication::Authoritative(mut root) = publication else {
-            panic!("strong Paragraph must be authoritative");
-        };
-        let mut cursor = root
-            .cursor(
-                &runtime,
-                runtime.current_source_version().unwrap(),
-                binding().syntax_profile(),
-            )
-            .expect("inline cursor");
-        let fact = loop {
-            match cursor.poll(&runtime).expect("cursor poll") {
-                M11InlineProjectionCursorPoll::Pending { .. } => {}
-                M11InlineProjectionCursorPoll::Fact { fact, .. } => break fact,
-                M11InlineProjectionCursorPoll::Complete { .. } => {
-                    panic!("strong fact is absent")
-                }
-            }
-        };
-        assert_eq!(fact.kind(), M11InlineProjectionKind::Strong);
-        assert_eq!(fact.relative_range(), 0..8);
-        assert_eq!(fact.relative_content_range(), 2..6);
-        assert!(matches!(
-            cursor.poll(&runtime).expect("cursor complete"),
-            M11InlineProjectionCursorPoll::Complete { .. }
-        ));
-        drop(cursor);
-        release_root(&mut root, &mut runtime);
-        drop(root);
-        drop(authority);
-        drop(job);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
-        close_runtime(runtime);
-    }
-
-    #[test]
-    fn published_atx_heading_refines_only_exact_content_with_authoritative_inline_facts() {
-        let source = "p\n\n  ### **β😀** ###  \r\n\nq";
-        let heading_start = source.find("  ###").expect("ATX Heading");
-        let heading_end = heading_start + "  ### **β😀** ###  \r\n".len();
-        let inline_start = source.find("**β😀**").expect("heading content");
-        let inline_end = inline_start + "**β😀**".len();
-        let mut runtime = segmented_runtime(source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-
-        let resolution = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                inline_start + 2,
-                utf16_offset(source, inline_start + 2),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("published ATX Heading fence");
-        let M11PublishedInlineLeafFenceResolution::InlineLeaf(fence) = resolution else {
-            panic!("heading-content point must select an inline-bearing leaf");
-        };
-        assert_eq!(fence.kind(), M11BlockSequenceEntryKind::Structured);
-        assert_eq!(
-            fence.block_source_range(),
-            heading_start as u32..heading_end as u32
-        );
-        assert_eq!(
-            fence.inline_source_range(),
-            inline_start as u32..inline_end as u32
-        );
-        assert_eq!(
-            fence.block_source_utf16_range(),
-            utf16_offset(source, heading_start) as u32..utf16_offset(source, heading_end) as u32
-        );
-        assert_eq!(
-            fence.inline_source_utf16_range(),
-            utf16_offset(source, inline_start) as u32..utf16_offset(source, inline_end) as u32
-        );
-
-        let mut job =
-            M11InlineProjectionJob::new_for_published_inline_leaf(&runtime, fence).expect("job");
-        loop {
-            let poll = job.poll(&mut runtime, 1).expect("Projection poll");
-            assert!(poll.transitions() <= 1);
-            if poll.status() == M11InlineProjectionJobPollStatus::Complete {
-                break;
-            }
-        }
-        assert_eq!(
-            job.initial_lexical_source_bytes_read(),
-            u64::try_from(inline_end - inline_start).unwrap()
-        );
-        let output = job.take_output().expect("inline output");
-        assert_eq!(
-            output.source_range(),
-            inline_start as u32..inline_end as u32
-        );
-        let (_, output_range, profile, authority, publication) =
-            output.into_publication_parts().into_parts();
-        assert_eq!(
-            output_range,
-            inline_start as u32..inline_end as u32,
-            "markers, indent, closing marker, and EOL stay outside inline authority"
-        );
-        assert_eq!(profile, binding().syntax_profile());
-        assert_eq!(authority.source_range(), inline_start..inline_end);
-        let M11InlineProjectionPublication::Authoritative(mut root) = publication else {
-            panic!("strong heading content must be authoritative");
-        };
-        let mut cursor = root
-            .cursor(
-                &runtime,
-                runtime.current_source_version().unwrap(),
-                binding().syntax_profile(),
-            )
-            .expect("inline cursor");
-        let fact = loop {
-            match cursor.poll(&runtime).expect("cursor poll") {
-                M11InlineProjectionCursorPoll::Pending { .. } => {}
-                M11InlineProjectionCursorPoll::Fact { fact, .. } => break fact,
-                M11InlineProjectionCursorPoll::Complete { .. } => {
-                    panic!("strong fact is absent")
-                }
-            }
-        };
-        assert_eq!(fact.kind(), M11InlineProjectionKind::Strong);
-        assert_eq!(fact.relative_range(), 0..10);
-        assert_eq!(fact.relative_content_range(), 2..8);
-        assert!(matches!(
-            cursor.poll(&runtime).expect("cursor complete"),
-            M11InlineProjectionCursorPoll::Complete { .. }
-        ));
-        drop(cursor);
-        release_root(&mut root, &mut runtime);
-        drop(root);
-        drop(authority);
-        drop(job);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
-        close_runtime(runtime);
-    }
-
-    #[test]
-    fn published_atx_heading_fails_closed_on_inline_hazard_and_empty_content() {
-        let source = "# before <tag>\n\n# ###\n";
-        let hazard_start = source.find("before").expect("hazard content");
-        let hazard_end = hazard_start + "before <tag>".len();
-        let empty_heading_start = source.find("# ###").expect("empty heading");
-        let mut runtime = segmented_runtime(source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-
-        let resolution = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                hazard_start,
-                utf16_offset(source, hazard_start),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("hazard ATX Heading fence");
-        let M11PublishedInlineLeafFenceResolution::InlineLeaf(fence) = resolution else {
-            panic!("nonempty heading must mint an inline fence");
-        };
-        assert_eq!(fence.kind(), M11BlockSequenceEntryKind::Structured);
-        assert_eq!(
-            fence.inline_source_range(),
-            hazard_start as u32..hazard_end as u32
-        );
-        let mut job =
-            M11InlineProjectionJob::new_for_published_inline_leaf(&runtime, fence).expect("job");
-        loop {
-            let poll = job.poll(&mut runtime, 2).expect("Projection poll");
-            assert!(poll.transitions() <= 2);
-            if poll.status() == M11InlineProjectionJobPollStatus::Complete {
-                break;
-            }
-        }
-        assert_eq!(
-            job.initial_lexical_source_bytes_read(),
-            u64::try_from(hazard_end - hazard_start).unwrap()
-        );
-        let output = job.take_output().expect("unsupported output");
-        let (_, range, _, authority, publication) = output.into_publication_parts().into_parts();
-        assert_eq!(range, hazard_start as u32..hazard_end as u32);
-        assert_eq!(authority.source_range(), hazard_start..hazard_end);
-        let M11InlineProjectionPublication::Unsupported(record) = publication else {
-            panic!("HTML hazard must fail the heading content closed");
-        };
-        assert_eq!(
-            record.source_range(),
-            hazard_start as u32..hazard_end as u32
-        );
-        drop(record.into_encoded());
-        drop(authority);
-        drop(job);
-
-        let empty = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                empty_heading_start,
-                utf16_offset(source, empty_heading_start),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("empty ATX Heading lookup");
-        assert!(matches!(
-            empty,
-            M11PublishedInlineLeafFenceResolution::NotInlineLeaf {
-                kind: M11BlockSequenceEntryKind::Structured,
-                source: ref range,
-                ..
-            } if *range == (
-                empty_heading_start as u32
-                    ..(empty_heading_start + "# ###\n".len()) as u32
-            )
-        ));
-
-        drop(empty);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
-        close_runtime(runtime);
-    }
-
-    #[test]
-    fn retained_point_lookup_honors_unicode_crlf_dual_coordinates_and_affinity() {
-        let source = "α\r\n\r\n**β**\r\n\r\nq";
-        let middle_start = source.find("**β**").expect("middle Paragraph");
-        let middle_end = middle_start + "**β**\r\n".len();
-        let mut runtime = segmented_runtime(source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-        let descriptor_before = retained.descriptor(&runtime).expect("descriptor before");
-
-        let invalid = retained.locate_block_point(
-            &runtime,
-            M11BlockSequencePoint::new(
-                middle_start,
-                utf16_offset(source, middle_start) + 1,
-                SourceBoundaryAffinity::After,
-            ),
-        );
-        assert!(invalid.is_err(), "mismatched UTF-16 point must fail closed");
-
-        let before_start = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                middle_start,
-                utf16_offset(source, middle_start),
-                SourceBoundaryAffinity::Before,
-            ),
-        )
-        .expect("before-start lookup");
-        assert!(matches!(
-            before_start,
-            M11PublishedInlineLeafFenceResolution::NotInlineLeaf {
-                kind: M11BlockSequenceEntryKind::Blank,
-                source: ref range,
-                ..
-            } if *range == ((middle_start as u32 - 2)..middle_start as u32)
-        ));
-
-        let after_start = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                middle_start,
-                utf16_offset(source, middle_start),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("after-start lookup");
-        let M11PublishedInlineLeafFenceResolution::InlineLeaf(after_start) = after_start else {
-            panic!("After at Paragraph start must select Paragraph");
-        };
-        assert_eq!(
-            after_start.block_source_range(),
-            middle_start as u32..middle_end as u32
-        );
-        assert_eq!(
-            after_start.block_source_utf16_range(),
-            utf16_offset(source, middle_start) as u32..utf16_offset(source, middle_end) as u32
-        );
-
-        let before_end = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                middle_end,
-                utf16_offset(source, middle_end),
-                SourceBoundaryAffinity::Before,
-            ),
-        )
-        .expect("before-end lookup");
-        assert!(matches!(
-            before_end,
-            M11PublishedInlineLeafFenceResolution::InlineLeaf(ref fence)
-                if fence.block_source_range() == (middle_start as u32..middle_end as u32)
-        ));
-
-        let after_end = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                middle_end,
-                utf16_offset(source, middle_end),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("after-end lookup");
-        assert!(matches!(
-            after_end,
-            M11PublishedInlineLeafFenceResolution::NotInlineLeaf {
-                kind: M11BlockSequenceEntryKind::Blank,
-                source: ref range,
-                source_utf16: ref utf16_range,
-                query_receipt,
-                ..
-            } if *range == (middle_end as u32..middle_end as u32 + 2)
-                && *utf16_range == (
-                    utf16_offset(source, middle_end) as u32
-                        ..utf16_offset(source, middle_end + 2) as u32
-                )
-                && query_receipt.entries_scanned() <= 64
-        ));
-        assert_eq!(
-            retained
-                .descriptor(&runtime)
-                .expect("descriptor after repeated point queries"),
-            descriptor_before,
-            "late caret movement must not alter canonical publication"
-        );
-
-        drop(after_start);
-        drop(before_start);
-        drop(before_end);
-        drop(after_end);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
-        close_runtime(runtime);
-    }
-
-    #[test]
-    fn published_middle_paragraph_fails_closed_on_inline_hazard_without_neighbor_reads() {
-        let source = "p\n\nbefore <tag>\n\nq";
-        let middle_start = source.find("before").expect("middle Paragraph");
-        let middle_end = middle_start + "before <tag>\n".len();
-        let mut runtime = segmented_runtime(source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-        let resolution = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                middle_start,
-                utf16_offset(source, middle_start),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("published Paragraph fence");
-        let M11PublishedInlineLeafFenceResolution::InlineLeaf(fence) = resolution else {
-            panic!("middle point must select a Paragraph");
-        };
-        let mut job =
-            M11InlineProjectionJob::new_for_published_inline_leaf(&runtime, fence).expect("job");
-        loop {
-            let poll = job.poll(&mut runtime, 2).expect("Projection poll");
-            assert!(poll.transitions() <= 2);
-            if poll.status() == M11InlineProjectionJobPollStatus::Complete {
-                break;
-            }
-        }
-        assert_eq!(
-            job.initial_lexical_source_bytes_read(),
-            u64::try_from(middle_end - middle_start).unwrap()
-        );
-        let output = job.take_output().expect("unsupported output");
-        assert_eq!(
-            output.source_range(),
-            middle_start as u32..middle_end as u32
-        );
-        let (_, range, _, authority, publication) = output.into_publication_parts().into_parts();
-        assert_eq!(range, middle_start as u32..middle_end as u32);
-        assert_eq!(authority.source_range(), middle_start..middle_end);
-        let M11InlineProjectionPublication::Unsupported(record) = publication else {
-            panic!("HTML hazard must fail the whole middle Paragraph closed");
-        };
-        assert_eq!(
-            record.source_range(),
-            middle_start as u32..middle_end as u32
-        );
-        drop(record.into_encoded());
-        drop(authority);
-        drop(job);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
-        close_runtime(runtime);
-    }
-
-    #[test]
-    fn published_middle_paragraph_abort_reclaims_to_zero_with_fuel_one() {
-        let middle = "*x* ".repeat(20_000);
-        let source = format!("p\n\n{middle}\n\nq");
-        let middle_start = 3;
-        let middle_end = middle_start + middle.len() + 1;
-        let mut runtime = segmented_runtime(&source);
-        let mut retained = retain_segmented_candidate(&mut runtime);
-        let resolution = resolve_m11_published_inline_leaf_fence(
-            &runtime,
-            &retained,
-            M11BlockSequencePoint::new(
-                middle_start,
-                utf16_offset(&source, middle_start),
-                SourceBoundaryAffinity::After,
-            ),
-        )
-        .expect("published Paragraph fence");
-        let M11PublishedInlineLeafFenceResolution::InlineLeaf(fence) = resolution else {
-            panic!("middle point must select a Paragraph");
-        };
-        assert_eq!(
-            fence.inline_source_range(),
-            middle_start as u32..middle_end as u32
-        );
-        let mut job =
-            M11InlineProjectionJob::new_for_published_inline_leaf(&runtime, fence).expect("job");
-        while runtime.arena_metrics().reserved_external_payload_bytes == 0 {
-            let poll = job.poll(&mut runtime, 257).expect("partial work");
-            assert_eq!(poll.status(), M11InlineProjectionJobPollStatus::Pending);
-        }
-        job.begin_abort(&mut runtime).expect("begin abort");
-        loop {
-            let poll = job.poll_abort(&mut runtime, 1).expect("abort poll");
-            assert!(poll.transitions() <= 1);
-            if poll.complete() {
-                break;
-            }
-        }
-        drop(job);
-        assert_eq!(runtime.arena_metrics().reserved_external_payload_bytes, 0);
-        close_retained(&mut retained, &mut runtime);
-        drop(retained);
-        close_runtime(runtime);
-    }
-
-    #[test]
-    fn non_paragraph_block_fence_rejects_fenced_code_before_inline_scanning() {
-        let source = "```\nx\n```\n";
-        let runtime =
-            DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let fence = parse(&runtime);
-        assert_ne!(fence.kind(), M11CleanDocumentKind::Paragraph);
-        let authority = M11ParserSourceRangeAuthority::new(
-            &runtime,
-            runtime.snapshot_current_source().expect("authority lease"),
-            0..source.len(),
-        )
-        .expect("authority");
-        let error = M11InlineProjectionJob::new(&runtime, authority, &fence, binding())
-            .expect_err("non-Paragraph fence must fail");
-        assert!(matches!(
-            error.0,
-            M11InlineProjectionJobErrorInner::BlockFenceNotParagraph
-        ));
-        drop(fence);
-        close_runtime(runtime);
     }
 
     #[test]
@@ -5281,7 +4009,6 @@ mod tests {
         let source = "\\*literal*";
         let runtime =
             DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let fence = parse(&runtime);
         let authority = M11ParserSourceRangeAuthority::new(
             &runtime,
             runtime.snapshot_current_source().expect("authority lease"),
@@ -5289,13 +4016,13 @@ mod tests {
         )
         .expect("authority");
         let stale = M11ParserBinding::new(binding().syntax_profile(), 3);
-        let error = M11InlineProjectionJob::new(&runtime, authority, &fence, stale)
-            .expect_err("grammar revision 3 must not reuse revision 5 inline semantics");
+        let error =
+            M11InlineProjectionJob::new_from_exact_authority(&runtime, authority, stale, None)
+                .expect_err("grammar revision 3 must not reuse revision 5 inline semantics");
         assert!(matches!(
             error.0,
             M11InlineProjectionJobErrorInner::UnsupportedGrammarRevision { actual: 3 }
         ));
-        drop(fence);
         close_runtime(runtime);
     }
 
@@ -5304,7 +4031,6 @@ mod tests {
         let source = "*x* ".repeat(20_000);
         let mut runtime =
             DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
-        let fence = parse(&runtime);
         let authority = M11ParserSourceRangeAuthority::new(
             &runtime,
             runtime.snapshot_current_source().expect("authority lease"),
@@ -5312,21 +4038,23 @@ mod tests {
         )
         .expect("authority");
         let mut job =
-            M11InlineProjectionJob::new(&runtime, authority, &fence, binding()).expect("job");
+            M11InlineProjectionJob::new_from_exact_authority(&runtime, authority, binding(), None)
+                .expect("capture job");
         while runtime.arena_metrics().reserved_external_payload_bytes == 0 {
             let poll = job.poll(&mut runtime, 257).expect("partial work");
             assert_eq!(poll.status(), M11InlineProjectionJobPollStatus::Pending);
         }
-        job.begin_abort(&mut runtime).expect("begin abort");
+        job.begin_release(&mut runtime).expect("begin release");
+        job.begin_release(&mut runtime)
+            .expect("retry release initialization");
         loop {
-            let poll = job.poll_abort(&mut runtime, 1).expect("abort poll");
+            let poll = job.poll_release(&mut runtime, 1).expect("release poll");
             assert!(poll.transitions() <= 1);
             if poll.complete() {
                 break;
             }
         }
         drop(job);
-        drop(fence);
         assert_eq!(runtime.arena_metrics().reserved_external_payload_bytes, 0);
         close_runtime(runtime);
     }
@@ -5336,7 +4064,6 @@ mod tests {
         let source = "\\* x\\\ny ".repeat(10_000);
         let mut runtime =
             DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
-        let fence = parse(&runtime);
         let authority = M11ParserSourceRangeAuthority::new(
             &runtime,
             runtime.snapshot_current_source().expect("authority lease"),
@@ -5344,7 +4071,8 @@ mod tests {
         )
         .expect("authority");
         let mut job =
-            M11InlineProjectionJob::new(&runtime, authority, &fence, binding()).expect("job");
+            M11InlineProjectionJob::new_from_exact_authority(&runtime, authority, binding(), None)
+                .expect("capture job");
         loop {
             let poll = job.poll(&mut runtime, 257).expect("partial work");
             assert_eq!(poll.status(), M11InlineProjectionJobPollStatus::Pending);
@@ -5358,16 +4086,15 @@ mod tests {
         assert_eq!(poll.status(), M11InlineProjectionJobPollStatus::Pending);
         assert!(job.leaf_scanner.is_some());
 
-        job.begin_abort(&mut runtime).expect("begin abort");
+        job.begin_release(&mut runtime).expect("begin release");
         loop {
-            let poll = job.poll_abort(&mut runtime, 1).expect("abort poll");
+            let poll = job.poll_release(&mut runtime, 1).expect("release poll");
             assert!(poll.transitions() <= 1);
             if poll.complete() {
                 break;
             }
         }
         drop(job);
-        drop(fence);
         assert_eq!(runtime.arena_metrics().reserved_external_payload_bytes, 0);
         close_runtime(runtime);
     }
@@ -5377,7 +4104,6 @@ mod tests {
         let source = "<http://example.test/a> ".repeat(2_000);
         let mut runtime =
             DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
-        let fence = parse(&runtime);
         let authority = M11ParserSourceRangeAuthority::new(
             &runtime,
             runtime.snapshot_current_source().expect("authority lease"),
@@ -5385,7 +4111,8 @@ mod tests {
         )
         .expect("authority");
         let mut job =
-            M11InlineProjectionJob::new(&runtime, authority, &fence, binding()).expect("job");
+            M11InlineProjectionJob::new_from_exact_authority(&runtime, authority, binding(), None)
+                .expect("capture job");
         loop {
             let poll = job.poll(&mut runtime, 257).expect("partial work");
             assert_eq!(poll.status(), M11InlineProjectionJobPollStatus::Pending);
@@ -5396,16 +4123,15 @@ mod tests {
             }
         }
         assert!(job.autolink_job.is_some());
-        job.begin_abort(&mut runtime).expect("begin abort");
+        job.begin_release(&mut runtime).expect("begin release");
         loop {
-            let poll = job.poll_abort(&mut runtime, 1).expect("abort poll");
+            let poll = job.poll_release(&mut runtime, 1).expect("release poll");
             assert!(poll.transitions() <= 1);
             if poll.complete() {
                 break;
             }
         }
         drop(job);
-        drop(fence);
         assert_eq!(runtime.arena_metrics().reserved_external_payload_bytes, 0);
         close_runtime(runtime);
     }

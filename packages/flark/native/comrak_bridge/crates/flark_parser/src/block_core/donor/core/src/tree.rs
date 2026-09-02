@@ -1,25 +1,9 @@
-use crate::source::{
-    LeafContent, LogicalProjection, LogicalProjectionCursor, ProjectionReadError,
-    SourceBackedContent, SourceDocument,
-};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SyntaxProfile {
     CommonMark,
     Gfm,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Position {
-    pub line: usize,
-    pub column: usize,
-}
-
-impl Position {
-    pub const fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,13 +59,10 @@ pub enum BlockKind {
         fence_char: u8,
         fence_length: usize,
         fence_offset: usize,
-        info: LogicalProjection,
-        literal: LogicalProjection,
         closed: bool,
     },
     HtmlBlock {
         block_type: u8,
-        literal: LogicalProjection,
     },
     Paragraph,
     Heading {
@@ -102,13 +83,6 @@ impl BlockKind {
         matches!(
             self,
             Self::Paragraph | Self::Heading { .. } | Self::CodeBlock { .. }
-        )
-    }
-
-    pub fn contains_inlines(&self) -> bool {
-        matches!(
-            self,
-            Self::Paragraph | Self::Heading { .. } | Self::TableCell
         )
     }
 
@@ -235,9 +209,6 @@ pub struct BlockNode {
     /// without remaining permanently zero. This parser-only field preserves
     /// donor output metadata while making the intended safety transition real.
     pub table_autocompleted_cells: usize,
-    pub source_start: Position,
-    pub source_end: Position,
-    pub content: LeafContent,
     /// Closed children that precede the transient children in `children`.
     /// Empty during a one-shot parse; populated only by continuation restore.
     pub historical_children: ChildSequenceFold,
@@ -248,60 +219,9 @@ pub struct BlockNode {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BlockEvent {
-    Open {
-        node: NodeId,
-        parent: NodeId,
-    },
-    AppendContent {
-        node: NodeId,
-        logical_start: u32,
-        logical_end: u32,
-        origin_start: u32,
-        origin_end: u32,
-        line_offsets_start: u32,
-        line_offsets_end: u32,
-        /// Event-time scalar fold for a source-backed raw block. Keeping this
-        /// on the event prevents a later parser state from leaking into an
-        /// earlier append delta when several lines are delivered together.
-        source_backed: Option<SourceBackedContent>,
-    },
-    DrainContentPrefix {
-        node: NodeId,
-        bytes: u32,
-    },
-    Promote {
-        node: NodeId,
-        from: &'static str,
-        to: &'static str,
-    },
-    Close {
-        node: NodeId,
-    },
-    /// Output-only full-tree source-position fold. A continuation parser emits
-    /// this instead of reading historical output from scratch.
-    RepairListSourcePositions {
-        node: NodeId,
-        scratch_positions: Vec<(NodeId, Position, Position)>,
-    },
-    Detach {
-        node: NodeId,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReferenceOccurrence {
-    pub normalized_label: String,
-    pub url: String,
-    pub title: String,
-    pub origins: Vec<crate::source::OriginRun>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockTree {
     pub nodes: Vec<BlockNode>,
     pub root: NodeId,
-    pub events: Vec<BlockEvent>,
 }
 
 impl BlockTree {
@@ -317,14 +237,10 @@ impl BlockTree {
                 last_line_blank: false,
                 table_visited: false,
                 table_autocompleted_cells: 0,
-                source_start: Position::new(1, 1),
-                source_end: Position::new(1, 1),
-                content: LeafContent::default(),
                 historical_children: ChildSequenceFold::default(),
                 folded_children: 0,
             }],
             root,
-            events: Vec::new(),
         }
     }
 
@@ -336,40 +252,8 @@ impl BlockTree {
         &mut self.nodes[id.index()]
     }
 
-    #[must_use]
-    pub fn literal_ownership_receipt(&self) -> LiteralOwnershipReceipt {
-        let mut receipt = LiteralOwnershipReceipt::default();
-        for node in &self.nodes {
-            if matches!(
-                node.kind,
-                BlockKind::CodeBlock { .. } | BlockKind::HtmlBlock { .. }
-            ) {
-                receipt.blocks += 1;
-                receipt.referenced_logical_bytes += node.content.logical_len();
-                receipt.owned_aggregate_literal_bytes += node.content.logical.capacity();
-                receipt.origin_runs += node.content.origins.len();
-            }
-        }
-        receipt
-    }
-
-    pub fn append(&mut self, parent: NodeId, kind: BlockKind, start: Position) -> NodeId {
-        let id = self.append_scratch(parent, kind, start);
-        self.events.push(BlockEvent::Open { node: id, parent });
-        id
-    }
-
-    /// Append parser scratch without creating the legacy node-id event stream.
-    ///
-    /// The direct command driver owns its own stack-shaped protocol. Keeping
-    /// this operation separate prevents that path from accidentally routing
-    /// through `BlockEvent` and a later tree materialization pass.
-    pub(crate) fn append_scratch(
-        &mut self,
-        parent: NodeId,
-        kind: BlockKind,
-        start: Position,
-    ) -> NodeId {
+    /// Append parser scratch for the direct command driver.
+    pub(crate) fn append_scratch(&mut self, parent: NodeId, kind: BlockKind) -> NodeId {
         let id = NodeId(u32::try_from(self.nodes.len()).expect("node id below u32"));
         self.nodes.push(BlockNode {
             id,
@@ -380,9 +264,6 @@ impl BlockTree {
             last_line_blank: false,
             table_visited: false,
             table_autocompleted_cells: 0,
-            source_start: start,
-            source_end: start,
-            content: LeafContent::default(),
             historical_children: ChildSequenceFold::default(),
             folded_children: 0,
         });
@@ -411,32 +292,7 @@ impl BlockTree {
             .is_some_and(|child| self.node(child).open)
     }
 
-    pub fn next_sibling(&self, id: NodeId) -> Option<NodeId> {
-        let parent = self.parent(id)?;
-        let siblings = &self.node(parent).children;
-        let index = siblings.iter().position(|candidate| *candidate == id)?;
-        siblings.get(index + 1).copied()
-    }
-
-    pub fn detach(&mut self, id: NodeId) {
-        let Some(parent) = self.parent(id) else {
-            return;
-        };
-        let index = self.nodes[parent.index()]
-            .children
-            .iter()
-            .position(|child| *child == id)
-            .expect("detached child present");
-        assert!(
-            index >= self.nodes[parent.index()].folded_children,
-            "cannot detach a child already committed to the parent fold"
-        );
-        self.nodes[parent.index()].children.remove(index);
-        self.nodes[id.index()].parent = None;
-        self.events.push(BlockEvent::Detach { node: id });
-    }
-
-    /// Detach direct-parser scratch without producing a legacy node-id event.
+    /// Detach direct-parser scratch.
     pub(crate) fn detach_scratch(&mut self, id: NodeId) {
         let Some(parent) = self.parent(id) else {
             return;
@@ -459,26 +315,7 @@ impl BlockTree {
         self.nodes[node.index()].parent = Some(parent);
     }
 
-    pub fn insert_before(&mut self, sibling: NodeId, node: NodeId) {
-        let parent = self.parent(sibling).expect("sibling has parent");
-        if let Some(old_parent) = self.parent(node) {
-            self.remove_unfolded_child(old_parent, node);
-        }
-        let siblings = &mut self.nodes[parent.index()].children;
-        let index = siblings
-            .iter()
-            .position(|candidate| *candidate == sibling)
-            .expect("sibling present");
-        siblings.insert(index, node);
-        self.nodes[node.index()].parent = Some(parent);
-    }
-
-    pub fn close(&mut self, id: NodeId) {
-        self.close_scratch(id);
-        self.events.push(BlockEvent::Close { node: id });
-    }
-
-    /// Close parser scratch without creating a legacy node-id event.
+    /// Close parser scratch.
     pub(crate) fn close_scratch(&mut self, id: NodeId) {
         self.nodes[id.index()].open = false;
     }
@@ -494,26 +331,6 @@ impl BlockTree {
             "cannot move a child already committed to the parent fold"
         );
         self.nodes[parent.index()].children.remove(index);
-    }
-
-    /// Commit one finalized direct child into its parent's constant-size fold.
-    pub fn fold_finalized_child(&mut self, id: NodeId) {
-        let Some(parent) = self.parent(id) else {
-            return;
-        };
-        // Atomic table construction can leave completed sibling cells/rows
-        // before the parser's last-child close path. Commit that prefix once
-        // before committing the explicitly finalized child.
-        self.fold_children_before(parent, Some(id));
-        let next = self.nodes[parent.index()].folded_children;
-        assert_eq!(
-            self.nodes[parent.index()].children.get(next),
-            Some(&id),
-            "children must finalize in source order"
-        );
-        let summary = self.closed_child_summary(id);
-        self.nodes[parent.index()].historical_children.push(summary);
-        self.nodes[parent.index()].folded_children += 1;
     }
 
     /// Commit the maximal contiguous closed child prefix in source order.
@@ -571,10 +388,6 @@ impl BlockTree {
             self.nodes[parent.index()].historical_children.push(summary);
             self.nodes[parent.index()].folded_children += 1;
         }
-    }
-
-    pub fn ends_with_blank_line(&self, id: NodeId) -> bool {
-        self.closed_child_summary(id).ends_blank
     }
 
     pub fn child_sequence_fold(&self, id: NodeId) -> ChildSequenceFold {
@@ -637,50 +450,5 @@ impl BlockTree {
 impl Default for BlockTree {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BlockDocument {
-    pub profile: SyntaxProfile,
-    pub source: SourceDocument,
-    pub tree: BlockTree,
-    pub references: Vec<ReferenceOccurrence>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct LiteralOwnershipReceipt {
-    pub blocks: usize,
-    pub referenced_logical_bytes: usize,
-    pub owned_aggregate_literal_bytes: usize,
-    pub origin_runs: usize,
-}
-
-impl BlockDocument {
-    pub fn projection_cursor(
-        &self,
-        node: NodeId,
-        projection: LogicalProjection,
-    ) -> Result<LogicalProjectionCursor<'_>, ProjectionReadError> {
-        self.tree
-            .node(node)
-            .content
-            .projection_cursor(&self.source, projection)
-    }
-
-    pub fn materialize_projection(
-        &self,
-        node: NodeId,
-        projection: LogicalProjection,
-    ) -> Result<String, ProjectionReadError> {
-        self.tree
-            .node(node)
-            .content
-            .materialize_projection(&self.source, projection)
-    }
-
-    #[must_use]
-    pub fn literal_ownership_receipt(&self) -> LiteralOwnershipReceipt {
-        self.tree.literal_ownership_receipt()
     }
 }

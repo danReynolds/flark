@@ -14,6 +14,7 @@ trap 'exit 143' TERM
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BRIDGE="$ROOT/packages/flark/native/comrak_bridge"
+source "$ROOT/scripts/pinned_rust_env.sh"
 PROFILE="${FLARK_V4_PROFILE:-debug}"
 # Experiment opt-in: extra cargo features for the flark-abi library build
 # (e.g. FLARK_V4_FEATURES=opening-session for the RFC 029 A3 streamed-open

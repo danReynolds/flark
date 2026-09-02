@@ -9,6 +9,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/scripts/pinned_rust_env.sh"
 SOURCE_BYTES="${FLARK_PROFILE_SOURCE_BYTES:-10485760}"
 RUN_COUNT="${FLARK_PROFILE_RUN_COUNT:-5}"
 LIBRARY="${FLARK_V4_LIBRARY_PATH:-$ROOT/packages/flark/native/comrak_bridge/target/release/libflark_abi.dylib}"

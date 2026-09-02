@@ -7,18 +7,17 @@ use std::{
 };
 
 use flark_engine::parser_internal::{
-    M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenEvent,
-    M11RecursiveGreenFrameId, M11RecursiveGreenFrameQueryLimits, M11RecursiveGreenLogicalAction,
-    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11ReferenceJournal, M11ReferenceJournalRoot,
-    M11ReferenceJournalStatus, M11ReferenceResolution, M11ReferenceResolver,
-    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
+    M11RecursiveGreenEvent, M11RecursiveGreenFrameId, M11RecursiveGreenLogicalAction,
+    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
+    M11ReferenceJournal, M11ReferenceJournalRoot, M11ReferenceJournalStatus,
+    M11ReferenceResolution, M11ReferenceResolver,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity,
     SOURCE_CURSOR_WINDOW_BYTES,
 };
 use flark_parser::block_core::{
-    resolve_m11_recursive_green_inline_leaf_fence, M11BlockWriter, M11BlockWriterOfferStatus,
+    resolve_m11_recursive_green_inline_leaf_row_fence, M11BlockWriter, M11BlockWriterOfferStatus,
     M11BlockWriterPollStatus, M11DirectBlockController, M11DirectBlockControllerError,
     M11DirectBlockError, M11DirectBlockPollStatus, M11DirectBlockUnsupported,
     M11ReferenceRendezvous, M11ReferenceRendezvousStatus, M11_DIRECT_BLOCK_MAX_LEXICAL_SLACK,
@@ -27,9 +26,11 @@ use flark_parser::block_core::{
 use flark_parser::{
     project_m11_gfm_inline, project_m11_gfm_table, M11ExactController, M11GfmInlineNode,
     M11GfmInlineOptions, M11GfmInlineReference, M11GfmTableAlignment, M11GfmTableProjection,
-    M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11InlineProjectionPublication,
+    M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionJob,
+    M11InlineProjectionJobPollStatus, M11InlineProjectionKind, M11InlineProjectionOutcome,
     M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
     SnapshotLineScanner, SnapshotLineSource, SourceAdapterError,
+    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
 };
 use sha2::{Digest, Sha256};
 
@@ -1351,51 +1352,18 @@ fn project_inline_leaf(
         .ok_or_else(|| RenderFailure::Invalid("Paragraph point is not UTF-8 aligned".into()))?
         .encode_utf16()
         .count();
-    let limits = M11RecursiveGreenFrameQueryLimits::new(4096, 1_000_000, 4096, 1_000_000)
+    let limits = M11RecursiveGreenRowQueryLimits::new(1, 4096, 1_000_000, 4096, 1_000_000)
         .expect("nonzero semantic gate limits");
-    let fence = resolve_m11_recursive_green_inline_leaf_fence(
+    let fence = resolve_m11_recursive_green_inline_leaf_row_fence(
         runtime,
         green,
         M11RecursiveGreenPoint::new(point, utf16, SourceBoundaryAffinity::After),
         limits,
+        1_000_000,
     )
     .map_err(|_| RenderFailure::Missing("projected-inline-authority"))?
     .ok_or(RenderFailure::Missing("projected-inline-authority"))?;
-    let profile = ParserProfileId::new(1).expect("nonzero parser profile");
-    let resolver = M11ReferenceResolver::from_live_reference_journal(runtime, references)
-        .map_err(|error| RenderFailure::Invalid(format!("reference resolver: {error}")))?;
-    let mut job = M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
-        runtime,
-        fence,
-        M11ParserBinding::current(profile),
-        resolver,
-    )
-    .map_err(|error| RenderFailure::Invalid(format!("inline job creation: {error}")))?;
-    let mut complete = false;
-    for _ in 0..MAX_POLLS {
-        let poll = job
-            .poll(runtime, FUEL)
-            .map_err(|error| RenderFailure::Invalid(format!("inline job poll: {error}")))?;
-        if poll.status() == M11InlineProjectionJobPollStatus::Complete {
-            complete = true;
-            break;
-        }
-    }
-    if !complete {
-        return Err(RenderFailure::Invalid(
-            "inline projection job did not converge".into(),
-        ));
-    }
-    let facts = job
-        .take_projected_facts()
-        .ok_or_else(|| RenderFailure::Invalid("inline job omitted captured facts".into()))?;
-    let link_values = job
-        .take_projected_link_values()
-        .ok_or_else(|| RenderFailure::Invalid("inline job omitted captured link values".into()))?;
-    let output = job
-        .take_output()
-        .ok_or_else(|| RenderFailure::Invalid("inline job omitted output".into()))?;
-    let (_, range, _, authority, publication) = output.into_publication_parts().into_parts();
+    let range = fence.inline_source_range();
     let source = markdown
         .get(
             usize::try_from(range.start)
@@ -1405,31 +1373,101 @@ fn project_inline_leaf(
         )
         .ok_or_else(|| RenderFailure::Invalid("inline range is not a source UTF-8 cut".into()))?
         .to_owned();
-    let result = match publication {
-        M11InlineProjectionPublication::Unsupported(record) => {
-            let _ = record.into_encoded();
-            Err(RenderFailure::Missing("inline-fail-closed"))
+    let expected_outcome_range = u32::try_from(range.start)
+        .map_err(|_| RenderFailure::Invalid("inline range start exceeds u32".into()))?
+        ..u32::try_from(range.end)
+            .map_err(|_| RenderFailure::Invalid("inline range end exceeds u32".into()))?;
+    let profile = ParserProfileId::new(1).expect("nonzero parser profile");
+    let resolver = M11ReferenceResolver::from_live_reference_journal(runtime, references)
+        .map_err(|error| RenderFailure::Invalid(format!("reference resolver: {error}")))?;
+    let mut job =
+        M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver(
+            runtime,
+            fence,
+            M11ParserBinding::current(profile),
+            resolver,
+        )
+        .map_err(|error| RenderFailure::Invalid(format!("inline job creation: {error}")))?;
+    let mut complete = false;
+    let mut poll_error = None;
+    for _ in 0..MAX_POLLS {
+        let poll = match job.poll(runtime, FUEL) {
+            Ok(poll) => poll,
+            Err(error) => {
+                poll_error = Some(error);
+                break;
+            }
+        };
+        if poll.status() == M11InlineProjectionJobPollStatus::Complete {
+            complete = true;
+            break;
         }
-        M11InlineProjectionPublication::Authoritative(mut root) => {
-            root.begin_release(runtime)
-                .map_err(|error| RenderFailure::Invalid(format!("release inline root: {error}")))?;
-            while !root
-                .poll_release(runtime, 64)
-                .map_err(|error| {
-                    RenderFailure::Invalid(format!("poll inline root release: {error}"))
+    }
+    if let Some(error) = poll_error {
+        release_inline_capture(&mut job, runtime)?;
+        return Err(RenderFailure::Invalid(format!("inline job poll: {error}")));
+    }
+    if !complete {
+        release_inline_capture(&mut job, runtime)?;
+        return Err(RenderFailure::Invalid(
+            "inline projection job did not converge".into(),
+        ));
+    }
+    match job.take_outcome() {
+        Some(M11InlineProjectionOutcome::Authoritative {
+            source: outcome_source,
+            source_range,
+            parser_profile,
+            capture,
+        }) => {
+            if outcome_source
+                != runtime.current_source_version().ok_or_else(|| {
+                    RenderFailure::Invalid("inline outcome source is no longer current".into())
                 })?
-                .complete()
-            {}
+                || source_range != expected_outcome_range
+                || parser_profile != profile
+            {
+                return Err(RenderFailure::Invalid(
+                    "inline outcome stamp differs from its recursive-Green fence".into(),
+                ));
+            }
+            let (facts, link_values, _) = capture.into_parts();
             Ok(InlineProjection {
                 source,
                 facts,
                 link_values,
             })
         }
-    };
-    drop(authority);
-    drop(job);
-    result
+        Some(M11InlineProjectionOutcome::Unsupported { .. }) => {
+            Err(RenderFailure::Missing("inline-fail-closed"))
+        }
+        None => {
+            release_inline_capture(&mut job, runtime)?;
+            Err(RenderFailure::Invalid(
+                "completed inline job omitted its disposition".into(),
+            ))
+        }
+    }
+}
+
+fn release_inline_capture(
+    job: &mut M11InlineProjectionJob,
+    runtime: &mut DocumentRuntime,
+) -> Result<(), RenderFailure> {
+    job.begin_release(runtime)
+        .map_err(|error| RenderFailure::Invalid(format!("begin inline cleanup: {error}")))?;
+    for _ in 0..MAX_POLLS {
+        if job
+            .poll_release(runtime, FUEL)
+            .map_err(|error| RenderFailure::Invalid(format!("poll inline cleanup: {error}")))?
+            .complete()
+        {
+            return Ok(());
+        }
+    }
+    Err(RenderFailure::Invalid(
+        "inline projection cleanup did not converge".into(),
+    ))
 }
 
 fn normalize_inline_logical_source(source: &str) -> String {

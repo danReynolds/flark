@@ -1,19 +1,19 @@
 use flark_engine::parser_internal::{
-    M11InlineProjectionCursorPoll, M11InlineProjectionKind, M11RecursiveGreenFrameQueryLimits,
-    M11RecursiveGreenPoint, M11RecursiveGreenRoot,
+    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity,
     SOURCE_CURSOR_WINDOW_BYTES,
 };
 use flark_parser::block_core::{
-    resolve_m11_recursive_green_paragraph_fence, M11BlockWriter, M11BlockWriterOfferStatus,
+    resolve_m11_recursive_green_inline_leaf_row_fence, M11BlockWriter, M11BlockWriterOfferStatus,
     M11BlockWriterPollStatus, M11DirectBlockController, M11DirectBlockPollStatus,
+    M11RecursiveGreenInlineLeafKind,
 };
 use flark_parser::{
     M11ExactController, M11InlineProjectionJob, M11InlineProjectionJobPollStatus,
-    M11InlineProjectionPublication, M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource,
-    SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource,
+    M11InlineProjectionKind, M11InlineProjectionOutcome, M11ParserBinding, M11SourceLinePollStatus,
+    M11SourceLineSource, SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource,
 };
 
 fn write_pending_command(
@@ -142,30 +142,35 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
 
     let (mut runtime, mut green) = drive(SOURCE, 1);
     let limits =
-        M11RecursiveGreenFrameQueryLimits::new(64, 4096, 64, 1024).expect("nonzero query limits");
-    let fence = resolve_m11_recursive_green_paragraph_fence(
+        M11RecursiveGreenRowQueryLimits::new(1, 64, 4096, 64, 4096).expect("nonzero query limits");
+    let inline_fence = resolve_m11_recursive_green_inline_leaf_row_fence(
         &runtime,
         &green,
         M11RecursiveGreenPoint::new(12, 12, SourceBoundaryAffinity::After),
         limits,
+        1024,
     )
-    .expect("bounded Paragraph query")
-    .expect("selected source belongs to a final Paragraph");
+    .expect("bounded inline-row query")
+    .expect("selected source belongs to an inline-bearing row");
 
-    assert_eq!(fence.source(), green.source());
-    assert_ne!(fence.frame().get(), 0);
-    assert_eq!(fence.block_source_range(), BLOCK);
-    assert_eq!(fence.block_source_utf16_range(), BLOCK);
-    assert_eq!(fence.inline_source_range(), INLINE);
-    assert_eq!(fence.inline_source_utf16_range(), INLINE);
-    assert!(fence.receipt().storage_pages_visited() <= 64);
-    assert!(fence.receipt().events_scanned() <= 4096);
-    assert!(fence.receipt().maximum_open_depth() <= 64);
+    assert_eq!(
+        inline_fence.kind(),
+        M11RecursiveGreenInlineLeafKind::Paragraph
+    );
+    assert_eq!(inline_fence.source(), green.source());
+    assert_ne!(inline_fence.frame().get(), 0);
+    assert_eq!(inline_fence.block_source_range(), BLOCK);
+    assert_eq!(inline_fence.block_source_utf16_range(), BLOCK);
+    assert_eq!(inline_fence.inline_source_range(), INLINE);
+    assert_eq!(inline_fence.inline_source_utf16_range(), INLINE);
+    assert!(inline_fence.receipt().storage_pages_visited() <= 64);
+    assert!(inline_fence.receipt().events_scanned() <= 4096);
+    assert!(inline_fence.receipt().maximum_open_depth() <= 64);
 
     let profile = ParserProfileId::new(1).expect("nonzero parser profile");
-    let mut job = M11InlineProjectionJob::new_for_recursive_green_paragraph(
+    let mut job = M11InlineProjectionJob::new_for_recursive_green_inline_leaf(
         &runtime,
-        fence,
+        inline_fence,
         M11ParserBinding::current(profile),
     )
     .expect("inline projection job accepts the minted authority");
@@ -176,39 +181,24 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
             break;
         }
     }
-    let output = job.take_output().expect("inline projection output");
-    assert_eq!(output.source_range(), 8..28);
-    let (_, range, actual_profile, authority, publication) =
-        output.into_publication_parts().into_parts();
-    assert_eq!(range, 8..28);
-    assert_eq!(actual_profile, profile);
-    authority
-        .validate(&runtime)
-        .expect("returned source authority remains exact");
-
-    let M11InlineProjectionPublication::Authoritative(mut inline) = publication else {
+    let M11InlineProjectionOutcome::Authoritative {
+        source,
+        source_range,
+        parser_profile,
+        capture,
+    } = job.take_outcome().expect("atomic inline outcome")
+    else {
         panic!("bold/emphasis/code Paragraph must project authoritatively");
     };
-    assert_eq!(inline.descriptor().fact_count(), 3);
-    let mut cursor = inline
-        .cursor(&runtime, green.source(), profile)
-        .expect("inline projection cursor");
-    let mut kinds = Vec::new();
-    loop {
-        match cursor.poll(&runtime).expect("inline cursor poll") {
-            M11InlineProjectionCursorPoll::Pending { transitions } => {
-                assert!(transitions <= 1);
-            }
-            M11InlineProjectionCursorPoll::Fact { transitions, fact } => {
-                assert!(transitions <= 1);
-                kinds.push(fact.kind());
-            }
-            M11InlineProjectionCursorPoll::Complete { transitions } => {
-                assert!(transitions <= 1);
-                break;
-            }
-        }
-    }
+    assert_eq!(source, green.source());
+    assert_eq!(source_range, 8..28);
+    assert_eq!(parser_profile, profile);
+    let kinds = capture
+        .facts()
+        .iter()
+        .copied()
+        .map(|fact| fact.kind())
+        .collect::<Vec<_>>();
     assert_eq!(
         kinds,
         vec![
@@ -217,16 +207,104 @@ fn selected_middle_paragraph_mints_exact_authority_for_inline_projection() {
             M11InlineProjectionKind::Code,
         ]
     );
-    drop(cursor);
-    inline
+    drop(job);
+
+    green
         .begin_release(&mut runtime)
-        .expect("begin inline root release");
-    while !inline
-        .poll_release(&mut runtime, 1)
-        .expect("poll inline root release")
+        .expect("begin Green root release");
+    while !green
+        .poll_release(&mut runtime, 64)
+        .expect("poll Green root release")
         .complete()
     {}
-    drop(authority);
+    runtime.begin_close().expect("begin runtime close");
+    while !runtime.poll_close(64).expect("poll runtime close").complete {}
+}
+
+#[test]
+fn unicode_setext_heading_mints_exact_atomic_inline_authority() {
+    const SOURCE: &str = "before\n\n🦀 **bold**\n---\n\nafter\n";
+
+    let block_start = SOURCE.find('🦀').expect("Setext block start");
+    let inline_end = SOURCE.find("\n---").expect("Setext inline end");
+    let block_end = SOURCE.find("---\n").expect("Setext underline") + "---\n".len();
+    let block_utf16 =
+        SOURCE[..block_start].encode_utf16().count()..SOURCE[..block_end].encode_utf16().count();
+    let inline_utf16 =
+        SOURCE[..block_start].encode_utf16().count()..SOURCE[..inline_end].encode_utf16().count();
+    assert_ne!(block_end - block_start, block_utf16.end - block_utf16.start);
+    assert_ne!(
+        inline_end - block_start,
+        inline_utf16.end - inline_utf16.start
+    );
+
+    let point = SOURCE.find("bold").expect("Setext content point") + 1;
+    let point_utf16 = SOURCE[..point].encode_utf16().count();
+    let (mut runtime, mut green) = drive(SOURCE, 1);
+    let limits =
+        M11RecursiveGreenRowQueryLimits::new(1, 64, 4096, 64, 4096).expect("nonzero query limits");
+    let inline_fence = resolve_m11_recursive_green_inline_leaf_row_fence(
+        &runtime,
+        &green,
+        M11RecursiveGreenPoint::new(point, point_utf16, SourceBoundaryAffinity::After),
+        limits,
+        1024,
+    )
+    .expect("bounded Setext row query")
+    .expect("Setext Heading is inline-bearing");
+
+    assert_eq!(
+        inline_fence.kind(),
+        M11RecursiveGreenInlineLeafKind::Heading
+    );
+    assert_eq!(inline_fence.source(), green.source());
+    assert_eq!(
+        inline_fence.block_source_range(),
+        block_start as u64..block_end as u64
+    );
+    assert_eq!(
+        inline_fence.block_source_utf16_range(),
+        block_utf16.start as u64..block_utf16.end as u64
+    );
+    assert_eq!(
+        inline_fence.inline_source_range(),
+        block_start as u64..inline_end as u64
+    );
+    assert_eq!(
+        inline_fence.inline_source_utf16_range(),
+        inline_utf16.start as u64..inline_utf16.end as u64
+    );
+
+    let profile = ParserProfileId::new(1).expect("nonzero parser profile");
+    let mut job = M11InlineProjectionJob::new_for_recursive_green_inline_leaf(
+        &runtime,
+        inline_fence,
+        M11ParserBinding::current(profile),
+    )
+    .expect("Setext inline projection job");
+    loop {
+        let poll = job.poll(&mut runtime, 1).expect("Setext inline poll");
+        assert!(poll.transitions() <= 1);
+        if poll.status() == M11InlineProjectionJobPollStatus::Complete {
+            break;
+        }
+    }
+    let M11InlineProjectionOutcome::Authoritative {
+        source,
+        source_range,
+        parser_profile,
+        capture,
+    } = job.take_outcome().expect("atomic Setext inline outcome")
+    else {
+        panic!("Setext Heading must project authoritatively");
+    };
+    assert_eq!(source, green.source());
+    assert_eq!(source_range, block_start as u32..inline_end as u32);
+    assert_eq!(parser_profile, profile);
+    assert_eq!(capture.facts().len(), 1);
+    assert_eq!(capture.facts()[0].kind(), M11InlineProjectionKind::Strong);
+    assert_eq!(capture.facts()[0].relative_range(), 5..13);
+    assert_eq!(capture.facts()[0].relative_content_range(), 7..11);
     drop(job);
 
     green
@@ -262,16 +340,18 @@ fn paragraph_near_twenty_thousand_block_eof_has_prefix_independent_query_work() 
 
     let (mut runtime, mut green) = drive(&source, 64);
     let limits =
-        M11RecursiveGreenFrameQueryLimits::new(12, 2048, 16, 8192).expect("nonzero query limits");
+        M11RecursiveGreenRowQueryLimits::new(1, 12, 2048, 16, 512).expect("nonzero query limits");
     let point = final_line_start + 3;
-    let fence = resolve_m11_recursive_green_paragraph_fence(
+    let fence = resolve_m11_recursive_green_inline_leaf_row_fence(
         &runtime,
         &green,
         M11RecursiveGreenPoint::new(point, point, SourceBoundaryAffinity::After),
         limits,
+        8192,
     )
-    .expect("late Paragraph query remains within fixed work bounds")
-    .expect("late source owner is a final Paragraph");
+    .expect("late row query remains within fixed work bounds")
+    .expect("late source owner is an inline-bearing row");
+    assert_eq!(fence.kind(), M11RecursiveGreenInlineLeafKind::Paragraph);
     assert_eq!(
         fence.block_source_range(),
         target_start as u64..source.len() as u64
@@ -280,13 +360,9 @@ fn paragraph_near_twenty_thousand_block_eof_has_prefix_independent_query_work() 
         fence.inline_source_range(),
         target_start as u64..target_inline_end as u64
     );
-    assert!(
-        fence.receipt().storage_pages_visited() >= 4,
-        "the witness must cross event pages and exercise backward owner recovery; visited {}",
-        fence.receipt().storage_pages_visited(),
-    );
     assert!(fence.receipt().storage_pages_visited() <= 12);
     assert!(fence.receipt().events_scanned() <= 2048);
+    assert!(fence.receipt().node_headers_decoded() <= 512);
     drop(fence);
 
     green

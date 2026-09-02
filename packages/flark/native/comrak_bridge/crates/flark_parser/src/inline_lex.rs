@@ -11,7 +11,8 @@ use std::fmt;
 use comrak::block_spine_facade;
 use finl_unicode::categories::CharacterCategories;
 use flark_engine::parser_internal::{
-    M11ParserPageError, M11ParserRangeCursor, M11ParserRangeStatus, M11_PARSER_RANGE_MAX_POLL_BYTES,
+    M11ParserRangeCursor, M11ParserRangeError, M11ParserRangeStatus,
+    M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 
 /// Largest cooperative scanner slice.
@@ -185,7 +186,7 @@ impl M11InlineLexPoll {
 
 #[derive(Debug)]
 pub enum M11InlineLexError {
-    Source(M11ParserPageError),
+    Source(M11ParserRangeError),
     ZeroFuel,
     PollLimitExceeded,
     InvalidUtf8,
@@ -223,8 +224,8 @@ impl std::error::Error for M11InlineLexError {
     }
 }
 
-impl From<M11ParserPageError> for M11InlineLexError {
-    fn from(value: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11InlineLexError {
+    fn from(value: M11ParserRangeError) -> Self {
         Self::Source(value)
     }
 }
@@ -1061,11 +1062,27 @@ fn recent_ascii_suffix(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flark_engine::parser_internal::M11ParserPageBuild;
+    use flark_engine::parser_internal::M11ParserSourceRangeAuthority;
     use flark_engine::{DocumentRuntime, DocumentRuntimeConfig};
 
-    fn scan(build: &M11ParserPageBuild, fuel: usize) -> Vec<M11InlineLexEvent> {
-        let cursor = build.source_cursor().expect("source cursor");
+    fn source_authority(
+        runtime: &DocumentRuntime,
+        range: std::ops::Range<usize>,
+    ) -> M11ParserSourceRangeAuthority {
+        M11ParserSourceRangeAuthority::new(
+            runtime,
+            runtime.snapshot_current_source().expect("source"),
+            range,
+        )
+        .expect("source authority")
+    }
+
+    fn scan(
+        runtime: &DocumentRuntime,
+        authority: &M11ParserSourceRangeAuthority,
+        fuel: usize,
+    ) -> Vec<M11InlineLexEvent> {
+        let cursor = authority.cursor(runtime).expect("source cursor");
         let mut scanner = M11InlineLexScanner::new(cursor);
         let mut events = Vec::new();
         loop {
@@ -1081,16 +1098,6 @@ mod tests {
         events
     }
 
-    fn cancel_build(build: &mut M11ParserPageBuild, runtime: &mut DocumentRuntime) {
-        build.begin_cancel(runtime).expect("begin cancel");
-        loop {
-            let poll = build.poll_cancel(runtime, 1).expect("cancel");
-            if poll.complete() {
-                break;
-            }
-        }
-    }
-
     fn close_runtime(mut runtime: DocumentRuntime) {
         runtime.begin_close().expect("begin close");
         while !runtime.poll_close(64).expect("close").complete {}
@@ -1102,34 +1109,29 @@ mod tests {
             "{}é_*β*_ `γ` \\\\* [x] & < ~~ name@example.test  \r\n",
             "x".repeat(M11_PARSER_RANGE_MAX_POLL_BYTES - 1)
         );
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 91).expect("build");
+        let authority = source_authority(&runtime, 0..source.len());
 
-        let expected = scan(&build, M11_INLINE_LEX_MAX_POLL_TRANSITIONS);
+        let expected = scan(&runtime, &authority, M11_INLINE_LEX_MAX_POLL_TRANSITIONS);
         for fuel in [1, 2, 7, 31, 257] {
-            assert_eq!(scan(&build, fuel), expected, "fuel={fuel}");
+            assert_eq!(scan(&runtime, &authority, fuel), expected, "fuel={fuel}");
         }
         for (ordinal, event) in expected.iter().copied().enumerate() {
             assert_eq!(event.ordinal(), u32::try_from(ordinal).expect("ordinal"));
         }
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
     #[test]
     fn unicode_punctuation_and_symbols_participate_in_commonmark_flanking() {
         let source = "α_β_γ α—_β_ α★_β_ α *β*";
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 92).expect("build");
-        let events = scan(&build, 3);
+        let authority = source_authority(&runtime, 0..source.len());
+        let events = scan(&runtime, &authority, 3);
         let emphasis: Vec<_> = events
             .into_iter()
             .filter_map(|event| match event.kind() {
@@ -1156,20 +1158,17 @@ mod tests {
             ]
         );
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
     #[test]
     fn tilde_runs_are_real_delimiters_and_neighboring_emphasis_skips_them() {
         let source = "a~*?x*";
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 99).expect("build");
-        let events = scan(&build, 1);
+        let authority = source_authority(&runtime, 0..source.len());
+        let events = scan(&runtime, &authority, 1);
         assert_eq!(
             events
                 .iter()
@@ -1211,20 +1210,17 @@ mod tests {
             ]
         );
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
     #[test]
     fn escapes_and_competing_candidates_emit_one_stable_hazard_each() {
         let source = "\\*literal* ![x] [y] &amp; <i> ~~ z@x  \nb";
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 93).expect("build");
-        let events = scan(&build, 5);
+        let authority = source_authority(&runtime, 0..source.len());
+        let events = scan(&runtime, &authority, 5);
         let actual: Vec<_> = events
             .iter()
             .map(|event| (event.ordinal(), event.start(), event.end(), event.kind()))
@@ -1311,8 +1307,7 @@ mod tests {
             ]
         );
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
@@ -1370,17 +1365,10 @@ mod tests {
             ("&#12345678;", None),
             ("&#x0000041;", None),
         ];
-        for (index, (source, expected_kind)) in cases.into_iter().enumerate() {
-            let mut runtime =
+        for (source, expected_kind) in cases {
+            let runtime =
                 DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-            let lease = runtime.snapshot_current_source().expect("source");
-            let mut build = M11ParserPageBuild::new(
-                &runtime,
-                lease,
-                0..source.len(),
-                120 + u32::try_from(index).expect("profile"),
-            )
-            .expect("build");
+            let authority = source_authority(&runtime, 0..source.len());
             let expected = expected_kind.map_or_else(Vec::new, |kind| {
                 vec![M11InlineLexEvent {
                     ordinal: 0,
@@ -1391,13 +1379,12 @@ mod tests {
             });
             for fuel in [1, 2, 7, 31, M11_INLINE_LEX_MAX_POLL_TRANSITIONS] {
                 assert_eq!(
-                    scan(&build, fuel),
+                    scan(&runtime, &authority, fuel),
                     expected,
                     "source={source:?}, fuel={fuel}"
                 );
             }
-            cancel_build(&mut build, &mut runtime);
-            drop(build);
+            drop(authority);
             close_runtime(runtime);
         }
     }
@@ -1405,12 +1392,10 @@ mod tests {
     #[test]
     fn invalid_entity_body_leaves_grammar_punctuation_for_the_normal_walk() {
         let source = "&amp*;";
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 133).expect("build");
-        let events = scan(&build, 1);
+        let authority = source_authority(&runtime, 0..source.len());
+        let events = scan(&runtime, &authority, 1);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].start(), 4);
         assert_eq!(events[0].end(), 5);
@@ -1419,8 +1404,7 @@ mod tests {
             M11InlineLexEventKind::EmphasisRun { marker: b'*', .. }
         ));
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
@@ -1492,13 +1476,11 @@ mod tests {
 
             for (prefix, expected) in cases {
                 let source = format!("{prefix}{ending}x");
-                let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+                let runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
                     .expect("runtime");
-                let lease = runtime.snapshot_current_source().expect("source");
-                let mut build =
-                    M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 97).expect("build");
+                let authority = source_authority(&runtime, 0..source.len());
                 for fuel in [1, 2, 7, 31] {
-                    let actual = scan(&build, fuel)
+                    let actual = scan(&runtime, &authority, fuel)
                         .iter()
                         .map(|event| (event.ordinal(), event.start(), event.end(), event.kind()))
                         .collect::<Vec<_>>();
@@ -1507,8 +1489,7 @@ mod tests {
                         "prefix={prefix:?}, ending={ending:?}, fuel={fuel}"
                     );
                 }
-                cancel_build(&mut build, &mut runtime);
-                drop(build);
+                drop(authority);
                 close_runtime(runtime);
             }
         }
@@ -1525,13 +1506,11 @@ mod tests {
                     content_start,
                     continuation_indented: true,
                 };
-                let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+                let runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
                     .expect("runtime");
-                let lease = runtime.snapshot_current_source().expect("source");
-                let mut build =
-                    M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 99).expect("build");
+                let authority = source_authority(&runtime, 0..source.len());
                 for fuel in [1, 2, 7, 31] {
-                    let hard_break = scan(&build, fuel)
+                    let hard_break = scan(&runtime, &authority, fuel)
                         .into_iter()
                         .find(|event| {
                             matches!(event.kind(), M11InlineLexEventKind::HardLineBreak { .. })
@@ -1553,8 +1532,7 @@ mod tests {
                         "ending={ending:?}, indent={indent:?}, fuel={fuel}"
                     );
                 }
-                cancel_build(&mut build, &mut runtime);
-                drop(build);
+                drop(authority);
                 close_runtime(runtime);
             }
         }
@@ -1563,21 +1541,18 @@ mod tests {
     #[test]
     fn terminal_line_ending_does_not_create_a_hard_break_candidate() {
         for source in ["\\\n", "\\\r", "\\\r\n", "  \n", "  \r", "  \r\n"] {
-            let mut runtime =
+            let runtime =
                 DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-            let lease = runtime.snapshot_current_source().expect("source");
-            let mut build =
-                M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 98).expect("build");
+            let authority = source_authority(&runtime, 0..source.len());
             for fuel in [1, 2, 7] {
                 assert!(
-                    scan(&build, fuel).iter().all(|event| {
+                    scan(&runtime, &authority, fuel).iter().all(|event| {
                         !matches!(event.kind(), M11InlineLexEventKind::HardLineBreak { .. })
                     }),
                     "source={source:?}, fuel={fuel}"
                 );
             }
-            cancel_build(&mut build, &mut runtime);
-            drop(build);
+            drop(authority);
             close_runtime(runtime);
         }
     }
@@ -1585,12 +1560,10 @@ mod tests {
     #[test]
     fn all_existing_bare_autolink_prefixes_are_case_insensitive_and_code_shieldable() {
         let source = "`HTTP://inside` https://outside FTP://x Www.example";
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 95).expect("build");
-        let events = scan(&build, 7);
+        let authority = source_authority(&runtime, 0..source.len());
+        let events = scan(&runtime, &authority, 7);
         assert_eq!(
             events
                 .iter()
@@ -1639,8 +1612,7 @@ mod tests {
         // Code-span resolution, not this scanner, must shield it before a
         // candidate becomes a whole-leaf unsupported disposition.
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
@@ -1650,11 +1622,10 @@ mod tests {
         let visible = "α *β*";
         let source = format!("{prefix}{visible}終OUT");
         let range = prefix.len()..prefix.len() + visible.len();
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build = M11ParserPageBuild::new(&runtime, lease, range, 96).expect("build");
-        let events = scan(&build, 2);
+        let authority = source_authority(&runtime, range);
+        let events = scan(&runtime, &authority, 2);
         assert_eq!(
             events
                 .iter()
@@ -1686,20 +1657,18 @@ mod tests {
             ]
         );
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
     #[test]
     fn cancellation_closes_the_owned_source_cursor() {
         let source = "α".repeat(10_000);
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 94).expect("build");
-        let mut scanner = M11InlineLexScanner::new(build.source_cursor().expect("source cursor"));
+        let authority = source_authority(&runtime, 0..source.len());
+        let mut scanner =
+            M11InlineLexScanner::new(authority.cursor(&runtime).expect("source cursor"));
         assert_eq!(
             scanner.poll(1).expect("first poll").status(),
             M11InlineLexPollStatus::Pending
@@ -1711,20 +1680,18 @@ mod tests {
         );
         drop(scanner);
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 
     #[test]
     fn terminal_poll_error_cancels_the_owned_source_cursor_before_propagation() {
         let source = "x";
-        let mut runtime =
+        let runtime =
             DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
-        let lease = runtime.snapshot_current_source().expect("source");
-        let mut build =
-            M11ParserPageBuild::new(&runtime, lease, 0..source.len(), 100).expect("build");
-        let mut scanner = M11InlineLexScanner::new(build.source_cursor().expect("source cursor"));
+        let authority = source_authority(&runtime, 0..source.len());
+        let mut scanner =
+            M11InlineLexScanner::new(authority.cursor(&runtime).expect("source cursor"));
 
         // Inject a corrupt byte window to exercise the terminal error path;
         // public source ranges are guaranteed scalar-aligned and valid UTF-8.
@@ -1741,8 +1708,7 @@ mod tests {
         // Dropping here proves the error path already discharged the cursor.
         drop(scanner);
 
-        cancel_build(&mut build, &mut runtime);
-        drop(build);
+        drop(authority);
         close_runtime(runtime);
     }
 }

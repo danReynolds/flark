@@ -6,7 +6,6 @@
 
 mod parser;
 mod reference_prefix;
-mod source;
 mod table;
 mod tree;
 

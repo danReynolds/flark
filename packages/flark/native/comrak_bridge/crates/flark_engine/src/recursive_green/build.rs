@@ -2,8 +2,8 @@
 
 use std::fmt;
 
-use crate::candidate_manifest::StrongIdentity;
 use crate::document::DocumentRuntime;
+use crate::identity::RuntimeIdentity;
 use crate::measured_sequence::{
     begin_measured_sequence_seal, concat_measured_sequence_build_roots_atomic,
     BeginMeasuredSequenceSealFailure, CommittedMeasuredSequenceRoot, MeasuredSequenceBuildRoot,
@@ -25,9 +25,9 @@ use super::codec::{
 pub const M11_RECURSIVE_GREEN_MAX_POLL_TRANSITIONS: usize = 4096;
 const CANONICAL_SCAN_BYTES_PER_TRANSITION: usize = 512;
 
-pub(super) fn allocate_recursive_green_identity() -> Result<StrongIdentity, M11RecursiveGreenError>
+pub(super) fn allocate_recursive_green_identity() -> Result<RuntimeIdentity, M11RecursiveGreenError>
 {
-    StrongIdentity::allocate(b"recursive-green").map_err(|_| M11RecursiveGreenError::InvalidState)
+    RuntimeIdentity::allocate(b"recursive-green").map_err(|_| M11RecursiveGreenError::InvalidState)
 }
 
 pub(super) type GreenSequenceBuilder = ResumableMeasuredSequenceBuilder<RecursiveGreenSpec>;
@@ -204,7 +204,7 @@ pub(super) struct OpenFrame {
 /// the build but cannot manufacture event or projection coordinates.
 #[must_use = "terminal-fragment authority must be consumed by a barrier or discarded"]
 pub struct M11RecursiveGreenTerminalFragment {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     source: SourceVersion,
     frame: M11RecursiveGreenFrameId,
     kind: M11RecursiveGreenKind,
@@ -240,7 +240,7 @@ impl M11RecursiveGreenTerminalFragmentBarrierPoll {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct M11RecursiveGreenTerminalFragmentStamp {
-    pub(super) runtime_identity: StrongIdentity,
+    pub(super) runtime_identity: RuntimeIdentity,
     pub(super) source: SourceVersion,
     pub(super) frame: M11RecursiveGreenFrameId,
     pub(super) kind: M11RecursiveGreenKind,
@@ -376,8 +376,8 @@ impl CanonicalScan {
 /// Fuelled, source-authenticated builder for one packed recursive Green root.
 #[must_use = "recursive-green builds require root transfer or explicit cancellation"]
 pub struct M11RecursiveGreenBuild {
-    pub(super) runtime_identity: StrongIdentity,
-    pub(super) green_identity: StrongIdentity,
+    pub(super) runtime_identity: RuntimeIdentity,
+    pub(super) green_identity: RuntimeIdentity,
     pub(super) lease: Option<SourceSnapshotLease>,
     pub(super) source: SourceVersion,
     pub(super) source_base: M11RecursiveGreenSourceMetric,
@@ -1838,8 +1838,8 @@ impl M11RecursiveGreenSliceRoot {
 
 #[must_use = "recursive-green roots require explicit release"]
 pub struct M11RecursiveGreenRoot {
-    pub(super) runtime_identity: StrongIdentity,
-    pub(super) green_identity: StrongIdentity,
+    pub(super) runtime_identity: RuntimeIdentity,
+    pub(super) green_identity: RuntimeIdentity,
     pub(super) lease: Option<SourceSnapshotLease>,
     pub(super) source: SourceVersion,
     pub(super) source_base: M11RecursiveGreenSourceMetric,
@@ -1865,8 +1865,8 @@ impl fmt::Debug for M11RecursiveGreenRoot {
 
 impl M11RecursiveGreenRoot {
     pub(super) fn from_splice(
-        runtime_identity: StrongIdentity,
-        green_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
+        green_identity: RuntimeIdentity,
         lease: SourceSnapshotLease,
         summary: RecursiveGreenSummary,
         page_count: u64,

@@ -7,8 +7,8 @@
 
 use std::fmt;
 
-use crate::candidate_manifest::StrongIdentity;
 use crate::document::{DocumentRuntime, DocumentState};
+use crate::identity::RuntimeIdentity;
 use crate::source::SourceVersion;
 use crate::storage::{
     ArenaError, ExternalPayloadReservation, ExternalPayloadReservationReleaseFailure,
@@ -95,7 +95,7 @@ impl From<ArenaError> for M11ParserScratchError {
 /// owning runtime may consume the charge.
 #[must_use = "parser scratch admission must remain paired with bytes until explicit release"]
 pub struct M11ParserScratchAdmission {
-    runtime_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
     source: SourceVersion,
     reservation: Option<ExternalPayloadReservation>,
 }

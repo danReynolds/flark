@@ -44,14 +44,6 @@ impl M11BareAutolinkCandidate {
     pub(crate) fn range(&self) -> Range<u32> {
         self.range.clone()
     }
-
-    pub(crate) const fn kind(&self) -> M11BareAutolinkKind {
-        self.kind
-    }
-
-    pub(crate) const fn flags(&self) -> u8 {
-        self.flags
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1037,7 +1029,7 @@ mod tests {
         classify_bare_autolinks(source)
             .expect("classification")
             .into_iter()
-            .map(|candidate| (candidate.range(), candidate.kind(), candidate.flags()))
+            .map(|candidate| (candidate.range(), candidate.kind, candidate.flags))
             .collect()
     }
 

@@ -181,7 +181,7 @@ fn adversarial_deep_mass_close_uses_one_linear_stack_pass() {
     assert_eq!(stack.last(), Some(&DirectBlockKind::Paragraph));
 
     let (close_commands, close_transitions) = drive_line(&mut parser, "***\n");
-    let direct = parser.parser.direct.as_ref().expect("direct hooks");
+    let direct = &parser.parser.direct;
     assert_eq!(
         direct.retired_insertions,
         DEPTH + 1,
@@ -239,12 +239,8 @@ fn leading_reference_remainder_continuation_resumes_without_replaying_prefix_sta
     // The reference actor is independently tested; install the exact state it
     // leaves after joining a VisibleRemainder terminal so this focused donor
     // test exercises only the new retrospective continuation primitive.
-    parser
-        .parser
-        .direct
-        .as_mut()
-        .expect("direct hooks")
-        .reference_finalize_resume_once = Some(DirectReferencePrefixDisposition::VisibleRemainder);
+    parser.parser.direct.reference_finalize_resume_once =
+        Some(DirectReferencePrefixDisposition::VisibleRemainder);
     let continuation = parser
         .capture_leading_reference_remainder_continuation()
         .expect("capture remainder continuation")

@@ -103,13 +103,15 @@ fn assert_probe_matches_clean(
         .capture_inline_projection(&mut clean_runtime, point)
         .expect("clean inline")
         .expect("clean paragraph");
-    assert_eq!(progressive_inline.inline_source, clean_inline.inline_source);
     assert_eq!(
-        progressive_inline.inline_source_utf16,
-        clean_inline.inline_source_utf16,
+        progressive_inline.inline_source(),
+        clean_inline.inline_source()
     );
-    assert_eq!(progressive_inline.facts, clean_inline.facts);
-    assert_eq!(progressive_inline.link_values, clean_inline.link_values);
+    assert_eq!(
+        progressive_inline.inline_source_utf16(),
+        clean_inline.inline_source_utf16(),
+    );
+    assert_eq!(progressive_inline.capture(), clean_inline.capture());
 
     // An early viewport is bound to its mid-load generation; once later
     // appends advanced the source, querying it must fail closed, so the
@@ -124,9 +126,11 @@ fn assert_probe_matches_clean(
                 .capture_inline_projection(&mut progressive_runtime, point)
                 .expect("early inline")
                 .expect("early paragraph");
-            assert_eq!(early_inline.inline_source, progressive_inline.inline_source);
-            assert_eq!(early_inline.facts, progressive_inline.facts);
-            assert_eq!(early_inline.link_values, progressive_inline.link_values);
+            assert_eq!(
+                early_inline.inline_source(),
+                progressive_inline.inline_source()
+            );
+            assert_eq!(early_inline.capture(), progressive_inline.capture());
             release(early, &mut progressive_runtime);
         }
     }
@@ -441,7 +445,7 @@ fn open_session_regenerates_certification_as_definitions_arrive() {
         .expect("early inline")
         .expect("early paragraph");
     assert!(
-        format!("{:?}", early_inline.link_values).contains("/resolved"),
+        format!("{:?}", early_inline.capture().link_values()).contains("/resolved"),
         "certified early rows resolve [late] through the committed winner"
     );
 

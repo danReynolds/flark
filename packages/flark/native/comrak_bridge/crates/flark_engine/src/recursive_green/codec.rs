@@ -1547,16 +1547,6 @@ pub(super) fn decode_leaf<'payload>(
     }))
 }
 
-/// Counts the canonical events packed into one recursive-Green leaf.
-/// Branch and unrelated payloads contribute no records.
-pub(crate) fn m11_recursive_green_canonical_record_count(payload: &[u8]) -> u32 {
-    let mut inspection = SequenceSpecInspection::default();
-    decode_leaf(payload, &mut inspection)
-        .ok()
-        .flatten()
-        .map_or(0, |leaf| u32::from(leaf.events))
-}
-
 pub(super) struct RecursiveGreenSpec;
 
 impl SequenceSpec for RecursiveGreenSpec {

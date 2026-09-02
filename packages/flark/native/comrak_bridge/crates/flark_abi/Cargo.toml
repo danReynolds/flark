@@ -21,6 +21,12 @@ flark-runtime = { path = "../flark_runtime" }
 [dev-dependencies]
 serde_json = "1.0"
 
+[lints.rust]
+dead_code = "deny"
+unused_assignments = "deny"
+unused_imports = "deny"
+unused_variables = "deny"
+
 [[test]]
 name = "opening_vertical"
 path = "tests/opening_vertical.rs"

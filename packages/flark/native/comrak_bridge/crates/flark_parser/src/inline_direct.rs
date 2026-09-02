@@ -12,9 +12,8 @@ use std::ops::Range;
 
 use comrak::block_spine_facade;
 use flark_engine::parser_internal::{
-    M11ParserPageError, M11ParserRangeCursor, M11ParserRangeStatus, M11PublicationError,
-    M11ReferenceResolution, M11ReferenceResolver, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
-    M11_PARSER_RANGE_MAX_POLL_BYTES,
+    M11ParserRangeCursor, M11ParserRangeError, M11ParserRangeStatus, M11ReferenceResolution,
+    M11ReferenceResolver, M11ReferenceResolverError, M11_PARSER_RANGE_MAX_POLL_BYTES,
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
 
@@ -25,6 +24,7 @@ use crate::inline_autolink::{
     M11InlineAutolinkError, M11InlineOpaqueCandidate, M11InlineOpaqueCandidates,
     M11InlineOpaqueKind,
 };
+use crate::inline_projection::M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES;
 use crate::reference_label::{ReferenceLabelAccumulator, ReferenceLabelAccumulatorError};
 use crate::reference_value::{
     clean_title_body_range, ReferenceValueBodyCleaner, ReferenceValueCleanerError,
@@ -104,11 +104,6 @@ pub(crate) struct M11InlineDirectCandidates {
     exhaustive_bracket_classification: bool,
 }
 
-pub(crate) struct M11InlineDirectStorage {
-    pub(crate) facts: Vec<M11InlineDirectFact>,
-    pub(crate) syntax: Vec<Range<u32>>,
-}
-
 impl fmt::Debug for M11InlineDirectCandidates {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -154,10 +149,6 @@ impl M11InlineDirectCandidates {
         self.facts.get(usize::try_from(index).ok()?)
     }
 
-    pub(crate) fn syntax_len(&self) -> u32 {
-        u32::try_from(self.syntax.len()).expect("syntax count was checked while building")
-    }
-
     pub(crate) fn syntax_range(&self, index: u32) -> Option<Range<u32>> {
         self.syntax.get(usize::try_from(index).ok()?).cloned()
     }
@@ -188,27 +179,6 @@ impl M11InlineDirectCandidates {
             .iter()
             .any(|syntax| syntax.start < range.end && range.start < syntax.end)
     }
-
-    pub(crate) fn take_storage_for_bare(
-        &mut self,
-    ) -> Result<M11InlineDirectStorage, M11InlineDirectError> {
-        Ok(M11InlineDirectStorage {
-            facts: std::mem::take(&mut self.facts),
-            syntax: std::mem::take(&mut self.syntax),
-        })
-    }
-
-    pub(crate) fn install_storage_after_bare(
-        &mut self,
-        storage: M11InlineDirectStorage,
-    ) -> Result<(), M11InlineDirectError> {
-        if !self.facts.is_empty() || !self.syntax.is_empty() {
-            return Err(M11InlineDirectError::InvalidState);
-        }
-        self.facts = storage.facts;
-        self.syntax = storage.syntax;
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -236,9 +206,9 @@ impl M11InlineDirectPoll {
 #[derive(Debug)]
 pub(crate) enum M11InlineDirectError {
     Opaque(M11InlineAutolinkError),
-    Source(M11ParserPageError),
+    Source(M11ParserRangeError),
     Cleaner(ReferenceValueCleanerError),
-    Reference(M11PublicationError),
+    Reference(M11ReferenceResolverError),
     ZeroFuel,
     PollLimitExceeded,
     CoordinateOverflow,
@@ -284,8 +254,8 @@ impl From<M11InlineAutolinkError> for M11InlineDirectError {
     }
 }
 
-impl From<M11ParserPageError> for M11InlineDirectError {
-    fn from(value: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11InlineDirectError {
+    fn from(value: M11ParserRangeError) -> Self {
         Self::Source(value)
     }
 }
@@ -296,8 +266,8 @@ impl From<ReferenceValueCleanerError> for M11InlineDirectError {
     }
 }
 
-impl From<M11PublicationError> for M11InlineDirectError {
-    fn from(value: M11PublicationError) -> Self {
+impl From<M11ReferenceResolverError> for M11InlineDirectError {
+    fn from(value: M11ReferenceResolverError) -> Self {
         Self::Reference(value)
     }
 }
@@ -1685,14 +1655,11 @@ mod tests {
         M11InlineOpaqueResolveJob,
     };
     use crate::inline_code::{M11InlineCodeJob, M11InlineCodePollStatus};
-    use flark_engine::m11_host::M11_CANDIDATE_ARENA_MAX_SLOTS;
     use flark_engine::parser_internal::{
-        M11CandidateBuild, M11CandidateBuildPoll, M11OwnedSnapshotPoll,
-        M11ParserSourceRangeAuthority, M11ReferenceRange, M11ReferenceRecord,
-        M11RetainedCandidatePublication, M11RoleRecords, M11SnapshotFrameKind,
-        M11_MAX_ROLE_RECORDS,
+        M11ParserSourceRangeAuthority, M11ReferenceJournal, M11ReferenceJournalOccurrence,
+        M11ReferenceJournalRange, M11ReferenceJournalRoot, M11ReferenceJournalStatus,
     };
-    use flark_engine::{ArenaLimits, DocumentRuntimeConfig};
+    use flark_engine::DocumentRuntimeConfig;
 
     struct Fixture {
         runtime: DocumentRuntime,
@@ -1700,23 +1667,13 @@ mod tests {
         autolink_job: M11InlineAutolinkJob,
         opaque: M11InlineOpaqueCandidates,
         reference_resolver: Option<M11ReferenceResolver>,
-        retained: Option<M11RetainedCandidatePublication>,
+        reference_root: Option<M11ReferenceJournalRoot>,
     }
 
     impl Fixture {
         fn new(source: &str) -> Self {
-            let mut runtime = DocumentRuntime::new(
-                source,
-                DocumentRuntimeConfig {
-                    arena_limits: ArenaLimits {
-                        max_slots: M11_CANDIDATE_ARENA_MAX_SLOTS,
-                        max_live_payload_bytes: 64 * 1024 * 1024,
-                        max_children_per_node: M11_MAX_ROLE_RECORDS,
-                    },
-                    ..DocumentRuntimeConfig::default()
-                },
-            )
-            .expect("runtime");
+            let mut runtime =
+                DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
             let authority = M11ParserSourceRangeAuthority::new(
                 &runtime,
                 runtime.snapshot_current_source().expect("source lease"),
@@ -1769,91 +1726,55 @@ mod tests {
                 autolink_job,
                 opaque,
                 reference_resolver: None,
-                retained: None,
+                reference_root: None,
             }
         }
 
-        fn with_reference_records(source: &str, records: Vec<M11ReferenceRecord>) -> Self {
+        fn with_reference_records(
+            source: &str,
+            records: Vec<M11ReferenceJournalOccurrence>,
+        ) -> Self {
             let mut fixture = Self::new(source);
             let source_version = fixture
                 .runtime
                 .current_source_version()
                 .expect("current source");
-            let mut build = M11CandidateBuild::new(
-                &mut fixture.runtime,
-                [0x71; 16],
-                [0x72; 16],
-                source_version,
-                1,
-                1,
-                M11RoleRecords::new(
-                    [Box::<[u8]>::from(&b"source"[..])],
-                    Box::<[u8]>::from(&b"green"[..]),
-                    Box::<[u8]>::from(&b"projection"[..]),
-                )
-                .expect("role records"),
-            )
-            .expect("reference candidate");
+            let mut journal = M11ReferenceJournal::new(&mut fixture.runtime, source_version, 1)
+                .expect("reference journal");
             for record in records {
-                build
-                    .offer_reference(&fixture.runtime, record)
-                    .expect("reference record");
-                while !build.references_idle() {
-                    assert!(matches!(
-                        build
-                            .poll(&mut fixture.runtime, 64)
-                            .expect("drain reference record"),
-                        M11CandidateBuildPoll::Pending { .. }
-                    ));
+                journal
+                    .offer_occurrence(&fixture.runtime, record)
+                    .expect("reference occurrence");
+                loop {
+                    let poll = journal
+                        .poll(&mut fixture.runtime, 64)
+                        .expect("drain reference occurrence");
+                    assert!(poll.transitions() <= 64);
+                    if poll.status() == M11ReferenceJournalStatus::NeedsInput {
+                        break;
+                    }
+                    assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
                 }
             }
-            build
-                .finish_references(&fixture.runtime)
-                .expect("finish references");
-            while matches!(
-                build
+            journal
+                .finish_input(&fixture.runtime)
+                .expect("finish reference journal");
+            loop {
+                let poll = journal
                     .poll(&mut fixture.runtime, 64)
-                    .expect("publish reference candidate"),
-                M11CandidateBuildPoll::Pending { .. }
-            ) {}
-            let publication = build.into_publication().expect("reference publication");
-            let mut stream = Box::new(publication)
-                .into_snapshot_stream(&fixture.runtime)
-                .expect("reference snapshot stream");
-            stream.begin_frame().expect("snapshot begin");
-            loop {
-                let poll = stream
-                    .poll(&fixture.runtime, 64)
-                    .expect("reference snapshot traversal");
-                if matches!(
-                    poll,
-                    M11OwnedSnapshotPoll::Frame {
-                        frame,
-                        ..
-                    } if frame.kind == M11SnapshotFrameKind::End
-                ) {
+                    .expect("seal reference journal");
+                assert!(poll.transitions() <= 64);
+                if poll.status() == M11ReferenceJournalStatus::Complete {
                     break;
                 }
+                assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
             }
-            let mut retained = stream
-                .into_retained_publication(&fixture.runtime)
-                .expect("retained reference publication");
-            loop {
-                if retained
-                    .poll_reference_resolver(&mut fixture.runtime, 1)
-                    .expect("reference resolver build")
-                    .ready()
-                {
-                    break;
-                }
-            }
+            let root = journal.take_root().expect("reference journal root");
             fixture.reference_resolver = Some(
-                retained
-                    .reference_resolver(&fixture.runtime)
-                    .expect("reference resolver query")
-                    .expect("ready reference resolver"),
+                M11ReferenceResolver::from_live_reference_journal(&fixture.runtime, &root)
+                    .expect("live reference resolver"),
             );
-            fixture.retained = Some(retained);
+            fixture.reference_root = Some(root);
             fixture
         }
 
@@ -1899,13 +1820,13 @@ mod tests {
             drop(self.autolink_job);
             drop(self.code_job);
             drop(self.reference_resolver.take());
-            if let Some(mut retained) = self.retained.take() {
-                retained
-                    .begin_close(&mut self.runtime)
-                    .expect("begin retained close");
-                while !retained
-                    .poll_close(&mut self.runtime, 1)
-                    .expect("retained close")
+            if let Some(mut root) = self.reference_root.take() {
+                root.begin_release(&mut self.runtime)
+                    .expect("begin reference root release");
+                while !root
+                    .poll_release(&mut self.runtime, 1)
+                    .expect("poll reference root release")
+                    .complete()
                 {}
             }
             self.runtime.begin_close().expect("begin runtime close");
@@ -1924,8 +1845,8 @@ mod tests {
         output
     }
 
-    fn source_range(range: Range<u64>) -> M11ReferenceRange {
-        M11ReferenceRange::new(range.clone(), range)
+    fn source_range(range: Range<u64>) -> M11ReferenceJournalRange {
+        M11ReferenceJournalRange::new(range.clone(), range)
     }
 
     fn reference_record(
@@ -1933,7 +1854,7 @@ mod tests {
         normalized_label: &str,
         cooked_destination: &str,
         cooked_title: Option<&str>,
-    ) -> M11ReferenceRecord {
+    ) -> M11ReferenceJournalOccurrence {
         let start = slot * 12;
         let source = start..start + 12;
         let label = start..start + 3;
@@ -1943,7 +1864,7 @@ mod tests {
             start + 12
         };
         let title = cooked_title.map(|_| start + 7..start + 12);
-        M11ReferenceRecord::new(
+        M11ReferenceJournalOccurrence::new(
             source_range(source),
             source_range(label),
             source_range(destination),
@@ -1954,7 +1875,7 @@ mod tests {
         )
     }
 
-    fn reference_records() -> Vec<M11ReferenceRecord> {
+    fn reference_records() -> Vec<M11ReferenceJournalOccurrence> {
         vec![
             reference_record(0, "foo", "/foo", Some("title")),
             reference_record(1, "bar", "/bar", None),
@@ -1964,7 +1885,7 @@ mod tests {
 
     fn resolve_references(
         source: &str,
-        records: Vec<M11ReferenceRecord>,
+        records: Vec<M11ReferenceJournalOccurrence>,
         fuel: usize,
     ) -> M11InlineDirectCandidates {
         let mut fixture = Fixture::with_reference_records(source, records);

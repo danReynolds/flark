@@ -20,9 +20,7 @@ use flark_engine::parser_internal::{
     M11ReferenceJournalOccurrenceStart, M11ReferenceJournalRange, M11ReferenceJournalValueKind,
 };
 #[cfg(any(test, feature = "m11-compact-probe"))]
-use flark_engine::parser_internal::{
-    M11ReferenceResolution, M11ResolvedReference, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
-};
+use flark_engine::parser_internal::{M11ReferenceResolution, M11ResolvedReference};
 use flark_engine::DocumentRuntime;
 
 use super::controller::M11DirectLeadingReferenceRemainderContinuation;
@@ -32,6 +30,8 @@ use super::writer::{
     M11ReferenceStagedTerminator,
 };
 use super::{M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError};
+#[cfg(any(test, feature = "m11-compact-probe"))]
+use crate::inline_projection::M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES;
 use crate::reference_value::{
     ReferenceValueBodyCleaner, ReferenceValueCleanerError, ReferenceValueCleanerStatus,
 };
@@ -230,6 +230,7 @@ impl M11CompactReferenceJournal {
     /// the GFM first-winner rule; missing labels stay `Unknown`. A definition
     /// still pending at the frontier is deliberately absent: it follows every
     /// committed record, so ignoring it can only defer, never misresolve.
+    #[cfg(feature = "m11-compact-probe")]
     pub(crate) fn committed_prefix_resolver(
         &self,
         source: flark_engine::SourceVersion,
@@ -329,7 +330,7 @@ impl M11CompactReferenceJournal {
 }
 
 /// One retained reference record flattened for relocatability probes.
-#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg(all(test, feature = "compact-revision-experiment"))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct M11CompactReferenceProbeRecord {
     pub(crate) digest: [u8; 16],
@@ -393,6 +394,7 @@ impl M11CompactReferenceResolver {
     /// Returns how many lookups this resolver (including every clone sharing
     /// its counter) answered with `Unknown`. Zero after a bounded capture
     /// pass proves no captured fact depended on an absent winner.
+    #[cfg(feature = "m11-compact-probe")]
     pub(crate) fn unknown_lookups(&self) -> u64 {
         self.unknown_lookups
             .load(std::sync::atomic::Ordering::Relaxed)
@@ -402,6 +404,7 @@ impl M11CompactReferenceResolver {
     /// definition's exact range. Definition text is suffix-independent — its
     /// presentation is fixed and its first-winner status is final — so
     /// bracket bytes inside it are not reference-use hazards.
+    #[cfg(feature = "m11-compact-probe")]
     pub(crate) fn byte_is_inside_committed_definition(&self, byte: usize) -> bool {
         self.index.records.iter().any(|record| {
             (record.source_start as usize) <= byte && byte < record.source_end as usize
@@ -411,6 +414,7 @@ impl M11CompactReferenceResolver {
     /// Flattens the retained record layout for relocatability probes: the
     /// digest and label identify a record across revisions, everything else
     /// is the exact stored coordinate payload under measurement.
+    #[cfg(all(test, feature = "compact-revision-experiment"))]
     pub(crate) fn probe_records(&self) -> Vec<M11CompactReferenceProbeRecord> {
         self.index
             .records

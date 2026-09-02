@@ -3,11 +3,13 @@
 use std::ops::Range;
 
 use crate::document::DocumentRuntime;
+#[cfg(test)]
+use crate::measured_sequence::SequenceLeafVisitControl;
 use crate::measured_sequence::{
-    MeasuredSequenceRef, SequenceInspectionReceipt, SequenceLeafVisitControl, SequenceNodeCache,
-    SequenceSpecInspection, SequenceSummaryPartitionDirection,
+    MeasuredSequenceRef, SequenceInspectionReceipt, SequenceNodeCache, SequenceSpecInspection,
+    SequenceSummaryPartitionDirection,
 };
-use crate::parser_pages::{M11ParserPageError, M11ParserSourceRangeAuthority};
+use crate::parser_range::{M11ParserRangeError, M11ParserSourceRangeAuthority};
 use crate::source::{SourceBoundaryAffinity, SourceVersion};
 
 use super::build::{
@@ -123,64 +125,6 @@ impl M11RecursiveGreenQueryReceipt {
     }
 }
 
-/// Explicit work admission for one frame-range query.
-///
-/// The current query walks authenticated event pages from the beginning of the
-/// root until the selected frame closes. These limits make that first
-/// production implementation honest and caller-bounded while the measured
-/// Green summary is extended with a direct ancestry zipper.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct M11RecursiveGreenFrameQueryLimits {
-    maximum_storage_pages_visited: u64,
-    maximum_events_scanned: u64,
-    maximum_open_depth: usize,
-    maximum_inline_source_bytes: u64,
-}
-
-impl M11RecursiveGreenFrameQueryLimits {
-    #[must_use]
-    pub const fn new(
-        maximum_storage_pages_visited: u64,
-        maximum_events_scanned: u64,
-        maximum_open_depth: usize,
-        maximum_inline_source_bytes: u64,
-    ) -> Option<Self> {
-        if maximum_storage_pages_visited == 0
-            || maximum_events_scanned == 0
-            || maximum_open_depth == 0
-            || maximum_inline_source_bytes == 0
-        {
-            return None;
-        }
-        Some(Self {
-            maximum_storage_pages_visited,
-            maximum_events_scanned,
-            maximum_open_depth,
-            maximum_inline_source_bytes,
-        })
-    }
-
-    #[must_use]
-    pub const fn maximum_storage_pages_visited(self) -> u64 {
-        self.maximum_storage_pages_visited
-    }
-
-    #[must_use]
-    pub const fn maximum_events_scanned(self) -> u64 {
-        self.maximum_events_scanned
-    }
-
-    #[must_use]
-    pub const fn maximum_open_depth(self) -> usize {
-        self.maximum_open_depth
-    }
-
-    #[must_use]
-    pub const fn maximum_inline_source_bytes(self) -> u64 {
-        self.maximum_inline_source_bytes
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum M11RecursiveGreenFrameQueryBound {
     StoragePagesVisited,
@@ -194,7 +138,7 @@ pub enum M11RecursiveGreenFrameQueryBound {
 pub enum M11RecursiveGreenFrameQueryError {
     BoundExceeded(M11RecursiveGreenFrameQueryBound),
     Green(M11RecursiveGreenError),
-    SourceAuthority(M11ParserPageError),
+    SourceAuthority(M11ParserRangeError),
 }
 
 impl std::fmt::Display for M11RecursiveGreenFrameQueryError {
@@ -217,8 +161,8 @@ impl From<M11RecursiveGreenError> for M11RecursiveGreenFrameQueryError {
     }
 }
 
-impl From<M11ParserPageError> for M11RecursiveGreenFrameQueryError {
-    fn from(error: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11RecursiveGreenFrameQueryError {
+    fn from(error: M11ParserRangeError) -> Self {
         Self::SourceAuthority(error)
     }
 }
@@ -463,6 +407,7 @@ pub struct M11RecursiveGreenPointBudgetExceeded {
     receipt: M11RecursiveGreenQueryReceipt,
 }
 
+#[cfg(test)]
 impl M11RecursiveGreenPointBudgetExceeded {
     #[must_use]
     pub const fn receipt(self) -> M11RecursiveGreenQueryReceipt {
@@ -700,68 +645,14 @@ impl M11RecursiveGreenRowWindow {
     }
 }
 
-/// Exact physical cuts for a half-open global renderable-row ordinal window.
-///
-/// The cuts are selected by the measured `renderable_row_exits` monoid, so
-/// lookup work depends on tree height and bounded packed pages rather than on
-/// the number of rows skipped.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct M11RecursiveGreenRowOrdinalWindow {
-    total_rows: u64,
-    start_ordinal: u64,
-    next_ordinal: u64,
-    start_bytes: u64,
-    start_utf16: u64,
-    next_bytes: u64,
-    next_utf16: u64,
-    receipt: M11RecursiveGreenQueryReceipt,
-}
-
-impl M11RecursiveGreenRowOrdinalWindow {
-    #[must_use]
-    pub const fn total_rows(self) -> u64 {
-        self.total_rows
-    }
-    #[must_use]
-    pub const fn start_ordinal(self) -> u64 {
-        self.start_ordinal
-    }
-    #[must_use]
-    pub const fn next_ordinal(self) -> u64 {
-        self.next_ordinal
-    }
-    #[must_use]
-    pub const fn start_bytes(self) -> u64 {
-        self.start_bytes
-    }
-    #[must_use]
-    pub const fn start_utf16(self) -> u64 {
-        self.start_utf16
-    }
-    #[must_use]
-    pub const fn next_bytes(self) -> u64 {
-        self.next_bytes
-    }
-    #[must_use]
-    pub const fn next_utf16(self) -> u64 {
-        self.next_utf16
-    }
-    #[must_use]
-    pub const fn complete(self) -> bool {
-        self.next_ordinal == self.total_rows
-    }
-    #[must_use]
-    pub const fn receipt(self) -> M11RecursiveGreenQueryReceipt {
-        self.receipt
-    }
-}
-
+#[cfg(test)]
 #[derive(Clone, Copy)]
 struct QueryOpenFrame {
     frame: M11RecursiveGreenFrameId,
     kind: M11RecursiveGreenKind,
 }
 
+#[cfg(test)]
 struct PendingLocation {
     byte_range: Range<u64>,
     utf16_range: Range<u64>,
@@ -771,51 +662,6 @@ struct PendingLocation {
     atom: M11RecursiveGreenLogicalAtom,
     owner_index: usize,
     ancestry: Vec<M11RecursiveGreenAncestor>,
-}
-
-#[derive(Clone, Copy)]
-struct FrameQueryOpenFrame {
-    frame: M11RecursiveGreenFrameId,
-    kind: M11RecursiveGreenKind,
-    block_byte_start: u64,
-    block_utf16_start: u64,
-    inline_byte_start: Option<u64>,
-    inline_byte_end: u64,
-    inline_utf16_start: Option<u64>,
-    inline_utf16_end: u64,
-    gap_after_inline: bool,
-    inline_is_contiguous_source: bool,
-}
-
-impl FrameQueryOpenFrame {
-    const fn new(
-        frame: M11RecursiveGreenFrameId,
-        kind: M11RecursiveGreenKind,
-        block_byte_start: u64,
-        block_utf16_start: u64,
-    ) -> Self {
-        Self {
-            frame,
-            kind,
-            block_byte_start,
-            block_utf16_start,
-            inline_byte_start: None,
-            inline_byte_end: block_byte_start,
-            inline_utf16_start: None,
-            inline_utf16_end: block_utf16_start,
-            gap_after_inline: false,
-            inline_is_contiguous_source: true,
-        }
-    }
-}
-
-struct ResolvedFrame {
-    frame: M11RecursiveGreenFrameId,
-    kind: M11RecursiveGreenKind,
-    block_source: Range<u64>,
-    block_source_utf16: Range<u64>,
-    inline_source: Range<u64>,
-    inline_source_utf16: Range<u64>,
 }
 
 impl M11RecursiveGreenRoot {
@@ -895,715 +741,14 @@ impl M11RecursiveGreenRoot {
         }
     }
 
-    /// Selects the physical coverage owner at one exact source point, verifies
-    /// that its final kind is one of `expected_kinds`, and mints move-only
-    /// authority for its contiguous inline source.
-    ///
-    /// The caller supplies only a semantic kind and authenticated byte/UTF-16
-    /// point, never a range. Close-time retypes are observed before the fence
-    /// is returned, so a Paragraph promoted to a Setext Heading cannot escape
-    /// as stale Paragraph authority.
-    pub fn locate_frame_fence_for_kinds(
-        &self,
-        runtime: &DocumentRuntime,
-        point: M11RecursiveGreenPoint,
-        expected_kinds: &[M11RecursiveGreenKind],
-        limits: M11RecursiveGreenFrameQueryLimits,
-    ) -> Result<Option<M11RecursiveGreenFrameFence>, M11RecursiveGreenFrameQueryError> {
-        self.ensure_runtime(runtime)?;
-        let covered_bytes = usize::try_from(self.summary.physical_bytes)
-            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-        let covered_utf16 = usize::try_from(self.summary.physical_utf16)
-            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-        let absolute_byte = self
-            .source_base
-            .bytes()
-            .checked_add(
-                u64::try_from(point.byte_offset)
-                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-            )
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        let absolute_utf16 = self
-            .source_base
-            .utf16()
-            .checked_add(
-                u64::try_from(point.utf16_offset)
-                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-            )
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        if point.byte_offset > covered_bytes
-            || point.utf16_offset > covered_utf16
-            || self
-                .lease()?
-                .utf16_offset_for_byte(
-                    usize::try_from(absolute_byte)
-                        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-                )
-                .map_err(M11RecursiveGreenError::from)?
-                != usize::try_from(absolute_utf16)
-                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
-        {
-            return Err(M11RecursiveGreenError::InvalidPoint.into());
-        }
-        if self.summary.physical_bytes == 0 {
-            return Ok(None);
-        }
-        let effective_byte = match (point.affinity, point.byte_offset) {
-            (SourceBoundaryAffinity::Before, offset) if offset > 0 => offset - 1,
-            (_, offset) if offset == covered_bytes => offset - 1,
-            (_, offset) => offset,
-        };
-        let effective_byte =
-            u64::try_from(effective_byte).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-        let tree = self
-            .tree
-            .as_ref()
-            .ok_or(M11RecursiveGreenError::InvalidState)?;
-        let arena = runtime.producer_arena();
-        let mut inspection = SequenceInspectionReceipt::default();
-        let mut callback_inspection = SequenceSpecInspection::default();
-        let mut events_scanned = 0_u64;
-        let mut storage_pages_visited = 0_u64;
-        let mut maximum_open_depth = 0_usize;
-        let point_leaf = tree
-            .as_ref()
-            .locate_leaf_containing_metric(
-                arena,
-                effective_byte,
-                |summary| summary.physical_bytes,
-                &mut inspection,
-            )?
-            .ok_or(M11RecursiveGreenError::Corrupt(
-                "recursive-green point has no coverage leaf",
-            ))?;
-        if storage_pages_visited == limits.maximum_storage_pages_visited {
-            return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
-                M11RecursiveGreenFrameQueryBound::StoragePagesVisited,
-            ));
-        }
-        storage_pages_visited += 1;
-        let point_prefix = point_leaf
-            .prefix
-            .unwrap_or_else(RecursiveGreenSummary::empty);
-        let external_open_at_leaf = u64::try_from(point_prefix.balance).map_err(|_| {
-            M11RecursiveGreenError::Corrupt("recursive-green prefix has negative open depth")
-        })?;
-        let point_payload = arena
-            .payload(point_leaf.id)
-            .map_err(M11RecursiveGreenError::from)?;
-        let mut local_inspection = SequenceSpecInspection::default();
-        let point_decoded = decode_leaf(point_payload, &mut local_inspection)?.ok_or(
-            M11RecursiveGreenError::Corrupt("measured Green leaf changed kind"),
-        )?;
-        accumulate_query_spec_inspection(&mut callback_inspection, local_inspection)?;
-
-        #[derive(Clone, Copy)]
-        struct LocalOpen {
-            frame: M11RecursiveGreenFrameId,
-            event_ordinal: u64,
-        }
-
-        let mut local_open = Vec::<LocalOpen>::new();
-        local_open
-            .try_reserve_exact(limits.maximum_open_depth.min(64))
-            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
-        let mut external_closes = 0_u64;
-        let mut point_source_bytes = point_prefix.physical_bytes;
-        let mut point_source_utf16 = point_prefix.physical_utf16;
-        let mut point_cursor = 0_usize;
-        let mut target_event_ordinal = None;
-        let mut target_frame = None;
-        let mut external_owner_rank = None;
-        for local_event_ordinal in 0..point_decoded.events {
-            if events_scanned == limits.maximum_events_scanned {
-                return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
-                    M11RecursiveGreenFrameQueryBound::EventsScanned,
-                ));
-            }
-            let event = decode_packed_event(point_decoded.event_bytes, &mut point_cursor)?;
-            events_scanned = events_scanned
-                .checked_add(1)
-                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-            let event_ordinal = point_prefix
-                .events
-                .checked_add(u64::from(local_event_ordinal))
-                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-            match event {
-                PackedGreenEvent::Enter { frame, .. } => {
-                    local_open.push(LocalOpen {
-                        frame,
-                        event_ordinal,
-                    });
-                }
-                PackedGreenEvent::RetypeOpen { frame, .. } => {
-                    if let Some(current) = local_open.last() {
-                        if current.frame != frame {
-                            return Err(M11RecursiveGreenError::Corrupt(
-                                "retype does not target the locally open top",
-                            )
-                            .into());
-                        }
-                    }
-                }
-                PackedGreenEvent::Exit { frame, .. } => {
-                    if let Some(current) = local_open.pop() {
-                        if current.frame != frame {
-                            return Err(M11RecursiveGreenError::Corrupt(
-                                "exit differs from its locally open frame",
-                            )
-                            .into());
-                        }
-                    } else {
-                        external_closes = external_closes
-                            .checked_add(1)
-                            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                        if external_closes > external_open_at_leaf {
-                            return Err(M11RecursiveGreenError::Corrupt(
-                                "leaf prefix closes beyond its external open depth",
-                            )
-                            .into());
-                        }
-                    }
-                }
-                PackedGreenEvent::Coverage {
-                    physical,
-                    owner_depth,
-                    ..
-                } => {
-                    let byte_end = point_source_bytes
-                        .checked_add(physical.bytes())
-                        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                    let utf16_end = point_source_utf16
-                        .checked_add(physical.utf16())
-                        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                    if effective_byte >= point_source_bytes && effective_byte < byte_end {
-                        let owner_depth = usize::try_from(owner_depth)
-                            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-                        let external_remaining = external_open_at_leaf
-                            .checked_sub(external_closes)
-                            .ok_or(M11RecursiveGreenError::Corrupt(
-                                "leaf prefix external depth underflow",
-                            ))?;
-                        let total_depth = usize::try_from(external_remaining)
-                            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
-                            .checked_add(local_open.len())
-                            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                        if total_depth > limits.maximum_open_depth {
-                            return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
-                                M11RecursiveGreenFrameQueryBound::OpenDepth,
-                            ));
-                        }
-                        maximum_open_depth = maximum_open_depth.max(total_depth);
-                        if owner_depth >= total_depth {
-                            return Err(M11RecursiveGreenError::Corrupt(
-                                "coverage owner is outside the point ancestry",
-                            )
-                            .into());
-                        }
-                        if owner_depth < local_open.len() {
-                            let owner = local_open[local_open.len() - 1 - owner_depth];
-                            target_event_ordinal = Some(owner.event_ordinal);
-                            target_frame = Some(owner.frame);
-                        } else {
-                            external_owner_rank = Some(
-                                u64::try_from(owner_depth - local_open.len())
-                                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-                            );
-                        }
-                        break;
-                    }
-                    point_source_bytes = byte_end;
-                    point_source_utf16 = utf16_end;
-                }
-                PackedGreenEvent::Property(_) => {}
-            }
-        }
-
-        if target_event_ordinal.is_none() {
-            let external_owner_rank = external_owner_rank.ok_or(
-                M11RecursiveGreenError::Corrupt("recursive-green point has no coverage event"),
-            )?;
-            let prefix_end = point_leaf.ordinal;
-            if prefix_end == 0 {
-                return Err(M11RecursiveGreenError::Corrupt(
-                    "point owner predates an empty leaf prefix",
-                )
-                .into());
-            }
-            let threshold = external_closes
-                .checked_add(external_owner_rank)
-                .and_then(|value| value.checked_add(1))
-                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-            let prefix_opens = point_prefix.unmatched_opens()?;
-            if prefix_opens < threshold {
-                return Err(M11RecursiveGreenError::Corrupt(
-                    "point owner rank exceeds unmatched prefix opens",
-                )
-                .into());
-            }
-
-            // Find the latest leaf boundary whose suffix still contains the
-            // requested unmatched Enter. Fully covered AVL subtrees answer
-            // each probe from their stored structural summary, so the search
-            // is logarithmic in prefix leaves rather than linear in blocks.
-            let mut included = 0_u64;
-            let mut excluded = prefix_end;
-            while included + 1 < excluded {
-                let middle = included + (excluded - included) / 2;
-                let opens = tree
-                    .as_ref()
-                    .range_summary(arena, middle..prefix_end, &mut inspection)?
-                    .ok_or(M11RecursiveGreenError::Corrupt(
-                        "nonempty recursive-green suffix has no summary",
-                    ))?
-                    .unmatched_opens()?;
-                if opens >= threshold {
-                    included = middle;
-                } else {
-                    excluded = middle;
-                }
-            }
-            let owner_leaf_ordinal = included;
-            let suffix = tree.as_ref().range_summary(
-                arena,
-                owner_leaf_ordinal + 1..prefix_end,
-                &mut inspection,
-            )?;
-            let (suffix_opens, suffix_closes) = match suffix {
-                Some(summary) => (summary.unmatched_opens()?, summary.unmatched_closes()?),
-                None => (0, 0),
-            };
-            let surviving_suffix_opens = suffix_opens.saturating_sub(external_closes);
-            let mut owner_rank_in_leaf = external_owner_rank
-                .checked_sub(surviving_suffix_opens)
-                .ok_or(M11RecursiveGreenError::Corrupt(
-                    "summary-guided owner leaf skipped the requested open",
-                ))?;
-            let mut closes_needed = external_closes
-                .saturating_sub(suffix_opens)
-                .checked_add(suffix_closes)
-                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-            let owner_leaf = tree
-                .as_ref()
-                .locate_leaf_with_prefix(arena, owner_leaf_ordinal, &mut inspection)?
-                .ok_or(M11RecursiveGreenError::Corrupt(
-                    "summary-guided owner leaf is absent",
-                ))?;
-            if storage_pages_visited == limits.maximum_storage_pages_visited {
-                return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
-                    M11RecursiveGreenFrameQueryBound::StoragePagesVisited,
-                ));
-            }
-            storage_pages_visited += 1;
-            let payload = arena
-                .payload(owner_leaf.id)
-                .map_err(M11RecursiveGreenError::from)?;
-            let mut local_inspection = SequenceSpecInspection::default();
-            let decoded = decode_leaf(payload, &mut local_inspection)?.ok_or(
-                M11RecursiveGreenError::Corrupt("measured Green leaf changed kind"),
-            )?;
-            accumulate_query_spec_inspection(&mut callback_inspection, local_inspection)?;
-            let mut cursor = 0_usize;
-            let mut events = Vec::new();
-            events
-                .try_reserve_exact(decoded.events as usize)
-                .map_err(|_| M11RecursiveGreenError::InvalidState)?;
-            for _ in 0..decoded.events {
-                if events_scanned == limits.maximum_events_scanned {
-                    return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
-                        M11RecursiveGreenFrameQueryBound::EventsScanned,
-                    ));
-                }
-                events.push(decode_packed_event(decoded.event_bytes, &mut cursor)?);
-                events_scanned = events_scanned
-                    .checked_add(1)
-                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-            }
-            if cursor != decoded.event_bytes.len() {
-                return Err(M11RecursiveGreenError::Corrupt(
-                    "recursive-green owner leaf retained trailing bytes",
-                )
-                .into());
-            }
-            let owner_prefix_events = owner_leaf.prefix.map_or(0, |summary| summary.events);
-            for (index, event) in events.into_iter().enumerate().rev() {
-                match event {
-                    PackedGreenEvent::Exit { .. } => {
-                        closes_needed = closes_needed
-                            .checked_add(1)
-                            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                    }
-                    PackedGreenEvent::Enter { .. } if closes_needed != 0 => {
-                        closes_needed -= 1;
-                    }
-                    PackedGreenEvent::Enter { .. } if owner_rank_in_leaf != 0 => {
-                        owner_rank_in_leaf -= 1;
-                    }
-                    PackedGreenEvent::Enter { frame, .. } => {
-                        target_frame = Some(frame);
-                        target_event_ordinal = Some(
-                            owner_prefix_events
-                                .checked_add(
-                                    u64::try_from(index)
-                                        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-                                )
-                                .ok_or(M11RecursiveGreenError::CounterOverflow)?,
-                        );
-                        break;
-                    }
-                    PackedGreenEvent::Property(_)
-                    | PackedGreenEvent::Coverage { .. }
-                    | PackedGreenEvent::RetypeOpen { .. } => {}
-                }
-            }
-        }
-
-        let target_event_ordinal = target_event_ordinal.ok_or(M11RecursiveGreenError::Corrupt(
-            "point owner Enter was not found",
-        ))?;
-        let target_frame = target_frame.ok_or(M11RecursiveGreenError::Corrupt(
-            "point owner frame was not found",
-        ))?;
-        let mut open = Vec::<FrameQueryOpenFrame>::new();
-        open.try_reserve_exact(limits.maximum_open_depth.min(64))
-            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
-        let mut source_bytes = 0_u64;
-        let mut source_utf16 = 0_u64;
-        let mut current_depth = 0_usize;
-        let mut selected_depth = None;
-        let mut traversal_initialized = false;
-        let mut resolved: Option<ResolvedFrame> = None;
-        let mut point_has_no_matching_frame = false;
-        let mut bound_exceeded = None;
-
-        tree.as_ref().visit_leaves_from_metric(
-            arena,
-            target_event_ordinal,
-            |summary| summary.events,
-            &mut inspection,
-            |leaf| {
-                if storage_pages_visited == limits.maximum_storage_pages_visited {
-                    bound_exceeded = Some(M11RecursiveGreenFrameQueryBound::StoragePagesVisited);
-                    return Ok(SequenceLeafVisitControl::Stop);
-                }
-                storage_pages_visited = storage_pages_visited
-                    .checked_add(1)
-                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                let prefix = leaf.prefix.unwrap_or_else(RecursiveGreenSummary::empty);
-                if !traversal_initialized {
-                    source_bytes = prefix.physical_bytes;
-                    source_utf16 = prefix.physical_utf16;
-                    current_depth = usize::try_from(prefix.balance).map_err(|_| {
-                        M11RecursiveGreenError::Corrupt(
-                            "recursive-green forward prefix has negative depth",
-                        )
-                    })?;
-                    traversal_initialized = true;
-                } else if source_bytes != prefix.physical_bytes
-                    || source_utf16 != prefix.physical_utf16
-                {
-                    return Err(M11RecursiveGreenError::Corrupt(
-                        "recursive-green forward source prefix changed",
-                    ));
-                }
-                let payload = arena.payload(leaf.id)?;
-                let mut local_inspection = SequenceSpecInspection::default();
-                let decoded = decode_leaf(payload, &mut local_inspection)?.ok_or(
-                    M11RecursiveGreenError::Corrupt("measured Green leaf changed kind"),
-                )?;
-                accumulate_query_spec_inspection(&mut callback_inspection, local_inspection)?;
-                let mut cursor = 0_usize;
-                let mut event_ordinal = prefix.events;
-                let mut stop = false;
-                for _ in 0..decoded.events {
-                    if events_scanned == limits.maximum_events_scanned {
-                        bound_exceeded = Some(M11RecursiveGreenFrameQueryBound::EventsScanned);
-                        stop = true;
-                        break;
-                    }
-                    let event = decode_packed_event(decoded.event_bytes, &mut cursor)?;
-                    events_scanned = events_scanned
-                        .checked_add(1)
-                        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                    if event_ordinal < target_event_ordinal {
-                        match event {
-                            PackedGreenEvent::Enter { .. } => {
-                                current_depth = current_depth
-                                    .checked_add(1)
-                                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                            }
-                            PackedGreenEvent::Exit { .. } => {
-                                current_depth = current_depth.checked_sub(1).ok_or(
-                                    M11RecursiveGreenError::Corrupt(
-                                        "recursive-green forward prefix depth underflow",
-                                    ),
-                                )?;
-                            }
-                            PackedGreenEvent::Coverage { physical, .. } => {
-                                source_bytes = source_bytes
-                                    .checked_add(physical.bytes())
-                                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                                source_utf16 = source_utf16
-                                    .checked_add(physical.utf16())
-                                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                            }
-                            PackedGreenEvent::Property(_) | PackedGreenEvent::RetypeOpen { .. } => {
-                            }
-                        }
-                        event_ordinal = event_ordinal
-                            .checked_add(1)
-                            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                        continue;
-                    }
-
-                    match event {
-                        PackedGreenEvent::Enter { frame, kind } => {
-                            let next_depth = current_depth
-                                .checked_add(1)
-                                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                            if next_depth > limits.maximum_open_depth {
-                                bound_exceeded = Some(M11RecursiveGreenFrameQueryBound::OpenDepth);
-                                stop = true;
-                                break;
-                            }
-                            if open.is_empty() {
-                                if event_ordinal != target_event_ordinal || frame != target_frame {
-                                    return Err(M11RecursiveGreenError::Corrupt(
-                                        "summary-guided owner Enter changed",
-                                    ));
-                                }
-                                selected_depth = Some(current_depth);
-                            }
-                            open.push(FrameQueryOpenFrame::new(
-                                frame,
-                                kind,
-                                source_bytes,
-                                source_utf16,
-                            ));
-                            current_depth = next_depth;
-                            maximum_open_depth = maximum_open_depth.max(current_depth);
-                        }
-                        PackedGreenEvent::RetypeOpen { frame, kind, .. } => {
-                            let current = open.last_mut().ok_or(
-                                M11RecursiveGreenError::Corrupt("retype has no queried open frame"),
-                            )?;
-                            if current.frame != frame {
-                                return Err(M11RecursiveGreenError::Corrupt(
-                                    "retype does not target the queried open top",
-                                ));
-                            }
-                            current.kind = kind;
-                        }
-                        PackedGreenEvent::Exit {
-                            frame, final_kind, ..
-                        } => {
-                            let current = open.pop().ok_or(M11RecursiveGreenError::Corrupt(
-                                "exit has no queried open frame",
-                            ))?;
-                            if current.frame != frame || current.kind != final_kind {
-                                return Err(M11RecursiveGreenError::Corrupt(
-                                    "exit differs from its queried open frame",
-                                ));
-                            }
-                            current_depth = current_depth.checked_sub(1).ok_or(
-                                M11RecursiveGreenError::Corrupt(
-                                    "recursive-green queried depth underflow",
-                                ),
-                            )?;
-                            if frame == target_frame {
-                                let Some(inline_byte_start) = current.inline_byte_start else {
-                                    point_has_no_matching_frame = true;
-                                    stop = true;
-                                    break;
-                                };
-                                let Some(inline_utf16_start) = current.inline_utf16_start else {
-                                    return Err(M11RecursiveGreenError::Corrupt(
-                                        "inline byte and UTF-16 starts differ",
-                                    ));
-                                };
-                                if !expected_kinds.contains(&final_kind)
-                                    || !current.inline_is_contiguous_source
-                                {
-                                    point_has_no_matching_frame = true;
-                                } else {
-                                    resolved = Some(ResolvedFrame {
-                                        frame,
-                                        kind: final_kind,
-                                        block_source: current.block_byte_start..source_bytes,
-                                        block_source_utf16: current.block_utf16_start..source_utf16,
-                                        inline_source: inline_byte_start..current.inline_byte_end,
-                                        inline_source_utf16: inline_utf16_start
-                                            ..current.inline_utf16_end,
-                                    });
-                                }
-                                stop = true;
-                                break;
-                            }
-                        }
-                        PackedGreenEvent::Coverage {
-                            physical,
-                            owner_depth,
-                            part,
-                            atom,
-                        } => {
-                            let byte_end = source_bytes
-                                .checked_add(physical.bytes())
-                                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                            let utf16_end = source_utf16
-                                .checked_add(physical.utf16())
-                                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                            let physical_owner_depth = usize::try_from(owner_depth)
-                                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-                            let physical_owner = current_depth
-                                .checked_sub(physical_owner_depth + 1)
-                                .ok_or(M11RecursiveGreenError::Corrupt(
-                                    "coverage owner is outside the queried open path",
-                                ))?;
-                            let logical_owner = match atom {
-                                M11RecursiveGreenLogicalAtom::None
-                                | M11RecursiveGreenLogicalAtom::HiddenUpstream => None,
-                                M11RecursiveGreenLogicalAtom::TabToSpaces {
-                                    target_owner_depth,
-                                    ..
-                                } => {
-                                    let depth = usize::try_from(target_owner_depth)
-                                        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-                                    Some(current_depth.checked_sub(depth + 1).ok_or(
-                                        M11RecursiveGreenError::Corrupt(
-                                            "logical coverage owner is outside the queried path",
-                                        ),
-                                    )?)
-                                }
-                                _ => Some(physical_owner),
-                            };
-                            let selected_depth =
-                                selected_depth.ok_or(M11RecursiveGreenError::Corrupt(
-                                    "queried coverage precedes its selected frame",
-                                ))?;
-                            let selected =
-                                open.first_mut().ok_or(M11RecursiveGreenError::Corrupt(
-                                    "queried coverage lost its selected frame",
-                                ))?;
-                            let compatible = logical_owner == Some(selected_depth)
-                                && part == M11RecursiveGreenCoveragePart::Content
-                                && matches!(
-                                    atom,
-                                    M11RecursiveGreenLogicalAtom::Identity
-                                        | M11RecursiveGreenLogicalAtom::LfToLf
-                                        | M11RecursiveGreenLogicalAtom::CrLfToLf
-                                        | M11RecursiveGreenLogicalAtom::LoneCrToLf
-                                );
-                            if compatible {
-                                if selected.gap_after_inline {
-                                    selected.inline_is_contiguous_source = false;
-                                }
-                                if selected.inline_byte_start.is_none() {
-                                    selected.inline_byte_start = Some(source_bytes);
-                                    selected.inline_utf16_start = Some(source_utf16);
-                                }
-                                selected.inline_byte_end = byte_end;
-                                selected.inline_utf16_end = utf16_end;
-                                selected.gap_after_inline = false;
-                            } else if logical_owner == Some(selected_depth)
-                                && !atom.logical_metric(physical).is_empty()
-                            {
-                                selected.inline_is_contiguous_source = false;
-                            } else if selected.inline_byte_start.is_some() {
-                                selected.gap_after_inline = true;
-                            }
-                            if selected.inline_byte_start.is_some_and(|start| {
-                                selected.inline_byte_end.saturating_sub(start)
-                                    > limits.maximum_inline_source_bytes
-                            }) {
-                                bound_exceeded =
-                                    Some(M11RecursiveGreenFrameQueryBound::InlineSourceBytes);
-                                stop = true;
-                            }
-                            source_bytes = byte_end;
-                            source_utf16 = utf16_end;
-                            if stop {
-                                break;
-                            }
-                        }
-                        PackedGreenEvent::Property(_) => {}
-                    }
-                    event_ordinal = event_ordinal
-                        .checked_add(1)
-                        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-                }
-                if !stop && cursor != decoded.event_bytes.len() {
-                    return Err(M11RecursiveGreenError::Corrupt(
-                        "recursive-green leaf retained trailing bytes",
-                    ));
-                }
-                Ok(if stop {
-                    SequenceLeafVisitControl::Stop
-                } else {
-                    SequenceLeafVisitControl::Continue
-                })
-            },
-        )?;
-        inspection.spec.payload_bytes_inspected = inspection
-            .spec
-            .payload_bytes_inspected
-            .checked_add(callback_inspection.payload_bytes_inspected)
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        inspection.spec.spec_items_hashed = inspection
-            .spec
-            .spec_items_hashed
-            .checked_add(callback_inspection.spec_items_hashed)
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        if let Some(bound) = bound_exceeded {
-            return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(bound));
-        }
-        if point_has_no_matching_frame {
-            return Ok(None);
-        }
-        let Some(resolved) = resolved else {
-            return Err(M11RecursiveGreenError::Corrupt(
-                "selected recursive-green frame did not close",
-            )
-            .into());
-        };
-        let receipt = M11RecursiveGreenQueryReceipt {
-            node_headers_decoded: inspection.node_headers_decoded,
-            summary_combinations: inspection.summary_combinations,
-            payload_bytes_inspected: inspection.spec.payload_bytes_inspected,
-            events_authenticated: inspection.spec.spec_items_hashed,
-            storage_pages_visited,
-            events_scanned,
-            maximum_open_depth,
-        };
-        let inline_start = usize::try_from(resolved.inline_source.start)
-            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-        let inline_end = usize::try_from(resolved.inline_source.end)
-            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-        let authority = M11ParserSourceRangeAuthority::new(
-            runtime,
-            self.lease()?.duplicate(),
-            inline_start..inline_end,
-        )?;
-        Ok(Some(M11RecursiveGreenFrameFence {
-            source: self.source(),
-            frame: resolved.frame,
-            kind: resolved.kind,
-            block_source: resolved.block_source,
-            block_source_utf16: resolved.block_source_utf16,
-            inline_source: resolved.inline_source,
-            inline_source_utf16: resolved.inline_source_utf16,
-            receipt,
-            authority,
-        }))
-    }
-
     /// Selects one final inline-bearing renderable row through the bounded
     /// row zipper and mints exact source authority from its cached close
     /// geometry.
     ///
-    /// Unlike [`Self::locate_frame_fence_for_kinds`], this path does not need
-    /// to replay every event from a long-lived frame's `Enter` to its `Exit`.
     /// The row query authenticates the final kind, frame, physical envelope,
-    /// and contiguous editable range before this method creates authority.
+    /// and contiguous editable range from cached close geometry before this
+    /// method creates authority; it never replays a long-lived frame from its
+    /// `Enter` to its `Exit`.
     pub fn locate_renderable_row_fence_for_kinds(
         &self,
         runtime: &DocumentRuntime,
@@ -2009,25 +1154,12 @@ impl M11RecursiveGreenRoot {
         }))
     }
 
-    /// Compatibility entry point for callers that admit exactly one final
-    /// recursive-Green kind.
-    pub fn locate_frame_fence(
-        &self,
-        runtime: &DocumentRuntime,
-        point: M11RecursiveGreenPoint,
-        expected_kind: M11RecursiveGreenKind,
-        limits: M11RecursiveGreenFrameQueryLimits,
-    ) -> Result<Option<M11RecursiveGreenFrameFence>, M11RecursiveGreenFrameQueryError> {
-        self.locate_frame_fence_for_kinds(runtime, point, &[expected_kind], limits)
-    }
-
     /// Resolves one exact source point and its final recursive Green ancestry.
     ///
-    /// This first production surface performs one authenticated ordered event
-    /// visit, preserving correctness for close-time retypes such as Setext.
-    /// The receipt makes its linear page count explicit; the measured summary
-    /// already carries the open-witness algebra needed by the bounded zipper
-    /// optimization without changing this API.
+    /// The measured zipper resolves the point from authenticated summaries and
+    /// local event pages, preserving final close-time retypes such as Setext
+    /// without scanning from the beginning of the document. Its receipt makes
+    /// the bounded tree, page, and event work explicit.
     pub fn locate_point(
         &self,
         runtime: &DocumentRuntime,
@@ -2421,6 +1553,7 @@ pub(super) fn locate_point_in_arena(
     }
 }
 
+#[cfg(test)]
 pub(super) fn locate_point_in_arena_bounded(
     arena: &crate::storage::PageArena,
     tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
@@ -2701,62 +1834,6 @@ pub(super) fn locate_renderable_rows_in_arena(
             receipt,
         },
     ))
-}
-
-pub(super) fn locate_renderable_row_ordinal_window_in_arena(
-    arena: &crate::storage::PageArena,
-    tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
-    summary: RecursiveGreenSummary,
-    start_ordinal: u64,
-    maximum_rows: u32,
-) -> Result<M11RecursiveGreenRowOrdinalWindow, M11RecursiveGreenError> {
-    let total_rows = summary.renderable_row_exits;
-    if maximum_rows == 0 || start_ordinal > total_rows {
-        return Err(M11RecursiveGreenError::InvalidPoint);
-    }
-    let next_ordinal = start_ordinal
-        .saturating_add(u64::from(maximum_rows))
-        .min(total_rows);
-    let mut work = PointZipperWork::default();
-    let terminal_cut = (summary.physical_bytes, summary.physical_utf16);
-    let start_cut = if start_ordinal == total_rows {
-        terminal_cut
-    } else {
-        let open = point_zipper_open_for_row_ordinal(arena, tree, start_ordinal, &mut work)?
-            .ok_or(M11RecursiveGreenError::Corrupt(
-                "renderable-row start ordinal omitted its Enter",
-            ))?;
-        (open.byte_start, open.utf16_start)
-    };
-    let next_cut = if next_ordinal == start_ordinal {
-        start_cut
-    } else if next_ordinal == total_rows {
-        terminal_cut
-    } else {
-        let open = point_zipper_open_for_row_ordinal(arena, tree, next_ordinal, &mut work)?.ok_or(
-            M11RecursiveGreenError::Corrupt("renderable-row next ordinal omitted its Enter"),
-        )?;
-        (open.byte_start, open.utf16_start)
-    };
-    if start_cut.0 > next_cut.0
-        || start_cut.1 > next_cut.1
-        || (start_ordinal == next_ordinal) != (start_cut == next_cut)
-        || (next_ordinal == total_rows) != (next_cut == terminal_cut)
-    {
-        return Err(M11RecursiveGreenError::Corrupt(
-            "renderable-row ordinal cuts disagree with measured coverage",
-        ));
-    }
-    Ok(M11RecursiveGreenRowOrdinalWindow {
-        total_rows,
-        start_ordinal,
-        next_ordinal,
-        start_bytes: start_cut.0,
-        start_utf16: start_cut.1,
-        next_bytes: next_cut.0,
-        next_utf16: next_cut.1,
-        receipt: work.finish_receipt(0)?,
-    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3318,25 +2395,6 @@ fn point_zipper_final_kind(
     work: &mut PointZipperWork,
 ) -> Result<M11RecursiveGreenKind, M11RecursiveGreenError> {
     Ok(point_zipper_frame_boundary(arena, tree, root_leaf_count, open, work)?.final_kind)
-}
-
-fn point_zipper_open_property(
-    arena: &crate::storage::PageArena,
-    open: PointZipperOpenFrame,
-    work: &mut PointZipperWork,
-) -> Result<Option<super::codec::M11RecursiveGreenPropertyChunk>, M11RecursiveGreenError> {
-    let events = work.decode_leaf_events(arena, open.enter_leaf)?;
-    if events.get(open.enter_event_index).is_none_or(
-        |event| !matches!(event, PackedGreenEvent::Enter { frame, .. } if *frame == open.frame),
-    ) {
-        return Err(M11RecursiveGreenError::Corrupt(
-            "Green frame property lost its Enter",
-        ));
-    }
-    Ok(match events.get(open.enter_event_index + 1) {
-        Some(PackedGreenEvent::Property(property)) => Some(*property),
-        _ => None,
-    })
 }
 
 fn point_zipper_open_for_row_ordinal(
@@ -4451,6 +3509,7 @@ fn accumulate_query_spec_inspection(
     Ok(())
 }
 
+#[cfg(test)]
 fn update_captured_kind(
     location: &mut Option<PendingLocation>,
     frame: M11RecursiveGreenFrameId,

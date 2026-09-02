@@ -17,7 +17,7 @@ mod command;
 mod controller;
 #[cfg(test)]
 mod incremental_adoption_tests;
-mod paragraph_fence;
+mod recursive_green_row;
 mod reference_rendezvous;
 mod writer;
 
@@ -37,19 +37,19 @@ pub use controller::{
     M11DirectBlockRestart, M11DirectBlockUnsupported, M11DirectSourceLineAdmission,
     M11_DIRECT_BLOCK_MAX_LEXICAL_SLACK, M11_DIRECT_BLOCK_MAX_RETAINED_SOURCE_BYTES,
 };
-pub use paragraph_fence::{
+pub use recursive_green_row::{
     m11_block_quote_prefix_lineage, m11_recursive_green_row_presentation,
-    resolve_m11_recursive_green_inline_leaf_fence,
-    resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
+    resolve_m11_recursive_green_inline_leaf_row_fence,
     resolve_m11_recursive_green_slice_inline_leaf_row_fence,
     resolve_m11_recursive_green_slice_inline_leaf_row_fences, M11RecursiveGreenCodeBlockStyle,
     M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
-    M11RecursiveGreenParagraphFence, M11RecursiveGreenRowPresentation,
+    M11RecursiveGreenRowPresentation,
 };
+#[cfg(all(test, feature = "compact-revision-experiment"))]
+pub(crate) use reference_rendezvous::M11CompactReferenceProbeRecord;
 #[cfg(any(test, feature = "m11-compact-probe"))]
 pub(crate) use reference_rendezvous::{
-    M11CompactReferenceJournal, M11CompactReferenceProbeRecord, M11CompactReferenceReceipt,
-    M11CompactReferenceResolver,
+    M11CompactReferenceJournal, M11CompactReferenceReceipt, M11CompactReferenceResolver,
 };
 pub use reference_rendezvous::{
     M11ReferenceRendezvous, M11ReferenceRendezvousError, M11ReferenceRendezvousPoll,
@@ -57,7 +57,7 @@ pub use reference_rendezvous::{
 };
 pub(crate) use writer::{
     M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption,
-    M11BlockTerminalCheckpointAdoption, KIND_BLOCK_QUOTE, KIND_DOCUMENT, KIND_PARAGRAPH,
+    M11BlockTerminalCheckpointAdoption,
 };
 pub use writer::{
     M11BlockRestartCheckpoint, M11BlockRestartError, M11BlockStructuralAdoptionReceipt,

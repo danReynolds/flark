@@ -156,6 +156,7 @@ pub(crate) struct M11InlineHazardJob {
 }
 
 impl M11InlineHazardJob {
+    #[cfg(test)]
     pub(crate) fn new(
         runtime: &DocumentRuntime,
         opaque: &M11InlineOpaqueCandidates,
@@ -434,7 +435,7 @@ mod tests {
     use crate::inline_code::{
         M11InlineCodeError, M11InlineCodeJob, M11InlineCodePollStatus, M11InlineCodeRuns,
     };
-    use flark_engine::parser_internal::{M11ParserPageError, M11ParserSourceRangeAuthority};
+    use flark_engine::parser_internal::{M11ParserRangeError, M11ParserSourceRangeAuthority};
     use flark_engine::{DocumentRuntimeConfig, SourceVersion};
 
     struct Fixture {
@@ -602,7 +603,7 @@ mod tests {
         assert!(matches!(
             M11InlineOpaqueResolveJob::take_new(&foreign, &mut code_a, &mut autolink_job),
             Err(M11InlineAutolinkError::Code(M11InlineCodeError::Source(
-                M11ParserPageError::WrongRuntime
+                M11ParserRangeError::WrongRuntime
             )))
         ));
         assert!(code_a.is_some());
@@ -623,7 +624,7 @@ mod tests {
         assert!(matches!(
             M11InlineOpaqueResolveJob::take_new(&runtime, &mut code_a, &mut autolink_job),
             Err(M11InlineAutolinkError::Code(M11InlineCodeError::Source(
-                M11ParserPageError::SourceAuthorityMismatch
+                M11ParserRangeError::SourceAuthorityMismatch
             )))
         ));
         assert!(code_a.is_some());

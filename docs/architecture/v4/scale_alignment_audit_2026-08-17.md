@@ -106,6 +106,14 @@ ordinary path improved 16.4 → 3.7 ms. Differentials assert per-point vs
 batch equality per row; GFM 672/672 and the 4,032-edit incremental ledger
 stay exact; the relocatability receipts are unchanged.
 
+Qualification note (2026-08-31): “bounded” is not yet a hard preemptive
+work cap for every row shape. Ordinary Paragraph and Heading queries consume
+cached close geometry. A rare cached-`Unavailable` projected or nested row can
+still scan the selected row before the query checks its accumulated limits.
+Before claiming a hard worst-case latency bound, add a hostile giant
+projected-row receipt and enforce fuel inside that fallback scan. This is a
+known scale proof gap, not an alternate source-authority path.
+
 **F2 — RESOLVED 2026-08-17: durable payloads are relocatable as stored.**
 The falsification probe ran before any convergence machinery was designed
 (build-plan receipt "Experiment B relocatability receipt"). Under a one-byte

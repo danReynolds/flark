@@ -12,7 +12,7 @@ use std::fmt;
 use std::ops::Range;
 
 use flark_engine::parser_internal::{
-    M11ParserPageError, M11ParserRangeCursor, M11ParserSourceRangeAuthority,
+    M11ParserRangeCursor, M11ParserRangeError, M11ParserSourceRangeAuthority,
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
 
@@ -114,7 +114,7 @@ impl M11InlineCodeReleasePoll {
 
 #[derive(Debug)]
 pub(crate) enum M11InlineCodeError {
-    Source(M11ParserPageError),
+    Source(M11ParserRangeError),
     Lex(M11InlineLexError),
     Scratch(M11InlineRadixError),
     ZeroFuel,
@@ -143,8 +143,8 @@ impl fmt::Display for M11InlineCodeError {
 
 impl std::error::Error for M11InlineCodeError {}
 
-impl From<M11ParserPageError> for M11InlineCodeError {
-    fn from(value: M11ParserPageError) -> Self {
+impl From<M11ParserRangeError> for M11InlineCodeError {
+    fn from(value: M11ParserRangeError) -> Self {
         Self::Source(value)
     }
 }
@@ -550,16 +550,17 @@ pub(crate) struct M11InlineCodeRuns {
 }
 
 impl M11InlineCodeRuns {
+    #[cfg(test)]
+    pub(crate) const fn raw_run_len(&self) -> u32 {
+        self.raw_run_count
+    }
+
     pub(crate) const fn source(&self) -> SourceVersion {
         self.source
     }
 
     pub(crate) fn source_range(&self) -> Range<u32> {
         self.source_range.clone()
-    }
-
-    pub(crate) const fn raw_run_len(&self) -> u32 {
-        self.raw_run_count
     }
 
     pub(crate) fn raw_run(&self, index: u32) -> Result<Option<CodeRun>, M11InlineCodeError> {
@@ -698,7 +699,7 @@ fn validate_fuel(fuel: usize) -> Result<(), M11InlineCodeError> {
 mod tests {
     use super::*;
     use flark_engine::parser_internal::{
-        M11ParserPageError, M11ParserScratchError, M11ParserSourceRangeAuthority,
+        M11ParserRangeError, M11ParserScratchError, M11ParserSourceRangeAuthority,
     };
     use flark_engine::{ArenaLimits, DocumentRuntimeConfig};
 
@@ -973,7 +974,9 @@ mod tests {
             DocumentRuntime::new(source_text, DocumentRuntimeConfig::default()).expect("foreign");
         assert!(matches!(
             job.poll(&mut foreign, 1),
-            Err(M11InlineCodeError::Source(M11ParserPageError::WrongRuntime))
+            Err(M11InlineCodeError::Source(
+                M11ParserRangeError::WrongRuntime
+            ))
         ));
         close_runtime(foreign);
 
@@ -984,7 +987,7 @@ mod tests {
         assert!(matches!(
             job.poll(&mut owner, 1),
             Err(M11InlineCodeError::Source(
-                M11ParserPageError::SourceAuthorityMismatch
+                M11ParserRangeError::SourceAuthorityMismatch
             ))
         ));
         job.begin_abort().expect("begin abort");

@@ -10,3 +10,9 @@ comrak = { path = "../../../../vendor/comrak", default-features = false }
 flark-reference-label-service = { path = "../reference_label_service" }
 generated_scanner_gate = { path = "../generated_scanner_gate" }
 serde = { version = "1", features = ["derive"] }
+
+[lints.rust]
+dead_code = "deny"
+unused_assignments = "deny"
+unused_imports = "deny"
+unused_variables = "deny"

@@ -9,8 +9,8 @@
 use std::fmt;
 use std::ops::Range;
 
-use crate::candidate_manifest::StrongIdentity;
 use crate::document::{DocumentRuntime, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness};
+use crate::identity::RuntimeIdentity;
 use crate::measured_sequence::{
     begin_measured_sequence_seal, splice_measured_sequence_atomic,
     splice_measured_sequence_build_root_atomic, SequenceInspectionReceipt, SequenceMutationReceipt,
@@ -55,8 +55,8 @@ impl M11RecursiveGreenBoundaryFrame {
 /// crossed into an adoption transaction.
 #[must_use = "a structural Green boundary must be consumed by adoption or discarded"]
 pub struct M11RecursiveGreenStructuralBoundary {
-    runtime_identity: StrongIdentity,
-    green_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
+    green_identity: RuntimeIdentity,
     source: crate::SourceVersion,
     event_cut: u64,
     physical: super::codec::M11RecursiveGreenSourceMetric,
@@ -95,8 +95,8 @@ impl fmt::Debug for M11RecursiveGreenStructuralBoundary {
 
 impl M11RecursiveGreenStructuralBoundary {
     pub(super) fn from_build(
-        runtime_identity: StrongIdentity,
-        green_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
+        green_identity: RuntimeIdentity,
         source: crate::SourceVersion,
         event_cut: u64,
         physical: super::codec::M11RecursiveGreenSourceMetric,
@@ -176,8 +176,8 @@ impl M11RecursiveGreenStructuralBoundary {
     }
 
     pub(super) fn rebound(
-        runtime_identity: StrongIdentity,
-        green_identity: StrongIdentity,
+        runtime_identity: RuntimeIdentity,
+        green_identity: RuntimeIdentity,
         source: crate::SourceVersion,
         event_cut: u64,
         physical: super::codec::M11RecursiveGreenSourceMetric,
@@ -221,9 +221,9 @@ impl M11RecursiveGreenStructuralBoundaryTransactionReplica {
 #[doc(hidden)]
 #[must_use = "structural splice rebase authority must be used or discarded"]
 pub struct M11RecursiveGreenStructuralSpliceRebase {
-    runtime_identity: StrongIdentity,
-    base_green_identity: StrongIdentity,
-    target_green_identity: StrongIdentity,
+    runtime_identity: RuntimeIdentity,
+    base_green_identity: RuntimeIdentity,
+    target_green_identity: RuntimeIdentity,
     base_source: crate::SourceVersion,
     target_source: crate::SourceVersion,
     base_event_start: u64,
@@ -738,6 +738,7 @@ struct FarSpanningExitRepairLeaf {
 /// numbering.
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub fn splice_m11_recursive_green_structural_atomic(
     runtime: &mut DocumentRuntime,
     base: &M11RecursiveGreenRoot,

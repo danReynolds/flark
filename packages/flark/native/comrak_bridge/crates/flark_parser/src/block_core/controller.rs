@@ -284,7 +284,7 @@ impl std::fmt::Debug for M11DirectBlockRestart {
 }
 
 impl M11DirectBlockRestart {
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
         self.grammar
             .allocated_bytes_for_diagnostics()
@@ -563,7 +563,7 @@ impl M11DirectBlockController {
         self.durable_restart_from_pause(pause)
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(test)]
     pub(crate) fn resume_durable_encoded_restart(
         encoded: &[u8],
         line_ordinal: u64,
@@ -633,6 +633,7 @@ impl M11DirectBlockController {
         }
     }
 
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn paragraph_may_have_reference_prefix(&self) -> Result<bool, M11DirectBlockError> {
         self.ensure_live()?;
         self.parser
