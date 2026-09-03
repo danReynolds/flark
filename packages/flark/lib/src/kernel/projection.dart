@@ -78,7 +78,7 @@ final class DisplayPosition {
 }
 
 final class ProjectedRow {
-  ProjectedRow({required this.index, required this.kind, required this.block, required this.firstLine, required this.lineCount, required this.text, required this.segments, required this.shells, required this.sourceStart, required this.sourceEnd, this.headingLevel = 0, this.fenced = false, this.codeInfoStart = -1, this.codeInfoEnd = -1, this.tableBlock = -1, this.tableRowBlock = -1, this.column = -1, this.header = false, this.alignment = 0});
+  ProjectedRow({required this.index, required this.kind, required this.block, required this.firstLine, required this.lineCount, required this.text, required this.segments, required this.shells, required this.sourceStart, required this.sourceEnd, required this.contentStarts, required this.contentEnds, required this.prefixStarts, this.headingLevel = 0, this.fenced = false, this.codeInfoStart = -1, this.codeInfoEnd = -1, this.tableBlock = -1, this.tableRowBlock = -1, this.column = -1, this.header = false, this.alignment = 0});
   final int index;
   final RowKind kind;
   /// The block this row projects, or -1 for a blank row; definitions use -1 too.
@@ -89,6 +89,11 @@ final class ProjectedRow {
   final List<Shell> shells;
   /// UTF-16 extent of the row's own content on its lines, prefixes excluded.
   final int sourceStart, sourceEnd;
+  /// Per line of the row (index = line - firstLine): where the caret may sit
+  /// on that line, and where the innermost container prefix begins (equal to
+  /// the content start when the line has none). A line without content, such
+  /// as a fence line, holds its line end so it stays reachable.
+  final List<int> contentStarts, contentEnds, prefixStarts;
   final int headingLevel;
   final bool fenced;
   final int codeInfoStart, codeInfoEnd;
@@ -161,6 +166,23 @@ final class Projection {
   /// Rows that own [line] (a table line holds one per cell).
   List<int> rowsOnLine(int line) => line < _rowsByLine.length ? _rowsByLine[line] : const [];
 
+  /// Where the caret may sit on [line]: one (start, end) span per row on the
+  /// line, sorted. Empty for a line with no caret positions (a table's
+  /// delimiter line).
+  List<(int, int)> lineSpans(int line) {
+    final out = <(int, int)>[];
+    if (line < 0 || line >= _rowsByLine.length) return out;
+    for (final r in _rowsByLine[line]) {
+      final row = rows[r];
+      final i = line - row.firstLine;
+      if (i < 0 || i >= row.contentStarts.length) continue;
+      final s = row.contentStarts[i], e = row.contentEnds[i];
+      if (s >= 0) out.add((s, e < s ? s : e));
+    }
+    out.sort((a, b) => a.$1 - b.$1);
+    return out;
+  }
+
   /// Display position of a UTF-16 source offset; snapped out of hidden bytes.
   DisplayPosition? displayForSource(int source) {
     final line = model.lineOfUtf16(source);
@@ -212,7 +234,9 @@ final class _Builder {
       final last = m.lineOfByte(endByte);
       final text = src.substring(v.startUtf16, v.endUtf16).replaceAll('\r\n', '\n').replaceAll('\r', '\n').trimRight();
       final end = v.startUtf16 + text.length;
-      addRow(ProjectedRow(index: rows.length, kind: RowKind.definition, block: -1, firstLine: first, lineCount: last - first + 1, text: text, segments: [Segment(displayStart: 0, displayEnd: text.length, sourceStart: v.startUtf16, sourceEnd: end, styles: 0, exact: text.length == end - v.startUtf16)], shells: _shellsFor(containerOf[first]), sourceStart: v.startUtf16, sourceEnd: end));
+      final starts = <int>[], ends = <int>[];
+      for (var l = first; l <= last; l++) { final ls = m.lineStartUtf16(l), le = _lineEnd(l); starts.add(v.startUtf16 > ls ? v.startUtf16 : ls); ends.add(end < le ? end : le); }
+      addRow(ProjectedRow(index: rows.length, kind: RowKind.definition, block: -1, firstLine: first, lineCount: last - first + 1, text: text, segments: [Segment(displayStart: 0, displayEnd: text.length, sourceStart: v.startUtf16, sourceEnd: end, styles: 0, exact: text.length == end - v.startUtf16)], shells: _shellsFor(containerOf[first]), sourceStart: v.startUtf16, sourceEnd: end, contentStarts: starts, contentEnds: ends, prefixStarts: List<int>.of(starts)));
     }
     // 2. Leaf rows in document order; their lines without content are hidden.
     for (var b = 0; b < m.blockCount; b++) {
@@ -225,7 +249,7 @@ final class _Builder {
         case BlockKind.codeBlock || BlockKind.htmlBlock:
           addRow(_literalRow(rows.length, b, kind, containerOf));
         case BlockKind.thematicBreak:
-          addRow(ProjectedRow(index: rows.length, kind: RowKind.thematicBreak, block: b, firstLine: first, lineCount: n, text: '', segments: const [], shells: _shellsFor(containerOf[first]), sourceStart: m.block(b, BlockField.startUtf16), sourceEnd: m.block(b, BlockField.endUtf16)));
+          addRow(ProjectedRow(index: rows.length, kind: RowKind.thematicBreak, block: b, firstLine: first, lineCount: n, text: '', segments: const [], shells: _shellsFor(containerOf[first]), sourceStart: m.block(b, BlockField.startUtf16), sourceEnd: m.block(b, BlockField.endUtf16), contentStarts: _lineEnds(first, n), contentEnds: _lineEnds(first, n), prefixStarts: _lineEnds(first, n)));
         case BlockKind.table:
           for (var l = first; l < first + n && l < lineCount; l++) { claimed[l] = true; }
         default:
@@ -240,11 +264,17 @@ final class _Builder {
     for (var l = 0; l < lineCount; l++) {
       if (claimed[l]) continue;
       final start = m.lineStartUtf16(l);
-      final end = l + 1 < lineCount ? m.lineStartUtf16(l + 1) : src.length;
-      // The line's own content start after container prefixes is unknown here;
-      // a blank row places its caret at the line end (after any prefix).
-      var contentEnd = end; while (contentEnd > start && (src.codeUnitAt(contentEnd - 1) == 0x0A || src.codeUnitAt(contentEnd - 1) == 0x0D)) { contentEnd--; }
-      addRow(ProjectedRow(index: rows.length, kind: RowKind.blank, block: -1, firstLine: l, lineCount: 1, text: '', segments: const [], shells: _shellsFor(containerOf[l]), sourceStart: contentEnd, sourceEnd: contentEnd));
+      // A blank row places its caret at the line end, after any prefix. The
+      // prefix of an empty item is its marker; of any other container line,
+      // the whole line.
+      final contentEnd = _lineEnd(l);
+      final shells = _shellsFor(containerOf[l]);
+      var prefixStart = contentEnd;
+      if (shells.isNotEmpty) {
+        final inner = shells.last;
+        prefixStart = (inner.kind == ShellKind.item || inner.kind == ShellKind.footnoteDefinition) && m.block(inner.block, BlockField.firstLine) == l ? m.block(inner.block, BlockField.startUtf16) : start;
+      }
+      addRow(ProjectedRow(index: rows.length, kind: RowKind.blank, block: -1, firstLine: l, lineCount: 1, text: '', segments: const [], shells: shells, sourceStart: contentEnd, sourceEnd: contentEnd, contentStarts: [contentEnd], contentEnds: [contentEnd], prefixStarts: [prefixStart]));
     }
     rows.sort((a, b) => a.firstLine != b.firstLine ? a.firstLine - b.firstLine : a.sourceStart - b.sourceStart);
     final renumbered = <ProjectedRow>[];
@@ -254,7 +284,7 @@ final class _Builder {
     return Projection._(m, src, renumbered, rowsByLine, options);
   }
 
-  ProjectedRow _withIndex(ProjectedRow r, int i) => ProjectedRow(index: i, kind: r.kind, block: r.block, firstLine: r.firstLine, lineCount: r.lineCount, text: r.text, segments: r.segments, shells: r.shells, sourceStart: r.sourceStart, sourceEnd: r.sourceEnd, headingLevel: r.headingLevel, fenced: r.fenced, codeInfoStart: r.codeInfoStart, codeInfoEnd: r.codeInfoEnd, tableBlock: r.tableBlock, tableRowBlock: r.tableRowBlock, column: r.column, header: r.header, alignment: r.alignment);
+  ProjectedRow _withIndex(ProjectedRow r, int i) => ProjectedRow(index: i, kind: r.kind, block: r.block, firstLine: r.firstLine, lineCount: r.lineCount, text: r.text, segments: r.segments, shells: r.shells, sourceStart: r.sourceStart, sourceEnd: r.sourceEnd, contentStarts: r.contentStarts, contentEnds: r.contentEnds, prefixStarts: r.prefixStarts, headingLevel: r.headingLevel, fenced: r.fenced, codeInfoStart: r.codeInfoStart, codeInfoEnd: r.codeInfoEnd, tableBlock: r.tableBlock, tableRowBlock: r.tableRowBlock, column: r.column, header: r.header, alignment: r.alignment);
 
   void _computeStyles() {
     for (var i = 0; i < m.runCount; i++) {
@@ -281,7 +311,8 @@ final class _Builder {
         final list = m.block(b, BlockField.parent);
         var itemIndex = 0;
         if (list != noParent) { for (var i = list + 1; i < b; i++) { if (m.block(i, BlockField.parent) == list) itemIndex++; } }
-        chain.add(Shell(kind: ShellKind.item, block: b, task: task, checked: task && flags & 2 != 0, checkboxStart: task && s > 0 ? _u16(s - 1) : -1, checkboxEnd: task && e > 0 ? _u16(e + 1) : -1, itemIndex: itemIndex));
+        final ordered = list != noParent && m.block(list, BlockField.attr0) == 1;
+        chain.add(Shell(kind: ShellKind.item, block: b, ordered: ordered, start: ordered ? m.block(list, BlockField.attr1) : 1, task: task, checked: task && flags & 2 != 0, checkboxStart: task && s > 0 ? _u16(s - 1) : -1, checkboxEnd: task && e > 0 ? _u16(e + 1) : -1, itemIndex: itemIndex));
       }
       if (kind == BlockKind.list) chain.add(Shell(kind: ShellKind.list, block: b, ordered: m.block(b, BlockField.attr0) == 1, start: m.block(b, BlockField.attr1), tight: m.block(b, BlockField.flags) & 1 != 0));
       if (kind == BlockKind.footnoteDefinition) chain.add(Shell(kind: ShellKind.footnoteDefinition, block: b));
@@ -333,9 +364,11 @@ final class _Builder {
     final text = StringBuffer();
     final segments = <Segment>[];
     var sourceStart = -1, sourceEnd = -1;
+    final starts = _lineEnds(first, n), ends = List<int>.of(starts), prefixes = List<int>.of(starts);
     for (var c = 0; c < cn; c++) {
       final rec = m.content(co + c, ContentField.line);
       final cs = m.content(co + c, ContentField.startUtf16), ce = m.content(co + c, ContentField.endUtf16);
+      if (rec >= first && rec < first + n) { starts[rec - first] = cs; ends[rec - first] = ce; prefixes[rec - first] = m.content(co + c, ContentField.prefixStartUtf16); }
       if (sourceStart < 0) sourceStart = cs;
       sourceEnd = ce;
       if (c > 0) {
@@ -375,23 +408,32 @@ final class _Builder {
         p = b > p ? b : p;
       }
       if (p < ce) emitGap(p, ce);
-      assert(rec >= first);
     }
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:
-        return ProjectedRow(index: index, kind: RowKind.heading, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: shells, sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, headingLevel: m.block(block, BlockField.attr0));
+        return ProjectedRow(index: index, kind: RowKind.heading, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: shells, sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, contentStarts: starts, contentEnds: ends, prefixStarts: prefixes, headingLevel: m.block(block, BlockField.attr0));
       case BlockKind.tableCell:
         final rowBlock = m.block(block, BlockField.parent);
         final tableBlock = rowBlock == noParent ? -1 : m.block(rowBlock, BlockField.parent);
         var column = 0;
         for (var i = rowBlock + 1; i < block; i++) { if (m.block(i, BlockField.parent) == rowBlock) column++; }
         final packed = tableBlock < 0 ? 0 : m.block(tableBlock, BlockField.attr1);
-        return ProjectedRow(index: index, kind: RowKind.tableCell, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: shells, sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, tableBlock: tableBlock, tableRowBlock: rowBlock, column: column, header: rowBlock != noParent && m.block(rowBlock, BlockField.flags) & 1 != 0, alignment: column < 16 ? (packed >> (2 * column)) & 3 : 0);
+        return ProjectedRow(index: index, kind: RowKind.tableCell, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: shells, sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, contentStarts: starts, contentEnds: ends, prefixStarts: prefixes, tableBlock: tableBlock, tableRowBlock: rowBlock, column: column, header: rowBlock != noParent && m.block(rowBlock, BlockField.flags) & 1 != 0, alignment: column < 16 ? (packed >> (2 * column)) & 3 : 0);
       default:
-        return ProjectedRow(index: index, kind: RowKind.paragraph, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: shells, sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd);
+        return ProjectedRow(index: index, kind: RowKind.paragraph, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: shells, sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, contentStarts: starts, contentEnds: ends, prefixStarts: prefixes);
     }
   }
+
+  /// Line end excluding the terminator.
+  int _lineEnd(int l) {
+    final start = m.lineStartUtf16(l);
+    var e = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : src.length;
+    while (e > start && (src.codeUnitAt(e - 1) == 0x0A || src.codeUnitAt(e - 1) == 0x0D)) { e--; }
+    return e;
+  }
+
+  List<int> _lineEnds(int first, int n) => [for (var l = first; l < first + n && l < m.lineCount; l++) _lineEnd(l)];
 
   ProjectedRow _literalRow(int index, int block, int kind, List<int> containerOf) {
     final first = m.block(block, BlockField.firstLine), n = m.block(block, BlockField.lineCount);
@@ -399,8 +441,11 @@ final class _Builder {
     final text = StringBuffer();
     final segments = <Segment>[];
     var sourceStart = -1, sourceEnd = -1;
+    final starts = _lineEnds(first, n), ends = List<int>.of(starts), prefixes = List<int>.of(starts);
     for (var c = 0; c < cn; c++) {
+      final rec = m.content(co + c, ContentField.line);
       final cs = m.content(co + c, ContentField.startUtf16), ce = m.content(co + c, ContentField.endUtf16);
+      if (rec >= first && rec < first + n) { starts[rec - first] = cs; ends[rec - first] = ce; prefixes[rec - first] = m.content(co + c, ContentField.prefixStartUtf16); }
       if (sourceStart < 0) sourceStart = cs;
       sourceEnd = ce;
       if (c > 0) { final prevEnd = m.content(co + c - 1, ContentField.endUtf16); final d0 = text.length; text.write('\n'); segments.add(Segment(displayStart: d0, displayEnd: text.length, sourceStart: prevEnd, sourceEnd: cs, styles: 0, exact: false, lineBreak: true)); }
@@ -409,6 +454,6 @@ final class _Builder {
       if (ce > cs) { final d0 = text.length; text.write(src.substring(cs, ce)); segments.add(Segment(displayStart: d0, displayEnd: text.length, sourceStart: cs, sourceEnd: ce, styles: kind == BlockKind.codeBlock ? Style.code : 0, exact: true)); }
     }
     final flags = m.block(block, BlockField.flags);
-    return ProjectedRow(index: index, kind: kind == BlockKind.codeBlock ? RowKind.codeBlock : RowKind.htmlBlock, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: _shellsFor(containerOf[first]), sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, fenced: kind == BlockKind.codeBlock && flags & 1 != 0, codeInfoStart: kind == BlockKind.codeBlock && flags & 1 != 0 ? _u16(m.block(block, BlockField.attr1)) : -1, codeInfoEnd: kind == BlockKind.codeBlock && flags & 1 != 0 ? _u16(m.block(block, BlockField.attr2)) : -1);
+    return ProjectedRow(index: index, kind: kind == BlockKind.codeBlock ? RowKind.codeBlock : RowKind.htmlBlock, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: _shellsFor(containerOf[first]), sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, contentStarts: starts, contentEnds: ends, prefixStarts: prefixes, fenced: kind == BlockKind.codeBlock && flags & 1 != 0, codeInfoStart: kind == BlockKind.codeBlock && flags & 1 != 0 ? _u16(m.block(block, BlockField.attr1)) : -1, codeInfoEnd: kind == BlockKind.codeBlock && flags & 1 != 0 ? _u16(m.block(block, BlockField.attr2)) : -1);
   }
 }

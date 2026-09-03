@@ -2,7 +2,7 @@
 
 Generated from `schema/render_model_v1.json`; edit the JSON, then run `tool/gen_schema.py`.
 
-Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely.
+Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker.
 
 Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in this order: lines, blocks, content, runs, definitions, strings. The string table is padded to a multiple of four bytes.
 
@@ -48,7 +48,7 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | 12 | `attr2` |
 | 13 | `flags` |
 
-## Content record (6 words)
+## Content record (8 words)
 
 | Word | Field |
 | --- | --- |
@@ -58,6 +58,8 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | 3 | `end_byte` |
 | 4 | `end_utf16` |
 | 5 | `virtual_leading_spaces` |
+| 6 | `prefix_start_byte` |
+| 7 | `prefix_start_utf16` |
 
 ## Run record (16 words)
 

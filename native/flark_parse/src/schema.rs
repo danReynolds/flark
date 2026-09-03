@@ -40,13 +40,15 @@ pub mod block {
     pub const FLAGS: usize = 13;
 }
 pub mod content {
-    pub const WORDS: usize = 6;
+    pub const WORDS: usize = 8;
     pub const LINE: usize = 0;
     pub const START_BYTE: usize = 1;
     pub const START_UTF16: usize = 2;
     pub const END_BYTE: usize = 3;
     pub const END_UTF16: usize = 4;
     pub const VIRTUAL_LEADING_SPACES: usize = 5;
+    pub const PREFIX_START_BYTE: usize = 6;
+    pub const PREFIX_START_UTF16: usize = 7;
 }
 pub mod run {
     pub const WORDS: usize = 16;

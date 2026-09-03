@@ -1,7 +1,7 @@
 {
   "version": 1,
   "magic": "FLK5",
-  "description": "Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely.",
+  "description": "Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker.",
   "sections": [
     "lines",
     "blocks",
@@ -50,7 +50,9 @@
       "start_utf16",
       "end_byte",
       "end_utf16",
-      "virtual_leading_spaces"
+      "virtual_leading_spaces",
+      "prefix_start_byte",
+      "prefix_start_utf16"
     ],
     "run": [
       "kind",

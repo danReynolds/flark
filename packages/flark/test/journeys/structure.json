@@ -1,0 +1,64 @@
+[
+  {"name": "return continues a bullet item", "source": "- one", "caret": 5, "steps": [
+    {"newline": true, "source": "- one\n- ", "rows": ["one", ""], "caret": [1, 0]},
+    {"insert": "t", "source": "- one\n- t", "rows": ["one", "t"], "caret": [1, 1]}
+  ]},
+  {"name": "return on an empty item exits the list", "source": "- one\n- ", "caret": 8, "steps": [
+    {"newline": true, "source": "- one\n", "rows": ["one", ""], "caret": [1, 0]},
+    {"insert": "p", "source": "- one\np", "rows": ["one\np"]}
+  ]},
+  {"name": "ordered items number the next marker", "source": "1. a", "caret": 4, "steps": [
+    {"newline": true, "source": "1. a\n2. ", "rows": ["a", ""], "caret": [1, 0]}
+  ]},
+  {"name": "task items continue unchecked", "source": "- [x] a", "caret": 7, "steps": [
+    {"newline": true, "source": "- [x] a\n- [ ] ", "rows": ["a", ""], "caret": [1, 0]}
+  ]},
+  {"name": "nested items keep their indentation", "source": "- a\n  - b", "caret": 9, "steps": [
+    {"newline": true, "source": "- a\n  - b\n  - ", "rows": ["a", "b", ""], "caret": [2, 0]}
+  ]},
+  {"name": "return in a quote continues the quote", "source": "> a", "caret": 3, "steps": [
+    {"newline": true, "source": "> a\n> ", "rows": ["a", ""], "caret": [1, 0]},
+    {"newline": true, "source": "> a\n", "rows": ["a", ""], "caret": [1, 0]}
+  ]},
+  {"name": "return splits a paragraph with a line break, or a paragraph break", "source": "ab", "caret": 1, "steps": [
+    {"newline": true, "source": "a\nb", "rows": ["a\nb"], "caret": [0, 2]},
+    {"caret": 1},
+    {"paragraph": true, "source": "a\n\n\nb", "rows": ["a", "", "", "b"], "caret": [2, 0]}
+  ]},
+  {"name": "return after a heading gives a plain paragraph", "source": "# T", "caret": 3, "steps": [
+    {"rows": ["T"]},
+    {"newline": true, "source": "# T\n", "rows": ["T", ""], "caret": [1, 0]},
+    {"insert": "p", "source": "# T\np", "rows": ["T", "p"]}
+  ]},
+  {"name": "backspace at an item start lifts the marker into a paragraph", "source": "- one\n- two", "caret": 8, "steps": [
+    {"caret": [1, 0]},
+    {"backspace": true, "source": "- one\n\ntwo", "rows": ["one", "", "two"], "caret": [2, 0]}
+  ]},
+  {"name": "backspace at the first item start removes the list", "source": "- one", "caret": 2, "steps": [
+    {"backspace": true, "source": "one", "rows": ["one"], "caret": [0, 0]}
+  ]},
+  {"name": "backspace at a paragraph start removes the blank row then joins", "source": "one\n\ntwo", "caret": 5, "steps": [
+    {"backspace": true, "source": "one\ntwo", "rows": ["one\ntwo"], "caret": [0, 4]},
+    {"backspace": true, "source": "onetwo", "rows": ["onetwo"], "caret": [0, 3]}
+  ]},
+  {"name": "delete at a row end joins the next row", "source": "one\n\ntwo", "caret": 3, "steps": [
+    {"delete": true, "source": "one\ntwo", "rows": ["one\ntwo"], "caret": [0, 3]},
+    {"delete": true, "source": "onetwo", "rows": ["onetwo"], "caret": [0, 3]}
+  ]},
+  {"name": "repeated return then typing leaves one live caret", "source": "a", "caret": 1, "steps": [
+    {"newline": 3, "source": "a\n\n\n", "rows": ["a", "", "", ""], "caret": [3, 0]},
+    {"insert": "b", "source": "a\n\n\nb", "rows": ["a", "", "", "b"], "caret": [3, 1]}
+  ]},
+  {"name": "a task checkbox toggles from the caret's item", "source": "- [ ] a", "caret": 7, "steps": [
+    {"toggleTask": true, "source": "- [x] a", "rows": ["a"]},
+    {"toggleTask": true, "source": "- [ ] a"}
+  ]},
+  {"name": "heading level is set and cleared on the caret's row", "source": "title", "caret": 5, "steps": [
+    {"heading": 2, "source": "## title", "rows": ["title"], "caret": [0, 5]},
+    {"heading": 0, "source": "title", "rows": ["title"], "caret": [0, 5]}
+  ]},
+  {"name": "backspace joins a quote line into the previous quote line", "source": "> a\n> b", "caret": 6, "steps": [
+    {"rows": ["a\nb"], "caret": [0, 2]},
+    {"backspace": true, "source": "> ab", "rows": ["ab"], "caret": [0, 1]}
+  ]}
+]

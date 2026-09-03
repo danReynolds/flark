@@ -1,0 +1,82 @@
+[
+  {"name": "typing inside emphasis continues it", "source": "say *hi* now", "caret": 7, "steps": [
+    {"context": ["emphasis"]},
+    {"insert": "x", "source": "say *hix* now", "rows": ["say hix now"], "caret": [0, 7], "context": ["emphasis"]}
+  ]},
+  {"name": "arrow right keeps the context it came from", "source": "**bold** here", "caret": 0, "steps": [
+    {"right": 4, "caret": [0, 4], "anchor": 6, "context": ["strong"]},
+    {"insert": "!", "source": "**bold!** here", "rows": ["bold! here"], "caret": [0, 5], "context": ["strong"]}
+  ]},
+  {"name": "arrow left from plain text stays plain at the closing boundary", "source": "**bold** here", "caret": 9, "steps": [
+    {"left": 1, "caret": [0, 4], "anchor": 8, "context": []},
+    {"insert": "!", "source": "**bold**! here", "rows": ["bold! here"], "caret": [0, 5], "context": []}
+  ]},
+  {"name": "entering a span from the left does not start it before its first glyph", "source": "a **b**", "caret": 0, "steps": [
+    {"right": 2, "caret": [0, 2], "anchor": 2, "context": []},
+    {"insert": "x", "source": "a x**b**", "rows": ["a xb"], "context": []}
+  ]},
+  {"name": "home and end take the outermost anchor", "source": "**bold**", "caret": 6, "steps": [
+    {"home": true, "caret": [0, 0], "anchor": 0, "context": []},
+    {"end": true, "caret": [0, 4], "anchor": 8, "context": []},
+    {"insert": ".", "source": "**bold**.", "rows": ["bold."]}
+  ]},
+  {"name": "arrow right at the document end leaves the span", "source": "**bold**", "caret": 6, "steps": [
+    {"context": ["strong"]},
+    {"right": 1, "caret": [0, 4], "anchor": 8, "context": []}
+  ]},
+  {"name": "backspace inside strong deletes the grapheme and stays strong", "source": "**bold**", "caret": 6, "steps": [
+    {"backspace": true, "source": "**bol**", "rows": ["bol"], "caret": [0, 3], "context": ["strong"]}
+  ]},
+  {"name": "backspace outside a span deletes its last visible grapheme", "source": "**bold** x", "caret": 8, "steps": [
+    {"context": []},
+    {"backspace": true, "source": "**bol** x", "rows": ["bol x"], "caret": [0, 3]}
+  ]},
+  {"name": "delete to empty removes the owner and the next character recreates it", "source": "a *t* b", "caret": 4, "steps": [
+    {"backspace": true, "source": "a  b", "rows": ["a  b"], "caret": [0, 2], "context": ["emphasis"]},
+    {"insert": "x", "source": "a *x* b", "rows": ["a x b"], "caret": [0, 3], "context": ["emphasis"]}
+  ]},
+  {"name": "delete to empty then whitespace exits the context", "source": "*t*", "caret": 2, "steps": [
+    {"backspace": true, "source": "", "rows": [""], "caret": [0, 0], "context": ["emphasis"]},
+    {"insert": " ", "source": " ", "rows": [""], "context": []}
+  ]},
+  {"name": "nested delete to empty removes every emptied owner", "source": "***t***", "caret": 4, "steps": [
+    {"backspace": true, "source": "", "rows": [""], "context": ["emphasis", "strong"]},
+    {"insert": "y", "source": "***y***", "rows": ["y"], "caret": [0, 1], "context": ["emphasis", "strong"]}
+  ]},
+  {"name": "forward delete to empty", "source": "`c` z", "caret": 1, "steps": [
+    {"delete": true, "source": " z", "rows": ["z"], "caret": [0, 0], "context": ["code"]},
+    {"insert": "d", "source": " `d`z", "rows": ["dz"], "context": ["code"]}
+  ]},
+  {"name": "an escaped delimiter is deleted as one visible character", "source": "\\*not\\*", "caret": 2, "steps": [
+    {"rows": ["*not*"], "caret": [0, 1]},
+    {"backspace": true, "source": "not\\*", "rows": ["not*"], "caret": [0, 0], "context": []}
+  ]},
+  {"name": "typing the closing delimiter renders the construct", "source": "*hi", "caret": 3, "steps": [
+    {"rows": ["*hi"]},
+    {"insert": "*", "source": "*hi*", "rows": ["hi"], "caret": [0, 2], "context": []}
+  ]},
+  {"name": "typing replaces the selection", "source": "hello world", "steps": [
+    {"select": [0, 5], "selection": [0, 5]},
+    {"insert": "bye", "source": "bye world", "rows": ["bye world"], "caret": [0, 3]}
+  ]},
+  {"name": "backspace deletes the selection across a span", "source": "a **bc** d", "steps": [
+    {"select": [0, 10]},
+    {"backspace": true, "source": "", "rows": [""]}
+  ]},
+  {"name": "toggling strong on a selection wraps it and again unwraps it", "source": "make this bold", "steps": [
+    {"select": [5, 9]},
+    {"toggle": "strong", "source": "make **this** bold", "rows": ["make this bold"], "selection": [7, 11]},
+    {"toggle": "strong", "source": "make this bold", "selection": [5, 9]}
+  ]},
+  {"name": "toggling strong at the caret styles the next character", "source": "ab", "caret": 2, "steps": [
+    {"toggle": "strong", "context": ["strong"], "source": "ab"},
+    {"insert": "c", "source": "ab**c**", "rows": ["abc"], "context": ["strong"]},
+    {"toggle": "strong", "anchor": 7, "context": []},
+    {"insert": "d", "source": "ab**c**d", "rows": ["abcd"]}
+  ]},
+  {"name": "a link projects its text and the caret never enters the url", "source": "see [docs](http://x.y) now", "caret": 9, "steps": [
+    {"rows": ["see docs now"], "caret": [0, 8], "context": ["link"]},
+    {"right": 1, "caret": [0, 9], "anchor": 23, "context": []},
+    {"left": 1, "caret": [0, 8], "anchor": 22, "context": []}
+  ]}
+]

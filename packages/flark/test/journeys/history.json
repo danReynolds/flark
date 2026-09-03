@@ -1,0 +1,27 @@
+[
+  {"name": "consecutive typing is one undo group", "source": "abc", "caret": 3, "steps": [
+    {"insert": "d", "source": "abcd"},
+    {"insert": "e", "source": "abcde"},
+    {"undo": true, "source": "abc", "caret": [0, 3]},
+    {"redo": true, "source": "abcde", "caret": [0, 5]}
+  ]},
+  {"name": "a pause splits typing groups", "source": "abc", "caret": 3, "steps": [
+    {"insert": "d", "source": "abcd"},
+    {"insert": "e", "after": 2000, "source": "abcde"},
+    {"undo": true, "source": "abcd", "caret": [0, 4]},
+    {"undo": true, "source": "abc", "caret": [0, 3]}
+  ]},
+  {"name": "delete to empty then typing undoes in two steps", "source": "*t*", "caret": 2, "steps": [
+    {"backspace": true, "source": ""},
+    {"insert": "x", "after": 2000, "source": "*x*"},
+    {"undo": true, "source": "", "caret": [0, 0]},
+    {"undo": true, "source": "*t*", "caret": [0, 1], "anchor": 2},
+    {"redo": 2, "source": "*x*"}
+  ]},
+  {"name": "structural commands are their own entries", "source": "- a", "caret": 3, "steps": [
+    {"newline": true, "source": "- a\n- "},
+    {"insert": "b", "source": "- a\n- b"},
+    {"undo": true, "source": "- a\n- "},
+    {"undo": true, "source": "- a", "caret": [0, 1]}
+  ]}
+]

@@ -9,7 +9,7 @@ abstract final class RenderModelSchema {
   static const int headerWords = 11;
   static const int lineWords = 2;
   static const int blockWords = 14;
-  static const int contentWords = 6;
+  static const int contentWords = 8;
   static const int runWords = 16;
   static const int definitionWords = 8;
 }
@@ -57,6 +57,8 @@ abstract final class ContentField {
   static const int endByte = 3;
   static const int endUtf16 = 4;
   static const int virtualLeadingSpaces = 5;
+  static const int prefixStartByte = 6;
+  static const int prefixStartUtf16 = 7;
 }
 
 abstract final class RunField {
