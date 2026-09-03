@@ -58,7 +58,7 @@ scaffolded Dart app with no Rust toolchain builds and parses.
 
 ## M2 — Kernel
 
-Pure Dart `flark`.
+Pure Dart `flark`. Detail, revised after M1: [m2_kernel_plan.md](m2_kernel_plan.md).
 
 - `FlarkDocument`, typed-data model decoder, `FlarkProjection` with hidden
   ranges, offset map, and per-block memo.
