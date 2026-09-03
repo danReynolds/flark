@@ -27,6 +27,7 @@ the extraction test.
 | A removed definition-only paragraph continues through lazy lines | uncovered runs extend through lazy lines owned by the scope or an ancestor | full-consumption check |
 | Code block end line runs short or long of the literal (unclosed fences, trailing blank lines of a container) | the literal's line count is exact for unclosed and indented code | code literal |
 | Lazy continuation lines keep partial indentation and partially consumed tabs | cmark's buffer mirrored: whitespace kept on lazy lines, virtual spaces subtracted from positions | text literal check |
+| A text node's literal is one decoded string (entities, the backslash of an escaped pipe, a stray CR, virtual spaces of a partial tab) | the node is split into exact text runs and replacement runs by a lockstep walk that treats an entity reference as one unit; the pieces must rebuild the literal or the node stays one replacement run | literal rebuild in `text_pieces`, extraction test |
 
 ## Outside the contract
 

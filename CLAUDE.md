@@ -14,10 +14,14 @@ Active code:
   to a flat render model. The schema is `schema/render_model_v1.json`;
   `tool/gen_schema.py` derives `src/schema.rs`, `SCHEMA.md`, and the Dart
   constants. Three-function C ABI on cdylib, staticlib, and wasm32.
-- `packages/flark`: pure Dart, must not import Flutter. M1 holds the render
-  model views and the parse transports (FFI on the VM, Wasm through
-  `dart:js_interop` on the web). M2 adds the projection, caret, commands,
-  history, and the `FlarkEditor` facade.
+- `packages/flark`: pure Dart, must not import Flutter. `src/parse` holds the
+  render model views and the parse transports (FFI on the VM, Wasm through
+  `dart:js_interop` on the web); `src/kernel` holds the projection (rows,
+  segments, hidden ranges, caret spans), the document (legal caret offsets,
+  anchors, owners), the closed command set, grouped history, and the
+  `FlarkEditor` facade that applies `edit_profile_v1` semantics. The facade
+  library is `package:flark/flark.dart`; the render model and schema
+  constants are `package:flark/render_model.dart`.
 - `test/fixtures/commonmark`: the upstream CommonMark 0.31.2 and GFM corpora
   and the deviation register.
 
@@ -35,7 +39,13 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
   (needs node; compares the committed wasm, and optionally a fresh build,
   to native across all 1,322 cases).
 - Dart: `cd packages/flark && dart analyze --fatal-infos && dart test`
-  (the build hook compiles the crate).
+  (the build hook compiles the crate). Journeys are JSON fixtures under
+  `packages/flark/test/journeys/` run by `test/journey_test.dart`; the
+  generated matrix is `test/matrix_test.dart` (`FLARK_MATRIX_ITERATIONS`,
+  `FLARK_MATRIX_SEED`); a failing matrix case prints its seed and command
+  log to become a journey.
+- Keystroke receipt: `cd packages/flark && dart run tool/bench_editor.dart 25 --spike`
+  (the M0 document; omit `--spike` for the denser one).
 - Rust-free consumer: `packages/flark/tool/verify_prebuilt_consumer.sh`.
 - Wasm asset: `packages/flark/tool/build_wasm.sh` after any crate change,
   then commit `packages/flark/lib/assets/wasm/flark_parse.wasm`.
@@ -49,7 +59,13 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
 
 - Markdown source is the document. Rust is the only Markdown authority: Dart
   consumes ranges from the render model and never inspects a delimiter. A
-  range the model lacks is a parse-crate bug, not a Dart workaround.
+  range the model lacks is a parse-crate bug, not a Dart workaround (content
+  records carry each line's innermost prefix start for exactly this reason).
+- The caret is a source offset that is never strictly inside a hidden range
+  and always on a row's caret span; several legal offsets can share one
+  display position, and which one the caret holds is its typing context.
+  Movement keeps the context it came from; row edges take the outermost
+  anchor; pointer placement uses the glyph half.
 - The extraction derives what comrak does not expose and validates each
   derivation against comrak's own output; `native/flark_parse/REGISTER.md`
   lists every known comrak quirk and its correction.

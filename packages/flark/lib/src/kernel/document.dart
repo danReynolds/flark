@@ -77,15 +77,17 @@ final class FlarkDocument {
   /// sorted by start.
   late final List<(int, int)> hiddenIntervals = () {
     final out = <(int, int)>[];
+    var sorted = true, last = -1;
+    void add(int a, int b) { if (a < last) sorted = false; last = a; out.add((a, b)); }
     for (var r = 0; r < model.runCount; r++) {
       final k = model.run(r, RunField.kind);
       final s = model.run(r, RunField.startUtf16), e = model.run(r, RunField.endUtf16);
-      if (k == RunKind.softBreak || k == RunKind.hardBreak) { if (e > s) out.add((s, e)); continue; }
+      if (k == RunKind.softBreak || k == RunKind.hardBreak) { if (e > s) add(s, e); continue; }
       final cs = model.run(r, RunField.contentStartUtf16), ce = model.run(r, RunField.contentEndUtf16);
-      if (cs > s) out.add((s, cs));
-      if (e > ce) out.add((ce, e));
+      if (cs > s) add(s, cs);
+      if (e > ce) add(ce, e);
     }
-    out.sort((a, b) => a.$1 - b.$1);
+    if (!sorted) out.sort((a, b) => a.$1 - b.$1);
     return out;
   }();
 
@@ -155,16 +157,35 @@ final class FlarkDocument {
 
   Owner _owner(int r) => Owner(r, model.run(r, RunField.kind), model.run(r, RunField.startUtf16), model.run(r, RunField.endUtf16), model.run(r, RunField.contentStartUtf16), model.run(r, RunField.contentEndUtf16));
 
+  /// The runs of the leaf block projected at [offset]: (first, end).
+  (int, int) _runsNear(int offset) {
+    final row = rowAt(offset);
+    if (row.block < 0) return (0, 0);
+    final first = model.firstRunOfBlock(row.block);
+    var end = first;
+    while (end < model.runCount && model.run(end, RunField.block) == row.block) { end++; }
+    return (first, end);
+  }
+
   /// Styled owners whose content contains [offset], outermost first. An
   /// offset at a content edge counts as inside: that is what makes the
   /// anchor the typing context.
-  List<Owner> ownersAt(int offset) => [for (var r = 0; r < model.runCount; r++) if (_owns(model.run(r, RunField.kind)) && model.run(r, RunField.kind) != RunKind.escape && offset >= model.run(r, RunField.contentStartUtf16) && offset <= model.run(r, RunField.contentEndUtf16)) _owner(r)];
+  List<Owner> ownersAt(int offset) {
+    final (first, end) = _runsNear(offset);
+    return [for (var r = first; r < end; r++) if (_owns(model.run(r, RunField.kind)) && model.run(r, RunField.kind) != RunKind.escape && offset >= model.run(r, RunField.contentStartUtf16) && offset <= model.run(r, RunField.contentEndUtf16)) _owner(r)];
+  }
 
   /// Owners whose content is exactly [start, end): emptied by deleting it.
-  List<Owner> ownersOfContent(int start, int end) => [for (var r = 0; r < model.runCount; r++) if (_owns(model.run(r, RunField.kind)) && model.run(r, RunField.contentStartUtf16) == start && model.run(r, RunField.contentEndUtf16) == end) _owner(r)];
+  List<Owner> ownersOfContent(int start, int end) {
+    final (first, last) = _runsNear(start);
+    return [for (var r = first; r < last; r++) if (_owns(model.run(r, RunField.kind)) && model.run(r, RunField.contentStartUtf16) == start && model.run(r, RunField.contentEndUtf16) == end) _owner(r)];
+  }
 
   /// Owners whose full range starts or ends at [offset]: adjacent from outside.
-  List<Owner> ownersTouching(int offset) => [for (var r = 0; r < model.runCount; r++) if (_owns(model.run(r, RunField.kind)) && model.run(r, RunField.kind) != RunKind.escape && (model.run(r, RunField.startUtf16) == offset || model.run(r, RunField.endUtf16) == offset)) _owner(r)];
+  List<Owner> ownersTouching(int offset) {
+    final (first, end) = _runsNear(offset);
+    return [for (var r = first; r < end; r++) if (_owns(model.run(r, RunField.kind)) && model.run(r, RunField.kind) != RunKind.escape && (model.run(r, RunField.startUtf16) == offset || model.run(r, RunField.endUtf16) == offset)) _owner(r)];
+  }
 
   /// Style bits the next keystroke at [offset] inherits.
   int typingContextAt(int offset) {

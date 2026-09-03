@@ -7,6 +7,18 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 
+/// The M0 spike's document (spikes/v5/dart_harness/bin/keystroke.dart), for
+/// numbers comparable with the RFC 030 receipts.
+String spikeDocument(int bytes) {
+  final s = StringBuffer();
+  var i = 0;
+  while (s.length < bytes) {
+    s.write('## Section $i\n\nThis is a paragraph with *emphasis*, **strong**, `code`, a [link](https://example.com/$i) and some ~~struck~~ text that wraps across several lines of ordinary prose so that the row is realistic.\n\n- item one with *em*\n- item two with **strong**\n  - nested item\n\n> a quote with `code` inside\n\n```dart\nvoid main() { print(\'hi $i\'); }\n```\n\n| a | b |\n|---|---|\n| 1 | *2* |\n\n[ref$i]: https://example.com/ref$i\n\n');
+    i++;
+  }
+  return s.toString();
+}
+
 String denseDocument(int bytes) {
   final b = StringBuffer();
   var i = 0;
@@ -28,8 +40,9 @@ int percentile(List<int> xs, double p) { final s = List.of(xs)..sort(); return s
 
 void main(List<String> args) {
   final kb = args.isNotEmpty ? int.parse(args[0]) : 25;
+  final spike = args.contains('--spike');
   final backend = createParseBackend();
-  final source = denseDocument(kb * 1024);
+  final source = spike ? spikeDocument(kb * 1024) : denseDocument(kb * 1024);
   final editor = FlarkEditor(backend, text: source, caret: source.length ~/ 2);
   final inserts = <int>[], deletes = <int>[], parses = <int>[], projections = <int>[];
   final sw = Stopwatch();
@@ -42,7 +55,7 @@ void main(List<String> args) {
     sw.reset(); sw.start(); Projection.of(m, editor.source); sw.stop(); if (i >= 50) projections.add(sw.elapsedMicroseconds);
   }
   final model = editor.document.model;
-  stdout.writeln('document ${source.length} chars, ${model.blockCount} blocks, ${model.runCount} runs, ${editor.projection.rows.length} rows');
+  stdout.writeln('\n${spike ? 'spike' : 'dense'} document ${source.length} chars, ${model.blockCount} blocks, ${model.runCount} runs, ${editor.projection.rows.length} rows');
   for (final (name, xs) in [('insert (facade)', inserts), ('backspace (facade)', deletes), ('parse only', parses), ('projection only', projections)]) {
     stdout.writeln('${name.padRight(20)} p50 ${(percentile(xs, 0.5) / 1000).toStringAsFixed(2)} ms  p99 ${(percentile(xs, 0.99) / 1000).toStringAsFixed(2)} ms  min ${(xs.reduce((a, b) => a < b ? a : b) / 1000).toStringAsFixed(2)} ms');
   }

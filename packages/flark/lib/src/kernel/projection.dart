@@ -79,7 +79,8 @@ final class DisplayPosition {
 
 final class ProjectedRow {
   ProjectedRow({required this.index, required this.kind, required this.block, required this.firstLine, required this.lineCount, required this.text, required this.segments, required this.shells, required this.sourceStart, required this.sourceEnd, required this.contentStarts, required this.contentEnds, required this.prefixStarts, this.headingLevel = 0, this.fenced = false, this.codeInfoStart = -1, this.codeInfoEnd = -1, this.tableBlock = -1, this.tableRowBlock = -1, this.column = -1, this.header = false, this.alignment = 0});
-  final int index;
+  /// Position in [Projection.rows], assigned once rows are ordered.
+  int index;
   final RowKind kind;
   /// The block this row projects, or -1 for a blank row; definitions use -1 too.
   final int block;
@@ -213,13 +214,14 @@ final class _Builder {
   late final List<int> _styleOf = List.filled(m.runCount, 0);
   late final List<int> _linkOf = List.filled(m.runCount, -1);
 
+
   Projection build() {
     _computeStyles();
     final lineCount = m.lineCount;
     final rowsByLine = List.generate(lineCount, (_) => <int>[]);
     final rows = <ProjectedRow>[];
     final claimed = List<bool>.filled(lineCount, false); // owned by a row or hidden
-    void addRow(ProjectedRow row) { rows.add(row); for (var l = row.firstLine; l < row.firstLine + row.lineCount && l < lineCount; l++) { rowsByLine[l].add(row.index); claimed[l] = true; } }
+    void addRow(ProjectedRow row) { rows.add(row); for (var l = row.firstLine; l < row.firstLine + row.lineCount && l < lineCount; l++) { claimed[l] = true; } }
     // Container line ranges from their (widened) byte ranges, innermost last.
     final containerOf = List<int>.filled(lineCount, -1);
     for (var b = 0; b < m.blockCount; b++) {
@@ -280,15 +282,23 @@ final class _Builder {
       }
       addRow(ProjectedRow(index: rows.length, kind: RowKind.blank, block: -1, firstLine: l, lineCount: 1, text: '', segments: const [], shells: shells, sourceStart: contentEnd, sourceEnd: contentEnd, contentStarts: [contentEnd], contentEnds: [contentEnd], prefixStarts: [prefixStart]));
     }
-    rows.sort((a, b) => a.firstLine != b.firstLine ? a.firstLine - b.firstLine : a.sourceStart - b.sourceStart);
-    final renumbered = <ProjectedRow>[];
-    for (var i = 0; i < rows.length; i++) { renumbered.add(_withIndex(rows[i], i)); }
-    for (final list in rowsByLine) { list.clear(); }
-    for (final r in renumbered) { for (var l = r.firstLine; l < r.firstLine + r.lineCount && l < lineCount; l++) { rowsByLine[l].add(r.index); } }
-    return Projection._(m, src, renumbered, rowsByLine, options);
+    // Display order is line order; rows were added per kind, so bucket them
+    // by first line and only order within a line when it holds several
+    // (table cells arrive in order; a definition and a leaf may not).
+    final byFirstLine = List<List<ProjectedRow>?>.filled(lineCount + 1, null);
+    for (final r in rows) { (byFirstLine[r.firstLine < lineCount ? r.firstLine : lineCount] ??= <ProjectedRow>[]).add(r); }
+    final ordered = <ProjectedRow>[];
+    for (final bucket in byFirstLine) {
+      if (bucket == null) continue;
+      if (bucket.length > 1) { var sorted = true; for (var i = 1; i < bucket.length && sorted; i++) { sorted = bucket[i - 1].sourceStart <= bucket[i].sourceStart; } if (!sorted) bucket.sort((a, b) => a.sourceStart - b.sourceStart); }
+      for (final r in bucket) {
+        r.index = ordered.length;
+        ordered.add(r);
+        for (var l = r.firstLine; l < r.firstLine + r.lineCount && l < lineCount; l++) { rowsByLine[l].add(r.index); }
+      }
+    }
+    return Projection._(m, src, ordered, rowsByLine, options);
   }
-
-  ProjectedRow _withIndex(ProjectedRow r, int i) => ProjectedRow(index: i, kind: r.kind, block: r.block, firstLine: r.firstLine, lineCount: r.lineCount, text: r.text, segments: r.segments, shells: r.shells, sourceStart: r.sourceStart, sourceEnd: r.sourceEnd, contentStarts: r.contentStarts, contentEnds: r.contentEnds, prefixStarts: r.prefixStarts, headingLevel: r.headingLevel, fenced: r.fenced, codeInfoStart: r.codeInfoStart, codeInfoEnd: r.codeInfoEnd, tableBlock: r.tableBlock, tableRowBlock: r.tableRowBlock, column: r.column, header: r.header, alignment: r.alignment);
 
   void _computeStyles() {
     for (var i = 0; i < m.runCount; i++) {
@@ -301,8 +311,14 @@ final class _Builder {
     }
   }
 
+  final _shells = <int, List<Shell>>{};
+
   List<Shell> _shellsFor(int container) {
     if (container < 0) return const [];
+    return _shells[container] ??= _buildShells(container);
+  }
+
+  List<Shell> _buildShells(int container) {
     final chain = <Shell>[];
     var b = container;
     while (b >= 0 && b != noParent) {
@@ -337,14 +353,16 @@ final class _Builder {
   /// Hidden UTF-16 intervals of a block's runs: delimiters plus break markers.
   List<(int, int)> _hiddenIntervals(int block) {
     final out = <(int, int)>[];
+    var sorted = true, last = -1;
+    void add(int a, int b) { if (a < last) sorted = false; last = a; out.add((a, b)); }
     for (var r = m.firstRunOfBlock(block); r < m.runCount && m.run(r, RunField.block) == block; r++) {
       final kind = m.run(r, RunField.kind);
       final s = m.run(r, RunField.startUtf16), e = m.run(r, RunField.endUtf16), cs = m.run(r, RunField.contentStartUtf16), ce = m.run(r, RunField.contentEndUtf16);
-      if (kind == RunKind.softBreak || kind == RunKind.hardBreak) { if (e > s) out.add((s, e)); continue; }
-      if (cs > s) out.add((s, cs));
-      if (e > ce) out.add((ce, e));
+      if (kind == RunKind.softBreak || kind == RunKind.hardBreak) { if (e > s) add(s, e); continue; }
+      if (cs > s) add(s, cs);
+      if (e > ce) add(ce, e);
     }
-    out.sort((a, b) => a.$1 - b.$1);
+    if (!sorted) out.sort((a, b) => a.$1 - b.$1);
     return out;
   }
 
@@ -368,7 +386,7 @@ final class _Builder {
     final text = StringBuffer();
     final segments = <Segment>[];
     var sourceStart = -1, sourceEnd = -1;
-    final starts = _lineEnds(first, n), ends = List<int>.of(starts), prefixes = List<int>.of(starts);
+    final starts = List<int>.filled(n, -1), ends = List<int>.filled(n, -1), prefixes = List<int>.filled(n, -1);
     for (var c = 0; c < cn; c++) {
       final rec = m.content(co + c, ContentField.line);
       final cs = m.content(co + c, ContentField.startUtf16), ce = m.content(co + c, ContentField.endUtf16);
@@ -413,6 +431,7 @@ final class _Builder {
       }
       if (p < ce) emitGap(p, ce);
     }
+    _fillLineEnds(first, starts, ends, prefixes);
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:
@@ -439,13 +458,22 @@ final class _Builder {
 
   List<int> _lineEnds(int first, int n) => [for (var l = first; l < first + n && l < m.lineCount; l++) _lineEnd(l)];
 
+  /// Lines of a row without a content record keep the caret at their end.
+  void _fillLineEnds(int first, List<int> starts, List<int> ends, List<int> prefixes) {
+    for (var i = 0; i < starts.length; i++) {
+      if (starts[i] >= 0 || first + i >= m.lineCount) continue;
+      final e = _lineEnd(first + i);
+      starts[i] = e; ends[i] = e; prefixes[i] = e;
+    }
+  }
+
   ProjectedRow _literalRow(int index, int block, int kind, List<int> containerOf) {
     final first = m.block(block, BlockField.firstLine), n = m.block(block, BlockField.lineCount);
     final co = m.block(block, BlockField.contentOffset), cn = m.block(block, BlockField.contentCount);
     final text = StringBuffer();
     final segments = <Segment>[];
     var sourceStart = -1, sourceEnd = -1;
-    final starts = _lineEnds(first, n), ends = List<int>.of(starts), prefixes = List<int>.of(starts);
+    final starts = List<int>.filled(n, -1), ends = List<int>.filled(n, -1), prefixes = List<int>.filled(n, -1);
     for (var c = 0; c < cn; c++) {
       final rec = m.content(co + c, ContentField.line);
       final cs = m.content(co + c, ContentField.startUtf16), ce = m.content(co + c, ContentField.endUtf16);
@@ -457,6 +485,7 @@ final class _Builder {
       if (virt > 0) { final d0 = text.length; text.write(' ' * virt); segments.add(Segment(displayStart: d0, displayEnd: text.length, sourceStart: cs, sourceEnd: cs, styles: 0, exact: false)); }
       if (ce > cs) { final d0 = text.length; text.write(src.substring(cs, ce)); segments.add(Segment(displayStart: d0, displayEnd: text.length, sourceStart: cs, sourceEnd: ce, styles: kind == BlockKind.codeBlock ? Style.code : 0, exact: true)); }
     }
+    _fillLineEnds(first, starts, ends, prefixes);
     final flags = m.block(block, BlockField.flags);
     // Fence lines hold no caret: an edit there would be invisible. The info
     // string is a host affordance, not a caret position.
