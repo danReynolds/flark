@@ -107,6 +107,24 @@ without any editing.
   on the M1 Pro, named by commit.
 - Line budget: under 8,000 production lines in `packages/flark`.
 
+Status 2026-09-03: met, with two honest notes recorded in the build plan's
+M2 receipts. The export gate is asserted as 24 concepts (commands counted
+once; render model in its own library) because "fifteen" predated the
+command set. The keystroke measures 1.50–1.58 ms p50 on the M0 document,
+on the line rather than under it, with 0.97 ms in parse and marshal.
+
+What M2 built that the concept list above did not name: the caret is a
+plain source offset (the anchor is which of several legal offsets sharing a
+display position it holds), so `FlarkCaret` is `FlarkSelection` plus the
+document's legality and anchor queries; pending typing intent after
+delete-to-empty or a formatting toggle is part of the history entry, so
+undo restores it; Indent and Outdent nest by the sibling's or parent's
+marker width from the model; fence lines hold no caret. Not built, by
+decision: delimiter auto-close, table restructuring, cross-block range
+transforms; a split of a styled span at the caret (Markdown's rule of three
+makes `**a****b**` not parse), so a collapsed toggle inside a span unwraps
+the whole span.
+
 ## Order of work
 
 1. Projection over the render model, with the invariants test over the
