@@ -40,6 +40,8 @@ List<FlarkCommand> commandsOf(Map<String, Object?> step) {
   if (step.containsKey('undo')) return repeat(step['undo'], const Undo());
   if (step.containsKey('redo')) return repeat(step['redo'], const Redo());
   if (step.containsKey('toggleTask')) return const [ToggleTask()];
+  if (step.containsKey('indent')) return const [Indent()];
+  if (step.containsKey('outdent')) return const [Outdent()];
   if (step.containsKey('toggle')) return [ToggleStyle(_styleNames[step['toggle']]!)];
   if (step.containsKey('heading')) return [SetHeadingLevel((step['heading'] as num).toInt())];
   return const [];

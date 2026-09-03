@@ -97,6 +97,7 @@ final class FlarkDocument {
   /// Whether a source offset is a legal caret position.
   bool isLegal(int offset) {
     if (offset < 0 || offset > source.length || _insideHidden(offset)) return false;
+    if (!projection.hasCaretSpans) return offset == source.length;
     for (final (s, e) in projection.lineSpans(model.lineOfUtf16(offset))) { if (offset >= s && offset <= e) return true; }
     return false;
   }
@@ -119,7 +120,7 @@ final class FlarkDocument {
     if (best != null) return best;
     for (var l = line + 1; l < model.lineCount; l++) { final sp = projection.lineSpans(l); if (sp.isNotEmpty) return sp.first.$1; }
     for (var l = line - 1; l >= 0; l--) { final sp = projection.lineSpans(l); if (sp.isNotEmpty) return sp.last.$2; }
-    return o;
+    return source.length;
   }
 
   /// Display position of a source offset.

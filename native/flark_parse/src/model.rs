@@ -6,6 +6,7 @@
 //! situations where comrak's inline positions are known to be off, and in
 //! report mode validates every derivation against comrak's own output.
 
+use crate::text_pieces;
 use crate::lines::LineIndex;
 use crate::reference_definitions::{self, Definition};
 use crate::schema::{self, block, block_kind, content, definition, header, run, run_kind, table_alignment};
@@ -819,8 +820,6 @@ impl<'a> Extractor<'a> {
                     }
                 } else { (s, e, slice) };
                 if t == slice { (run_kind::TEXT, s, e) } else {
-                    let (off, len) = self.push_string(t);
-                    rec[run::AUX0] = off; rec[run::AUX1] = len;
                     // Known limit: after a bare CR, text that also carries an entity
                     // cannot be relocated by literal search (the literal is decoded),
                     // so it keeps comrak's shifted range with the literal as display.
@@ -834,7 +833,21 @@ impl<'a> Extractor<'a> {
                     let unescaped_pipes = slice.contains("\\|") && slice.replace("\\|", "|") == t;
                     let explained = slice.contains('&') || slice.contains('\t') || unescaped_pipes || cr_leaf || virtual_spaces;
                     if !explained { let (sl, lit) = (slice.to_string(), t.to_string()); self.dev("text-mismatch", || format!("block {blk} {:?} vs literal {:?}", sl, lit)); }
-                    (run_kind::REPLACEMENT, s, e)
+                    // Keep exact ranges around the bytes that differ (an entity, an
+                    // escaped pipe, a CR, virtual spaces). The pieces are validated to
+                    // rebuild the literal; otherwise the node stays one replacement run.
+                    match text_pieces::split_pieces(slice, t) {
+                        Some(pieces) if pieces.len() > 1 => {
+                            let last = pieces.len() - 1;
+                            for p in &pieces[..last] { let d = p.display.map(|(a, b)| &t[a..b]); self.push_piece(blk, parent, s + p.start, s + p.end, d); }
+                            let p = &pieces[last];
+                            match p.display {
+                                None => (run_kind::TEXT, s + p.start, s + p.end),
+                                Some((a, b)) => { let (off, len) = self.push_string(&t[a..b]); rec[run::AUX0] = off; rec[run::AUX1] = len; (run_kind::REPLACEMENT, s + p.start, s + p.end) }
+                            }
+                        }
+                        _ => { let (off, len) = self.push_string(t); rec[run::AUX0] = off; rec[run::AUX1] = len; (run_kind::REPLACEMENT, s, e) }
+                    }
                 }
             }
             NodeValue::Emph => { let ok = e > s + 1 && matches!(bytes[s], b'*' | b'_') && bytes[e - 1] == bytes[s]; if !ok { let sl = slice.to_string(); self.dev("emph-delims", || format!("block {blk} {:?}", sl)); } (run_kind::EMPH, s + 1, e.saturating_sub(1).max(s + 1)) }
@@ -926,6 +939,20 @@ impl<'a> Extractor<'a> {
         let ri = self.runs.len() as u32;
         self.runs.push(rec);
         Some(ri)
+    }
+
+    /// One piece of a split text node: an exact text run, or a replacement
+    /// run displaying [display] (empty for hidden bytes).
+    fn push_piece(&mut self, blk: u32, parent: u32, s: usize, e: usize, display: Option<&str>) {
+        let mut rec: RunRec = [0; run::WORDS];
+        rec[run::BLOCK] = blk; rec[run::PARENT] = parent;
+        rec[run::KIND] = match display { None => run_kind::TEXT, Some(d) => { let (off, len) = self.push_string(d); rec[run::AUX0] = off; rec[run::AUX1] = len; run_kind::REPLACEMENT } };
+        rec[run::START_BYTE] = s as u32; rec[run::END_BYTE] = e as u32;
+        rec[run::CONTENT_START_BYTE] = s as u32; rec[run::CONTENT_END_BYTE] = e as u32;
+        rec[run::START_UTF16] = self.li.u16(s); rec[run::END_UTF16] = self.li.u16(e);
+        rec[run::CONTENT_START_UTF16] = self.li.u16(s); rec[run::CONTENT_END_UTF16] = self.li.u16(e);
+        if self.src[s..e].contains('\n') { rec[run::FLAGS] |= 1 << 8; }
+        self.runs.push(rec);
     }
 
     /// Destination and title ranges after a link's `]`, using comrak's own

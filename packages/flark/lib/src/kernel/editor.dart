@@ -25,6 +25,8 @@ final class FlarkEditor {
   final List<FlarkListener> _listeners = [];
   FlarkDocument _doc;
   PendingStyle? _pending;
+  /// Display column vertical movement aims for, kept across rows.
+  int? _goalColumn;
   Duration _now = Duration.zero;
 
   FlarkDocument get document => _doc;
@@ -59,7 +61,8 @@ final class FlarkEditor {
       ToggleTask() => _toggleTask(),
       ToggleStyle(:final style) => _toggleStyle(style),
       SetHeadingLevel(:final level) => _setHeading(level),
-      Indent() || Outdent() => false,
+      Indent() => _shiftItem(outdent: false),
+      Outdent() => _shiftItem(outdent: true),
     };
     if (applied) { for (final l in List.of(_listeners)) { l(); } }
     return applied;
@@ -77,6 +80,7 @@ final class FlarkEditor {
     final next = _doc.withSelection(s);
     if (next.selection == selection) return false;
     _pending = null;
+    _goalColumn = null;
     _doc = next;
     return true;
   }
@@ -140,8 +144,9 @@ final class FlarkEditor {
   /// Backspace at a row start: lift the line's innermost prefix, else join
   /// the previous row.
   bool _joinBackward(ProjectedRow row) {
-    final prefixStart = row.prefixStarts.first, contentStart = row.contentStarts.first;
-    if (prefixStart < contentStart) {
+    final i = (_doc.model.lineOfUtf16(selection.extent) - row.firstLine).clamp(0, row.contentStarts.length - 1);
+    final prefixStart = row.prefixStarts[i], contentStart = row.contentStarts[i];
+    if (prefixStart >= 0 && prefixStart < contentStart) {
       // A lifted line that would lazily continue the previous paragraph
       // stays a paragraph of its own.
       final prev = row.index > 0 ? projection.rows[row.index - 1] : null;
@@ -152,8 +157,8 @@ final class FlarkEditor {
     if (row.index == 0) return false;
     final prev = projection.rows[row.index - 1];
     if (prev.firstLine + prev.lineCount > row.firstLine) return false;
-    final from = prev.contentEnds.last, to = row.sourceStart;
-    if (to <= from) return false;
+    final from = _lastCaretEnd(prev), to = _firstCaretStart(row);
+    if (from < 0 || to < 0 || to <= from) return false;
     _commit(source.replaceRange(from, to, ''), FlarkSelection.collapsed(from), typing: false);
     return true;
   }
@@ -163,11 +168,14 @@ final class FlarkEditor {
     if (row.index + 1 >= projection.rows.length) return false;
     final next = projection.rows[row.index + 1];
     if (next.firstLine < row.firstLine + row.lineCount) return false;
-    final from = row.contentEnds.last, to = next.contentStarts.first;
-    if (to <= from) return false;
+    final from = _lastCaretEnd(row), to = _firstCaretStart(next);
+    if (from < 0 || to < 0 || to <= from) return false;
     _commit(source.replaceRange(from, to, ''), FlarkSelection.collapsed(from), typing: false);
     return true;
   }
+
+  static int _lastCaretEnd(ProjectedRow row) { for (var i = row.contentEnds.length - 1; i >= 0; i--) { if (row.contentEnds[i] >= 0) return row.contentEnds[i]; } return -1; }
+  static int _firstCaretStart(ProjectedRow row) { for (final s in row.contentStarts) { if (s >= 0) return s; } return -1; }
 
   bool _newline(bool paragraph) {
     final sel = selection;
@@ -181,7 +189,7 @@ final class FlarkEditor {
     if (row.shells.isNotEmpty) {
       final prefixStart = row.prefixStarts[i], contentStart = row.contentStarts[i];
       // Return on an empty container line exits the container.
-      if (row.text.isEmpty && prefixStart < contentStart) { _commit(source.replaceRange(prefixStart, contentStart, ''), FlarkSelection.collapsed(prefixStart), typing: false); return true; }
+      if (row.text.isEmpty && prefixStart >= 0 && prefixStart < contentStart) { _commit(source.replaceRange(prefixStart, contentStart, ''), FlarkSelection.collapsed(prefixStart), typing: false); return true; }
       final inner = row.shells.last;
       text = '\n${inner.kind == ShellKind.item ? _nextMarker(inner) : source.substring(_doc.model.lineStartUtf16(line), contentStart)}';
     } else {
@@ -196,13 +204,12 @@ final class FlarkEditor {
   String _nextMarker(Shell item) {
     final m = _doc.model;
     final itemLine = m.block(item.block, BlockField.firstLine), itemStart = m.block(item.block, BlockField.startUtf16);
-    var contentStart = itemStart;
-    for (final r in projection.rowsOnLine(itemLine)) {
-      final row = projection.rows[r];
-      if (row.firstLine == itemLine && row.prefixStarts.first == itemStart) { contentStart = row.contentStarts.first; break; }
-    }
+    // The marker with its padding spans the item's content offset (columns;
+    // markers are ASCII so units agree), bounded by the line.
+    var lineEnd = itemLine + 1 < m.lineCount ? m.lineStartUtf16(itemLine + 1) : source.length;
+    while (lineEnd > itemStart && source.codeUnitAt(lineEnd - 1) == 0x0A) { lineEnd--; }
+    final markerEnd = (itemStart + m.block(item.block, BlockField.attr0)).clamp(itemStart, lineEnd);
     final outer = source.substring(m.lineStartUtf16(itemLine), itemStart);
-    final markerEnd = item.task ? item.checkboxStart : contentStart;
     var marker = source.substring(itemStart, markerEnd);
     if (item.ordered) {
       final delimiter = marker.trimRight();
@@ -212,6 +219,77 @@ final class FlarkEditor {
     }
     if (item.task) marker = '$marker[ ] ';
     return outer + marker;
+  }
+
+  /// Indent nests the caret's item under its previous sibling by that
+  /// sibling's content offset; Outdent removes the parent's. Every line of
+  /// the item shifts at the item's own column.
+  bool _shiftItem({required bool outdent}) {
+    final row = _doc.rowAt(selection.extent);
+    final shells = row.shells;
+    var idx = -1;
+    for (var i = shells.length - 1; i >= 0; i--) { if (shells[i].kind == ShellKind.item) { idx = i; break; } }
+    if (idx < 0) return false;
+    final item = shells[idx];
+    final m = _doc.model;
+    final list = m.block(item.block, BlockField.parent);
+    final first = m.block(item.block, BlockField.firstLine), n = m.block(item.block, BlockField.lineCount);
+    final column = m.block(item.block, BlockField.startUtf16) - m.lineStartUtf16(first);
+    int width;
+    if (!outdent) {
+      var prev = -1;
+      for (var b = list + 1; b < item.block; b++) { if (m.block(b, BlockField.parent) == list) prev = b; }
+      if (prev < 0) return false;
+      width = m.block(prev, BlockField.attr0);
+    } else {
+      Shell? parent;
+      for (var i = idx - 1; i >= 0; i--) { if (shells[i].kind == ShellKind.item) { parent = shells[i]; break; } }
+      if (parent == null) return false;
+      width = m.block(parent.block, BlockField.attr0);
+    }
+    final edits = <(int, int, String)>[];
+    for (var l = first; l < first + n; l++) {
+      final ls = m.lineStartUtf16(l), at = ls + column;
+      var le = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : source.length;
+      while (le > ls && source.codeUnitAt(le - 1) == 0x0A) { le--; }
+      if (at > le) continue;
+      if (!outdent) {
+        edits.add((at, at, ' ' * width));
+        // An ordered item nested under its sibling starts a new list at 1.
+        if (l == first && item.ordered) {
+          var k = 0;
+          while (at + k < le && source.codeUnitAt(at + k) >= 0x30 && source.codeUnitAt(at + k) <= 0x39) { k++; }
+          if (k > 0) edits.add((at, at + k, '1'));
+        }
+        continue;
+      }
+      var k = 0;
+      while (k < width && at - k > ls && source.codeUnitAt(at - k - 1) == 0x20) { k++; }
+      if (k > 0) edits.add((at - k, at, ''));
+    }
+    if (edits.isEmpty) return false;
+    final (s, map) = _edited(edits);
+    _commit(s, FlarkSelection(map(selection.base), map(selection.extent)), typing: false);
+    return true;
+  }
+
+  /// Apply sorted, non-overlapping edits; returns the new source and a map
+  /// from old offsets to new ones.
+  (String, int Function(int)) _edited(List<(int, int, String)> edits) {
+    final out = StringBuffer();
+    var last = 0;
+    for (final (a, b, text) in edits) { out.write(source.substring(last, a)); out.write(text); last = b; }
+    out.write(source.substring(last));
+    int map(int o) {
+      var d = 0;
+      for (final (a, b, text) in edits) {
+        if (o < a) break;
+        if (o < b) return a + d;
+        d += text.length - (b - a);
+      }
+      return o + d;
+    }
+    return (out.toString(), map);
   }
 
   bool _toggleTask() {
@@ -313,7 +391,11 @@ final class FlarkEditor {
         case MoveUnit.row:
           final other = _rowAfter(row.index, forward: forward);
           if (other == null) return false;
-          target = _anchorFor(other, d.clamp(0, other.text.length), forward: forward);
+          final goal = _goalColumn ?? d;
+          target = _anchorFor(other, goal.clamp(0, other.text.length), forward: forward);
+          final moved = _select(extend ? FlarkSelection(sel.base, target) : FlarkSelection.collapsed(target));
+          _goalColumn = goal;
+          return moved;
       }
     }
     return _select(extend ? FlarkSelection(sel.base, target) : FlarkSelection.collapsed(target));

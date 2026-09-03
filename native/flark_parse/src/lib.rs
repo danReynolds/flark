@@ -4,6 +4,7 @@ pub mod lines;
 pub mod model;
 pub mod reference_definitions;
 pub mod schema;
+mod text_pieces;
 
 use std::slice;
 

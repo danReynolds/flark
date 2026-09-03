@@ -166,9 +166,13 @@ final class Projection {
   /// Rows that own [line] (a table line holds one per cell).
   List<int> rowsOnLine(int line) => line < _rowsByLine.length ? _rowsByLine[line] : const [];
 
+  /// Whether any line has a caret span; false only for a document that is
+  /// nothing but fence lines, where the caret sits at the end instead.
+  late final bool hasCaretSpans = () { for (var l = 0; l < _rowsByLine.length; l++) { if (lineSpans(l).isNotEmpty) return true; } return false; }();
+
   /// Where the caret may sit on [line]: one (start, end) span per row on the
-  /// line, sorted. Empty for a line with no caret positions (a table's
-  /// delimiter line).
+  /// line, sorted. Empty for a line with no caret positions (a fence line, a
+  /// table's delimiter line).
   List<(int, int)> lineSpans(int line) {
     final out = <(int, int)>[];
     if (line < 0 || line >= _rowsByLine.length) return out;
@@ -454,6 +458,12 @@ final class _Builder {
       if (ce > cs) { final d0 = text.length; text.write(src.substring(cs, ce)); segments.add(Segment(displayStart: d0, displayEnd: text.length, sourceStart: cs, sourceEnd: ce, styles: kind == BlockKind.codeBlock ? Style.code : 0, exact: true)); }
     }
     final flags = m.block(block, BlockField.flags);
+    // Fence lines hold no caret: an edit there would be invisible. The info
+    // string is a host affordance, not a caret position.
+    if (kind == BlockKind.codeBlock && flags & 1 != 0 && starts.isNotEmpty) {
+      starts[0] = -1; ends[0] = -1; prefixes[0] = -1;
+      if (flags & 2 != 0 && starts.length > 1) { starts[starts.length - 1] = -1; ends[ends.length - 1] = -1; prefixes[prefixes.length - 1] = -1; }
+    }
     return ProjectedRow(index: index, kind: kind == BlockKind.codeBlock ? RowKind.codeBlock : RowKind.htmlBlock, block: block, firstLine: first, lineCount: n, text: text.toString(), segments: segments, shells: _shellsFor(containerOf[first]), sourceStart: sourceStart < 0 ? m.block(block, BlockField.startUtf16) : sourceStart, sourceEnd: sourceEnd < 0 ? m.block(block, BlockField.endUtf16) : sourceEnd, contentStarts: starts, contentEnds: ends, prefixStarts: prefixes, fenced: kind == BlockKind.codeBlock && flags & 1 != 0, codeInfoStart: kind == BlockKind.codeBlock && flags & 1 != 0 ? _u16(m.block(block, BlockField.attr1)) : -1, codeInfoEnd: kind == BlockKind.codeBlock && flags & 1 != 0 ? _u16(m.block(block, BlockField.attr2)) : -1);
   }
 }

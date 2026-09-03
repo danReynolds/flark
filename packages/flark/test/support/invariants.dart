@@ -2,6 +2,7 @@
 library;
 
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart';
 import 'package:test/test.dart';
 
 void checkInvariants(String src, RenderModel m, Projection p, String label) {
