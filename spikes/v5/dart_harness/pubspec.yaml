@@ -1,0 +1,4 @@
+name: flark_v5_harness
+publish_to: none
+environment:
+  sdk: ^3.12.0

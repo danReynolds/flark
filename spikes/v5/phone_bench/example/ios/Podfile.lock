@@ -1,0 +1,22 @@
+PODS:
+  - flark_spike_ffi (0.0.1):
+    - Flutter
+  - Flutter (1.0.0)
+
+DEPENDENCIES:
+  - flark_spike_ffi (from `.symlinks/plugins/flark_spike_ffi/ios`)
+  - Flutter (from `Flutter`)
+
+EXTERNAL SOURCES:
+  flark_spike_ffi:
+    :path: ".symlinks/plugins/flark_spike_ffi/ios"
+  Flutter:
+    :path: Flutter
+
+SPEC CHECKSUMS:
+  flark_spike_ffi: 70700701aaa0cc51ef1c2c2db862b954d407b174
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+
+PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
+
+COCOAPODS: 1.17.0

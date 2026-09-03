@@ -19,3 +19,9 @@ legacy/root_package/tool/parser_research/
 
 # flutter_test golden failure artifacts
 test/**/failures/
+
+# v5
+native/**/target/
+spikes/**/target/
+spikes/**/build/
+packages/flark/prebuilt/

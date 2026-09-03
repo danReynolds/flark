@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "magic": "FLK5",
+  "description": "Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely.",
+  "sections": [
+    "lines",
+    "blocks",
+    "content",
+    "runs",
+    "definitions",
+    "strings"
+  ],
+  "header": [
+    "magic",
+    "version",
+    "src_bytes",
+    "src_utf16",
+    "line_count",
+    "block_count",
+    "content_count",
+    "run_count",
+    "definition_count",
+    "string_bytes",
+    "reserved"
+  ],
+  "records": {
+    "line": [
+      "start_byte",
+      "start_utf16"
+    ],
+    "block": [
+      "kind",
+      "parent",
+      "start_byte",
+      "end_byte",
+      "start_utf16",
+      "end_utf16",
+      "first_line",
+      "line_count",
+      "content_offset",
+      "content_count",
+      "attr0",
+      "attr1",
+      "attr2",
+      "flags"
+    ],
+    "content": [
+      "line",
+      "start_byte",
+      "start_utf16",
+      "end_byte",
+      "end_utf16",
+      "virtual_leading_spaces"
+    ],
+    "run": [
+      "kind",
+      "block",
+      "parent",
+      "start_byte",
+      "end_byte",
+      "content_start_byte",
+      "content_end_byte",
+      "start_utf16",
+      "end_utf16",
+      "content_start_utf16",
+      "content_end_utf16",
+      "aux0",
+      "aux1",
+      "aux2",
+      "aux3",
+      "flags"
+    ],
+    "definition": [
+      "start_byte",
+      "end_byte",
+      "start_utf16",
+      "end_utf16",
+      "label_start_byte",
+      "label_end_byte",
+      "dest_start_byte",
+      "dest_end_byte"
+    ]
+  },
+  "enums": {
+    "block_kind": {
+      "document": 0,
+      "paragraph": 1,
+      "heading": 2,
+      "code_block": 3,
+      "html_block": 4,
+      "block_quote": 5,
+      "list": 6,
+      "item": 7,
+      "thematic_break": 8,
+      "table": 9,
+      "table_row": 10,
+      "table_cell": 11,
+      "footnote_definition": 12,
+      "other": 14
+    },
+    "run_kind": {
+      "text": 1,
+      "emph": 2,
+      "strong": 3,
+      "code": 4,
+      "strike": 5,
+      "link": 6,
+      "image": 7,
+      "autolink": 8,
+      "escape": 9,
+      "replacement": 10,
+      "hard_break": 11,
+      "soft_break": 12,
+      "html_inline": 13,
+      "footnote_ref": 14,
+      "other": 16
+    },
+    "table_alignment": {
+      "none": 0,
+      "left": 1,
+      "center": 2,
+      "right": 3
+    }
+  },
+  "block_attrs": {
+    "heading": {
+      "attr0": "level 1-6",
+      "flags": "bit0 setext"
+    },
+    "code_block": {
+      "attr0": "fence length (0 for indented)",
+      "attr1": "info string start byte",
+      "attr2": "info string end byte",
+      "flags": "bit0 fenced, bit1 closed by a fence line"
+    },
+    "list": {
+      "attr0": "1 if ordered",
+      "attr1": "start number",
+      "flags": "bit0 tight"
+    },
+    "item": {
+      "attr0": "content column offset (marker_offset + padding)",
+      "attr1": "task symbol start byte (task items only)",
+      "attr2": "task symbol end byte",
+      "flags": "bit0 task item, bit1 checked"
+    },
+    "table": {
+      "attr0": "column count",
+      "attr1": "column alignments packed two bits per column, column 0 in the low bits"
+    },
+    "table_row": {
+      "flags": "bit0 header row"
+    },
+    "table_cell": {
+      "attr0": "column index",
+      "attr1": "alignment"
+    },
+    "footnote_definition": {
+      "attr1": "label start byte",
+      "attr2": "label end byte"
+    }
+  },
+  "run_attrs": {
+    "link": {
+      "aux0": "destination start byte",
+      "aux1": "destination end byte",
+      "aux2": "title start byte",
+      "aux3": "title end byte",
+      "flags": "bit0 reference style, bit1 has title"
+    },
+    "image": {
+      "aux0": "destination start byte",
+      "aux1": "destination end byte",
+      "aux2": "title start byte",
+      "aux3": "title end byte",
+      "flags": "bit0 reference style, bit1 has title"
+    },
+    "autolink": {
+      "aux0": "url start byte",
+      "aux1": "url end byte"
+    },
+    "replacement": {
+      "aux0": "display text offset in the string table",
+      "aux1": "display text byte length"
+    },
+    "footnote_ref": {
+      "aux0": "label start byte",
+      "aux1": "label end byte"
+    },
+    "code": {
+      "aux0": "backtick count",
+      "aux2": "display text offset in the string table when flags bit1 is set",
+      "aux3": "display text byte length when flags bit1 is set",
+      "flags": "bit1 content displays from the string table instead of the source slice (escaped pipes inside table cells)"
+    },
+    "any": {
+      "flags": "bit8 run spans more than one line"
+    }
+  },
+  "invariants": [
+    "Blocks are in document order; a block's parent index is smaller than its own index or 0xFFFFFFFF for the document.",
+    "Runs are in document order and contiguous per block; a run's parent is an earlier run of the same block or 0xFFFFFFFF.",
+    "content_start >= start and content_end <= end and content_start <= content_end for every run.",
+    "Content records of a block are in line order and lie inside the block's source range.",
+    "Every byte offset lies inside a UTF-8 scalar boundary; every UTF-16 offset equals the count of code units before its byte offset.",
+    "Definition records never overlap a block's content record."
+  ]
+}

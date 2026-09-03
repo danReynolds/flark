@@ -1,0 +1,23 @@
+name: flark
+description: Headless Dart API for the bounded Flark Markdown editor runtime.
+version: 0.1.0-dev.1
+publish_to: none
+homepage: https://github.com/danReynolds/flark
+repository: https://github.com/danReynolds/flark
+issue_tracker: https://github.com/danReynolds/flark/issues
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  # Pinned exactly: the text/unicode contract names characters 1.4.1 /
+  # Unicode 16.0.0 as the grapheme authority.
+  characters: 1.4.1
+  code_assets: ^1.0.0
+  ffi: ^2.1.4
+  hooks: ^1.0.0
+
+dev_dependencies:
+  crypto: ^3.0.6
+  lints: ^6.0.0
+  test: ^1.26.3
