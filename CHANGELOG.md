@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0-dev.1 (unreleased)
+
+- v5 M1: `native/flark_parse` (unmodified comrak plus a flat render model, three-function ABI on native and wasm32) and `packages/flark` (render model views, FFI and Wasm transports, build hook with prebuilt resolution). v4 moved under `legacy/v4/`. See RFC 030.
+
+
 ## 0.1.0-dev.1
 
 - Cut over to the portable v4 package split: `flark` owns the headless

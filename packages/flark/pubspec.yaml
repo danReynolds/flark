@@ -1,23 +1,23 @@
 name: flark
-description: Headless Dart API for the bounded Flark Markdown editor runtime.
-version: 0.1.0-dev.1
+description: "Flark v5 kernel. Pure Dart: the render model, the parse transports (FFI and Wasm), and from M2 the projection and editor facade."
+version: 0.5.0-dev.1
 publish_to: none
 homepage: https://github.com/danReynolds/flark
 repository: https://github.com/danReynolds/flark
-issue_tracker: https://github.com/danReynolds/flark/issues
 
 environment:
   sdk: ^3.10.4
 
 dependencies:
-  # Pinned exactly: the text/unicode contract names characters 1.4.1 /
-  # Unicode 16.0.0 as the grapheme authority.
-  characters: 1.4.1
   code_assets: ^1.0.0
-  ffi: ^2.1.4
   hooks: ^1.0.0
 
 dev_dependencies:
-  crypto: ^3.0.6
   lints: ^6.0.0
   test: ^1.26.3
+
+# Bundled by Flutter web builds at assets/packages/flark/lib/assets/wasm/;
+# Fleury and other dart2js pages serve the file themselves.
+flutter:
+  assets:
+    - lib/assets/wasm/flark_parse.wasm

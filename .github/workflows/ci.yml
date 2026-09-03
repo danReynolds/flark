@@ -9,142 +9,47 @@ on:
 permissions:
   contents: read
 
-env:
-  FLUTTER_VERSION: '3.41.9'
-
 jobs:
-  v4-integration-gate:
+  parse-crate:
+    name: flark_parse · spec conformance, extraction, fuzz, transports
     runs-on: macos-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --target wasm32-unknown-unknown
+          rustup default "$TOOLCHAIN"
+      - uses: actions/setup-node@v4
         with:
-          # The qualification suite verifies pinned historical Git objects.
-          fetch-depth: 0
+          node-version: '22'
+      - name: Generated schema files are current
+        run: |
+          python3 native/flark_parse/tool/gen_schema.py
+          git diff --exit-code -- native/flark_parse/src/schema.rs native/flark_parse/SCHEMA.md packages/flark/lib/src/parse/schema.g.dart
+      - name: Rust tests
+        run: cargo test --release --locked --manifest-path native/flark_parse/Cargo.toml
+      - name: Committed wasm and a fresh build both match native
+        run: native/flark_parse/tool/verify_transports.sh --rebuild
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.98.0
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Run active v4 integration gate
-        # Pull-request evidence intentionally omits certification stress and
-        # archive runtime execution. The full release receipt remains a
-        # separate, explicitly named lane below.
-        run: bash ./scripts/verify_v4_release.sh --skip-stress --skip-archive-runtime
-
-  v4-opening-session-gate:
+  dart-kernel:
+    name: flark · analyze, tests through the build hook, Rust-free consumer
     runs-on: macos-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - uses: dart-lang/setup-dart@v1
         with:
-          # The qualification suite verifies pinned historical Git objects.
-          fetch-depth: 0
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.98.0
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Run the feature-gated streamed-opening suites
-        env:
-          FLARK_V4_FEATURES: opening-session
-        run: bash ./scripts/verify_v4.sh
-
-  v4-release-receipt:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    runs-on: macos-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-        with:
-          # The qualification suite verifies pinned historical Git objects.
-          fetch-depth: 0
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.98.0
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Run full v4 release receipt
-        run: bash ./scripts/verify_v4_release.sh
-
-  # Platform build smokes. Each builds the active v4 example for a target,
-  # which compiles the native Comrak bridge through hook/build.dart for that
-  # platform (so a green build proves the native-assets cross-compile path),
-  # but does not claim device interaction or packaged-app launch proof. Those
-  # remain separate launch/device receipts.
-  macos-smoke:
-    runs-on: macos-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.98.0
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - name: macOS build smoke
-        run: bash ./scripts/verify_platform_smoke.sh --platform macos
-
-  ios-smoke:
-    runs-on: macos-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.98.0
-        with:
-          targets: aarch64-apple-ios
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - name: iOS build smoke (device arm64, no signing)
-        run: bash ./scripts/verify_platform_smoke.sh --platform ios
-
-  android-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.98.0
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      # ubuntu-latest ships an Android SDK + NDK; hook/build.dart resolves the
-      # NDK from ANDROID_NDK_LATEST_HOME (set on the runner) automatically.
-      - name: Android build smoke (compiles the bridge for every ABI)
-        run: bash ./scripts/verify_platform_smoke.sh --platform android
+          sdk: stable
+      - name: Analyze
+        working-directory: packages/flark
+        run: dart pub get && dart analyze --fatal-infos
+      - name: Test
+        working-directory: packages/flark
+        run: dart test
+      - name: Consumer without Rust on PATH builds via a prebuilt
+        run: packages/flark/tool/verify_prebuilt_consumer.sh

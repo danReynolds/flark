@@ -1,3 +1,5 @@
+> **v5 in progress (2026-09).** The editor is being rebuilt on a synchronous core; see [RFC 030](docs/architecture/rfc/rfc_030_synchronous_core.md) and the [v5 build plan](docs/architecture/v5/build_plan.md). The v4 text below is historical; v4 lives under `legacy/v4/`.
+
 # Flark
 
 Flark is a high-performance, continuously rendered Markdown editor with a

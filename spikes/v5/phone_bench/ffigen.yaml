@@ -1,0 +1,15 @@
+# Run with `dart run ffigen --config ffigen.yaml`.
+name: FlarkSpikeFfiBindings
+description: |
+  Bindings for `src/flark_spike_ffi.h`.
+
+  Regenerate bindings with `dart run ffigen --config ffigen.yaml`.
+output: 'lib/flark_spike_ffi_bindings_generated.dart'
+headers:
+  entry-points:
+    - 'src/flark_spike_ffi.h'
+  include-directives:
+    - 'src/flark_spike_ffi.h'
+comments:
+  style: any
+  length: full

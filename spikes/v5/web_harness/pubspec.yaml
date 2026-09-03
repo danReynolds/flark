@@ -1,0 +1,6 @@
+name: flark_v5_web_harness
+publish_to: none
+environment:
+  sdk: ^3.12.0
+dependencies:
+  web: ^1.1.0
