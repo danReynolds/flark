@@ -67,8 +67,30 @@ final class RenderModel {
   /// A string-table entry, used by replacement runs and display overrides.
   String string(int offset, int length) => utf8.decode(Uint8List.sublistView(bytes, _stringsByteOff + offset, _stringsByteOff + offset + length));
 
+  /// Index of the line containing byte [offset] (the last line for the end).
+  int lineOfByte(int offset) {
+    var lo = 0, hi = lineCount - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (lineStartByte(mid) <= offset) { lo = mid; } else { hi = mid - 1; }
+    }
+    return lo;
+  }
+
+  /// Index of the line containing UTF-16 offset [offset].
+  int lineOfUtf16(int offset) {
+    var lo = 0, hi = lineCount - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (lineStartUtf16(mid) <= offset) { lo = mid; } else { hi = mid - 1; }
+    }
+    return lo;
+  }
+
   BlockView blockAt(int index) => BlockView(this, index);
   RunView runAt(int index) => RunView(this, index);
+  DefinitionView definitionAt(int index) => DefinitionView(this, index);
+  Iterable<DefinitionView> get definitions => Iterable.generate(definitionCount, definitionAt);
   Iterable<BlockView> get blocks => Iterable.generate(blockCount, blockAt);
   Iterable<RunView> get runs => Iterable.generate(runCount, runAt);
 
