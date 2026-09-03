@@ -11,27 +11,37 @@ permissions:
 
 jobs:
   parse-crate:
-    name: flark_parse · conformance, invariants, fuzz, transports
+    name: flark_parse · spec conformance, extraction, fuzz, transports
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --target wasm32-unknown-unknown
+          rustup default "$TOOLCHAIN"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Generated schema files are current
+        run: |
+          python3 native/flark_parse/tool/gen_schema.py
+          git diff --exit-code -- native/flark_parse/src/schema.rs native/flark_parse/SCHEMA.md packages/flark/lib/src/parse/schema.g.dart
       - name: Rust tests
-        run: cargo test --release --manifest-path native/flark_parse/Cargo.toml
-      - name: Native and wasm render models are byte-identical
-        run: native/flark_parse/tool/verify_transports.sh
+        run: cargo test --release --locked --manifest-path native/flark_parse/Cargo.toml
+      - name: Committed wasm and a fresh build both match native
+        run: native/flark_parse/tool/verify_transports.sh --rebuild
 
   dart-kernel:
-    name: flark · dart tests through the build hook
+    name: flark · analyze, tests through the build hook, Rust-free consumer
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable

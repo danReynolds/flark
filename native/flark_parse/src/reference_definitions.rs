@@ -1,119 +1,22 @@
-//! Link reference definitions, derived textually and validated against the
-//! parser's own block output (salvaged from the v2 bridge, RFC 022 Phase 2b).
+//! Link reference definitions, derived by mirroring comrak's own rule.
 //!
 //! comrak consumes definitions during the block phase and exposes no node or
-//! sourcepos for them. A definition-shaped line run is proposed here and
-//! accepted only when no non-container block covers it: a real definition
-//! leaves no block behind, while a definition-shaped line comrak kept as
-//! content (inside a fence, lazily continuing a paragraph) is covered by a
-//! block and refuted. Classification proposes; the parser decides.
+//! sourcepos for them. `resolve_reference_link_definitions` strips them from
+//! the start of a paragraph's content buffer while it begins with `[`, and a
+//! paragraph that becomes blank is removed. The extraction rebuilds that
+//! buffer for every paragraph-like leaf and for every run of lines no leaf
+//! block covers, and runs the same parser over it. Every Text literal comrak
+//! reports is then checked against its corrected source slice, which is the
+//! validation for this derivation.
 
-/// One accepted definition. Ranges are byte offsets; `end` includes the
-/// trailing newline when present.
+/// One definition in source coordinates. `end` includes the trailing line
+/// terminator when present.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Definition {
     pub start: usize,
     pub end: usize,
     pub label: (usize, usize),
     pub dest: (usize, usize),
-}
-
-/// A block as the coverage check sees it.
-#[derive(Clone, Copy)]
-pub struct CoverBlock { pub start: usize, pub end: usize, pub is_container_list: bool, pub is_document: bool }
-
-pub fn collect(text: &str, blocks: &[CoverBlock]) -> Vec<Definition> {
-    let bytes = text.as_bytes();
-    let mut lines = Vec::new();
-    let mut start = 0usize;
-    while start <= bytes.len() {
-        let end = match bytes[start..].iter().position(|b| *b == b'\n') { Some(o) => start + o, None => bytes.len() };
-        let end_with_break = if end < bytes.len() { end + 1 } else { end };
-        lines.push((start, end, end_with_break));
-        if end >= bytes.len() { break; }
-        start = end + 1;
-    }
-    let mut out = Vec::new();
-    let mut index = 0usize;
-    while index < lines.len() {
-        let (ls, le, lbe) = lines[index];
-        let line = &bytes[ls..le];
-        let Some(parts) = definition_parts(line) else { index += 1; continue; };
-        let mut range_end = lbe;
-        if !definition_line_has_title(line) && index + 1 < lines.len() {
-            let (ns, ne, nbe) = lines[index + 1];
-            if is_standalone_title_line(&bytes[ns..ne]) { range_end = nbe; index += 1; }
-        }
-        let covered = blocks.iter().any(|b| !b.is_container_list && !b.is_document && b.start < range_end && b.end > ls);
-        if !covered {
-            out.push(Definition { start: ls, end: range_end, label: (ls + parts.0, ls + parts.1), dest: (ls + parts.2, ls + parts.3) });
-        }
-        index += 1;
-    }
-    out
-}
-
-/// `[label]: destination…` with up to three leading spaces or tabs, a
-/// non-empty single-line label, and a non-space destination. Returns
-/// (label_start, label_end, dest_start, dest_end) relative to the line.
-fn definition_parts(line: &[u8]) -> Option<(usize, usize, usize, usize)> {
-    let after_indent = skip_indent(line);
-    let rest = &line[after_indent..];
-    if rest.first() != Some(&b'[') { return None; }
-    if rest.get(1) == Some(&b'^') { return None; }
-    let label_len = label_length(&rest[1..])?;
-    let mut cursor = 1 + label_len + 1;
-    if rest.get(cursor) != Some(&b':') { return None; }
-    cursor += 1;
-    while matches!(rest.get(cursor), Some(b' ') | Some(b'\t')) { cursor += 1; }
-    let dest_start = cursor;
-    match rest.get(cursor) {
-        Some(b'<') => {
-            cursor += 1;
-            while let Some(b) = rest.get(cursor) { if *b == b'>' { break; } if *b == b'\n' { return None; } cursor += 1; }
-            if rest.get(cursor) != Some(&b'>') { return None; }
-            cursor += 1;
-        }
-        Some(b) if !b.is_ascii_whitespace() => { while matches!(rest.get(cursor), Some(b) if !b.is_ascii_whitespace()) { cursor += 1; } }
-        _ => return None,
-    }
-    Some((after_indent + 1, after_indent + 1 + label_len, after_indent + dest_start, after_indent + cursor))
-}
-
-fn definition_line_has_title(line: &[u8]) -> bool {
-    let Some((_, _, _, dest_end)) = definition_parts(line) else { return false; };
-    let mut cursor = dest_end;
-    let mut saw_gap = false;
-    while matches!(line.get(cursor), Some(b' ') | Some(b'\t')) { saw_gap = true; cursor += 1; }
-    saw_gap && matches!(line.get(cursor), Some(b'"') | Some(b'\'') | Some(b'('))
-}
-
-fn is_standalone_title_line(line: &[u8]) -> bool {
-    let mut cursor = 0usize;
-    while matches!(line.get(cursor), Some(b' ') | Some(b'\t')) { cursor += 1; }
-    let closer = match line.get(cursor) { Some(b'"') => b'"', Some(b'\'') => b'\'', Some(b'(') => b')', _ => return false };
-    cursor += 1;
-    while let Some(b) = line.get(cursor) {
-        if *b == closer {
-            cursor += 1;
-            while matches!(line.get(cursor), Some(b' ') | Some(b'\t')) { cursor += 1; }
-            return cursor == line.len();
-        }
-        cursor += 1;
-    }
-    false
-}
-
-fn skip_indent(line: &[u8]) -> usize {
-    let mut c = 0usize;
-    while c < 3 && matches!(line.get(c), Some(b' ') | Some(b'\t')) { c += 1; }
-    c
-}
-
-fn label_length(rest: &[u8]) -> Option<usize> {
-    let mut n = 0usize;
-    for b in rest { match b { b']' => return if n == 0 { None } else { Some(n) }, b'\n' => return None, _ => n += 1 } }
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +47,7 @@ pub fn paragraph_definitions(buffer: &str) -> Vec<BufferDefinition> {
 const MAX_LINK_LABEL_LENGTH: usize = 1000;
 
 fn ispunct(b: u8) -> bool { b.is_ascii_punctuation() }
-fn isspace(b: u8) -> bool { matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) }
+pub(crate) fn isspace(b: u8) -> bool { matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) }
 
 struct Sc { pos: usize }
 impl Sc {
@@ -177,7 +80,7 @@ impl Sc {
 }
 
 /// comrak `manual_scan_link_url`: returns (dest_start, dest_end, consumed).
-fn scan_link_url(s: &[u8]) -> Option<(usize, usize, usize)> {
+pub(crate) fn scan_link_url(s: &[u8]) -> Option<(usize, usize, usize)> {
     let len = s.len();
     if len > 0 && s[0] == b'<' {
         let mut i = 1;
@@ -188,7 +91,7 @@ fn scan_link_url(s: &[u8]) -> Option<(usize, usize, usize)> {
             else if b == b'\n' || b == b'\r' || b == b'<' { return None; }
             else { i += 1; }
         }
-        if i > len || i < 2 || s.get(i - 1) != Some(&b'>') { return None; }
+        if i >= len || i < 2 || s.get(i - 1) != Some(&b'>') { return None; }
         return Some((1, i - 1, i));
     }
     let mut i = 0; let mut nb_p = 0i32;
@@ -203,7 +106,7 @@ fn scan_link_url(s: &[u8]) -> Option<(usize, usize, usize)> {
 }
 
 /// cmark `link_title`: "…", '…' or (…) with backslash escapes; may span lines.
-fn scan_link_title(s: &[u8]) -> Option<usize> {
+pub(crate) fn scan_link_title(s: &[u8]) -> Option<usize> {
     let open = *s.first()?;
     let close = match open { b'"' => b'"', b'\'' => b'\'', b'(' => b')', _ => return None };
     let mut i = 1;

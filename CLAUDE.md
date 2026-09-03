@@ -1,60 +1,76 @@
 # Flark repository guide
 
-Flark is a native Flutter Markdown editor and read-only renderer backed by a
-Rust-owned source and incremental GFM engine. The repository root is a
-non-publishable qualification harness. Active product code lives in two
-packages:
+Flark is a live Markdown editor and read-only renderer for Flutter, Flutter
+web, and Fleury, being rebuilt as **v5** on a synchronous core: the whole
+document is parsed by unmodified comrak on every keystroke and the frame
+paints the parser's answer. The controlling decision is
+[RFC 030](docs/architecture/rfc/rfc_030_synchronous_core.md); the execution
+contract is the [v5 build plan](docs/architecture/v5/build_plan.md). The
+repository root is a non-publishable workspace.
 
-- `packages/flark`: headless Dart API, native build hook, ABI, runtime,
-  parser, and engine; it must not import Flutter.
-- `packages/flark_flutter`: Flutter editor and read-only surface, with the macOS/Android
-  dogfood app at `packages/flark_flutter/example`.
+Active code:
 
-Superseded v2/v3 code lives under `legacy/` and is historical evidence, not an
-active dependency. The current v4 product is native-only; do not claim a Web or
-Pages surface.
+- `native/flark_parse`: Rust. Unmodified comrak plus a single-pass extraction
+  to a flat render model. The schema is `schema/render_model_v1.json`;
+  `tool/gen_schema.py` derives `src/schema.rs`, `SCHEMA.md`, and the Dart
+  constants. Three-function C ABI on cdylib, staticlib, and wasm32.
+- `packages/flark`: pure Dart, must not import Flutter. M1 holds the render
+  model views and the parse transports (FFI on the VM, Wasm through
+  `dart:js_interop` on the web). M2 adds the projection, caret, commands,
+  history, and the `FlarkEditor` facade.
+- `test/fixtures/commonmark`: the upstream CommonMark 0.31.2 and GFM corpora
+  and the deviation register.
+
+Superseded code is under `legacy/` (v2/v3 in `legacy/root_package` and
+`legacy/native_v3_comrak_bridge`, v4 in `legacy/v4`). It is historical
+evidence, not a dependency, and its scripts no longer run from the root.
+The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
 
 ## Commands
 
-- Active gate: `bash scripts/verify_v4.sh`.
-- Opening-session feature lane:
-  `FLARK_V4_FEATURES=opening-session bash scripts/verify_v4.sh`.
-- Release reconciliation: `bash scripts/verify_v4_release.sh`.
-- Archive consumers: `bash scripts/verify_v4_publish_archives.sh`.
-- Package-local iteration: `cd packages/flark && dart analyze && dart test`
-  or `cd packages/flark_flutter && flutter analyze && flutter test --concurrency=1`.
-  Native-backed tests skip without an explicit `FLARK_V4_LIBRARY_PATH`; use the
-  active gate above for evidence that they executed.
-- Dogfood app: `cd packages/flark_flutter/example && flutter run -d macos`.
-- Physical Android: `bash scripts/v4_android.sh verify <device-id>`.
+- Rust gates: `cargo test --release --locked --manifest-path native/flark_parse/Cargo.toml`
+  (spec HTML conformance, extraction with zero deviations plus schema
+  invariants, fuzz, regressions).
+- Transport identity: `native/flark_parse/tool/verify_transports.sh [--rebuild]`
+  (needs node; compares the committed wasm, and optionally a fresh build,
+  to native across all 1,322 cases).
+- Dart: `cd packages/flark && dart analyze --fatal-infos && dart test`
+  (the build hook compiles the crate).
+- Rust-free consumer: `packages/flark/tool/verify_prebuilt_consumer.sh`.
+- Wasm asset: `packages/flark/tool/build_wasm.sh` after any crate change,
+  then commit `packages/flark/lib/assets/wasm/flark_parse.wasm`.
+- Schema: edit the JSON, run `python3 native/flark_parse/tool/gen_schema.py`,
+  commit all three outputs (CI diffs them).
+- Rust toolchain: `rust-toolchain.toml` is the single selector. Scripts and
+  the hook run `rustup run <active toolchain>`; the Homebrew `cargo` on a
+  developer's PATH lacks cross targets, so use those scripts for wasm and iOS.
 
 ## Architecture notes
 
-- Rust owns canonical source, revision order, Markdown semantics, and
-  certification. Dart and Flutter retain only bounded views and caches.
-- Supported imports are `package:flark/flark.dart` for headless users
-  and `package:flark_flutter/flark_flutter.dart` for Flutter users. Production consumers do not
-  deep-import `lib/src`.
-- `packages/flark/hook/build.dart` compiles and bundles `flark-abi` from
-  `packages/flark/native/comrak_bridge` for supported native targets.
-- `FlarkEditorController`, `FlarkEditor`, and `FlarkMarkdownView` are the active
-  Flutter product surface.
-- Feature-gated opening sessions require the `opening-session` Cargo feature;
-  default builds must remain byte-for-byte on the default feature set.
+- Markdown source is the document. Rust is the only Markdown authority: Dart
+  consumes ranges from the render model and never inspects a delimiter. A
+  range the model lacks is a parse-crate bug, not a Dart workaround.
+- The extraction derives what comrak does not expose and validates each
+  derivation against comrak's own output; `native/flark_parse/REGISTER.md`
+  lists every known comrak quirk and its correction.
+- Two conformance claims are kept separate: comrak's HTML matches the spec
+  fixtures (minus the registered deviations), and the extraction is faithful
+  to comrak (zero deviations, schema invariants). Do not report one as the
+  other.
+- Coordinates are explicit everywhere: every range carries UTF-8 bytes and
+  UTF-16 code units, and hidden bytes of a run are source minus content.
+- The build hook resolves a bundled `prebuilt/<triple>/` library, then a
+  consumer's `hooks: user_defines: flark: prebuilt_dir:`, then a cargo build.
+  The hook runner sanitizes environment variables; they are not a channel.
+- Web packaging: the package declares `lib/assets/wasm/flark_parse.wasm` as a
+  Flutter asset; a dart2js page serves the module itself.
 
 ## Conventions & quality bar
 
-- Keep source, UTF-8 byte, and UTF-16 coordinate spaces explicit at every
-  boundary; host `String` input must be well-formed before mutation.
-- Parser changes need the pinned CommonMark/GFM fixture ledgers plus direct Rust
-  differentials. Flutter tests do not substitute for grammar evidence.
-- Performance claims require checked-in provenance and the declared detector
-  tiers. Local green tests, profile traces, physical-device receipts, CI, merge,
-  and publication are separate proof levels.
-
-## Pointers
-
-- `docs/architecture/rfc/` contains controlling architecture decisions.
-- `docs/architecture/v4/build_plan.md` is the execution/evidence contract.
-- `benchmark/v4/` contains checked-in qualification artifacts; narrative prose
-  alone is not a receipt.
+- Every performance claim names a commit, machine, and number; local runs,
+  CI, and device receipts are different proof levels and are labeled as such.
+- No test asserts on an edited frame after settling. Kernel journeys assert
+  the visible transcript per step; budgets are single frames.
+- No concept enters the kernel without a journey, a conformance case, or a
+  named consumer (Dune, Fleury). Line budgets in the build plan are gates.
+- Commit and push only when asked; watch CI to green after a push.

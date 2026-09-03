@@ -5,9 +5,16 @@ import 'dart:typed_data';
 
 import 'backend.dart';
 import 'render_model.dart';
+import 'schema.g.dart';
 
-@JS('WebAssembly.instantiate')
-external JSPromise<JSObject> _instantiate(JSAny bytesOrModule, JSObject imports);
+@JS('WebAssembly.compile')
+external JSPromise<JSObject> _compile(JSAny bytes);
+
+@JS('WebAssembly.Instance')
+extension type _Instance._(JSObject _) implements JSObject {
+  external _Instance(JSObject module, JSObject imports);
+  external JSObject get exports;
+}
 
 @JS('fetch')
 external JSPromise<JSObject> _fetch(JSString url);
@@ -18,25 +25,28 @@ extension type _Response(JSObject _) implements JSObject {
   external JSPromise<JSArrayBuffer> arrayBuffer();
 }
 
+const int _initialInputCapacity = 4096;
+
 /// The web transport: comrak compiled to wasm32-unknown-unknown, loaded
 /// through `dart:js_interop` alone, so it works under dart2js (Fleury) and
 /// dart2wasm (Flutter web). Creation is asynchronous; parsing is synchronous.
+///
+/// wasm32 aborts on panic, so a native fault traps out of the call instead of
+/// returning a code. The trap is reported as [FlarkParseException] with
+/// [FlarkParseException.faultCode], and the instance is discarded and
+/// re-created from the compiled module before the next parse.
 final class WasmParseBackend implements FlarkParseBackend {
-  WasmParseBackend._(this._exports, this._memory) {
-    _outCell = _call1('flark_parse_alloc', 16);
-  }
+  WasmParseBackend._(this._module) { _instantiate(); }
 
-  /// Instantiate from raw module bytes.
+  /// Compile and instantiate from raw module bytes.
   static Future<WasmParseBackend> fromBytes(Uint8List bytes) async {
-    final result = await _instantiate(bytes.toJS, JSObject()).toDart;
-    final instance = result.getProperty<JSObject>('instance'.toJS);
-    final exports = instance.getProperty<JSObject>('exports'.toJS);
-    final memory = exports.getProperty<JSObject>('memory'.toJS);
-    return WasmParseBackend._(exports, memory);
+    final module = await _compile(bytes.toJS).toDart;
+    return WasmParseBackend._(module);
   }
 
-  /// Fetch and instantiate. With no [candidates], tries the package asset
-  /// locations Flutter web and a plain dart2js page serve.
+  /// Fetch, compile, and instantiate. With no [candidates], tries the
+  /// locations a Flutter web build and a plain dart2js page serve the
+  /// package asset from; see [defaultAssetCandidates].
   static Future<WasmParseBackend> load({List<Uri>? candidates}) async {
     final uris = candidates ?? defaultAssetCandidates();
     Object? lastError;
@@ -45,55 +55,83 @@ final class WasmParseBackend implements FlarkParseBackend {
         final response = _Response(await _fetch(uri.toString().toJS).toDart);
         if (!response.ok.toDart) { lastError = 'HTTP ${response.status.toDartInt} for $uri'; continue; }
         final buffer = await response.arrayBuffer().toDart;
-        return fromBytes(buffer.toDart.asUint8List());
+        return await fromBytes(buffer.toDart.asUint8List());
       } catch (e) { lastError = e; }
     }
-    throw FlarkParseException(-1, 'could not load flark_parse.wasm from ${uris.join(', ')}: $lastError');
+    throw FlarkParseException(FlarkParseException.loadFailedCode, 'could not load flark_parse.wasm from ${uris.join(', ')}: $lastError');
   }
 
+  /// Flutter web serves the package-declared asset at
+  /// `assets/packages/flark/lib/assets/wasm/flark_parse.wasm`; an app that
+  /// declares it itself serves `assets/packages/flark/assets/wasm/...`; a
+  /// plain page can place the module beside its HTML.
   static List<Uri> defaultAssetCandidates() => [
         Uri.base.resolve('assets/packages/flark/lib/assets/wasm/flark_parse.wasm'),
-        Uri.base.resolve('packages/flark/lib/assets/wasm/flark_parse.wasm'),
+        Uri.base.resolve('assets/packages/flark/assets/wasm/flark_parse.wasm'),
         Uri.base.resolve('flark_parse.wasm'),
       ];
 
-  final JSObject _exports;
-  final JSObject _memory;
-  late final int _outCell;
-  int _input = 0;
-  int _inputCapacity = 0;
+  final JSObject _module;
+  late JSObject _exports;
+  late JSObject _memory;
+  late JSFunction _parseFn, _allocFn, _freeFn, _versionFn;
+  late int _outCell;
+  late int _input;
+  late int _inputCapacity;
+
+  void _instantiate() {
+    final instance = _Instance(_module, JSObject());
+    _exports = instance.exports;
+    _memory = _exports.getProperty<JSObject>('memory'.toJS);
+    _parseFn = _exports.getProperty<JSFunction>('flark_parse'.toJS);
+    _allocFn = _exports.getProperty<JSFunction>('flark_parse_alloc'.toJS);
+    _freeFn = _exports.getProperty<JSFunction>('flark_parse_free'.toJS);
+    _versionFn = _exports.getProperty<JSFunction>('flark_parse_schema_version'.toJS);
+    final version = schemaVersion;
+    if (version != RenderModelSchema.version) {
+      throw FlarkParseException(FlarkParseException.schemaMismatchCode, 'flark_parse.wasm writes schema $version, this package reads ${RenderModelSchema.version}');
+    }
+    _outCell = _alloc(16);
+    _inputCapacity = _initialInputCapacity;
+    _input = _alloc(_inputCapacity);
+  }
 
   Uint8List _heap() => _memory.getProperty<JSArrayBuffer>('buffer'.toJS).toDart.asUint8List();
-  int _call1(String name, int a) => (_exports.getProperty<JSFunction>(name.toJS).callAsFunction(null, a.toJS) as JSNumber).toDartInt;
-  int _call4(String name, int a, int b, int c, int d) => (_exports.getProperty<JSFunction>(name.toJS).callAsFunction(null, a.toJS, b.toJS, c.toJS, d.toJS) as JSNumber).toDartInt;
-  void _callVoid2(String name, int a, int b) { _exports.getProperty<JSFunction>(name.toJS).callAsFunction(null, a.toJS, b.toJS); }
+  int _alloc(int len) => (_allocFn.callAsFunction(null, len.toJS) as JSNumber).toDartInt;
+  void _free(int ptr, int len) { _freeFn.callAsFunction(null, ptr.toJS, len.toJS); }
 
   @override
-  int get schemaVersion => (_exports.getProperty<JSFunction>('flark_parse_schema_version'.toJS).callAsFunction(null) as JSNumber).toDartInt;
+  int get schemaVersion => (_versionFn.callAsFunction(null) as JSNumber).toDartInt;
 
   @override
   RenderModel parse(String source) {
     final bytes = utf8.encode(source);
     if (bytes.length > _inputCapacity) {
-      if (_input != 0) _callVoid2('flark_parse_free', _input, _inputCapacity);
-      _inputCapacity = bytes.length * 2 + 1024;
-      _input = _call1('flark_parse_alloc', _inputCapacity);
+      _free(_input, _inputCapacity);
+      _inputCapacity = bytes.length * 2;
+      _input = _alloc(_inputCapacity);
     }
     _heap().setRange(_input, _input + bytes.length, bytes);
-    final rc = _call4('flark_parse', _input, bytes.length, _outCell, _outCell + 8);
-    if (rc != 0) {
-      throw FlarkParseException(rc, switch (rc) { 1 => 'null argument', 2 => 'invalid UTF-8', 3 => 'contained fault', _ => 'unknown' });
+    final int rc;
+    try {
+      rc = (_parseFn.callAsFunction(null, _input.toJS, bytes.length.toJS, _outCell.toJS, (_outCell + 8).toJS) as JSNumber).toDartInt;
+    } catch (e) {
+      // A trap: the instance is no longer trustworthy. Rebuild it from the
+      // compiled module so the next parse starts clean.
+      _instantiate();
+      throw FlarkParseException(FlarkParseException.faultCode, 'wasm trap during parse: $e');
     }
+    if (rc != 0) throw FlarkParseException.fromCode(rc);
     final heap = _heap(); // re-read: memory may have grown
     final view = ByteData.sublistView(heap);
     final outPtr = view.getUint32(_outCell, Endian.little);
     final outLen = view.getUint32(_outCell + 8, Endian.little);
     final copy = Uint8List.fromList(Uint8List.sublistView(heap, outPtr, outPtr + outLen));
-    _callVoid2('flark_parse_free', outPtr, outLen);
+    _free(outPtr, outLen);
     return RenderModel(copy);
   }
 }
 
-/// On the web the backend must be created with [WasmParseBackend.load] or
-/// [WasmParseBackend.fromBytes]; the synchronous factory cannot fetch.
-FlarkParseBackend createParseBackend() => throw UnsupportedError('flark: on the web, await WasmParseBackend.load() or fromBytes()');
+/// On the web the backend is created with [WasmParseBackend.load] or
+/// [WasmParseBackend.fromBytes]; a synchronous factory cannot fetch.
+FlarkParseBackend createParseBackend() => throw UnsupportedError('flark: on the web, await WasmParseBackend.load() or WasmParseBackend.fromBytes()');

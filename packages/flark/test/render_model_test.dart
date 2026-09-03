@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flark/flark.dart';
 import 'package:test/test.dart';
@@ -10,6 +11,13 @@ void main() {
 
   test('schema version matches the generated constants', () {
     expect(backend.schemaVersion, RenderModelSchema.version);
+  });
+
+  test('the empty document parses on a fresh backend', () {
+    final fresh = createParseBackend();
+    final m = fresh.parse('');
+    expect(m.blockCount, 1);
+    expect(m.runCount, 0);
   });
 
   test('a paragraph with emphasis decodes into hidden delimiters and content', () {
@@ -24,6 +32,23 @@ void main() {
     expect((emph.startUtf16, emph.endUtf16), (4, 8));
     expect((emph.contentStartUtf16, emph.contentEndUtf16), (5, 7));
     expect(runs[2].parent, emph.index);
+    expect(m.runsOfBlock(1).length, 4);
+    expect(m.runsOfBlock(0), isEmpty);
+  });
+
+  test('a run-less block yields an empty run range, not the next block\'s runs', () {
+    final m = backend.parse('para\n\n---\n\n*x*');
+    final rule = m.blocks.firstWhere((b) => b.kind == BlockKind.thematicBreak);
+    expect(m.runsOfBlock(rule.index), isEmpty);
+    final last = m.blocks.last;
+    expect(m.runsOfBlock(last.index).map((r) => r.kind), [RunKind.emph, RunKind.text]);
+  });
+
+  test('an unaligned byte view is accepted', () {
+    final m = backend.parse('x');
+    final padded = Uint8List(m.bytes.length + 2)..setRange(2, m.bytes.length + 2, m.bytes);
+    final view = Uint8List.sublistView(padded, 2);
+    expect(RenderModel(view).blockCount, m.blockCount);
   });
 
   test('every conformance case decodes with consistent counts', () {
@@ -46,8 +71,7 @@ void main() {
     expect(cases, 1322);
   });
 
-  test('invalid UTF-16 in the Dart string never faults the native side', () {
-    // A lone surrogate encodes to U+FFFD through utf8.encode; the parser sees valid UTF-8.
+  test('a lone surrogate never faults the native side', () {
     final m = backend.parse('x\uD800y');
     expect(m.blockCount, 2);
   });

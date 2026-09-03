@@ -25,12 +25,15 @@ Fleury native packaging moved into M1.
 ## M1 — Parse crate · done 2026-09-02
 
 `native/flark_parse` and `packages/flark` (parse transports) on branch
-`v5/m1-parse-crate`. Receipts: `cargo test --release` (conformance 1,322/1,322
-with zero deviations, invariants, fuzz), `tool/verify_transports.sh`
-(native and wasm byte-identical, 1,322 cases), `packages/flark` `dart test`
-through the build hook, and `tool/verify_prebuilt_consumer.sh` (a fresh
-Dart app with Rust removed from PATH builds and parses via a prebuilt).
-Native parse plus extraction at 25 KB dense: 1.05 ms.
+`v5/m1-parse-crate`. Receipts: `cargo test --release` (spec HTML conformance 1,321/1,322 with
+example 354 registered; extraction zero deviations plus schema invariants;
+fuzz; regressions), `tool/verify_transports.sh` (committed wasm and native
+byte-identical, 1,322 cases), `packages/flark` `dart test` through the build
+hook, and `tool/verify_prebuilt_consumer.sh` (a fresh Dart app with Rust
+removed from PATH builds and parses via a prebuilt). Reviewed on PR #40
+(15 confirmed findings, all fixed before merge). Native parse plus
+extraction at 25 KB dense: 0.96 ms on the M1 Pro at the head of PR #40; a
+300,000-iteration random fuzz over the CRLF-inclusive alphabet is clean.
 
 - Render-model schema as a versioned file: field tables, kinds, attrs,
   invariants. Rust constants and the Dart decoder both derive from it.

@@ -15,3 +15,9 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.26.3
+
+# Bundled by Flutter web builds at assets/packages/flark/lib/assets/wasm/;
+# Fleury and other dart2js pages serve the file themselves.
+flutter:
+  assets:
+    - lib/assets/wasm/flark_parse.wasm

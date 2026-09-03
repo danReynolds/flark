@@ -19,7 +19,7 @@ fn main() {
             let t = Instant::now();
             let buf = Extractor::extract(&src);
             times.push(t.elapsed().as_secs_f64() * 1000.0);
-            out_len = buf.len();
+            out_len = buf.len() * 4;
         }
         times.sort_by(|a, b| a.partial_cmp(b).unwrap());
         println!("{:>7} bytes  parse+extract p50 {:6.3} ms  min {:6.3} ms  model {:>7} bytes ({:.2}x source)", src.len(), times[times.len() / 2], times[0], out_len, out_len as f64 / src.len() as f64);

@@ -1,6 +1,6 @@
 //! Prints an FNV-1a 64-bit hash of the render model for every corpus case,
 //! for byte-identity comparison against the wasm transport.
-use flark_parse::model::Extractor;
+use flark_parse::model::{to_bytes, Extractor};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -13,6 +13,6 @@ fn main() {
     for file in ["common_mark_tests.json", "gfm_tests.json"] {
         let text = std::fs::read_to_string(format!("{root}/{file}")).expect("read");
         let cases: Vec<Case> = serde_json::from_str(&text).expect("json");
-        for c in &cases { let buf = Extractor::extract(&c.markdown); println!("{file}#{} {} {:016x}", c.example, buf.len(), fnv1a(&buf)); }
+        for c in &cases { let buf = to_bytes(&Extractor::extract(&c.markdown)); println!("{file}#{} {} {:016x}", c.example, buf.len(), fnv1a(&buf)); }
     }
 }

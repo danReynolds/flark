@@ -25,3 +25,7 @@ native/**/target/
 spikes/**/target/
 spikes/**/build/
 packages/flark/prebuilt/
+spikes/v5/phone_bench/ios/*.a
+spikes/v5/web_harness/web/*.js
+spikes/v5/web_harness/web/*.js.*
+spikes/v5/web_harness/web/*.wasm

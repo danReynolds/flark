@@ -9,9 +9,17 @@ import 'schema.g.dart';
 /// Layout: header, line table, blocks, content records, runs, definitions,
 /// string table. See `native/flark_parse/SCHEMA.md`.
 final class RenderModel {
-  RenderModel(this.bytes)
-      : _data = ByteData.sublistView(bytes),
-        _words = Uint32List.sublistView(bytes, 0, bytes.lengthInBytes ~/ 4 * 4) {
+  /// Wraps [bytes]; a view whose offset is not word-aligned is copied first,
+  /// because the words are read through a [Uint32List] view. Both transports
+  /// hand in fresh, aligned buffers, so the copy only happens for slices a
+  /// host carved out of a larger buffer.
+  factory RenderModel(Uint8List bytes) {
+    if (bytes.offsetInBytes % 4 != 0) bytes = Uint8List.fromList(bytes);
+    return RenderModel._(bytes);
+  }
+
+  RenderModel._(this.bytes) : _words = Uint32List.sublistView(bytes, 0, bytes.lengthInBytes ~/ 4 * 4) {
+    if (Endian.host != Endian.little) throw UnsupportedError('flark: big-endian hosts are not supported');
     if (bytes.lengthInBytes < RenderModelSchema.headerWords * 4) {
       throw const FormatException('render model shorter than its header');
     }
@@ -41,15 +49,11 @@ final class RenderModel {
   }
 
   final Uint8List bytes;
-  final ByteData _data;
   final Uint32List _words;
   late final int lineCount, blockCount, contentCount, runCount, definitionCount, sourceBytes, sourceUtf16;
   late final int _linesOff, _blocksOff, _contentOff, _runsOff, _defsOff, _stringsByteOff;
 
-  // Little-endian u32 reads; Uint32List views assume host endianness, which
-  // is little-endian on every supported target, but ByteData keeps the
-  // decoder honest on any other.
-  int _w(int wordIndex) => Endian.host == Endian.little ? _words[wordIndex] : _data.getUint32(wordIndex * 4, Endian.little);
+  int _w(int wordIndex) => _words[wordIndex];
 
   int lineStartByte(int line) => _w(_linesOff + line * RenderModelSchema.lineWords + LineField.startByte);
   int lineStartUtf16(int line) => _w(_linesOff + line * RenderModelSchema.lineWords + LineField.startUtf16);
@@ -68,8 +72,10 @@ final class RenderModel {
   Iterable<BlockView> get blocks => Iterable.generate(blockCount, blockAt);
   Iterable<RunView> get runs => Iterable.generate(runCount, runAt);
 
-  /// Index of the first run belonging to [blockIndex], or [runCount] when
-  /// the block has none. Runs are contiguous per block in document order.
+  /// Index of the first run whose block is at or after [blockIndex]. Runs
+  /// are contiguous per block in document order, so a block's runs are
+  /// `firstRunOfBlock(b)` up to `firstRunOfBlock(b + 1)`; a block without
+  /// runs yields an empty range. Use [runsOfBlock] for the range itself.
   int firstRunOfBlock(int blockIndex) {
     var lo = 0, hi = runCount;
     while (lo < hi) {
@@ -77,6 +83,12 @@ final class RenderModel {
       if (run(mid, RunField.block) < blockIndex) { lo = mid + 1; } else { hi = mid; }
     }
     return lo;
+  }
+
+  /// The runs of block [blockIndex], possibly empty.
+  Iterable<RunView> runsOfBlock(int blockIndex) {
+    final start = firstRunOfBlock(blockIndex), end = firstRunOfBlock(blockIndex + 1);
+    return Iterable.generate(end - start, (i) => runAt(start + i));
   }
 }
 
