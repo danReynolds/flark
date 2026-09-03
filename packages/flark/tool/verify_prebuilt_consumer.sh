@@ -43,15 +43,14 @@ void main() {
   print('empty=${empty.blockCount} blocks=${m.blockCount} runs=${m.runCount} emph=${m.runAt(1).kind == RunKind.emph}');
 }
 DART
-CLEAN_PATH=""
-IFS=: read -ra PARTS <<< "$PATH"
-for d in "${PARTS[@]}"; do
-  if [ -x "$d/cargo" ] || [ -x "$d/rustup" ] || [ -x "$d/rustc" ]; then continue; fi
-  CLEAN_PATH="${CLEAN_PATH:+$CLEAN_PATH:}$d"
-done
+# A minimal PATH: the Dart SDK's directory plus the system directories. This
+# is more robust than filtering the caller's PATH (runners reach cargo through
+# entries that do not hold the binary themselves).
+DART_DIR="$(dirname "$(command -v dart)")"
+CLEAN_PATH="$DART_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 cd "$APP" || exit 1
 PATH="$CLEAN_PATH" dart pub get >/dev/null || { echo "pub get failed"; exit 1; }
-if PATH="$CLEAN_PATH" command -v cargo >/dev/null 2>&1; then echo "cargo still on PATH"; exit 1; fi
+if FOUND="$(PATH="$CLEAN_PATH" command -v cargo 2>/dev/null)"; then echo "cargo still on PATH at $FOUND (PATH=$CLEAN_PATH)"; exit 1; fi
 OUT="$(PATH="$CLEAN_PATH" dart run bin/main.dart 2>&1)"; STATUS=$?
 echo "$OUT" | grep -vE '^\s*$' | tail -12
 if [ $STATUS -eq 0 ] && echo "$OUT" | grep -q 'empty=1 blocks=5 runs=7 emph=true'; then
