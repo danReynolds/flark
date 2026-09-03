@@ -50,6 +50,7 @@ DART_DIR="$(dirname "$(command -v dart)")"
 CLEAN_PATH="$DART_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 cd "$APP" || exit 1
 PATH="$CLEAN_PATH" dart pub get >/dev/null || { echo "pub get failed"; exit 1; }
+hash -r  # forget the cargo this script itself invoked; command -v consults the hash table
 if FOUND="$(PATH="$CLEAN_PATH" command -v cargo 2>/dev/null)"; then echo "cargo still on PATH at $FOUND (PATH=$CLEAN_PATH)"; exit 1; fi
 OUT="$(PATH="$CLEAN_PATH" dart run bin/main.dart 2>&1)"; STATUS=$?
 echo "$OUT" | grep -vE '^\s*$' | tail -12
