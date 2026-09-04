@@ -65,7 +65,7 @@ Pure Dart `flark`. Detail, revised after M1: [m2_kernel_plan.md](m2_kernel_plan.
 - `FlarkCaret` anchor model with the navigation rules from RFC 030 §6.
 - `FlarkCommand` closed set including formatting toggles, heading level,
   task toggle, indent and outdent, paste.
-- Command semantics for every rule in `edit_profile_v1`, as range
+- Command semantics for every rule in [`edit_profile_v1`](edit_profile_v1.md), as range
   arithmetic over the model.
 - History with v4's grouping rules.
 - `FlarkEditor` facade with `typingContext`; parse backend interface with

@@ -53,7 +53,7 @@ Flutter import, under 8,000 production lines including the M1 parse layer
    `indent`, `outdent`, `paste`, `toggleStyle` (emphasis, strong,
    strikethrough, code), `setHeadingLevel`. Every host route reduces to one
    of these before the kernel sees it.
-5. **Semantics** — `edit_profile_v1` as range arithmetic: deleting the last
+5. **Semantics** — [`edit_profile_v1`](edit_profile_v1.md) as range arithmetic: deleting the last
    styled grapheme removes the run's hidden ranges with it; Return continues,
    exits, or splits a list item or quote using the block's per-line content
    ranges; Backspace at a block start lifts the prefix using the same

@@ -67,7 +67,7 @@ enable. CommonMark-only operation is explicit code 1. Zero or an unknown code
 returns `INVALID_ARGUMENT`; a runtime that negotiated no matching profile bit
 returns `UNSUPPORTED_CAPABILITY`.
 
-The draft [rendered-editing profile](edit_profile_v1.md) selects
+The draft [rendered-editing profile](../../v5/edit_profile_v1.md) selects
 `flark-gfm-0.29-v2` and requires explicit edit-profile/support-envelope
 negotiation. ABI 4.38 does not provide either. A future exact minor must assign
 a new parser-profile code rather than rename code 2, and must append the edit
