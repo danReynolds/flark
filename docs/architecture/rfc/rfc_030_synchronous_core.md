@@ -4,7 +4,7 @@
 
 **Supersedes for execution:** RFC 026, RFC 027 §4 onward, RFC 028, RFC 029,
 and the v4 build plan. **Retains unchanged:** NORTH_STAR.md, the product
-examples in RFC 027 §2, `edit_profile_v1.md`, and
+examples in RFC 027 §2, [`edit_profile_v1.md`](../v5/edit_profile_v1.md), and
 `live_editor_test_strategy.md`.
 
 **Requirements this RFC is built around** (owner's words, 2026-09-02):
@@ -168,6 +168,27 @@ the glyph half, exactly as `edit_profile_v1` already states. The caret is
 never inside a hidden range. This is the essential complexity of the
 product and it is small.
 
+*As built in M2 (2026-09-03), amending the paragraph above.* The caret is
+a plain source offset: a legal offset is one not strictly inside a hidden
+run range and lying on a row's caret span, and the anchors of a display
+position are the legal offsets that display there. No separate caret type
+exists; `FlarkSelection` plus the document's legality and anchor queries
+is the whole model. The rules as shipped: movement keeps the context it
+came from (moving right takes the smallest anchor, moving left the
+largest, so the context changes only by crossing a glyph of another
+style); Home and End take the outermost anchor; pointer placement takes
+the outer anchor for a leading glyph half and the inner for a trailing
+one. One deliberate exception to "never a stop that does not move": Right
+at the end of the document, and Left at its start, step to the outermost
+anchor without moving, because otherwise a styled run at the end of a
+document could only be left by a formatting command. Fence lines of a
+code block hold no caret, since an edit there would be invisible; the info
+string is a host affordance. A formatting toggle at a collapsed caret
+inside a span unwraps the whole span rather than splitting it, because
+Markdown's rule of three makes `**a****b**` not parse. Delete-to-empty
+leaves the removed delimiters as pending typing intent, which history
+restores on undo.
+
 **`FlarkCommand`** is the closed set of logical actions: insert text,
 delete backward, delete forward, newline, replace range, set selection,
 move caret by grapheme, word, line, or block, undo, redo, toggle task,
@@ -219,7 +240,10 @@ entry, undo restores exact source and selection.
 `document`, `apply(command)`, `projection`, a change listener, and the
 parse backend. The v4 core exports 113 types and no facade, and the audit
 counted that as its single largest defect for a second consumer. v5 exports
-about a dozen.
+about a dozen. As built, the facade library exports 22 concepts with the
+command set counted once, gated at 24 by the boundary test, and the render
+model with its schema constants is a second library,
+`package:flark/render_model.dart`, for hosts and tests that read it.
 
 ## 7. Flutter surface
 
@@ -284,7 +308,7 @@ Per keystroke, phone, 120 Hz, 8.3 ms frame, at the 64 KB sync limit:
 | Splice source string | 0.1 ms | 64 KB copy |
 | Parse | 4 ms | 2.1 ms at 100 KB on M1 Pro, ×3 for a phone, scaled to 64 KB |
 | Marshal into typed-data views | 0.5 ms | spike |
-| Projection | 1 ms | per-block memo keyed on the block's source slice; unchanged blocks reuse |
+| Projection | 1 ms | measured 0.44 ms at 25 KB on the M1 Pro without a memo (M2); a per-block memo keyed on the block's source slice is the reserve if a phone measurement needs it |
 | Layout and paint | 2 ms | visible rows only; painters reused on identical spans, salvaged from v4 |
 
 The bar is v2's own measurement, not the parse alone. v2 measured parse
@@ -293,6 +317,13 @@ plus projection plus render plan at 8.5 ms for 25 KB of dense Markdown and
 end-to-end figure for the same 25 KB dense document must be under 3 ms on
 the same class of machine before the phone tier is believed. The marshal
 spike measures this whole chain, not the parser.
+
+M2 receipt (2026-09-03, build plan): the keystroke through the facade on
+the M0 25 KB document measures 1.50–1.58 ms p50 on the M1 Pro, of which
+parse and marshal are 0.97 ms and the projection 0.44 ms, and 2.03 ms on a
+denser document. That clears the 3 ms bar; the plan's tighter 1.5 ms line
+is touched, not cleared, and the remaining cost sits in the crate's
+extraction.
 
 Flatness across sizes is not a claim v5 makes. The claim is that every
 document inside the tier is under budget on the named phone, with a receipt
@@ -312,6 +343,10 @@ The methodology stays and most of it gets cheaper.
   display text contains no byte from a hidden range; display text equals
   source minus hidden ranges plus replacements; the caret is never inside a
   hidden range; offset mapping round-trips.
+- **Generated matrix.** Seeded random command sequences over the corpus
+  documents, with the invariants and an undo/redo probe after every
+  command; a failure prints its seed and command log so it can become a
+  journey.
 - **Conformance.** The 652 CommonMark and 672 GFM cases run through the
   render model, comparing rendered text and ranges to the reference, on
   both transports.
@@ -334,7 +369,7 @@ A dogfood bug becomes a kernel journey first and a paint test second.
 
 | Keep | From | Use |
 | --- | --- | --- |
-| NORTH_STAR.md, DOGFOOD_MILESTONE.md, edit_profile_v1, test strategy | v4 | unchanged product contract |
+| NORTH_STAR.md, DOGFOOD_MILESTONE.md, edit_profile_v1 (now `docs/architecture/v5/edit_profile_v1.md`), test strategy | v4 | unchanged product contract |
 | Sourcepos to byte-range arithmetic, reference definition scanner, payload layout | v2 `native/comrak_bridge/src/{parser,reference_definitions,payload}.rs` | core of `flark_parse` |
 | Wasm build script, `hook/build.dart`, js_interop loader | v2 `scripts/`, `hook/`, `native_comrak_bridge_factory_web.dart` | transports |
 | Inline segmentation (covering model) | v2 `render_plan/flark_inline_segmentation.dart` | projection |
@@ -425,6 +460,12 @@ The full ladder with exit criteria, budgets, and sizing is the
    link and image popovers as required affordances, and reveal-at-caret
    kept only as an off-by-default projection option. **Agreed
    2026-09-02.**
+7. The caret model as built in M2 (§6, "as built"): a plain source offset
+   with anchors as the legal offsets sharing a display position; movement
+   keeps the context it came from; Home, End, and the document ends take
+   the outermost anchor; fence lines hold no caret; a collapsed toggle
+   inside a span unwraps it. **Decided in implementation 2026-09-03; open
+   to revision from dogfood.**
 
 ## 17. What the earlier generations teach, and how v5 answers
 

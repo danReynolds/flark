@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart';
 import 'package:test/test.dart';
 
 void main() {

@@ -6,7 +6,7 @@ ready for focused dogfood. 2026-08-12.
 
 **Reading rule:** this RFC records transaction architecture and its decision
 history. Current user-visible behavior lives in
-[edit_profile_v1.md](../v4/contracts/edit_profile_v1.md), test policy in
+[edit_profile_v1.md](../v5/edit_profile_v1.md), test policy in
 [live_editor_test_strategy.md](../../testing/live_editor_test_strategy.md), and
 the handoff bar in [DOGFOOD_MILESTONE.md](../../../DOGFOOD_MILESTONE.md). This
 RFC is not a second product contract or testing taxonomy.
@@ -96,7 +96,7 @@ are rejected without mutation. Profile behavior is fixture-backed and may not
 be inferred independently in Dart or Flutter.
 
 The normative user-facing behavior of `flark-edit-v1` is now specified by the
-[rendered-editing profile](../v4/contracts/edit_profile_v1.md). This RFC owns
+[rendered-editing profile](../v5/edit_profile_v1.md). This RFC owns
 the transaction, receipt, package-boundary, and failure mechanism used to
 implement that behavior. Parser recipes prove a profile result; they do not
 choose the product result.
@@ -594,7 +594,7 @@ creates, changes, or removes a projected construct or hidden syntax must
 negotiate a new receipt capability and return, in the same logical result,
 both a fresh typing-context directive and the bounded result-presentation
 proof required by
-[EP1-RESULT-PRESENTATION-001](../v4/contracts/edit_profile_v1.md#ep1-result-presentation-001).
+[EP1-RESULT-PRESENTATION-001](../v5/edit_profile_v1.md#ep1-result-presentation-001).
 The current `CommittedEditReceiptV1` and its reserved fields are not
 reinterpreted.
 

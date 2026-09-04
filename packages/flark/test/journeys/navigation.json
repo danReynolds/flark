@@ -1,0 +1,57 @@
+[
+  {"name": "word movement stops at word edges", "source": "one **two** three", "caret": 0, "steps": [
+    {"wordRight": 1, "caret": [0, 3], "anchor": 3, "context": []},
+    {"wordRight": 1, "caret": [0, 7], "anchor": 9, "context": ["strong"]},
+    {"wordLeft": 1, "caret": [0, 4], "anchor": 6, "context": ["strong"]},
+    {"wordLeft": 1, "caret": [0, 0]}
+  ]},
+  {"name": "pointer placement uses the glyph half at a boundary", "source": "**bold** x", "steps": [
+    {"place": [0, 4, "trailing"], "anchor": 6, "context": ["strong"]},
+    {"place": [0, 4, "leading"], "anchor": 8, "context": []},
+    {"place": [0, 0, "leading"], "anchor": 2, "context": ["strong"]},
+    {"place": [0, 0, "trailing"], "anchor": 0, "context": []}
+  ]},
+  {"name": "up and down move between rows at the same offset", "source": "first line\n\n- item\n\n```\ncode\n```", "caret": 3, "steps": [
+    {"down": 1, "caret": [1, 0]},
+    {"down": 1, "caret": [2, 3]},
+    {"down": 2, "caret": [4, 3]},
+    {"up": 4, "caret": [0, 3]}
+  ]},
+  {"name": "shift arrows extend the selection and typing replaces it", "source": "abc *def*", "caret": 1, "steps": [
+    {"shiftRight": 3, "selection": [1, 4]},
+    {"insert": "Z", "source": "aZ*def*", "rows": ["aZdef"], "caret": [0, 2]}
+  ]},
+  {"name": "a plain arrow collapses a selection to its edge", "source": "hello", "steps": [
+    {"select": [1, 4]},
+    {"left": 1, "caret": [0, 1], "selection": [1, 1]},
+    {"select": [1, 4]},
+    {"right": 1, "caret": [0, 4]}
+  ]},
+  {"name": "moving through table cells and past the delimiter line", "source": "| a | b |\n| - | - |\n| c | d |", "steps": [
+    {"rows": ["a", "b", "c", "d"], "caret": [0, 0]},
+    {"right": 2, "caret": [1, 0]},
+    {"right": 2, "caret": [2, 0]},
+    {"insert": "x", "source": "| a | b |\n| - | - |\n| xc | d |", "rows": ["a", "b", "xc", "d"]}
+  ]},
+  {"name": "the caret stays out of a fenced code block's fence lines", "source": "```js\nlet a;\n```", "caret": 0, "steps": [
+    {"rows": ["let a;"], "caret": [0, 0], "anchor": 6},
+    {"end": true, "caret": [0, 6]},
+    {"insert": "b", "source": "```js\nlet a;b\n```", "rows": ["let a;b"]},
+    {"newline": true, "source": "```js\nlet a;b\n\n```", "rows": ["let a;b\n"], "caret": [0, 8]}
+  ]},
+  {"name": "replace range and paste land the caret after the text", "source": "abcdef", "steps": [
+    {"replace": [1, 3, "XY"], "source": "aXYdef", "caret": [0, 3]},
+    {"paste": "**p**", "source": "aXY**p**def", "rows": ["aXYpdef"], "caret": [0, 4], "anchor": 8}
+  ]},
+  {"name": "a hard break is one grapheme to delete", "source": "a  \nb", "caret": 4, "steps": [
+    {"rows": ["a\nb"], "caret": [0, 2]},
+    {"backspace": true, "source": "ab", "rows": ["ab"], "caret": [0, 1]}
+  ]},
+  {"name": "entities and emoji are single graphemes", "source": "x &amp; 😀y", "caret": 11, "steps": [
+    {"rows": ["x & 😀y"], "caret": [0, 7]},
+    {"left": 1, "caret": [0, 6]},
+    {"backspace": true, "source": "x &amp; y", "rows": ["x & y"], "caret": [0, 4]},
+    {"left": 2, "caret": [0, 2]},
+    {"delete": true, "source": "x  y", "rows": ["x  y"], "caret": [0, 2]}
+  ]}
+]

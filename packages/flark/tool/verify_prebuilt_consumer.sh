@@ -36,6 +36,7 @@ hooks:
 PUB
 cat > "$APP/bin/main.dart" <<'DART'
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart';
 void main() {
   final backend = createParseBackend();
   final empty = backend.parse('');

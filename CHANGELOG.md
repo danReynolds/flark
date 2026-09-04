@@ -2,6 +2,7 @@
 
 ## 0.5.0-dev.1 (unreleased)
 
+- v5 M2: the pure-Dart kernel in `packages/flark`: projection with hidden ranges and caret spans, document with anchors, the closed command set, grouped history that restores typing intent, and the `FlarkEditor` facade; journeys, a generated command matrix, and a keystroke bench. The parse crate records each line's innermost prefix start and splits text nodes into exact and replacement pieces.
 - v5 M1: `native/flark_parse` (unmodified comrak plus a flat render model, three-function ABI on native and wasm32) and `packages/flark` (render model views, FFI and Wasm transports, build hook with prebuilt resolution). v4 moved under `legacy/v4/`. See RFC 030.
 
 

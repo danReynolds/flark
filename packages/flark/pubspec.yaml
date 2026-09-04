@@ -9,6 +9,8 @@ environment:
   sdk: ^3.10.4
 
 dependencies:
+  # Grapheme boundaries for caret movement and deletion; pinned like v4 did.
+  characters: ^1.4.0
   code_assets: ^1.0.0
   hooks: ^1.0.0
 

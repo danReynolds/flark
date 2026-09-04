@@ -6,6 +6,7 @@
 //! situations where comrak's inline positions are known to be off, and in
 //! report mode validates every derivation against comrak's own output.
 
+use crate::text_pieces;
 use crate::lines::LineIndex;
 use crate::reference_definitions::{self, Definition};
 use crate::schema::{self, block, block_kind, content, definition, header, run, run_kind, table_alignment};
@@ -92,7 +93,8 @@ impl<'a> ColCursor<'a> {
 }
 
 /// Result of consuming the container prefixes on one line.
-struct Prefix<'a> { cur: ColCursor<'a>, lazy: bool, after_checkbox: bool }
+struct Prefix<'a> { cur: ColCursor<'a>, lazy: bool, after_checkbox: bool, /// byte offset within the line where the innermost matched container's prefix begins
+    prefix_start: usize }
 
 struct Leaf<'b> { node: &'b AstNode<'b>, idx: usize, container: Option<usize> }
 
@@ -109,7 +111,7 @@ pub struct Shift { lines: Vec<LineSpan>, def_lines: usize }
 /// number of virtual spaces a partially consumed tab contributed on a lazy
 /// line, which exist in comrak's buffer but not in the source.
 #[derive(Clone, Copy)]
-struct LineSpan { line0: usize, start: usize, end: usize, virt: usize }
+struct LineSpan { line0: usize, start: usize, end: usize, virt: usize, prefix_start: usize }
 
 pub struct Extractor<'a> {
     src: &'a str,
@@ -305,7 +307,9 @@ impl<'a> Extractor<'a> {
         let mut lazy = false;
         let mut after_checkbox = false;
         let mut base = 0usize;
+        let mut prefix_start = 0usize;
         for c in containers {
+            let at = cur.pos;
             match c.kind {
                 ContainerKind::Quote => {
                     let save = cur;
@@ -318,6 +322,7 @@ impl<'a> Extractor<'a> {
                             _ => {}
                         }
                         base = cur.col - cur.virt;
+                        prefix_start = at;
                     } else { cur = save; lazy = true; break; }
                 }
                 ContainerKind::Item => {
@@ -336,6 +341,7 @@ impl<'a> Extractor<'a> {
                         let got = cur.consume_columns(need);
                         if got < need { cur = save; lazy = true; break; }
                     }
+                    prefix_start = at;
                     // The task checkbox is skipped on whichever line comrak found it
                     // (the item's first paragraph line), plus one space or tab.
                     if let Some((cb_start, cb_end)) = c.checkbox {
@@ -356,6 +362,7 @@ impl<'a> Extractor<'a> {
                             cur.skip_whitespace();
                         }
                         base = cur.col;
+                        prefix_start = at;
                     } else {
                         let target = base + 4;
                         let save = cur;
@@ -363,11 +370,13 @@ impl<'a> Extractor<'a> {
                         let got = cur.consume_columns(need);
                         if got < need { cur = save; lazy = true; break; }
                         base = target;
+                        prefix_start = at;
                     }
                 }
             }
         }
-        Prefix { cur, lazy, after_checkbox }
+        if lazy { prefix_start = cur.pos; }
+        Prefix { cur, lazy, after_checkbox, prefix_start }
     }
 
     fn line_bytes(&self, line0: usize) -> &'a [u8] { let ls = self.li.line_start(line0); let le = self.li.line_end(line0, self.src.len()); &self.src.as_bytes()[ls..le] }
@@ -389,12 +398,13 @@ impl<'a> Extractor<'a> {
         let mut p = self.prefix_cursor(line0, self.line_bytes(line0), containers);
         if !p.lazy && !p.after_checkbox { p.cur.skip_whitespace(); }
         let start = self.li.line_start(line0) + p.cur.pos;
-        LineSpan { line0, start, end: self.trimmed_end(line0, start), virt: if p.lazy { p.cur.virt } else { 0 } }
+        LineSpan { line0, start, end: self.trimmed_end(line0, start), virt: if p.lazy { p.cur.virt } else { 0 }, prefix_start: self.li.line_start(line0) + p.prefix_start }
     }
 
-    fn push_content(&mut self, line0: usize, cs: usize, ce: usize, virt: usize) {
+    fn push_content(&mut self, line0: usize, cs: usize, ce: usize, virt: usize, prefix_start: usize) {
         let ce = ce.max(cs);
-        self.content.push([line0 as u32, cs as u32, self.li.u16(cs), ce as u32, self.li.u16(ce), virt as u32]);
+        let ps = prefix_start.min(cs);
+        self.content.push([line0 as u32, cs as u32, self.li.u16(cs), ce as u32, self.li.u16(ce), virt as u32, ps as u32, self.li.u16(ps)]);
     }
 
     fn leaf(&mut self, leaf: &Leaf<'_>, chain: &[Container]) {
@@ -417,7 +427,7 @@ impl<'a> Extractor<'a> {
                     let cs = (ls + p.cur.pos).max(if line0 == l0 { bs } else { 0 });
                     let le = self.li.line_end(line0, self.src.len());
                     if cs > be { break; }
-                    self.push_content(line0, cs, le.min(be.max(cs)), p.cur.virt);
+                    self.push_content(line0, cs, le.min(be.max(cs)), p.cur.virt, ls + p.prefix_start);
                 }
             }
             NodeValue::ThematicBreak => {}
@@ -428,7 +438,7 @@ impl<'a> Extractor<'a> {
                 while a < b && bytes[a] == b' ' { a += 1; }
                 while b > a && bytes[b - 1] == b' ' { b -= 1; }
                 let rec_index = self.content.len();
-                self.push_content(l0, a, b, 0);
+                self.push_content(l0, a, b, 0, a);
                 self.walk_inlines(leaf.node, idx as u32, Some((cs, ce)), None);
                 // In a pipeless table comrak offsets a body row's cells by the
                 // header row's indentation; the cell's runs, repaired by their
@@ -455,7 +465,7 @@ impl<'a> Extractor<'a> {
                 if q < ce && (q == cs || bytes[q - 1] == b' ' || bytes[q - 1] == b'\t') { ce = q; while ce > cs && (bytes[ce - 1] == b' ' || bytes[ce - 1] == b'\t') { ce -= 1; } }
                 if span_s < span_e { if span_s < cs || span_e > ce { self.dev("heading-content", || format!("block {idx}: children {span_s}..{span_e} outside derived {cs}..{ce}")); } }
                 span.start = cs; span.end = ce;
-                self.push_content(l0, span.start, span.end, 0);
+                self.push_content(l0, span.start, span.end, 0, span.prefix_start);
                 self.walk_inlines(leaf.node, idx as u32, None, None);
             }
             NodeValue::Heading(_) | NodeValue::Paragraph => {
@@ -465,7 +475,7 @@ impl<'a> Extractor<'a> {
                 // make a table header (the remainder is re-created as a new node).
                 let split_by_table = kind == block_kind::PARAGRAPH && self.blocks.get(idx + 1).map_or(false, |b| b[block::KIND] == block_kind::TABLE && b[block::FIRST_LINE] as usize == l1 + 1);
                 let (shift, records) = self.strip_definitions(l0, last, chain, !split_by_table);
-                for r in records { self.push_content(r.line0, r.start, r.end, 0); }
+                for r in records { self.push_content(r.line0, r.start, r.end, 0, r.prefix_start); }
                 // That split paragraph also had its pipes unescaped, so its inline
                 // positions carry the same shift as a table cell's.
                 let pipes = if split_by_table { Some((self.blocks[idx][block::START_BYTE] as usize, self.blocks[idx][block::END_BYTE] as usize)) } else { None };
@@ -559,7 +569,7 @@ impl<'a> Extractor<'a> {
             let remove = if c.fenced { c.fence_offset } else { 4 };
             p.cur.consume_columns(remove);
             let cs = ls + p.cur.pos;
-            self.push_content(line0, cs, le, p.cur.virt);
+            self.push_content(line0, cs, le, p.cur.virt, ls + p.prefix_start);
             if self.collect { for _ in 0..p.cur.virt { derived.push(' '); } derived.push_str(&self.src[cs..le]); derived.push('\n'); }
         }
         // comrak keeps CR line endings inside code literals; content records end
@@ -810,8 +820,6 @@ impl<'a> Extractor<'a> {
                     }
                 } else { (s, e, slice) };
                 if t == slice { (run_kind::TEXT, s, e) } else {
-                    let (off, len) = self.push_string(t);
-                    rec[run::AUX0] = off; rec[run::AUX1] = len;
                     // Known limit: after a bare CR, text that also carries an entity
                     // cannot be relocated by literal search (the literal is decoded),
                     // so it keeps comrak's shifted range with the literal as display.
@@ -825,7 +833,21 @@ impl<'a> Extractor<'a> {
                     let unescaped_pipes = slice.contains("\\|") && slice.replace("\\|", "|") == t;
                     let explained = slice.contains('&') || slice.contains('\t') || unescaped_pipes || cr_leaf || virtual_spaces;
                     if !explained { let (sl, lit) = (slice.to_string(), t.to_string()); self.dev("text-mismatch", || format!("block {blk} {:?} vs literal {:?}", sl, lit)); }
-                    (run_kind::REPLACEMENT, s, e)
+                    // Keep exact ranges around the bytes that differ (an entity, an
+                    // escaped pipe, a CR, virtual spaces). The pieces are validated to
+                    // rebuild the literal; otherwise the node stays one replacement run.
+                    match text_pieces::split_pieces(slice, t) {
+                        Some(pieces) if pieces.len() > 1 => {
+                            let last = pieces.len() - 1;
+                            for p in &pieces[..last] { let d = p.display.map(|(a, b)| &t[a..b]); self.push_piece(blk, parent, s + p.start, s + p.end, d); }
+                            let p = &pieces[last];
+                            match p.display {
+                                None => (run_kind::TEXT, s + p.start, s + p.end),
+                                Some((a, b)) => { let (off, len) = self.push_string(&t[a..b]); rec[run::AUX0] = off; rec[run::AUX1] = len; (run_kind::REPLACEMENT, s + p.start, s + p.end) }
+                            }
+                        }
+                        _ => { let (off, len) = self.push_string(t); rec[run::AUX0] = off; rec[run::AUX1] = len; (run_kind::REPLACEMENT, s, e) }
+                    }
                 }
             }
             NodeValue::Emph => { let ok = e > s + 1 && matches!(bytes[s], b'*' | b'_') && bytes[e - 1] == bytes[s]; if !ok { let sl = slice.to_string(); self.dev("emph-delims", || format!("block {blk} {:?}", sl)); } (run_kind::EMPH, s + 1, e.saturating_sub(1).max(s + 1)) }
@@ -917,6 +939,20 @@ impl<'a> Extractor<'a> {
         let ri = self.runs.len() as u32;
         self.runs.push(rec);
         Some(ri)
+    }
+
+    /// One piece of a split text node: an exact text run, or a replacement
+    /// run displaying [display] (empty for hidden bytes).
+    fn push_piece(&mut self, blk: u32, parent: u32, s: usize, e: usize, display: Option<&str>) {
+        let mut rec: RunRec = [0; run::WORDS];
+        rec[run::BLOCK] = blk; rec[run::PARENT] = parent;
+        rec[run::KIND] = match display { None => run_kind::TEXT, Some(d) => { let (off, len) = self.push_string(d); rec[run::AUX0] = off; rec[run::AUX1] = len; run_kind::REPLACEMENT } };
+        rec[run::START_BYTE] = s as u32; rec[run::END_BYTE] = e as u32;
+        rec[run::CONTENT_START_BYTE] = s as u32; rec[run::CONTENT_END_BYTE] = e as u32;
+        rec[run::START_UTF16] = self.li.u16(s); rec[run::END_UTF16] = self.li.u16(e);
+        rec[run::CONTENT_START_UTF16] = self.li.u16(s); rec[run::CONTENT_END_UTF16] = self.li.u16(e);
+        if self.src[s..e].contains('\n') { rec[run::FLAGS] |= 1 << 8; }
+        self.runs.push(rec);
     }
 
     /// Destination and title ranges after a link's `]`, using comrak's own
