@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 3,
   "magic": "FLK5",
-  "description": "Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker.",
+  "description": "Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker. Empty lines owned only by a container have a zero-width content record on the innermost container. Its prefix_start identifies only that container prefix; lifting it retains the outer containers.",
   "sections": [
     "lines",
     "blocks",
@@ -42,7 +42,9 @@
       "attr0",
       "attr1",
       "attr2",
-      "flags"
+      "flags",
+      "marker_end_byte",
+      "marker_end_utf16"
     ],
     "content": [
       "line",
@@ -144,7 +146,9 @@
       "attr0": "content column offset (marker_offset + padding)",
       "attr1": "task symbol start byte (task items only)",
       "attr2": "task symbol end byte",
-      "flags": "bit0 task item, bit1 checked"
+      "flags": "bit0 task item, bit1 checked",
+      "marker_end_byte": "exclusive end of the first-line list marker and padding, before any task checkbox",
+      "marker_end_utf16": "same marker endpoint in UTF-16; zero for other block kinds"
     },
     "table": {
       "attr0": "column count",
@@ -200,11 +204,13 @@
     }
   },
   "invariants": [
+    "Leaf content retains editable trailing whitespace: paragraph and setext content reaches physical line ends, table cells retain trailing padding, and ATX closing markers keep one required separator outside content. Space-based hard-break runs expose their spaces as content; deleting across the break removes the full source range of its marker and newline. Backslash hard breaks and soft breaks have empty content ranges.",
     "Blocks are in document order; a block's parent index is smaller than its own index or 0xFFFFFFFF for the document.",
     "Runs are in document order and contiguous per block; a run's parent is an earlier run of the same block or 0xFFFFFFFF.",
     "content_start >= start and content_end <= end and content_start <= content_end for every run.",
     "Content records of a block are in line order and lie inside the block's source range.",
     "Every byte offset lies inside a UTF-8 scalar boundary; every UTF-16 offset equals the count of code units before its byte offset.",
-    "Definition records never overlap a block's content record."
+    "Definition records never overlap a block's content record.",
+    "Item marker endpoints lie within the first source line, after the marker start and before task checkboxes; attr0 remains a display-column indentation offset, never a source length. Non-item marker endpoints are zero."
   ]
 }

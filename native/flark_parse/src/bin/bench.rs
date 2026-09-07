@@ -17,7 +17,7 @@ fn main() {
         let mut times = vec![]; let mut out_len = 0;
         for _ in 0..30 {
             let t = Instant::now();
-            let buf = Extractor::extract(&src);
+            let buf = Extractor::extract(&src).expect("generated benchmark must extract without deviations");
             times.push(t.elapsed().as_secs_f64() * 1000.0);
             out_len = buf.len() * 4;
         }

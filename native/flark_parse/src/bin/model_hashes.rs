@@ -13,6 +13,6 @@ fn main() {
     for file in ["common_mark_tests.json", "gfm_tests.json"] {
         let text = std::fs::read_to_string(format!("{root}/{file}")).expect("read");
         let cases: Vec<Case> = serde_json::from_str(&text).expect("json");
-        for c in &cases { let buf = to_bytes(&Extractor::extract(&c.markdown)); println!("{file}#{} {} {:016x}", c.example, buf.len(), fnv1a(&buf)); }
+        for c in &cases { let model = Extractor::extract(&c.markdown).unwrap_or_else(|error| panic!("{file} #{} extraction deviations: {:?}", c.example, error.deviations)); let buf = to_bytes(&model); println!("{file}#{} {} {:016x}", c.example, buf.len(), fnv1a(&buf)); }
     }
 }

@@ -18,7 +18,7 @@ fi
 case "$TRIPLE" in *darwin*) LIB=libflark_parse.dylib;; *) LIB=libflark_parse.so;; esac
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 PREBUILT="$WORK/prebuilt/$TRIPLE"; mkdir -p "$PREBUILT"
-if [ ! -f "$CRATE/target/release/$LIB" ]; then cargo build --release --locked --lib --manifest-path "$CRATE/Cargo.toml" || exit 1; fi
+cargo build --release --locked --lib --manifest-path "$CRATE/Cargo.toml" || exit 1
 cp "$CRATE/target/release/$LIB" "$PREBUILT/$LIB"
 APP="$WORK/consumer"; mkdir -p "$APP/bin"
 cat > "$APP/pubspec.yaml" <<PUB
@@ -47,7 +47,17 @@ DART
 # A minimal PATH: the Dart SDK's directory plus the system directories. This
 # is more robust than filtering the caller's PATH (runners reach cargo through
 # entries that do not hold the binary themselves).
-DART_DIR="$(dirname "$(command -v dart)")"
+DART_BIN="$(command -v dart)"
+# Homebrew exposes Dart and Cargo in the same bin directory. Resolve Dart's
+# symlink so the isolated PATH includes the SDK, not all Homebrew tools.
+while [ -L "$DART_BIN" ]; do
+  DART_LINK="$(readlink "$DART_BIN")"
+  case "$DART_LINK" in
+    /*) DART_BIN="$DART_LINK";;
+    *) DART_BIN="$(dirname "$DART_BIN")/$DART_LINK";;
+  esac
+done
+DART_DIR="$(cd "$(dirname "$DART_BIN")" && pwd)"
 CLEAN_PATH="$DART_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 cd "$APP" || exit 1
 PATH="$CLEAN_PATH" dart pub get >/dev/null || { echo "pub get failed"; exit 1; }

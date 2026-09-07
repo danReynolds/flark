@@ -8,8 +8,15 @@ import 'native.dart' as native;
 import 'render_model.dart';
 import 'schema.g.dart';
 
-typedef _ParseC = Int32 Function(Pointer<Uint8>, Uint32, Pointer<Pointer<Uint8>>, Pointer<Uint32>);
-typedef _ParseD = int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Uint32>);
+typedef _ParseC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Uint32>,
+    );
+typedef _ParseD =
+    int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Uint32>);
 typedef _AllocC = Pointer<Uint8> Function(Uint32);
 typedef _AllocD = Pointer<Uint8> Function(int);
 typedef _FreeC = Void Function(Pointer<Uint8>, Uint32);
@@ -29,7 +36,10 @@ final class FfiParseBackend implements FlarkParseBackend {
   FfiParseBackend._(this._parse, this._alloc, this._free, this._version) {
     final version = _version();
     if (version != RenderModelSchema.version) {
-      throw FlarkParseException(FlarkParseException.schemaMismatchCode, 'native flark_parse writes schema $version, this package reads ${RenderModelSchema.version}');
+      throw FlarkParseException(
+        FlarkParseException.schemaMismatchCode,
+        'native flark_parse writes schema $version, this package reads ${RenderModelSchema.version}',
+      );
     }
     _outCell = _alloc(16);
     _outPtr = _outCell.cast<Pointer<Uint8>>();
@@ -40,7 +50,9 @@ final class FfiParseBackend implements FlarkParseBackend {
 
   factory FfiParseBackend() {
     const product = bool.fromEnvironment('dart.vm.product');
-    final override = product ? null : Platform.environment['FLARK_PARSE_LIBRARY'];
+    final override = product
+        ? null
+        : Platform.environment['FLARK_PARSE_LIBRARY'];
     if (override != null && override.isNotEmpty) {
       final lib = DynamicLibrary.open(override);
       return FfiParseBackend._(
@@ -50,7 +62,12 @@ final class FfiParseBackend implements FlarkParseBackend {
         lib.lookupFunction<_VersionC, _VersionD>('flark_parse_schema_version'),
       );
     }
-    return FfiParseBackend._(native.flarkParse, native.flarkParseAlloc, native.flarkParseFree, native.flarkParseSchemaVersion);
+    return FfiParseBackend._(
+      native.flarkParse,
+      native.flarkParseAlloc,
+      native.flarkParseFree,
+      native.flarkParseSchemaVersion,
+    );
   }
 
   final _ParseD _parse;
@@ -70,6 +87,7 @@ final class FfiParseBackend implements FlarkParseBackend {
   @override
   RenderModel parse(String source) {
     if (_disposed) throw StateError('FfiParseBackend used after dispose');
+    validateFlarkSourceText(source);
     final bytes = utf8.encode(source);
     if (bytes.length > _inputCapacity) {
       _free(_input, _inputCapacity);

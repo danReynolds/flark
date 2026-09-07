@@ -1,6 +1,6 @@
 //! Shared test support: corpus loading and the schema invariants.
 #![allow(dead_code)]
-use flark_parse::schema::{self, block, content, definition, header, run};
+use flark_parse::schema::{self, block, block_kind, content, definition, header, run};
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]
@@ -41,6 +41,15 @@ pub fn check_invariants(src: &str, w: &[u32]) -> Result<(), String> {
         if s > e || e > src.len() { return Err(format!("block {i} range {s}..{e}")); }
         if !is_boundary(s) || !is_boundary(e) { return Err(format!("block {i} not on scalar boundary")); }
         if blk(i, block::START_UTF16) != utf16_of(s) || blk(i, block::END_UTF16) != utf16_of(e) { return Err(format!("block {i} utf16")); }
+        let marker_end = blk(i, block::MARKER_END_BYTE) as usize;
+        if blk(i, block::KIND) == block_kind::ITEM {
+            let line_end = src[s..].find(['\n', '\r']).map_or(src.len(), |n| s + n);
+            if marker_end < s || marker_end > line_end || !is_boundary(marker_end) || blk(i, block::MARKER_END_UTF16) != utf16_of(marker_end) {
+                return Err(format!("item {i} marker endpoint {marker_end}"));
+            }
+        } else if marker_end != 0 || blk(i, block::MARKER_END_UTF16) != 0 {
+            return Err(format!("non-item {i} has marker endpoint"));
+        }
         let p = blk(i, block::PARENT);
         if i == 0 { if p != u32::MAX { return Err("document parent".into()); } } else {
             if p as usize >= i { return Err(format!("block {i} parent {p}")); }

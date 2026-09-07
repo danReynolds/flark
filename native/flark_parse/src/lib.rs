@@ -8,31 +8,39 @@ mod text_pieces;
 
 use std::slice;
 
+pub const PARSE_OK: i32 = 0;
+pub const PARSE_INVALID_ARGUMENT: i32 = 1;
+pub const PARSE_INVALID_UTF8: i32 = 2;
+pub const PARSE_PANIC: i32 = 3;
+pub const PARSE_EXTRACTION_DEVIATION: i32 = 4;
+
 /// Parse `len` UTF-8 bytes at `src` and hand back a freshly allocated render
 /// model in `*out` / `*out_len` (bytes). A null `src` with `len == 0` is the
 /// empty document. Returns 0 on success, 1 for a null output argument or a
 /// null source with a non-zero length, 2 for invalid UTF-8, and 3 when the
-/// extraction panicked.
+/// extraction panicked, and 4 when a derived range or value failed validation.
 ///
 /// Panic containment is native-only: `wasm32-unknown-unknown` aborts on
 /// panic, so on the web a panic traps out of this call and the host must
 /// discard the instance and re-instantiate the module.
 #[no_mangle]
 pub extern "C" fn flark_parse(src: *const u8, len: u32, out: *mut *mut u8, out_len: *mut u32) -> i32 {
-    if out.is_null() || out_len.is_null() { return 1; }
-    if src.is_null() && len != 0 { return 1; }
+    if out.is_null() || out_len.is_null() { return PARSE_INVALID_ARGUMENT; }
+    unsafe { *out = std::ptr::null_mut(); *out_len = 0; }
+    if src.is_null() && len != 0 { return PARSE_INVALID_ARGUMENT; }
     let bytes: &[u8] = if src.is_null() { &[] } else { unsafe { slice::from_raw_parts(src, len as usize) } };
-    let Ok(text) = std::str::from_utf8(bytes) else { return 2; };
+    let Ok(text) = std::str::from_utf8(bytes) else { return PARSE_INVALID_UTF8; };
     match std::panic::catch_unwind(|| model::Extractor::extract(text)) {
-        Ok(words) => {
+        Ok(Ok(words)) => {
             let mut words = words.into_boxed_slice();
             let ptr = words.as_mut_ptr() as *mut u8;
             let n = (words.len() * 4) as u32;
             std::mem::forget(words);
             unsafe { *out = ptr; *out_len = n; }
-            0
+            PARSE_OK
         }
-        Err(_) => 3,
+        Ok(Err(_)) => PARSE_EXTRACTION_DEVIATION,
+        Err(_) => PARSE_PANIC,
     }
 }
 

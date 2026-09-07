@@ -1,8 +1,8 @@
-# Render model schema v1
+# Render model schema v3
 
-Generated from `schema/render_model_v1.json`; edit the JSON, then run `tool/gen_schema.py`.
+Generated from `schema/render_model_v3.json`; edit the JSON, then run `tool/gen_schema.py`.
 
-Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker.
+Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker. Empty lines owned only by a container have a zero-width content record on the innermost container. Its prefix_start identifies only that container prefix; lifting it retains the outer containers.
 
 Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in this order: lines, blocks, content, runs, definitions, strings. The string table is padded to a multiple of four bytes.
 
@@ -29,7 +29,7 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | 0 | `start_byte` |
 | 1 | `start_utf16` |
 
-## Block record (14 words)
+## Block record (16 words)
 
 | Word | Field |
 | --- | --- |
@@ -47,6 +47,8 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | 11 | `attr1` |
 | 12 | `attr2` |
 | 13 | `flags` |
+| 14 | `marker_end_byte` |
+| 15 | `marker_end_utf16` |
 
 ## Content record (8 words)
 
@@ -160,6 +162,8 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | `item` | `attr1` | task symbol start byte (task items only) |
 | `item` | `attr2` | task symbol end byte |
 | `item` | `flags` | bit0 task item, bit1 checked |
+| `item` | `marker_end_byte` | exclusive end of the first-line list marker and padding, before any task checkbox |
+| `item` | `marker_end_utf16` | same marker endpoint in UTF-16; zero for other block kinds |
 | `table` | `attr0` | column count |
 | `table` | `attr1` | column alignments packed two bits per column, column 0 in the low bits |
 | `table_row` | `flags` | bit0 header row |
@@ -196,9 +200,11 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 
 ## Invariants
 
+- Leaf content retains editable trailing whitespace: paragraph and setext content reaches physical line ends, table cells retain trailing padding, and ATX closing markers keep one required separator outside content. Space-based hard-break runs expose their spaces as content; deleting across the break removes the full source range of its marker and newline. Backslash hard breaks and soft breaks have empty content ranges.
 - Blocks are in document order; a block's parent index is smaller than its own index or 0xFFFFFFFF for the document.
 - Runs are in document order and contiguous per block; a run's parent is an earlier run of the same block or 0xFFFFFFFF.
 - content_start >= start and content_end <= end and content_start <= content_end for every run.
 - Content records of a block are in line order and lie inside the block's source range.
 - Every byte offset lies inside a UTF-8 scalar boundary; every UTF-16 offset equals the count of code units before its byte offset.
 - Definition records never overlap a block's content record.
+- Item marker endpoints lie within the first source line, after the marker start and before task checkboxes; attr0 remains a display-column indentation offset, never a source length. Non-item marker endpoints are zero.

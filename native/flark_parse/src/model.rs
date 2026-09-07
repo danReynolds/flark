@@ -1,6 +1,6 @@
 //! Flat render-model extraction over an unmodified comrak AST.
 //!
-//! See `schema/render_model_v1.json` and `SCHEMA.md` for the layout. The
+//! See `schema/render_model_v3.json` and `SCHEMA.md` for the layout. The
 //! extraction walks the tree once, iteratively, derives what comrak does not
 //! expose (per-line content ranges, reference definitions), corrects the two
 //! situations where comrak's inline positions are known to be off, and in
@@ -20,6 +20,11 @@ pub type RunRec = [u32; run::WORDS];
 /// A validation finding from report mode. `rule` is a stable identifier.
 #[derive(Clone, Debug)]
 pub struct Deviation { pub rule: &'static str, pub detail: String }
+
+/// Extraction refused to publish a model because a derived range or value did
+/// not agree with comrak's source positions or literal output.
+#[derive(Debug)]
+pub struct ExtractionError { pub deviations: Vec<Deviation> }
 
 /// Options for the render-model parse. Footnote definitions stay where they
 /// are written so every source byte keeps an owner and blocks stay in
@@ -107,6 +112,16 @@ struct ContainerNode { c: Container, parent: Option<usize>, block: usize }
 /// on original line `n` really lies on line `n + def_lines`.
 pub struct Shift { lines: Vec<LineSpan>, def_lines: usize }
 
+/// A cell buffer has an inherited column origin and unescaped pipes.
+#[derive(Clone, Copy)]
+struct Cell { start: usize, column_delta: isize }
+
+fn shift_columns(mut sp: Sourcepos, delta: isize) -> Sourcepos {
+    sp.start.column = sp.start.column.saturating_add_signed(delta);
+    sp.end.column = sp.end.column.saturating_add_signed(delta);
+    sp
+}
+
 /// One line of a paragraph-like leaf as comrak buffered it: `virt` is the
 /// number of virtual spaces a partially consumed tab contributed on a lazy
 /// line, which exist in comrak's buffer but not in the source.
@@ -136,7 +151,10 @@ pub struct Extractor<'a> {
 impl<'a> Extractor<'a> {
     /// The render model as little-endian u32 words; the string table is
     /// packed into the tail and padded to a whole word.
-    pub fn extract(src: &'a str) -> Vec<u32> { Self::run(src, false).0 }
+    pub fn extract(src: &'a str) -> Result<Vec<u32>, ExtractionError> {
+        let (model, deviations) = Self::run(src, true);
+        if deviations.is_empty() { Ok(model) } else { Err(ExtractionError { deviations }) }
+    }
     pub fn extract_with_report(src: &'a str) -> (Vec<u32>, Vec<Deviation>) { Self::run(src, true) }
 
     fn run(src: &'a str, collect: bool) -> (Vec<u32>, Vec<Deviation>) {
@@ -149,6 +167,7 @@ impl<'a> Extractor<'a> {
         ex.gap_definitions(&leaves);
         ex.definitions.sort_by_key(|d| d.start);
         ex.definitions.dedup_by_key(|d| d.start);
+        ex.empty_container_lines();
         let buf = ex.encode();
         (buf, ex.deviations)
     }
@@ -280,6 +299,17 @@ impl<'a> Extractor<'a> {
             _ => rec[block::KIND] = block_kind::OTHER,
         }
         drop(data);
+        if let Some(c) = container.filter(|c| c.kind == ContainerKind::Item) {
+            // The column offset can consume only part of a tab. Export the
+            // resulting source position; callers must never add columns to a
+            // byte/UTF-16 offset. Leave a task checkbox outside this marker.
+            let mut chain = self.chain(container_id);
+            chain.push(Container { checkbox: None, ..c });
+            let prefix = self.prefix_cursor(first_line, self.line_bytes(first_line), &chain);
+            let marker_end = self.li.line_start(first_line) + prefix.cur.pos;
+            rec[block::MARKER_END_BYTE] = marker_end as u32;
+            rec[block::MARKER_END_UTF16] = self.li.u16(marker_end);
+        }
         let idx = self.blocks.len();
         self.blocks.push(rec);
         (idx, container, is_leaf)
@@ -407,6 +437,43 @@ impl<'a> Extractor<'a> {
         self.content.push([line0 as u32, cs as u32, self.li.u16(cs), ce as u32, self.li.u16(ce), virt as u32, ps as u32, self.li.u16(ps)]);
     }
 
+    /// Empty container lines have no leaf AST node. Publish their authenticated
+    /// prefix range too, so hosts can exit one quote/item without scanning
+    /// markers or accidentally removing all enclosing containers.
+    fn empty_container_lines(&mut self) {
+        let lines = self.li.line_of(self.src.len()) + 1;
+        let mut claimed = vec![false; lines];
+        for b in &self.blocks {
+            if matches!(b[block::KIND], block_kind::PARAGRAPH | block_kind::HEADING | block_kind::CODE_BLOCK | block_kind::HTML_BLOCK | block_kind::THEMATIC_BREAK | block_kind::TABLE) {
+                let first = b[block::FIRST_LINE] as usize;
+                let end = (first + b[block::LINE_COUNT] as usize).min(lines);
+                for line in first..end { claimed[line] = true; }
+            }
+        }
+        let mut inner = vec![None; lines];
+        for (i, c) in self.containers.iter().enumerate() {
+            let b = &self.blocks[c.block];
+            let first = self.li.line_of(b[block::START_BYTE] as usize);
+            let last = self.li.line_of((b[block::END_BYTE] as usize).saturating_sub(1));
+            for line in first..=last.min(lines - 1) { if !claimed[line] { inner[line] = Some(i); } }
+        }
+        let mut by_container = vec![Vec::new(); self.containers.len()];
+        for (line, owner) in inner.into_iter().enumerate() {
+            if let Some(i) = owner { by_container[i].push(line); }
+        }
+        for (i, owned) in by_container.into_iter().enumerate() {
+            if owned.is_empty() { continue; }
+            let block_index = self.containers[i].block;
+            let chain = self.chain(Some(i));
+            self.blocks[block_index][block::CONTENT_OFFSET] = self.content.len() as u32;
+            for line in owned {
+                let p = self.paragraph_line(line, &chain);
+                if p.start == p.end { self.push_content(line, p.start, p.end, 0, p.prefix_start); }
+            }
+            self.blocks[block_index][block::CONTENT_COUNT] = self.content.len() as u32 - self.blocks[block_index][block::CONTENT_OFFSET];
+        }
+    }
+
     fn leaf(&mut self, leaf: &Leaf<'_>, chain: &[Container]) {
         let idx = leaf.idx;
         let data = leaf.node.data.borrow();
@@ -432,26 +499,28 @@ impl<'a> Extractor<'a> {
             }
             NodeValue::ThematicBreak => {}
             NodeValue::TableCell => {
-                let (cs, ce) = sourcepos_range(sp, &self.li, self.src.len()).unwrap_or((0, 0));
+                // Comrak parses a body row from first_nonspace, but records its
+                // cells and inline line_offsets relative to the HEADER's column.
+                // Translate that origin before reading any literal or unescaping
+                // pipes; repeated text cannot authenticate a shifted position.
+                let parent = leaf.node.parent().unwrap().data.borrow();
+                let column_delta = if matches!(parent.value, NodeValue::TableRow(false)) {
+                    let mut p = self.prefix_cursor(l0, self.line_bytes(l0), chain);
+                    p.cur.skip_whitespace();
+                    (p.cur.pos + 1) as isize - parent.sourcepos.start.column as isize
+                } else { 0 };
+                let corrected = shift_columns(sp, column_delta);
+                let (cs, ce) = sourcepos_range(corrected, &self.li, self.src.len()).unwrap_or((0, 0));
+                let rec = &mut self.blocks[idx];
+                rec[block::START_BYTE] = cs as u32; rec[block::START_UTF16] = self.li.u16(cs);
+                rec[block::END_BYTE] = ce as u32; rec[block::END_UTF16] = self.li.u16(ce);
                 let bytes = self.src.as_bytes();
-                let (mut a, mut b) = (cs, ce);
-                while a < b && bytes[a] == b' ' { a += 1; }
-                while b > a && bytes[b - 1] == b' ' { b -= 1; }
-                let rec_index = self.content.len();
-                self.push_content(l0, a, b, 0, a);
-                self.walk_inlines(leaf.node, idx as u32, Some((cs, ce)), None);
-                // In a pipeless table comrak offsets a body row's cells by the
-                // header row's indentation; the cell's runs, repaired by their
-                // literals, are the reliable extent of its content.
-                if self.runs.len() > first_run {
-                    let (mut lo, mut hi) = (usize::MAX, 0usize);
-                    for r in &self.runs[first_run..] { lo = lo.min(r[run::START_BYTE] as usize); hi = hi.max(r[run::END_BYTE] as usize); }
-                    let rec = &mut self.content[rec_index];
-                    if lo < rec[content::START_BYTE] as usize || hi > rec[content::END_BYTE] as usize || (rec[content::START_BYTE] as usize) < lo && lo - (rec[content::START_BYTE] as usize) <= 2 {
-                        rec[content::START_BYTE] = lo as u32; rec[content::START_UTF16] = self.li.u16(lo);
-                        rec[content::END_BYTE] = hi as u32; rec[content::END_UTF16] = self.li.u16(hi);
-                    }
-                }
+                let mut a = cs;
+                while a < ce && bytes[a] == b' ' { a += 1; }
+                // Trailing cell padding is editable whitespace. Trimming it
+                // reorders the next typed word, just as in a paragraph.
+                self.push_content(l0, a, ce, 0, a);
+                self.walk_inlines(leaf.node, idx as u32, Some(Cell { start: cs, column_delta }), None);
             }
             NodeValue::Heading(h) if !h.setext => {
                 let (span_s, span_e) = self.children_span(leaf.node, None, None);
@@ -462,7 +531,13 @@ impl<'a> Extractor<'a> {
                 while p < ce && (bytes[p] == b' ' || bytes[p] == b'\t') { p += 1; }
                 cs = p;
                 let mut q = ce; while q > cs && bytes[q - 1] == b'#' { q -= 1; }
-                if q < ce && (q == cs || bytes[q - 1] == b' ' || bytes[q - 1] == b'\t') { ce = q; while ce > cs && (bytes[ce - 1] == b' ' || bytes[ce - 1] == b'\t') { ce -= 1; } }
+                if q < ce && (q == cs || bytes[q - 1] == b' ' || bytes[q - 1] == b'\t') {
+                    // Keep the required separator with the closing marker;
+                    // additional spaces remain editable content.
+                    ce = if q > cs { q - 1 } else { q };
+                } else {
+                    ce = self.li.line_end(l0, self.src.len());
+                }
                 if span_s < span_e { if span_s < cs || span_e > ce { self.dev("heading-content", || format!("block {idx}: children {span_s}..{span_e} outside derived {cs}..{ce}")); } }
                 span.start = cs; span.end = ce;
                 self.push_content(l0, span.start, span.end, 0, span.prefix_start);
@@ -475,10 +550,18 @@ impl<'a> Extractor<'a> {
                 // make a table header (the remainder is re-created as a new node).
                 let split_by_table = kind == block_kind::PARAGRAPH && self.blocks.get(idx + 1).map_or(false, |b| b[block::KIND] == block_kind::TABLE && b[block::FIRST_LINE] as usize == l1 + 1);
                 let (shift, records) = self.strip_definitions(l0, last, chain, !split_by_table);
-                for r in records { self.push_content(r.line0, r.start, r.end, 0, r.prefix_start); }
+                for r in records {
+                    // The parser buffer trims trailing whitespace, but an
+                    // editing content span must retain it. Otherwise typing a
+                    // space legalizes the caret backwards and the next letter
+                    // is inserted before that space. Break-marker runs still
+                    // authenticate any whitespace hidden by the projection.
+                    let end = self.li.line_end(r.line0, self.src.len());
+                    self.push_content(r.line0, r.start, end, 0, r.prefix_start);
+                }
                 // That split paragraph also had its pipes unescaped, so its inline
                 // positions carry the same shift as a table cell's.
-                let pipes = if split_by_table { Some((self.blocks[idx][block::START_BYTE] as usize, self.blocks[idx][block::END_BYTE] as usize)) } else { None };
+                let pipes = if split_by_table { Some(Cell { start: self.blocks[idx][block::START_BYTE] as usize, column_delta: 0 }) } else { None };
                 self.walk_inlines(leaf.node, idx as u32, pipes, shift.as_ref());
             }
             _ => { self.walk_inlines(leaf.node, idx as u32, None, None); }
@@ -676,7 +759,7 @@ impl<'a> Extractor<'a> {
         }
     }
 
-    fn children_span<'b>(&mut self, node: &'b AstNode<'b>, cell: Option<(usize, usize)>, shift: Option<&Shift>) -> (usize, usize) {
+    fn children_span<'b>(&mut self, node: &'b AstNode<'b>, cell: Option<Cell>, shift: Option<&Shift>) -> (usize, usize) {
         let mut first = None; let mut last = None;
         for ch in node.children() {
             if let Some((cs, ce)) = self.corrected_range(ch.data.borrow().sourcepos, cell, shift) { if first.is_none() { first = Some(cs); } last = Some(ce); }
@@ -715,8 +798,8 @@ impl<'a> Extractor<'a> {
         removed
     }
 
-    fn pipe_shift(&self, byte: usize, cell: Option<(usize, usize)>) -> usize {
-        let Some((cell_start, _)) = cell else { return byte; };
+    fn pipe_shift(&self, byte: usize, cell: Option<Cell>) -> usize {
+        let Some(Cell { start: cell_start, .. }) = cell else { return byte; };
         let mut b = byte; let mut k0 = 0usize;
         loop {
             // A backslash at b-1 whose pipe sits at b was removed too: count through b+1.
@@ -727,8 +810,9 @@ impl<'a> Extractor<'a> {
         b
     }
 
-    fn corrected_range(&mut self, sp: Sourcepos, cell: Option<(usize, usize)>, shift: Option<&Shift>) -> Option<(usize, usize)> {
+    fn corrected_range(&mut self, sp: Sourcepos, cell: Option<Cell>, shift: Option<&Shift>) -> Option<(usize, usize)> {
         if sp.start.line == 0 || sp.end.line == 0 { return None; }
+        let sp = shift_columns(sp, cell.map_or(0, |c| c.column_delta));
         let (s, e) = match shift {
             Some(sh) => (self.shifted(sp.start.line, sp.start.column.saturating_sub(1), sh), self.shifted(sp.end.line, sp.end.column, sh)),
             None => sourcepos_range(sp, &self.li, self.src.len())?,
@@ -740,7 +824,7 @@ impl<'a> Extractor<'a> {
     }
 
     /// Pass 2 inline walk, iterative: runs in document order, contiguous per block.
-    fn walk_inlines<'b>(&mut self, leaf: &'b AstNode<'b>, blk: u32, cell: Option<(usize, usize)>, shift: Option<&Shift>) {
+    fn walk_inlines<'b>(&mut self, leaf: &'b AstNode<'b>, blk: u32, cell: Option<Cell>, shift: Option<&Shift>) {
         let content_from = self.blocks[blk as usize][block::CONTENT_OFFSET] as usize;
         self.run_delta = 0;
         // Allow a small backward window: comrak can also place a run too far right.
@@ -793,10 +877,23 @@ impl<'a> Extractor<'a> {
         }
     }
 
-    fn inline_record<'b>(&mut self, node: &'b AstNode<'b>, blk: u32, parent: u32, cell: Option<(usize, usize)>, shift: Option<&Shift>, content_from: usize) -> Option<u32> {
+    fn inline_record<'b>(&mut self, node: &'b AstNode<'b>, blk: u32, parent: u32, cell: Option<Cell>, shift: Option<&Shift>, content_from: usize) -> Option<u32> {
         let data = node.data.borrow();
         let sp = data.sourcepos;
-        let (s, e) = self.corrected_range(sp, cell, shift)?;
+        let (mut s, mut e) = self.corrected_range(sp, cell, shift)?;
+        if matches!(data.value, NodeValue::SoftBreak | NodeValue::LineBreak) && !self.src[s..e].contains(['\n', '\r']) {
+            // comrak can leave a break's sourcepos inside a multiline link's
+            // title. Its preceding sibling owns the true closing boundary.
+            if let Some(previous) = self.runs.iter().rev().take_while(|r| r[run::BLOCK] == blk).find(|r| r[run::PARENT] == parent) {
+                let end = previous[run::END_BYTE] as usize;
+                let line = self.li.line_of(end);
+                let line_end = self.li.line_end(line, self.src.len());
+                if end >= s && self.src.as_bytes()[end..line_end].iter().all(|b| matches!(b, b' ' | b'\t')) {
+                    s = end;
+                    e = self.li.line_end_with_break(line, self.src.len());
+                }
+            }
+        }
         let src = self.src; let bytes = src.as_bytes();
         let slice = &src[s..e];
         let mut rec: RunRec = [0; run::WORDS];
@@ -804,13 +901,19 @@ impl<'a> Extractor<'a> {
         let (kind, cs, ce): (u32, usize, usize) = match &data.value {
             NodeValue::Text(t) => {
                 let t: &str = &**t;
+                // A repeated literal can match the closing syntax of a preceding
+                // multiline link even though comrak positioned it too early.
+                // Siblings cannot overlap: authenticate relocation after the
+                // preceding sibling's complete range, not only its text children.
+                let sibling_end = self.runs.iter().rev().take_while(|r| r[run::BLOCK] == blk)
+                    .find(|r| r[run::PARENT] == parent).map_or(0, |r| r[run::END_BYTE] as usize);
                 // Repair: comrak's inline line counter does not advance across a bare
                 // CR, so positions after one are short by the line-ending bytes.
                 // Find the literal forward of the last text run and carry the offset.
                 let replacement_like = slice.contains('&') || slice.contains('\t') || slice.contains("\\|") || (t.len() > slice.len() && t.trim_start_matches(' ') == slice);
-                let (s, e, slice) = if t != slice && !t.is_empty() && t != "\n" && !replacement_like {
+                let (s, e, slice) = if (t != slice || s < sibling_end) && !t.is_empty() && t != "\n" && !replacement_like {
                     let block_end = self.blocks[blk as usize][block::END_BYTE] as usize;
-                    let mut from = self.last_text_end.max(s.saturating_sub(4)).min(src.len());
+                    let mut from = self.last_text_end.max(sibling_end).max(s.saturating_sub(4)).min(src.len());
                     while from > 0 && !src.is_char_boundary(from) { from -= 1; }
                     let mut to = block_end.max(from).min(src.len());
                     while to < src.len() && !src.is_char_boundary(to) { to += 1; }
@@ -859,7 +962,6 @@ impl<'a> Extractor<'a> {
                 // comrak's end column drifts when a span crosses CR line endings;
                 // the closing run is the next backtick run of exactly n after the
                 // opener (CommonMark), validated below against the literal.
-                let mut e = e;
                 if s + n <= bytes.len() && bytes[s..s + n].iter().all(|b| *b == b'`') && !(e >= s + 2 * n && bytes[e - n..e].iter().all(|b| *b == b'`') && bytes.get(e) != Some(&b'`')) {
                     let mut i = s + n;
                     while i < bytes.len() {
@@ -903,9 +1005,13 @@ impl<'a> Extractor<'a> {
                 if s < e && bytes[s] == b'[' {
                     let (cs, ce) = { let (a, b) = self.children_span(node, cell, shift); if a == 0 && b == 0 { (s + 1, s + 1) } else { (a, b) } };
                     self.link_aux(&mut rec, ce, e);
+                    if bytes.get(e.saturating_sub(1)) != Some(&b')') {
+                        e = self.repair_inline_link(&mut rec, ce, blk).unwrap_or(e);
+                    }
                     (run_kind::LINK, cs, ce)
                 } else {
-                    let (cs, ce) = (if s < e && bytes[s] == b'<' { s + 1 } else { s }, if s < e && bytes[e - 1] == b'>' { e - 1 } else { e });
+                    let bracketed = s < e && bytes[s] == b'<' && bytes[e - 1] == b'>';
+                    let (cs, ce) = if bracketed { (s + 1, e - 1) } else { (s, e) };
                     rec[run::AUX0] = cs as u32; rec[run::AUX1] = ce as u32;
                     (run_kind::AUTOLINK, cs, ce)
                 }
@@ -914,11 +1020,21 @@ impl<'a> Extractor<'a> {
                 if s < e && bytes[s] == b'!' {
                     let (cs, ce) = { let (a, b) = self.children_span(node, cell, shift); if a == 0 && b == 0 { (s + 2, s + 2) } else { (a, b) } };
                     self.link_aux(&mut rec, ce, e);
+                    if bytes.get(e.saturating_sub(1)) != Some(&b')') {
+                        e = self.repair_inline_link(&mut rec, ce, blk).unwrap_or(e);
+                    }
                     (run_kind::IMAGE, cs, ce)
                 } else { let sl = slice.to_string(); self.dev("image-delims", || format!("block {blk} {:?}", sl)); (run_kind::IMAGE, s, e) }
             }
             NodeValue::SoftBreak => (run_kind::SOFT_BREAK, e, e),
-            NodeValue::LineBreak => (run_kind::HARD_BREAK, e, e),
+            NodeValue::LineBreak => {
+                let line_end = self.li.line_end(self.li.line_of(s), self.src.len()).min(e);
+                // Spaces before a hard break stay editable. The full run
+                // still owns the marker and newline for atomic break deletion.
+                if line_end > s && self.src.as_bytes()[s..line_end].iter().all(|b| matches!(b, b' ' | b'\t')) {
+                    (run_kind::HARD_BREAK, s, line_end)
+                } else { (run_kind::HARD_BREAK, e, e) }
+            }
             NodeValue::HtmlInline(_) => (run_kind::HTML_INLINE, s, e),
             NodeValue::FootnoteReference(_) => { if e > s + 3 { rec[run::AUX0] = (s + 2) as u32; rec[run::AUX1] = (e - 1) as u32; } (run_kind::FOOTNOTE_REF, s, e) }
             NodeValue::Escaped => { let (a, b) = self.children_span(node, cell, shift); if a < b { (run_kind::ESCAPE, a, b) } else { (run_kind::ESCAPE, (s + 1).min(e), e) } }
@@ -958,6 +1074,46 @@ impl<'a> Extractor<'a> {
     /// Destination and title ranges after a link's `]`, using comrak's own
     /// destination and title scanners; angle brackets are excluded from the
     /// destination range everywhere. Reference-style links carry the label.
+    /// Complete an AST-authenticated inline link whose sourcepos ends before
+    /// its closing parenthesis (notably a title on another physical line).
+    fn repair_inline_link(&self, rec: &mut RunRec, ce: usize, blk: u32) -> Option<usize> {
+        if self.src.as_bytes().get(ce..ce + 2)? != b"](" { return None; }
+        // Use the already derived content records so quote/list prefixes do
+        // not become part of the link grammar. This rare sourcepos repair is
+        // bounded by the current leaf, and maps scanner offsets back to source.
+        let from = self.blocks[blk as usize][block::CONTENT_OFFSET] as usize;
+        let mut bytes = Vec::new();
+        let mut source_offsets = Vec::new();
+        for line in &self.content[from..] {
+            let start = (line[content::START_BYTE] as usize).max(ce);
+            let end = line[content::END_BYTE] as usize;
+            if end < start { continue; }
+            bytes.extend_from_slice(&self.src.as_bytes()[start..end]);
+            source_offsets.extend(start..end);
+            bytes.push(b'\n'); source_offsets.push(end);
+        }
+        let mut p = 2;
+        while bytes.get(p).is_some_and(|b| reference_definitions::isspace(*b)) { p += 1; }
+        let (ds, de, consumed) = reference_definitions::scan_link_url(bytes.get(p..)?)?;
+        let destination = (*source_offsets.get(p + ds)?, *source_offsets.get(p + de)?);
+        p += consumed;
+        while bytes.get(p).is_some_and(|b| reference_definitions::isspace(*b)) { p += 1; }
+        let mut title = None;
+        if bytes.get(p) != Some(&b')') {
+            let n = reference_definitions::scan_link_title(bytes.get(p..)?)?;
+            title = Some((*source_offsets.get(p + 1)?, *source_offsets.get(p + n - 1)?));
+            p += n;
+            while bytes.get(p).is_some_and(|b| reference_definitions::isspace(*b)) { p += 1; }
+        }
+        if bytes.get(p) != Some(&b')') { return None; }
+        rec[run::AUX0] = destination.0 as u32; rec[run::AUX1] = destination.1 as u32;
+        rec[run::FLAGS] &= !3;
+        if let Some((s, e)) = title {
+            rec[run::AUX2] = s as u32; rec[run::AUX3] = e as u32; rec[run::FLAGS] |= 2;
+        }
+        Some(source_offsets[p] + 1)
+    }
+
     fn link_aux(&self, rec: &mut RunRec, ce: usize, e: usize) {
         let bytes = self.src.as_bytes();
         let mut p = ce;
