@@ -1,0 +1,842 @@
+{
+  "cases": 390,
+  "runtimes": [
+    "native",
+    "aot",
+    "js",
+    "dart-wasm"
+  ],
+  "system": "macOS-26.2-arm64-arm-64bit-Mach-O",
+  "wasmBytes": 13123001,
+  "wasmSha256": "2091e763ffc72ce25967582c08c7b75ae686edc674cddc83c57405d112a53b65",
+  "baseCommit": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "dirtyCheckout": true,
+  "dart": "Dart SDK version: 3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"",
+  "node": "v22.23.0",
+  "rust": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "sourceHashes": {
+    "lib/assets/highlight_worker.mjs": "af88b2f85d29679fcf458c143bcaff8d2f92cd6bb0dbb5ef0078a0b079b3e674",
+    "lib/flark_tree_sitter.dart": "4cb3ae7beec65f844bf99a3fa281d90f143b9cb2d9cf45c8108fd8094f9371a0",
+    "lib/highlight_worker.dart": "411fd14eb030c4ff9f77a9db60528d71837bf5cb1550939feee7c9ed8bdb8e43",
+    "lib/src/analyzer.dart": "eef8c46b26243bb2adf533bd857f5ec149c0834560af3eb36ae6e1657e806909",
+    "lib/src/backend.dart": "b9a5a6b70945d16711dd32d2b97406c9f738c7d9fd5ffb64774aab0a23d0779a",
+    "lib/src/backend_ffi.dart": "792c1a2f8a3f72e3037c18f2719968245ae14b95e2b814eabef15e77fd0d0cc6",
+    "lib/src/backend_web.dart": "2087ccc63c2f5d2800cd6c9674656676de9bc4b21246cb8d674622963faa6a5a",
+    "lib/src/catalog.dart": "271c8c4522d82e3ba8d962fb8640f299783a07a20011ed85b7550d95f010896b",
+    "lib/src/edit.dart": "11eba48094f2f5f8cef26d00f6eab944dc3e118930620cacdb74ee168da14e53",
+    "lib/src/highlight_native.dart": "f2a1751addd2ada01978af69a920e7e51d3b1f3d4ad802bdcfd832b5cf698153",
+    "lib/src/highlight_queue.dart": "007152c64cb6df8ac6a3efd604bcfd2733626e05d511f4d2131a08588cb6be37",
+    "lib/src/highlight_transport.dart": "3a699a8fe281766d047c2ed88a8324686e0240b3db133d8d1ceb6c022532f6ee",
+    "lib/src/highlight_web.dart": "0ad53540ac2adc7c35832f55af0e02fb94b605d5f0538ef49f04a3030f82dd4c",
+    "lib/src/model.dart": "1108c5110459b5ce5b830ea39d55d76ab1aff1c0a4faada04e3520d5786b1efd",
+    "lib/src/native.dart": "f7087bba8ade4c6f894a141c8dd986047eee87ca50d12da22b118f777bda57a2",
+    "lib/wasm.dart": "7f94bcc35b6fac7f55e33f16476156f6316c3579ff169a052ab2ca29184abf9f",
+    "hook/build.dart": "79ceaa30a9619435fe01591ed165cd15bd20a16542a38d08341d07172ce14809",
+    "native/src/abi.rs": "549fd7cec58a04445856e37bbef72cb2242d190237bca5a726aa2244114e08d9",
+    "native/src/bin/analyze.rs": "430139b7846c2ab4637aa89972c08acb367df8d6e32c66a8fe3710e47ac15ffd",
+    "native/src/detect.rs": "c2487bdc1533f6b38170b6044b5c34b9f08bc9138c62a2b51c346fdd507639d6",
+    "native/src/edit.rs": "319145110cea66362e9049003d461130ed561da805d48ecad4594b6e54228f02",
+    "native/src/languages.rs": "b0a2c431449fc15df4c5463dc4bc088d570cc0797dd93d0e7cd1d16eacc2d985",
+    "native/src/lib.rs": "0284bfaab5e9d3e1ae13a55e0d6eeb61f130478db67a54ef4cbc0b9fee3a2e08",
+    "native/src/syntax.rs": "24324491364381e0fe4fca840cc40c9a0da05f9219b7c4fc51f4ce8ffc0e179a",
+    "native/queries/bash.scm": "0b92d94f448aea4ebc38b4ec2a428d8c31d1431e2d4390b960bb0b9b89e0bb43",
+    "native/queries/css.scm": "37add05d8543209ea5cff6ad6d4fa674b55270270d50bea19c096d77b26db3a6",
+    "native/queries/dart.scm": "f5323b5fee32b13d3de1af44c6be1aa03580dfd94f7d9b166db0c12d4ae2ea3c",
+    "native/queries/detect/bash.scm": "907c43a0c55a0016a6441117e79b975ec0cac1c103817ef2137adfca2a09345d",
+    "native/queries/detect/css.scm": "ad5a8d1d73fc02ddf1d5c2eabccabb6a1fbd5bb4f68e32386346e7aef3606db9",
+    "native/queries/detect/dart.scm": "69199cb40ee7a9d0af064e19f3b84b1968f8116d4756ae2d16680051eb01e115",
+    "native/queries/detect/go.scm": "a7ab8158e96ce45e979617a03056677c062167d3a19da621b57049c39fb835f7",
+    "native/queries/detect/html.scm": "d667eeb4d56eaf48eb978eba4e49aeb73c01bab1b76ac55a7efdca376fff4432",
+    "native/queries/detect/javascript.scm": "76018228ee23c246db881359c1de4331d9e572dffca333fc792dc684884d4043",
+    "native/queries/detect/json.scm": "37136b28a8b2c8c27ee067342aef29290620e8055ad37b7d7df338e2383e648c",
+    "native/queries/detect/python.scm": "8e7faf9ceb29576946f7c030499c331d1c631f8cbf6f9b347834fc3f364d18d8",
+    "native/queries/detect/ruby.scm": "194636a81034d15afbb3437d53e3ad8410a343829163d0f11c7df15a359044f1",
+    "native/queries/detect/rust.scm": "53aec4c2b9e726bdd06300acf9a4f8dcd1d305a510ea16dc15a9a82b6e9fb7a4",
+    "native/queries/detect/sql.scm": "9c893f1be9bb96a332022d023a33e7b9b22929a26dbf2944723a6f04a3bcfa5c",
+    "native/queries/detect/typescript.scm": "d865e54a61ea37c9e9130bf9f8bebf809b6657a60f01207a96f984eb20a98cab",
+    "native/queries/detect/xml.scm": "533a3096bde832f980c669c2870a1bba8d4b08727fe12e87453af1adc54927b0",
+    "native/queries/detect/yaml.scm": "54784a012e1c81e78f714f028a5b20dfafc5bc80e63914e18a633862f477f7b7",
+    "native/queries/go.scm": "b294732c855725dfd985db47cd1da09030aae737b1dbb53790bbaac08faee2f1",
+    "native/queries/html.scm": "8c599913b587b42a7ffd7164e2b8481f817d5fb8146e4fc4550b8ea91104bb59",
+    "native/queries/javascript.scm": "e4526c7f650007e87addb5e0d35db7090b6e172eb50b8ed3e8b680876965ba5e",
+    "native/queries/json.scm": "284046b4a109d0686fe6c5b73a57afa48db0f511f21ae9474c2259cf5b0aaaee",
+    "native/queries/python.scm": "6dfd8d933a811d031638dd9729325b6932bae9522e95fb87714c454b02bf3830",
+    "native/queries/ruby.scm": "36e9af61d57599f7abc2032ed7bc7faf28eb91e55cb9a0740eeba1c3f6c3205d",
+    "native/queries/rust.scm": "35bc9046476ae7121fd2d614fde803ed484916527d0fa43a976e356058dff04c",
+    "native/queries/sql.scm": "f48dc0d8e0bad4962257dc9ef05bd0898e92be74b4703fcf8ee38519d76cc187",
+    "native/queries/typescript.scm": "e4526c7f650007e87addb5e0d35db7090b6e172eb50b8ed3e8b680876965ba5e",
+    "native/queries/xml.scm": "d6da8e095f7ade22ddb0aa6fca743cf06c99df67545ac0de564e82879a8547ca",
+    "native/queries/yaml.scm": "3b1b6c55bcde956593d295fc48cc9cfca5dcf2e7e010d7c266c01a841d66634d",
+    "native/examples/stages.rs": "4375073dd4a94625775040049e03e91dc36d49761223a05cee9a7c8f934eff79",
+    "native/examples/tree.rs": "32f3249125bd2d62b8bbe3338a0be9fb0fee5b0de333385a6c94ca97434bdcac",
+    "bin/flark_tree_sitter_bench.dart": "6e8f8a6fe4194b6c5bb9fda6eb8ff2d1dc900b2b9b37ea2dd36e9fb19345e7bd",
+    "bin/flark_tree_sitter_edit_bench.dart": "5a1a4a2f98d212206885fa744c447d1ae4b150b8b93e6565968c65b6946b5f62",
+    "bin/flark_tree_sitter_probe.dart": "15eddeb85be90599e3adbcfbbeffad313ae01431beaef795f7d7b59c8cd071b6",
+    "bin/flark_tree_sitter_typing_bench.dart": "f4aa8f4aff81ee62e84afe49db262605c999e83ae19c5654631f0fe1add82fee",
+    "bin/flark_tree_sitter_worker_probe.dart": "70248b346d2d2ac0daa82b045f26a1a9ca1f3d15b8072bae6a6000f69555f4cd",
+    "test/analyzer_test.dart": "bacb2b4e73699f71c4d58fe71f5074d64bf8e3d4c4670ff39c052662ce14f193",
+    "test/catalog_test.dart": "93bc62f9803b6e829bf9be0859d8c213a2a7d5f6b55f8f4d83100f97139ee3a7",
+    "test/detection_contract_test.dart": "e583052e11d8a017e26d4aceb48af094a752c1429afeae92bf509a75db3eeb02",
+    "test/edit_test.dart": "d7d3a3d0d81a1e374e3ea0a16d69d79f75d7c3d73bfcebb9361f8400ddbde2b9",
+    "test/highlight_worker_test.dart": "9cc64f4bde1ae4c8d5a608dd690728815d8c98f5bae0837bbde1354273117f29",
+    "tool/bench.dart": "d04f0f66d0aa5bbb20f01e401d3baf8f030bd3b03f670c74b303d532006b6632",
+    "tool/browser_probe.dart": "1d3066cf6be23d472e3b0081afcc749ba89c09e7c1e4b2bd08bb91d75d3351fd",
+    "tool/build_wasm.py": "d96aa37cc30ecfe82a6e663fd3c0ab47a894fd6db2704983adf3aa9db0d0be96",
+    "tool/catalog_cases.dart": "dae6e5648a9670738a623944df8d4542a6364da141167d064f05f59b1e2c5f32",
+    "tool/clock_native.dart": "c331bba33725f4d7476cd3e70552db96c544cab87af404c181cd2c9d587ef8a7",
+    "tool/clock_web.dart": "ae2c8598fbaf59ed5854279f2fce9da9856670b1648170201ba14ecca0cf2727",
+    "tool/edit_bench.dart": "0915de29cedbbfd905f8ab0aa6c839fdc673a87a2d53c5b589817d83809ea835",
+    "tool/edit_cases.dart": "3e1e096d65802990d300b8edb40de809001fe320e3dab9af53efe020ef45f003",
+    "tool/probe.dart": "eabf64f055f5ecb8533205de47568e6d4fa1b161038fca8e164ab343f20af956",
+    "tool/probe_native.dart": "e207369c0804eefc356820c1f63a492635069e32a46b05312738b3bc6d9f530a",
+    "tool/probe_web.dart": "8dbceb3a982266e9529d243a1bea181bba3f679ac321850cb9d237760b7022ca",
+    "tool/run_probe.mjs": "5e3e7b2926acc451050256d6ff288eb8441b15178bd7f20b296c75917d8be217",
+    "tool/serve_probe.py": "b7c9d40722d4907c0aaf5be7608a683e8ba35f6a9d1d5e261fc01d7339035983",
+    "tool/typing_bench.dart": "0363be0e7412967399b2a1d9710b07da1d448e1debde28447648af8097ec04f4",
+    "tool/verify.py": "7b4d473054972f679d9d9d431d2e38c88f220e944010af7939e4b8c1edd43945",
+    "tool/worker_native.dart": "e63174d0602e8580b3dd87b596f1a70ff0ed2239841992469b6df96cd14a812c",
+    "tool/worker_probe.dart": "d105203c45af1f03167da397d4af28cb168035ae719fef092e226fbcc987d991",
+    "tool/worker_web.dart": "d4952599f4d16a5c6f220dd94ed907b94ffe1ccda1e7da1738f4c5937f670353",
+    "pubspec.yaml": "c4a129db4d01a9be377a38929002c73dabf99099f136a7859907e708d1c6aab3",
+    "native/Cargo.toml": "8717e1e61a3f35149b3f5a5a61b93df00a895054fbc9f410acde3b7d73d5877a",
+    "native/Cargo.lock": "988566f9f1fa3a4f9b80ff85c2fc0adfbd387d2c84883bee58e461546f514e32",
+    "native/wasm_compat.h": "91fd60503ce74b6f38706158caf7e9dd2c23268ba0f352e9f203f5f58145ad1d"
+  },
+  "nativeWorker": {
+    "comparisons": 412,
+    "burstRequests": 40,
+    "startupMicros": 258505,
+    "detection": [
+      {
+        "language": "dart",
+        "sampleUnits": 31,
+        "samples": 39,
+        "micros": {
+          "p50": 594,
+          "p95": 785,
+          "max": 1005
+        }
+      },
+      {
+        "language": "dart",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1675,
+          "p95": 2060,
+          "max": 2193
+        }
+      },
+      {
+        "language": "javascript",
+        "sampleUnits": 42,
+        "samples": 39,
+        "micros": {
+          "p50": 526,
+          "p95": 801,
+          "max": 823
+        }
+      },
+      {
+        "language": "javascript",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 925,
+          "p95": 1206,
+          "max": 1211
+        }
+      },
+      {
+        "language": "python",
+        "sampleUnits": 31,
+        "samples": 39,
+        "micros": {
+          "p50": 577,
+          "p95": 730,
+          "max": 934
+        }
+      },
+      {
+        "language": "python",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1747,
+          "p95": 2054,
+          "max": 2137
+        }
+      },
+      {
+        "language": "yaml",
+        "sampleUnits": 31,
+        "samples": 39,
+        "micros": {
+          "p50": 636,
+          "p95": 890,
+          "max": 899
+        }
+      },
+      {
+        "language": "yaml",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1649,
+          "p95": 1948,
+          "max": 2109
+        }
+      },
+      {
+        "language": "ruby",
+        "sampleUnits": 29,
+        "samples": 39,
+        "micros": {
+          "p50": 443,
+          "p95": 649,
+          "max": 670
+        }
+      },
+      {
+        "language": "ruby",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1397,
+          "p95": 1710,
+          "max": 1715
+        }
+      },
+      {
+        "language": "typescript",
+        "sampleUnits": 30,
+        "samples": 39,
+        "micros": {
+          "p50": 392,
+          "p95": 584,
+          "max": 599
+        }
+      },
+      {
+        "language": "typescript",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1158,
+          "p95": 1426,
+          "max": 1473
+        }
+      },
+      {
+        "language": "rust",
+        "sampleUnits": 32,
+        "samples": 39,
+        "micros": {
+          "p50": 636,
+          "p95": 862,
+          "max": 892
+        }
+      },
+      {
+        "language": "rust",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1612,
+          "p95": 1907,
+          "max": 1939
+        }
+      },
+      {
+        "language": "go",
+        "sampleUnits": 45,
+        "samples": 39,
+        "micros": {
+          "p50": 667,
+          "p95": 1002,
+          "max": 1012
+        }
+      },
+      {
+        "language": "go",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1414,
+          "p95": 1648,
+          "max": 1660
+        }
+      },
+      {
+        "language": "json",
+        "sampleUnits": 20,
+        "samples": 39,
+        "micros": {
+          "p50": 550,
+          "p95": 787,
+          "max": 822
+        }
+      },
+      {
+        "language": "json",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1425,
+          "p95": 1587,
+          "max": 1595
+        }
+      },
+      {
+        "language": "css",
+        "sampleUnits": 39,
+        "samples": 39,
+        "micros": {
+          "p50": 523,
+          "p95": 703,
+          "max": 792
+        }
+      },
+      {
+        "language": "css",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1370,
+          "p95": 1742,
+          "max": 1818
+        }
+      },
+      {
+        "language": "bash",
+        "sampleUnits": 31,
+        "samples": 39,
+        "micros": {
+          "p50": 533,
+          "p95": 836,
+          "max": 845
+        }
+      },
+      {
+        "language": "bash",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1720,
+          "p95": 2003,
+          "max": 2072
+        }
+      },
+      {
+        "language": "html",
+        "sampleUnits": 29,
+        "samples": 39,
+        "micros": {
+          "p50": 452,
+          "p95": 697,
+          "max": 735
+        }
+      },
+      {
+        "language": "html",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1639,
+          "p95": 1984,
+          "max": 1988
+        }
+      },
+      {
+        "language": "xml",
+        "sampleUnits": 39,
+        "samples": 39,
+        "micros": {
+          "p50": 734,
+          "p95": 926,
+          "max": 1077
+        }
+      },
+      {
+        "language": "xml",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 1751,
+          "p95": 2020,
+          "max": 2046
+        }
+      },
+      {
+        "language": "sql",
+        "sampleUnits": 44,
+        "samples": 39,
+        "micros": {
+          "p50": 435,
+          "p95": 585,
+          "max": 592
+        }
+      },
+      {
+        "language": "sql",
+        "sampleUnits": 128,
+        "samples": 39,
+        "micros": {
+          "p50": 782,
+          "p95": 972,
+          "max": 983
+        }
+      }
+    ],
+    "results": [
+      {
+        "language": "typescript",
+        "seedUnits": 372,
+        "samples": 90,
+        "inputMicros": {
+          "p50": 82,
+          "p95": 187,
+          "max": 241
+        },
+        "colorLatencyMicros": {
+          "p50": 499,
+          "p95": 1138,
+          "max": 3526
+        },
+        "superseded": 0
+      },
+      {
+        "language": "typescript",
+        "seedUnits": 8060,
+        "samples": 90,
+        "inputMicros": {
+          "p50": 205,
+          "p95": 265,
+          "max": 376
+        },
+        "colorLatencyMicros": {
+          "p50": 3060,
+          "p95": 3674,
+          "max": 3971
+        },
+        "superseded": 0
+      },
+      {
+        "language": "rust",
+        "seedUnits": 363,
+        "samples": 96,
+        "inputMicros": {
+          "p50": 120,
+          "p95": 305,
+          "max": 1993
+        },
+        "colorLatencyMicros": {
+          "p50": 792,
+          "p95": 3406,
+          "max": 4649
+        },
+        "superseded": 0
+      },
+      {
+        "language": "rust",
+        "seedUnits": 8052,
+        "samples": 96,
+        "inputMicros": {
+          "p50": 263,
+          "p95": 300,
+          "max": 398
+        },
+        "colorLatencyMicros": {
+          "p50": 3732,
+          "p95": 4019,
+          "max": 4084
+        },
+        "superseded": 0
+      },
+      {
+        "language": "go",
+        "seedUnits": 368,
+        "samples": 135,
+        "inputMicros": {
+          "p50": 73,
+          "p95": 298,
+          "max": 2774
+        },
+        "colorLatencyMicros": {
+          "p50": 374,
+          "p95": 2403,
+          "max": 4999
+        },
+        "superseded": 0
+      },
+      {
+        "language": "go",
+        "seedUnits": 8050,
+        "samples": 135,
+        "inputMicros": {
+          "p50": 302,
+          "p95": 690,
+          "max": 1727
+        },
+        "colorLatencyMicros": {
+          "p50": 3278,
+          "p95": 4385,
+          "max": 9657
+        },
+        "superseded": 0
+      },
+      {
+        "language": "json",
+        "seedUnits": 378,
+        "samples": 60,
+        "inputMicros": {
+          "p50": 119,
+          "p95": 298,
+          "max": 2002
+        },
+        "colorLatencyMicros": {
+          "p50": 486,
+          "p95": 2432,
+          "max": 4024
+        },
+        "superseded": 0
+      },
+      {
+        "language": "json",
+        "seedUnits": 8064,
+        "samples": 60,
+        "inputMicros": {
+          "p50": 368,
+          "p95": 464,
+          "max": 618
+        },
+        "colorLatencyMicros": {
+          "p50": 3274,
+          "p95": 3834,
+          "max": 4096
+        },
+        "superseded": 0
+      },
+      {
+        "language": "css",
+        "seedUnits": 360,
+        "samples": 117,
+        "inputMicros": {
+          "p50": 79,
+          "p95": 201,
+          "max": 1521
+        },
+        "colorLatencyMicros": {
+          "p50": 442,
+          "p95": 2318,
+          "max": 5268
+        },
+        "superseded": 0
+      },
+      {
+        "language": "css",
+        "seedUnits": 8040,
+        "samples": 117,
+        "inputMicros": {
+          "p50": 287,
+          "p95": 364,
+          "max": 452
+        },
+        "colorLatencyMicros": {
+          "p50": 3359,
+          "p95": 3732,
+          "max": 4273
+        },
+        "superseded": 0
+      },
+      {
+        "language": "bash",
+        "seedUnits": 384,
+        "samples": 93,
+        "inputMicros": {
+          "p50": 155,
+          "p95": 623,
+          "max": 4705
+        },
+        "colorLatencyMicros": {
+          "p50": 634,
+          "p95": 3178,
+          "max": 5029
+        },
+        "superseded": 0
+      },
+      {
+        "language": "bash",
+        "seedUnits": 8064,
+        "samples": 93,
+        "inputMicros": {
+          "p50": 318,
+          "p95": 1213,
+          "max": 1276
+        },
+        "colorLatencyMicros": {
+          "p50": 3398,
+          "p95": 4313,
+          "max": 4407
+        },
+        "superseded": 0
+      },
+      {
+        "language": "html",
+        "seedUnits": 360,
+        "samples": 87,
+        "inputMicros": {
+          "p50": 86,
+          "p95": 282,
+          "max": 3096
+        },
+        "colorLatencyMicros": {
+          "p50": 404,
+          "p95": 2477,
+          "max": 3835
+        },
+        "superseded": 0
+      },
+      {
+        "language": "html",
+        "seedUnits": 8040,
+        "samples": 87,
+        "inputMicros": {
+          "p50": 265,
+          "p95": 922,
+          "max": 1056
+        },
+        "colorLatencyMicros": {
+          "p50": 2783,
+          "p95": 3561,
+          "max": 3779
+        },
+        "superseded": 0
+      },
+      {
+        "language": "xml",
+        "seedUnits": 360,
+        "samples": 117,
+        "inputMicros": {
+          "p50": 52,
+          "p95": 285,
+          "max": 3826
+        },
+        "colorLatencyMicros": {
+          "p50": 316,
+          "p95": 1447,
+          "max": 4135
+        },
+        "superseded": 0
+      },
+      {
+        "language": "xml",
+        "seedUnits": 8040,
+        "samples": 117,
+        "inputMicros": {
+          "p50": 245,
+          "p95": 2049,
+          "max": 2369
+        },
+        "colorLatencyMicros": {
+          "p50": 4090,
+          "p95": 5685,
+          "max": 6388
+        },
+        "superseded": 0
+      },
+      {
+        "language": "sql",
+        "seedUnits": 360,
+        "samples": 132,
+        "inputMicros": {
+          "p50": 96,
+          "p95": 234,
+          "max": 1933
+        },
+        "colorLatencyMicros": {
+          "p50": 609,
+          "p95": 2697,
+          "max": 5767
+        },
+        "superseded": 0
+      },
+      {
+        "language": "sql",
+        "seedUnits": 8055,
+        "samples": 132,
+        "inputMicros": {
+          "p50": 203,
+          "p95": 229,
+          "max": 315
+        },
+        "colorLatencyMicros": {
+          "p50": 3481,
+          "p95": 3756,
+          "max": 3939
+        },
+        "superseded": 0
+      },
+      {
+        "language": "ruby",
+        "seedUnits": 372,
+        "samples": 51,
+        "inputMicros": {
+          "p50": 89,
+          "p95": 356,
+          "max": 719
+        },
+        "colorLatencyMicros": {
+          "p50": 449,
+          "p95": 1463,
+          "max": 3927
+        },
+        "superseded": 0
+      },
+      {
+        "language": "ruby",
+        "seedUnits": 8068,
+        "samples": 51,
+        "inputMicros": {
+          "p50": 344,
+          "p95": 1640,
+          "max": 1711
+        },
+        "colorLatencyMicros": {
+          "p50": 4438,
+          "p95": 5848,
+          "max": 5985
+        },
+        "superseded": 0
+      },
+      {
+        "language": "dart",
+        "seedUnits": 374,
+        "samples": 54,
+        "inputMicros": {
+          "p50": 94,
+          "p95": 1181,
+          "max": 1806
+        },
+        "colorLatencyMicros": {
+          "p50": 886,
+          "p95": 4083,
+          "max": 4761
+        },
+        "superseded": 0
+      },
+      {
+        "language": "dart",
+        "seedUnits": 8070,
+        "samples": 54,
+        "inputMicros": {
+          "p50": 316,
+          "p95": 1881,
+          "max": 1972
+        },
+        "colorLatencyMicros": {
+          "p50": 7609,
+          "p95": 8599,
+          "max": 9144
+        },
+        "superseded": 0
+      },
+      {
+        "language": "javascript",
+        "seedUnits": 387,
+        "samples": 72,
+        "inputMicros": {
+          "p50": 77,
+          "p95": 380,
+          "max": 964
+        },
+        "colorLatencyMicros": {
+          "p50": 429,
+          "p95": 1746,
+          "max": 4130
+        },
+        "superseded": 0
+      },
+      {
+        "language": "javascript",
+        "seedUnits": 8062,
+        "samples": 72,
+        "inputMicros": {
+          "p50": 332,
+          "p95": 1465,
+          "max": 2130
+        },
+        "colorLatencyMicros": {
+          "p50": 4099,
+          "p95": 5311,
+          "max": 5617
+        },
+        "superseded": 0
+      },
+      {
+        "language": "python",
+        "seedUnits": 373,
+        "samples": 48,
+        "inputMicros": {
+          "p50": 87,
+          "p95": 669,
+          "max": 911
+        },
+        "colorLatencyMicros": {
+          "p50": 444,
+          "p95": 2669,
+          "max": 4111
+        },
+        "superseded": 0
+      },
+      {
+        "language": "python",
+        "seedUnits": 8069,
+        "samples": 48,
+        "inputMicros": {
+          "p50": 343,
+          "p95": 3248,
+          "max": 3825
+        },
+        "colorLatencyMicros": {
+          "p50": 4411,
+          "p95": 7446,
+          "max": 8304
+        },
+        "superseded": 0
+      },
+      {
+        "language": "yaml",
+        "seedUnits": 388,
+        "samples": 39,
+        "inputMicros": {
+          "p50": 60,
+          "p95": 192,
+          "max": 220
+        },
+        "colorLatencyMicros": {
+          "p50": 393,
+          "p95": 578,
+          "max": 590
+        },
+        "superseded": 0
+      },
+      {
+        "language": "yaml",
+        "seedUnits": 8073,
+        "samples": 39,
+        "inputMicros": {
+          "p50": 304,
+          "p95": 1741,
+          "max": 1943
+        },
+        "colorLatencyMicros": {
+          "p50": 4743,
+          "p95": 5961,
+          "max": 6339
+        },
+        "superseded": 0
+      }
+    ]
+  }
+}

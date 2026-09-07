@@ -2,6 +2,10 @@
 
 ## 0.5.0-dev.1 (unreleased)
 
+- Added the V5 Flutter editor/viewer and a local-draft workbench for macOS and Flutter web/WASM, with selection, clipboard, source inspection, keyboard input, and first-paint regression coverage.
+- Added `flark_tree_sitter`: one fourteen-language service for syntax highlighting, automatic/manual language selection, and snippet indentation through shared native and WASM transports. Removed the active Dart highlighter and language-specific lexical fallback.
+- Hardened semantic editing, history, and source-mode admission. Review regressions cover tab-padded list continuation, graphemes spanning hidden formatting, and literal fence delimiters pasted into code regions. Render-model schema V3 publishes exact list-marker source endpoints.
+- v5 M2: the pure-Dart kernel in `packages/flark`: projection with hidden ranges and caret spans, document with anchors, the closed command set, grouped history that restores typing intent, and the `FlarkEditor` facade; journeys, a generated command matrix, and a keystroke bench. The parse crate records each line's innermost prefix start and splits text nodes into exact and replacement pieces.
 - v5 M1: `native/flark_parse` (unmodified comrak plus a flat render model, three-function ABI on native and wasm32) and `packages/flark` (render model views, FFI and Wasm transports, build hook with prebuilt resolution). v4 moved under `legacy/v4/`. See RFC 030.
 
 

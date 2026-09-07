@@ -23,6 +23,94 @@ impl M {
 }
 
 #[test]
+fn literal_tabs_do_not_hide_a_shifted_pipeless_cell() {
+    for padding in ["", " ", "  ", "   "] {
+      for body_padding in ["", " ", "  ", "   "] {
+       for (first, next) in [("", ""), ("> ", "> "), ("- ", "  "), ("> - ", ">   ")] {
+        for ending in ["\n", "\r\n"] {
+          for (head, body, contents) in [("h", "**<\t\t**", vec!["h", "**<\t\t**"]), ("|h|j|", "|**<\t\t**|é|", vec!["h", "j", "**<\t\t**", "é"])] {
+            let delim = if head == "h" { "--- |" } else { "|---|---|" };
+            // Padding after a list marker belongs to the item prefix.
+            let item_padding = if first.ends_with("- ") { padding } else { "" };
+            let src = format!("{first}{padding}{head}{ending}{next}{padding}{delim}{ending}{next}{item_padding}{body_padding}{body}");
+            let m = M::of(&src); m.clean();
+            assert_eq!(m.contents(&src), contents, "for {src:?}");
+            assert!((0..m.n(header::RUN_COUNT)).all(|r| m.run(r, run::KIND) == run_kind::TEXT as usize), "literal text must have exact source ranges for {src:?}: {:?}", m.run_contents(&src));
+          }
+        }
+       }
+      }
+    }
+}
+
+#[test]
+fn multiline_code_repair_updates_the_complete_owner_range() {
+    let src = "#### **foo *bar***\n].\n `!\n***-<***b`-`";
+    let m = M::of(src); m.clean();
+    let code = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == run_kind::CODE as usize).unwrap();
+    assert_eq!(m.run(code, run::END_BYTE), m.run(code, run::CONTENT_END_BYTE) + 1);
+    assert_eq!(&src[m.run(code, run::END_BYTE)..], "-`");
+}
+
+#[test]
+fn multiline_inline_link_closures_and_following_breaks_are_exact() {
+    for marker in ["", "!"] {
+        for ending in ["\n", "\r\n"] {
+          for prefix in ["", "> "] {
+           for suffix in ["", ")", ")) extra", "]"] {
+            let src = format!("{prefix}{marker}[link](   /uri{ending}{prefix}  \"title\"  ){suffix}{ending}{prefix}next");
+            let m = M::of(&src); m.clean();
+            let kind = if marker.is_empty() { run_kind::LINK } else { run_kind::IMAGE };
+            let owner = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == kind as usize).unwrap();
+            let end = src.find(')').unwrap() + 1;
+            assert_eq!(m.run(owner, run::END_BYTE), end, "for {src:?}");
+            assert_eq!(&src[m.run(owner, run::AUX0)..m.run(owner, run::AUX1)], "/uri");
+            assert_eq!(&src[m.run(owner, run::AUX2)..m.run(owner, run::AUX3)], "title");
+            let br = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == run_kind::SOFT_BREAK as usize).unwrap();
+            let break_start = end + suffix.len();
+            assert_eq!((m.run(br, run::START_BYTE), m.run(br, run::END_BYTE)), (break_start, break_start + ending.len()), "for {src:?}");
+           }
+          }
+        }
+    }
+}
+
+#[test]
+fn bare_url_ending_in_an_angle_has_no_hidden_closing_bracket() {
+    for prefix in ["", "# ", "> "] {
+        let src = format!("{prefix}< http://foo.ba&`>\n");
+        let m = M::of(&src); m.clean();
+        let r = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == run_kind::AUTOLINK as usize).unwrap();
+        assert_eq!(m.run(r, run::START_BYTE), m.run(r, run::CONTENT_START_BYTE));
+        assert_eq!(m.run(r, run::END_BYTE), m.run(r, run::CONTENT_END_BYTE));
+    }
+}
+
+#[test]
+fn editing_content_retains_trailing_whitespace() {
+    for prefix in ["", "- ", "> ", "# ", "> - "] {
+        for ending in ["", "\n", "\r\n"] {
+            let src = format!("{prefix}alpha  {ending}");
+            let m = M::of(&src); m.clean();
+            assert_eq!(m.contents(&src), ["alpha  "], "for {src:?}");
+        }
+    }
+    let src = "# alpha  #";
+    let m = M::of(src); m.clean();
+    assert_eq!(m.contents(src), ["alpha "]);
+    for src in ["| alpha  |\n| --- |", "|alpha  |\n|---|"] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.contents(src), ["alpha  "], "for {src:?}");
+    }
+    let src = "alpha  \r\nnext";
+    let m = M::of(src); m.clean();
+    assert_eq!(m.contents(src), ["alpha  ", "next"]);
+    let br = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == run_kind::HARD_BREAK as usize).unwrap();
+    assert_eq!((m.run(br, run::START_BYTE), m.run(br, run::END_BYTE)), (5, 9));
+    assert_eq!((m.run(br, run::CONTENT_START_BYTE), m.run(br, run::CONTENT_END_BYTE)), (5, 7));
+}
+
+#[test]
 fn bare_carriage_returns_are_line_endings() {
     let src = "a\rb\r*c*";
     let m = M::of(src); m.clean();
@@ -87,7 +175,17 @@ fn task_items_start_content_after_the_checkbox() {
     assert_eq!(m.block(2, block::ATTR0), 2, "container offset is the list padding");
     let src = "- [ ] foo\n\n  > quote";
     let m = M::of(src); m.clean();
-    assert_eq!(m.contents(src), ["foo", "quote"]);
+    assert_eq!(m.contents(src), ["foo", "quote", ""]);
+}
+
+#[test]
+fn empty_nested_quote_publishes_only_the_innermost_prefix() {
+    let src = "> > a\n> > ";
+    let m = M::of(src); m.clean();
+    let c = m.block(2, block::CONTENT_OFFSET);
+    assert_eq!(m.block(2, block::CONTENT_COUNT), 1);
+    assert_eq!(m.content(c, content::PREFIX_START_UTF16), 8);
+    assert_eq!(m.content(c, content::START_UTF16), 10);
 }
 
 #[test]
@@ -137,6 +235,17 @@ fn a_wide_table_reports_the_alignment_cap() {
     let src = header + &delim + &row;
     let m = M::of(&src);
     assert!(m.devs.iter().any(|d| d.starts_with("table-alignment-cap")), "{:?}", m.devs);
+    assert!(Extractor::extract(&src).is_err(), "production extraction must reject a lossy model");
+}
+
+#[test]
+fn indented_table_body_strong_range_is_exact() {
+    let src = "| abc | def |\n| --- | --- |\n| bar |&\n **:**|\n| bar | baz | boo |\n";
+    let m = M::of(src); m.clean();
+    let r = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == run_kind::STRONG as usize).unwrap();
+    assert_eq!(&src[m.run(r, run::START_BYTE)..m.run(r, run::END_BYTE)], "**:**");
+    assert_eq!(&src[m.run(r, run::CONTENT_START_BYTE)..m.run(r, run::CONTENT_END_BYTE)], ":");
+    assert!(Extractor::extract(src).is_ok());
 }
 
 #[test]
@@ -171,4 +280,21 @@ fn a_paragraph_split_by_a_table_header_keeps_its_definition_text() {
     let m = M::of(src); m.clean();
     assert_eq!(m.contents(src), ["[a]: /u", "foo", "hdr"]);
     assert_eq!(m.defs(src), Vec::<&str>::new());
+}
+
+#[test]
+fn item_marker_endpoints_are_source_ranges_not_display_columns() {
+    for (src, marker) in [
+        ("-\tfoo", "-\t"), ("1.\tfoo", "1.\t"),
+        ("> -\tfoo", "-\t"), ("- a\n\t- b", "- "),
+        ("-\t[x] foo", "-\t"), ("- ## title", "- "),
+        ("- a\r\n\t- b", "- "),
+    ] {
+        let m = M::of(src); m.clean();
+        let item = (0..m.n(header::BLOCK_COUNT)).rfind(|&i| m.block(i, block::KIND) == block_kind::ITEM as usize).unwrap();
+        let start = m.block(item, block::START_BYTE);
+        let end = m.block(item, block::MARKER_END_BYTE);
+        assert_eq!(&src[start..end], marker, "for {src:?}");
+        assert_eq!(m.block(item, block::MARKER_END_UTF16), src[..end].encode_utf16().count());
+    }
 }

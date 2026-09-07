@@ -1,0 +1,22 @@
+{
+  "browser": "Codex embedded browser, normal Flutter web/Wasm app",
+  "url": "http://127.0.0.1:8813/",
+  "assetPrefix": "/_flark/c0bc68aa409a0df0/",
+  "scenarios": [
+    "Final build: typing three backticks creates an empty code region; typing the owner loop and pressing Enter produces two spaces.",
+    "Final build: typing the closing brace aligns it at column zero; source caret is 32. The screenshot shows the aligned brace.",
+    "Final build: next semicolon types after the brace; Undo removes the semicolon, then removes the brace and restores both spaces at caret 33. Redo restores the aligned brace and caret 32.",
+    "Nested closers align to the inner opener, then the outer opener after Enter. Open block-comment content and plain text preserve indentation.",
+    "Final build: keyboard copy and paste of a single closer into indented Dart code preserves both spaces at caret 25. Prior build incorrectly outdented that paste."
+  ],
+  "cleanup": {
+    "draftBeforeBytes": 0,
+    "draftAfterBytes": 0,
+    "tourBeforeBytes": 1060,
+    "tourAfterBytes": 1060,
+    "tourWasEditedByAgent": false,
+    "selectedDocument": "Tour",
+    "exactBeforeAfterTextComparison": "Unavailable: initial immediate clipboard read was stale selected text, not the complete Tour. All test edits targeted Draft; initial/final Tour UI byte counts agree."
+  },
+  "proofBoundary": "Interactive canaries plus separate automated Chrome input/paint tests. Nested/comment/plain-text observations preceded the final clipboard change; exact owner typing/history and clipboard paste were repeated on the final build."
+}

@@ -1,10 +1,33 @@
-# D0: Ready for macOS dogfood
+# D0: Owner dogfood, by platform
 
 **Product bar:** [NORTH_STAR.md](NORTH_STAR.md)
 
-**Editing behavior:** [edit_profile_v1.md](docs/architecture/v4/contracts/edit_profile_v1.md)
+**Editing behavior:** [edit_profile_v1.md](docs/architecture/v5/edit_profile_v1.md)
 
 **Testing approach:** [live_editor_test_strategy.md](docs/testing/live_editor_test_strategy.md)
+
+**Delivery status (2026-09-06 automatic outdent):** D0-web is ready for exploratory
+owner dogfooding on the observed embedded browser. The
+[code editing review](docs/architecture/v5/code_closer_review_2026_09_06.md)
+records visible code selection, syntax coloring, language choice, indentation and typed-closer outdent
+with actual browser and paint regressions.
+The complete Flutter web/Wasm workbench remains the primary
+development and dogfooding environment in Codex's embedded browser. Its
+[browser acceptance contract](docs/architecture/v5/web_dogfood.md) covers the
+common editing loop, browser input, persistence and bounded source mode.
+D0-web can pass independently of D0-macOS. Neither status is a release claim.
+
+The macOS requirements below remain unchanged and are now called D0-macOS.
+Web evidence cannot close AppKit input or native frame-budget failures.
+
+**Current native status (2026-09-05):** D0-macOS remains open. The
+[continuation record](docs/architecture/v5/native_session_2026_09_04.md) records
+browser-found corrections and passing local checks. The
+[native sweep](docs/architecture/v5/native_profile_2026_09_05.md) now records an
+open B1 performance miss in five largest-paragraph cases. The
+[input-context correction](docs/architecture/v5/input_context_review_2026_09_05.md)
+brings the focused case below the limit in diagnostic evidence. D0-macOS still needs
+a complete foreground run and normal-app native canaries on the new candidate.
 
 ## Goal
 
@@ -32,7 +55,7 @@ Direct Core and controller tests must cover:
 - Undo and Redo across insert, delete, replacement, and structural edits;
 - full-value, delta, key, and semantic-command delivery without duplication;
 - repeated Return/Backspace followed immediately by typing; and
-- incremental results matching a clean parse.
+- every committed model and projection matching a clean parse.
 
 Every accepted command must leave exact source, selection, history, and the next
 writable state correct.
@@ -71,22 +94,30 @@ candidate then proves:
 Posted input is not considered delivered until the app records a corresponding
 event and reaches a stable state.
 
-## 4. Large documents
+## 4. Live envelope and source mode
 
-The candidate opens and edits the checked-in product tour plus the 1 MiB, 5 MiB,
-10 MiB, giant-line, and dense-block presets. Tests cover local editing, paging,
-scroll-away/return, resize, Undo, and sustained input while offscreen parsing is
-active.
+The initial macOS qualification floor is continuously rendered editing through 32 KiB of
+UTF-8 source when the document is also inside the published shape budget. The
+checked-in product tour plus representative plain, dense, long-list,
+table-heavy, Unicode-heavy, and giant-line presets immediately below, at, and
+above both boundaries cover open, local editing, scrolling, resize, Undo, and
+sustained input.
 
-The visible viewport must remain semantically correct and writable. Document
-size may not cause unbounded foreground work or require a complete document-wide
-render model before useful editing begins.
+Inside the configured byte-and-shape envelope, the complete input-to-raster path
+must stay inside the measured frame budget. Outside it, the document opens
+directly in a visibly identified source mode that remains exact and writable
+without first projecting the full document. Cheap byte/line preflight must
+avoid parsing plainly ineligible input. Paste, Undo, Redo, and deletion across
+the boundary switch modes atomically. A 64 KiB ordinary-prose tier is a stretch
+candidate, not a promise; the limit may be raised only by a production-path
+receipt across the published adversarial shape set.
 
 ## 5. Mac performance and lifecycle proof
 
 The production-path profile must pass the checked-in frame-latency, memory,
-opening, parser-work, paging, resize, and sustained-input budgets on the
-benchmark Mac. Measurements identify the exact commit, tree, app executable,
+opening, parser-work, mode-transition, resize, and sustained-input budgets on the
+benchmark Mac. The [V5 macOS qualification contract](docs/architecture/v5/macos_qualification.md)
+names those limits and the two workloads. Measurements identify the exact commit, tree, app executable,
 native library, host, display, and configuration.
 
 The app must also survive repeated open/close, background/foreground,
@@ -112,14 +143,24 @@ when the OS route mattered.
 
 ## Current status
 
-D0 is not yet passed. The final-styled-grapheme deletion family—including the
-reported italic Backspace case, forward Delete, delete-then-type, history, and
-every-frame marker exposure—is implemented and covered across native, Core,
-controller, and mounted-surface tests. The full local Core, controller, and
-mounted-paint suites pass, including the headless 1 MiB/5 MiB navigation and
-dense-block cases. The whole-candidate architecture review and separate 5 MiB
-dense certification stress pass. The remaining proof is the clean-candidate
-profile/lifecycle matrix and attended native canaries.
+Current implementation and local evidence are in the
+[2026-09-04 review](docs/architecture/v5/implementation_review_2026_09_04.md).
+The new host and workbench pass local functional/paint checks and build on
+macOS and Flutter web/Wasm. The latest host suite has 110 passing tests and the
+workbench has 25, with three additional real-browser transport tests. Attended
+native input and the sealed production performance/lifecycle profile remain
+open. A resumed foreground sweep completed with five frame-budget failures;
+the longer workload lost foreground during sustained typing. After unlocking,
+native stack samples identified TextKit work in the full-document input mirror.
+The new bounded input context has focused timing and browser evidence, but
+foreground changes and accessibility activation prevented a clean native
+qualification run. The original B1 remains open pending the complete rerun.
+
+D0-macOS is not yet passed on v5. Kernel and parser receipts are necessary inputs, but
+the v4 large-document, controller, paint, and native receipts do not transfer to
+the new synchronous surface. The remaining proof includes the complete v5
+functional and actual-paint suites, the 32 KiB macOS floor and source-mode
+transition receipt, the lifecycle profile, and attended native canaries.
 Broader composition, arbitrary cross-owner ranges, deep structural editing, and
 mobile qualification remain outside this milestone unless investigation
 reveals a B0 or B1 in the supported core loop.

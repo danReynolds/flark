@@ -1,0 +1,20 @@
+name: flark_tree_sitter
+description: Shared code snippet highlighting and indentation for Flark hosts.
+version: 0.1.0-dev.4
+publish_to: none
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  code_assets: ^1.0.0
+  hooks: ^1.0.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.3
+
+flutter:
+  assets:
+    - lib/assets/highlight_worker.mjs
+    - lib/assets/wasm/flark_tree_sitter.wasm

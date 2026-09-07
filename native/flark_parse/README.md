@@ -2,8 +2,9 @@
 
 The Flark v5 parse crate: **unmodified comrak** plus a single-pass extraction
 that writes a flat render model (see [SCHEMA.md](SCHEMA.md), generated from
-`schema/render_model_v1.json`). It is the only place Markdown is interpreted;
-the Dart kernel consumes ranges and never inspects a delimiter.
+`schema/render_model_v3.json`). It is the only place Markdown meaning is
+recognized. The Dart kernel consumes its ranges; explicit semantic commands
+may synthesize canonical syntax, then validate the candidate through Rust.
 
 ## ABI
 
@@ -11,7 +12,7 @@ Three functions on both targets (`cdylib` for FFI, `wasm32-unknown-unknown`
 for the web), plus a schema version query:
 
 ```c
-int32_t  flark_parse(const uint8_t* src, uint32_t len, uint8_t** out, uint32_t* out_len); // 0 ok, 1 null, 2 utf8, 3 contained panic
+int32_t  flark_parse(const uint8_t* src, uint32_t len, uint8_t** out, uint32_t* out_len); // 0 ok, 1 null, 2 utf8, 3 contained panic, 4 extraction deviation
 uint8_t* flark_parse_alloc(uint32_t len);
 void     flark_parse_free(uint8_t* ptr, uint32_t len);
 uint32_t flark_parse_schema_version(void);
@@ -21,7 +22,9 @@ uint32_t flark_parse_schema_version(void);
 
 comrak does not expose per-line content ranges or reference definitions, and
 its inline positions are wrong in two known situations. Each derivation is
-checked against comrak's own output in report mode, and the conformance test
+checked against comrak's own output in production and report mode. Production
+fails closed with return code 4 instead of publishing a model with a known
+deviation, and the conformance test
 asserts zero deviations across the 652 CommonMark and 670 GFM upstream cases:
 
 | Derived | Validated against |

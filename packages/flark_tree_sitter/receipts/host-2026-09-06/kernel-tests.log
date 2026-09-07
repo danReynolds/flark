@@ -1,0 +1,472 @@
+Running build hooks...Running build hooks...00:00 +0: loading test/matrix_test.dart
+00:00 +0: test/source_mode_test.dart: (setUpAll)
+00:00 +0: test/inline_tab_test.dart: tabs in a pipeless cell retain distinct source positions
+00:00 +1: test/inline_tab_test.dart: tabs in a pipeless cell retain distinct source positions
+00:00 +2: test/inline_tab_test.dart: tabs in a pipeless cell retain distinct source positions
+00:00 +3: test/inline_tab_test.dart: tabs in a pipeless cell retain distinct source positions
+00:00 +4: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: `a
+b`c`
+00:00 +5: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: `a
+b`c`
+00:00 +6: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +7: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +8: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +9: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +10: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +11: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +12: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +13: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +14: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +15: test/source_mode_test.dart: (tearDownAll)
+00:00 +15: test/selection_boundary_test.dart: boundary selection selection 7..13 ReplaceRange and next input
+00:00 +16: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +17: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +18: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +19: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +20: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +21: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +22: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +23: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +24: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +25: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +26: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +27: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +28: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +29: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +30: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +31: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +32: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +33: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +34: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +35: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +36: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +37: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +38: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +39: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +40: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +41: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +42: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +43: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +44: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +45: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +46: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +47: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +48: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +49: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +50: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +51: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +52: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +53: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +54: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +55: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +56: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +57: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +58: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +59: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +60: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +61: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +62: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +63: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +64: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +65: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +66: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +67: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +68: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +69: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +70: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +71: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +72: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +73: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +74: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +75: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +76: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +77: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +78: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +79: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +80: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +81: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +82: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +83: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +84: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +85: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +86: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +87: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +88: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +89: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +90: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +91: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +92: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +93: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +94: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +95: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +96: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +97: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +98: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +99: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +100: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +101: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +102: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +103: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +104: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +105: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +106: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +107: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +108: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +109: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +110: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +111: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +112: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +113: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +114: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +115: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +116: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +117: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +118: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +119: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +120: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +121: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +122: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +123: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +124: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +125: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +126: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +127: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +128: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +129: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +130: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +131: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +132: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +133: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +134: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +135: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +136: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +137: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +138: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +139: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +140: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +141: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +142: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +143: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +144: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +145: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +146: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +147: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +148: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +149: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +150: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +151: test/semantic_edits_test.dart: joining matching * owners keeps glyphs and style backward=false
+00:00 +152: test/projection_test.dart: (tearDownAll)
+00:00 +152: test/semantic_edits_test.dart: Return preserves * in "" at end
+00:00 +153: test/semantic_edits_test.dart: Return preserves * in "" at middle
+00:00 +154: test/semantic_edits_test.dart: Return preserves * in "- " at end
+00:00 +155: test/semantic_edits_test.dart: Return preserves * in "- " at middle
+00:00 +156: test/semantic_edits_test.dart: Return preserves * in "> " at end
+00:00 +157: test/semantic_edits_test.dart: Return preserves * in "> " at middle
+00:00 +158: test/semantic_edits_test.dart: Return preserves * in "# " at end
+00:00 +159: test/semantic_edits_test.dart: Return preserves * in "# " at middle
+00:00 +160: test/semantic_edits_test.dart: empty * backward retains only starting context true
+00:00 +161: test/semantic_edits_test.dart: empty * backward retains only starting context false
+00:00 +162: test/semantic_edits_test.dart: empty * forward retains only starting context true
+00:00 +163: test/semantic_edits_test.dart: empty * forward retains only starting context false
+00:00 +164: test/semantic_edits_test.dart: joining matching ** owners keeps glyphs and style backward=true
+00:00 +165: test/semantic_edits_test.dart: joining matching ** owners keeps glyphs and style backward=false
+00:00 +166: test/semantic_edits_test.dart: Return preserves ** in "" at end
+00:00 +167: test/semantic_edits_test.dart: Return preserves ** in "" at middle
+00:00 +168: test/semantic_edits_test.dart: Return preserves ** in "- " at end
+00:00 +169: test/semantic_edits_test.dart: Return preserves ** in "- " at middle
+00:00 +170: test/semantic_edits_test.dart: Return preserves ** in "> " at end
+00:00 +171: test/semantic_edits_test.dart: Return preserves ** in "> " at middle
+00:00 +172: test/semantic_edits_test.dart: Return preserves ** in "# " at end
+00:00 +173: test/semantic_edits_test.dart: Return preserves ** in "# " at middle
+00:00 +174: test/semantic_edits_test.dart: empty ** backward retains only starting context true
+00:00 +175: test/semantic_edits_test.dart: empty ** backward retains only starting context false
+00:00 +176: test/semantic_edits_test.dart: empty ** forward retains only starting context true
+00:00 +177: test/semantic_edits_test.dart: empty ** forward retains only starting context false
+00:00 +178: test/semantic_edits_test.dart: joining matching ~~ owners keeps glyphs and style backward=true
+00:00 +179: test/semantic_edits_test.dart: joining matching ~~ owners keeps glyphs and style backward=false
+00:00 +180: test/semantic_edits_test.dart: Return preserves ~~ in "" at end
+00:00 +181: test/semantic_edits_test.dart: Return preserves ~~ in "" at middle
+00:00 +182: test/semantic_edits_test.dart: Return preserves ~~ in "- " at end
+00:00 +183: test/semantic_edits_test.dart: Return preserves ~~ in "- " at middle
+00:00 +184: test/semantic_edits_test.dart: Return preserves ~~ in "> " at end
+00:00 +185: test/semantic_edits_test.dart: Return preserves ~~ in "> " at middle
+00:00 +186: test/semantic_edits_test.dart: Return preserves ~~ in "# " at end
+00:00 +187: test/semantic_edits_test.dart: Return preserves ~~ in "# " at middle
+00:00 +188: test/semantic_edits_test.dart: empty ~~ backward retains only starting context true
+00:00 +189: test/semantic_edits_test.dart: empty ~~ backward retains only starting context false
+00:00 +190: test/semantic_edits_test.dart: empty ~~ forward retains only starting context true
+00:00 +191: test/semantic_edits_test.dart: empty ~~ forward retains only starting context false
+00:00 +192: test/semantic_edits_test.dart: joining matching ` owners keeps glyphs and style backward=true
+00:00 +193: test/semantic_edits_test.dart: joining matching ` owners keeps glyphs and style backward=false
+00:00 +194: test/semantic_edits_test.dart: Return preserves ` in "" at end
+00:00 +195: test/semantic_edits_test.dart: Return preserves ` in "" at middle
+00:00 +196: test/semantic_edits_test.dart: Return preserves ` in "- " at end
+00:00 +197: test/semantic_edits_test.dart: Return preserves ` in "- " at middle
+00:00 +198: test/semantic_edits_test.dart: Return preserves ` in "> " at end
+00:00 +199: test/semantic_edits_test.dart: Return preserves ` in "> " at middle
+00:00 +200: test/semantic_edits_test.dart: Return preserves ` in "# " at end
+00:00 +201: test/semantic_edits_test.dart: Return preserves ` in "# " at middle
+00:00 +202: test/semantic_edits_test.dart: empty ` backward retains only starting context true
+00:00 +203: test/semantic_edits_test.dart: empty ` backward retains only starting context false
+00:00 +204: test/semantic_edits_test.dart: empty ` forward retains only starting context true
+00:00 +205: test/semantic_edits_test.dart: empty ` forward retains only starting context false
+00:00 +206: test/semantic_edits_test.dart: joining matching *** owners keeps glyphs and style backward=true
+00:00 +207: test/semantic_edits_test.dart: joining matching *** owners keeps glyphs and style backward=false
+00:00 +208: test/semantic_edits_test.dart: Return preserves *** in "" at end
+00:00 +209: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +210: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +211: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +212: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +213: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +214: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +215: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +216: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +217: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +218: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +219: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +220: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +221: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +222: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +223: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +224: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +225: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +226: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +227: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +228: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +229: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +230: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +231: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +232: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +233: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +234: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +235: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +236: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +237: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +238: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +239: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +240: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +241: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +242: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +243: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +244: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +245: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +246: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +247: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +248: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +249: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +250: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +251: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +252: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +253: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +254: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +255: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +256: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +257: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +258: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +259: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +260: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +261: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +262: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +263: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +264: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +265: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +266: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +267: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +268: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +269: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +270: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +271: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +272: test/kernel_correctness_test.dart: source and caret boundaries selection cannot split scalar, combining, or ZWJ graphemes
+00:00 +273: test/kernel_correctness_test.dart: source and caret boundaries selection cannot split scalar, combining, or ZWJ graphemes
+00:00 +274: test/kernel_correctness_test.dart: source and caret boundaries selection cannot split scalar, combining, or ZWJ graphemes
+00:00 +275: test/whole_document_test.dart: whole document Paste reverse=true: # Heading
+
+- one
+- two
+00:00 +276: test/journey_test.dart: inline forward delete to empty
+00:00 +277: test/journey_test.dart: inline forward delete to empty
+00:00 +278: test/journey_test.dart: inline forward delete to empty
+00:00 +279: test/whole_document_test.dart: whole document ReplaceRange reverse=true: # Heading
+
+- one
+- two
+00:00 +280: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +281: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +282: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +283: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +284: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +285: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +286: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +287: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +288: test/kernel_correctness_test.dart: source and caret boundaries multi-grapheme replacements move and delete as one atomic unit
+00:00 +289: test/journey_test.dart: inline toggling strong on a selection wraps it and again unwraps it
+00:00 +290: test/journey_test.dart: inline toggling strong on a selection wraps it and again unwraps it
+00:00 +291: test/kernel_correctness_test.dart: projection-safe edits deleting an owner's selected content removes its delimiters
+00:00 +292: test/whole_document_test.dart: whole document ReplaceRange reverse=false: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +293: test/journey_test.dart: inline toggling strong at the caret styles the next character
+00:00 +294: test/journey_test.dart: inline toggling strong at the caret styles the next character
+00:00 +295: test/journey_test.dart: inline toggling strong at the caret styles the next character
+00:00 +296: test/whole_document_test.dart: whole document DeleteForward reverse=false: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +297: test/kernel_correctness_test.dart: projection-safe edits a style toggle that cannot establish its postcondition is a no-op
+00:00 +298: test/journey_test.dart: inline a link projects its text and the caret never enters the url
+00:00 +299: test/whole_document_test.dart: whole document Newline reverse=false: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +300: test/kernel_correctness_test.dart: bounded logical history navigation closes the current typing group
+00:00 +301: test/kernel_correctness_test.dart: bounded logical history navigation closes the current typing group
+00:00 +302: test/journey_test.dart: navigation word movement stops at word edges
+00:00 +303: test/whole_document_test.dart: whole document InsertText reverse=true: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +304: test/kernel_correctness_test.dart: bounded logical history an edit clears the preferred vertical column
+00:00 +305: test/journey_test.dart: navigation pointer placement uses the glyph half at a boundary
+00:00 +306: test/journey_test.dart: navigation pointer placement uses the glyph half at a boundary
+00:00 +307: test/whole_document_test.dart: whole document ReplaceRange reverse=true: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +308: test/kernel_correctness_test.dart: bounded logical history joined typing retains only the group entry needed by undo
+00:00 +309: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +310: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +311: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +312: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +313: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +314: test/whole_document_test.dart: whole document Newline reverse=true: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +315: test/journey_test.dart: navigation shift arrows extend the selection and typing replaces it
+00:00 +316: test/journey_test.dart: navigation shift arrows extend the selection and typing replaces it
+00:00 +317: test/whole_document_test.dart: whole document InsertText reverse=false: ```dart
+code
+```
+00:00 +318: test/journey_test.dart: navigation a plain arrow collapses a selection to its edge
+00:00 +319: test/whole_document_test.dart: whole document ReplaceRange reverse=false: ```dart
+code
+```
+00:00 +320: test/journey_test.dart: navigation moving through table cells and past the delimiter line
+00:00 +321: test/journey_test.dart: navigation moving through table cells and past the delimiter line
+00:00 +322: test/whole_document_test.dart: whole document DeleteForward reverse=false: ```dart
+code
+```
+00:00 +323: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +324: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +325: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +326: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +327: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +328: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +329: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +330: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +331: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +332: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +333: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +334: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +335: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +336: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +337: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +338: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +339: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +340: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +341: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +342: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +343: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +344: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +345: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +346: test/journey_test.dart: structure delete at a row end joins the next row
+00:00 +347: test/input_contract_test.dart: composition commits once and cancellation preserves redo
+00:00 +348: test/input_contract_test.dart: composition commits once and cancellation preserves redo
+00:00 +349: test/input_contract_test.dart: composition commits once and cancellation preserves redo
+00:00 +350: test/input_contract_test.dart: composition commits once and cancellation preserves redo
+00:00 +351: test/journey_test.dart: structure backspace joins a quote line into the previous quote line
+00:00 +352: test/input_contract_test.dart: stale commands reject without mutation
+00:00 +353: test/journey_test.dart: structure indent nests an item under its previous sibling and outdent lifts it back
+00:00 +354: test/input_contract_test.dart: shape admission and explicit source escape apply through history
+00:00 +355: test/journey_test.dart: structure the first item cannot indent and ordered items nest by their marker width
+00:00 +356: test/input_contract_test.dart: block-count admission precedes projection and source size stays bounded
+00:00 +357: test/input_contract_test.dart: Return exits one nested quote then subsequent typing keeps the outer quote
+00:00 +358: test/input_contract_test.dart: a long logical block fails shape admission even with short physical lines
+00:00 +359: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +360: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +361: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +362: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +363: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +364: test/code_closer_test.dart: dart: shared closer contract or conservative fallback
+00:00 +365: test/code_closer_test.dart: dart: shared closer contract or conservative fallback
+00:00 +366: test/boundary_test.dart: the kernel never imports Flutter
+00:00 +367: test/boundary_test.dart: the kernel never imports Flutter
+00:01 +368: test/boundary_test.dart: the kernel never imports Flutter
+00:01 +369: test/boundary_test.dart: the kernel never imports Flutter
+00:01 +370: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +371: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +372: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +373: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +374: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +375: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +376: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +377: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +378: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +379: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +380: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +381: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +382: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +383: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +384: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +385: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +386: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +387: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +388: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +389: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +390: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +391: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +392: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +393: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +394: test/render_model_test.dart: (setUpAll)
+00:01 +395: test/render_model_test.dart: (setUpAll)
+00:01 +396: test/render_model_test.dart: (setUpAll)
+00:01 +396: test/typing_whitespace_test.dart: deleting    break 
+ backward=true then typing
+00:01 +397: test/render_model_test.dart: schema version matches the generated constants
+00:01 +398: test/render_model_test.dart: schema version matches the generated constants
+00:01 +399: test/render_model_test.dart: schema version matches the generated constants
+00:01 +400: test/render_model_test.dart: schema version matches the generated constants
+00:01 +401: test/typing_whitespace_test.dart: deleting \ break 
+ backward=true then typing
+00:01 +402: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +403: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +404: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +405: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +406: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +407: test/typing_whitespace_test.dart: space then next word stays ordered in | alpha |
+| --- |
+00:01 +408: test/render_model_test.dart: a paragraph with emphasis decodes into hidden delimiters and content
+00:01 +409: test/render_model_test.dart: a paragraph with emphasis decodes into hidden delimiters and content
+00:01 +410: test/typing_whitespace_test.dart: space then next word stays ordered in **alpha**
+00:01 +411: test/render_model_test.dart: a run-less block yields an empty run range, not the next block's runs
+00:01 +412: test/typing_whitespace_test.dart: space then next word stays ordered in alpha
+next
+00:01 +413: test/render_model_test.dart: an unaligned byte view is accepted
+00:01 +414: test/typing_whitespace_test.dart: space then next word stays ordered in alpha
+next
+00:01 +415: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +416: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +417: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +418: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +419: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +420: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +421: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +422: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +423: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +424: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +425: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +426: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +427: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +428: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +429: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +430: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +431: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +432: test/render_model_test.dart: malformed host UTF-16 is rejected before encoding
+00:01 +433: test/render_model_test.dart: an extraction deviation fails closed at the transport
+00:01 +434: test/render_model_test.dart: (tearDownAll)
+00:01 +434: All tests passed!

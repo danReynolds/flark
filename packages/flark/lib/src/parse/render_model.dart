@@ -18,8 +18,12 @@ final class RenderModel {
     return RenderModel._(bytes);
   }
 
-  RenderModel._(this.bytes) : _words = Uint32List.sublistView(bytes, 0, bytes.lengthInBytes ~/ 4 * 4) {
-    if (Endian.host != Endian.little) throw UnsupportedError('flark: big-endian hosts are not supported');
+  RenderModel._(Uint8List bytes)
+    : bytes = bytes.asUnmodifiableView(),
+      _words = Uint32List.sublistView(bytes, 0, bytes.lengthInBytes ~/ 4 * 4) {
+    if (Endian.host != Endian.little) {
+      throw UnsupportedError('flark: big-endian hosts are not supported');
+    }
     if (bytes.lengthInBytes < RenderModelSchema.headerWords * 4) {
       throw const FormatException('render model shorter than its header');
     }
@@ -27,7 +31,9 @@ final class RenderModel {
       throw const FormatException('render model magic mismatch');
     }
     if (_words[HeaderField.version] != RenderModelSchema.version) {
-      throw FormatException('render model version ${_words[HeaderField.version]}, expected ${RenderModelSchema.version}');
+      throw FormatException(
+        'render model version ${_words[HeaderField.version]}, expected ${RenderModelSchema.version}',
+      );
     }
     lineCount = _words[HeaderField.lineCount];
     blockCount = _words[HeaderField.blockCount];
@@ -41,7 +47,8 @@ final class RenderModel {
     _contentOff = _blocksOff + blockCount * RenderModelSchema.blockWords;
     _runsOff = _contentOff + contentCount * RenderModelSchema.contentWords;
     _defsOff = _runsOff + runCount * RenderModelSchema.runWords;
-    _stringsByteOff = (_defsOff + definitionCount * RenderModelSchema.definitionWords) * 4;
+    _stringsByteOff =
+        (_defsOff + definitionCount * RenderModelSchema.definitionWords) * 4;
     final stringBytes = _words[HeaderField.stringBytes];
     if (_stringsByteOff + stringBytes > bytes.lengthInBytes) {
       throw const FormatException('render model truncated');
@@ -50,25 +57,79 @@ final class RenderModel {
 
   final Uint8List bytes;
   final Uint32List _words;
-  late final int lineCount, blockCount, contentCount, runCount, definitionCount, sourceBytes, sourceUtf16;
-  late final int _linesOff, _blocksOff, _contentOff, _runsOff, _defsOff, _stringsByteOff;
+  late final int lineCount,
+      blockCount,
+      contentCount,
+      runCount,
+      definitionCount,
+      sourceBytes,
+      sourceUtf16;
+  late final int _linesOff,
+      _blocksOff,
+      _contentOff,
+      _runsOff,
+      _defsOff,
+      _stringsByteOff;
 
   int _w(int wordIndex) => _words[wordIndex];
 
-  int lineStartByte(int line) => _w(_linesOff + line * RenderModelSchema.lineWords + LineField.startByte);
-  int lineStartUtf16(int line) => _w(_linesOff + line * RenderModelSchema.lineWords + LineField.startUtf16);
+  int lineStartByte(int line) =>
+      _w(_linesOff + line * RenderModelSchema.lineWords + LineField.startByte);
+  int lineStartUtf16(int line) =>
+      _w(_linesOff + line * RenderModelSchema.lineWords + LineField.startUtf16);
 
   /// Read one field of block [index]; use [BlockField] for [field].
-  int block(int index, int field) => _w(_blocksOff + index * RenderModelSchema.blockWords + field);
-  int content(int index, int field) => _w(_contentOff + index * RenderModelSchema.contentWords + field);
-  int run(int index, int field) => _w(_runsOff + index * RenderModelSchema.runWords + field);
-  int definition(int index, int field) => _w(_defsOff + index * RenderModelSchema.definitionWords + field);
+  int block(int index, int field) =>
+      _w(_blocksOff + index * RenderModelSchema.blockWords + field);
+  int content(int index, int field) =>
+      _w(_contentOff + index * RenderModelSchema.contentWords + field);
+  int run(int index, int field) =>
+      _w(_runsOff + index * RenderModelSchema.runWords + field);
+  int definition(int index, int field) =>
+      _w(_defsOff + index * RenderModelSchema.definitionWords + field);
 
   /// A string-table entry, used by replacement runs and display overrides.
-  String string(int offset, int length) => utf8.decode(Uint8List.sublistView(bytes, _stringsByteOff + offset, _stringsByteOff + offset + length));
+  String string(int offset, int length) => utf8.decode(
+    Uint8List.sublistView(
+      bytes,
+      _stringsByteOff + offset,
+      _stringsByteOff + offset + length,
+    ),
+  );
+
+  /// Index of the line containing byte [offset] (the last line for the end).
+  int lineOfByte(int offset) {
+    var lo = 0, hi = lineCount - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (lineStartByte(mid) <= offset) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
+  }
+
+  /// Index of the line containing UTF-16 offset [offset].
+  int lineOfUtf16(int offset) {
+    var lo = 0, hi = lineCount - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (lineStartUtf16(mid) <= offset) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return lo;
+  }
 
   BlockView blockAt(int index) => BlockView(this, index);
   RunView runAt(int index) => RunView(this, index);
+  DefinitionView definitionAt(int index) => DefinitionView(this, index);
+  Iterable<DefinitionView> get definitions =>
+      Iterable.generate(definitionCount, definitionAt);
   Iterable<BlockView> get blocks => Iterable.generate(blockCount, blockAt);
   Iterable<RunView> get runs => Iterable.generate(runCount, runAt);
 
@@ -80,14 +141,19 @@ final class RenderModel {
     var lo = 0, hi = runCount;
     while (lo < hi) {
       final mid = (lo + hi) >> 1;
-      if (run(mid, RunField.block) < blockIndex) { lo = mid + 1; } else { hi = mid; }
+      if (run(mid, RunField.block) < blockIndex) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
     }
     return lo;
   }
 
   /// The runs of block [blockIndex], possibly empty.
   Iterable<RunView> runsOfBlock(int blockIndex) {
-    final start = firstRunOfBlock(blockIndex), end = firstRunOfBlock(blockIndex + 1);
+    final start = firstRunOfBlock(blockIndex),
+        end = firstRunOfBlock(blockIndex + 1);
     return Iterable.generate(end - start, (i) => runAt(start + i));
   }
 }
@@ -114,8 +180,19 @@ extension type const BlockView._((RenderModel, int) _rec) {
   int get attr1 => field(BlockField.attr1);
   int get attr2 => field(BlockField.attr2);
   int get flags => field(BlockField.flags);
-  bool get isLeaf => kind == BlockKind.paragraph || kind == BlockKind.heading || kind == BlockKind.codeBlock || kind == BlockKind.htmlBlock || kind == BlockKind.tableCell || kind == BlockKind.thematicBreak;
-  Iterable<ContentView> get contentLines => Iterable.generate(contentCount, (i) => ContentView(model, contentOffset + i));
+  int get markerEndByte => field(BlockField.markerEndByte);
+  int get markerEndUtf16 => field(BlockField.markerEndUtf16);
+  bool get isLeaf =>
+      kind == BlockKind.paragraph ||
+      kind == BlockKind.heading ||
+      kind == BlockKind.codeBlock ||
+      kind == BlockKind.htmlBlock ||
+      kind == BlockKind.tableCell ||
+      kind == BlockKind.thematicBreak;
+  Iterable<ContentView> get contentLines => Iterable.generate(
+    contentCount,
+    (i) => ContentView(model, contentOffset + i),
+  );
 }
 
 extension type const ContentView._((RenderModel, int) _rec) {

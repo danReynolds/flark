@@ -1,0 +1,110 @@
+{
+  "url": "http://127.0.0.1:8813/",
+  "browser": "Codex embedded browser",
+  "viewport": {
+    "width": 1073,
+    "height": 899
+  },
+  "normalRebuiltApp": {
+    "fenceLifecycle": [
+      {
+        "action": "first tick",
+        "source": "`\n# Heading\n\n```dart\nold\n```",
+        "caret": 1
+      },
+      {
+        "action": "second tick",
+        "source": "``\n# Heading\n\n```dart\nold\n```",
+        "caret": 2
+      },
+      {
+        "action": "third tick",
+        "source": "```\n\n```\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 4
+      },
+      {
+        "action": "type x",
+        "source": "```\nx\n```\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 5
+      },
+      {
+        "action": "Down",
+        "source": "```\nx\n```\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 10
+      },
+      {
+        "action": "type prose",
+        "source": "```\nx\n```\nprose\n# Heading\n\n```dart\nold\n```",
+        "caret": 15
+      },
+      {
+        "action": "Undo prose",
+        "source": "```\nx\n```\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 10
+      },
+      {
+        "action": "Undo x",
+        "source": "```\n\n```\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 4
+      },
+      {
+        "action": "Undo creation",
+        "source": "``\n# Heading\n\n```dart\nold\n```",
+        "caret": 2
+      },
+      {
+        "action": "Redo creation",
+        "source": "```\n\n```\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 4
+      },
+      {
+        "action": "Backspace empty block",
+        "source": "\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 0
+      },
+      {
+        "action": "type plain",
+        "source": "plain\n\n# Heading\n\n```dart\nold\n```",
+        "caret": 5
+      }
+    ],
+    "emptyDocumentCompletion": {
+      "source": "```\n\n```\n\n",
+      "caret": 4
+    },
+    "quotedListCompletion": {
+      "source": "> - ```\n>   \n>   ```\n>   \n\nafter",
+      "caret": 12
+    },
+    "quotedListEnterThenType": {
+      "source": "> - ```\n>   \n>   x\n>   ```\n>   \n\nafter",
+      "caret": 18
+    },
+    "blankNavigation": {
+      "source": "before\n\n\n\nafter",
+      "upOffsets": [
+        9,
+        8,
+        7,
+        4
+      ]
+    },
+    "checkbox": {
+      "sourceAfterOneClick": "- [x] todo\n\ntext",
+      "bodyCursor": "pointer"
+    },
+    "multilineInlineCode": {
+      "source": "`a\nb`c`x",
+      "visible": "a bc`x",
+      "caret": 8
+    },
+    "visualChecks": [
+      "one empty visible code line; heading and old code remain separate",
+      "normalized inline-code space",
+      "owner Tour visible at 894 bytes"
+    ],
+    "disposableDraftRestoredEmpty": true,
+    "ownerTourEdited": false
+  },
+  "evidenceBoundary": "Local normal-app observations and mounted width tests; no new native, device or timing qualification."
+}

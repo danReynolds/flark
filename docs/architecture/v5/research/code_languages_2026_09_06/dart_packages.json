@@ -1,0 +1,201 @@
+[
+  {
+    "name": "highlight",
+    "version": "0.7.0",
+    "published": "2021-03-07T11:57:16.569617Z",
+    "repository": null,
+    "homepage": "https://github.com/pd4d10/highlight",
+    "dependencies": {
+      "collection": "^1.15.0"
+    },
+    "environment": {
+      "sdk": ">=2.12.0 <3.0.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/highlight-0.7.0.tar.gz",
+    "archive_sha256": "5353a83ffe3e3eca7df0abfb72dcf3fa66cc56b953728e7113ad4ad88497cf21"
+  },
+  {
+    "name": "re_highlight",
+    "version": "0.0.3",
+    "published": "2024-02-05T13:15:47.321245Z",
+    "repository": "https://github.com/reqable/re-highlight",
+    "homepage": "https://reqable.com",
+    "dependencies": {
+      "flutter": {
+        "sdk": "flutter"
+      },
+      "path": "^1.8.2",
+      "collection": "^1.17.1"
+    },
+    "environment": {
+      "sdk": ">=2.17.0 <4.0.0",
+      "flutter": ">=1.17.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/re_highlight-0.0.3.tar.gz",
+    "archive_sha256": "6c4ac3f76f939fb7ca9df013df98526634e17d8f7460e028bd23a035870024f2"
+  },
+  {
+    "name": "re_editor",
+    "version": "0.10.0",
+    "published": "2026-07-01T12:44:46.858098Z",
+    "repository": "https://github.com/reqable/re-editor",
+    "homepage": "https://reqable.com",
+    "dependencies": {
+      "flutter": {
+        "sdk": "flutter"
+      },
+      "re_highlight": "^0.0.3",
+      "isolate_manager": "^4.1.5+1"
+    },
+    "environment": {
+      "sdk": ">=2.17.3 <4.0.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/re_editor-0.10.0.tar.gz",
+    "archive_sha256": "66671c4774a6b4c5254c9a53ab35a083e7e7da9ae371c519bcf491c70a2a4e56"
+  },
+  {
+    "name": "flutter_code_editor",
+    "version": "0.3.5",
+    "published": "2025-09-27T04:58:05.987373Z",
+    "repository": "https://github.com/akvelon/flutter-code-editor",
+    "homepage": null,
+    "dependencies": {
+      "autotrie": "^2.0.0",
+      "characters": "^1.2.1",
+      "charcode": "^1.3.1",
+      "collection": "^1.17.2",
+      "equatable": "^2.0.5",
+      "flutter": {
+        "sdk": "flutter"
+      },
+      "flutter_highlight": "^0.7.0",
+      "highlight": "^0.7.0",
+      "http": "^1.1.0",
+      "linked_scroll_controller": "^0.2.0",
+      "meta": "^1.9.1",
+      "mocktail": "^1.0.1",
+      "scrollable_positioned_list": "^0.3.5",
+      "tuple": "^2.0.1",
+      "url_launcher": "^6.1.8"
+    },
+    "environment": {
+      "sdk": ">=2.17.0 <4.0.0",
+      "flutter": ">=3.0.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/flutter_code_editor-0.3.5.tar.gz",
+    "archive_sha256": "9af48ba8e3558b6ea4bb98b84c5eb1649702acf53e61a84d88383eeb79b239b0"
+  },
+  {
+    "name": "shiki_flutter",
+    "version": "1.1.0",
+    "published": "2026-07-26T04:59:39.230712Z",
+    "repository": "https://github.com/BirjuVachhani/shiki_flutter/tree/main/packages/shiki_flutter",
+    "homepage": "https://shiki.birju.dev",
+    "dependencies": {
+      "flutter": {
+        "sdk": "flutter"
+      },
+      "shiki_flutter_engine_interface": "^1.0.0",
+      "shiki_flutter_dart_engine": "^1.0.0",
+      "meta": ">=1.18.0 <2.0.0",
+      "web": ">=1.1.0 <1.2.0"
+    },
+    "environment": {
+      "sdk": "^3.12.0",
+      "flutter": ">=3.27.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/shiki_flutter-1.1.0.tar.gz",
+    "archive_sha256": "486b00ae4e26e6021b9be270b6bfad419b4dddf5ba328ab7e6256c4e0f405921"
+  },
+  {
+    "name": "oniguruma_dart",
+    "version": "1.0.1",
+    "published": "2026-07-19T08:38:53.464352Z",
+    "repository": "https://github.com/BirjuVachhani/oniguruma-dart/tree/main/packages/oniguruma_dart",
+    "homepage": null,
+    "dependencies": null,
+    "environment": {
+      "sdk": "^3.12.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/oniguruma_dart-1.0.1.tar.gz",
+    "archive_sha256": "b861147f0c23251bbb6276adb50f09f6794aa9dd662be42bf154646e0f68bc19"
+  },
+  {
+    "name": "oniguruma_native",
+    "version": "1.0.1+2",
+    "published": "2026-07-23T15:19:56.845611Z",
+    "repository": "https://github.com/BirjuVachhani/oniguruma-dart/tree/main/packages/oniguruma_native",
+    "homepage": null,
+    "dependencies": {
+      "ffi": ">=2.0.0 <2.3.0",
+      "hooks": ">=2.0.0 <2.2.0",
+      "code_assets": ">=1.0.0 <1.3.0",
+      "native_toolchain_c": ">=0.19.0 <0.20.0",
+      "archive": ">=4.0.0 <4.1.0",
+      "crypto": ">=3.0.0 <3.1.0"
+    },
+    "environment": {
+      "sdk": "^3.12.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/oniguruma_native-1.0.1%2B2.tar.gz",
+    "archive_sha256": "98955fa3b3064f9361a9ed652434187a35395bff5f6e866f2d5aec4140c72f8e"
+  },
+  {
+    "name": "tree_sitter",
+    "version": "0.2.1",
+    "published": "2025-10-04T02:37:02.490071Z",
+    "repository": "https://github.com/UserNobody14/tree-sitter-dart",
+    "homepage": null,
+    "dependencies": {
+      "dylib": "^0.3.3",
+      "args": "^2.7.0",
+      "ffi": "^2.1.4",
+      "freezed_annotation": "^3.1.0",
+      "path": "^1.9.1",
+      "json_annotation": "^4.9.0"
+    },
+    "environment": {
+      "sdk": ">=3.8.0 <4.0.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/tree_sitter-0.2.1.tar.gz",
+    "archive_sha256": "75ba616ea8e5755afeb772ca97fa528cc24c6c91743eff58541f48e9c09d95a3"
+  },
+  {
+    "name": "tree_sitter_dart",
+    "version": "0.1.1",
+    "published": "2026-08-05T05:50:13.703102Z",
+    "repository": "https://github.com/meshagent/lapce",
+    "homepage": null,
+    "dependencies": {
+      "flutter": {
+        "sdk": "flutter"
+      },
+      "web": "^1.1.1"
+    },
+    "environment": {
+      "sdk": "^3.12.0",
+      "flutter": ">=3.41.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/tree_sitter_dart-0.1.1.tar.gz",
+    "archive_sha256": "1786eb28918b01a5909769d48e7b56b28ca5bf2899111b000cb3b083255e52e6"
+  },
+  {
+    "name": "tree_sitter_language_pack",
+    "version": "1.16.2",
+    "published": "2026-09-06T07:01:26.538785Z",
+    "repository": "https://github.com/xberg-io/tree-sitter-language-pack",
+    "homepage": null,
+    "dependencies": {
+      "http": "^1.2.0",
+      "crypto": "^3.0.0",
+      "flutter_rust_bridge": "2.13.0",
+      "freezed_annotation": "^3.1.0",
+      "json_annotation": "^4.11.0"
+    },
+    "environment": {
+      "sdk": ">=3.11.0 <4.0.0"
+    },
+    "archive_url": "https://pub.dev/api/archives/tree_sitter_language_pack-1.16.2.tar.gz",
+    "archive_sha256": "b17c11e2b9afdb7715c4d9d09105c08633fc7c2d78380aded1a8757ce749b1de"
+  }
+]

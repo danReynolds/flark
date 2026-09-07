@@ -1,5 +1,9 @@
 # Cookbook
 
+> **V4 historical guide.** These examples do not describe the in-progress V5
+> API. See [RFC 030](architecture/rfc/rfc_030_synchronous_core.md) and the
+> [V5 build plan](architecture/v5/build_plan.md).
+
 All examples use the supported Flutter barrel:
 
 ```dart

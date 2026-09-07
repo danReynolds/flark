@@ -1,0 +1,227 @@
+Resolving dependencies...
+Downloading packages...
+  clock 1.1.2 (1.1.3 available)
+  code_assets 1.0.0 (2.0.0 available)
+  hooks 1.0.3 (2.2.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.14 available)
+  vector_math 2.2.0 (2.4.2 available)
+Got dependencies!
+10 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading /Users/dan/Coding/sovereign/packages/flark_flutter/example/test/web_input_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: browser paste keeps a closer literal and commits exactly once
+00:00 +0 -1: browser paste keeps a closer literal and commits exactly once [E]
+  Expected: false
+    Actual: <true>
+  the browser must deliver its paste event
+  
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/errors.dart 274:3       throw_
+  packages/matcher/src/expect/prints_matcher.dart.js 605:22                         fail
+  packages/matcher/src/expect/prints_matcher.dart.js 601:12                         _expect
+  packages/matcher/src/expect/prints_matcher.dart.js 534:12                         expect$
+  packages/flutter_test/src/test_text_input_key_handler.dart.js 14629:12            expect$
+  web_input_test.dart.js 428:29                                                     <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 618:19               <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 643:23               <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 245:113                 <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 292:16                  [_run]
+  packages/stack_trace/src/stack_zone_specification.dart.js 245:95                  <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 589:19               <fn>
+  dart-sdk/lib/async/zone_root.dart 48:47                                           _rootRunUnary
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 733:19                                               runUnary
+  dart-sdk/lib/async/future_impl.dart 222:18                                        handleValue
+  dart-sdk/lib/async/future_impl.dart 948:44                                        handleValueCallback
+  dart-sdk/lib/async/future_impl.dart 977:13                                        _propagateToListeners
+  dart-sdk/lib/async/future_impl.dart 711:7                                         [_complete]
+  dart-sdk/lib/async/future.dart 436:15                                             <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 292:16                  [_run]
+  packages/stack_trace/src/stack_zone_specification.dart.js 235:71                  <fn>
+  dart-sdk/lib/async/zone_root.dart 27:47                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone.dart 625:7                                                runGuarded
+  dart-sdk/lib/async/zone.dart 666:23                                               <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 292:16                  [_run]
+  packages/stack_trace/src/stack_zone_specification.dart.js 235:71                  <fn>
+  dart-sdk/lib/async/zone_root.dart 35:13                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone.dart 649:23                                               <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/private/isolate_helper.dart 47:11           internalCallback
+  ===== asynchronous gap ===========================
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 763:19                                               registerBinaryCallback
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 642:23               _wrapJsFunctionForAsync
+  packages/test_api/src/backend/declarer.dart.js 1036:35                            <fn>
+  dart-sdk/lib/async/zone_root.dart 35:13                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone_api.dart 165:63                                           _runZoned
+  dart-sdk/lib/async/zone_api.dart 92:10                                            runZoned
+  packages/test_api/src/backend/declarer.dart.js 1034:13                            [_waitForOutstandingCallbacks]
+  packages/test_api/src/backend/declarer.dart.js 1162:80                            <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 618:19               <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 643:23               <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 245:113                 <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 292:16                  [_run]
+  packages/stack_trace/src/stack_zone_specification.dart.js 245:95                  <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 589:19               <fn>
+  dart-sdk/lib/async/zone_root.dart 48:47                                           _rootRunUnary
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 733:19                                               runUnary
+  dart-sdk/lib/async/future_impl.dart 222:18                                        handleValue
+  dart-sdk/lib/async/future_impl.dart 948:44                                        handleValueCallback
+  dart-sdk/lib/async/future_impl.dart 977:13                                        _propagateToListeners
+  dart-sdk/lib/async/future_impl.dart 711:7                                         [_complete]
+  dart-sdk/lib/async/future.dart 265:13                                             <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 292:16                  [_run]
+  packages/stack_trace/src/stack_zone_specification.dart.js 235:71                  <fn>
+  dart-sdk/lib/async/zone_root.dart 27:47                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone.dart 625:7                                                runGuarded
+  dart-sdk/lib/async/zone.dart 666:23                                               <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 292:16                  [_run]
+  packages/stack_trace/src/stack_zone_specification.dart.js 235:71                  <fn>
+  dart-sdk/lib/async/zone_root.dart 35:13                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone.dart 649:23                                               <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/private/isolate_helper.dart 47:11           internalCallback
+  ===== asynchronous gap ===========================
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 763:19                                               registerBinaryCallback
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 642:23               _wrapJsFunctionForAsync
+  packages/test_api/src/backend/declarer.dart.js 1150:39                            <fn>
+  dart-sdk/lib/async/zone_root.dart 35:13                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone_api.dart 165:63                                           _runZoned
+  dart-sdk/lib/async/zone_api.dart 92:10                                            runZoned
+  packages/test_api/src/backend/declarer.dart.js 1148:17                            <fn>
+  packages/test_api/src/backend/declarer.dart.js 1193:9                             [_guardIfGuarded]
+  packages/test_api/src/backend/declarer.dart.js 1147:30                            <fn>
+  packages/stack_trace/src/stack_zone_specification.dart.js 1405:18                 <fn>
+  dart-sdk/lib/async/zone_root.dart 35:13                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone_api.dart 165:63                                           _runZoned
+  dart-sdk/lib/async/zone_api.dart 92:10                                            runZoned
+  packages/stack_trace/src/stack_zone_specification.dart.js 1403:20                 capture
+  packages/test_api/src/backend/declarer.dart.js 1146:19                            [_onRun]
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  packages/test_api/src/backend/live_test_controller.dart.js 178:19                 run
+  packages/test_api/src/backend/remote_listener.dart.js 269:18                      <fn>
+  dart-sdk/lib/async/zone_root.dart 35:13                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone_api.dart 165:63                                           _runZoned
+  dart-sdk/lib/async/zone_api.dart 92:10                                            runZoned
+  packages/test_api/src/backend/remote_listener.dart.js 268:13                      [_runLiveTest]
+  packages/test_api/src/backend/remote_listener.dart.js 249:27                      <fn>
+  dart-sdk/lib/async/zone_root.dart 48:47                                           _rootRunUnary
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 733:19                                               runUnary
+  dart-sdk/lib/async/zone.dart 633:7                                                runUnaryGuarded
+  dart-sdk/lib/async/stream_impl.dart 381:5                                         [_sendData]
+  dart-sdk/lib/async/stream_impl.dart 312:7                                         [_add]
+  dart-sdk/lib/async/stream_controller.dart 798:5                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 832:7                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 663:7                                   [_add]
+  dart-sdk/lib/async/stream_controller.dart 618:5                                   add
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone_root.dart 56:13                                           _rootRunUnary
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 733:19                                               runUnary
+  dart-sdk/lib/async/zone.dart 633:7                                                runUnaryGuarded
+  dart-sdk/lib/async/stream_impl.dart 381:5                                         [_sendData]
+  dart-sdk/lib/async/stream_impl.dart 312:7                                         [_add]
+  dart-sdk/lib/async/stream_controller.dart 798:5                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 832:7                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 663:7                                   [_add]
+  dart-sdk/lib/async/stream_controller.dart 618:5                                   add
+  dart-sdk/lib/async/stream_controller.dart 898:5                                   add
+  packages/stream_channel/src/stream_channel_controller.dart.js 1126:22             add
+  packages/stream_channel/src/stream_channel_controller.dart.js 509:31              <fn>
+  dart-sdk/lib/async/zone.dart 891:9                                                runUnaryGuarded
+  dart-sdk/lib/internal/async_cast.dart 95:5                                        [_onData]
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 891:9                                                runUnaryGuarded
+  dart-sdk/lib/async/stream_impl.dart 381:5                                         [_sendData]
+  dart-sdk/lib/async/stream_impl.dart 312:7                                         [_add]
+  dart-sdk/lib/async/stream_controller.dart 798:5                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 832:7                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 663:7                                   [_add]
+  dart-sdk/lib/async/stream_controller.dart 618:5                                   add
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 891:9                                                runUnaryGuarded
+  dart-sdk/lib/async/stream_impl.dart 381:5                                         [_sendData]
+  dart-sdk/lib/async/stream_impl.dart 312:7                                         [_add]
+  dart-sdk/lib/async/stream_controller.dart 798:5                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 832:7                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 663:7                                   [_add]
+  dart-sdk/lib/async/stream_controller.dart 618:5                                   add
+  dart-sdk/lib/async/stream_controller.dart 898:5                                   add
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 891:9                                                runUnaryGuarded
+  dart-sdk/lib/async/stream_impl.dart 381:5                                         [_sendData]
+  dart-sdk/lib/async/stream_impl.dart 312:7                                         [_add]
+  dart-sdk/lib/async/stream_controller.dart 798:5                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 832:7                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 663:7                                   [_add]
+  dart-sdk/lib/async/stream_controller.dart 618:5                                   add
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 891:9                                                runUnaryGuarded
+  dart-sdk/lib/async/stream_impl.dart 381:5                                         [_sendData]
+  dart-sdk/lib/async/stream_impl.dart 312:7                                         [_add]
+  dart-sdk/lib/async/stream_controller.dart 798:5                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 832:7                                   [_sendData]
+  dart-sdk/lib/async/stream_controller.dart 663:7                                   [_add]
+  dart-sdk/lib/async/stream_controller.dart 618:5                                   add
+  dart-sdk/lib/async/stream_controller.dart 898:5                                   add
+  packages/stream_channel/src/stream_channel_controller.dart.js 1126:22             add
+  packages/flutter_test/src/_test_selector_web.dart.js 123:29                       <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 218:27    _callDartFunctionFast1
+  dart-sdk/lib/_internal/js_dev_runtime/patch/js_allow_interop_patch.dart 78:15     ret
+  
+00:00 +0 -2: loading /Users/dan/Coding/sovereign/packages/flark_flutter/example/test/web_input_test.dart [E]
+  Failed to load "test/web_input_test.dart": PlatformException(paste_fail, Clipboard.getData failed., null, null)
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/errors.dart 274:3       throw_
+  packages/flutter/src/services/text_editing_delta.dart.js 8402:19                  decodeEnvelope
+  packages/flutter/src/services/text_editing_delta.dart.js 7576:62                  <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 618:19               <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 643:23               <fn>
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 589:19               <fn>
+  dart-sdk/lib/async/zone_root.dart 48:47                                           _rootRunUnary
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 733:19                                               runUnary
+  dart-sdk/lib/async/future_impl.dart 222:18                                        handleValue
+  dart-sdk/lib/async/future_impl.dart 948:44                                        handleValueCallback
+  dart-sdk/lib/async/future_impl.dart 977:13                                        _propagateToListeners
+  dart-sdk/lib/async/future_impl.dart 720:5                                         [_completeWithValue]
+  dart-sdk/lib/async/future_impl.dart 804:7                                         <fn>
+  dart-sdk/lib/async/zone_root.dart 35:13                                           _rootRun
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/async/zone.dart 726:19                                               run
+  dart-sdk/lib/async/zone.dart 625:7                                                runGuarded
+  dart-sdk/lib/async/zone.dart 666:23                                               <fn>
+  dart-sdk/lib/async/schedule_microtask.dart 40:34                                  _microtaskLoop
+  dart-sdk/lib/async/schedule_microtask.dart 49:5                                   _startMicrotaskLoop
+  dart-sdk/lib/_internal/js_dev_runtime/private/ddc_runtime/operations.dart 118:77  tear
+  dart-sdk/lib/_internal/js_dev_runtime/patch/async_patch.dart 183:69               <fn>
+  
+00:00 +0 -2: (tearDownAll)
+00:00 +0 -2: (tearDownAll) - did not complete [E]
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  /Users/dan/Coding/sovereign/packages/flark_flutter/example/test/web_input_test.dart: loading /Users/dan/Coding/sovereign/packages/flark_flutter/example/test/web_input_test.dart
+  test/web_input_test.dart: (tearDownAll) (did not complete)
+  test/web_input_test.dart: browser paste keeps a closer literal and commits exactly once

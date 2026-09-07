@@ -1,0 +1,241 @@
+{
+  "recordedAtUtc": "2026-09-06T14:20:36.978415+00:00",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "evidence": "Local dirty code-editing candidate; normal Flutter web/Wasm app exercised through visible browser UI.",
+  "dogfoodReady": {
+    "D0-web": true,
+    "D0-macOS": false
+  },
+  "qualification": "Exploratory dogfooding on the observed embedded browser, not M5, device performance, native, CI or release proof.",
+  "baselineCandidate": "../2026-09-05-fence/candidate.json",
+  "baselineCandidateSha256": "938bc2d6e1a3c09bf1f57aea74e0d78d3af11d27198699e0003e6540a5b40233",
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "ce5d0e1ccafd13a6b7257d9d33d1f7046b3aadfa6e67e9d2c51d3fa19a01840e",
+  "inputFileCount": 218,
+  "buildManifestFile": "build_manifest.sha256",
+  "buildManifestSha256": "ae24f85d14bd36f7ca086bc4ebd7f94e51e3b6784491f652fb9ee6e8a43b2c8b",
+  "buildFileCount": 41,
+  "changedBaselineInputs": {
+    "CLAUDE.md": {
+      "before": "d158f5dfde46fdc225aecc645fb650d67a7ba1aaf2473df40f3ea32eb6805ba0",
+      "after": "df3d72092f7f4a7d20d54342f6d1f6114a468a1e86ba8c217012cbe831ffec45"
+    },
+    "DOGFOOD_MILESTONE.md": {
+      "before": "aff562413703f20cba480011df8a4865072bde8b079546fe5d53b7a8f718107b",
+      "after": "693c9b5496741826341f2a97ff6f53ba8a7660041cd0b880ebef602cc6eb8e26"
+    },
+    "docs/README.md": {
+      "before": "2f8e295f15bf8dfc8b82177e04a23f2f0553eae9d82107e7da5365e1f6ae081e",
+      "after": "6b79ba7b093fba44fe5f9174a027f5f8a37d1cca2cdacfe1dd1b68417e9266f8"
+    },
+    "docs/architecture/v5/build_plan.md": {
+      "before": "c6434a1f2145f91a9ae26a5c5bbf5e2aeeadf6d8257bf9c737a4b64ce1597366",
+      "after": "12cc0208b2ac51a189dacab7af5d7790fa63f674d80fa58dd42d093a73ff6318"
+    },
+    "docs/architecture/v5/edit_profile_v1.md": {
+      "before": "7f016f974921a67e19ff200410c0ca023a1a1ce17eedeae08c13f5bcc3ca7e2b",
+      "after": "7a515323f38c95d7caa599d0c2946077fb55497e5fd168f5e23ef802cbe1ff71"
+    },
+    "docs/architecture/v5/web_dogfood.md": {
+      "before": "07451106d6f66dbcb8015361e3208aee2b46447e218fb917f6e913f23dc20dab",
+      "after": "9df2fa2b29e98e68f3b898da24bcf7b6aa00b3c82cf890770f1b4f0d7229e954"
+    },
+    "packages/flark/lib/src/kernel/commands.dart": {
+      "before": "417b5d1b71f91a92083443d8a8dad3a700743800ed9ad40dfd21ce17aafa46e7",
+      "after": "aea8649bc2ba6314f1ee71d7a81b399c2d69d6ed75c55e7cea213e594719335f"
+    },
+    "packages/flark/lib/src/kernel/editor.dart": {
+      "before": "5e301ee5c08d24958f7f750aaee3a9d2767e4d567ccf64b7735f0fcb0c79c7d4",
+      "after": "94abc4a57316277ae0388dc568e071ab70916131eb9bebbc27f68a911f64293d"
+    },
+    "packages/flark/pubspec.lock": {
+      "before": "e5f597d1873814aee19c2ea2cd5456965dd475149587849fdf1bc996d2bde17a",
+      "after": "2b33087168ceb902e9cdcb51113e82bbc1bbec6913bbeb364ea814a50c7ad910"
+    },
+    "packages/flark/pubspec.yaml": {
+      "before": "16656679e1660a1f671739afce8b0111b920636487e5164dc38627c0fbe178ad",
+      "after": "38a752c186b041d7b5434761e7cdeae4306e8b6c3d8503b5296c9d787aefee79"
+    },
+    "packages/flark/test/boundary_test.dart": {
+      "before": "3720bd77eb5d5f97b90c3c82dad25e7b5fbfcc7f55d1dc3fbd1eeb00896aaf4c",
+      "after": "c8173a2ff8c0be4c4fb9bf81ff38476f8e4430975d01a3204f8f0deb67a85036"
+    },
+    "packages/flark/test/matrix_test.dart": {
+      "before": "8b8cadbf198460592ebdfbf5e64fb7494bfb699420ffeaed533e9537e03b9e58",
+      "after": "f2c1701348e7ae0e0b35cb625ebaa642d10e51225edb1ff0abe8d9fb6acf09d2"
+    },
+    "packages/flark_flutter/example/README.md": {
+      "before": "069c2c2175ff5d127e99b92fe875649a9a28512c39ec3b4009b6cd074d34beeb",
+      "after": "55172f14fb9a1842a36a8d890d26004583d186a443f4e894a6331fdb81b39008"
+    },
+    "packages/flark_flutter/example/pubspec.lock": {
+      "before": "513924c459e08244db775d512289365f5305b17d113051b430e047b39f649acf",
+      "after": "2863e1f876ae082629730afec948df33626df9c32a23c53d57545d1ffaee995d"
+    },
+    "packages/flark_flutter/example/test/web_input_test.dart": {
+      "before": "3f7b82f697c961de2845a7e732bd1bc1bf019d0b7b24eae949f4772757f135b2",
+      "after": "78bd4ff685f283ef14475cf86d8173067d2acfdb9d00fefc04bb017dfd062bf8"
+    },
+    "packages/flark_flutter/lib/src/editor.dart": {
+      "before": "4abc4c74a0c430d21ac7a4223436ba669695d24ec4bd7484433c4ae1f0462550",
+      "after": "f59dc5d5e53afc6bfa1cd80b833ae2ed81b6aeedc41eb371aaf03b60d708f4f2"
+    },
+    "packages/flark_flutter/lib/src/surface.dart": {
+      "before": "dd0a4c3bd40aeece78e8fb6513d7000c0dfcaa538811050d0e270781646939c6",
+      "after": "4f37f02d9fea91373721f725caec74a4207ac20a50e671a016d70abed4f923d4"
+    },
+    "packages/flark_flutter/pubspec.lock": {
+      "before": "6ade1fbb3825ed8e976b7409b9ca46b26aa5bb79705201ebd785c12056b2a4b1",
+      "after": "0b9d83ce924ea0568c8187fff825ff2ec6a970c2f86e97c0a148fb3a23eac7cf"
+    }
+  },
+  "newInputs": [
+    "docs/architecture/v5/code_editing_review_2026_09_06.md",
+    "packages/flark/lib/code.dart",
+    "packages/flark/lib/src/kernel/code_editing.dart",
+    "packages/flark/test/code_editing_test.dart",
+    "packages/flark/test/code_highlight_test.dart",
+    "packages/flark/tool/bench_code.dart",
+    "packages/flark_flutter/test/code_selection_test.dart",
+    "packages/flark_flutter/test/code_tools_test.dart",
+    "packages/flark_flutter/example/tool/serve_web.py"
+  ],
+  "freshSuiteCounts": {
+    "core": 403,
+    "host": 116,
+    "workbench": 25,
+    "realBrowserTransport": 4,
+    "totalDartFlutterBrowser": 548
+  },
+  "inheritedEvidence": {
+    "rustTests": 42,
+    "transportCases": 1322,
+    "basis": "All baseline native/flark_parse input hashes and parser Wasm match the prior sealed candidate; not rerun this turn."
+  },
+  "codeDecorationBounds": {
+    "registeredGrammars": 12,
+    "autoSampleUtf16": 1024,
+    "maxBlockUtf16": 8192,
+    "cacheEntries": 32,
+    "cacheUtf16": 65536,
+    "detectionCacheEntries": 32
+  },
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "productionDartLineCountsIncludingComments": {
+    "flark": 4704,
+    "flark_flutter": 2204
+  },
+  "servedArtifacts": {
+    "main.dart.wasm": {
+      "sha256": "b9d498458d6f5be42f4c98750942b32a3e955fa4775b86f32ace10ce4a4ff4e8",
+      "bytes": 2149514,
+      "matchesBuild": true
+    },
+    "main.dart.mjs": {
+      "sha256": "a65fbdf175b48911aeccae8a2c7d0a89e448f509873ac5804f41241ce1dc133f",
+      "bytes": 33363,
+      "matchesBuild": true
+    },
+    "main.dart.js": {
+      "sha256": "a70d784d2df0d21f79a5412e0ad353a3f8688b9b4e743b3aaa946bccbd6e565b",
+      "bytes": 2515049,
+      "matchesBuild": true
+    },
+    "assets/packages/flark/lib/assets/wasm/flark_parse.wasm": {
+      "sha256": "64cc94b932e17ac712a3b0f9006a5d40f9a6aa46fe3d0d1828b25f3f8efc167f",
+      "bytes": 526482,
+      "matchesBuild": true
+    }
+  },
+  "browserObservationsFile": "browser_observations.json",
+  "browserObservationsSha256": "65d8410add6ba2af8779ff6186b5e5f33238b7a78faf7b1a82658f6ebca74e7b",
+  "knownLimits": [
+    "Automatic detection is heuristic; manual tags and Plain text are available.",
+    "No formatter or automatic closing-brace dedent.",
+    "Bodyless imported fence syntax uses source editing for Return.",
+    "Native/AppKit, IME, floor devices, performance, Dune, Fleury and full browser matrix remain separate gates."
+  ],
+  "logs": {
+    "core-analyze": {
+      "result": "passed",
+      "logFile": "core-analyze.log.gz",
+      "sha256": "a6121b60dcf2917c5c66a8dd816d337efb4b76611461eb16abe9f9fa9b5b4cf4"
+    },
+    "core-tests": {
+      "result": "403 passed; 1000 generated histories seed 2028",
+      "logFile": "core-tests.log.gz",
+      "sha256": "6d0e8f7a9d2eb9682420fd7caa1009f8ed3f12deecde85f8b4eb5e85928c5496"
+    },
+    "host-analyze": {
+      "result": "passed",
+      "logFile": "host-analyze.log.gz",
+      "sha256": "89ac68b0473e6a7bd5f67f41f7d88ca11a799ebd6e8a957ec95b63d81cea4969"
+    },
+    "host-tests": {
+      "result": "116 passed",
+      "logFile": "host-tests.log.gz",
+      "sha256": "1af9a43db05b526b06c2bf985305a5c6b6d48e1881160e2bb1fa9833bcf92194"
+    },
+    "workbench-analyze": {
+      "result": "passed",
+      "logFile": "workbench-analyze.log.gz",
+      "sha256": "1aa45a786081021d35aa90720164afa737ac5046bcd6ec677f2a0d290aeaaacf"
+    },
+    "workbench-tests": {
+      "result": "25 passed",
+      "logFile": "workbench-tests.log.gz",
+      "sha256": "3e83ca0c149b0021afae8d06aee2b773b1cd966804b9c7779fea90d85b8ce2d8"
+    },
+    "chrome-tests": {
+      "result": "4 passed",
+      "logFile": "chrome-tests.log.gz",
+      "sha256": "2d6a6acb71c36f5dc59d364eed2659bf2f67eb7be33765f41687f0c840ff485d"
+    },
+    "web-build": {
+      "result": "passed",
+      "logFile": "web-build.log.gz",
+      "sha256": "9c39f66cea26e591cc169ca8d66d5e88208c005a4f7c9cc6f537582bf74fc2eb"
+    },
+    "format": {
+      "result": "passed",
+      "logFile": "format.log.gz",
+      "sha256": "1c36e89b65009ec83414e4278e8939f3a0c5668998fc9307009a0317b9531191"
+    },
+    "selection-before-fix": {
+      "result": "expected regression failure",
+      "logFile": "selection-before-fix.log.gz",
+      "sha256": "3024f204867dd4c55cba4b09b278ee613d8ca7acf69b8462bc2a9d0318017394"
+    },
+    "boundary-before-fix": {
+      "result": "expected regression failure",
+      "logFile": "boundary-before-fix.log.gz",
+      "sha256": "b901cca6c3afa10775750bf4a39d31de41d058c2609602485d2651d01d560646"
+    },
+    "indent-before-fix": {
+      "result": "expected regression failure",
+      "logFile": "indent-before-fix.log.gz",
+      "sha256": "1551fec1b17b9f33441df92f9a148a8789f5c0608349f26353d9ca2e02ba76b7"
+    },
+    "code-cost-diagnostic": {
+      "result": "local Dart diagnostic; no frame budget claim",
+      "logFile": "code-cost-diagnostic.log.gz",
+      "sha256": "fed794084161e91324b4c19044054e8f9148e88102be9eb6b53b010f2438e994"
+    },
+    "preview-http": {
+      "result": "final build-specific asset paths requested by browser",
+      "logFile": "preview-http.log.gz",
+      "sha256": "9266a02505c5191331e1df4a7846d195758ba3365a5076bbd306c4f129ad66fa"
+    }
+  }
+}

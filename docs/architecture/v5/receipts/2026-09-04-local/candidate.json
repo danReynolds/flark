@@ -1,0 +1,197 @@
+{
+  "recordedAtUtc": "2026-09-05T00:26:15.047933+00:00",
+  "evidence": "local uncommitted working tree",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "dogfoodReady": false,
+  "machine": {
+    "cpu": "Apple M1 Pro",
+    "memoryBytes": 17179869184,
+    "os": "macOS 26.2 (25C56)",
+    "architecture": "arm64"
+  },
+  "flutter": {
+    "frameworkVersion": "3.44.4",
+    "channel": "[user-branch]",
+    "repositoryUrl": "unknown source",
+    "frameworkRevision": "ad70ec4617166f1c38e5d2bfd388af71fda14f06",
+    "frameworkCommitDate": "2026-06-24 11:07:06 -0700",
+    "engineRevision": "a10d8ac38de835021c8d2f920dbf50a920ccc030",
+    "engineCommitDate": "2026-06-23 23:09:55.000Z",
+    "engineContentHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+    "engineBuildDate": "2026-06-23 20:26:40.203",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.4"
+  },
+  "inputManifestSha256": "94f424b34e246a57b23cf74a985cfaa46e661531d2a1b1a1a6c2c252cccbf53f",
+  "inputManifestFile": "input_manifest.sha256",
+  "kernelBenchmark": {
+    "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+    "evidence": "local working tree",
+    "sourceTreeSha256": "a002a4ed1ff27c27c2e076e015ab088c7dcaeb2f24ce7357828d683305ffc698",
+    "runtime": "3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"",
+    "os": "Version 26.2 (Build 25C56)",
+    "fixture": "dense",
+    "sourceBytes": 16694,
+    "fixtureSha256": "81fecc5feda4e724a2622fb67ff1cc4a3a5bb5149394345124f269c18d28065f",
+    "modelSha256": "37a4f13d3c1172b7fa315b04bdef1ec9b075123fa8af0d404a6cbd9869ac7f0b",
+    "schema": 2,
+    "blocks": 769,
+    "runs": 2144,
+    "rows": 705,
+    "warmupPairs": 100,
+    "measuredPairs": 400,
+    "insertP99Us": 2201,
+    "backspaceP99Us": 1957
+  },
+  "localGates": {
+    "kernel_analyze": {
+      "status": "passed",
+      "logSha256": "ab9d4a5159d42e8729ccf4767fdc6bea6452ec1376310aebf470860ca33191d4",
+      "result": [
+        "No issues found!"
+      ]
+    },
+    "kernel_tests": {
+      "status": "passed",
+      "logSha256": "d9f60a70497335436e22d663788e441644698f33f9d70c03d28745ee8cb7750b",
+      "result": [
+        "00:00 +217: All tests passed!"
+      ]
+    },
+    "generated_histories": {
+      "status": "passed",
+      "logSha256": "6a848189a8c8fadef8e9e56c929278c0d861be1d5377234bbabd117dded61424",
+      "result": [
+        "00:00 +0: random command sequences keep every invariant (seed 2026, 1000 sequences)",
+        "00:01 +1: All tests passed!"
+      ]
+    },
+    "host_analyze": {
+      "status": "passed",
+      "logSha256": "49f15354d24a556d975b7ee8477b435bde0ff789f5595fd69c7e7f7eaa7f3492",
+      "result": [
+        "No issues found! (ran in 2.6s)"
+      ]
+    },
+    "host_tests": {
+      "status": "passed",
+      "logSha256": "5ef13deed210801a9b09d4ce739d36b93e9a07f299f665477b95978fa766d63e",
+      "result": [
+        "00:02 +72: All tests passed!"
+      ]
+    },
+    "workbench_analyze": {
+      "status": "passed",
+      "logSha256": "893a078b6156eb47bbd4ab8181f344daf2b4746270bcfbbe63aad3b945210fd9",
+      "result": [
+        "No issues found! (ran in 1.6s)"
+      ]
+    },
+    "workbench_tests": {
+      "status": "passed",
+      "logSha256": "1961ecbed4717be296713d5a62e4eda0b954d28622102216131f20f9ce17dd5f",
+      "result": [
+        "00:01 +11: All tests passed!"
+      ]
+    },
+    "rust": {
+      "status": "passed",
+      "logSha256": "af28f0499ac358240893eed4ba7f01622ddb28e5a52aeb9924589b06e56f6bfe",
+      "result": [
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s",
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "parity": {
+      "status": "passed",
+      "logSha256": "eb8c513b8cdd8777667b0112a165e6980e88152e0efd443270f7ebea8a08aad2",
+      "result": [
+        "committed wasm identical to native: 1322 cases",
+        "fresh wasm identical to native"
+      ]
+    },
+    "prebuilt_consumer": {
+      "status": "passed",
+      "logSha256": "412fe3c85ae159ecfccc60a72974972468add177d36f619840fad7104c03e1cf",
+      "result": [
+        "prebuilt consumer OK (no Rust on PATH)"
+      ]
+    },
+    "schema": {
+      "status": "passed",
+      "logSha256": "97afc04467e0b286895f54bceb2292c5c9007c92c05be7aad0adf2ac58bd03b1",
+      "result": [
+        "Schema freshness PASS"
+      ]
+    },
+    "macos_build": {
+      "status": "passed",
+      "logSha256": "b9b090eaca7426d34b9c9b0b73c85d4a83066fef48b8d878e585ecf23176442e",
+      "result": [
+        "\u2713 Built build/macos/Build/Products/Profile/flark_dogfood.app (64.4MB)"
+      ]
+    },
+    "web_build": {
+      "status": "passed",
+      "logSha256": "25a3d586f52fab7a5cb688fd3e1f7bb4bd9b49299c651ea7de60c10791e707b5",
+      "result": [
+        "\u2713 Built build/web"
+      ]
+    }
+  },
+  "artifacts": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "9fe43a4b16ba0e5474bedb54ca1a57ce4eb39a082535e4d4cebbdba6f426ad76",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/App.framework/Versions/A/App": "a1460c8935777e68e08279ae92ad24e6a0126cdceea7b59f5f9b9b13afc413c6",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "eb62e4546f1def4bc64ac7b90d68b8ced030e07e4ca33082c3e35266e57af393",
+    "packages/flark_flutter/example/build/web/main.dart.wasm": "9b36ffb67492f322da2c0c957922eb357ebbeede0cf6a94ebb4304f296a93c3e",
+    "packages/flark/lib/assets/wasm/flark_parse.wasm": "8074764a90f5784a38abca055fe73cfe0397b993b71f95e0862e85a55d4b373e",
+    "packages/flark_flutter/example/build/web/assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "8074764a90f5784a38abca055fe73cfe0397b993b71f95e0862e85a55d4b373e"
+  },
+  "macosArchitectures": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "x86_64 arm64",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "x86_64 arm64"
+  },
+  "macosBundle": {
+    "path": "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app",
+    "fileCount": 31,
+    "sha256": "9e4c85a7c8ef63ae5b44c3f53cdcd2741bd2a64f3381feeb4d0fd35b315fd111"
+  },
+  "webBundle": {
+    "path": "packages/flark_flutter/example/build/web",
+    "fileCount": 41,
+    "sha256": "688c8bc4167c49a3770aaf7d1b18e3226eacff79e82f9f044a28114ed3751f29"
+  },
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "notQualified": [
+    "attended AppKit input and menus",
+    "production input-to-raster envelope",
+    "opening, source transitions and sustained/lifecycle performance",
+    "final browser interaction",
+    "Dune integration",
+    "floor Android and CJK",
+    "named-commit CI"
+  ],
+  "nativeBlocker": "Mac locked; CUA required manual unlock. Earlier timing runs lack adequate foreground/display provenance and are not qualification.",
+  "kernelNativeArtifact": {
+    "path": "packages/flark/.dart_tool/lib/libflark_parse.dylib",
+    "sha256": "cfc4690ab2f68ee287df759523b72db4c6cb0d1269bb912a12825823ae13ab09",
+    "mapping": "packages/flark/.dart_tool/native_assets.yaml",
+    "explicitOverride": false
+  }
+}

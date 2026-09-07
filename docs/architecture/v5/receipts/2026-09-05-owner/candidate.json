@@ -1,0 +1,170 @@
+{
+  "recordedAtUtc": "2026-09-06T01:29:20.453042+00:00",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "evidence": "Local dirty owner-follow-up candidate: navigation and cursor fixed; typed fence authoring open.",
+  "dogfoodReady": {
+    "D0-web": false,
+    "D0-macOS": false
+  },
+  "openIssues": [
+    {
+      "severity": "B1",
+      "area": "typed fence creation",
+      "status": "authoring contract choice pending; no completion implementation in this candidate"
+    }
+  ],
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "021082bd646ed2227dc1a775cc42ea37190b625dbf51f57a5d1ef0eb38cd450a",
+  "inputFileCount": 204,
+  "buildManifestFile": "build_manifest.sha256",
+  "buildManifestSha256": "51eeaab5e71bec350fba525dfafd33cf3f6106570ffabcdd946102251afdc5be",
+  "buildFileCount": 41,
+  "changedBaselineInputs": {
+    "CLAUDE.md": {
+      "before": "e96ba9ba3fdf716c8492f9467d0fb264ca798c007143cdbba6b32cbe0ce2058c",
+      "after": "39ec5158489a67f7efa776206f4aacd0cd547621cb9d930f10a775d8cfa0dd4c"
+    },
+    "DOGFOOD_MILESTONE.md": {
+      "before": "958a1d933a157825faabe8e1dcf9f639058c514f56faaf2c8395d625e334ff3a",
+      "after": "94975a8c9849c95fb381b199a1cc3333e2bfd58a95995bfcd2b3648659e61d78"
+    },
+    "docs/README.md": {
+      "before": "39483767a60f6f22ef5347b388df999b0d9bd71ea50c7dbe87768d86438d12db",
+      "after": "cf6ef122c6e0260258df42708455c5f6a83f64e63fcbc27778a1c1ec70cc8a32"
+    },
+    "docs/architecture/v5/build_plan.md": {
+      "before": "7e36cd9cb5a3c50fd9c335c9deec172205eaf2457d8b343e74924c3cb1328222",
+      "after": "5d97b19f374d3971afd4040ff3f89071266cd8d0e2371f1d91b4b42415663b6c"
+    },
+    "docs/architecture/v5/edit_profile_v1.md": {
+      "before": "0bfce158f60d4f336ff9b37eef1b39854123c855834530a5155e6fc3f87677fb",
+      "after": "5c764c3fb5ec0daa7746af20b49e55da752df2dc3bfe83e6d9123e6e2a8dc077"
+    },
+    "docs/architecture/v5/web_dogfood.md": {
+      "before": "c45c5ce16abe105d2c43c2315afd61f8792659e00f222c1369358680fa98e912",
+      "after": "8250b1bff027161718392d0e619968baa8647c7a6e0c5d09671e3602a8581e52"
+    },
+    "docs/testing/live_editor_test_strategy.md": {
+      "before": "1713d9dff1fd4dcbc5a6e749387cec41267f974d27c0446172e8e36a13eb6819",
+      "after": "b341afe3f35fd82c7a0e9cf3a39849ec0adb0b99d5d89ccb7d386a1fbea7177f"
+    },
+    "packages/flark_flutter/example/README.md": {
+      "before": "cb1fc647158927a735dbd5b57eadcbf8c2e2a62fc0d78e8431ba1e91067ee950",
+      "after": "162bad2c3e7d7557c1b51dd9afe676bc3271af3a7f47c73cf2aae7cfd1e9209d"
+    },
+    "packages/flark_flutter/lib/src/surface.dart": {
+      "before": "57b06b863bf3360b659204e221245cd1257efa278a483a4b88b87d2d1f9a1e22",
+      "after": "dd0a4c3bd40aeece78e8fb6513d7000c0dfcaa538811050d0e270781646939c6"
+    }
+  },
+  "baselineCandidate": "../2026-09-05-web-extended/candidate.json",
+  "baselineCandidateSha256": "7e027f059dce9f52a37921fe2ec5d4b9823809b18d5375c1a999f516e7ac05ac",
+  "keyArtifacts": {
+    "main.dart.wasm": "853d8f1f5f42d953a66f5f2ad0f804e664387e6c308156326a9928390b4a7d40",
+    "main.dart.js": "870ec3005c700802c5062cda054839a3658aa0cd6879c970f80eaab92d3980e9",
+    "assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "74d476c8ac893639467aa22e68c36974d813523071ab0d13147617b4907d045d"
+  },
+  "browserObservationsFile": "browser_observations.json",
+  "browserObservationsSha256": "e5a576f51ef09ebc4d436bc13dbb40de57375544c55b077ef4c9e5d1f516d160",
+  "machine": {
+    "cpu": "Apple M1 Pro",
+    "memoryBytes": 17179869184,
+    "os": "macOS 26.2 (25C56)",
+    "architecture": "arm64"
+  },
+  "flutter": {
+    "frameworkVersion": "3.44.4",
+    "channel": "[user-branch]",
+    "repositoryUrl": "unknown source",
+    "frameworkRevision": "ad70ec4617166f1c38e5d2bfd388af71fda14f06",
+    "frameworkCommitDate": "2026-06-24 11:07:06 -0700",
+    "engineRevision": "a10d8ac38de835021c8d2f920dbf50a920ccc030",
+    "engineCommitDate": "2026-06-23 23:09:55.000Z",
+    "engineContentHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+    "engineBuildDate": "2026-06-23 20:26:40.203",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.4"
+  },
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "freshSuiteCounts": {
+    "host": 110,
+    "workbench": 25,
+    "realBrowserTransport": 3,
+    "total": 138
+  },
+  "unchangedCoreParserEvidence": {
+    "source": "../2026-09-05-web-extended/candidate.json",
+    "coreTests": 365,
+    "rustTests": 41,
+    "transportCases": 1322,
+    "rerun": false
+  },
+  "logs": {
+    "host-analyze": {
+      "status": "passed",
+      "logFile": "host-analyze.log.gz",
+      "logSha256": "e86e060c4d706029bb1729cea1287e54c94cd794b98363cbfcbbc5bfbbc1fe54",
+      "compressedSha256": "39bd3338c48887e02745f33a62f0311344d63bb56c94054d5f61e53bcf1447dd"
+    },
+    "host-tests": {
+      "status": "passed",
+      "logFile": "host-tests.log.gz",
+      "logSha256": "3e83fe9e7ab90a26a3ae5973b1c344701a5eae4063eeb083ac72e33418b09b19",
+      "compressedSha256": "7840fd3532e83a94c5b15b2656a90acbefd2fa4f678d5988a0ee4e960bd2dc3b"
+    },
+    "example-analyze": {
+      "status": "passed",
+      "logFile": "example-analyze.log.gz",
+      "logSha256": "433348e250acf319303921b62dc4af05abfe73fe5adf6889ea5f8b13b6b89660",
+      "compressedSha256": "5062da62cab2f94f41b35cdd9d0fe41413f7d1e2bd07a1ddb7665497768b9e27"
+    },
+    "example-tests": {
+      "status": "passed",
+      "logFile": "example-tests.log.gz",
+      "logSha256": "fbbd00a7af06e700b62391bc2d131951599a7d3060c3613e0c3571a64e0594a2",
+      "compressedSha256": "9481e481042bea1b569a21c63b7d9fc611ac3e8803c6e1bfd60b5bf2d862d8f6"
+    },
+    "browser-tests": {
+      "status": "passed",
+      "logFile": "browser-tests.log.gz",
+      "logSha256": "3d625d333218e80bb6150cdf4065f7bd2627dd088980fbab682bae4ec192be25",
+      "compressedSha256": "30cad603002d979f7a23206a550eb20059a3f92c599b5fa6c293a239d06baf5c"
+    },
+    "build": {
+      "status": "passed",
+      "logFile": "build.log.gz",
+      "logSha256": "07c17e931df544c42419c13dcb8ac31380749b2ca8347ddcd047532ae7044599",
+      "compressedSha256": "648a29faea8d27c079a14a40ba6b8d057aa0e6e5210c0d81320ba99698781af4"
+    },
+    "navigation-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "navigation-before.log.gz",
+      "logSha256": "4088f14899e3e00cb4b88e12bdadf110301ff94f4a8618c4431d2e46723c81e3",
+      "compressedSha256": "6025192539cff1a6111929f1a7324cc5366031b70c32f54861d6d9df72e3a8a3"
+    },
+    "cursor-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "cursor-before.log.gz",
+      "logSha256": "776214e20f9b97d4f3b070001a530bc18d07f14f3b7d77259d83a9dbf56eedc0",
+      "compressedSha256": "682ba85533ed26c92d0388a8a8b2d64857c9ec7a14b1be44cfbd02967d6366b5"
+    },
+    "host-focused": {
+      "status": "passed",
+      "logFile": "host-focused.log.gz",
+      "logSha256": "ce8b321a404d6c1ab7ab0f3bd523fef89708896f0f59a8ef6c2dbbda76ebed94",
+      "compressedSha256": "f1e814c3c023d1006f65660cda723402d66f98db3645891b190331db8930b70a"
+    }
+  }
+}

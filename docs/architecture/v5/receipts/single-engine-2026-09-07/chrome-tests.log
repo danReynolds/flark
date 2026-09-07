@@ -1,0 +1,49 @@
+00:00 +0: loading /Users/dan/Coding/sovereign/packages/flark_flutter/example/test/tree_sitter_web_test.dart
+00:00 +0: test/tree_sitter_web_test.dart: (setUpAll)
+TREE_SITTER_COLD {"loadAndWarmUs":143100}
+00:00 +0: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: dart outdent
+TREE_SITTER_FRAME {"language":"dart","callbackUs":3401,"firstPaintWaitUs":23401,"colorAndPaintWaitUs":33101,"paints":1}
+00:00 +1: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: javascript outdent
+TREE_SITTER_FRAME {"language":"javascript","callbackUs":900,"firstPaintWaitUs":21500,"colorAndPaintWaitUs":33699,"paints":1}
+00:00 +2: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: typescript outdent
+TREE_SITTER_FRAME {"language":"typescript","callbackUs":799,"firstPaintWaitUs":19600,"colorAndPaintWaitUs":33000,"paints":1}
+00:00 +3: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: rust Enter
+TREE_SITTER_FRAME {"language":"rust","callbackUs":1000,"firstPaintWaitUs":5600,"colorAndPaintWaitUs":16799,"paints":1}
+00:01 +4: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: go Enter
+TREE_SITTER_FRAME {"language":"go","callbackUs":801,"firstPaintWaitUs":19401,"colorAndPaintWaitUs":33101,"paints":1}
+00:01 +5: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: json Enter
+TREE_SITTER_FRAME {"language":"json","callbackUs":800,"firstPaintWaitUs":19900,"colorAndPaintWaitUs":33500,"paints":1}
+00:01 +6: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: css Enter
+TREE_SITTER_FRAME {"language":"css","callbackUs":800,"firstPaintWaitUs":18800,"colorAndPaintWaitUs":32800,"paints":1}
+00:01 +7: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: bash Enter
+TREE_SITTER_FRAME {"language":"bash","callbackUs":801,"firstPaintWaitUs":19401,"colorAndPaintWaitUs":33401,"paints":1}
+00:01 +8: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: html Enter
+TREE_SITTER_FRAME {"language":"html","callbackUs":801,"firstPaintWaitUs":18701,"colorAndPaintWaitUs":32701,"paints":1}
+00:01 +9: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: xml Enter
+TREE_SITTER_FRAME {"language":"xml","callbackUs":700,"firstPaintWaitUs":17700,"colorAndPaintWaitUs":31399,"paints":1}
+00:01 +10: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: sql Enter
+TREE_SITTER_FRAME {"language":"sql","callbackUs":800,"firstPaintWaitUs":19800,"colorAndPaintWaitUs":33300,"paints":1}
+00:02 +11: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint:  Enter
+TREE_SITTER_FRAME {"language":"","callbackUs":1900,"firstPaintWaitUs":19600,"colorAndPaintWaitUs":33100,"paints":1}
+00:02 +12: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint:  outdent
+TREE_SITTER_FRAME {"language":"","callbackUs":1800,"firstPaintWaitUs":23500,"colorAndPaintWaitUs":37800,"paints":1}
+00:02 +13: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: python outdent
+TREE_SITTER_FRAME {"language":"python","callbackUs":899,"firstPaintWaitUs":19700,"colorAndPaintWaitUs":33100,"paints":1}
+00:02 +14: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: yaml Enter
+TREE_SITTER_FRAME {"language":"yaml","callbackUs":699,"firstPaintWaitUs":18600,"colorAndPaintWaitUs":32800,"paints":1}
+00:02 +15: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: ruby Enter
+TREE_SITTER_FRAME {"language":"ruby","callbackUs":700,"firstPaintWaitUs":5300,"colorAndPaintWaitUs":20500,"paints":1}
+00:02 +16: test/tree_sitter_web_test.dart: real Wasm worker and Flutter input/paint: ruby outdent
+TREE_SITTER_FRAME {"language":"ruby","callbackUs":801,"firstPaintWaitUs":19201,"colorAndPaintWaitUs":33401,"paints":1}
+00:03 +17: test/tree_sitter_web_test.dart: (tearDownAll)
+00:03 +17: loading /Users/dan/Coding/sovereign/packages/flark_flutter/example/test/web_input_test.dart
+00:03 +17: test/web_input_test.dart: (setUpAll)
+00:03 +17: test/web_input_test.dart: browser paste keeps a closer literal and commits exactly once
+00:04 +18: test/web_input_test.dart: browser code selection copies exact body lines and cuts once
+00:04 +19: test/web_input_test.dart: browser copy and cut export visible text and commit one semantic deletion
+00:04 +20: test/web_input_test.dart: browser replacement without beforeinput survives next key: long line
+00:04 +21: test/web_input_test.dart: browser replacement without beforeinput survives next key: multiple blocks
+00:04 +22: test/web_input_test.dart: (tearDownAll)
+00:04 +22: loading /Users/dan/Coding/sovereign/packages/flark_flutter/example/test/code_font_web_test.dart
+00:05 +22: test/code_font_web_test.dart: actual code and source caret columns use a loaded monospace face
+00:05 +23: All tests passed!

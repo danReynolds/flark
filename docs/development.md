@@ -1,5 +1,8 @@
 # Development and verification
 
+> **V4 historical guide.** Use the active [V5 build plan](architecture/v5/build_plan.md)
+> and the package-local commands it names for current work.
+
 Flark v4 is split into `packages/flark` (Dart plus Rust runtime) and
 `packages/flark_flutter` (Flutter). The repository root is a non-publishable
 qualification workspace.

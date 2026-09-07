@@ -1,0 +1,75 @@
+{
+  "url": "http://127.0.0.1:8813/",
+  "browser": "Codex embedded browser",
+  "viewport": {
+    "width": 1073,
+    "height": 899
+  },
+  "normalRebuiltApp": {
+    "blankRows": {
+      "source": "before\n\n\n\nafter",
+      "beforeFixUpOffsets": [
+        15,
+        15,
+        15,
+        15
+      ],
+      "afterFixUpOffsets": [
+        9,
+        8,
+        7,
+        4
+      ],
+      "afterFixDownOffsets": [
+        7,
+        8,
+        9,
+        15
+      ],
+      "note": "Final nonempty-line offset preserves actual glyph x, rather than a code-unit column."
+    },
+    "blankCodeRows": {
+      "source": "top\n\n```\n\nx\n\n```\n\nend",
+      "downOffsets": [
+        4,
+        9,
+        10,
+        12,
+        17,
+        18
+      ],
+      "upOffsets": [
+        17,
+        12,
+        10,
+        9
+      ],
+      "nextTypedSource": "top\n\n```\ny\nx\n\n```\n\nend",
+      "undoSource": "top\n\n```\n\nx\n\n```\n\nend",
+      "undoCaret": 9
+    },
+    "checkbox": {
+      "initial": "- [ ] todo\n\ntext",
+      "afterClick": "- [x] todo\n\ntext",
+      "checkboxBodyCursor": "pointer",
+      "labelBodyCursor": "text",
+      "undo": "- [ ] todo\n\ntext"
+    },
+    "handoff": {
+      "document": "Tour",
+      "ownerContent": "preserved",
+      "qaDraft": "restored empty",
+      "tabId": "8"
+    }
+  },
+  "openFenceReproduction": {
+    "startingSource": "before\n\n\nafter",
+    "typed": "```",
+    "afterTyping": "before\n\n```\nafter",
+    "afterReturn": "before\n\n```\n\nafter",
+    "actual": "Existing following text rendered inside unclosed code fence.",
+    "expected": "New empty bounded code block, existing following text outside.",
+    "status": "open; authoring trigger choice pending"
+  },
+  "scope": "Browser observations and host regressions; no native or numeric performance claim."
+}

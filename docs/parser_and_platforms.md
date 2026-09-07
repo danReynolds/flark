@@ -1,5 +1,9 @@
 # Parser and platforms
 
+> **V4 historical guide.** The active V5 parser and transport contract is
+> [RFC 030](architecture/rfc/rfc_030_synchronous_core.md) with implementation
+> notes in [`native/flark_parse`](../native/flark_parse/README.md).
+
 Flark v4 has one grammar and source authority: the Rust workspace bundled in
 the headless `flark` package. Dart and Flutter communicate with it through the
 fixed v4 C ABI.

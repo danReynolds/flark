@@ -1,0 +1,26 @@
+name: flark_dogfood
+description: The Flark V5 editing workbench.
+publish_to: none
+version: 0.5.0+1
+environment:
+  sdk: ^3.12.2
+dependencies:
+  flutter:
+    sdk: flutter
+  flark_flutter:
+    path: ../
+  flark:
+    path: ../../flark
+  shared_preferences: ^2.5.3
+dev_dependencies:
+  flark_tree_sitter:
+    path: ../../flark_tree_sitter
+  web: ^1.1.1
+  shared_preferences_platform_interface: ^2.4.2
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

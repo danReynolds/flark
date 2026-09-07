@@ -12,11 +12,10 @@ Upstream fixture source:
   `tool/gfm_tests.json` in markdown `7.3.0`), which tracks CommonMark/GFM
   example corpora used by that package.
 
-The active v4 product profile is `flark-gfm-0.29-v2`: official GFM 0.29-gfm
-is normative, with the two omitted official task-list examples supplied by
-`test/fixtures/v4/task_list_profile_cases_v1.json`. CommonMark 0.31.2 is kept as
-a separate compatibility diagnostic and never changes GFM conformance status.
-Live editor projection is independently versioned as `flark-live-v1`.
+V5's parse crate runs the 652 CommonMark and 670 GFM upstream cases through the
+versioned render model and requires native/Wasm byte identity. The V4 profile,
+its two supplied task-list cases, and the live-projection profile remain
+historical evidence; they do not define V5's completion count.
 
 Deviation register:
 
@@ -41,9 +40,13 @@ The final category includes both likely-working and incomplete grammar. It is
 not a pass. The ledger deliberately does not credit fragment-only, synthetic,
 or legacy-v2 coverage to v3.
 
-The JSON file remains historical source material after the direct v4 cutover.
-Run the active v4 normative GFM and CommonMark compatibility ledgers with:
+The JSON file remains historical source material. The V4 ledger can still be
+run with:
 
 ```sh
 bash scripts/verify_v4_markdown_conformance.sh
 ```
+
+Run the active V5 conformance and transport parity lanes from
+`native/flark_parse` with `cargo test --release --locked` and
+`./tool/verify_transports.sh`.

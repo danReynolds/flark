@@ -1,0 +1,848 @@
+00:00 +0: loading /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart
+00:00 +0: /Users/dan/Coding/sovereign/packages/flark_flutter/test/document_navigation_test.dart: document edges, selection and next key: source=false mac=false
+00:00 +1: /Users/dan/Coding/sovereign/packages/flark_flutter/test/document_navigation_test.dart: document edges, selection and next key: source=false mac=false
+00:00 +2: /Users/dan/Coding/sovereign/packages/flark_flutter/test/document_navigation_test.dart: document edges, selection and next key: source=false mac=false
+00:00 +3: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +4: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +5: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +6: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +7: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +8: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: undetected snippet 0 shows a usable Auto label
+00:00 +9: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: undetected snippet 0 shows a usable Auto label
+00:00 +10: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: undetected snippet 0 shows a usable Auto label
+00:00 +11: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: undetected snippet 0 shows a usable Auto label
+00:00 +12: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: undetected snippet 0 shows a usable Auto label
+00:00 +13: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: undetected snippet 0 shows a usable Auto label
+00:01 +14: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical arrows cross every blank line: source=true
+00:01 +15: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: undetected snippet 1 shows a usable Auto label
+00:01 +16: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:01 +17: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: language picker repaints unchanged text and keeps editing/history
+00:01 +18: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: Tab and Shift-Tab preserve selection through input and paints
+00:01 +19: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: (tearDownAll)
+00:02 +19: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +20: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +21: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +22: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +23: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +24: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +25: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +26: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +27: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +28: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +29: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +30: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +31: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +32: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +33: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +34: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +35: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +36: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +37: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +38: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +39: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +40: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +41: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +42: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +43: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +44: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +45: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +46: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +47: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +48: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +49: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +50: /Users/dan/Coding/sovereign/packages/flark_flutter/test/fence_clipboard_boundary_test.dart: clipboard fence text stays code on the first edited paint
+00:03 +51: /Users/dan/Coding/sovereign/packages/flark_flutter/test/fence_clipboard_boundary_test.dart: clipboard fence text stays code on the first edited paint
+00:03 +52: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: large source pages stay bounded and edits keep global offsets
+00:03 +53: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:04 +54: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:04 +55: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:04 +56: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:04 +57: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:04 +58: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +59: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +60: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +61: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +62: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +63: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +64: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +65: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +66: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +67: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +68: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +69: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +70: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +71: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +72: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +73: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +74: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +75: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +76: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +77: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +78: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +79: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +80: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +81: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +82: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +83: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +84: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +85: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=false backward=true burst=false
+00:05 +86: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: delete beside whitespace preserves style on the first paint
+00:05 +87: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=false backward=true burst=true
+00:05 +88: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:05 +89: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:05 +90: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:05 +91: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:05 +92: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:05 +93: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:05 +94: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=false
+00:05 +95: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:05 +96: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform input reports the source ceiling and then recovers
+00:05 +97: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=true burst=false
+00:05 +98: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=true burst=false
+00:05 +99: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=true burst=false
+00:05 +100: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: wide reverse selection and active composition are never clipped
+00:05 +101: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=true burst=true
+00:05 +102: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=true burst=true
+00:05 +103: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +104: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +105: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +106: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +107: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +108: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +109: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +110: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +111: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +112: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +113: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +114: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +115: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +116: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +117: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +118: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +119: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +120: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +121: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +122: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +123: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +124: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +125: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +126: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +127: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +128: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +129: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +130: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +131: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +132: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +133: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +134: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +135: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +136: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +137: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +138: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +139: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +140: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +141: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +142: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +143: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +144: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +145: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +146: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +147: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +148: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +149: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +150: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +151: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +152: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +153: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +154: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +155: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +156: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +157: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +158: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +159: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +160: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +161: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +162: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +163: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +164: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +165: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +166: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +167: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +168: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +169: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +170: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +171: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +172: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +173: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +174: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +175: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +176: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +177: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +178: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +179: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +180: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +181: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +182: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +183: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +184: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +185: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +186: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +187: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +188: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +189: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +190: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +191: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +192: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +193: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +194: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +195: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +196: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +197: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +198: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +199: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +200: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +201: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +202: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +203: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +204: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +205: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +206: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +207: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +208: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +209: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +210: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +211: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +212: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +213: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +214: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +215: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +216: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +217: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +218: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +219: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +220: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +221: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +222: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +223: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +224: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +225: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +226: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +227: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +228: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +229: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +230: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +231: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +232: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +233: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +234: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +235: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +236: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +237: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +238: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +239: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +240: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +241: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +242: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +243: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +244: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +245: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +246: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +247: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +248: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +249: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +250: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +251: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +252: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +253: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +254: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +255: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +256: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +257: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +258: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +259: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +260: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +261: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +262: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +263: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +264: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +265: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +266: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +267: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +268: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +269: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +270: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +271: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +272: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +273: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +274: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +275: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +276: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +277: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +278: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +279: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +280: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +281: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +282: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +283: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +284: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +285: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +286: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +287: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +288: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +289: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +290: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +291: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +292: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +293: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +294: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +295: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +296: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +297: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +298: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +299: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +300: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +301: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +302: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +303: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +304: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +305: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +306: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +307: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +308: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +309: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +310: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +311: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +312: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +313: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +314: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +315: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +316: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +317: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +318: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +319: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +320: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +321: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +322: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +323: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +324: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +325: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +326: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +327: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +328: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +329: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +330: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +331: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +332: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +333: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +334: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +335: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +336: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +337: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +338: /Users/dan/Coding/sovereign/packages/flark_flutter/test/surface_contract_test.dart: table exit with existing suffix paints the next input: 
+
+00:06 +339: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +340: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +341: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +342: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +343: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +344: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +345: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +346: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +347: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +348: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +349: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +350: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +351: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +352: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +353: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +354: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +355: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +356: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +357: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +358: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +359: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +360: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +361: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +362: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +363: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +364: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +365: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +366: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +367: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +368: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +369: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +370: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +371: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +372: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +373: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +374: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +375: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +376: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +377: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +378: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +379: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +380: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +381: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +382: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +383: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +384: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +385: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +386: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +387: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +388: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +389: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +390: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +391: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +392: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +393: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +394: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +395: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +396: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +397: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +398: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +399: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +400: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +401: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +402: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +403: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +404: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +405: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +406: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +407: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +408: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +409: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +410: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +411: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +412: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +413: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +414: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +415: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +416: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +417: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +418: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +419: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +420: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +421: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +422: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +423: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +424: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +425: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +426: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +427: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +428: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +429: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +430: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +431: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +432: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +433: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +434: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +435: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +436: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +437: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +438: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +439: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +440: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +441: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +442: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +443: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +444: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +445: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +446: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +447: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +448: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +449: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +450: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +451: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +452: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +453: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +454: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +455: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +456: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +457: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +458: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +459: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +460: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +461: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +462: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +463: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +464: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +465: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +466: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +467: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +468: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +469: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +470: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +471: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +472: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +473: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +474: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +475: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +476: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +477: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +478: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +479: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +480: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +481: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +482: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +483: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +484: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +485: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +486: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +487: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +488: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +489: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +490: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +491: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +492: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +493: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +494: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +495: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +496: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +497: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +498: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +499: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +500: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +501: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +502: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +503: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +504: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +505: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +506: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +507: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +508: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +509: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +510: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +511: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +512: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +513: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +514: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +515: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +516: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +517: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +518: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +519: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +520: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +521: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +522: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +523: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +524: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +525: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +526: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +527: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +528: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +529: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +530: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +531: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +532: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +533: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +534: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +535: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +536: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +537: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +538: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +539: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +540: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +541: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +542: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +543: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +544: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +545: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +546: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +547: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +548: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +549: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +550: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +551: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +552: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +553: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +554: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +555: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +556: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +557: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +558: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +559: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +560: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +561: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +562: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +563: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +564: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +565: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +566: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +567: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +568: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +569: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +570: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +571: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +572: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +573: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +574: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +575: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +576: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +577: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +578: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +579: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +580: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +581: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +582: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +583: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +584: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +585: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +586: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +587: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +588: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +589: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +590: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +591: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +592: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +593: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +594: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +595: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +596: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +597: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +598: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +599: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +600: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +601: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +602: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +603: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +604: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +605: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +606: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +607: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +608: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +609: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +610: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +611: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +612: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +613: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +614: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +615: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +616: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +617: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +618: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +619: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +620: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +621: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +622: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +623: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +624: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +625: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +626: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +627: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +628: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +629: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +630: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +631: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +632: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +633: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +634: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +635: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +636: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +637: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +638: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +639: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +640: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +641: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +642: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +643: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +644: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +645: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +646: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +647: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +648: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +649: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +650: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +651: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +652: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +653: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +654: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +655: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +656: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +657: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_closer_test.dart: typed closer outdents on every paint and accepts the next key
+00:06 +658: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +659: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +660: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +661: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +662: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +663: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +664: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +665: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +666: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +667: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +668: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +669: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +670: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +671: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +672: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +673: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +674: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +675: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +676: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +677: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +678: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +679: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +680: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +681: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +682: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +683: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +684: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +685: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +686: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +687: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +688: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +689: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +690: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +691: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +692: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +693: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +694: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +695: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +696: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +697: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +698: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +699: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +700: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +701: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +702: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +703: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +704: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +705: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +706: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +707: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +708: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +709: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +710: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +711: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +712: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +713: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +714: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +715: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +716: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +717: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +718: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +719: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +720: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +721: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +722: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +723: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +724: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +725: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +726: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +727: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +728: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +729: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +730: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +731: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +732: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +733: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +734: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +735: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +736: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +737: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +738: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +739: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +740: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +741: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +742: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +743: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +744: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +745: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +746: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +747: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +748: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +749: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +750: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +751: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +752: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +753: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +754: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +755: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +756: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +757: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +758: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +759: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +760: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +761: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +762: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +763: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +764: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +765: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +766: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +767: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +768: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +769: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +770: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +771: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +772: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +773: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +774: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +775: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +776: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +777: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +778: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +779: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +780: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +781: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +782: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +783: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +784: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +785: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +786: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +787: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +788: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +789: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +790: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +791: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +792: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +793: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +794: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +795: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed composition commits and undoes as one exact source edit
+00:09 +796: All tests passed!

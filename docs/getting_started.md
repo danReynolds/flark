@@ -1,5 +1,10 @@
 # Getting started
 
+> **V4 historical guide.** For active V5 work, start with
+> [RFC 030](architecture/rfc/rfc_030_synchronous_core.md) and the
+> [V5 build plan](architecture/v5/build_plan.md). The current Flutter implementation has a
+> [V5 package guide](../packages/flark_flutter/README.md) and a runnable workbench.
+
 Flark v4 is a native Flutter editor. Its active product targets are macOS,
 Android, and iOS; Linux and Web are not active targets. Rust builds
 automatically as a bundled native asset, so development machines and package

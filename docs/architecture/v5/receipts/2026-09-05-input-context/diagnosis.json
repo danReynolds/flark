@@ -1,0 +1,62 @@
+{
+  "evidence": "Captured after foreground progress during production workbench dense/largest-block loop; later run lost foreground. Diagnostic, not qualification.",
+  "profileArtifactsAndHarness": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "14ea4a3f8eba72828c6ce02fe079544aafa89b43e9264551400b70ce25141112",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/App.framework/Versions/A/App": "273b1e2ce2de681763377943871eadfd7ad2a7b9c30a4f2c81b437cd192597ec",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "bbb291c554bbce13c1064f058d03bff4a90cd5bc22544caa8d4d2143bbc3e4ad",
+    "packages/flark_flutter/example/integration_test/frame_profile_test.dart": "d4d5efbbe4ac556ee543288f3930b29d366d65afa1e324edf82f6c0501ff98bb"
+  },
+  "profileLogSha256": "29e8e833f6c89830489cddafe1f8632f361ef5bb47e6eb02c3071098a39fb270",
+  "traceMetadata": {
+    "timeOriginMicros": 797697132200,
+    "timeExtentMicros": 5020888,
+    "pid": 73234,
+    "flags": {
+      "type": "TimelineFlags",
+      "recorderName": "Ring",
+      "availableStreams": [
+        "API",
+        "Compiler",
+        "CompilerVerbose",
+        "Dart",
+        "Debugger",
+        "Embedder",
+        "GC",
+        "Isolate",
+        "Microtask",
+        "VM"
+      ],
+      "recordedStreams": [
+        "Dart",
+        "Embedder",
+        "GC",
+        "Microtask"
+      ]
+    }
+  },
+  "timeline": {
+    "file": "timeline_before.json.gz",
+    "sha256": "9c6806f07667a2ec02c4da6dcf137bd0285262771e0fa374f753ccbeefd70947",
+    "uncompressedSha256": "368c5dd20f8058eb8cafe76a2680e332e448a415c179fb51a1da27394331de48",
+    "events": 13392
+  },
+  "nativeStack": {
+    "file": "native_before.txt.gz",
+    "sha256": "c902352ab697842d8951041044952291fda871aa56f5a0547dbf93c235ec3613",
+    "uncompressedSha256": "982a135ee98591403fb254cdd160344022d5841454e6f0c07793689723925154",
+    "durationSeconds": 2,
+    "sampleIntervalMilliseconds": 1,
+    "mainThreadSamples": 1524,
+    "setEditingStateInclusiveSamples": 445,
+    "insertionPointLayoutInclusiveSamples": 346,
+    "caretOffsetEnumerationInclusiveSamples": 280,
+    "interpretation": "Inclusive stack sample counts, including idle samples in denominator; not precise CPU-time attribution."
+  },
+  "dartCpu": {
+    "rawLocalSha256": "d10cc9be37871eb2a48431f5ac017fa189457529b618174feed27961fd2d4bba",
+    "samples": 702,
+    "note": "Supplementary large CPU capture kept in temporary workspace; native stack and timeline are retained here."
+  },
+  "cause": "Native full-document input mirror triggered substantial NSTextView/TextKit/CoreText caret layout. The bounded mirror reduced the focused edit latency without changing parser or paint architecture.",
+  "limits": "No clean full native pass. No-mirror controls failed foreground gates. Accessibility and queued native input across a context rebase remain explicit canaries."
+}

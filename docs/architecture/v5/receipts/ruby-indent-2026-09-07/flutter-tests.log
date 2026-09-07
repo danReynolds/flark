@@ -1,0 +1,568 @@
+Resolving dependencies...
+Downloading packages...
+  clock 1.1.2 (1.1.3 available)
+  code_assets 1.0.0 (2.0.0 available)
+  hooks 1.0.3 (2.2.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.14 available)
+  vector_math 2.2.0 (2.4.2 available)
+Got dependencies!
+10 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Resolving dependencies in `./example`...
+Downloading packages...
+Got dependencies in `./example`.
+00:00 +0: loading /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart
+00:00 +0: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +1: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +2: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +3: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +4: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +5: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +6: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +7: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +8: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +9: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +10: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:01 +11: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:02 +12: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:02 +13: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:02 +14: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:02 +15: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical arrows cross every blank line: source=false
+00:02 +16: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: language picker repaints unchanged text and keeps editing/history
+00:02 +17: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: language picker repaints unchanged text and keeps editing/history
+00:02 +18: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: Tab and Shift-Tab preserve selection through input and paints
+00:02 +19: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:03 +20: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:03 +21: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:03 +22: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:04 +23: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:04 +24: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:04 +25: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:04 +26: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:04 +27: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:04 +28: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:04 +29: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:04 +30: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:04 +31: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:04 +32: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +33: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +34: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +35: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:04 +36: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +37: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +38: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +39: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +40: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +41: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +42: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +43: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +44: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +45: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +46: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +47: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +48: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +49: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: Select All scopes to code, then expands to the document
+00:05 +50: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +51: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:05 +52: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +53: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +54: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +55: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +56: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +57: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +58: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +59: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +60: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +61: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:05 +62: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +63: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +64: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +65: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +66: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +67: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +68: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +69: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +70: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +71: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +72: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +73: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +74: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +75: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +76: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +77: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +78: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +79: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +80: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +81: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +82: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +83: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +84: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +85: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +86: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +87: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +88: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +89: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +90: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:06 +91: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +92: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +93: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +94: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +95: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +96: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +97: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +98: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:06 +99: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +100: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +101: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +102: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +103: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +104: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +105: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +106: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +107: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +108: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +109: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=false burst=false
+00:06 +110: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:06 +111: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:06 +112: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:06 +113: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:06 +114: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:06 +115: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:06 +116: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:06 +117: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +118: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +119: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +120: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +121: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +122: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +123: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +124: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +125: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +126: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +127: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +128: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:06 +129: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +130: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +131: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +132: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +133: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +134: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +135: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +136: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +137: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +138: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:06 +139: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:06 +140: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:06 +141: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:06 +142: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:06 +143: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:06 +144: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:06 +145: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:06 +146: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +147: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +148: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +149: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +150: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +151: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +152: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +153: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +154: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +155: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +156: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +157: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +158: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +159: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +160: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +161: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +162: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +163: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +164: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +165: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +166: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +167: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +168: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +169: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +170: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +171: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +172: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +173: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +174: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +175: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +176: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +177: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +178: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +179: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +180: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +181: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +182: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +183: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +184: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +185: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +186: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +187: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +188: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +189: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +190: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +191: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +192: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +193: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +194: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +195: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +196: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +197: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +198: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +199: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +200: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +201: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +202: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +203: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +204: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +205: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +206: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +207: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +208: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +209: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +210: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +211: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +212: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +213: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +214: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +215: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +216: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +217: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +218: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +219: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +220: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +221: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +222: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +223: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +224: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +225: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +226: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +227: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +228: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +229: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +230: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +231: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +232: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +233: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +234: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +235: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +236: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +237: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +238: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +239: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +240: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +241: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +242: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +243: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +244: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +245: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +246: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +247: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +248: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +249: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +250: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +251: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +252: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +253: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +254: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +255: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +256: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +257: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +258: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +259: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +260: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +261: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +262: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +263: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +264: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +265: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +266: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +267: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +268: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +269: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +270: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +271: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +272: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +273: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +274: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +275: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +276: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +277: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +278: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +279: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +280: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +281: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +282: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +283: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +284: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +285: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +286: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +287: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +288: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +289: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +290: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +291: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +292: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +293: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +294: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +295: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +296: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +297: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +298: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +299: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +300: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +301: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +302: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +303: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +304: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +305: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +306: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +307: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +308: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +309: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +310: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +311: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +312: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +313: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +314: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +315: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +316: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +317: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +318: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +319: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +320: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +321: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +322: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +323: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +324: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +325: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +326: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +327: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +328: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +329: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +330: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +331: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +332: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +333: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +334: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +335: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +336: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +337: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +338: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +339: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +340: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +341: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +342: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +343: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +344: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +345: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +346: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +347: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +348: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +349: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +350: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +351: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +352: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +353: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +354: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +355: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +356: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +357: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +358: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +359: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +360: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +361: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +362: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +363: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +364: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +365: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +366: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +367: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +368: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +369: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +370: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +371: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +372: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +373: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +374: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +375: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +376: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +377: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +378: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +379: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +380: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +381: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +382: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +383: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +384: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +385: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +386: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +387: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +388: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +389: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +390: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +391: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +392: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +393: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +394: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +395: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +396: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +397: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +398: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +399: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +400: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +401: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +402: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +403: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +404: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +405: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +406: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +407: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +408: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +409: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +410: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +411: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +412: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +413: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +414: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +415: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +416: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +417: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +418: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +419: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +420: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +421: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +422: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +423: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +424: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +425: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +426: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +427: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +428: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +429: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +430: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +431: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +432: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +433: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +434: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +435: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +436: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +437: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +438: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +439: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +440: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +441: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +442: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +443: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +444: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +445: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +446: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +447: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +448: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +449: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +450: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +451: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +452: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +453: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +454: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +455: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +456: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +457: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +458: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +459: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +460: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +461: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +462: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +463: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +464: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +465: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +466: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +467: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +468: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +469: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +470: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +471: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +472: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +473: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +474: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +475: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +476: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +477: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +478: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +479: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +480: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +481: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +482: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +483: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +484: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +485: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +486: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +487: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +488: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +489: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +490: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +491: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +492: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +493: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +494: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +495: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +496: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +497: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +498: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +499: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +500: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +501: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +502: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +503: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +504: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +505: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +506: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +507: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +508: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +509: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +510: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +511: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +512: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +513: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +514: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +515: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +516: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +517: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +518: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +519: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +520: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +521: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +522: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +523: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +524: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +525: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +526: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +527: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:09 +528: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:10 +529: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +530: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +531: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +532: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +533: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +534: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +535: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +536: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +537: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +538: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +539: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +540: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +541: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +542: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:11 +543: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:12 +544: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:12 +545: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:12 +546: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:13 +547: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed composition commits and undoes as one exact source edit
+00:13 +548: All tests passed!

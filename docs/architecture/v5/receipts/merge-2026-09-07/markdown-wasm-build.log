@@ -1,0 +1,4 @@
+info: component 'rust-std' for target 'wasm32-unknown-unknown' is up to date
+   Compiling flark_parse v0.1.0 (/Users/dan/Coding/sovereign/native/flark_parse)
+    Finished `release` profile [optimized] target(s) in 1.59s
+55cd80371a714e043d578591caa9122987bea66e437815ecf185b9cc6e606644  /Users/dan/Coding/sovereign/packages/flark/lib/assets/wasm/flark_parse.wasm

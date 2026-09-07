@@ -2,7 +2,7 @@
 
 **Profile ID:** `flark-live-v2`  
 **Semantic profile:** `flark-gfm-0.29-v2`  
-**Edit profile:** [flark-edit-v1](edit_profile_v1.md)
+**Edit profile:** [flark-edit-v1](../../v5/edit_profile_v1.md)
 
 **Owner:** [RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md)  
 **Status:** normative executable contract; T1 and T2 product checkpoint implemented.
@@ -11,7 +11,7 @@
 
 This contract defines what every visible frame may show while exact Markdown
 source, parser certification, platform input, selection, and viewport state
-change. [The rendered-editing profile](edit_profile_v1.md) separately defines
+change. [The rendered-editing profile](../../v5/edit_profile_v1.md) separately defines
 what logical editing commands mean. This contract does not change any GFM
 parse result or invent source-edit semantics.
 
@@ -235,7 +235,7 @@ For semantic presentation, the surface may use only:
 2. a one-shot parser-authored literal-safe envelope for a literal edit that
    cannot change the retained semantic facts; or
 3. a transaction-bound semantic result-presentation proof required by
-   [EP1-RESULT-PRESENTATION-001](edit_profile_v1.md#ep1-result-presentation-001).
+   [EP1-RESULT-PRESENTATION-001](../../v5/edit_profile_v1.md#ep1-result-presentation-001).
 
 ### LP2-SEMANTIC-EDIT-RESULT-001
 

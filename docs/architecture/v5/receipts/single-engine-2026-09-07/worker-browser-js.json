@@ -1,0 +1,739 @@
+{
+  "runtime": "js",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  "comparisons": 412,
+  "burstRequests": 40,
+  "startupMicros": 35700,
+  "detection": [
+    {
+      "language": "dart",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 700,
+        "p95": 900,
+        "max": 1000
+      }
+    },
+    {
+      "language": "dart",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 2000,
+        "p95": 2200,
+        "max": 2200
+      }
+    },
+    {
+      "language": "javascript",
+      "sampleUnits": 42,
+      "samples": 39,
+      "micros": {
+        "p50": 600,
+        "p95": 700,
+        "max": 800
+      }
+    },
+    {
+      "language": "javascript",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 1100,
+        "p95": 1300,
+        "max": 1400
+      }
+    },
+    {
+      "language": "python",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 700,
+        "p95": 800,
+        "max": 800
+      }
+    },
+    {
+      "language": "python",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 2000,
+        "p95": 2100,
+        "max": 2300
+      }
+    },
+    {
+      "language": "yaml",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 700,
+        "p95": 1000,
+        "max": 1000
+      }
+    },
+    {
+      "language": "yaml",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 1900,
+        "p95": 2200,
+        "max": 2200
+      }
+    },
+    {
+      "language": "ruby",
+      "sampleUnits": 29,
+      "samples": 39,
+      "micros": {
+        "p50": 500,
+        "p95": 700,
+        "max": 700
+      }
+    },
+    {
+      "language": "ruby",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 1700,
+        "p95": 1900,
+        "max": 2000
+      }
+    },
+    {
+      "language": "typescript",
+      "sampleUnits": 30,
+      "samples": 39,
+      "micros": {
+        "p50": 500,
+        "p95": 700,
+        "max": 700
+      }
+    },
+    {
+      "language": "typescript",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 1400,
+        "p95": 1600,
+        "max": 1600
+      }
+    },
+    {
+      "language": "rust",
+      "sampleUnits": 32,
+      "samples": 39,
+      "micros": {
+        "p50": 800,
+        "p95": 900,
+        "max": 1000
+      }
+    },
+    {
+      "language": "rust",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 2000,
+        "p95": 2300,
+        "max": 2300
+      }
+    },
+    {
+      "language": "go",
+      "sampleUnits": 45,
+      "samples": 39,
+      "micros": {
+        "p50": 800,
+        "p95": 1000,
+        "max": 1000
+      }
+    },
+    {
+      "language": "go",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 1700,
+        "p95": 1900,
+        "max": 1900
+      }
+    },
+    {
+      "language": "json",
+      "sampleUnits": 20,
+      "samples": 39,
+      "micros": {
+        "p50": 600,
+        "p95": 700,
+        "max": 800
+      }
+    },
+    {
+      "language": "json",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 1800,
+        "p95": 1900,
+        "max": 2100
+      }
+    },
+    {
+      "language": "css",
+      "sampleUnits": 39,
+      "samples": 39,
+      "micros": {
+        "p50": 600,
+        "p95": 800,
+        "max": 900
+      }
+    },
+    {
+      "language": "css",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 1600,
+        "p95": 1900,
+        "max": 2000
+      }
+    },
+    {
+      "language": "bash",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 600,
+        "p95": 800,
+        "max": 800
+      }
+    },
+    {
+      "language": "bash",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 2000,
+        "p95": 2200,
+        "max": 2200
+      }
+    },
+    {
+      "language": "html",
+      "sampleUnits": 29,
+      "samples": 39,
+      "micros": {
+        "p50": 600,
+        "p95": 700,
+        "max": 1000
+      }
+    },
+    {
+      "language": "html",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 2000,
+        "p95": 2200,
+        "max": 2300
+      }
+    },
+    {
+      "language": "xml",
+      "sampleUnits": 39,
+      "samples": 39,
+      "micros": {
+        "p50": 800,
+        "p95": 900,
+        "max": 1000
+      }
+    },
+    {
+      "language": "xml",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 2000,
+        "p95": 2300,
+        "max": 2400
+      }
+    },
+    {
+      "language": "sql",
+      "sampleUnits": 44,
+      "samples": 39,
+      "micros": {
+        "p50": 500,
+        "p95": 700,
+        "max": 700
+      }
+    },
+    {
+      "language": "sql",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 900,
+        "p95": 1200,
+        "max": 1300
+      }
+    }
+  ],
+  "results": [
+    {
+      "language": "typescript",
+      "seedUnits": 372,
+      "samples": 90,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 500,
+        "max": 1400
+      },
+      "colorLatencyMicros": {
+        "p50": 800,
+        "p95": 4400,
+        "max": 5300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "typescript",
+      "seedUnits": 8060,
+      "samples": 90,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 3800,
+        "p95": 4200,
+        "max": 4300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "rust",
+      "seedUnits": 363,
+      "samples": 96,
+      "inputMicros": {
+        "p50": 100,
+        "p95": 200,
+        "max": 300
+      },
+      "colorLatencyMicros": {
+        "p50": 600,
+        "p95": 800,
+        "max": 900
+      },
+      "superseded": 0
+    },
+    {
+      "language": "rust",
+      "seedUnits": 8052,
+      "samples": 96,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 4600,
+        "p95": 4800,
+        "max": 5200
+      },
+      "superseded": 0
+    },
+    {
+      "language": "go",
+      "seedUnits": 368,
+      "samples": 135,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 300,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 600,
+        "p95": 900,
+        "max": 4700
+      },
+      "superseded": 0
+    },
+    {
+      "language": "go",
+      "seedUnits": 8050,
+      "samples": 135,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 500,
+        "max": 1300
+      },
+      "colorLatencyMicros": {
+        "p50": 3600,
+        "p95": 4000,
+        "max": 4800
+      },
+      "superseded": 0
+    },
+    {
+      "language": "json",
+      "seedUnits": 378,
+      "samples": 60,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 500,
+        "p95": 2600,
+        "max": 3100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "json",
+      "seedUnits": 8064,
+      "samples": 60,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 600,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 3800,
+        "p95": 4100,
+        "max": 4500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "css",
+      "seedUnits": 360,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 300,
+        "max": 500
+      },
+      "colorLatencyMicros": {
+        "p50": 600,
+        "p95": 1000,
+        "max": 4300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "css",
+      "seedUnits": 8040,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 3600,
+        "p95": 4000,
+        "max": 4100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "bash",
+      "seedUnits": 384,
+      "samples": 93,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 400
+      },
+      "colorLatencyMicros": {
+        "p50": 600,
+        "p95": 800,
+        "max": 1500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "bash",
+      "seedUnits": 8064,
+      "samples": 93,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 1400,
+        "max": 1500
+      },
+      "colorLatencyMicros": {
+        "p50": 4200,
+        "p95": 5200,
+        "max": 8400
+      },
+      "superseded": 0
+    },
+    {
+      "language": "html",
+      "seedUnits": 360,
+      "samples": 87,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 300,
+        "max": 500
+      },
+      "colorLatencyMicros": {
+        "p50": 600,
+        "p95": 800,
+        "max": 1600
+      },
+      "superseded": 0
+    },
+    {
+      "language": "html",
+      "seedUnits": 8040,
+      "samples": 87,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 1200,
+        "max": 1300
+      },
+      "colorLatencyMicros": {
+        "p50": 3900,
+        "p95": 4500,
+        "max": 4800
+      },
+      "superseded": 0
+    },
+    {
+      "language": "xml",
+      "seedUnits": 360,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 500
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 1100,
+        "max": 2800
+      },
+      "superseded": 0
+    },
+    {
+      "language": "xml",
+      "seedUnits": 8040,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 2500,
+        "max": 2700
+      },
+      "colorLatencyMicros": {
+        "p50": 4900,
+        "p95": 6900,
+        "max": 7200
+      },
+      "superseded": 0
+    },
+    {
+      "language": "sql",
+      "seedUnits": 360,
+      "samples": 132,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 500
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 1800,
+        "max": 4500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "sql",
+      "seedUnits": 8055,
+      "samples": 132,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 3900,
+        "p95": 4200,
+        "max": 4300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "ruby",
+      "seedUnits": 372,
+      "samples": 51,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 500,
+        "max": 800
+      },
+      "colorLatencyMicros": {
+        "p50": 900,
+        "p95": 2300,
+        "max": 3200
+      },
+      "superseded": 0
+    },
+    {
+      "language": "ruby",
+      "seedUnits": 8068,
+      "samples": 51,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 1800,
+        "max": 2000
+      },
+      "colorLatencyMicros": {
+        "p50": 5500,
+        "p95": 6800,
+        "max": 7100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "dart",
+      "seedUnits": 374,
+      "samples": 54,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 400
+      },
+      "colorLatencyMicros": {
+        "p50": 1100,
+        "p95": 1500,
+        "max": 1700
+      },
+      "superseded": 0
+    },
+    {
+      "language": "dart",
+      "seedUnits": 8070,
+      "samples": 54,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 2100,
+        "max": 3000
+      },
+      "colorLatencyMicros": {
+        "p50": 9600,
+        "p95": 11100,
+        "max": 12300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "javascript",
+      "seedUnits": 387,
+      "samples": 72,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 500,
+        "max": 500
+      },
+      "colorLatencyMicros": {
+        "p50": 900,
+        "p95": 2300,
+        "max": 2900
+      },
+      "superseded": 0
+    },
+    {
+      "language": "javascript",
+      "seedUnits": 8062,
+      "samples": 72,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 1600,
+        "max": 1600
+      },
+      "colorLatencyMicros": {
+        "p50": 5200,
+        "p95": 6400,
+        "max": 6500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "python",
+      "seedUnits": 373,
+      "samples": 48,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 700,
+        "max": 800
+      },
+      "colorLatencyMicros": {
+        "p50": 900,
+        "p95": 2100,
+        "max": 3100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "python",
+      "seedUnits": 8069,
+      "samples": 48,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 3900,
+        "max": 4000
+      },
+      "colorLatencyMicros": {
+        "p50": 5800,
+        "p95": 9200,
+        "max": 9400
+      },
+      "superseded": 0
+    },
+    {
+      "language": "yaml",
+      "seedUnits": 388,
+      "samples": 39,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 800,
+        "p95": 2200,
+        "max": 2500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "yaml",
+      "seedUnits": 8073,
+      "samples": 39,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 2100,
+        "max": 2100
+      },
+      "colorLatencyMicros": {
+        "p50": 6000,
+        "p95": 7700,
+        "max": 7700
+      },
+      "superseded": 0
+    }
+  ]
+}

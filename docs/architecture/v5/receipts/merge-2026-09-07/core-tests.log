@@ -1,0 +1,548 @@
+Running build hooks...Running build hooks...00:00 +0: loading test/matrix_test.dart
+00:00 +0: test/source_mode_test.dart: (setUpAll)
+00:00 +0: test/source_mode_test.dart: the conservative default is 16 KiB of UTF-8
+00:00 +1: test/rendered_grapheme_boundary_test.dart: selection stays on rendered graphemes in *a*́
+00:00 +2: test/rendered_grapheme_boundary_test.dart: selection stays on rendered graphemes in *a*́
+00:00 +3: test/rendered_grapheme_boundary_test.dart: selection stays on rendered graphemes in *a*́
+00:00 +4: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: `a
+b`c`
+00:00 +5: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: `a
+b`c`
+00:00 +6: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: `a
+b`c`
+00:00 +7: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: `a
+b`c`
+00:00 +8: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: `a
+b`c`
+00:00 +9: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +10: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +11: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +12: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +13: test/selection_boundary_test.dart: boundary selection selection 7..13 Paste and next input
+00:00 +14: test/rendered_grapheme_boundary_test.dart: delete *a*́ forward, type and undo
+00:00 +15: test/multiline_code_edit_test.dart: multiline code owns its closing fence and paints a normalized space: #### **foo *bar***
+].
+ `!
+***-<***b`-`
+00:00 +16: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +17: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +18: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +19: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +20: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +21: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +22: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +23: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +24: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +25: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +26: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +27: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +28: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +29: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +30: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +31: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +32: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +33: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +34: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +35: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +36: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +37: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +38: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +39: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +40: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +41: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +42: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +43: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +44: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +45: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +46: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +47: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +48: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +49: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +50: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +51: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +52: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +53: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +54: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +55: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +56: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +57: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +58: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +59: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +60: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +61: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +62: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +63: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +64: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +65: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +66: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +67: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +68: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +69: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +70: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +71: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +72: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +73: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +74: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +75: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +76: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +77: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +78: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +79: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +80: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +81: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +82: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +83: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +84: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +85: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +86: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +87: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +88: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +89: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +90: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +91: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +92: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +93: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +94: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +95: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +96: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +97: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +98: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +99: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +100: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +101: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +102: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +103: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +104: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +105: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +106: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +107: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +108: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +109: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +110: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +111: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +112: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +113: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +114: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +115: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +116: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +117: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +118: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +119: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +120: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +121: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +122: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +123: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +124: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +125: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +126: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +127: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +128: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +129: test/matrix_test.dart: random command sequences keep every invariant (seed 2026, 60 sequences)
+00:00 +130: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +131: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +132: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +133: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +134: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +135: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +136: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +137: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +138: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +139: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +140: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +141: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +142: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +143: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +144: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +145: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +146: test/projection_test.dart: flat-list item ordinals remain correct at scale
+00:00 +147: test/fence_clipboard_boundary_test.dart: bodyless fence paste [] 1 x
+00:00 +148: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +149: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +150: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +151: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +152: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +153: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +154: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +155: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +156: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +157: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +158: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +159: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +160: test/block_contract_test.dart: Backspace lifts heading and retains inline formatting: # **title**
+00:00 +161: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +162: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +163: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +164: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +165: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +166: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +167: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +168: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +169: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +170: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +171: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +172: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +173: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +174: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +175: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +176: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +177: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +178: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +179: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +180: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +181: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +182: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +183: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +184: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +185: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +186: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +187: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +188: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +189: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +190: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +191: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +192: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +193: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +194: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +195: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +196: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +197: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +198: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +199: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +200: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +201: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +202: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +203: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +204: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +205: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +206: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +207: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +208: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +209: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +210: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +211: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +212: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +213: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +214: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +215: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +216: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +217: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +218: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +219: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +220: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +221: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +222: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +223: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +224: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +225: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +226: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +227: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +228: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +229: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +230: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +231: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +232: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +233: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +234: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +235: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +236: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +237: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +238: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +239: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +240: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +241: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +242: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +243: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +244: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +245: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +246: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +247: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +248: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +249: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +250: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +251: test/projection_test.dart: projection invariants hold across the conformance corpora
+00:00 +252: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +253: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +254: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +255: test/journey_test.dart: history consecutive typing is one undo group
+00:00 +256: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +257: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +258: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +259: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +260: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +261: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +262: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +263: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +264: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +265: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +266: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +267: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +268: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +269: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +270: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +271: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +272: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +273: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +274: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +275: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +276: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +277: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +278: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +279: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +280: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +281: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +282: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +283: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +284: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +285: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +286: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +287: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +288: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +289: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +290: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +291: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +292: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +293: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +294: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +295: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +296: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +297: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +298: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +299: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +300: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +301: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +302: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +303: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +304: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +305: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +306: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +307: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +308: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +309: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +310: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +311: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +312: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +313: test/whole_document_test.dart: whole selection rejects over-limit input and collapses to a legal caret
+00:00 +314: test/journey_test.dart: inline toggling strong on a selection wraps it and again unwraps it
+00:00 +315: test/semantic_edits_test.dart: partial owner range from 2 rejects InsertText atomically
+00:00 +316: test/semantic_edits_test.dart: partial owner range from 2 rejects InsertText atomically
+00:00 +317: test/whole_document_test.dart: whole document Paste reverse=false: first
+
+**second**
+00:00 +318: test/whole_document_test.dart: whole document Paste reverse=false: first
+
+**second**
+00:00 +319: test/whole_document_test.dart: whole document Paste reverse=false: first
+
+**second**
+00:00 +320: test/whole_document_test.dart: whole document Paste reverse=false: first
+
+**second**
+00:00 +321: test/journey_test.dart: navigation word movement stops at word edges
+00:00 +322: test/journey_test.dart: navigation word movement stops at word edges
+00:00 +323: test/journey_test.dart: navigation word movement stops at word edges
+00:00 +324: test/whole_document_test.dart: whole document InsertText reverse=false: first
+
+**second**
+00:00 +325: test/semantic_edits_test.dart: partial owner range from 2 rejects Newline atomically
+00:00 +326: test/journey_test.dart: navigation pointer placement uses the glyph half at a boundary
+00:00 +327: test/journey_test.dart: navigation pointer placement uses the glyph half at a boundary
+00:00 +328: test/whole_document_test.dart: whole document ReplaceRange reverse=false: first
+
+**second**
+00:00 +329: test/whole_document_test.dart: whole document ReplaceRange reverse=false: first
+
+**second**
+00:00 +330: test/semantic_edits_test.dart: partial owner range from 3 rejects ReplaceRange atomically
+00:00 +331: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +332: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +333: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +334: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +335: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +336: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +337: test/journey_test.dart: navigation up and down move between rows at the same offset
+00:00 +338: test/whole_document_test.dart: whole document Newline reverse=false: first
+
+**second**
+00:00 +339: test/semantic_edits_test.dart: empty container exits before subsequent typing: > one
+> 
+00:00 +340: test/journey_test.dart: navigation shift arrows extend the selection and typing replaces it
+00:00 +341: test/whole_document_test.dart: whole document Paste reverse=true: first
+
+**second**
+00:00 +342: test/journey_test.dart: navigation a plain arrow collapses a selection to its edge
+00:00 +343: test/journey_test.dart: navigation a plain arrow collapses a selection to its edge
+00:00 +344: test/whole_document_test.dart: whole document ReplaceRange reverse=true: first
+
+**second**
+00:00 +345: test/journey_test.dart: navigation moving through table cells and past the delimiter line
+00:00 +346: test/journey_test.dart: navigation moving through table cells and past the delimiter line
+00:00 +347: test/whole_document_test.dart: whole document DeleteForward reverse=true: first
+
+**second**
+00:00 +348: test/journey_test.dart: navigation the caret stays out of a fenced code block's fence lines
+00:00 +349: test/whole_document_test.dart: whole document Newline reverse=true: first
+
+**second**
+00:00 +350: test/journey_test.dart: navigation replace range and paste land the caret after the text
+00:00 +351: test/whole_document_test.dart: whole document Paste reverse=false: # Heading
+
+- one
+- two
+00:00 +352: test/journey_test.dart: navigation a hard break is one grapheme to delete
+00:00 +353: test/whole_document_test.dart: whole document InsertText reverse=false: # Heading
+
+- one
+- two
+00:00 +354: test/journey_test.dart: navigation entities and emoji are single graphemes
+00:00 +355: test/journey_test.dart: navigation entities and emoji are single graphemes
+00:00 +356: test/journey_test.dart: navigation entities and emoji are single graphemes
+00:00 +357: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +358: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +359: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +360: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +361: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +362: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +363: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +364: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +365: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +366: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +367: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +368: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +369: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +370: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +371: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +372: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +373: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +374: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +375: test/kernel_correctness_test.dart: (setUpAll)
+00:00 +375: test/whole_document_test.dart: whole document InsertText reverse=false: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +376: test/whole_document_test.dart: whole document InsertText reverse=false: | a | b |
+| - | - |
+| 1 | 2 |
+00:00 +377: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +378: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +379: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +380: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +381: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +382: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +383: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +384: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +385: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +386: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +387: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +388: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +389: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +390: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +391: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +392: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +393: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +394: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +395: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +396: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +397: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +398: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +399: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +400: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +401: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +402: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +403: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +404: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +405: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +406: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +407: test/kernel_correctness_test.dart: transactional commits a parse failure publishes neither source nor history
+00:00 +408: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +409: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +410: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +411: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +412: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +413: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +414: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +415: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +416: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +417: test/autolink_edit_test.dart: a bare URL ending in an angle is not a bracketed autolink
+00:00 +418: test/kernel_correctness_test.dart: projection-safe edits a style toggle that cannot establish its postcondition is a no-op
+00:00 +419: test/kernel_correctness_test.dart: bounded logical history navigation closes the current typing group
+00:00 +420: test/kernel_correctness_test.dart: bounded logical history an edit clears the preferred vertical column
+00:00 +421: test/kernel_correctness_test.dart: bounded logical history history limits are validated in every build mode
+00:00 +422: test/kernel_correctness_test.dart: bounded logical history joined typing retains only the group entry needed by undo
+00:00 +423: test/kernel_correctness_test.dart: bounded logical history entry cap evicts the oldest undo state
+00:00 +424: test/kernel_correctness_test.dart: bounded logical history source budget evicts whole snapshots
+00:00 +425: test/kernel_correctness_test.dart: (tearDownAll)
+00:00 +425: test/input_contract_test.dart: deep containers enter source mode before projection and can recover
+00:00 +426: test/input_contract_test.dart: composition commits once and cancellation preserves redo
+00:00 +427: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +428: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +429: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +430: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +431: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +432: test/multiline_link_edit_test.dart: punctuation after a multiline link stays outside its owner: 
+00:00 +433: test/code_select_all_test.dart: code scope preserves containers  and 1-unit newlines
+00:00 +434: test/code_select_all_test.dart: code scope preserves containers  and 1-unit newlines
+00:01 +435: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +436: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +437: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +438: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +439: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +440: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +441: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +442: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +443: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +444: test/list_marker_range_test.dart: Enter uses source marker range: -	foo
+00:01 +445: test/boundary_test.dart: the kernel never imports Flutter
+00:01 +446: test/boundary_test.dart: the kernel never imports Flutter
+00:01 +447: test/list_marker_range_test.dart: Enter uses source marker range: 9)	foo
+00:01 +448: test/boundary_test.dart: the facade library exports a bounded set of declarations
+00:01 +449: test/boundary_test.dart: the facade library exports a bounded set of declarations
+00:01 +450: test/boundary_test.dart: the facade library exports a bounded set of declarations
+00:01 +451: test/boundary_test.dart: the facade library exports a bounded set of declarations
+00:01 +452: test/boundary_test.dart: the facade library exports a bounded set of declarations
+00:01 +453: test/boundary_test.dart: the facade library exports a bounded set of declarations
+00:01 +454: test/typing_whitespace_test.dart: typing after a multiline link hides its destination lines
+00:01 +455: test/render_model_test.dart: (setUpAll)
+00:01 +455: test/typing_whitespace_test.dart: deleting    break 
+ backward=false then typing
+00:01 +456: test/render_model_test.dart: schema version matches the generated constants
+00:01 +457: test/render_model_test.dart: schema version matches the generated constants
+00:01 +458: test/typing_whitespace_test.dart: deleting    break 
+ backward=false then typing
+00:01 +459: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +460: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +461: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +462: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +463: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +464: test/render_model_test.dart: the empty document parses on a fresh backend
+00:01 +465: test/typing_whitespace_test.dart: space then next word stays ordered in # alpha #
+00:01 +466: test/render_model_test.dart: a paragraph with emphasis decodes into hidden delimiters and content
+00:01 +467: test/render_model_test.dart: a paragraph with emphasis decodes into hidden delimiters and content
+00:01 +468: test/typing_whitespace_test.dart: space then next word stays ordered in | alpha |
+| --- |
+00:01 +469: test/render_model_test.dart: a run-less block yields an empty run range, not the next block's runs
+00:01 +470: test/typing_whitespace_test.dart: space then next word stays ordered in |alpha|
+|---|
+00:01 +471: test/render_model_test.dart: an unaligned byte view is accepted
+00:01 +472: test/typing_whitespace_test.dart: space then next word stays ordered in **alpha**
+00:01 +473: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +474: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +475: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +476: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +477: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +478: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +479: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +480: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +481: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +482: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +483: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +484: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +485: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +486: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +487: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +488: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +489: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +490: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +491: test/render_model_test.dart: every conformance case decodes with consistent counts
+00:01 +492: test/render_model_test.dart: malformed host UTF-16 is rejected before encoding
+00:01 +493: test/render_model_test.dart: an extraction deviation fails closed at the transport
+00:01 +494: test/render_model_test.dart: (tearDownAll)
+00:01 +494: All tests passed!

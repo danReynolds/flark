@@ -3,8 +3,8 @@
 //! Set FLARK_FUZZ_ITERATIONS to run longer (default 2,000).
 //!
 //! Bare CR line endings are outside the fidelity contract: comrak's inline
-//! line counter does not advance across them, so the kernel normalizes them
-//! to LF on load (see REGISTER.md). CRLF is in the alphabet; bare CR is not.
+//! line counter does not advance across them, so the kernel rejects them
+//! before parsing. CRLF is in the alphabet; bare CR is not.
 mod common;
 use common::{check_invariants, corpus};
 use flark_parse::model::Extractor;
@@ -45,8 +45,7 @@ fn corpus_mutations_never_panic() {
         let ins = (rng.next() % (mutated.len() as u64 + 1)) as usize;
         let ins = (0..=ins).rev().find(|p| mutated.is_char_boundary(*p)).unwrap_or(0);
         mutated.insert_str(ins, ALPHABET[(rng.next() % ALPHABET.len() as u64) as usize]);
-        let (w, _) = Extractor::extract_with_report(&mutated);
-        if let Err(e) = check_invariants(&mutated, &w) { panic!("case {i}: {e} for {:?}", mutated); }
+        check(&mutated, &format!("case {i}"));
     }
 }
 
@@ -55,9 +54,7 @@ fn deep_nesting_does_not_overflow_the_stack() {
     let quotes = "> ".repeat(20_000) + "x";
     check(&quotes, "20k quotes");
     let lists: String = (0..5_000).map(|d| format!("{}- x\n", "  ".repeat(d))).collect();
-    let (w, _) = Extractor::extract_with_report(&lists);
-    check_invariants(&lists, &w).unwrap();
+    check(&lists, "5k nested lists");
     let emph = "*".repeat(5_000) + "x" + &"*".repeat(5_000);
-    let (w, _) = Extractor::extract_with_report(&emph);
-    check_invariants(&emph, &w).unwrap();
+    check(&emph, "5k emphasis delimiters");
 }

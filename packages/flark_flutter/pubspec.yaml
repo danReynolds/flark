@@ -1,0 +1,27 @@
+name: flark_flutter
+description: Synchronous live Markdown editing and viewing for Flutter.
+version: 0.5.0-dev.1
+publish_to: none
+environment:
+  sdk: ^3.12.2
+  flutter: '>=3.44.4'
+dependencies:
+  characters: ^1.4.0
+  web: ^1.1.1
+  flark:
+    path: ../flark
+  flark_tree_sitter:
+    path: ../flark_tree_sitter
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  fonts:
+    - family: FlarkMono
+      fonts:
+        - asset: lib/assets/fonts/RobotoMono-Regular.otf
+  assets:
+    - lib/assets/fonts/OFL.txt
