@@ -1,0 +1,17 @@
+{
+  "upstream": "https://github.com/googlefonts/RobotoMono",
+  "commit": "895ec691990d041dd727c7b5afa3ce56525d98e6",
+  "modified": false,
+  "files": {
+    "RobotoMono-Regular.otf": {
+      "source": "https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/fonts/otf/RobotoMono-Regular.otf",
+      "bytes": 90872,
+      "sha256": "874671c3f088802a915e3f7b1b773d3d031e04a21d82e2eb5107aa1c51895c21"
+    },
+    "OFL.txt": {
+      "source": "https://raw.githubusercontent.com/googlefonts/RobotoMono/895ec691990d041dd727c7b5afa3ce56525d98e6/OFL.txt",
+      "bytes": 4395,
+      "sha256": "50ab8dd54680d3473f649c9db86fece88434d097c7834475c1c72d2f8c429215"
+    }
+  }
+}
