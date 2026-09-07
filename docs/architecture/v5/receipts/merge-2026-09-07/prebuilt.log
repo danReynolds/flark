@@ -1,0 +1,12 @@
+   Compiling flark_parse v0.1.0 (/Users/dan/Coding/sovereign/native/flark_parse)
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[21955]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: `flark_parse` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1.54s
+Running build hooks...Running build hooks...empty=1 blocks=5 runs=7 emph=true
+prebuilt consumer OK (no Rust on PATH)

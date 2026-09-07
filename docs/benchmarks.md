@@ -1,5 +1,10 @@
 # Benchmarks
 
+> **V4 historical guide.** Its proof discipline still applies, but its numbers
+> and commands do not qualify V5. Current V5 receipts live in
+> [RFC 030](architecture/rfc/rfc_030_synchronous_core.md) and the
+> [V5 build plan](architecture/v5/build_plan.md).
+
 Flark v4 performance claims are receipt-based. Source code, local unit tests,
 foregrounded profile runs, committed benchmark JSON, and physical-device runs
 are different proof levels and must not be conflated.

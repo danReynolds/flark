@@ -1,0 +1,280 @@
+{
+  "recordedAtUtc": "2026-09-05T21:45:40.693758+00:00",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "evidence": "Local dirty web candidate; exploratory owner dogfood readiness only.",
+  "dogfoodReady": {
+    "D0-web": true,
+    "D0-macOS": false
+  },
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "98ffc73c3cc571f2b149b1e77796a59cb51d0317f4f32c2f5837f406ac4462ed",
+  "inputFileCount": 191,
+  "buildManifestFile": "build_manifest.sha256",
+  "buildManifestSha256": "0cbb1c715641af8042e35b2424798cb7b375268fefe05395466fcf86329b4f31",
+  "buildFileCount": 41,
+  "keyArtifacts": {
+    "main.dart.wasm": "a3b9b49e2cfd8e11bce39849d119a81755435da4f0dd5a00ec2d26281d04c4ff",
+    "main.dart.js": "6e4616352affa840635f47dbceb0acd3a332428736e4fe122e7f1bda2c5dbe8f",
+    "assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "7e39a46adfd6c47ce33f3d5850bef4fb12df135a607cfbb3af4325098620eb54"
+  },
+  "browserObservationsFile": "browser_observations.json",
+  "browserObservationsSha256": "a74d96effc9e9b1a74254b2633806df3c9bd5b50e42fa1681c69d7c6e4402161",
+  "baselineCandidate": "../2026-09-05-input-context/candidate.json",
+  "baselineCandidateSha256": "52f6cdad0743ec0e175e34af252210b090f9f6451b1536753ae22bc4eeb71786",
+  "changedBaselineInputs": {
+    "DOGFOOD_MILESTONE.md": {
+      "before": "c5cbeaaf8da56aa6d827a7d901feb05daad870b5d76df00ab3ffb10092e8f2e6",
+      "after": "48e695ee350676132a0a44282264aec10ca2a799e4ff5c70339f11cc58e53d00"
+    },
+    "packages/flark/lib/src/kernel/document.dart": {
+      "before": "e4666b7c35dc8aa9b2825b6d442c345be313891063cd4349956d9fc654c7849d",
+      "after": "507c6aff751750dd95d1afd874a809752b30f813074c537a39fc55cf0ab82308"
+    },
+    "packages/flark/lib/src/kernel/editor.dart": {
+      "before": "f24b589dc969d98c629e37d086534a36b4298bd186634edfd1f7787821962c4a",
+      "after": "cb18e094e2a1abcc57788f656663ec69f9a36864a867caf7ea7f04415899cf58"
+    },
+    "packages/flark/test/journey_test.dart": {
+      "before": "bb7e2b8cef63c4dd4101d186d7bd94b51199a21a76df1824b9cbc9e6dd06290d",
+      "after": "5722614c0c34243fa673c9b0f673a88f5232d93ded2a1c221add925abce1a1fa"
+    },
+    "packages/flark/test/matrix_test.dart": {
+      "before": "8c163191c3307f8b1f22f81ab7e22ea8713abbd341f277434858eb984e02188c",
+      "after": "c4b8ebc72dea3262924588e0eab6a39a373d4f3bd2edabe96c2718f1a45e99c1"
+    },
+    "packages/flark_flutter/example/README.md": {
+      "before": "ca4d650ee0f52c754190bfec6e3016220464d94e43310d50c86573a417057eb6",
+      "after": "b592635e281ee95b36cdc630e92682b45f5f3a425ceceeccb82f301cd43c0eda"
+    },
+    "packages/flark_flutter/example/pubspec.lock": {
+      "before": "eb4495656657741dc39c13c423545e92778702fc10531b80876f174a8894fe55",
+      "after": "513924c459e08244db775d512289365f5305b17d113051b430e047b39f649acf"
+    },
+    "packages/flark_flutter/example/pubspec.yaml": {
+      "before": "5e4c2487520a5c10da2af96593755e8dade850cfe837aa6fc073f3b10ab57bbf",
+      "after": "1e1ccc779509139143da5ac65ee18d0e90047fbce29d4a66373ae1a0410fcc98"
+    },
+    "packages/flark_flutter/lib/src/controller.dart": {
+      "before": "917b6611115db424729866b3be80dcd82be933425990f1c05000a8ab633b301c",
+      "after": "df2b657a293375b9faaf5b8e8211bb9c8a0353a04953148a129ace2b27a61c5b"
+    },
+    "packages/flark_flutter/lib/src/editor.dart": {
+      "before": "e258a31d419374bd376dc9948b42603853767a31e22aa4235c5a8deed79a2147",
+      "after": "43a9926872100a7016f935a0e45801bd2194e5bb4eb7e16615182197385507c8"
+    },
+    "packages/flark_flutter/lib/src/surface.dart": {
+      "before": "e7c04df55bc38b29543a3ed9c8745288307bc0b2753af91b71b7649d0fd96857",
+      "after": "b004d4ed8b696346e3ac8af2355168fe05a095d29ea59231830aee225fb467b5"
+    },
+    "packages/flark_flutter/test/input_context_test.dart": {
+      "before": "19c9e9cf76007de784ea3e098f5408081f4bf94af4ead007a2488f8b3d636dfb",
+      "after": "203bf96b8f3a9d240388fc24bdb49450f26830834de7a43773cb3ca8b4c890d0"
+    },
+    "packages/flark_flutter/test/paint_families_test.dart": {
+      "before": "3d2b5cc78c697cd5e84e066e9807307180a751228c9ad68b15b2c0ac580ed757",
+      "after": "752e83874e51f8e0ce57dbb1928c4ef212bd98f5c5f77e658fd1977eaab03464"
+    }
+  },
+  "additionalInputs": {
+    "CLAUDE.md": "39a9007bbfa9f16fe7a3c26918850e02a3a0dd26593619b868a9d1c36f419645",
+    "NORTH_STAR.md": "f4a214167a4e15f2b992bc59e3d0ed955567262347c613439b0064f3a5dca9ef",
+    "docs/architecture/v5/build_plan.md": "7e36cd9cb5a3c50fd9c335c9deec172205eaf2457d8b343e74924c3cb1328222",
+    "docs/architecture/v5/edit_profile_v1.md": "2535e7c44c418a484fa6aa04a89ab2dceb3c57585c9c91f1a0c05e76d7cb3c1a",
+    "docs/architecture/v5/web_dogfood.md": "18e3e06d1208bb6286bf9c9f262527c7ff71676d1b541af845e446429d9508d3",
+    "docs/architecture/v5/web_dogfood_review_2026_09_05.md": "bb70cfb631936b0dcc31633992c492e318eb0d636bc790bcb230adce5ca20466",
+    "docs/testing/live_editor_test_strategy.md": "1713d9dff1fd4dcbc5a6e749387cec41267f974d27c0446172e8e36a13eb6819",
+    "packages/flark/test/whole_document_test.dart": "d6ec7f982a29a284df4b7abaf160f88082271729717111d50379b74da77988b0",
+    "packages/flark_flutter/example/test/font_loading_test.dart": "4cf7d42e644dc6766e0e25af2ec87cf136d27a20dd1f1b13933ebd1a84ec3265",
+    "packages/flark_flutter/example/test/web_input_test.dart": "f7956c11e326b164ef5cfba0367c80bd29ed3e84fb9c86d7be27d6c3cf87d562",
+    "packages/flark_flutter/test/whole_document_test.dart": "3c68cf8991ba1609ecbbaca13aac13a187603d2e8e3f5cae25aad8afa86866e1"
+  },
+  "machine": {
+    "cpu": "Apple M1 Pro",
+    "memoryBytes": 17179869184,
+    "os": "macOS 26.2 (25C56)",
+    "architecture": "arm64"
+  },
+  "flutter": {
+    "frameworkVersion": "3.44.4",
+    "channel": "[user-branch]",
+    "repositoryUrl": "unknown source",
+    "frameworkRevision": "ad70ec4617166f1c38e5d2bfd388af71fda14f06",
+    "frameworkCommitDate": "2026-06-24 11:07:06 -0700",
+    "engineRevision": "a10d8ac38de835021c8d2f920dbf50a920ccc030",
+    "engineCommitDate": "2026-06-23 23:09:55.000Z",
+    "engineContentHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+    "engineBuildDate": "2026-06-23 20:26:40.203",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.4"
+  },
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "tests": {
+    "core": 298,
+    "generatedHistories": {
+      "sequences": 1000,
+      "seed": 2026,
+      "includedInCoreSuite": true
+    },
+    "host": 96,
+    "workbench": 25,
+    "realBrowserTransport": 2,
+    "total": 421
+  },
+  "logs": {
+    "core-analyze": {
+      "status": "passed",
+      "logFile": "core-analyze.log.gz",
+      "logSha256": "ab9d4a5159d42e8729ccf4767fdc6bea6452ec1376310aebf470860ca33191d4",
+      "compressedSha256": "a6121b60dcf2917c5c66a8dd816d337efb4b76611461eb16abe9f9fa9b5b4cf4"
+    },
+    "core-tests": {
+      "status": "passed",
+      "logFile": "core-tests.log.gz",
+      "logSha256": "7929c82235ad351b8850ece4952d7df7e5400c05bec4075f7901b894a178dbd1",
+      "compressedSha256": "9a535ed51fb0c1c5f92b3910fc875fae923c3d8e1147730493445b5d10ba5983"
+    },
+    "host-analyze": {
+      "status": "passed",
+      "logFile": "host-analyze.log.gz",
+      "logSha256": "e86e060c4d706029bb1729cea1287e54c94cd794b98363cbfcbbc5bfbbc1fe54",
+      "compressedSha256": "39bd3338c48887e02745f33a62f0311344d63bb56c94054d5f61e53bcf1447dd"
+    },
+    "host-tests": {
+      "status": "passed",
+      "logFile": "host-tests.log.gz",
+      "logSha256": "d0a1b6c5a1172097051074243135e20d636748ce3c6df2d85c4680d9b930b363",
+      "compressedSha256": "170961043bab2db9fcf9906ddeb687e33d3c023a092d7ef38565a8f2f8edafd0"
+    },
+    "example-analyze": {
+      "status": "passed",
+      "logFile": "example-analyze.log.gz",
+      "logSha256": "433348e250acf319303921b62dc4af05abfe73fe5adf6889ea5f8b13b6b89660",
+      "compressedSha256": "5062da62cab2f94f41b35cdd9d0fe41413f7d1e2bd07a1ddb7665497768b9e27"
+    },
+    "example-tests": {
+      "status": "passed",
+      "logFile": "example-tests.log.gz",
+      "logSha256": "3e715e879306e55bc3910299d044c46a6d11c97a57bd15a1d8d095d76d72a2e9",
+      "compressedSha256": "87234659fca1d49aac2ae9b0cd5bfc4fdcc397e1597ca9363fe83718ffcdff16"
+    },
+    "input": {
+      "status": "passed",
+      "logFile": "input.log.gz",
+      "logSha256": "0ed3dee7784bdde3b6b7547ea5eae0e89fc8458ea55bbf080d51a9d462d7436a",
+      "compressedSha256": "25a5a2e63189e4365f8c2b52f970dbec0bf086cb13e0fae28b7f445a5f645c87"
+    },
+    "dogfood-build": {
+      "status": "passed",
+      "logFile": "dogfood-build.log.gz",
+      "logSha256": "b93043291f5b810cf58e9d4e21af8cd51a1aee345b63262eeef6394037b420da",
+      "compressedSha256": "c4313f840a87f54e8759cdfea38ae30c5ea37884d5936a307a933adef08b6b60"
+    },
+    "input-before": {
+      "status": "expected regression failure",
+      "logFile": "input-before.log.gz",
+      "logSha256": "9ba9f109c1ccedee8161c84fe570ea18c43f8d35edb3eb9471e8246aba512ce1",
+      "compressedSha256": "5881aa64358ebcbb2e1cd146846e284b0dd196ed373e1114c399910e05f8d666"
+    },
+    "whole-before": {
+      "status": "expected regression failure",
+      "logFile": "whole-before.log.gz",
+      "logSha256": "248670d1f65da827d82f6dcd34e01411acb557e733061c1395b13941125df58e",
+      "compressedSha256": "7a1ea0b64d6d4759e8dabacdd66d6c0f7ef644236c04d162089e1cb3f113c55c"
+    },
+    "ceiling-before": {
+      "status": "expected regression failure",
+      "logFile": "ceiling-before.log.gz",
+      "logSha256": "2f5ad3e8242687275a07ebe5bf9756092835e8123cd3272469b978856504f01d",
+      "compressedSha256": "2adf72367cd2b661fe98220eca3b90720edba00f6662093b9c49140edc267120"
+    },
+    "task-marker-before": {
+      "status": "expected regression failure",
+      "logFile": "task-marker-before.log.gz",
+      "logSha256": "ab4932f31c259ebe846e531817a98b4936e5331a2e9d2ba23923ee291f1a25e1",
+      "compressedSha256": "9012645b1f696cfa4e82e565bed1fb443956ced7a85ac86e55c5ca538739552a"
+    },
+    "font-before": {
+      "status": "expected regression failure",
+      "logFile": "font-before.log.gz",
+      "logSha256": "b1d61dfdb6b072509284d9b7d2ae5cf36961a695b7819ef752f2505a78dcc567",
+      "compressedSha256": "e8a4232391fb7fd28a7cec7a3be41d35abbeed5eb3b62589d0cc5799bbf2a4f0"
+    }
+  },
+  "inheritedUnchangedParserGates": {
+    "rust": {
+      "status": "passed",
+      "logSha256": "cb20bb12a1e6d573dc021becabb6eb50a4fbb73c504a434a07ce39e839da23df",
+      "result": [
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s",
+        "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "tests": 40
+    },
+    "parity": {
+      "status": "passed",
+      "logSha256": "8c5ec585fa0c5f716c1eec121f3e4932d399da6260d156d52e9079e3b08b97a7",
+      "result": [
+        "committed wasm identical to native: 1322 cases",
+        "fresh wasm identical to native"
+      ]
+    }
+  },
+  "parserInputsRechecked": [
+    "native/flark_parse/Cargo.lock",
+    "native/flark_parse/Cargo.toml",
+    "native/flark_parse/schema/render_model_v2.json",
+    "native/flark_parse/src/bin/bench.rs",
+    "native/flark_parse/src/bin/differential.rs",
+    "native/flark_parse/src/bin/model_hashes.rs",
+    "native/flark_parse/src/lib.rs",
+    "native/flark_parse/src/lines.rs",
+    "native/flark_parse/src/model.rs",
+    "native/flark_parse/src/reference_definitions.rs",
+    "native/flark_parse/src/schema.rs",
+    "native/flark_parse/src/text_pieces.rs",
+    "native/flark_parse/tests/abi.rs",
+    "native/flark_parse/tests/common/mod.rs",
+    "native/flark_parse/tests/conformance.rs",
+    "native/flark_parse/tests/fuzz.rs",
+    "native/flark_parse/tests/regressions.rs",
+    "native/flark_parse/tool/gen_schema.py",
+    "native/flark_parse/tool/verify_transports.sh",
+    "native/flark_parse/tool/wasm_model_hashes.mjs",
+    "packages/flark/lib/assets/wasm/flark_parse.wasm",
+    "packages/flark/lib/src/parse/backend.dart",
+    "packages/flark/lib/src/parse/backend_ffi.dart",
+    "packages/flark/lib/src/parse/backend_stub.dart",
+    "packages/flark/lib/src/parse/backend_web.dart",
+    "packages/flark/lib/src/parse/native.dart",
+    "packages/flark/lib/src/parse/parse.dart",
+    "packages/flark/lib/src/parse/render_model.dart",
+    "packages/flark/lib/src/parse/schema.g.dart",
+    "packages/flark/lib/wasm.dart"
+  ],
+  "openQualification": [
+    "Native B1 complete foreground rerun and normal-app input/lifecycle canaries",
+    "Numeric browser performance and other browser engines",
+    "Physical narrow browser viewport",
+    "Real IME/mobile and assistive technology",
+    "Phone floor devices, Dune integration and release proof"
+  ],
+  "buildWarning": "Flutter reports optional CupertinoIcons family absent; observed app uses Material icons and those render. No Cupertino package added.",
+  "exploratoryArtifactsFile": "exploratory_artifacts.json",
+  "exploratoryArtifactsSha256": "4b010826db528349d543b5956e954f232d757a2055c5668d4f69e3b77d80bae4"
+}

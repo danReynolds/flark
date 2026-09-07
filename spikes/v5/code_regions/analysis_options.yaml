@@ -1,0 +1,6 @@
+# Isolated proof: no production workspace lint/package dependency inheritance.
+analyzer:
+  errors:
+    unused_import: error
+    unused_local_variable: error
+    dead_code: error

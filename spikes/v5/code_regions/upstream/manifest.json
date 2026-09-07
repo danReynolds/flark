@@ -1,0 +1,30 @@
+[
+  {
+    "language": "javascript",
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/2147551cfa2a723b461b8676ea117ee93f5ec02f/extensions/javascript/javascript-language-configuration.json",
+    "sha256": "5d64c3902b9bdb6c88ea19d538192e9a6bbbcec2358e0c652774c9ffbb123c23",
+    "license_file": "javascript.LICENSE",
+    "license_sha256": "9480271317925265e806a9a196aaa33410a962fa9d4d1e248a4a5187bc8c9df9"
+  },
+  {
+    "language": "python",
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/2147551cfa2a723b461b8676ea117ee93f5ec02f/extensions/python/language-configuration.json",
+    "sha256": "141f93a99e92b9d399cbe4e18f36757fc6bcb94df765607b57b149c1749fda28",
+    "license_file": "python.LICENSE",
+    "license_sha256": "9480271317925265e806a9a196aaa33410a962fa9d4d1e248a4a5187bc8c9df9"
+  },
+  {
+    "language": "yaml",
+    "url": "https://raw.githubusercontent.com/redhat-developer/vscode-yaml/939c313604c1889215c32654ace41ee5e060c236/language-configuration.json",
+    "sha256": "194f89d571d4c73966de1282786573f7e0c082a281c9518b09c763b3d16264db",
+    "license_file": "yaml.LICENSE",
+    "license_sha256": "2a6ebc3c5b441f0aef19c5190d17f5bfc1ab4f729db49fabb2db7d10bd9a6146"
+  },
+  {
+    "language": "dart",
+    "url": "https://raw.githubusercontent.com/Dart-Code/Dart-Code/4a166f7abbc077ac4d2706224a61ebceb4bf0a92/syntaxes/dart-language-configuration.json",
+    "sha256": "ea109e01845ed97a95b78967d5b6ddb8af8d75d611c1e894eb3f842de0c3e434",
+    "license_file": "dart.LICENSE",
+    "license_sha256": "192e1760e9435124d035ea727f7dee11a4f370ef5262e5385fe3bfd7f66212b3"
+  }
+]

@@ -1,0 +1,302 @@
+{
+  "recordedAtUtc": "2026-09-05T15:08:25.861826+00:00",
+  "evidence": "local uncommitted candidate; failed native latency qualification",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "dogfoodReady": false,
+  "baselineCandidate": "../2026-09-04-typing/candidate.json",
+  "baselineCandidateSha256": "1707293c1321e3be83e75a3aecc9f80f42d1c159fd48b49aa6499a26228aae53",
+  "productionInputsChanged": false,
+  "unchangedBaselineInputCount": 169,
+  "changedBaselineInputs": {
+    "packages/flark_flutter/example/README.md": {
+      "before": "892cd29788475d038e64a1dbb98d42a5d5d98a64e7d67fd78f65bd7540ca2ec6",
+      "after": "7d693ba97c2e603ce034d3703bea4580a18c24bdf9f0f62f421871b8ea41f5e7"
+    },
+    "packages/flark_flutter/example/integration_test/frame_profile_test.dart": {
+      "before": "7100608f0984ad177dd246b8ca64736d6ea072f3b4ed8b9f6a1ca38f3447e5b2",
+      "after": "d4d5efbbe4ac556ee543288f3930b29d366d65afa1e324edf82f6c0501ff98bb"
+    }
+  },
+  "additionalInputs": {
+    "DOGFOOD_MILESTONE.md": "dee2e65c2226574145a04ccba3af59209da709fce2cba21c57c73a2d461bad5d",
+    "docs/architecture/v5/macos_qualification.md": "0743b34372a4e2c925e68869e298e4fcfa83984d5a69bb4e391b59534fa9a62c",
+    "docs/architecture/v5/native_profile_2026_09_05.md": "a0d29cca4399dff381e3b7e6f49b9f3f5fdbf936fe96b6030adb7a592489b10d",
+    "docs/architecture/v5/native_session_2026_09_04.md": "4c19bfd7eac9bf8b169d5711ec24f7e8271dbc94953534c1146a784274472002",
+    "packages/flark_flutter/example/integration_test/workbench_profile_test.dart": "5b1de58912c16cdfeccf038a116de5aea0567688dd1904d11cd5bd191356e277",
+    "packages/flark_flutter/example/test/workbench_boundaries_test.dart": "7aa2d098f648924bca3259352ee46a6c93a75b09433b6eaccd9e84d3ab7e2722"
+  },
+  "machine": {
+    "cpu": "Apple M1 Pro",
+    "memoryBytes": 17179869184,
+    "os": "macOS 26.2 (25C56)",
+    "architecture": "arm64"
+  },
+  "flutter": {
+    "frameworkVersion": "3.44.4",
+    "channel": "[user-branch]",
+    "repositoryUrl": "unknown source",
+    "frameworkRevision": "ad70ec4617166f1c38e5d2bfd388af71fda14f06",
+    "frameworkCommitDate": "2026-06-24 11:07:06 -0700",
+    "engineRevision": "a10d8ac38de835021c8d2f920dbf50a920ccc030",
+    "engineCommitDate": "2026-06-23 23:09:55.000Z",
+    "engineContentHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+    "engineBuildDate": "2026-06-23 20:26:40.203",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.4"
+  },
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "dbb7cb9d1a6d3bfb470101621ec421be0ea9fcaba0e51f85c075d95786dccee3",
+  "inputFileCount": 177,
+  "localGates": {
+    "kernel_tests": {
+      "status": "passed",
+      "logSha256": "ffa0236d3d3813bc3c2f3acab21011b31d8b89eb791316f09ba028a9c5a24a7e",
+      "result": [
+        "00:01 +249: All tests passed!"
+      ],
+      "tests": 249,
+      "generatedHistories": {
+        "sequences": 1000,
+        "seed": 2026,
+        "includedInSuite": true
+      }
+    },
+    "kernel_analyze": {
+      "status": "passed",
+      "logSha256": "ab9d4a5159d42e8729ccf4767fdc6bea6452ec1376310aebf470860ca33191d4",
+      "result": [
+        "No issues found!"
+      ]
+    },
+    "host_tests": {
+      "status": "passed",
+      "logSha256": "8d3ee0b1b983bf8189805b42836e265d7015017fcab284afc8dfa64095b42bf7",
+      "result": [
+        "00:03 +84: All tests passed!"
+      ],
+      "tests": 84
+    },
+    "host_analyze": {
+      "status": "passed",
+      "logSha256": "1a3e8c5c6c469bec72f4d853933fec56b07ad2a2046f6e9a08385d57ee78dfb7",
+      "result": [
+        "No issues found! (ran in 2.2s)"
+      ]
+    },
+    "workbench_tests": {
+      "status": "passed",
+      "logSha256": "f4aa3766fedd9713d9e1d2c0e9bf7c3b8d4bfa71534a9fb60327a0a9bb9ba4f6",
+      "result": [
+        "00:04 +24: All tests passed!"
+      ],
+      "tests": 24
+    },
+    "workbench_analyze": {
+      "status": "passed",
+      "logSha256": "c50b3f43bfb3f9039ada58ce06fb613d0f0d7cf81929fecc092d5cf00218164c",
+      "result": [
+        "No issues found! (ran in 1.8s)"
+      ]
+    },
+    "rust": {
+      "status": "passed",
+      "logSha256": "cb20bb12a1e6d573dc021becabb6eb50a4fbb73c504a434a07ce39e839da23df",
+      "result": [
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s",
+        "test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "tests": 40
+    },
+    "parity": {
+      "status": "passed",
+      "logSha256": "8c5ec585fa0c5f716c1eec121f3e4932d399da6260d156d52e9079e3b08b97a7",
+      "result": [
+        "committed wasm identical to native: 1322 cases",
+        "fresh wasm identical to native"
+      ]
+    },
+    "prebuilt_consumer": {
+      "status": "passed",
+      "logSha256": "148292b4343f4a4198b11b0b6606d83515958cefbbbddebb6873b9fb6a7cbda7",
+      "result": [
+        "prebuilt consumer OK (no Rust on PATH)"
+      ]
+    },
+    "schema": {
+      "status": "passed",
+      "logSha256": "16d670c3617fffd3904926ea6410575678842c8205c4cc64484ac89dbb640262",
+      "result": [
+        "Schema freshness PASS"
+      ]
+    },
+    "macos_build": {
+      "status": "passed",
+      "logSha256": "95389966ee718c761b053eaa576fe9462ced100df548f672bb65412bf81a433d",
+      "result": [
+        "\u2713 Built build/macos/Build/Products/Profile/flark_dogfood.app (64.4MB)"
+      ]
+    },
+    "web_build": {
+      "status": "passed",
+      "logSha256": "816fbfae854227647009ea48bc608f99d3220e1535a642936601a991b5819eaf",
+      "result": [
+        "\u2713 Built build/web"
+      ]
+    }
+  },
+  "kernelBenchmark": {
+    "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+    "evidence": "local working tree",
+    "sourceTreeSha256": "fb36bb37fe0e688910debf753d28accb350ac1364cb943825f1b304c96cd4fad",
+    "runtime": "3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"",
+    "os": "Version 26.2 (Build 25C56)",
+    "fixture": "dense",
+    "sourceBytes": 16694,
+    "fixtureSha256": "81fecc5feda4e724a2622fb67ff1cc4a3a5bb5149394345124f269c18d28065f",
+    "modelSha256": "05e6109ea0f4f13da54cca6c92c8dcaa572b714c20e047de6cb57b7597ab2838",
+    "schema": 2,
+    "blocks": 769,
+    "runs": 2144,
+    "rows": 705,
+    "warmupPairs": 100,
+    "measuredPairs": 400,
+    "insertP99Us": 2263,
+    "backspaceP99Us": 2020,
+    "logSha256": "ba79e1cdbd2c5903fcb52d2c65e68b41c94f3e2367dcd4a5268389766f57bb5e",
+    "scope": "headless facade; not native input-to-raster proof"
+  },
+  "artifacts": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "b8b48ec31bfaf1931901eb039c5f9e781d54a877fe5b61ac49ec0f0e7c254974",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/App.framework/Versions/A/App": "b39387ba0a69f06ab4f324217456d4b85cbb7a74a410c031375ece8487e423c1",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "bbb291c554bbce13c1064f058d03bff4a90cd5bc22544caa8d4d2143bbc3e4ad",
+    "packages/flark_flutter/example/build/web/main.dart.wasm": "4fe7738017dfa86b6523969d435855b829f333e239bd7f1d10e6492dd1f0cd7c",
+    "packages/flark/lib/assets/wasm/flark_parse.wasm": "7e39a46adfd6c47ce33f3d5850bef4fb12df135a607cfbb3af4325098620eb54",
+    "packages/flark_flutter/example/build/web/assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "7e39a46adfd6c47ce33f3d5850bef4fb12df135a607cfbb3af4325098620eb54"
+  },
+  "macosBundle": {
+    "path": "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app",
+    "fileCount": 28,
+    "entryCount": 37,
+    "sha256": "a6ce664e82ea5392aad09d03b483df1dc55ad42794d8e37a736ba1e6397a3ba1",
+    "digestFormat": "sorted F relative-path content-sha256 or L relative-path symlink-target, newline-delimited"
+  },
+  "webBundle": {
+    "path": "packages/flark_flutter/example/build/web",
+    "fileCount": 41,
+    "entryCount": 41,
+    "sha256": "20ef81951906295137214b0c5f7aadc4d6434a687edeb1cb1fe9e86b509d41b1",
+    "digestFormat": "sorted F relative-path content-sha256 or L relative-path symlink-target, newline-delimited"
+  },
+  "macosBuildTarget": "lib/main.dart",
+  "diagnosticDartDefines": [],
+  "kernelNativeArtifact": {
+    "path": "packages/flark/.dart_tool/lib/libflark_parse.dylib",
+    "sha256": "44d2b36cbe057871e5e0f615aa1bbd058b069c93bbd876a206b322a0374518e7",
+    "explicitOverride": false
+  },
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "nativeSweep": {
+    "status": "failed B1 latency gate",
+    "file": "frame_sweep.json",
+    "sha256": "1094f0fa56cd96117f11c7b4fc728afbea3dbf3038a5fcd94fbf89979e6dc042",
+    "measuredInputs": 4200,
+    "passedCases": 16,
+    "failedCases": 5,
+    "failures": [
+      {
+        "shape": "dense",
+        "site": "largest block",
+        "insertP99Us": 20639,
+        "deleteP99Us": 19468
+      },
+      {
+        "shape": "list",
+        "site": "largest block",
+        "insertP99Us": 19496,
+        "deleteP99Us": 19545
+      },
+      {
+        "shape": "table",
+        "site": "largest block",
+        "insertP99Us": 19328,
+        "deleteP99Us": 19305
+      },
+      {
+        "shape": "nested",
+        "site": "largest block",
+        "insertP99Us": 19121,
+        "deleteP99Us": 18998
+      },
+      {
+        "shape": "reference",
+        "site": "largest block",
+        "insertP99Us": 20079,
+        "deleteP99Us": 20375
+      }
+    ]
+  },
+  "focusedDiagnostic": {
+    "file": "frame_diagnostic.json",
+    "sha256": "414b3b89bedee0aa01430fdad314f73642c2c1a37172e69a73bdea92414dd8ea",
+    "status": "quiet reproduction failed; most delay precedes frame build",
+    "separateArtifactHashPreserved": false
+  },
+  "workbenchProfile": {
+    "status": "rejected foreground loss",
+    "logSha256": "234f2d0bea8feec06977e8e506552d3f800b967ac4883ece64112ac6417dd16e",
+    "completedMeasuredCycles": 100,
+    "sustainedLoopEntered": true,
+    "acceptedSustainedInputCount": null,
+    "completePerformanceOrMemoryReceipt": false,
+    "elapsedReported": "3:59",
+    "harnessCorrection": "Explicit legal initial caret offsets for hidden block prefixes; no product change."
+  },
+  "laterNativeAttempts": [
+    {
+      "label": "minimal surface comparator",
+      "status": "rejected initial foreground gate",
+      "logSha256": "358cbccf2a0162de31c7703720c9d6409f4d282efcbbd13a4dd1afbe5fc25aca"
+    },
+    {
+      "label": "extended production trace",
+      "status": "rejected initial foreground gate",
+      "logSha256": "573d117ebc503d2eae62f02a5e4a152104fd52b1a43ff2853d5d028299979b05"
+    }
+  ],
+  "nativeEnvironment": "CUA reported Mac locked; no automatic unlock. All owned native profiles and awake holds exited.",
+  "browserSmoke": {
+    "status": "observed functional subset",
+    "scope": "Empty and retype italic/strong/strike/code/nested owner; plain outside owner; pending-style whitespace exit; Undo/Redo; ordinary consecutive spaces. Canonical values, caret and screenshots checked.",
+    "clipboard": "Attempts produced no observed paste; not qualified.",
+    "limitations": "Not AppKit, native timing, clipboard or full web qualification."
+  },
+  "validationFile": "validation.txt",
+  "validationSha256": "a453b84f20bcf2fb260d4dc084c1e1da58a2ef3d163357bf7c1d42ba64eade2e",
+  "notQualified": [
+    "attended AppKit input and menus",
+    "production 32 KiB input-to-raster envelope",
+    "opening, source transitions and sustained/lifecycle performance",
+    "normal rebuilt binary interaction",
+    "Dune integration",
+    "floor Android and CJK",
+    "named-commit CI",
+    "full browser/device qualification"
+  ],
+  "nextAction": "On an unlocked foreground Mac, compare the same dense paragraph with and without workbench and capture the actual failing interval. Resolve and repeat the complete sweep, uninterrupted workload and normal-binary native canaries."
+}

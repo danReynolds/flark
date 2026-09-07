@@ -1,0 +1,146 @@
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[19988]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: `flark_parse` (lib) generated 1 warning
+   Compiling flark_parse v0.1.0 (/Users/dan/Coding/sovereign/native/flark_parse)
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[20077]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[20140]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[20080]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[20217]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[20139]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[20189]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: `flark_parse` (example "ast") generated 1 warning
+warning: `flark_parse` (test "conformance") generated 1 warning
+warning: `flark_parse` (example "dump") generated 1 warning
+warning: `flark_parse` (lib test) generated 1 warning
+warning: `flark_parse` (test "fuzz") generated 1 warning
+warning: `flark_parse` (test "regressions") generated 1 warning
+warning: stripping debug info with `rust-objcopy` failed: signal: 6 (SIGABRT)
+  |
+  = note: dyld[21561]: Library not loaded: @rpath/libLLVM.dylib
+            Referenced from: <AC0D75A8-23BF-301F-B7CE-3E5CC0C1BC06> /Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-objcopy
+            Reason: tried: '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/.rustup/toolchains/1.98.0-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/../lib/libLLVM.dylib' (no such file), '/Users/dan/Coding/sovereign/native/flark_parse/target/release/deps/libLLVM.dylib' (no such file), '/Users/dan/lib/libLLVM.dylib' (no such file), '/usr/local/lib/libLLVM.dylib' (no such file), '/usr/lib/libLLVM.dylib' (no such file, not in dyld cache)
+          
+
+warning: `flark_parse` (test "abi") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.62s
+     Running unittests src/lib.rs (native/flark_parse/target/release/deps/flark_parse-3a597e886e10a4a8)
+
+running 14 tests
+test lines::tests::utf16_counts_supplementary_pairs ... ok
+test lines::tests::bare_cr_and_crlf_are_line_endings ... ok
+test reference_definitions::mirror_tests::multiline_label ... ok
+test reference_definitions::mirror_tests::rejects_title_followed_by_text_on_same_line ... ok
+test reference_definitions::mirror_tests::several_in_a_row ... ok
+test reference_definitions::mirror_tests::strips_definition_then_paragraph_text ... ok
+test text_pieces::tests::double_encoded_entity_keeps_the_literal_tail_exact ... ok
+test text_pieces::tests::entity_in_the_middle ... ok
+test text_pieces::tests::escaped_pipe_hides_the_backslash ... ok
+test text_pieces::tests::numeric_entity_at_the_edges ... ok
+test text_pieces::tests::stray_cr_is_hidden ... ok
+test text_pieces::tests::unknown_entities_stay_exact ... ok
+test text_pieces::tests::unrelated_text_does_not_split ... ok
+test text_pieces::tests::virtual_leading_spaces_are_a_zero_width_piece ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/abi.rs (native/flark_parse/target/release/deps/abi-429f73466ce15c85)
+
+running 2 tests
+test abi_and_encoded_header_publish_schema_v3 ... ok
+test abi_returns_a_typed_error_and_no_model_for_extraction_deviations ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/conformance.rs (native/flark_parse/target/release/deps/conformance-2c81d8af2a1a6dec)
+
+running 2 tests
+test spec_html_matches_the_fixtures_except_registered_deviations ... ok
+test extraction_has_zero_deviations_and_valid_models ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/fuzz.rs (native/flark_parse/target/release/deps/fuzz-c119ebe0f912d113)
+
+running 3 tests
+test corpus_mutations_never_panic ... ok
+test random_markdown_never_panics_and_keeps_invariants ... ok
+test deep_nesting_does_not_overflow_the_stack ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+
+     Running tests/regressions.rs (native/flark_parse/target/release/deps/regressions-d505923d6378fd6f)
+
+running 23 tests
+test crlf_is_not_part_of_code_or_html_content ... ok
+test a_checkbox_after_a_stripped_definition_is_found_in_the_source ... ok
+test a_paragraph_split_by_a_table_header_keeps_its_definition_text ... ok
+test crlf_documents_extract_exactly ... ok
+test bare_url_ending_in_an_angle_has_no_hidden_closing_bracket ... ok
+test empty_document_is_a_lone_document_block ... ok
+test crlf_after_an_escaped_bracket_keeps_positions ... ok
+test bare_carriage_returns_are_line_endings ... ok
+test empty_nested_quote_publishes_only_the_innermost_prefix ... ok
+test indented_table_body_strong_range_is_exact ... ok
+test definitions_inside_containers_and_across_lines_are_recorded ... ok
+test editing_content_retains_trailing_whitespace ... ok
+test escaped_pipes_in_cells_shift_correctly ... ok
+test a_wide_table_reports_the_alignment_cap ... ok
+test item_marker_endpoints_are_source_ranges_not_display_columns ... ok
+test link_destinations_honor_escapes_tabs_and_angle_brackets ... ok
+test lazy_continuation_after_a_stripped_definition ... ok
+test multiline_code_repair_updates_the_complete_owner_range ... ok
+test nested_markers_consume_their_padding ... ok
+test task_items_start_content_after_the_checkbox ... ok
+test unreferenced_footnote_definitions_keep_their_place ... ok
+test multiline_inline_link_closures_and_following_breaks_are_exact ... ok
+test literal_tabs_do_not_hide_a_shifted_pipeless_cell ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests flark_parse
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

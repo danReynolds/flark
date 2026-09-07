@@ -1,0 +1,8 @@
+{
+  "recordedAtUtc": "2026-09-05T21:32:14.019524+00:00",
+  "artifacts": {
+    "main.dart.wasm": "640cfb0fb95734eebd7fd07526375a22807f0fc64682c4f8d4c883f801dfeadd",
+    "main.dart.js": "b078ba7ae573d6d1a4ff34d3f89199b8d18477051d703bd29fbb77ea74bdddba",
+    "assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "7e39a46adfd6c47ce33f3d5850bef4fb12df135a607cfbb3af4325098620eb54"
+  }
+}

@@ -1,0 +1,6 @@
+   Compiling flark_parse v0.1.0 (/Users/dan/Coding/sovereign/native/flark_parse)
+    Finished `release` profile [optimized] target(s) in 2.12s
+committed wasm identical to native: 1322 cases
+info: component 'rust-std' for target 'wasm32-unknown-unknown' is up to date
+    Finished `release` profile [optimized] target(s) in 0.01s
+fresh wasm identical to native

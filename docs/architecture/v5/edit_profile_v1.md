@@ -1,12 +1,16 @@
 # Rendered editing behavior
 
 **Profile:** `flark-edit-v1`
-**Status:** active product contract. v5's kernel (M2, 2026-09-03) implements every headless rule below with a journey in `packages/flark/test/journeys/`; paste routes, composition, and pointer geometry are covered by the M3 surfaces.
+**Status:** active product contract. v5's kernel covers the currently supported
+headless rules with direct scenarios in `packages/flark/test/`; host revision,
+paste, composition, and pointer geometry are M3 surface obligations.
 **Product goal:** [Flark North Star](../../../NORTH_STAR.md)
 
 ## Purpose
 
-This contract moved from `docs/architecture/v4/contracts/` when v5 adopted it unchanged; RFC 030 §6 records how the v5 kernel realizes its caret and boundary rules.
+This contract moved from `docs/architecture/v4/contracts/` and was rebased onto
+v5's synchronous execution model. RFC 030 §6 records how the kernel realizes
+its caret and boundary rules.
 
 This document defines what common editing actions mean when users edit rendered
 Markdown while exact Markdown source remains canonical. It is the active
@@ -26,9 +30,6 @@ Flark behaves like a native rich-text editor backed losslessly by Markdown:
 - **Rendered grapheme:** one user-visible deletion or movement unit.
 - **Semantic context:** formatting intent at the current rendered caret, such
   as Emphasis or Strong.
-- **Exact island:** the smallest parser-authorized source range that must remain
-  literal because its current rendered meaning is uncertain.
-
 These are implementation-facing descriptions of visible behavior, not
 additional product principles or testing layers.
 
@@ -55,6 +56,10 @@ additional product principles or testing layers.
 - Typing inside a semantic span continues that semantic context.
 - Typing at a visible boundary uses the context selected by the caret target,
   pointer hit, or preceding navigation command.
+- Typing a space advances the source and painted caret; the next word stays
+  after that space. Editable trailing whitespace, including table-cell padding,
+  remains represented. A parser-authenticated hard break stays one atomic
+  rendered unit when moving or deleting across the break.
 - Typing ordinary whitespace after an emptied inline owner exits that owner
   unless a supported construct explicitly retains whitespace.
 - Completing source-authored delimiters may atomically turn literal text into a
@@ -66,6 +71,21 @@ additional product principles or testing layers.
 - Replacing a rendered range inserts the provided text once and selects or
   places the caret at the logical replacement end.
 - A replacement wholly inside compatible formatting retains that formatting.
+- Selecting a word at an owner's visible edge may include that edge's hidden
+  delimiter. When the visible selection stays inside the owner, edit its
+  content; the delimiter anchor must not make ordinary replacement fail.
+- In rendered mode, the first Select All within one fenced code region selects
+  its projected body, excluding fence markers and surrounding prose. The next
+  Select All expands to the document. Other editing/navigation commands restart
+  this sequence. In an empty fence, the first command stays at its empty body;
+  pasting then must not replace the document. Source mode, prose and selections
+  spanning regions select the document immediately.
+- Whole-document Select All preserves the exact noncollapsed `0..source.length` range,
+  including leading/trailing block syntax. Replacing or deleting that range
+  replaces the whole document in one undoable transaction; the next typed
+  character uses the new document's context. Ordinary caret placement still
+  legalizes to rendered content. This whole-document action is supported even
+  when partial cross-block transformations are not.
 - A replacement crossing unsupported owners fails before mutation rather than
   guessing at Markdown closure.
 
@@ -76,6 +96,12 @@ additional product principles or testing layers.
 - Hidden opening and closing delimiters are never separate deletion steps.
 - Deleting content from a styled span preserves unaffected surrounding source,
   styling, and block presentation.
+- Word deletion uses the same word boundaries as word navigation. It is one
+  history action, followed by an independently undoable typed character.
+- If deletion exposes whitespace against emphasis/strong/strike delimiters,
+  move that whitespace outside the owner so surviving words retain their
+  style. Keep a legal caret in surviving leading content, and retain typing
+  intent when deletion exits an owner's trailing whitespace.
 
 ### EP1-DELETE-TO-EMPTY-001
 
@@ -96,15 +122,25 @@ the smallest mounted regression case.
 ## Caret, selection, and boundaries
 
 - Arrow movement advances by visible caret targets, not hidden source offsets.
+- Up and Down cross every empty visual line and row boundary in both directions,
+  preserving the horizontal goal through short lines. Shift extends the original
+  selection base, and the next key edits at the reached line.
 - Pointer placement chooses a parser-authored target using actual glyph
   geometry. When two semantic contexts share one visual boundary, leading and
   trailing glyph halves may select different targets.
 - Selection direction and affinity survive controller, platform-input, layout,
   and paint mapping.
+- Double-click selects the laid-out visible word. Replacement and Undo use
+  the same semantic selection rules as keyboard selection.
+- Command-Up/Down and Control-Home/End move to the document edges. Shift
+  extends from the existing selection base, retaining the complete source
+  when the range reaches both document edges.
 - Collapsing a range chooses the appropriate visible edge and immediately
   establishes the semantic context for the next command.
 - A caret target or formatting context bound to an older source revision or
   selection generation is rejected.
+- An editable checkbox uses the click pointer over the same hit region that
+  activates it. Text and read-only regions keep their appropriate cursors.
 
 ## Structural editing
 
@@ -113,13 +149,77 @@ Return and Backspace operate on the visible block structure:
 - Return splits a paragraph or heading at the caret;
 - Return continues or exits supported list and quote structures;
 - terminal Return creates one writable following paragraph;
+- table Return moves to the next row in the same column, then exits the table;
+  cell-boundary deletion rejects atomically, and table restructuring uses source mode;
 - Backspace at a supported block start merges, lifts, or removes the structural
   boundary users see; and
 - repeated Return or Backspace followed immediately by typing must leave one
   live caret and accept the next input.
 
-Structural source markers remain hidden unless they are intentionally literal
-or inside the smallest exact island.
+Structural source markers remain hidden when the current parse recognizes them;
+intentionally literal or incomplete syntax remains visible authoring content.
+
+### Typed fence creation
+
+In rendered mode, typing the third backtick (or tilde) on an otherwise bare
+opening-fence line immediately creates one empty code line and a matching
+closing fence. The caret starts inside that line. A writable gap follows the
+block; existing following prose, headings and code blocks stay outside it.
+The parser authenticates the opener and the completed Markdown before the
+single publication. Quotes and list items retain their continuation prefixes.
+
+Enter continues code, including on an empty line inside a quote or list. Down
+from the last code line reaches the following gap, where typing creates prose.
+Backspace in an empty closed code block removes the fences and retains its
+container context. Completion is its own Undo step: Undo restores the two
+typed markers and their caret; Redo restores the empty bounded block.
+
+This is a typing convenience. Paste, range replacement, source mode and IME
+preedit preserve their literal input. Existing language tags are preserved;
+under immediate creation, characters typed after the third marker enter the
+code body. Opening-line padding and CRLF at the insertion site are retained.
+
+### Code editing
+
+Code selection is painted above the block background. Pointer selection,
+replacement, copy/cut and history use the same projected text and source
+coordinates as other rows.
+
+Untagged fences receive automatic syntax coloring without changing Markdown.
+When the caret is inside a fence, the toolbar offers Automatic, Plain text and
+a language override. A manual choice edits only the first info-string token,
+retains metadata and body text, maps the selection, and is one Undo action.
+Automatic removes the language token; with remaining metadata it uses `auto`
+to preserve the metadata's position. Unknown tags remain intact and uncolored.
+
+Enter carries existing leading whitespace and parser-owned container prefixes.
+An opening brace, bracket or parenthesis increases the indentation, and Enter
+between a matching pair puts the closer on its own line. Python's trailing
+colon also increases indentation. Recognized comments, strings and regex literals do not
+trigger those rules. The step is two spaces, four for Python, or an existing
+tab. Tab/Shift-Tab indent/outdent selected code lines without touching their
+container prefixes; a collapsed Tab inserts a step at the caret. Commands
+crossing a code-block boundary reject atomically.
+
+Typing `}`, `]` or `)` on an indented, otherwise blank code line aligns it with
+its matching opener's leading whitespace. A shared balanced-delimiter scan
+skips literal token ranges, including enclosing string/comment/regex ancestry.
+It operates on parser-owned code content and preserves quote/list prefixes.
+The closer and whitespace change publish together as one Undo action. Inline
+closers, unmatched/mismatched pairs, selected replacement, paste, composition
+and source-mode input retain literal behavior. Unknown and Plain text languages
+also retain literal indentation. The current YAML grammar marks flow punctuation
+as string text, so its automatic closer falls back to literal input. The twelve
+registered grammars each have a declared regression case; these examples are
+coverage boundaries, not a guarantee for every construct in those languages.
+This is a bounded editing aid, not a formatter or arbitrary-language parser.
+
+Syntax decoration is pure Dart and theme-free. The initial grammar set is Dart,
+Python, JavaScript, TypeScript, Rust, Go, JSON, YAML, SQL, shell, HTML/XML and CSS.
+Detection examines at most 1,024 UTF-16 units. Blocks above 8,192 units fall back
+to plain text; the host's narrower admission envelope still applies. Cached
+tokens are bounded and must reconstruct the exact projected body text.
+Decoration failures cannot alter or reject source input.
 
 ## History and platform input
 
@@ -129,6 +229,10 @@ or inside the smallest exact island.
 - Equivalent full-value, delta, key, paste, and composition delivery routes
   produce the same accepted logical command.
 - Duplicate platform callbacks must not duplicate source mutations.
+- Browser copy/cut exports visible selected text in rendered mode and exact
+  selected source in source mode. Copy Markdown remains the full-source export.
+  A browser cut is one semantic deletion; native DOM source replacement must
+  not also delete the range.
 
 Paste, composition, clipboard, dictation, and platform-specific selection
 behavior require native qualification in addition to Core and mounted tests.
@@ -137,18 +241,22 @@ behavior require native qualification in addition to Core and mounted tests.
 
 ### EP1-RESULT-PRESENTATION-001
 
-Every accepted source mutation returns enough parser-owned information to paint
-the complete current result or the smallest exact island plus unchanged
-rendered surroundings. That result is bound to the committed source revision
-and affected range.
+Inside the live tier, every accepted source mutation returns enough parser-owned
+information to paint the complete current result. That result is bound to the
+committed source revision. Outside the configured UTF-8 byte-and-shape
+admission envelope, the editor publishes a source-mode snapshot and does not
+retain a full parsed projection. A typed extraction deviation also keeps an
+initially opened or already-source-mode document in source mode rather than
+publishing an untrustworthy projection; the same deviation rejects an edit to
+an existing live snapshot atomically. M2 implements the byte gate; M3 adds
+shape admission before this becomes a product-qualified live boundary.
 
 Flutter may validate and render this information. It may not reconstruct the
 result with delimiter scans, character allowlists, or stale row structure.
 
 Source, selection, rendered runs, block presentation, caret target, geometry,
-semantics, and available actions publish atomically. A later parser result may
-replace that snapshot only when it belongs to the same or a newer accepted
-generation.
+semantics, and available actions publish atomically. The synchronous parser
+answer is part of that publication; there is no later parser result to adopt.
 
 ## Required D0 behavior
 
@@ -159,7 +267,7 @@ generation.
 | Boundaries | Inside, outside, opening edge, closing edge, pointer placement, and arrow traversal |
 | Sequences | Delete-to-empty then type, repeated Return then type, terminal-gap Backspace then type, and delete/insert Undo/Redo |
 | Presentation | Current source, rendered text, style, block presentation, caret, selection, geometry, and no unrelated marker exposure on every paint |
-| Scale | The supported document presets, viewport movement, resize, parser backlog, and rapid input budgets in the dogfood milestone |
+| Scale | The supported document presets, viewport movement, resize, live/source transitions, adversarial admitted shapes, and rapid input budgets in the dogfood milestone |
 
 The exact cases live beside the production tests that execute them. There is no
 separate scenario registry or conformance claim based only on fixture metadata.

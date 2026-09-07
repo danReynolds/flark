@@ -1,0 +1,6 @@
+name: flark_code_region_spike
+publish_to: none
+environment:
+  sdk: ^3.12.0
+dependencies:
+  shiki_flutter: 1.1.0

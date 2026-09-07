@@ -1,0 +1,313 @@
+{
+  "runtime": "v22.23.0",
+  "method": "Headless EditorState language and command probe; no DOM, Flutter adapter, paint, IME, latency or deployment claim.",
+  "packages": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.0",
+    "@codemirror/lang-css": "6.3.1",
+    "@codemirror/lang-html": "6.4.12",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-json": "6.0.2",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/lang-yaml": "6.1.3",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/legacy-modes": "6.5.4",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/state": "6.7.4",
+    "@codemirror/view": "6.43.11"
+  },
+  "results": [
+    {
+      "name": "dart owner",
+      "language": "dart",
+      "before": "for (final x in [1,2,3]) {",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "for (final x in [1,2,3]) {\n  ",
+          "caret": 29
+        },
+        {
+          "action": "type",
+          "text": "for (final x in [1,2,3]) {\n}",
+          "caret": 28
+        }
+      ]
+    },
+    {
+      "name": "javascript nested",
+      "language": "javascript",
+      "before": "function run() {\n  if (ok) {",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "function run() {\n  if (ok) {\n    ",
+          "caret": 33
+        },
+        {
+          "action": "type",
+          "text": "function run() {\n  if (ok) {\n  }",
+          "caret": 32
+        },
+        {
+          "action": "enter",
+          "text": "function run() {\n  if (ok) {\n  }\n  ",
+          "caret": 35
+        },
+        {
+          "action": "type",
+          "text": "function run() {\n  if (ok) {\n  }\n}",
+          "caret": 34
+        }
+      ]
+    },
+    {
+      "name": "typescript block",
+      "language": "typescript",
+      "before": "function run(): void {",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "function run(): void {\n  ",
+          "caret": 25
+        },
+        {
+          "action": "type",
+          "text": "function run(): void {\n}",
+          "caret": 24
+        }
+      ]
+    },
+    {
+      "name": "javascript regex",
+      "language": "javascript",
+      "before": "function run() {\n  const re = /[}]/;",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "function run() {\n  const re = /[}]/;\n  ",
+          "caret": 39
+        },
+        {
+          "action": "type",
+          "text": "function run() {\n  const re = /[}]/;\n}",
+          "caret": 38
+        }
+      ]
+    },
+    {
+      "name": "javascript open comment",
+      "language": "javascript",
+      "before": "function run() {\n  /*",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "function run() {\n  /*\n  ",
+          "caret": 24
+        },
+        {
+          "action": "type",
+          "text": "function run() {\n  /*\n  }",
+          "caret": 25
+        }
+      ]
+    },
+    {
+      "name": "javascript template expression",
+      "language": "javascript",
+      "before": "const s = `${(() => {",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "const s = `${(() => {\n  ",
+          "caret": 24
+        },
+        {
+          "action": "type",
+          "text": "const s = `${(() => {\n}",
+          "caret": 23
+        }
+      ]
+    },
+    {
+      "name": "javascript pasted closer",
+      "language": "javascript",
+      "before": "function run() {\n  ",
+      "steps": [
+        {
+          "action": "paste",
+          "text": "function run() {\n  }",
+          "caret": 20
+        }
+      ]
+    },
+    {
+      "name": "python suite",
+      "language": "python",
+      "before": "if ready:",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "if ready:\n    ",
+          "caret": 14
+        },
+        {
+          "action": "type",
+          "text": "if ready:\n    pass",
+          "caret": 18
+        },
+        {
+          "action": "enter",
+          "text": "if ready:\n    pass\n    ",
+          "caret": 23
+        },
+        {
+          "action": "type",
+          "text": "if ready:\n    pass\nelse:",
+          "caret": 24
+        },
+        {
+          "action": "enter",
+          "text": "if ready:\n    pass\nelse:\n    ",
+          "caret": 29
+        }
+      ]
+    },
+    {
+      "name": "python bracket",
+      "language": "python",
+      "before": "values = [",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "values = [\n    ",
+          "caret": 15
+        },
+        {
+          "action": "type",
+          "text": "values = [\n]",
+          "caret": 12
+        }
+      ]
+    },
+    {
+      "name": "yaml mapping",
+      "language": "yaml",
+      "before": "settings:",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "settings:\n",
+          "caret": 10
+        },
+        {
+          "action": "type",
+          "text": "settings:\nenabled: true",
+          "caret": 23
+        }
+      ]
+    },
+    {
+      "name": "yaml flow",
+      "language": "yaml",
+      "before": "settings: {",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "settings: {\n  ",
+          "caret": 14
+        },
+        {
+          "action": "type",
+          "text": "settings: {\n}",
+          "caret": 13
+        }
+      ]
+    },
+    {
+      "name": "html element",
+      "language": "html",
+      "before": "<div>",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "<div>\n  ",
+          "caret": 8
+        },
+        {
+          "action": "type",
+          "text": "<div>\n</div>",
+          "caret": 12
+        }
+      ]
+    },
+    {
+      "name": "json object",
+      "language": "json",
+      "before": "{",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "{\n  ",
+          "caret": 4
+        },
+        {
+          "action": "type",
+          "text": "{\n}",
+          "caret": 3
+        }
+      ]
+    },
+    {
+      "name": "ruby keyword",
+      "language": "ruby",
+      "before": "def run",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "def run\n  ",
+          "caret": 10
+        },
+        {
+          "action": "type",
+          "text": "def run\nend",
+          "caret": 11
+        }
+      ]
+    },
+    {
+      "name": "shell keyword",
+      "language": "shell",
+      "before": "if true; then",
+      "steps": [
+        {
+          "action": "enter",
+          "text": "if true; then\n",
+          "caret": 14
+        },
+        {
+          "action": "type",
+          "text": "if true; then\nfi",
+          "caret": 16
+        }
+      ]
+    },
+    {
+      "name": "dart indent round trip",
+      "language": "dart",
+      "before": "void main() {\n  print(42);",
+      "steps": [
+        {
+          "action": "indent",
+          "text": "void main() {\n    print(42);",
+          "caret": 28
+        },
+        {
+          "action": "outdent",
+          "text": "void main() {\n  print(42);",
+          "caret": 26
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-06",
+  "decision": "Do not adopt this backend",
+  "baseCommit": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "checkout": "dirty; spike input hashes identify the tested source",
+  "machine": "Apple M1 Pro\nProductName:\t\tmacOS\nProductVersion:\t\t26.2\nBuildVersion:\t\t25C56",
+  "dart": "3.12.2",
+  "node": "v22.23.0",
+  "platformExecutions": [
+    "Dart VM",
+    "native AOT CLI",
+    "Dart-to-JavaScript under Node"
+  ],
+  "checksPerExecution": 69,
+  "passedPerExecution": 67,
+  "failedPerExecution": 2,
+  "failedChecks": [
+    "Python else alignment / 1 else:",
+    "YAML block scalar Enter / 1 enter"
+  ],
+  "crossRuntimeChecksAndLexicalSnapshotsEqual": true,
+  "timings": "Final runtimes executed sequentially; 12 warm complete-snippet samples per grammar/size; median averages the middle pair. No host/frame/device measurement.",
+  "sourceSha256": {
+    "pubspec.yaml": "4509d0782b41fd9f4122eac2ae4cc200060fa3eb0aaf6551ab3b3a4bb5c7f5f8",
+    "pubspec.lock": "cf2d4221841ffbe32ca3b427bf15fcdffd68b3368d7e4fe70ff9c27989212b13",
+    "analysis_options.yaml": "11c87ad19ce5ae47a084713846a84f9a2d6de40f9560bbf5ca48a3899676c5ad",
+    "lib/configurations.dart": "0e31b85087e317cac0a69e9a1e8af3a735cb6a0ecd799ce2113c5f2b777ee81c",
+    "lib/indentation.dart": "93f6d2df439dead635e2c00d5a6bfb505b0de1fd2ddb97d8cf3c6175048fd4a9",
+    "lib/lexical.dart": "00701c4d09274aad007f654ebff0522a61a0e8cfd1aa20d5e05620e80767e2c4",
+    "bin/probe.dart": "51ea9770a47431bd678d2664956bea23400dc9aa6d188797e9ad8e39669cfc84",
+    "tool/generate_configurations.py": "b7a9b41b0a1786a0fcb2e9a8253cdf789d237f3c8ac576b5e15c8787df884eed",
+    "upstream/dart.LICENSE": "192e1760e9435124d035ea727f7dee11a4f370ef5262e5385fe3bfd7f66212b3",
+    "upstream/dart.jsonc": "ea109e01845ed97a95b78967d5b6ddb8af8d75d611c1e894eb3f842de0c3e434",
+    "upstream/javascript.LICENSE": "9480271317925265e806a9a196aaa33410a962fa9d4d1e248a4a5187bc8c9df9",
+    "upstream/javascript.jsonc": "5d64c3902b9bdb6c88ea19d538192e9a6bbbcec2358e0c652774c9ffbb123c23",
+    "upstream/manifest.json": "7795688fefa129d1588120aa6f85290fcf48b505b547c4dd7ce2d2c85c69d9c5",
+    "upstream/python.LICENSE": "9480271317925265e806a9a196aaa33410a962fa9d4d1e248a4a5187bc8c9df9",
+    "upstream/python.jsonc": "141f93a99e92b9d399cbe4e18f36757fc6bcb94df765607b57b149c1749fda28",
+    "upstream/yaml.LICENSE": "2a6ebc3c5b441f0aef19c5190d17f5bfc1ab4f729db49fabb2db7d10bd9a6146",
+    "upstream/yaml.jsonc": "194f89d571d4c73966de1282786573f7e0c082a281c9518b09c763b3d16264db",
+    ".gitignore": "cddc33acec81c19cadca7fe049b7ed5f717f6011985b565adcf1294cd8e67ff4"
+  },
+  "resultSha256": {
+    "vm.json": "2f77ac5d0fdc6642400a002a057f52ddf994fcb9da8bc483ec7e9da3ad1d54b2",
+    "aot.json": "1216a9f14d4485d3b3432be00876231dba66fc38a26bc3fab721ef6cd00843e9",
+    "js.json": "f556b15090814ec468528f1b6717f969da6f4e796fc7fbb4e8628e901605572b"
+  },
+  "limits": [
+    "Uses unsupported internal Shiki APIs and a Flutter-dependent package",
+    "No full VS Code configuration semantics",
+    "No production integration, browser, Flutter input/paint, history or platform qualification",
+    "No Dart Wasm or pathological-regex budget proof"
+  ]
+}

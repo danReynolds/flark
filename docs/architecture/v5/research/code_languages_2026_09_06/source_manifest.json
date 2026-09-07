@@ -1,0 +1,86 @@
+[
+  {
+    "repo": "codemirror/language",
+    "path": "src/indent.ts",
+    "url": "https://raw.githubusercontent.com/codemirror/language/8e9700018446d46f23267f6e31da56628d5117c0/src/indent.ts",
+    "bytes": 16817,
+    "sha256": "423b4c60b50b6c5161a5868a6b22c65b2f8474540de182bd3ce350163544c51a"
+  },
+  {
+    "repo": "codemirror/lang-javascript",
+    "path": "src/javascript.ts",
+    "url": "https://raw.githubusercontent.com/codemirror/lang-javascript/aac430a8d38669711cc2a4727fd6418b9634807d/src/javascript.ts",
+    "bytes": 7505,
+    "sha256": "cec7119539963f1b388959d04aa82ce275b36968857f44e544d68947feff8d41"
+  },
+  {
+    "repo": "Dart-Code/Dart-Code",
+    "path": "syntaxes/dart-language-configuration.json",
+    "url": "https://raw.githubusercontent.com/Dart-Code/Dart-Code/4a166f7abbc077ac4d2706224a61ebceb4bf0a92/syntaxes/dart-language-configuration.json",
+    "bytes": 755,
+    "sha256": "ea109e01845ed97a95b78967d5b6ddb8af8d75d611c1e894eb3f842de0c3e434"
+  },
+  {
+    "repo": "helix-editor/helix",
+    "path": "helix-core/src/indent.rs",
+    "url": "https://raw.githubusercontent.com/helix-editor/helix/079a789e8cb08ead67f19e1971a1b7438b37354b/helix-core/src/indent.rs",
+    "bytes": 57837,
+    "sha256": "9a25b637cd1bd152587f1eab388921ba6992b834dd352235b1ad0fa200613428"
+  },
+  {
+    "repo": "helix-editor/helix",
+    "path": "runtime/queries/dart/indents.scm",
+    "url": "https://raw.githubusercontent.com/helix-editor/helix/079a789e8cb08ead67f19e1971a1b7438b37354b/runtime/queries/dart/indents.scm",
+    "bytes": 1760,
+    "sha256": "c84b5674bb7db00d2ed145a78f52f3252b2548a06deb375457ac7112111ddcc2"
+  },
+  {
+    "repo": "helix-editor/helix",
+    "path": "runtime/queries/javascript/indents.scm",
+    "url": "https://raw.githubusercontent.com/helix-editor/helix/079a789e8cb08ead67f19e1971a1b7438b37354b/runtime/queries/javascript/indents.scm",
+    "bytes": 82,
+    "sha256": "de860241732055f2c9eceabd00c8f60e9af4ed0cc1206ee735bfc74b427dea88"
+  },
+  {
+    "repo": "helix-editor/helix",
+    "path": "runtime/queries/yaml/indents.scm",
+    "url": "https://raw.githubusercontent.com/helix-editor/helix/079a789e8cb08ead67f19e1971a1b7438b37354b/runtime/queries/yaml/indents.scm",
+    "bytes": 1109,
+    "sha256": "0daf8b65a3f2a8c7c2280bed2eaa21e03fad82bd22ce44bb952d9cf45c373e26"
+  },
+  {
+    "repo": "helix-editor/helix",
+    "path": "runtime/queries/python/indents.scm",
+    "url": "https://raw.githubusercontent.com/helix-editor/helix/079a789e8cb08ead67f19e1971a1b7438b37354b/runtime/queries/python/indents.scm",
+    "bytes": 1421,
+    "sha256": "f44ee3dbc9bec803aecd3113e1e481e9f0f465570990f0d9d0ad38ae58160509"
+  },
+  {
+    "repo": "helix-editor/helix",
+    "path": "LICENSE",
+    "url": "https://raw.githubusercontent.com/helix-editor/helix/079a789e8cb08ead67f19e1971a1b7438b37354b/LICENSE",
+    "bytes": 16725,
+    "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+  },
+  {
+    "repo": "milkdown/milkdown",
+    "path": "packages/components/src/code-block/config.ts",
+    "url": "https://raw.githubusercontent.com/milkdown/milkdown/920cded3fc9fe956de87339e30507650a916cf56/packages/components/src/code-block/config.ts",
+    "bytes": 1542,
+    "sha256": "eb393205fe3438cf5644274937d9ebdc3a2d9a8c3eee74ab03b377863fc278f5"
+  },
+  {
+    "repo": "milkdown/milkdown",
+    "path": "packages/crepe/src/feature/code-mirror/index.ts",
+    "url": "https://raw.githubusercontent.com/milkdown/milkdown/920cded3fc9fe956de87339e30507650a916cf56/packages/crepe/src/feature/code-mirror/index.ts",
+    "bytes": 2732,
+    "sha256": "b6bf5d530d07637fe70790c487c2153d1cad27a6fc53ad7d8ad2c6bd79d5c175"
+  },
+  {
+    "repo": "milkdown/milkdown",
+    "path": "packages/components/src/code-block/view/node-view.ts",
+    "url": "https://raw.githubusercontent.com/milkdown/milkdown/920cded3fc9fe956de87339e30507650a916cf56/packages/components/src/code-block/view/node-view.ts",
+    "bytes": 11698,
+    "sha256": "4663d7cfd36b32bee874a7b83fb97455e6a88312c9a5a714319f1cd1c04e10e5"
+  }
+]

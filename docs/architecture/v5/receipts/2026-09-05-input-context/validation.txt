@@ -1,0 +1,18 @@
+LOCAL CONTINUATION — 2026-09-05
+New production input adapter: packages/flark_flutter/lib/src/input_context.dart and editor.dart.
+Core/parser inputs and their earlier 249-test/40-test/1,322-case evidence remain unchanged.
+PASS: all 93 Flutter host tests, including nine input-context regression scenarios.
+PASS: all 24 workbench tests; host and example analysis; normal macOS and web/Wasm builds.
+DIAGNOSTIC: minimal native host reproduced 21,270/21,141 us p99 failure over 960 inputs.
+DIAGNOSTIC: actual foreground workbench trace/stack identifies native text mirror caret layout.
+DIAGNOSTIC: bounded context reached 12,748/12,290 us p99 over 200 exact-paint inputs.
+The latter run failed semantics-handle teardown after accessibility activation; not a pass.
+REJECTED: no-mirror controls and full sweep did not complete valid foreground measurements.
+Profiles now check foreground before their first pump; native rerun of that ordering is pending.
+OBSERVED WEB: exact 5,800-byte source after 800 delivered characters on 5,000-byte fixture;
+new context remained focused, next input worked, Undo/Redo exact, Select All selected all source.
+The actuator stopped at a replaced textarea; resuming the remaining input preserved all source.
+Browser paste did not produce an observed replacement; clipboard qualification remains open.
+Original fixture and prior browser clipboard restored.
+Native profilers and awake holds exited; final normal app rebuilt without diagnostic defines.
+D0 and the performance B1 remain open. No commit, push or CI claim.

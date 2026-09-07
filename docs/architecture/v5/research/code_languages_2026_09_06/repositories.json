@@ -1,0 +1,106 @@
+[
+  {
+    "repo": "reqable/re-editor",
+    "sha": "28d9fc06c5c2087ff75bd6b96a6d466b8d7b4fbc",
+    "branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "pushedAt": "2026-08-21T03:25:35Z"
+  },
+  {
+    "repo": "reqable/re-highlight",
+    "sha": "3485b61f00ef120a06c9c6848ab860ea340cdf44",
+    "branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "pushedAt": "2025-03-18T09:10:35Z"
+  },
+  {
+    "repo": "codemirror/language",
+    "sha": "8e9700018446d46f23267f6e31da56628d5117c0",
+    "branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "pushedAt": "2026-04-15T10:19:22Z"
+  },
+  {
+    "repo": "codemirror/lang-javascript",
+    "sha": "aac430a8d38669711cc2a4727fd6418b9634807d",
+    "branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "pushedAt": "2026-04-15T10:21:13Z"
+  },
+  {
+    "repo": "milkdown/milkdown",
+    "sha": "920cded3fc9fe956de87339e30507650a916cf56",
+    "branch": "main",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "pushedAt": "2026-09-06T12:34:32Z"
+  },
+  {
+    "repo": "helix-editor/helix",
+    "sha": "079a789e8cb08ead67f19e1971a1b7438b37354b",
+    "branch": "master",
+    "license": {
+      "key": "mpl-2.0",
+      "name": "Mozilla Public License 2.0",
+      "spdx_id": "MPL-2.0",
+      "url": "https://api.github.com/licenses/mpl-2.0",
+      "node_id": "MDc6TGljZW5zZTE0"
+    },
+    "pushedAt": "2026-09-01T23:26:06Z"
+  },
+  {
+    "repo": "trishume/syntect",
+    "sha": "4aa78031e93ebd3e0be7278120d0bd9d2508b1a3",
+    "branch": "master",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "pushedAt": "2026-04-28T19:52:59Z"
+  },
+  {
+    "repo": "Dart-Code/Dart-Code",
+    "sha": "4a166f7abbc077ac4d2706224a61ebceb4bf0a92",
+    "branch": "master",
+    "license": {
+      "key": "mit",
+      "name": "MIT License",
+      "spdx_id": "MIT",
+      "url": "https://api.github.com/licenses/mit",
+      "node_id": "MDc6TGljZW5zZTEz"
+    },
+    "pushedAt": "2026-09-05T16:00:07Z"
+  }
+]

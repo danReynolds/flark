@@ -1,0 +1,365 @@
+   Compiling flark_tree_sitter v0.1.0 (/Users/dan/Coding/sovereign/packages/flark_tree_sitter/native)
+warning: function `parse_fresh` is never used
+  --> examples/../src/syntax.rs:93:8
+   |
+93 | pub fn parse_fresh(source: &str, grammar: &crate::languages::Grammar) -> Result<Parsed, String> {
+   |        ^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `flark_tree_sitter` (example "stages") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 2.95s
+     Running unittests src/lib.rs (native/target/release/deps/flark_tree_sitter-808128ce0a8eaa37)
+
+running 9 tests
+test edit::tests::invalid_requests_are_rejected_before_syntax_work ... ok
+test tests::unknown_language_errors_and_limit_preserves_source ... ok
+test tests::repeated_analyses_do_not_share_document_state ... ok
+test abi::tests::abi_validates_inputs_and_clears_outputs ... ok
+test languages::tests::all_catalog_queries_compile ... ok
+test tests::every_grammar_highlights_real_code_and_distinguishes_strings ... ok
+test tests::reused_highlighter_matches_fresh_after_language_and_context_changes ... ok
+test tests::preserves_unicode_crlf_and_incomplete_source_in_every_grammar ... ok
+test syntax::tests::incremental_context_matches_fresh_during_typing_and_replacements ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running unittests src/bin/analyze.rs (native/target/release/deps/analyze-b237705b9054589a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests flark_tree_sitter
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling flark_tree_sitter v0.1.0 (/Users/dan/Coding/sovereign/packages/flark_tree_sitter/native)
+    Finished `release` profile [optimized] target(s) in 1.27s
+/Users/dan/Coding/sovereign/packages/flark_tree_sitter/lib/assets/wasm/flark_tree_sitter.wasm
+Analyzing flark_tree_sitter...
+No issues found!
+Running build hooks...Running build hooks...00:00 +0: loading test/highlight_worker_test.dart
+00:00 +0: test/highlight_worker_test.dart: coalesces rapid edits and never returns superseded colors
+00:00 +1: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +2: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +3: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +4: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +5: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +6: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +7: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +8: test/analyzer_test.dart: plain: exact Unicode/CRLF source after editing earlier context
+00:00 +9: test/edit_test.dart: JSON Enter before first string
+00:00 +10: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +11: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +12: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +13: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +14: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +15: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +16: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +17: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +18: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +19: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +20: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +21: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +22: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +23: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +24: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +25: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +26: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +27: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +28: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +29: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +30: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +31: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +32: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +33: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +34: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +35: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +36: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +37: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +38: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +39: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +40: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +41: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +42: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +43: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +44: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +45: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +46: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +47: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +48: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +49: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +50: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +51: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +52: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +53: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +54: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +55: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +56: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +57: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +58: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +59: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +60: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +61: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +62: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +63: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +64: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +65: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +66: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +67: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +68: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +69: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +70: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +71: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +72: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +73: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +74: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +75: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +76: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +77: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +78: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +79: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +80: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +81: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +82: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +83: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +84: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +85: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +86: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +87: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +88: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +89: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +90: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +91: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +92: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +93: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +94: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +95: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +96: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +97: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +98: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +99: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +100: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +101: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +102: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +103: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +104: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +105: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +106: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +107: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +108: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +109: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +110: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +111: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +112: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +113: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +114: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +115: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +116: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +117: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +118: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +119: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +120: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +121: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +122: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +123: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +124: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +125: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +126: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +127: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +128: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +129: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +130: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +131: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +132: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +133: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +134: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +135: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +136: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +137: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +138: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +139: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +140: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +141: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +142: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +143: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +144: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +145: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +146: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +147: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +148: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +149: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +150: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +151: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +152: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +153: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +154: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +155: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +156: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +157: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +158: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +159: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +160: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +161: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +162: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +163: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +164: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +165: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +166: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +167: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +168: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +169: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +170: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +171: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +172: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +173: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +174: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +175: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +176: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +177: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +178: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +179: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +180: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +181: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +182: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +183: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +184: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +185: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +186: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +187: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +188: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +189: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +190: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +191: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +192: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +193: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +194: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +195: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +196: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +197: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +198: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +199: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +200: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +201: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +202: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +203: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +204: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +205: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +206: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +207: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +208: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +209: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +210: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +211: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +212: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +213: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +214: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +215: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +216: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +217: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +218: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +219: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +220: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +221: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +222: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +223: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +224: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +225: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +226: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +227: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +228: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +229: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +230: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +231: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +232: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +233: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +234: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +235: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +236: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +237: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +238: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +239: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +240: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +241: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +242: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +243: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +244: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +245: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +246: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +247: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +248: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +249: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +250: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +251: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +252: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +253: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +254: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +255: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +256: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +257: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +258: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +259: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +260: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +261: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +262: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +263: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +264: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +265: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +266: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +267: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +268: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +269: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +270: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +271: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +272: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +273: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +274: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +275: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +276: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +277: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +278: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +279: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +280: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +281: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +282: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +283: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +284: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +285: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +286: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +287: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +288: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +289: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +290: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +291: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +292: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +293: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +294: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +295: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +296: test/highlight_worker_test.dart: real native isolate matches direct analysis across languages
+00:00 +297: test/catalog_test.dart: Automatic bash: echo "hello"
+00:00 +298: test/catalog_test.dart: Automatic javascript: function hello() {
+00:00 +299: test/catalog_test.dart: Automatic plain: 
+00:00 +300: test/catalog_test.dart: Automatic plain: x
+00:00 +301: test/catalog_test.dart: Automatic plain: Hello world
+00:00 +302: test/catalog_test.dart: Automatic plain: This is a simple test.
+00:00 +303: test/catalog_test.dart: Automatic plain: Please select the item.
+00:00 +304: test/catalog_test.dart: Automatic plain: An end to the story.
+00:00 +305: test/catalog_test.dart: Automatic plain: The final result is here.
+00:00 +306: test/catalog_test.dart: aliases and manual choices bypass Automatic
+00:00 +307: All tests passed!
+Running build hooks...Running build hooks...Deleting output directory: /Users/dan/Coding/sovereign/packages/flark_tree_sitter/build/aot/.
+Running build hooks...Running build hooks...Running link hooks...Running link hooks...Copying 1 build assets:
+package:flark_tree_sitter/src/native.dart
+Generated: /Users/dan/Coding/sovereign/packages/flark_tree_sitter/build/aot/bundle/bin/flark_tree_sitter_probe
+Compiled 10,376,979 input bytes (5,326,718 characters source) to 135,482 characters JavaScript in 0.65 seconds
+Generated wasm module 'build/probe.wasm', and JS init file 'build/probe.mjs'.
+Deleting output directory: /Users/dan/Coding/sovereign/packages/flark_tree_sitter/build/worker-aot/.
+Running build hooks...Running build hooks...Running link hooks...Running link hooks...Copying 1 build assets:
+package:flark_tree_sitter/src/native.dart
+Generated: /Users/dan/Coding/sovereign/packages/flark_tree_sitter/build/worker-aot/bundle/bin/flark_tree_sitter_worker_probe
+Compiled 10,394,743 input bytes (5,344,482 characters source) to 193,903 characters JavaScript in 0.84 seconds
+Generated wasm module 'build/browser_probe.wasm', and JS init file 'build/browser_probe.mjs'.
+{"cases": 390, "runtimes": ["native", "aot", "js", "dart-wasm"], "system": "macOS-26.2-arm64-arm-64bit-Mach-O", "wasmBytes": 13123001, "wasmSha256": "2091e763ffc72ce25967582c08c7b75ae686edc674cddc83c57405d112a53b65", "baseCommit": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410", "dirtyCheckout": true, "dart": "Dart SDK version: 3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"", "node": "v22.23.0", "rust": "rustc 1.98.0 (88d9e12ae 2026-08-18)", "sourceHashes": {"lib/assets/highlight_worker.mjs": "af88b2f85d29679fcf458c143bcaff8d2f92cd6bb0dbb5ef0078a0b079b3e674", "lib/flark_tree_sitter.dart": "4cb3ae7beec65f844bf99a3fa281d90f143b9cb2d9cf45c8108fd8094f9371a0", "lib/highlight_worker.dart": "411fd14eb030c4ff9f77a9db60528d71837bf5cb1550939feee7c9ed8bdb8e43", "lib/src/analyzer.dart": "eef8c46b26243bb2adf533bd857f5ec149c0834560af3eb36ae6e1657e806909", "lib/src/backend.dart": "b9a5a6b70945d16711dd32d2b97406c9f738c7d9fd5ffb64774aab0a23d0779a", "lib/src/backend_ffi.dart": "792c1a2f8a3f72e3037c18f2719968245ae14b95e2b814eabef15e77fd0d0cc6", "lib/src/backend_web.dart": "2087ccc63c2f5d2800cd6c9674656676de9bc4b21246cb8d674622963faa6a5a", "lib/src/catalog.dart": "271c8c4522d82e3ba8d962fb8640f299783a07a20011ed85b7550d95f010896b", "lib/src/edit.dart": "11eba48094f2f5f8cef26d00f6eab944dc3e118930620cacdb74ee168da14e53", "lib/src/highlight_native.dart": "f2a1751addd2ada01978af69a920e7e51d3b1f3d4ad802bdcfd832b5cf698153", "lib/src/highlight_queue.dart": "007152c64cb6df8ac6a3efd604bcfd2733626e05d511f4d2131a08588cb6be37", "lib/src/highlight_transport.dart": "3a699a8fe281766d047c2ed88a8324686e0240b3db133d8d1ceb6c022532f6ee", "lib/src/highlight_web.dart": "0ad53540ac2adc7c35832f55af0e02fb94b605d5f0538ef49f04a3030f82dd4c", "lib/src/model.dart": "1108c5110459b5ce5b830ea39d55d76ab1aff1c0a4faada04e3520d5786b1efd", "lib/src/native.dart": "f7087bba8ade4c6f894a141c8dd986047eee87ca50d12da22b118f777bda57a2", "lib/wasm.dart": "7f94bcc35b6fac7f55e33f16476156f6316c3579ff169a052ab2ca29184abf9f", "hook/build.dart": "79ceaa30a9619435fe01591ed165cd15bd20a16542a38d08341d07172ce14809", "native/src/abi.rs": "549fd7cec58a04445856e37bbef72cb2242d190237bca5a726aa2244114e08d9", "native/src/bin/analyze.rs": "430139b7846c2ab4637aa89972c08acb367df8d6e32c66a8fe3710e47ac15ffd", "native/src/detect.rs": "c2487bdc1533f6b38170b6044b5c34b9f08bc9138c62a2b51c346fdd507639d6", "native/src/edit.rs": "319145110cea66362e9049003d461130ed561da805d48ecad4594b6e54228f02", "native/src/languages.rs": "b0a2c431449fc15df4c5463dc4bc088d570cc0797dd93d0e7cd1d16eacc2d985", "native/src/lib.rs": "0284bfaab5e9d3e1ae13a55e0d6eeb61f130478db67a54ef4cbc0b9fee3a2e08", "native/src/syntax.rs": "24324491364381e0fe4fca840cc40c9a0da05f9219b7c4fc51f4ce8ffc0e179a", "native/queries/bash.scm": "0b92d94f448aea4ebc38b4ec2a428d8c31d1431e2d4390b960bb0b9b89e0bb43", "native/queries/css.scm": "37add05d8543209ea5cff6ad6d4fa674b55270270d50bea19c096d77b26db3a6", "native/queries/dart.scm": "f5323b5fee32b13d3de1af44c6be1aa03580dfd94f7d9b166db0c12d4ae2ea3c", "native/queries/detect/bash.scm": "907c43a0c55a0016a6441117e79b975ec0cac1c103817ef2137adfca2a09345d", "native/queries/detect/css.scm": "ad5a8d1d73fc02ddf1d5c2eabccabb6a1fbd5bb4f68e32386346e7aef3606db9", "native/queries/detect/dart.scm": "69199cb40ee7a9d0af064e19f3b84b1968f8116d4756ae2d16680051eb01e115", "native/queries/detect/go.scm": "a7ab8158e96ce45e979617a03056677c062167d3a19da621b57049c39fb835f7", "native/queries/detect/html.scm": "d667eeb4d56eaf48eb978eba4e49aeb73c01bab1b76ac55a7efdca376fff4432", "native/queries/detect/javascript.scm": "76018228ee23c246db881359c1de4331d9e572dffca333fc792dc684884d4043", "native/queries/detect/json.scm": "37136b28a8b2c8c27ee067342aef29290620e8055ad37b7d7df338e2383e648c", "native/queries/detect/python.scm": "8e7faf9ceb29576946f7c030499c331d1c631f8cbf6f9b347834fc3f364d18d8", "native/queries/detect/ruby.scm": "194636a81034d15afbb3437d53e3ad8410a343829163d0f11c7df15a359044f1", "native/queries/detect/rust.scm": "53aec4c2b9e726bdd06300acf9a4f8dcd1d305a510ea16dc15a9a82b6e9fb7a4", "native/queries/detect/sql.scm": "9c893f1be9bb96a332022d023a33e7b9b22929a26dbf2944723a6f04a3bcfa5c", "native/queries/detect/typescript.scm": "d865e54a61ea37c9e9130bf9f8bebf809b6657a60f01207a96f984eb20a98cab", "native/queries/detect/xml.scm": "533a3096bde832f980c669c2870a1bba8d4b08727fe12e87453af1adc54927b0", "native/queries/detect/yaml.scm": "54784a012e1c81e78f714f028a5b20dfafc5bc80e63914e18a633862f477f7b7", "native/queries/go.scm": "b294732c855725dfd985db47cd1da09030aae737b1dbb53790bbaac08faee2f1", "native/queries/html.scm": "8c599913b587b42a7ffd7164e2b8481f817d5fb8146e4fc4550b8ea91104bb59", "native/queries/javascript.scm": "e4526c7f650007e87addb5e0d35db7090b6e172eb50b8ed3e8b680876965ba5e", "native/queries/json.scm": "284046b4a109d0686fe6c5b73a57afa48db0f511f21ae9474c2259cf5b0aaaee", "native/queries/python.scm": "6dfd8d933a811d031638dd9729325b6932bae9522e95fb87714c454b02bf3830", "native/queries/ruby.scm": "36e9af61d57599f7abc2032ed7bc7faf28eb91e55cb9a0740eeba1c3f6c3205d", "native/queries/rust.scm": "35bc9046476ae7121fd2d614fde803ed484916527d0fa43a976e356058dff04c", "native/queries/sql.scm": "f48dc0d8e0bad4962257dc9ef05bd0898e92be74b4703fcf8ee38519d76cc187", "native/queries/typescript.scm": "e4526c7f650007e87addb5e0d35db7090b6e172eb50b8ed3e8b680876965ba5e", "native/queries/xml.scm": "d6da8e095f7ade22ddb0aa6fca743cf06c99df67545ac0de564e82879a8547ca", "native/queries/yaml.scm": "3b1b6c55bcde956593d295fc48cc9cfca5dcf2e7e010d7c266c01a841d66634d", "native/examples/stages.rs": "4375073dd4a94625775040049e03e91dc36d49761223a05cee9a7c8f934eff79", "native/examples/tree.rs": "32f3249125bd2d62b8bbe3338a0be9fb0fee5b0de333385a6c94ca97434bdcac", "bin/flark_tree_sitter_bench.dart": "6e8f8a6fe4194b6c5bb9fda6eb8ff2d1dc900b2b9b37ea2dd36e9fb19345e7bd", "bin/flark_tree_sitter_edit_bench.dart": "5a1a4a2f98d212206885fa744c447d1ae4b150b8b93e6565968c65b6946b5f62", "bin/flark_tree_sitter_probe.dart": "15eddeb85be90599e3adbcfbbeffad313ae01431beaef795f7d7b59c8cd071b6", "bin/flark_tree_sitter_typing_bench.dart": "f4aa8f4aff81ee62e84afe49db262605c999e83ae19c5654631f0fe1add82fee", "bin/flark_tree_sitter_worker_probe.dart": "70248b346d2d2ac0daa82b045f26a1a9ca1f3d15b8072bae6a6000f69555f4cd", "test/analyzer_test.dart": "bacb2b4e73699f71c4d58fe71f5074d64bf8e3d4c4670ff39c052662ce14f193", "test/catalog_test.dart": "93bc62f9803b6e829bf9be0859d8c213a2a7d5f6b55f8f4d83100f97139ee3a7", "test/detection_contract_test.dart": "e583052e11d8a017e26d4aceb48af094a752c1429afeae92bf509a75db3eeb02", "test/edit_test.dart": "d7d3a3d0d81a1e374e3ea0a16d69d79f75d7c3d73bfcebb9361f8400ddbde2b9", "test/highlight_worker_test.dart": "9cc64f4bde1ae4c8d5a608dd690728815d8c98f5bae0837bbde1354273117f29", "tool/bench.dart": "d04f0f66d0aa5bbb20f01e401d3baf8f030bd3b03f670c74b303d532006b6632", "tool/browser_probe.dart": "1d3066cf6be23d472e3b0081afcc749ba89c09e7c1e4b2bd08bb91d75d3351fd", "tool/build_wasm.py": "d96aa37cc30ecfe82a6e663fd3c0ab47a894fd6db2704983adf3aa9db0d0be96", "tool/catalog_cases.dart": "dae6e5648a9670738a623944df8d4542a6364da141167d064f05f59b1e2c5f32", "tool/clock_native.dart": "c331bba33725f4d7476cd3e70552db96c544cab87af404c181cd2c9d587ef8a7", "tool/clock_web.dart": "ae2c8598fbaf59ed5854279f2fce9da9856670b1648170201ba14ecca0cf2727", "tool/edit_bench.dart": "0915de29cedbbfd905f8ab0aa6c839fdc673a87a2d53c5b589817d83809ea835", "tool/edit_cases.dart": "3e1e096d65802990d300b8edb40de809001fe320e3dab9af53efe020ef45f003", "tool/probe.dart": "eabf64f055f5ecb8533205de47568e6d4fa1b161038fca8e164ab343f20af956", "tool/probe_native.dart": "e207369c0804eefc356820c1f63a492635069e32a46b05312738b3bc6d9f530a", "tool/probe_web.dart": "8dbceb3a982266e9529d243a1bea181bba3f679ac321850cb9d237760b7022ca", "tool/run_probe.mjs": "5e3e7b2926acc451050256d6ff288eb8441b15178bd7f20b296c75917d8be217", "tool/serve_probe.py": "b7c9d40722d4907c0aaf5be7608a683e8ba35f6a9d1d5e261fc01d7339035983", "tool/typing_bench.dart": "0363be0e7412967399b2a1d9710b07da1d448e1debde28447648af8097ec04f4", "tool/verify.py": "7b4d473054972f679d9d9d431d2e38c88f220e944010af7939e4b8c1edd43945", "tool/worker_native.dart": "e63174d0602e8580b3dd87b596f1a70ff0ed2239841992469b6df96cd14a812c", "tool/worker_probe.dart": "d105203c45af1f03167da397d4af28cb168035ae719fef092e226fbcc987d991", "tool/worker_web.dart": "d4952599f4d16a5c6f220dd94ed907b94ffe1ccda1e7da1738f4c5937f670353", "pubspec.yaml": "c4a129db4d01a9be377a38929002c73dabf99099f136a7859907e708d1c6aab3", "native/Cargo.toml": "8717e1e61a3f35149b3f5a5a61b93df00a895054fbc9f410acde3b7d73d5877a", "native/Cargo.lock": "988566f9f1fa3a4f9b80ff85c2fc0adfbd387d2c84883bee58e461546f514e32", "native/wasm_compat.h": "91fd60503ce74b6f38706158caf7e9dd2c23268ba0f352e9f203f5f58145ad1d"}, "nativeWorker": {"comparisons": 412, "burstRequests": 40, "startupMicros": 253964, "detection": [{"language": "dart", "sampleUnits": 31, "samples": 39, "micros": {"p50": 591, "p95": 844, "max": 1023}}, {"language": "dart", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1606, "p95": 1854, "max": 1863}}, {"language": "javascript", "sampleUnits": 42, "samples": 39, "micros": {"p50": 515, "p95": 649, "max": 663}}, {"language": "javascript", "sampleUnits": 128, "samples": 39, "micros": {"p50": 903, "p95": 1179, "max": 1186}}, {"language": "python", "sampleUnits": 31, "samples": 39, "micros": {"p50": 538, "p95": 695, "max": 769}}, {"language": "python", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1673, "p95": 1864, "max": 1898}}, {"language": "yaml", "sampleUnits": 31, "samples": 39, "micros": {"p50": 630, "p95": 843, "max": 880}}, {"language": "yaml", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1534, "p95": 1760, "max": 1803}}, {"language": "ruby", "sampleUnits": 29, "samples": 39, "micros": {"p50": 427, "p95": 541, "max": 581}}, {"language": "ruby", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1307, "p95": 1512, "max": 1610}}, {"language": "typescript", "sampleUnits": 30, "samples": 39, "micros": {"p50": 365, "p95": 521, "max": 540}}, {"language": "typescript", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1106, "p95": 1249, "max": 1259}}, {"language": "rust", "sampleUnits": 32, "samples": 39, "micros": {"p50": 610, "p95": 799, "max": 823}}, {"language": "rust", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1589, "p95": 1743, "max": 1764}}, {"language": "go", "sampleUnits": 45, "samples": 39, "micros": {"p50": 667, "p95": 811, "max": 856}}, {"language": "go", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1329, "p95": 1520, "max": 1526}}, {"language": "json", "sampleUnits": 20, "samples": 39, "micros": {"p50": 534, "p95": 636, "max": 701}}, {"language": "json", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1398, "p95": 1514, "max": 1553}}, {"language": "css", "sampleUnits": 39, "samples": 39, "micros": {"p50": 513, "p95": 666, "max": 722}}, {"language": "css", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1348, "p95": 1552, "max": 1562}}, {"language": "bash", "sampleUnits": 31, "samples": 39, "micros": {"p50": 507, "p95": 602, "max": 681}}, {"language": "bash", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1694, "p95": 1896, "max": 1914}}, {"language": "html", "sampleUnits": 29, "samples": 39, "micros": {"p50": 452, "p95": 585, "max": 641}}, {"language": "html", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1615, "p95": 1819, "max": 1869}}, {"language": "xml", "sampleUnits": 39, "samples": 39, "micros": {"p50": 675, "p95": 857, "max": 870}}, {"language": "xml", "sampleUnits": 128, "samples": 39, "micros": {"p50": 1614, "p95": 1953, "max": 1969}}, {"language": "sql", "sampleUnits": 44, "samples": 39, "micros": {"p50": 394, "p95": 574, "max": 625}}, {"language": "sql", "sampleUnits": 128, "samples": 39, "micros": {"p50": 773, "p95": 981, "max": 1020}}], "results": [{"language": "typescript", "seedUnits": 372, "samples": 90, "inputMicros": {"p50": 57, "p95": 155, "max": 937}, "colorLatencyMicros": {"p50": 382, "p95": 1250, "max": 3435}, "superseded": 0}, {"language": "typescript", "seedUnits": 8060, "samples": 90, "inputMicros": {"p50": 203, "p95": 287, "max": 402}, "colorLatencyMicros": {"p50": 3172, "p95": 3497, "max": 3691}, "superseded": 0}, {"language": "rust", "seedUnits": 363, "samples": 96, "inputMicros": {"p50": 43, "p95": 58, "max": 120}, "colorLatencyMicros": {"p50": 277, "p95": 347, "max": 399}, "superseded": 0}, {"language": "rust", "seedUnits": 8052, "samples": 96, "inputMicros": {"p50": 228, "p95": 270, "max": 334}, "colorLatencyMicros": {"p50": 3243, "p95": 3943, "max": 6033}, "superseded": 1}, {"language": "go", "seedUnits": 368, "samples": 135, "inputMicros": {"p50": 48, "p95": 98, "max": 285}, "colorLatencyMicros": {"p50": 251, "p95": 633, "max": 4845}, "superseded": 0}, {"language": "go", "seedUnits": 8050, "samples": 135, "inputMicros": {"p50": 252, "p95": 340, "max": 880}, "colorLatencyMicros": {"p50": 2742, "p95": 3480, "max": 3738}, "superseded": 0}, {"language": "json", "seedUnits": 378, "samples": 60, "inputMicros": {"p50": 66, "p95": 163, "max": 2291}, "colorLatencyMicros": {"p50": 304, "p95": 710, "max": 2632}, "superseded": 0}, {"language": "json", "seedUnits": 8064, "samples": 60, "inputMicros": {"p50": 329, "p95": 421, "max": 478}, "colorLatencyMicros": {"p50": 2913, "p95": 3651, "max": 4020}, "superseded": 0}, {"language": "css", "seedUnits": 360, "samples": 117, "inputMicros": {"p50": 82, "p95": 241, "max": 533}, "colorLatencyMicros": {"p50": 553, "p95": 2032, "max": 5204}, "superseded": 0}, {"language": "css", "seedUnits": 8040, "samples": 117, "inputMicros": {"p50": 232, "p95": 313, "max": 379}, "colorLatencyMicros": {"p50": 2695, "p95": 3459, "max": 3828}, "superseded": 0}, {"language": "bash", "seedUnits": 384, "samples": 93, "inputMicros": {"p50": 90, "p95": 439, "max": 911}, "colorLatencyMicros": {"p50": 445, "p95": 1259, "max": 4267}, "superseded": 0}, {"language": "bash", "seedUnits": 8064, "samples": 93, "inputMicros": {"p50": 320, "p95": 1168, "max": 1270}, "colorLatencyMicros": {"p50": 3404, "p95": 4308, "max": 6081}, "superseded": 2}, {"language": "html", "seedUnits": 360, "samples": 87, "inputMicros": {"p50": 56, "p95": 171, "max": 4977}, "colorLatencyMicros": {"p50": 285, "p95": 646, "max": 5506}, "superseded": 0}, {"language": "html", "seedUnits": 8040, "samples": 87, "inputMicros": {"p50": 282, "p95": 998, "max": 1898}, "colorLatencyMicros": {"p50": 3150, "p95": 3804, "max": 4588}, "superseded": 0}, {"language": "xml", "seedUnits": 360, "samples": 117, "inputMicros": {"p50": 98, "p95": 922, "max": 3738}, "colorLatencyMicros": {"p50": 645, "p95": 2252, "max": 4573}, "superseded": 0}, {"language": "xml", "seedUnits": 8040, "samples": 117, "inputMicros": {"p50": 227, "p95": 2093, "max": 2446}, "colorLatencyMicros": {"p50": 4050, "p95": 5864, "max": 6145}, "superseded": 0}, {"language": "sql", "seedUnits": 360, "samples": 132, "inputMicros": {"p50": 72, "p95": 187, "max": 1200}, "colorLatencyMicros": {"p50": 518, "p95": 1843, "max": 5573}, "superseded": 0}, {"language": "sql", "seedUnits": 8055, "samples": 132, "inputMicros": {"p50": 192, "p95": 217, "max": 472}, "colorLatencyMicros": {"p50": 3364, "p95": 3863, "max": 4042}, "superseded": 0}, {"language": "ruby", "seedUnits": 372, "samples": 51, "inputMicros": {"p50": 103, "p95": 775, "max": 1084}, "colorLatencyMicros": {"p50": 699, "p95": 2179, "max": 2855}, "superseded": 0}, {"language": "ruby", "seedUnits": 8068, "samples": 51, "inputMicros": {"p50": 313, "p95": 1586, "max": 1640}, "colorLatencyMicros": {"p50": 4339, "p95": 5498, "max": 5629}, "superseded": 0}, {"language": "dart", "seedUnits": 374, "samples": 54, "inputMicros": {"p50": 58, "p95": 384, "max": 1240}, "colorLatencyMicros": {"p50": 774, "p95": 1636, "max": 3368}, "superseded": 0}, {"language": "dart", "seedUnits": 8070, "samples": 54, "inputMicros": {"p50": 277, "p95": 1691, "max": 2063}, "colorLatencyMicros": {"p50": 7246, "p95": 7843, "max": 8203}, "superseded": 0}, {"language": "javascript", "seedUnits": 387, "samples": 72, "inputMicros": {"p50": 95, "p95": 321, "max": 1164}, "colorLatencyMicros": {"p50": 716, "p95": 1181, "max": 3416}, "superseded": 0}, {"language": "javascript", "seedUnits": 8062, "samples": 72, "inputMicros": {"p50": 314, "p95": 1395, "max": 1567}, "colorLatencyMicros": {"p50": 4176, "p95": 5091, "max": 5401}, "superseded": 0}, {"language": "python", "seedUnits": 373, "samples": 48, "inputMicros": {"p50": 117, "p95": 335, "max": 701}, "colorLatencyMicros": {"p50": 773, "p95": 2914, "max": 4789}, "superseded": 0}, {"language": "python", "seedUnits": 8069, "samples": 48, "inputMicros": {"p50": 328, "p95": 3393, "max": 3708}, "colorLatencyMicros": {"p50": 4343, "p95": 7460, "max": 7740}, "superseded": 0}, {"language": "yaml", "seedUnits": 388, "samples": 39, "inputMicros": {"p50": 59, "p95": 336, "max": 749}, "colorLatencyMicros": {"p50": 436, "p95": 981, "max": 1139}, "superseded": 0}, {"language": "yaml", "seedUnits": 8073, "samples": 39, "inputMicros": {"p50": 283, "p95": 1756, "max": 1846}, "colorLatencyMicros": {"p50": 4835, "p95": 6293, "max": 6332}, "superseded": 0}]}}

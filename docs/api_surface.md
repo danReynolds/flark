@@ -1,5 +1,10 @@
 # API surface
 
+> **V4 historical guide.** The active V5 headless facade is specified in
+> [RFC 030](architecture/rfc/rfc_030_synchronous_core.md) and implemented in
+> `packages/flark`; the current Flutter implementation is described in the
+> [V5 package guide](../packages/flark_flutter/README.md).
+
 Flark v4 exposes two supported library barrels and no compatibility barrel.
 Anything under `lib/src/` is implementation detail.
 

@@ -8,8 +8,11 @@ source remains canonical.
 
 Typing must never reveal unrelated markers, lose input, move the caret, or
 publish a visibly inconsistent intermediate state. The same promise must hold
-under rapid input, scrolling, parser backlog, and large documents within the
-declared support envelope.
+under rapid input and scrolling throughout the declared live-rendered envelope.
+Documents outside that envelope open in an explicit source mode; they do not
+silently take the live-rendered path. The no-jank promise belongs to the
+live-rendered envelope; source-mode latency and maximum size are qualified
+separately rather than implied to be unbounded.
 
 ## Product principles
 
@@ -21,9 +24,10 @@ declared support envelope.
    structural commands, and history act on the visible meaning users edit.
 4. **Continuous interaction.** After every accepted command the editor remains
    focused, correctly targeted, writable, and ready for the next command.
-5. **Responsive at scale.** Editing remains native-responsive and semantically
-   consistent as document size, viewport movement, input cadence, parser
-   backlog, and offscreen work scale.
+5. **Responsive within a measured work envelope.** Live editing remains
+   native-responsive as document size, viewport movement, and input cadence
+   scale to receipt-defined byte and shape limits. Ineligible documents remain
+   exact and writable in source mode without requiring a full render model.
 
 ## UX features
 
@@ -35,7 +39,7 @@ declared support envelope.
 | Structural editing | Return, Backspace, list, quote, table, and block actions perform the expected split, continuation, exit, merge, or lift. |
 | History and platform input | Undo, redo, paste, composition, clipboard, and equivalent platform routes preserve user intent and coherent history. |
 | Continuous rapid input | Human cadence and unpumped bursts accept the same commands without dropped input, stale state, or bad intermediate paint. |
-| Responsive large-document editing | Editing, scrolling, paging, resize, and offscreen parsing stay within measured latency, memory, and work bounds. |
+| Explicit scale boundary | Live editing stays within measured latency, memory, and work bounds; documents outside the byte-and-shape envelope enter a disclosed source mode. |
 
 These feature groups organize product coverage, not the codebase. A test may
 cover several features, and tests live at the layer that can observe the bug.
@@ -44,14 +48,13 @@ cover several features, and tests live at the layer that can observe the bug.
 
 - Exact source, canonical selection, platform input, displayed selection, and
   painted caret describe the same accepted generation.
-- Certified Markdown stays rendered while focused and edited. Uncertainty is
-  confined to the smallest parser-authored affected range.
+- Complete Markdown constructs stay rendered while focused and edited inside
+  the live tier; literal or incomplete syntax remains visible authoring text.
 - Rapid input is as correct as slow input. A correct final frame cannot excuse
   a wrong intermediate frame.
-- Unaffected text retains its styling and block presentation while nearby work
-  is pending.
-- Scrolling, paging, large documents, and offscreen parsing do not change the
-  semantics of the visible editing surface.
+- Unaffected text retains its styling and block presentation during an edit.
+- Crossing the declared size boundary changes mode explicitly and never changes
+  source bytes or silently performs unbounded foreground work.
 - Read-only and editable surfaces render equivalent Markdown consistently.
 
 ## Architecture guardrails
@@ -62,8 +65,9 @@ cover several features, and tests live at the layer that can observe the bug.
   any proof that rendered presentation may be retained during an edit.
 - Source, selection, presentation, geometry, and action authority publish as
   one coherent snapshot. Stale asynchronous results cannot overwrite it.
-- Foreground parsing, mapping, layout, and paint work are bounded. Large
-  documents use paging and virtualization rather than hidden unbounded work.
+- Foreground parsing, mapping, layout, and paint work are bounded by the live
+  tier. Larger documents use a source-only path that does not build a complete
+  render model.
 - Performance is part of correctness and is measured on the production path.
 
 ## How we prove it
@@ -82,17 +86,18 @@ wrong block shell requires an actual-paint regression test.
 
 ## Current bar
 
-Flark is ready for dogfood only when the supported scenarios in
-[DOGFOOD_MILESTONE.md](DOGFOOD_MILESTONE.md) pass locally, every open dogfood
-blocker is closed, the native macOS canaries pass, and the measured performance
-profile stays within budget.
+Dogfood readiness is stated per platform under
+[DOGFOOD_MILESTONE.md](DOGFOOD_MILESTONE.md). D0-web is the immediate owner
+handoff: its supported browser scenarios must pass with no open browser B0/B1.
+D0-macOS additionally requires the native canaries and measured performance
+profile to pass. A pass on one platform does not close another platform's gates.
 
 Safe fallback is not enough: a common editing path that repeatedly exposes raw
 source still fails this North Star even when no data is lost.
 
 ## Active documents
 
-- [Rendered editing behavior](docs/architecture/v4/contracts/edit_profile_v1.md)
+- [Rendered editing behavior](docs/architecture/v5/edit_profile_v1.md)
 - [Testing strategy](docs/testing/live_editor_test_strategy.md)
 - [Dogfood milestone](DOGFOOD_MILESTONE.md)
 

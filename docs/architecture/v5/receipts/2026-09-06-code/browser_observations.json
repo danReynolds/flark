@@ -1,0 +1,35 @@
+{
+  "browser": "Codex embedded browser, observed normal Flutter/Wasm app",
+  "viewport": [
+    1280,
+    720
+  ],
+  "url": "http://127.0.0.1:8813/",
+  "assetPrefix": "/_flark/e2d620aff197c906/",
+  "scenarios": [
+    "Automatic JSON and explicitly tagged Dart/Python show syntax foreground colors.",
+    "Pointer drag selects the exact code range with visible blue background; keyboard copy exports the selected code text.",
+    "Replacing the selected range changes exactly that range; Undo restores the source.",
+    "Plain text changes only the opening info token, removes syntax colors, and Undo restores source and selection.",
+    "Enter between Dart braces creates an indented blank line with the closer below; print(42); types at that caret.",
+    "Python colon Return inserts four spaces and accepts return 42 on the new line.",
+    "Final build: Tab then Shift-Tab on an already indented selected line restores exact source and selection.",
+    "Final build: keyboard cut exports two spaces plus print(42);, removes that range once, and Undo restores source.",
+    "Final build: manual plain-text override survives save and reload.",
+    "Following prose remains outside code throughout the scenarios."
+  ],
+  "foundAndFixed": [
+    "Selection was covered by opaque code-text background; actual pixel regression added.",
+    "Backward selection crossing a code boundary escaped the initial indent endpoint check; generated-history discovery and direct regression.",
+    "Browser Tab/Shift-Tab inferred a changing indentation width; replaced with stable step and direct plus mounted regressions.",
+    "Ordinary reload retained an older preview; content-derived asset URLs now prove the new build is loaded."
+  ],
+  "cleanup": {
+    "draftBeforeBytes": 0,
+    "draftAfterBytes": 0,
+    "ownerTourBytes": 1019,
+    "tourWasEditedByAgent": false,
+    "selectedDocument": "Tour"
+  },
+  "proofBoundary": "Interactive canaries, not exhaustive browser/IME/accessibility or latency certification. Earlier discovery observations used the intermediate build; corrected indentation and cut/history/persistence repeated on the final build."
+}

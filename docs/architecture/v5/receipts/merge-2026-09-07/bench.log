@@ -1,0 +1,7 @@
+Running build hooks...Running build hooks...
+dense document 16694 UTF-8 bytes, 769 blocks, 2144 runs, 705 rows
+insert (facade)      p50 2.02 ms  p99 2.45 ms  min 1.84 ms
+backspace (facade)   p50 2.03 ms  p99 2.50 ms  min 1.85 ms
+parse only           p50 0.86 ms  p99 1.08 ms  min 0.82 ms
+projection only      p50 0.47 ms  p99 0.80 ms  min 0.44 ms
+{"head":"603433c44634157cdb15b056343bbc9e9b269b27","evidence":"local working tree","sourceTreeSha256":"14aa859e6486e2420697b61402cb250200398ff25a67a098ba4161fe0b9a5626","runtime":"3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"","os":"Version 26.2 (Build 25C56)","fixture":"dense","sourceBytes":16694,"fixtureSha256":"81fecc5feda4e724a2622fb67ff1cc4a3a5bb5149394345124f269c18d28065f","modelSha256":"fc36a401e30b8bed71920cbbb3634e73e6c053150d7ea0c3d42dfd949a7754cb","schema":3,"blocks":769,"runs":2144,"rows":705,"warmupPairs":100,"measuredPairs":400,"insertP99Us":2448,"backspaceP99Us":2498}

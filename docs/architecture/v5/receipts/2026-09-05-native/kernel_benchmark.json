@@ -1,0 +1,21 @@
+{
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "evidence": "local working tree",
+  "sourceTreeSha256": "fb36bb37fe0e688910debf753d28accb350ac1364cb943825f1b304c96cd4fad",
+  "runtime": "3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"",
+  "os": "Version 26.2 (Build 25C56)",
+  "fixture": "dense",
+  "sourceBytes": 16694,
+  "fixtureSha256": "81fecc5feda4e724a2622fb67ff1cc4a3a5bb5149394345124f269c18d28065f",
+  "modelSha256": "05e6109ea0f4f13da54cca6c92c8dcaa572b714c20e047de6cb57b7597ab2838",
+  "schema": 2,
+  "blocks": 769,
+  "runs": 2144,
+  "rows": 705,
+  "warmupPairs": 100,
+  "measuredPairs": 400,
+  "insertP99Us": 2263,
+  "backspaceP99Us": 2020,
+  "logSha256": "ba79e1cdbd2c5903fcb52d2c65e68b41c94f3e2367dcd4a5268389766f57bb5e",
+  "scope": "headless facade; not native input-to-raster proof"
+}

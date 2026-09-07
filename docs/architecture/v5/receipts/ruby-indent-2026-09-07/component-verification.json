@@ -1,0 +1,243 @@
+{
+  "cases": 200,
+  "runtimes": [
+    "native",
+    "aot",
+    "js",
+    "dart-wasm"
+  ],
+  "system": "macOS-26.2-arm64-arm-64bit-Mach-O",
+  "wasmBytes": 6272909,
+  "wasmSha256": "eefdb705b9eb9eeeb6939c3bbb53db76666792932dbfd318a482501714f806fc",
+  "baseCommit": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "dirtyCheckout": true,
+  "dart": "Dart SDK version: 3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"",
+  "node": "v22.23.0",
+  "rust": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+  "sourceHashes": {
+    "lib/assets/highlight_worker.mjs": "f16b426b86cb7fb484a550b818bbc7295da6b25e4f7ec73d10a4515faddc90f4",
+    "lib/flark_tree_sitter.dart": "0bbf191851b4114eeac6d0181cd2c7c1c2709b8ce747916075264b1922b0f5d3",
+    "lib/highlight_worker.dart": "411fd14eb030c4ff9f77a9db60528d71837bf5cb1550939feee7c9ed8bdb8e43",
+    "lib/src/analyzer.dart": "068820533d8fc36dd31575fe4b82eeb74e9d8762a82eb012c713e2922c5220b4",
+    "lib/src/backend.dart": "53da367a94a78bb7a001e2f843c56a7da0d438bee1cf0b3498091028352135d9",
+    "lib/src/backend_ffi.dart": "824e9a794cc36808158ae65778add0126652246b2aa82524667ab20d2668533e",
+    "lib/src/backend_web.dart": "c194750472858573106ff1d040a14d6edb651f88f51bc285c802116c62bf79a9",
+    "lib/src/edit.dart": "682635a802a92e2c0749cd522deb3415db3285b40cb1e3a2525734621cbb60e0",
+    "lib/src/highlight_native.dart": "10b0232474996084a7c9c962b1dcb5a091f4e22e653d14f00476b05a02938a36",
+    "lib/src/highlight_queue.dart": "007152c64cb6df8ac6a3efd604bcfd2733626e05d511f4d2131a08588cb6be37",
+    "lib/src/highlight_transport.dart": "3a699a8fe281766d047c2ed88a8324686e0240b3db133d8d1ceb6c022532f6ee",
+    "lib/src/highlight_web.dart": "0ad53540ac2adc7c35832f55af0e02fb94b605d5f0538ef49f04a3030f82dd4c",
+    "lib/src/model.dart": "3a5d78f41532cc8e013b0e1353ae53a7672bdb2e8be256647b4666a7b451b7c4",
+    "lib/src/native.dart": "8e56732abddadc429835efb255021dd7bbbfd1203e5018051ac3c367b3ed9361",
+    "lib/wasm.dart": "7f94bcc35b6fac7f55e33f16476156f6316c3579ff169a052ab2ca29184abf9f",
+    "hook/build.dart": "79ceaa30a9619435fe01591ed165cd15bd20a16542a38d08341d07172ce14809",
+    "native/src/abi.rs": "6199461d92b879aac9863e43c1f4d60aeec31e9be492155371df2e2301c0e0da",
+    "native/src/bin/analyze.rs": "430139b7846c2ab4637aa89972c08acb367df8d6e32c66a8fe3710e47ac15ffd",
+    "native/src/edit.rs": "2ba3636b8ebc46c78160ac2d5e6add4645192940d96403271fc1942c6a6bffa5",
+    "native/src/languages.rs": "3c87ab73ae88fdd6dd152aba7e73cbcde4f62ac7cded6eef153eacd08ab260e0",
+    "native/src/lib.rs": "f3d7895332bc56c8000b615d61d05ae404f18cc18d90a8cb51af05f243507a32",
+    "native/src/syntax.rs": "ab9d52a3dbf970e63d5d733bac1e97857c6b430595aec5e5e8af49593e630273",
+    "native/queries/dart.scm": "1ff45af920c5433a3ca0a23f0d21ef21a5ed3dd259df087bbcc2ef6db50e3fa2",
+    "native/queries/javascript.scm": "e4526c7f650007e87addb5e0d35db7090b6e172eb50b8ed3e8b680876965ba5e",
+    "native/queries/python.scm": "6dfd8d933a811d031638dd9729325b6932bae9522e95fb87714c454b02bf3830",
+    "native/queries/ruby.scm": "36e9af61d57599f7abc2032ed7bc7faf28eb91e55cb9a0740eeba1c3f6c3205d",
+    "native/queries/yaml.scm": "3b1b6c55bcde956593d295fc48cc9cfca5dcf2e7e010d7c266c01a841d66634d",
+    "native/examples/stages.rs": "4375073dd4a94625775040049e03e91dc36d49761223a05cee9a7c8f934eff79",
+    "native/examples/tree.rs": "32f3249125bd2d62b8bbe3338a0be9fb0fee5b0de333385a6c94ca97434bdcac",
+    "bin/flark_tree_sitter_bench.dart": "6e8f8a6fe4194b6c5bb9fda6eb8ff2d1dc900b2b9b37ea2dd36e9fb19345e7bd",
+    "bin/flark_tree_sitter_edit_bench.dart": "5a1a4a2f98d212206885fa744c447d1ae4b150b8b93e6565968c65b6946b5f62",
+    "bin/flark_tree_sitter_probe.dart": "15eddeb85be90599e3adbcfbbeffad313ae01431beaef795f7d7b59c8cd071b6",
+    "bin/flark_tree_sitter_typing_bench.dart": "f4aa8f4aff81ee62e84afe49db262605c999e83ae19c5654631f0fe1add82fee",
+    "bin/flark_tree_sitter_worker_probe.dart": "70248b346d2d2ac0daa82b045f26a1a9ca1f3d15b8072bae6a6000f69555f4cd",
+    "test/analyzer_test.dart": "e9ab545a7879c1df66c8ca8eefb9750d5f25fff441659b4a2dd274937d68bc45",
+    "test/edit_test.dart": "8b136e268792c6f9a3d1393e8ff71be92434da92e9f2dd894d06571961f2a6b3",
+    "test/highlight_worker_test.dart": "6c130c8973e6a6f7781487e37857c7ccae804893c4cb870d6059772d42fd3f0b",
+    "tool/bench.dart": "d04f0f66d0aa5bbb20f01e401d3baf8f030bd3b03f670c74b303d532006b6632",
+    "tool/browser_probe.dart": "1d3066cf6be23d472e3b0081afcc749ba89c09e7c1e4b2bd08bb91d75d3351fd",
+    "tool/build_wasm.py": "82e33644ebfcf815ed6add2c6e9df011e527c3bf3fa7e1456368cc0df102a8bf",
+    "tool/clock_native.dart": "c331bba33725f4d7476cd3e70552db96c544cab87af404c181cd2c9d587ef8a7",
+    "tool/clock_web.dart": "ae2c8598fbaf59ed5854279f2fce9da9856670b1648170201ba14ecca0cf2727",
+    "tool/edit_bench.dart": "0915de29cedbbfd905f8ab0aa6c839fdc673a87a2d53c5b589817d83809ea835",
+    "tool/edit_cases.dart": "0f7e03da9e021bee2a8f834e215b642047e7166909b321afc036b5c91b841876",
+    "tool/probe.dart": "3ac8a6e265d143656b5e9bda23698424ea8526120ebb0c648c7b90601d8824ce",
+    "tool/probe_native.dart": "e207369c0804eefc356820c1f63a492635069e32a46b05312738b3bc6d9f530a",
+    "tool/probe_web.dart": "8dbceb3a982266e9529d243a1bea181bba3f679ac321850cb9d237760b7022ca",
+    "tool/run_probe.mjs": "5e3e7b2926acc451050256d6ff288eb8441b15178bd7f20b296c75917d8be217",
+    "tool/serve_probe.py": "b7c9d40722d4907c0aaf5be7608a683e8ba35f6a9d1d5e261fc01d7339035983",
+    "tool/typing_bench.dart": "ff54eb86ba33c168fc715979ef23147ca2021db940582c5e4469fbd965834821",
+    "tool/verify.py": "8d7bb676e33efc5bb05f260259dae637ba690c320b1842990d5782bafebcc81b",
+    "tool/worker_native.dart": "e63174d0602e8580b3dd87b596f1a70ff0ed2239841992469b6df96cd14a812c",
+    "tool/worker_probe.dart": "41064424bd220e43862566fcf413f7076c53828a9fb49822197650df22e6ede6",
+    "tool/worker_web.dart": "d4952599f4d16a5c6f220dd94ed907b94ffe1ccda1e7da1738f4c5937f670353",
+    "pubspec.yaml": "db545e8abc518cebf133308b2af75e1d4cacde73e563c646abb431c21af41e11",
+    "native/Cargo.toml": "bb4202bc62572a1cbbc352fe210e3a76074261cb674e45be52200b5a71b0c79e",
+    "native/Cargo.lock": "2ddb033f3576df17b9202b8bedc9829ae581cf653adedac07feb3baea7badf05"
+  },
+  "nativeWorker": {
+    "comparisons": 280,
+    "burstRequests": 40,
+    "startupMicros": 253953,
+    "results": [
+      {
+        "language": "ruby",
+        "seedUnits": 372,
+        "samples": 51,
+        "inputMicros": {
+          "p50": 120,
+          "p95": 554,
+          "max": 763
+        },
+        "colorLatencyMicros": {
+          "p50": 535,
+          "p95": 1098,
+          "max": 1474
+        },
+        "superseded": 0
+      },
+      {
+        "language": "ruby",
+        "seedUnits": 8068,
+        "samples": 51,
+        "inputMicros": {
+          "p50": 546,
+          "p95": 2123,
+          "max": 2180
+        },
+        "colorLatencyMicros": {
+          "p50": 5489,
+          "p95": 8018,
+          "max": 8552
+        },
+        "superseded": 0
+      },
+      {
+        "language": "dart",
+        "seedUnits": 374,
+        "samples": 54,
+        "inputMicros": {
+          "p50": 63,
+          "p95": 412,
+          "max": 493
+        },
+        "colorLatencyMicros": {
+          "p50": 897,
+          "p95": 1756,
+          "max": 1835
+        },
+        "superseded": 0
+      },
+      {
+        "language": "dart",
+        "seedUnits": 8070,
+        "samples": 54,
+        "inputMicros": {
+          "p50": 401,
+          "p95": 4197,
+          "max": 6422
+        },
+        "colorLatencyMicros": {
+          "p50": 9678,
+          "p95": 13588,
+          "max": 14161
+        },
+        "superseded": 23
+      },
+      {
+        "language": "javascript",
+        "seedUnits": 387,
+        "samples": 72,
+        "inputMicros": {
+          "p50": 71,
+          "p95": 258,
+          "max": 740
+        },
+        "colorLatencyMicros": {
+          "p50": 453,
+          "p95": 983,
+          "max": 1426
+        },
+        "superseded": 0
+      },
+      {
+        "language": "javascript",
+        "seedUnits": 8062,
+        "samples": 72,
+        "inputMicros": {
+          "p50": 383,
+          "p95": 1761,
+          "max": 2111
+        },
+        "colorLatencyMicros": {
+          "p50": 4518,
+          "p95": 6583,
+          "max": 7869
+        },
+        "superseded": 0
+      },
+      {
+        "language": "python",
+        "seedUnits": 373,
+        "samples": 48,
+        "inputMicros": {
+          "p50": 80,
+          "p95": 331,
+          "max": 1077
+        },
+        "colorLatencyMicros": {
+          "p50": 451,
+          "p95": 1356,
+          "max": 1545
+        },
+        "superseded": 0
+      },
+      {
+        "language": "python",
+        "seedUnits": 8069,
+        "samples": 48,
+        "inputMicros": {
+          "p50": 374,
+          "p95": 3595,
+          "max": 4156
+        },
+        "colorLatencyMicros": {
+          "p50": 5144,
+          "p95": 7848,
+          "max": 9995
+        },
+        "superseded": 0
+      },
+      {
+        "language": "yaml",
+        "seedUnits": 388,
+        "samples": 39,
+        "inputMicros": {
+          "p50": 73,
+          "p95": 479,
+          "max": 480
+        },
+        "colorLatencyMicros": {
+          "p50": 414,
+          "p95": 992,
+          "max": 2072
+        },
+        "superseded": 0
+      },
+      {
+        "language": "yaml",
+        "seedUnits": 8073,
+        "samples": 39,
+        "inputMicros": {
+          "p50": 413,
+          "p95": 2428,
+          "max": 3922
+        },
+        "colorLatencyMicros": {
+          "p50": 6573,
+          "p95": 10890,
+          "max": 12035
+        },
+        "superseded": 1
+      }
+    ]
+  }
+}

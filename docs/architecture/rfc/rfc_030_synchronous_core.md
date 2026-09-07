@@ -3,9 +3,11 @@
 **Status:** PROPOSED. 2026-09-02.
 
 **Supersedes for execution:** RFC 026, RFC 027 §4 onward, RFC 028, RFC 029,
-and the v4 build plan. **Retains unchanged:** NORTH_STAR.md, the product
-examples in RFC 027 §2, [`edit_profile_v1.md`](../v5/edit_profile_v1.md), and
-`live_editor_test_strategy.md`.
+and the v4 build plan. **Retains the product intent of:** NORTH_STAR.md, the
+product examples in RFC 027 §2,
+[`edit_profile_v1.md`](../v5/edit_profile_v1.md), and
+`live_editor_test_strategy.md`. Those active contracts are updated where v5
+removes asynchronous parsing and very-large live editing.
 
 **Requirements this RFC is built around** (owner's words, 2026-09-02):
 blazing fast on reasonably sized documents on mobile; live Markdown editing
@@ -19,15 +21,16 @@ a frame paints. Every keystroke runs one synchronous chain inside the input
 callback:
 
 ```text
-splice source → parse (unmodified comrak, sourcepos) → render model
-             → projection (visible text, hidden ranges, offset map)
-             → command semantics → host paint
+current model + command → source splice → parse candidate (unmodified comrak)
+                        → render model → projection → publish snapshot
+                        → host paint
 ```
 
 There is no incremental engine, no certification, no pending presentation,
-no revision race, and no input reconciliation. Those mechanisms existed to
-paint frames before the parser had answered. In v5 the parser has always
-answered.
+and no parser-result revision race. Those mechanisms existed to paint frames
+before the parser had answered. In v5 the parser has always answered. Platform
+input still owns ordinary delivery concerns such as composition, duplicate
+callbacks, and stale host selections.
 
 The product bet is unchanged and is the reason the projection layer exists:
 Markdown source is the document, and delimiters of a complete construct are
@@ -45,20 +48,33 @@ and certification. A synchronous parse makes the promise a structural
 property: the frame is the parser's answer for the current source, always.
 Measured full-document comrak parse with sourcepos and GFM extensions on an
 M1 Pro: 0.5 ms at 25 KB, 2.1 ms at 100 KB, 25 ms at 1 MB. Real corpora top
-out under 100 KB at p99. The sync tier covers the product; the rest is a
-later tier.
+out under 100 KB at p99. The qualified sync tier covers the live-rendered
+product; the rest opens in source mode.
 
 ## 3. Envelope
 
 | Tier | Limit (provisional) | Behavior |
 | --- | --- | --- |
-| Sync | ≤ 64 KB on phones, ≤ 256 KB on desktop | Full live rendering, all promises hold |
-| Source mode | above the sync limit, at launch | Monospace source editing with a visible notice; no live rendering; nothing silent |
-| Async (later) | above the sync limit, post-launch | Background parse, last projection mapped through the edit, one stale frame permitted; see Appendix A |
+| Sync | initial qualification floor: ≤ 16 KiB on phones, ≤ 32 KiB on desktop, and within a receipt-defined shape budget | Full live rendering, all promises hold |
+| Source mode | outside either byte or shape limit, or a typed extraction deviation prevents a trustworthy live model | Monospace source editing with a visible notice; no live rendering; nothing silent |
 
-The limits are moved only by a device receipt, never by argument. The
-never-stale promise applies inside the sync tier; the async tier is
-explicitly a weaker promise for documents the product does not target.
+The size limits are measured in UTF-8 bytes. A byte ceiling alone is not a work
+bound: a flat list can create thousands of blocks well below the byte cap, and one
+giant line can move cost into layout. Admission therefore also has a small,
+published shape budget (physical lines, maximum line length, and model
+rows/runs), calibrated by the same adversarial receipts. Cheap byte and line
+checks run before parsing; a candidate outside the post-parse model budget is
+not published as live-rendered state. The initial 16/32 KiB limits are
+qualification floors, not yet product claims. They reflect the corrected M2
+kernel rather than the earlier parse-only and pre-correction spikes. Ordinary
+prose may support 32 KiB on phones and 64 KiB on desktop, but those are stretch
+candidates raised only by a production-path device receipt. The never-stale
+promise applies inside the sync tier. Source mode is V5's terminal behavior
+beyond it, not a placeholder for an automatic async live-rendered path.
+For an in-envelope extraction deviation, initial open fails closed into source
+mode, an existing source-mode document remains writable there, and an edit to
+an existing live snapshot is rejected atomically. No untrustworthy projection
+is published.
 
 ## 4. Packages and dependency direction
 
@@ -71,7 +87,7 @@ flark_flutter   Flutter editor + view widgets (RenderBox)
           |             history, FlarkEditor facade, parse transports
           |
    native/flark_parse   Rust: unmodified comrak → render model
-                        C ABI (FFI) and wasm32 (js_interop), three functions
+                        C ABI (FFI) and wasm32 (js_interop), four exports
 ```
 
 - `flark` has no Flutter import. The boundary test from v4 stays.
@@ -79,17 +95,18 @@ flark_flutter   Flutter editor + view widgets (RenderBox)
   v2 did: `dart:ffi` on the VM (macOS, iOS, Android, Linux, Fleury
   terminal), `dart:js_interop` on the web (Flutter web under dart2wasm,
   Fleury browser under dart2js). One package for consumers.
-- Rust is the only Markdown authority. Dart never inspects delimiter
-  characters; it operates on ranges the render model hands it. The v4
-  rule survives intact and gets easier to hold, because the model now
-  carries every range Dart needs.
+- Rust is the only authority that recognizes Markdown meaning. Dart operates on
+  ranges the render model hands it; an explicit semantic command may emit a
+  canonical spelling, but the candidate parse must prove the requested result.
+  Dart may not infer a construct by scanning source delimiters. The model must
+  carry every range a host needs.
 
 ## 5. The parse crate and the render model
 
 `flark_parse` depends on comrak as an ordinary crate, unforked and
 unpatched, with `sourcepos` on and the GFM extensions the profile pins. It
-exports three functions on both targets: `version`, `parse(bytes) →
-buffer`, `free`. Parse is a pure function of the bytes. No session, no
+exports four functions on both targets: `version`, `alloc`, `parse(bytes) →
+buffer`, and `free`. Parse is a pure function of the bytes. No session, no
 state, no fuel.
 
 The output is the **render model**, one flat little-endian buffer:
@@ -145,9 +162,10 @@ spike with a number before any kernel code exists.
 Six concepts. A new engineer should be able to hold all of them in one
 sitting.
 
-**`FlarkDocument`** is an immutable value: source string, selection, the
-render model derived from the source, and the history stack. Producing the
-next document from a command is a pure function.
+**`FlarkDocument`** is an immutable value: source string, selection, the render
+model derived from the source, and its projection. `FlarkEditor` owns command
+application and history and publishes a new document only after the complete
+candidate succeeds.
 
 **`FlarkProjection`** turns the render model into what a host draws: rows
 (one per leaf block, plus container shells for quotes and lists) of runs,
@@ -158,9 +176,9 @@ ranges never become runs. Replacement runs, such as entities, carry display
 text that differs from source and map to an edge by affinity. Bidirectional
 offset mapping is v4's `FlarkSurfaceTextRun`, about fifty lines, salvaged.
 
-**`FlarkCaret`** is a visible offset plus a source anchor. One visible
+**The caret model** is a visible offset plus a source anchor. One visible
 position can have several legal source anchors, before or after a hidden
-range, and which one the caret holds is the semantic context: typing there
+range, and which one the selection holds is the semantic context: typing there
 stays bold or leaves bold. Navigation sets the anchor by rule: arriving by
 typing keeps the current context; arrow keys cross a boundary on the first
 press and never produce a stop that does not move; pointer placement uses
@@ -191,7 +209,7 @@ restores on undo.
 
 **`FlarkCommand`** is the closed set of logical actions: insert text,
 delete backward, delete forward, newline, replace range, set selection,
-move caret by grapheme, word, line, or block, undo, redo, toggle task,
+move caret by grapheme, word, line, or rendered row, undo, redo, toggle task,
 indent and outdent, paste, toggle emphasis, strong, strikethrough, or
 inline code on the selection or the word at the caret, and set heading
 level. Every platform route, delta, full value, key, or
@@ -202,9 +220,11 @@ is `edit_profile_v1` rule 1 and it stays.
 the render model. Deleting the last styled grapheme removes the run's
 hidden ranges with it. Return at a list item continues, exits, or splits
 using the block's line content ranges. Backspace at a block start lifts the
-prefix using the same ranges. No character is inspected. Every rule has a
-headless test of the form: source, caret, command, expected source, caret,
-and projection.
+prefix using the same ranges. Rust alone recognizes Markdown meaning; Dart may
+read parser-bounded source to preserve or emit canonical syntax for an explicit
+semantic command, and the candidate parse must prove the requested result.
+Every rule has a headless test of the form: source, caret, command, expected
+source, caret, and projection.
 
 **Incomplete syntax needs no concept.** `*hello` is a paragraph with a
 literal asterisk, because that is what the parser says. There are no exact
@@ -237,12 +257,14 @@ window, composition joins the open group, one logical action is at most one
 entry, undo restores exact source and selection.
 
 **`FlarkEditor`** is the facade and the only thing a host constructs:
-`document`, `apply(command)`, `projection`, a change listener, and the
-parse backend. The v4 core exports 113 types and no facade, and the audit
-counted that as its single largest defect for a second consumer. v5 exports
-about a dozen. As built, the facade library exports 22 concepts with the
-command set counted once, gated at 24 by the boundary test, and the render
-model with its schema constants is a second library,
+`snapshot`, `apply(command)`, `typingContext`, a change listener, and the parse
+backend. Its sealed snapshot is either live, with a document and projection, or
+source-only, with exact text and selection but no stale render model to paint.
+The v4 core exports 113 types and no facade, and the audit counted that as its
+single largest defect for a second consumer. As built, the v5 facade library
+exports 26 concepts on either platform, 27 in the union of its conditional FFI
+and Wasm exports, with the command set counted once and the union gated at 27
+by the recursive boundary test. The render model with its schema constants is a second library,
 `package:flark/render_model.dart`, for hosts and tests that read it.
 
 ## 7. Flutter surface
@@ -287,9 +309,10 @@ table borders use box-drawing cells and Fleury's own table widget. Fleury's
 existing `MarkdownText` stays for its tiny-renderer niche; the view is the
 full-fidelity option.
 
-Fleury is built before Flutter web on purpose. It is the second consumer
-that proves the kernel is portable, and the browser transport it forces
-into existence is the one Flutter web then reuses.
+Fleury is the second host that proves the kernel's editing semantics are
+portable. Its browser surface shares the Wasm transport with Flutter web.
+An early Flutter-web smoke is part of M3a; full Fleury delivery is M4 and
+full Flutter-web qualification remains M5, as detailed in the build plan.
 
 ## 9. Web
 
@@ -301,53 +324,61 @@ runs through both transports and the render models must be byte-identical.
 
 ## 10. Performance model
 
-Per keystroke, phone, 120 Hz, 8.3 ms frame, at the 64 KB sync limit:
+Provisional per-keystroke allocation for a phone at 120 Hz (8.3 ms), at the
+16 KiB qualification floor:
 
 | Stage | Budget | Basis |
 | --- | --- | --- |
-| Splice source string | 0.1 ms | 64 KB copy |
-| Parse | 4 ms | 2.1 ms at 100 KB on M1 Pro, ×3 for a phone, scaled to 64 KB |
-| Marshal into typed-data views | 0.5 ms | spike |
-| Projection | 1 ms | measured 0.44 ms at 25 KB on the M1 Pro without a memo (M2); a per-block memo keyed on the block's source slice is the reserve if a phone measurement needs it |
+| Source command, validation, and history | 0.5 ms | bounded source copy and one history snapshot |
+| Parse and marshal | 2.5 ms | corrected M2 desktop p99 under 0.8 ms at 16 KiB, with floor-phone reserve |
+| Projection and caret legality | 3.0 ms | complete immutable rebuild; corrected facade p99 is the controlling measurement |
 | Layout and paint | 2 ms | visible rows only; painters reused on identical spans, salvaged from v4 |
 
 The bar is v2's own measurement, not the parse alone. v2 measured parse
 plus projection plus render plan at 8.5 ms for 25 KB of dense Markdown and
-39 ms at 100 KB on a workstation, with two thirds of that in Dart. v5's
-end-to-end figure for the same 25 KB dense document must be under 3 ms on
-the same class of machine before the phone tier is believed. The marshal
-spike measures this whole chain, not the parser.
+39 ms at 100 KB on a workstation, with two thirds of that in Dart. Under the
+de-scoped live tier, the corrected V5 facade must stay under 4 ms p99 at 16 KiB
+on the M1 Pro before the floor-phone full-frame test is attempted. Parser-only
+or pre-correction spikes do not clear that gate.
 
-M2 receipt (2026-09-03, build plan): the keystroke through the facade on
-the M0 25 KB document measures 1.50–1.58 ms p50 on the M1 Pro, of which
-parse and marshal are 0.97 ms and the projection 0.44 ms, and 2.03 ms on a
-denser document. That clears the 3 ms bar; the plan's tighter 1.5 ms line
-is touched, not cleared, and the remaining cost sits in the crate's
-extraction.
+The 2026-09-03 M2 baseline measured 1.50–1.58 ms p50 and 2.2–2.5 ms
+p99 at 25 KiB, but later correctness work added Unicode legality and immutable
+snapshot ownership to the hot path, so that number is historical rather than a
+current exit receipt. On the uncommitted correction-pass tree on 2026-09-04,
+the 16 KiB-class structural fixture (16,750 bytes) measured insert 1.78/2.18 ms p50/p99 and
+Backspace 2.60/3.14 ms; parse-and-marshal was 0.64/0.80 ms and projection
+0.30/0.54 ms. Those local timings do not close the current kernel gate or
+qualify layout and paint. The [build plan](../v5/build_plan.md#evidence-before-closeout)
+records the later review, semantic failures, and Backspace budget miss; M2b
+requires a passing receipt on the corrected named commit.
 
-Flatness across sizes is not a claim v5 makes. The claim is that every
-document inside the tier is under budget on the named phone, with a receipt
-that names the commit, library hash, device, and display rate. The v4
-receipt format is salvaged.
+Flatness across sizes is not a claim v5 makes. The claim is that every document
+inside the published byte-and-shape tier is under budget on the named phone,
+with a receipt that names the commit, library hash, device, display rate, and
+document shape. The v4 receipt format is salvaged.
 
 ## 11. Testing
 
-The methodology stays and most of it gets cheaper.
+The smaller state space makes testing cheaper. The product contract defines
+expected behavior; tests and their observation helpers can still be wrong.
+The [testing strategy](../../testing/live_editor_test_strategy.md) defines
+fault-detection checks, early real-input sessions, and the recurrence rule.
 
-- **Kernel journeys.** Fixtures of source, then a sequence of commands,
-  with the expected source, caret, and projection after every step. This is
-  the 4,032 incremental histories idea with the engine removed: every step
-  is a clean parse, so the check is the projection invariants, not parser
-  convergence.
-- **Projection invariants**, asserted on every step of every journey:
-  display text contains no byte from a hidden range; display text equals
+- **Direct kernel scenarios.** Typed Dart cases start from source and issue
+  production commands, with acceptance, expected source, caret, projection,
+  and relevant styles/container membership after every step and follow-up input.
+  There is no serialized journey vocabulary or replay framework. Every live
+  edit is a clean parse; the tests must also prove the requested editing intent.
+- **Projection invariants**, asserted on every step of every scenario:
+  display text contains no source code unit from a hidden range; display text equals
   source minus hidden ranges plus replacements; the caret is never inside a
   hidden range; offset mapping round-trips.
 - **Generated matrix.** Seeded random command sequences over the corpus
-  documents, with the invariants and an undo/redo probe after every
-  command; a failure prints its seed and command log so it can become a
-  journey.
-- **Conformance.** The 652 CommonMark and 672 GFM cases run through the
+  documents preserve uninterrupted histories, with undo/redo probes separate
+  or occasional. A failure prints its seed and command log so it can be
+  minimized into a directly named regression. M2a corrects the current generator
+  that inserts an undo/redo probe after each mutation.
+- **Conformance.** The 652 CommonMark and 670 GFM cases run through the
   render model, comparing rendered text and ranges to the reference, on
   both transports.
 - **Actual paint** stays for the Flutter layer, for paint, geometry,
@@ -358,18 +389,22 @@ The methodology stays and most of it gets cheaper.
 Two rules inherited from v2's failure. **No test that asserts on the
 edited frame may settle first.** v2's suite ended every step with a settle
 that drained the debounce and the isolate, so it never saw the one frame
-the promise is about. In v5 the assertion is that the frame painted inside
-the input callback shows the result, and settling is forbidden in kernel
-and paint tests. **Budgets are frames.** v2 asserted 75 to 250 ms per
+the promise is about. In v5 one immutable coherent snapshot must be available
+before the input callback returns, and the first subsequently produced frame
+must use it; settling before that assertion is forbidden. **Budgets are
+frames.** v2 asserted 75 to 250 ms per
 step, four to fifteen frames; v5 budgets are the single frame in §10.
 
-A dogfood bug becomes a kernel journey first and a paint test second.
+A dogfood bug becomes a direct regression at its owning layer, with a paint or
+native case when that provides additional evidence. Another variant of a
+purported family-level fix triggers review of the rule and its observation
+before further feature expansion.
 
 ## 12. Salvage manifest
 
 | Keep | From | Use |
 | --- | --- | --- |
-| NORTH_STAR.md, DOGFOOD_MILESTONE.md, edit_profile_v1 (now `docs/architecture/v5/edit_profile_v1.md`), test strategy | v4 | unchanged product contract |
+| NORTH_STAR.md, DOGFOOD_MILESTONE.md, edit_profile_v1 (now `docs/architecture/v5/edit_profile_v1.md`), test strategy | v4 | product contract, rebased to the v5 execution model and live envelope |
 | Sourcepos to byte-range arithmetic, reference definition scanner, payload layout | v2 `native/comrak_bridge/src/{parser,reference_definitions,payload}.rs` | core of `flark_parse` |
 | Wasm build script, `hook/build.dart`, js_interop loader | v2 `scripts/`, `hook/`, `native_comrak_bridge_factory_web.dart` | transports |
 | Inline segmentation (covering model) | v2 `render_plan/flark_inline_segmentation.dart` | projection |
@@ -398,10 +433,11 @@ Each spike is a day or two and ends in a number in the repo.
 
 | Risk | Spike | Pass |
 | --- | --- | --- |
-| comrak inline sourcepos is wrong inside containers, links, or entities | differential over the 1,324 conformance cases: source slice at every run's range equals the expected delimited text | zero unregistered deviations; known ones enter the register with a rule |
+| comrak inline sourcepos is wrong inside containers, links, or entities | differential over the 1,322 conformance cases: source slice at every run's range equals the expected delimited text | zero unregistered deviations; known ones enter the register with a rule |
 | Per-line content derivation fails on tabs or lazy continuation | same differential, per line | zero |
-| Phone parse time | comrak on a mid-range Android and an older iPhone at 32, 64, 128 KB | under 4 ms at 64 KB |
-| End-to-end keystroke | 25 KB dense document, parse plus marshal plus projection, FFI and Wasm | under 3 ms on an M1 class machine; marshal alone under 1 ms at 100 KB |
+| Floor-phone live frame | complete input-to-raster path on a mid-range Android at 16 KiB, then stretch at 32 KiB | every admitted edit inside one 120 Hz frame at 16 KiB |
+| Corrected kernel keystroke | 16 KiB structural document, command plus parse, marshal, projection, caret, and history; FFI and Wasm | under 4 ms p99 on an M1 class machine |
+| Adversarial in-tier shape | giant line, flat list, dense table, deep quote/list nesting, reference-heavy and Unicode-heavy documents at each candidate limit | every admitted shape stays inside the complete frame budget; over-budget shapes enter source mode |
 | Fleury browser transport | comrak wasm loaded from a dart2js page, parse a document | works, startup under 100 ms |
 | Fleury native packaging | a scaffolded Fleury app consuming `flark` without Rust installed | prebuilt fetch works |
 
@@ -413,7 +449,7 @@ Each spike is a day or two and ends in a number in the repo.
 | End-to-end keystroke, FFI, 25 KB dense | 0.97 ms p50, 1.19 ms p99 against v2's 8.5 ms. **Pass** |
 | Marshal, 100 KB | decode plus projection 0.54 ms, 0.43 ms with the per-block memo. **Pass** |
 | Wasm under dart2js, 25 KB, warm | 1.2 ms p50, 2.0 ms p99; parse 0.8 ms, equal to native; instantiate 15 to 29 ms. **Pass** |
-| Phone, end-to-end, iPhone 16 on iOS 18.7, profile build | 25 KB 0.69 ms p50 / 0.76 p99; 64 KB 1.75 / 1.83; 100 KB 2.78 / 3.84. **Pass** at 64 KB with 2× margin. A flagship, not a floor device; the phone limit stays provisional until a mid-range Android receipt |
+| Earlier phone parse/marshal kernel, iPhone 16 on iOS 18.7, profile build | 25 KiB 0.69 ms p50 / 0.76 p99; 64 KiB 1.75 / 1.83; 100 KiB 2.78 / 3.84. Useful capacity evidence, but it predates the corrected Dart caret/projection path, excludes layout and paint, and uses a flagship; it does not set the V5 live limit |
 | Fleury native packaging | not yet run; needs prebuilt binary hosting |
 
 At 25 KB over FFI the parse is 78 percent of the keystroke and the marshal
@@ -425,24 +461,23 @@ inline tree, not a second parser. That decision is made only on evidence.
 
 ## 15. Sequence
 
-1. **M0 Spikes.** The table above. One week.
+1. **M0 Spikes.** The table above.
 2. **M1 Parse.** `flark_parse`, render model, both transports, conformance
-   through the model on both. Exit: 672 of 672 GFM byte-identical native and
+   through the model on both. Exit: 670 of 670 GFM byte-identical native and
    Wasm.
-3. **M2 Kernel.** Document, projection, caret, commands, history, facade.
-   Exit: every `edit_profile_v1` rule has a journey; invariants hold on all
-   journeys; kernel has no Flutter import.
-4. **M3 Flutter.** Prune the v4 surface, real scrolling, row protocol,
-   block rows from v2 salvage, `FlarkMarkdownView`. Exit: dogfood milestone
-   sections 1, 2, 3 and 5 on macOS with a receipt; Dune migrated; one
-   attended session with a real Android keyboard and CJK composition on a
-   phone, because the v4 review already recorded that deferring device
-   evidence to the last milestone was the program's original mistake.
+3. **M2 Kernel.** M2a closes semantic/test gaps; M2b qualifies the corrected
+   kernel with reproducible performance, local checks, and named-commit CI.
+4. **M3 Flutter.** M3a proves the paragraph/inline input-to-paint path,
+   composition/history, shape admission, source recovery, and an early
+   Flutter-web Wasm smoke. M3b completes rows/scrolling and qualifies the full
+   shape envelope. M3c integrates Dune and completes sustained dogfood.
 5. **M4 Fleury.** Editor and view, terminal and browser. Exit: the same
-   kernel journeys drive a Fleury test surface; browser transport receipt.
+   semantics pass direct host tests; browser transport receipt. May overlap
+   M3c once the shared contracts stabilize.
 6. **M5 Flutter web.** Wasm build, parity run, mobile receipts on the named
    devices. Exit: envelope limits published from receipts.
-7. **Later.** Async tier, auto-close, source mode polish, Windows.
+7. **M6 Release.** Accessibility, device input/lifecycle, packaging, and released
+   artifacts consumed by Dune and Fleury. Windows remains later work.
 
 The full ladder with exit criteria, budgets, and sizing is the
 [v5 build plan](../v5/build_plan.md).
@@ -476,16 +511,16 @@ listed as rules instead.
 | Generation | Failure, tied to code | v5 answer |
 | --- | --- | --- |
 | v2 | The parse was late, an 80 ms debounce plus an isolate for anything over 4 KB, so Dart predicted structure; 1 in 11 keystrokes painted a frame the parse then refuted | Removed structurally: the parse is synchronous, there is nothing to predict |
-| v2 | Guessing needed a second grammar in Dart, 1,687 lines of flanking and delimiter rules, plus a mapping layer that re-derived blocks the payload did not carry | Removed only if the render model carries every range a host needs. Rule: Dart never inspects a delimiter, and a missing range is a parse-crate bug, not a Dart workaround |
+| v2 | Guessing needed a second grammar in Dart, 1,687 lines of flanking and delimiter rules, plus a mapping layer that re-derived blocks the payload did not carry | Removed only if the render model carries every range a host needs. Rule: Dart never recognizes Markdown by scanning delimiters; canonical syntax emitted for an explicit command is accepted only when the candidate parse proves its meaning. A missing range is a parse-crate bug, not a Dart workaround |
 | v2 | Marshal was two thirds of the keystroke: JSON over FFI, three object tiers, a document-length UTF-16 mapper per parse | Not removed by sync; made more urgent. Typed-data views, one object tier, UTF-16 from Rust, lazy per-block decode, and the end-to-end spike in §14 |
 | v2 | One EditableText per block: identity guessing on every reparse, five echo-resync reasons, a thousand-line fence policy | Removed structurally: one render surface, one input client, source-offset selection, no echoes to reconcile |
 | v2 | The suite settled before asserting, so it never saw the intermediate frame, and budgets were four to fifteen frames | Not removed by architecture. Rule in §11: no settle before the assertion, budgets are single frames |
 | v2 | A position paper declared the architecture fit for purpose eight weeks before measurement refuted it | Rule: no claim without a receipt naming commit, device, and number |
 | v3 | The engine was strong and the integration layer could not be driven; a jank harness never obtained one frame; four silent-stop states | Vertical slice through paint by M3, fault containment as typed errors, never a silent stop |
 | v3 | SelectionArea and EditableText could not express source-offset selection over virtualized content | The v4 surface already solved this; v5 keeps it |
-| v3 | Claims were conflated: structural admission reported as exact conformance | Denominators stay separate: conformance through the render model, journeys, and receipts each report their own count |
+| v3 | Claims were conflated: structural admission reported as exact conformance | Denominators stay separate: conformance through the render model, direct kernel scenarios, and receipts each report their own count |
 | v4 | Never-stale over an async engine required certification, envelopes, and counterfactual plans; roughly 100k lines | Removed structurally: never-stale is a property of the sync chain |
-| v4 | Scope drifted from editor to large-document engine to streaming runtime | Rule: no concept without a journey, a conformance case, or a named consumer, and the consumers are Dune and Fleury |
+| v4 | Scope drifted from editor to large-document engine to streaming runtime | Rule: no concept without a direct case, a conformance case, or a named consumer, and the consumers are Dune and Fleury |
 | v4 | Real IME, CJK, swipe typing, handles, and the magnifier were never exercised; native canaries stayed unrun at the stop | Device session in M3, and mobile handles named as unbudgeted work in §7 rather than assumed |
 
 Two v2 techniques are adopted as concepts, not just code. The reference
@@ -495,9 +530,16 @@ derived range in §5. And the delta adapter's insistence that every
 platform route reduce to one logical command survives as rule 1 of the
 edit profile.
 
-## Appendix A: the async tier, when it is wanted
+## Appendix A: asynchronous live rendering is outside V5
 
-Parse on a background isolate; keep the last projection and map its ranges
-through the edit, which is what CodeMirror does with decorations; adopt the
-new model when it arrives; permit one stale frame. A few thousand lines.
-It never touches the sync path and is enabled by document size alone.
+V5 uses explicit writable source mode beyond its qualified synchronous tier.
+An asynchronous live-rendered tier would weaken the never-stale promise and
+reintroduce range mapping, result adoption, and another visible representation.
+It therefore requires a named consumer and a separate RFC; document size alone
+must never enable it.
+
+[RFC 031](rfc_031_code_color_worker.md) specifies a separate, optional code-color
+worker. The Flutter workbench implements it for qualification: only snippet
+colors may arrive later; Markdown structure, source, indentation, caret and
+history remain synchronous. This does not change source-mode admission or
+qualify asynchronous Markdown rendering.

@@ -1,0 +1,48 @@
+kernel_analyze
+No issues found!
+
+kernel_tests
+00:00 +249: All tests passed!
+
+generated_histories
+00:00 +0: random command sequences keep every invariant (seed 2026, 1000 sequences)
+00:01 +1: All tests passed!
+
+host_analyze
+No issues found!
+
+host_tests
+00:02 +84: All tests passed!
+
+workbench_analyze
+No issues found!
+
+workbench_tests
+00:01 +11: All tests passed!
+
+rust
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+parity
+committed wasm identical to native: 1322 cases
+fresh wasm identical to native
+
+prebuilt_consumer
+prebuilt consumer OK (no Rust on PATH)
+
+schema
+Schema freshness PASS
+
+macos_build
+✓ Built build/macos/Build/Products/Profile/flark_dogfood.app (64.4MB)
+
+web_build
+✓ Built build/web
+
+Browser functional smoke: passed for the documented sequences.
+Native and D0: NOT QUALIFIED; unlock and actual foreground are required.

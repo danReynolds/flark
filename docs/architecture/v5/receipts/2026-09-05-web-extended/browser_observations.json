@@ -1,0 +1,196 @@
+{
+  "method": "Normal flutter build web --wasm; CUA keyboard, pointer, paste and screenshot observations. Exact source checked from complete bounded DOM input values for these short fixtures. Offsets below are DOM selectionStart/End, not direction.",
+  "browser": "Codex embedded browser",
+  "url": "http://127.0.0.1:8813/",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "preFinalBuild": [
+    {
+      "scenario": "boundary replacement",
+      "before": "before **bold** after",
+      "selectedSourceRange": [
+        9,
+        15
+      ],
+      "after": "before **new!** after",
+      "status": "passed after correction"
+    },
+    {
+      "scenario": "double click replacement, next key and two Undos",
+      "results": [
+        "A simple **new** word.",
+        "A simple **new!** word.",
+        "A simple **bold** word."
+      ],
+      "status": "passed after correction"
+    },
+    {
+      "scenario": "ordered list continuation and exit",
+      "results": [
+        "9. nine\n10. ten",
+        "9. nine\n10. ten\n\nafter"
+      ],
+      "status": "passed"
+    },
+    {
+      "scenario": "nested list exit retains quote",
+      "after": "> - first\n> - second\n> \n> quote",
+      "status": "passed"
+    },
+    {
+      "scenario": "combining grapheme and emoji deletion then type",
+      "before": "café 👩🏽‍💻 é end",
+      "after": "café next end",
+      "status": "passed"
+    },
+    {
+      "scenario": "source-mode copy/paste keeps Markdown syntax",
+      "after": "**copy me**",
+      "status": "passed"
+    },
+    {
+      "scenario": "reload preserves exact source",
+      "after": "**copy me**",
+      "status": "passed"
+    },
+    {
+      "scenario": "Command-Down after reload then type",
+      "expected": "**copy me**!",
+      "actual": "!**copy me**",
+      "status": "failed; fixed by final host shortcut mapping"
+    }
+  ],
+  "finalBuildCanaries": [
+    {
+      "scenario": "document end and next character",
+      "status": "passed",
+      "source": "**copy me**!",
+      "selectionStart": 12,
+      "selectionEnd": 12
+    },
+    {
+      "scenario": "document selection replacement",
+      "status": "passed",
+      "source": "replacement",
+      "selectionStart": 11,
+      "selectionEnd": 11
+    },
+    {
+      "scenario": "document selection undo",
+      "status": "passed",
+      "source": "**copy me**!",
+      "selectionStart": 0,
+      "selectionEnd": 12
+    },
+    {
+      "scenario": "boundary replacement and next character",
+      "status": "passed",
+      "source": "before **new!** after",
+      "selectionStart": 13,
+      "selectionEnd": 13
+    },
+    {
+      "scenario": "boundary redo",
+      "status": "passed",
+      "source": "before **new!** after",
+      "selectionStart": 13,
+      "selectionEnd": 13
+    },
+    {
+      "scenario": "word deletion beside whitespace",
+      "status": "passed",
+      "source": "one **two** ",
+      "selectionStart": 12,
+      "selectionEnd": 12
+    },
+    {
+      "scenario": "word deletion next character",
+      "status": "passed",
+      "source": "one **two** **x**",
+      "selectionStart": 15,
+      "selectionEnd": 15
+    },
+    {
+      "scenario": "double click selected word",
+      "status": "passed",
+      "source": "A simple **bold** word.",
+      "selectionStart": 11,
+      "selectionEnd": 15
+    },
+    {
+      "scenario": "double click replacement",
+      "status": "passed",
+      "source": "A simple **new** word.",
+      "selectionStart": 14,
+      "selectionEnd": 14
+    },
+    {
+      "scenario": "keyboard copy then paste",
+      "status": "passed",
+      "source": "two",
+      "selectionStart": 3,
+      "selectionEnd": 3
+    },
+    {
+      "scenario": "keyboard cut once",
+      "status": "passed",
+      "source": "one  three",
+      "selectionStart": 4,
+      "selectionEnd": 4
+    },
+    {
+      "scenario": "cut next character",
+      "status": "passed",
+      "source": "one **x** three",
+      "selectionStart": 7,
+      "selectionEnd": 7
+    },
+    {
+      "scenario": "cut undo",
+      "status": "passed",
+      "source": "one **two** three",
+      "selectionStart": 6,
+      "selectionEnd": 11
+    },
+    {
+      "scenario": "multiline link punctuation",
+      "status": "passed",
+      "source": "[link](   /uri\n  \"title\"  ))!",
+      "selectionStart": 29,
+      "selectionEnd": 29
+    },
+    {
+      "scenario": "bare URL next character",
+      "status": "passed",
+      "source": "# < http://foo.ba&`>x\n",
+      "selectionStart": 21,
+      "selectionEnd": 21
+    },
+    {
+      "scenario": "QA draft restored empty",
+      "status": "passed",
+      "source": "",
+      "selectionStart": 0,
+      "selectionEnd": 0
+    }
+  ],
+  "pointerTiming": {
+    "instantClickCountTwo": "below Flutter minimum; collapsed caret",
+    "actualClicks": "70 ms separation; measured 111 ms total call time; visible word selected"
+  },
+  "handoff": {
+    "document": "Tour",
+    "heading": "A place to think",
+    "utf8Bytes": 779,
+    "qaDraft": "restored empty",
+    "tabId": "6"
+  },
+  "limits": [
+    "No numeric browser latency claim.",
+    "No narrow physical-browser resize proof.",
+    "No AppKit, IME or native performance qualification.",
+    "Pre-existing clipboard read was rejected by automatic approval review; only test-created clipboard data was used."
+  ]
+}

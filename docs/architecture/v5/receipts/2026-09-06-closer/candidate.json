@@ -1,0 +1,260 @@
+{
+  "recordedAtUtc": "2026-09-06T15:16:27.185420+00:00",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "evidence": "Dirty local automatic closer candidate, Rust coordinate correction and browser paste routing; normal web/Wasm canaries.",
+  "dogfoodReady": {
+    "D0-web": true,
+    "D0-macOS": false
+  },
+  "qualification": "Exploratory embedded-browser dogfooding, not M5, device, native, CI or release proof.",
+  "baselineCandidate": "../2026-09-06-code/candidate.json",
+  "baselineCandidateSha256": "48e21188e75803ebb88f151dfb63dac33f6b1159006ab18b8a1e24819524ead3",
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "28c00e79fbcf91603216314db1eb2997257b59bd92e49e5581be6fbc3435e9cd",
+  "inputFileCount": 222,
+  "buildManifestFile": "build_manifest.sha256",
+  "buildManifestSha256": "fbf3aa62967bc7147fe8044c9f6a1f15bc1e02c78b027fdfa6e9b3b454099092",
+  "buildFileCount": 41,
+  "changedBaselineInputs": {
+    "CLAUDE.md": {
+      "before": "df3d72092f7f4a7d20d54342f6d1f6114a468a1e86ba8c217012cbe831ffec45",
+      "after": "54f030075ad8c68ba678e3bc2f59d723f246f8dbed83343d32feed53c2e6c14f"
+    },
+    "DOGFOOD_MILESTONE.md": {
+      "before": "693c9b5496741826341f2a97ff6f53ba8a7660041cd0b880ebef602cc6eb8e26",
+      "after": "793cb5fb361dd5e0544db5c91df044809e381a0577bcaee829202728e8d24dbd"
+    },
+    "docs/README.md": {
+      "before": "6b79ba7b093fba44fe5f9174a027f5f8a37d1cca2cdacfe1dd1b68417e9266f8",
+      "after": "c8bc4013e59de1e7ceab6854046abcba82f762a1b29d4358cbbd826f57de3239"
+    },
+    "docs/architecture/v5/build_plan.md": {
+      "before": "12cc0208b2ac51a189dacab7af5d7790fa63f674d80fa58dd42d093a73ff6318",
+      "after": "567c906c0cf23b3f1db8c17a32fb5ba6c65deb9710d1928cde5db576f0e18501"
+    },
+    "docs/architecture/v5/edit_profile_v1.md": {
+      "before": "7a515323f38c95d7caa599d0c2946077fb55497e5fd168f5e23ef802cbe1ff71",
+      "after": "bc97b355c674d13b7343082c2a62016784a8c564219ea4f3bb976dea13abd16d"
+    },
+    "docs/architecture/v5/web_dogfood.md": {
+      "before": "9df2fa2b29e98e68f3b898da24bcf7b6aa00b3c82cf890770f1b4f0d7229e954",
+      "after": "22be397b7cf3e4393a52ca61622a6e97d7bcde006e49e9a2263ba75d61947831"
+    },
+    "native/flark_parse/src/model.rs": {
+      "before": "6fe83a5423fb68c71a22ffa20aa5530f6f451dd5ff96afbe8641191da2864514",
+      "after": "3de4d96ea1c6395f5b19d89c39362dfe57e7764eddd1ba10c7ca8fc653d8a950"
+    },
+    "native/flark_parse/tests/abi.rs": {
+      "before": "23707919652e223abf1e5d2530ce7c5b61f561a2071e109abf77ee69a4cc08aa",
+      "after": "279aeaed8d8117dce2851a2883ec06b366998825c4566e50713ad99ebe139ecf"
+    },
+    "native/flark_parse/tests/regressions.rs": {
+      "before": "dca10a4b200d7b0a10a01c9b54ebcdf759a010834dc701580596c3806e5ae4a3",
+      "after": "d96ad079b6bdb618c369829bf414dd4c07b587802b9800791420e27e8f218966"
+    },
+    "packages/flark/lib/assets/wasm/flark_parse.wasm": {
+      "before": "64cc94b932e17ac712a3b0f9006a5d40f9a6aa46fe3d0d1828b25f3f8efc167f",
+      "after": "fc511f650cfb05e4dbf260bec3e40803e7a7756167c2e921a7489684130ff93a"
+    },
+    "packages/flark/lib/code.dart": {
+      "before": "2f721328a3ef324e50fa96fa4877a2317e7f3a72bb2b043815e36c0f3cc830c0",
+      "after": "d515ac601e94ef441a33e181ce052e87432f8f027bd5a1f95e91a7f94e5241ee"
+    },
+    "packages/flark/lib/src/kernel/code_editing.dart": {
+      "before": "f1e86b50bff4c88e7ecaead8af1edfd73711268d90ce2442b80a196e08de54b8",
+      "after": "fdbab39909a9f0ea8067ede7d252a874a7410b051cdfb376dcd0514b664b586b"
+    },
+    "packages/flark/lib/src/kernel/editor.dart": {
+      "before": "94abc4a57316277ae0388dc568e071ab70916131eb9bebbc27f68a911f64293d",
+      "after": "82d23e46797ad50df953cc0217456feca8842ad9787b28948e2cb8f3a322ec7d"
+    },
+    "packages/flark/test/matrix_test.dart": {
+      "before": "f2c1701348e7ae0e0b35cb625ebaa642d10e51225edb1ff0abe8d9fb6acf09d2",
+      "after": "044399c8ede22f0fdc53de0c5194cf53c351ca8909df5a9bff59b602f380ce6e"
+    },
+    "packages/flark/test/render_model_test.dart": {
+      "before": "ebc15be5824eded8e4e2fef88f0e56ce408c0c511808c0a907003e90e1feebdb",
+      "after": "c1f84d5be4e2bcbbfa79e56e4df3a042997a959a9457e18f62d3316d2127b90c"
+    },
+    "packages/flark/test/source_mode_test.dart": {
+      "before": "d1d25c5ad4ebcbb5717c5929793b1ef6f9bb04b8943e35465d650d3b62895931",
+      "after": "13443e3980c66224d1ccab86ff28ee0603e9211007c6cb06e1669e8863c9df40"
+    },
+    "packages/flark_flutter/example/README.md": {
+      "before": "55172f14fb9a1842a36a8d890d26004583d186a443f4e894a6331fdb81b39008",
+      "after": "b02c4e0e803db67cccd4176f6d7bd1b7d1238411c4b226aa25bb7ad4f4de1c9c"
+    },
+    "packages/flark_flutter/example/test/web_input_test.dart": {
+      "before": "78bd4ff685f283ef14475cf86d8173067d2acfdb9d00fefc04bb017dfd062bf8",
+      "after": "186a08482f934ec9b1064fe6ebcf53780e36687373a3dbf6c9956f2aed996b69"
+    },
+    "packages/flark_flutter/lib/src/clipboard_binding_stub.dart": {
+      "before": "933087a692d59a00551243f22ca1f72ad08562a42a4d7902cf859a7725048a34",
+      "after": "4e468a1ebb085edc238956fb7111dbf0f3346e409103fce7f909bab0e4862c25"
+    },
+    "packages/flark_flutter/lib/src/clipboard_binding_web.dart": {
+      "before": "a4a7b9ea7ef2bbde750f7edcf2df9286341b522c309e916c6586b283d2cae0b7",
+      "after": "580ebc138183885ae3bec3628cc320d73e8ed39d6a1c1cf61b322bf9361285c4"
+    },
+    "packages/flark_flutter/lib/src/editor.dart": {
+      "before": "f59dc5d5e53afc6bfa1cd80b833ae2ed81b6aeedc41eb371aaf03b60d708f4f2",
+      "after": "f8d7db211af4e83d9c854bcaab6590d7a10ec180b51ddde64853d6a1cb018e38"
+    }
+  },
+  "newInputs": [
+    "docs/architecture/v5/code_closer_review_2026_09_06.md",
+    "packages/flark/test/code_closer_test.dart",
+    "packages/flark/test/inline_tab_test.dart",
+    "packages/flark_flutter/test/code_closer_test.dart"
+  ],
+  "freshSuiteCounts": {
+    "core": 432,
+    "host": 117,
+    "workbench": 25,
+    "realBrowserTransport": 5,
+    "totalDartFlutterBrowser": 579,
+    "rust": 43,
+    "transportCases": 1322
+  },
+  "codeDecorationBounds": {
+    "registeredGrammars": 12,
+    "autoSampleUtf16": 1024,
+    "maxBlockUtf16": 8192,
+    "cacheEntries": 32,
+    "cacheUtf16": 65536,
+    "detectionCacheEntries": 32
+  },
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "productionDartLineCountsIncludingComments": {
+    "flark": 4785,
+    "flark_flutter": 2218
+  },
+  "servedArtifacts": {
+    "main.dart.wasm": {
+      "sha256": "99a0dccd8cc3ba06993810e33a68ab9d344d7268e097489d77dd0f9b244c9f34",
+      "bytes": 2151577,
+      "matchesBuild": true
+    },
+    "main.dart.mjs": {
+      "sha256": "57b9e9238252c2af86faa917ba05590ca638500aea4486a068c9d430dd88f4bd",
+      "bytes": 33403,
+      "matchesBuild": true
+    },
+    "main.dart.js": {
+      "sha256": "4a9fdae46e5005fc2f212b4de2584616b7695b1e9cce3f0499ac4c37a2894942",
+      "bytes": 2516912,
+      "matchesBuild": true
+    },
+    "assets/packages/flark/lib/assets/wasm/flark_parse.wasm": {
+      "sha256": "fc511f650cfb05e4dbf260bec3e40803e7a7756167c2e921a7489684130ff93a",
+      "bytes": 526988,
+      "matchesBuild": true
+    }
+  },
+  "browserObservationsFile": "browser_observations.json",
+  "browserObservationsSha256": "67f899cb714a556942030997dfba138691537bbfbc0a23a83eb8b1f00bc56de1",
+  "knownLimits": [
+    "Automatic detection is heuristic; manual language and Plain text remain available.",
+    "Shared delimiter matching is bounded by tokenizer coverage, not arbitrary-language formatting. YAML flow punctuation currently falls back to literal input.",
+    "Keyword closures such as Ruby end and shell fi are not implemented.",
+    "Native/AppKit/IME, devices, performance, Dune, Fleury, browser matrix and CI/release remain separate gates."
+  ],
+  "logs": {
+    "core-analyze": {
+      "result": "passed",
+      "logFile": "core-analyze.log.gz",
+      "sha256": "a6121b60dcf2917c5c66a8dd816d337efb4b76611461eb16abe9f9fa9b5b4cf4"
+    },
+    "core-tests": {
+      "result": "432 passed; 1000 generated histories seed 2028 with braces in alphabet",
+      "logFile": "core-tests.log.gz",
+      "sha256": "421b7808145918742794858a7f45673d92636a8e755a79b100782c57e5ddf86e"
+    },
+    "host-analyze": {
+      "result": "passed",
+      "logFile": "host-analyze.log.gz",
+      "sha256": "47697682c47a5a2b70b5ae4ca27f8c5a5d9111d150411707e66d3a156567e437"
+    },
+    "host-tests": {
+      "result": "117 passed",
+      "logFile": "host-tests.log.gz",
+      "sha256": "04e230ff1e2d6e11478202cf6aaf994f027640c43aa66a824c31c0404902243d"
+    },
+    "workbench-analyze": {
+      "result": "passed",
+      "logFile": "workbench-analyze.log.gz",
+      "sha256": "586898c3cc78d649ed65fd2ba167b95a5563e72fd8c4edd8bc95e7bed3078811"
+    },
+    "workbench-tests": {
+      "result": "25 passed",
+      "logFile": "workbench-tests.log.gz",
+      "sha256": "48e62df2aaf5d9e73d016a7618e504c9dc2ec9c0e130796f8b0373e673c46f11"
+    },
+    "chrome-tests": {
+      "result": "5 passed",
+      "logFile": "chrome-tests.log.gz",
+      "sha256": "02ffc1377283e0b6afebe9b1aa8871c3407fdd08ed8d1c81f4bcfa4e9a42a852"
+    },
+    "rust-tests": {
+      "result": "43 passed",
+      "logFile": "rust-tests.log.gz",
+      "sha256": "7adb37e97df744d77ecf0b73372a50caf13d5e7ed6551a332663321fc46d66fa"
+    },
+    "parser-wasm": {
+      "result": "rebuilt",
+      "logFile": "parser-wasm.log.gz",
+      "sha256": "a8a167783b62388e1661cc7601abf8cb7de8f645fbfd51748efdfae7d4ec00ee"
+    },
+    "transport-parity": {
+      "result": "1322 native/bundled/fresh model matches",
+      "logFile": "transport-parity.log.gz",
+      "sha256": "f02923d6c377e96d1db0ce30f49abbd4162d102357049d148f4a1670a36fb098"
+    },
+    "web-build": {
+      "result": "passed",
+      "logFile": "web-build.log.gz",
+      "sha256": "8a6ad43063962e2f771f50c15d0cdf7f06f5a986069569f062b13d8a5393ba59"
+    },
+    "format": {
+      "result": "passed",
+      "logFile": "format.log.gz",
+      "sha256": "f1b8377b05a8a4f654f23826d75d0292d494f71d07d1b3568733cb62e6b78d50"
+    },
+    "closer-before-fix": {
+      "result": "expected regression failures",
+      "logFile": "closer-before-fix.log.gz",
+      "sha256": "f59210d2fb362d7773c9f23d1f41ebec50d01d11952748d26c7866b837c41277"
+    },
+    "table-before-fix": {
+      "result": "expected regression failure",
+      "logFile": "table-before-fix.log.gz",
+      "sha256": "8876b57c9a0e0a1b3ab12b2f641a504451384795a8b06c46cc539119e0b7d446"
+    },
+    "table-caret-before-fix": {
+      "result": "expected regression failure",
+      "logFile": "table-caret-before-fix.log.gz",
+      "sha256": "a144822db57673ffbdb9c20272e2fdf7da4e6ed29863548d5719a0bea41990c9"
+    },
+    "browser-paste-before-fix": {
+      "result": "expected regression failure",
+      "logFile": "browser-paste-before-fix.log.gz",
+      "sha256": "74d65cad7bbfca0463d0ec3966557fca9f82712d62bc85b58ef8272705fc514d"
+    },
+    "preview-http": {
+      "result": "final build-specific assets requested",
+      "logFile": "preview-http.log.gz",
+      "sha256": "6156450f9c3a301b78c43355f31fa4fbf71234ff89273aef8cb03eca6bacaad8"
+    }
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "runtime": "js",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  "comparisons": 280,
+  "burstRequests": 40,
+  "startupMicros": 16400,
+  "results": [
+    {
+      "language": "ruby",
+      "seedUnits": 372,
+      "samples": 51,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 500
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 900,
+        "max": 1100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "ruby",
+      "seedUnits": 8068,
+      "samples": 51,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 1800,
+        "max": 1800
+      },
+      "colorLatencyMicros": {
+        "p50": 5300,
+        "p95": 6700,
+        "max": 6900
+      },
+      "superseded": 0
+    },
+    {
+      "language": "dart",
+      "seedUnits": 374,
+      "samples": 54,
+      "inputMicros": {
+        "p50": 100,
+        "p95": 300,
+        "max": 400
+      },
+      "colorLatencyMicros": {
+        "p50": 1000,
+        "p95": 1200,
+        "max": 1300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "dart",
+      "seedUnits": 8070,
+      "samples": 54,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 2100,
+        "max": 2400
+      },
+      "colorLatencyMicros": {
+        "p50": 9600,
+        "p95": 11100,
+        "max": 11200
+      },
+      "superseded": 1
+    },
+    {
+      "language": "javascript",
+      "seedUnits": 387,
+      "samples": 72,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 300,
+        "max": 400
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 900,
+        "max": 1000
+      },
+      "superseded": 0
+    },
+    {
+      "language": "javascript",
+      "seedUnits": 8062,
+      "samples": 72,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 1600,
+        "max": 1800
+      },
+      "colorLatencyMicros": {
+        "p50": 5500,
+        "p95": 6800,
+        "max": 9600
+      },
+      "superseded": 0
+    },
+    {
+      "language": "python",
+      "seedUnits": 373,
+      "samples": 48,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 500
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 1100,
+        "max": 1500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "python",
+      "seedUnits": 8069,
+      "samples": 48,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 4000,
+        "max": 4200
+      },
+      "colorLatencyMicros": {
+        "p50": 6000,
+        "p95": 9700,
+        "max": 10100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "yaml",
+      "seedUnits": 388,
+      "samples": 39,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 300,
+        "max": 300
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 900,
+        "max": 1300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "yaml",
+      "seedUnits": 8073,
+      "samples": 39,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 2100,
+        "max": 2200
+      },
+      "colorLatencyMicros": {
+        "p50": 6100,
+        "p95": 7900,
+        "max": 7900
+      },
+      "superseded": 0
+    }
+  ]
+}

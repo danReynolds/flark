@@ -1,0 +1,37 @@
+{
+  "browser": "Codex embedded browser (IAB)",
+  "url": "http://127.0.0.1:8813/",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "scope": "Observed normal Wasm workbench; no special FLARK defines. This record summarizes actual interactive tool observations, not an automated CI result.",
+  "finalCandidateStartedAtUtc": "2026-09-05T21:37:10.847Z",
+  "finalBuildCanaries": [
+    "Unicode pixels correct after fallback fonts load without a source edit; exact source 32 UTF-8 bytes.",
+    "Whole-document structured paste 31 bytes, keyboard paste 47, next key 48; Undo 47, Undo original 31, Redo 47, all exact.",
+    "32 KiB shape-eligible rendered document -> 32769-byte source mode -> 32768-byte rendered mode, all source exact.",
+    "262144-byte source accepts ceiling, rejects next character atomically with writable-limit notice; replacement recovers.",
+    "64 typing chunks / 1642 delivered characters / 2 input-context rebases; exact source after 4 batches: 3936, 4341, 4757, 5162 bytes.",
+    "Reload retains 5162 bytes; next typing produces expected 5172 bytes.",
+    "Select All plus Backspace clears synthetic QA Draft to zero bytes.",
+    "Tour source preserved at 779 UTF-8 bytes; both checkbox states visually correct; pointer toggle and Undo reproduce exact DOM source."
+  ],
+  "exploratoryCanariesBeforeFinalRebuild": [
+    "Keyboard copy, cut and paste; next key; Undo/Redo.",
+    "Delete last styled grapheme then type; list/quote continuation and exit; heading Return; bold shortcut and whitespace.",
+    "Source/rendered next input; pointer table cell edit and Undo; task toggle and Undo; scrolling and inspection reflow.",
+    "All presets and draft switching retain exact source; dense32 and giant-line source-page edits and Undo.",
+    "Another 64-chunk sustained sequence, 1642 characters and two rebases; exact-source checkpoints, reload and next key.",
+    "32 KiB live boundary both directions; writable 256 KiB ceiling; over-limit typing and 270000-byte replacement rejected atomically; next edit recovers."
+  ],
+  "finalTypingWallSecondsIncludingInspection": 194.983,
+  "limitations": [
+    "Each chunk retargets the active input; chunk ends at rebase boundary. Does not prove an unretargeted queued native burst.",
+    "Viewport override did not change actual width from 1280. Mounted narrow-layout tests pass; physical narrow-browser resize unqualified.",
+    "CUA empty-string paste dispatched no deletion; explicit Backspace worked.",
+    "Clipboard export is asynchronous: immediate read after a reset observed old empty contents. After observing completion, export and checkbox checks passed; use source/DOM or settled export as the oracle.",
+    "No formal browser latency, other engine, native input, IME/mobile or assistive-technology qualification."
+  ],
+  "cleanup": "QA-only Draft cleared; original presets restored; temporary control tab closed; prior empty browser clipboard restored as empty text; Tour left open for owner."
+}

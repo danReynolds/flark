@@ -1,0 +1,14 @@
+{
+  "date": "2026-09-06",
+  "codemirror": {
+    "traceCount": 16,
+    "cleanOfflineNpmCiReplay": "identical parsed JSON",
+    "resultSha256": "6cf50dd849de5e6bcddd56f8f44696852e16d94fcfc65dde686e70898df3ef9d"
+  },
+  "shiki": {
+    "caseCount": 6,
+    "vmAndCompiledJavaScript": "identical parsed JSON",
+    "exactTextReconstruction": "asserted in each execution"
+  },
+  "scope": "Research only; no Flark production implementation or host qualification."
+}

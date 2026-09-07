@@ -1,0 +1,198 @@
+{
+  "recordedAtUtc": "2026-09-06T03:03:41.835522+00:00",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "evidence": "Local dirty fence-authoring candidate; final normal web/WASM app exercised through visible UI.",
+  "dogfoodReady": {
+    "D0-web": true,
+    "D0-macOS": false
+  },
+  "qualification": "Exploratory owner dogfooding in the observed embedded browser; not M5, native, performance, named-commit CI or release proof.",
+  "knownLimits": [
+    "Bodyless imported fence syntax uses source mode for Return; the rendered command rejects safely.",
+    "Native/AppKit, floor devices, performance, Dune and full browser matrix remain separate gates."
+  ],
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "ba710534b76e19a882e00fd552ad7a6e9561f55c2949a5f7e5283bd7b0f34777",
+  "inputFileCount": 209,
+  "buildManifestFile": "build_manifest.sha256",
+  "buildManifestSha256": "2b83c5005bdd954c56ab7df7a0ba8a78b63257c2b7e1728f5470eba628a5048e",
+  "buildFileCount": 41,
+  "baselineCandidate": "../2026-09-05-owner/candidate.json",
+  "baselineCandidateSha256": "9dc99ad64b0ab16ee6c2bb3c70478b07939d1a0a9d3923812c2e0a6b0917a685",
+  "changedBaselineInputs": {
+    "CLAUDE.md": {
+      "before": "39ec5158489a67f7efa776206f4aacd0cd547621cb9d930f10a775d8cfa0dd4c",
+      "after": "d158f5dfde46fdc225aecc645fb650d67a7ba1aaf2473df40f3ea32eb6805ba0"
+    },
+    "DOGFOOD_MILESTONE.md": {
+      "before": "94975a8c9849c95fb381b199a1cc3333e2bfd58a95995bfcd2b3648659e61d78",
+      "after": "aff562413703f20cba480011df8a4865072bde8b079546fe5d53b7a8f718107b"
+    },
+    "docs/README.md": {
+      "before": "cf6ef122c6e0260258df42708455c5f6a83f64e63fcbc27778a1c1ec70cc8a32",
+      "after": "2f8e295f15bf8dfc8b82177e04a23f2f0553eae9d82107e7da5365e1f6ae081e"
+    },
+    "docs/architecture/v5/build_plan.md": {
+      "before": "5d97b19f374d3971afd4040ff3f89071266cd8d0e2371f1d91b4b42415663b6c",
+      "after": "c6434a1f2145f91a9ae26a5c5bbf5e2aeeadf6d8257bf9c737a4b64ce1597366"
+    },
+    "docs/architecture/v5/edit_profile_v1.md": {
+      "before": "5c764c3fb5ec0daa7746af20b49e55da752df2dc3bfe83e6d9123e6e2a8dc077",
+      "after": "7f016f974921a67e19ff200410c0ca023a1a1ce17eedeae08c13f5bcc3ca7e2b"
+    },
+    "docs/architecture/v5/web_dogfood.md": {
+      "before": "8250b1bff027161718392d0e619968baa8647c7a6e0c5d09671e3602a8581e52",
+      "after": "07451106d6f66dbcb8015361e3208aee2b46447e218fb917f6e913f23dc20dab"
+    },
+    "native/flark_parse/src/model.rs": {
+      "before": "5d9ffa5e8e5e95c0f66004f778458ed175af6a9d1691ffdea91eeda6c7791b92",
+      "after": "6fe83a5423fb68c71a22ffa20aa5530f6f451dd5ff96afbe8641191da2864514"
+    },
+    "native/flark_parse/tests/regressions.rs": {
+      "before": "c57ed565e00bdc9ae25671fac5a6371398b27d7a3f9550063a5efc31d601a82e",
+      "after": "dca10a4b200d7b0a10a01c9b54ebcdf759a010834dc701580596c3806e5ae4a3"
+    },
+    "packages/flark/lib/assets/wasm/flark_parse.wasm": {
+      "before": "74d476c8ac893639467aa22e68c36974d813523071ab0d13147617b4907d045d",
+      "after": "64cc94b932e17ac712a3b0f9006a5d40f9a6aa46fe3d0d1828b25f3f8efc167f"
+    },
+    "packages/flark/lib/src/kernel/editor.dart": {
+      "before": "ffd38cb637c6ea8bab43c12d3713af3686005aab9d87d85f308f96eecb56803b",
+      "after": "5e301ee5c08d24958f7f750aaee3a9d2767e4d567ccf64b7735f0fcb0c79c7d4"
+    },
+    "packages/flark/lib/src/kernel/projection.dart": {
+      "before": "3a373917dffb157c234a345269f973b87e08090fff3ab6df8a48f264eb7266a5",
+      "after": "43fa6d4bfb22e9f0e60fcd97b27b1ae1218585e69a5c376b8643e5fea0725415"
+    },
+    "packages/flark/test/matrix_test.dart": {
+      "before": "c4b8ebc72dea3262924588e0eab6a39a373d4f3bd2edabe96c2718f1a45e99c1",
+      "after": "8b8cadbf198460592ebdfbf5e64fb7494bfb699420ffeaed533e9537e03b9e58"
+    },
+    "packages/flark_flutter/example/README.md": {
+      "before": "162bad2c3e7d7557c1b51dd9afe676bc3271af3a7f47c73cf2aae7cfd1e9209d",
+      "after": "069c2c2175ff5d127e99b92fe875649a9a28512c39ec3b4009b6cd074d34beeb"
+    }
+  },
+  "newInputs": [
+    "docs/architecture/v5/fence_authoring_review_2026_09_05.md",
+    "packages/flark/test/fence_authoring_test.dart",
+    "packages/flark/test/multiline_code_edit_test.dart",
+    "packages/flark_flutter/test/fence_authoring_test.dart",
+    "packages/flark_flutter/test/multiline_code_test.dart"
+  ],
+  "keyArtifacts": {
+    "main.dart.wasm": "49dd5a5757cfa938da445855c20c40838da06ca509f81fbecb6a4aab2f09bfe5",
+    "main.dart.js": "29f8fbced0071cd92e03b68fa9d1bcf117a47c4e96cf867b6fe481e3efa46562",
+    "assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "64cc94b932e17ac712a3b0f9006a5d40f9a6aa46fe3d0d1828b25f3f8efc167f"
+  },
+  "browserObservationsFile": "browser_observations.json",
+  "browserObservationsSha256": "dead856931711b9bb627c82baa5608d35eaf1a6aceea3a32dcde201a16327343",
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "freshSuiteCounts": {
+    "core": 388,
+    "host": 113,
+    "workbench": 25,
+    "realBrowserTransport": 3,
+    "totalDartFlutterBrowser": 529,
+    "rust": 42,
+    "transportCases": 1322
+  },
+  "discovery": {
+    "iterations": 1000,
+    "seed": 2028,
+    "found": "multiline inline-code owner end; minimized and fixed before final green run"
+  },
+  "logs": {
+    "core-analyze": {
+      "result": "passed",
+      "logFile": "core-analyze.log.gz",
+      "sha256": "a6121b60dcf2917c5c66a8dd816d337efb4b76611461eb16abe9f9fa9b5b4cf4"
+    },
+    "core-tests": {
+      "result": "388 passed; matrix 1000 histories seed 2028",
+      "logFile": "core-tests.log.gz",
+      "sha256": "e38fb8fff116f13ce95dfdfc9ed8cfce118cb72e9359e81b7dd26b6ea4597c4c"
+    },
+    "host-analyze": {
+      "result": "passed",
+      "logFile": "host-analyze.log.gz",
+      "sha256": "5aec321d6a748d3ed3ac92f4ba7c2a68c962a22a92e887c2a80b770be93e9e9b"
+    },
+    "host-tests": {
+      "result": "113 passed",
+      "logFile": "host-tests.log.gz",
+      "sha256": "a1c022c2c6615afee7e5364c09543d91053b9bacf0c36715be7fda72b8462cfa"
+    },
+    "example-analyze": {
+      "result": "passed",
+      "logFile": "example-analyze.log.gz",
+      "sha256": "07a1ec2a51a27c6ebb7fbf4fd9de83628b9da026803b2d9859d58afaba431a4a"
+    },
+    "example-tests": {
+      "result": "25 passed",
+      "logFile": "example-tests.log.gz",
+      "sha256": "a94d3d6e15dbd8ef6282d074fae6dee8ad3c3d7b707289d811d4ce90fc504202"
+    },
+    "browser-tests": {
+      "result": "3 passed",
+      "logFile": "browser-tests.log.gz",
+      "sha256": "30cad603002d979f7a23206a550eb20059a3f92c599b5fa6c293a239d06baf5c"
+    },
+    "build": {
+      "result": "passed",
+      "logFile": "build.log.gz",
+      "sha256": "f0950817997a27131af41c41c22ca8e603d61a13f2ddc714885967eaa6b5d5dc"
+    },
+    "rust-tests": {
+      "result": "42 passed",
+      "logFile": "rust-tests.log.gz",
+      "sha256": "f59b0c524e9932bd8100f91ac286e171583e2ab626dcc40f78f69a941b48c245"
+    },
+    "wasm-build": {
+      "result": "passed",
+      "logFile": "wasm-build.log.gz",
+      "sha256": "4b6127dddc8966d5afac114fe1e294a0204c6d2641a2f047c74ab8bee3a1ba01"
+    },
+    "parity": {
+      "result": "1322 native/bundled/fresh identical",
+      "logFile": "parity.log.gz",
+      "sha256": "f47abe38a84c3d5f227c50d8c5c3716673b9da4c3b7e935b73b974a5536f6bb6"
+    },
+    "before": {
+      "result": "4 meaningful fence failures before implementation",
+      "logFile": "before.log.gz",
+      "sha256": "7ba2b3f77a57eb0edeb74afba9d47a19b31d8132d8893f7627cead6e3c2f04b6"
+    },
+    "neighbors-before": {
+      "result": "10 lifecycle failures before Return/Backspace correction",
+      "logFile": "neighbors-before.log.gz",
+      "sha256": "56aa4c5eed0573d80908bdfa04d1b57e316679109e6a03618c883f4d3802a382"
+    },
+    "matrix-before": {
+      "result": "discovery failure minimized into multiline code regression",
+      "logFile": "matrix-before.log.gz",
+      "sha256": "0b7f8f273996f767525b2e0821f4bbef3c8cb02068c9a2d3a807b05254d0d51a"
+    },
+    "rust-before": {
+      "result": "owner end 37 versus expected 36 before removing shadow",
+      "logFile": "rust-before.log.gz",
+      "sha256": "96bf30dc3fad6a736af4608d208fd20c429dbe0cd0bf76796ee94a1b3d37a2a7"
+    },
+    "import-before": {
+      "result": "bodyless imported fence Return RangeError before guard",
+      "logFile": "import-before.log.gz",
+      "sha256": "5005b509cf307d83c48fd7244dffe60af022634546674caeac5ff6c3f824affd"
+    }
+  }
+}

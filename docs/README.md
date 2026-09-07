@@ -1,19 +1,15 @@
 # Flark documentation
 
-Flark v4 has one active product path:
+Flark V5 is the active development path. Start with
+[RFC 030](architecture/rfc/rfc_030_synchronous_core.md), the
+[V5 build plan](architecture/v5/build_plan.md), and the
+[North Star](../NORTH_STAR.md). The current code is the headless synchronous
+kernel in `packages/flark` and the Flutter host/workbench in
+`packages/flark_flutter`. The latest [code editing review](architecture/v5/code_closer_review_2026_09_06.md)
+records the current local candidate; native qualification and Fleury remain separate work.
 
-- [`flark`](../packages/flark/README.md) owns the headless Dart API
-  over the Rust source and parser authority.
-- [`flark_flutter`](../packages/flark_flutter/README.md) owns the Flutter editor
-  and read-only rendering surfaces and re-exports the supported Dart API.
-
-Start with [Getting started](getting_started.md), then use the
-[API surface](api_surface.md), [Cookbook](cookbook.md), and
-[Parser and platforms](parser_and_platforms.md) guides. Contributors should
-also read [Development and verification](development.md) and
-[Benchmarks](benchmarks.md).
-
-The normative architecture lives under [`architecture/v4/`](architecture/v4/)
-and in [RFC 027](architecture/rfc/rfc_027_continuously_rendered_markdown.md).
-Superseded v2/v3 guides are preserved under [`legacy/docs/`](../legacy/docs/)
-and do not define the active product or its release evidence.
+The older [Getting started](getting_started.md), [API surface](api_surface.md),
+[Cookbook](cookbook.md), [Parser and platforms](parser_and_platforms.md),
+[Development](development.md), and [Benchmarks](benchmarks.md) guides describe
+the archived V4 surface. They remain implementation evidence, not current V5
+instructions, until their corresponding V5 surfaces exist.

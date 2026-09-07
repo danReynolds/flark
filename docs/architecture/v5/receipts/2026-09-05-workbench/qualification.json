@@ -1,0 +1,62 @@
+{
+  "recordedAtUtc": "2026-09-05T14:06:16.677890+00:00",
+  "evidence": "local uncommitted qualification extension; native foreground blocked",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "baselineCandidate": "../2026-09-04-typing/candidate.json",
+  "baselineCandidateSha256": "1707293c1321e3be83e75a3aecc9f80f42d1c159fd48b49aa6499a26228aae53",
+  "dogfoodReady": false,
+  "productionInputsChanged": false,
+  "unchangedPriorInputCount": 170,
+  "changedPriorInputs": {
+    "packages/flark_flutter/example/README.md": {
+      "before": "892cd29788475d038e64a1dbb98d42a5d5d98a64e7d67fd78f65bd7540ca2ec6",
+      "after": "4de7363bfd4d8b24a1456e0d64e33db26203806fb94849b8670e355318fbeb53"
+    }
+  },
+  "additionalInputs": {
+    "packages/flark_flutter/example/integration_test/workbench_profile_test.dart": "b92f1892a9fa84079f7090d0490ae6f07b49711e0c6066fa5c185f96fbf770dc",
+    "packages/flark_flutter/example/test/workbench_boundaries_test.dart": "a5bf14d7a2d5b1907b5c3d1518f3eacd8dd5e87a1d8b8ca8c6036490d1c1d75b",
+    "docs/architecture/v5/macos_qualification.md": "0743b34372a4e2c925e68869e298e4fcfa83984d5a69bb4e391b59534fa9a62c",
+    "docs/architecture/v5/native_session_2026_09_04.md": "bbe28eb5ede70b7e86c0a231191e2635cde39db5af3b34ef67d88f4ddea4bd05",
+    "DOGFOOD_MILESTONE.md": "42380c548cab963456b6125b55bf834accc304f2f0c9872d3e68b8db0fba8545"
+  },
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "f905139ce6caa8f357628ab923f6b22e3bfd55046975ddb3a5f5f21b357b24c0",
+  "inputFileCount": 176,
+  "verifiedUnchangedArtifacts": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "c158499af647be9e1ce4ed261bec053efae088c9e7ccbd8d5df48dc651072570",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/App.framework/Versions/A/App": "b39387ba0a69f06ab4f324217456d4b85cbb7a74a410c031375ece8487e423c1",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "bbb291c554bbce13c1064f058d03bff4a90cd5bc22544caa8d4d2143bbc3e4ad",
+    "packages/flark_flutter/example/build/web/main.dart.wasm": "4fe7738017dfa86b6523969d435855b829f333e239bd7f1d10e6492dd1f0cd7c",
+    "packages/flark/lib/assets/wasm/flark_parse.wasm": "7e39a46adfd6c47ce33f3d5850bef4fb12df135a607cfbb3af4325098620eb54",
+    "packages/flark_flutter/example/build/web/assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "7e39a46adfd6c47ce33f3d5850bef4fb12df135a607cfbb3af4325098620eb54"
+  },
+  "localGates": {
+    "workbench_tests": {
+      "status": "passed",
+      "tests": 24,
+      "logSha256": "6038effccc492cbaf0d7ddba2bec5d9de72150ab0f6360f24d08b8f5e2eca5be"
+    },
+    "workbench_analyze": {
+      "status": "passed",
+      "logSha256": "e145b2591f1329ba7fff64fb0cf9d6be187d75f1245f77a56b4d6086bc6b3066"
+    }
+  },
+  "inheritedEvidence": "Baseline core, host, Rust, parity, prebuilt and normal macOS/Web build results are retained against unchanged inputs; not rerun in this continuation.",
+  "newProfile": {
+    "target": "integration_test/workbench_profile_test.dart",
+    "status": "analyzed; no valid native run",
+    "functionalScenarios": "13 mounted boundary/fallback cases passed"
+  },
+  "nativeStatus": "Mac unlocked; native text-field value can advance while the captured surface remains stale. Manual foreground activation requested; no new native pass.",
+  "notQualified": [
+    "attended AppKit input and menus",
+    "production 32 KiB input-to-raster envelope",
+    "opening, source transitions and sustained/lifecycle performance",
+    "normal rebuilt binary interaction",
+    "Dune integration",
+    "floor Android and CJK",
+    "named-commit CI",
+    "full browser/device qualification"
+  ]
+}

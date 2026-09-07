@@ -1,0 +1,739 @@
+{
+  "runtime": "js",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+  "comparisons": 412,
+  "burstRequests": 40,
+  "startupMicros": 17400,
+  "detection": [
+    {
+      "language": "dart",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 4400,
+        "p95": 12900,
+        "max": 13800
+      }
+    },
+    {
+      "language": "dart",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 6400,
+        "p95": 10500,
+        "max": 11700
+      }
+    },
+    {
+      "language": "javascript",
+      "sampleUnits": 42,
+      "samples": 39,
+      "micros": {
+        "p50": 2100,
+        "p95": 4800,
+        "max": 8900
+      }
+    },
+    {
+      "language": "javascript",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 4400,
+        "p95": 9700,
+        "max": 10900
+      }
+    },
+    {
+      "language": "python",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 2700,
+        "p95": 6500,
+        "max": 10700
+      }
+    },
+    {
+      "language": "python",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 14100,
+        "p95": 30000,
+        "max": 33700
+      }
+    },
+    {
+      "language": "yaml",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 3400,
+        "p95": 6400,
+        "max": 11100
+      }
+    },
+    {
+      "language": "yaml",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 7200,
+        "p95": 22900,
+        "max": 25200
+      }
+    },
+    {
+      "language": "ruby",
+      "sampleUnits": 29,
+      "samples": 39,
+      "micros": {
+        "p50": 3700,
+        "p95": 10600,
+        "max": 12200
+      }
+    },
+    {
+      "language": "ruby",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 6600,
+        "p95": 18400,
+        "max": 24700
+      }
+    },
+    {
+      "language": "typescript",
+      "sampleUnits": 30,
+      "samples": 39,
+      "micros": {
+        "p50": 1600,
+        "p95": 2700,
+        "max": 4100
+      }
+    },
+    {
+      "language": "typescript",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 6100,
+        "p95": 10800,
+        "max": 14200
+      }
+    },
+    {
+      "language": "rust",
+      "sampleUnits": 32,
+      "samples": 39,
+      "micros": {
+        "p50": 3900,
+        "p95": 10400,
+        "max": 11800
+      }
+    },
+    {
+      "language": "rust",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 6500,
+        "p95": 14500,
+        "max": 14500
+      }
+    },
+    {
+      "language": "go",
+      "sampleUnits": 45,
+      "samples": 39,
+      "micros": {
+        "p50": 3100,
+        "p95": 9100,
+        "max": 9300
+      }
+    },
+    {
+      "language": "go",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 7600,
+        "p95": 16500,
+        "max": 18500
+      }
+    },
+    {
+      "language": "json",
+      "sampleUnits": 20,
+      "samples": 39,
+      "micros": {
+        "p50": 2200,
+        "p95": 7200,
+        "max": 12100
+      }
+    },
+    {
+      "language": "json",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 7900,
+        "p95": 13200,
+        "max": 18700
+      }
+    },
+    {
+      "language": "css",
+      "sampleUnits": 39,
+      "samples": 39,
+      "micros": {
+        "p50": 2300,
+        "p95": 7400,
+        "max": 7900
+      }
+    },
+    {
+      "language": "css",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 7800,
+        "p95": 21800,
+        "max": 25800
+      }
+    },
+    {
+      "language": "bash",
+      "sampleUnits": 31,
+      "samples": 39,
+      "micros": {
+        "p50": 2200,
+        "p95": 4900,
+        "max": 8900
+      }
+    },
+    {
+      "language": "bash",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 7800,
+        "p95": 13500,
+        "max": 16100
+      }
+    },
+    {
+      "language": "html",
+      "sampleUnits": 29,
+      "samples": 39,
+      "micros": {
+        "p50": 2500,
+        "p95": 9500,
+        "max": 9800
+      }
+    },
+    {
+      "language": "html",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 8900,
+        "p95": 19200,
+        "max": 21200
+      }
+    },
+    {
+      "language": "xml",
+      "sampleUnits": 39,
+      "samples": 39,
+      "micros": {
+        "p50": 4000,
+        "p95": 12300,
+        "max": 16200
+      }
+    },
+    {
+      "language": "xml",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 13400,
+        "p95": 25000,
+        "max": 25600
+      }
+    },
+    {
+      "language": "sql",
+      "sampleUnits": 44,
+      "samples": 39,
+      "micros": {
+        "p50": 2900,
+        "p95": 7900,
+        "max": 12000
+      }
+    },
+    {
+      "language": "sql",
+      "sampleUnits": 128,
+      "samples": 39,
+      "micros": {
+        "p50": 3700,
+        "p95": 7000,
+        "max": 8800
+      }
+    }
+  ],
+  "results": [
+    {
+      "language": "typescript",
+      "seedUnits": 372,
+      "samples": 90,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 800
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 2000,
+        "max": 4200
+      },
+      "superseded": 0
+    },
+    {
+      "language": "typescript",
+      "seedUnits": 8060,
+      "samples": 90,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 4100,
+        "p95": 4300,
+        "max": 4500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "rust",
+      "seedUnits": 363,
+      "samples": 96,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 2200,
+        "max": 5100
+      },
+      "colorLatencyMicros": {
+        "p50": 2500,
+        "p95": 8200,
+        "max": 21300
+      },
+      "superseded": 1
+    },
+    {
+      "language": "rust",
+      "seedUnits": 8052,
+      "samples": 96,
+      "inputMicros": {
+        "p50": 1700,
+        "p95": 10800,
+        "max": 33500
+      },
+      "colorLatencyMicros": {
+        "p50": 25700,
+        "p95": 120600,
+        "max": 120600
+      },
+      "superseded": 93
+    },
+    {
+      "language": "go",
+      "seedUnits": 368,
+      "samples": 135,
+      "inputMicros": {
+        "p50": 300,
+        "p95": 1100,
+        "max": 6200
+      },
+      "colorLatencyMicros": {
+        "p50": 1100,
+        "p95": 9800,
+        "max": 19400
+      },
+      "superseded": 0
+    },
+    {
+      "language": "go",
+      "seedUnits": 8050,
+      "samples": 135,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 1100,
+        "max": 1800
+      },
+      "colorLatencyMicros": {
+        "p50": 3600,
+        "p95": 5400,
+        "max": 12200
+      },
+      "superseded": 3
+    },
+    {
+      "language": "json",
+      "seedUnits": 378,
+      "samples": 60,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 700,
+        "p95": 2000,
+        "max": 3200
+      },
+      "superseded": 0
+    },
+    {
+      "language": "json",
+      "seedUnits": 8064,
+      "samples": 60,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 3800,
+        "p95": 4000,
+        "max": 4200
+      },
+      "superseded": 0
+    },
+    {
+      "language": "css",
+      "seedUnits": 360,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 500,
+        "max": 700
+      },
+      "colorLatencyMicros": {
+        "p50": 800,
+        "p95": 2400,
+        "max": 4600
+      },
+      "superseded": 0
+    },
+    {
+      "language": "css",
+      "seedUnits": 8040,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 3900,
+        "p95": 4200,
+        "max": 4200
+      },
+      "superseded": 0
+    },
+    {
+      "language": "bash",
+      "seedUnits": 384,
+      "samples": 93,
+      "inputMicros": {
+        "p50": 300,
+        "p95": 700,
+        "max": 1500
+      },
+      "colorLatencyMicros": {
+        "p50": 1000,
+        "p95": 4700,
+        "max": 6400
+      },
+      "superseded": 0
+    },
+    {
+      "language": "bash",
+      "seedUnits": 8064,
+      "samples": 93,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 1500,
+        "max": 1600
+      },
+      "colorLatencyMicros": {
+        "p50": 4300,
+        "p95": 5300,
+        "max": 5500
+      },
+      "superseded": 0
+    },
+    {
+      "language": "html",
+      "seedUnits": 360,
+      "samples": 87,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 400,
+        "max": 800
+      },
+      "colorLatencyMicros": {
+        "p50": 800,
+        "p95": 2000,
+        "max": 4100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "html",
+      "seedUnits": 8040,
+      "samples": 87,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 1200,
+        "max": 1300
+      },
+      "colorLatencyMicros": {
+        "p50": 4100,
+        "p95": 4800,
+        "max": 4900
+      },
+      "superseded": 0
+    },
+    {
+      "language": "xml",
+      "seedUnits": 360,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 200,
+        "p95": 600,
+        "max": 900
+      },
+      "colorLatencyMicros": {
+        "p50": 1000,
+        "p95": 3500,
+        "max": 6300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "xml",
+      "seedUnits": 8040,
+      "samples": 117,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 2600,
+        "max": 2700
+      },
+      "colorLatencyMicros": {
+        "p50": 5000,
+        "p95": 7000,
+        "max": 7400
+      },
+      "superseded": 0
+    },
+    {
+      "language": "sql",
+      "seedUnits": 360,
+      "samples": 132,
+      "inputMicros": {
+        "p50": 300,
+        "p95": 600,
+        "max": 1000
+      },
+      "colorLatencyMicros": {
+        "p50": 900,
+        "p95": 3800,
+        "max": 4700
+      },
+      "superseded": 0
+    },
+    {
+      "language": "sql",
+      "seedUnits": 8055,
+      "samples": 132,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 500,
+        "max": 600
+      },
+      "colorLatencyMicros": {
+        "p50": 3900,
+        "p95": 5600,
+        "max": 7000
+      },
+      "superseded": 1
+    },
+    {
+      "language": "ruby",
+      "seedUnits": 372,
+      "samples": 51,
+      "inputMicros": {
+        "p50": 600,
+        "p95": 1800,
+        "max": 2300
+      },
+      "colorLatencyMicros": {
+        "p50": 3500,
+        "p95": 11400,
+        "max": 34400
+      },
+      "superseded": 0
+    },
+    {
+      "language": "ruby",
+      "seedUnits": 8068,
+      "samples": 51,
+      "inputMicros": {
+        "p50": 2400,
+        "p95": 33700,
+        "max": 46300
+      },
+      "colorLatencyMicros": {
+        "p50": 38700,
+        "p95": 67600,
+        "max": 67600
+      },
+      "superseded": 48
+    },
+    {
+      "language": "dart",
+      "seedUnits": 374,
+      "samples": 54,
+      "inputMicros": {
+        "p50": 400,
+        "p95": 3600,
+        "max": 5500
+      },
+      "colorLatencyMicros": {
+        "p50": 7300,
+        "p95": 13500,
+        "max": 25800
+      },
+      "superseded": 11
+    },
+    {
+      "language": "dart",
+      "seedUnits": 8070,
+      "samples": 54,
+      "inputMicros": {
+        "p50": 1800,
+        "p95": 16600,
+        "max": 22300
+      },
+      "colorLatencyMicros": {
+        "p50": 81500,
+        "p95": 104900,
+        "max": 104900
+      },
+      "superseded": 51
+    },
+    {
+      "language": "javascript",
+      "seedUnits": 387,
+      "samples": 72,
+      "inputMicros": {
+        "p50": 300,
+        "p95": 1400,
+        "max": 2700
+      },
+      "colorLatencyMicros": {
+        "p50": 2000,
+        "p95": 8400,
+        "max": 11300
+      },
+      "superseded": 0
+    },
+    {
+      "language": "javascript",
+      "seedUnits": 8062,
+      "samples": 72,
+      "inputMicros": {
+        "p50": 1500,
+        "p95": 16100,
+        "max": 38200
+      },
+      "colorLatencyMicros": {
+        "p50": 101800,
+        "p95": 110500,
+        "max": 110500
+      },
+      "superseded": 69
+    },
+    {
+      "language": "python",
+      "seedUnits": 373,
+      "samples": 48,
+      "inputMicros": {
+        "p50": 300,
+        "p95": 2900,
+        "max": 8800
+      },
+      "colorLatencyMicros": {
+        "p50": 6800,
+        "p95": 19000,
+        "max": 22100
+      },
+      "superseded": 0
+    },
+    {
+      "language": "python",
+      "seedUnits": 8069,
+      "samples": 48,
+      "inputMicros": {
+        "p50": 1700,
+        "p95": 26400,
+        "max": 49600
+      },
+      "colorLatencyMicros": {
+        "p50": 57000,
+        "p95": 108800,
+        "max": 108800
+      },
+      "superseded": 45
+    },
+    {
+      "language": "yaml",
+      "seedUnits": 388,
+      "samples": 39,
+      "inputMicros": {
+        "p50": 500,
+        "p95": 7100,
+        "max": 7400
+      },
+      "colorLatencyMicros": {
+        "p50": 3700,
+        "p95": 13200,
+        "max": 16900
+      },
+      "superseded": 0
+    },
+    {
+      "language": "yaml",
+      "seedUnits": 8073,
+      "samples": 39,
+      "inputMicros": {
+        "p50": 1400,
+        "p95": 17700,
+        "max": 18900
+      },
+      "colorLatencyMicros": {
+        "p50": 34600,
+        "p95": 66700,
+        "max": 66700
+      },
+      "superseded": 36
+    }
+  ]
+}

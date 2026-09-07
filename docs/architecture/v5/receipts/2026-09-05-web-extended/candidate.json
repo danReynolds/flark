@@ -1,0 +1,185 @@
+{
+  "recordedAtUtc": "2026-09-06T00:01:32.651682+00:00",
+  "head": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "branch": "v5/m2-kernel",
+  "evidence": "Local dirty candidate after extended exploratory browser dogfooding. Not release or native qualification.",
+  "dogfoodReady": {
+    "D0-web": true,
+    "D0-macOS": false
+  },
+  "inputManifestFile": "input_manifest.sha256",
+  "inputManifestSha256": "dcc895c870ab0c890b7576f5a75db0b83cb9cef183fc38d6f0bbc0feed57d8b1",
+  "inputFileCount": 201,
+  "buildManifestFile": "build_manifest.sha256",
+  "buildManifestSha256": "37e58ff468e58a67c9a28e995d4f14013fe2a37fc5a5f255dbf9e5a85b5139ae",
+  "buildFileCount": 41,
+  "keyArtifacts": {
+    "main.dart.wasm": "de0fe9cb3caa91e3d021cf68ecd857810788a9b6f3adb2c866f21e0bdd39d7b8",
+    "main.dart.js": "1db66b5b1f542021233e250b630ff8130ddebd2a75178c2e73c4d2047e16f0ca",
+    "assets/packages/flark/lib/assets/wasm/flark_parse.wasm": "74d476c8ac893639467aa22e68c36974d813523071ab0d13147617b4907d045d"
+  },
+  "browserObservationsFile": "browser_observations.json",
+  "browserObservationsSha256": "b28197d1c3d6a7fcad5586c5517b0e7391c6d065873a79f2fc7f34e96a584f2e",
+  "baselineCandidate": "../2026-09-05-web/candidate.json",
+  "baselineCandidateSha256": "9c978a8207336bd23402fc9f04fd00a99330e6fe079c1cdecb68698cb9c2d280",
+  "machine": {
+    "cpu": "Apple M1 Pro",
+    "memoryBytes": 17179869184,
+    "os": "macOS 26.2 (25C56)",
+    "architecture": "arm64"
+  },
+  "flutter": {
+    "frameworkVersion": "3.44.4",
+    "channel": "[user-branch]",
+    "repositoryUrl": "unknown source",
+    "frameworkRevision": "ad70ec4617166f1c38e5d2bfd388af71fda14f06",
+    "frameworkCommitDate": "2026-06-24 11:07:06 -0700",
+    "engineRevision": "a10d8ac38de835021c8d2f920dbf50a920ccc030",
+    "engineCommitDate": "2026-06-23 23:09:55.000Z",
+    "engineContentHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+    "engineBuildDate": "2026-06-23 20:26:40.203",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.4"
+  },
+  "candidateLimits": {
+    "liveUtf8Bytes": 32768,
+    "sourceUtf8Bytes": 262144,
+    "physicalLines": 1024,
+    "blocks": 512,
+    "runs": 2048,
+    "lineUtf16Units": 4096,
+    "leafBlockUtf16Units": 4096,
+    "quoteItemDepth": 8,
+    "qualification": "provisional; not sealed"
+  },
+  "suiteCounts": {
+    "core": 365,
+    "host": 106,
+    "workbench": 25,
+    "realBrowserTransport": 3,
+    "total": 499
+  },
+  "generatedDiscovery": {
+    "seed": 2027,
+    "histories": 1000
+  },
+  "rustTests": 41,
+  "transportCases": 1322,
+  "parserQualification": "Rebuilt and retested this pass; bundled and fresh Wasm both identical to native.",
+  "logs": {
+    "core-analyze": {
+      "status": "passed",
+      "logFile": "core-analyze.log.gz",
+      "logSha256": "ab9d4a5159d42e8729ccf4767fdc6bea6452ec1376310aebf470860ca33191d4",
+      "compressedSha256": "a6121b60dcf2917c5c66a8dd816d337efb4b76611461eb16abe9f9fa9b5b4cf4"
+    },
+    "core-tests": {
+      "status": "passed",
+      "logFile": "core-tests.log.gz",
+      "logSha256": "9fab826f5ca7712c0f3072518081470e6db61a6e8dd59c6a0f4d707ef2c31d7e",
+      "compressedSha256": "dceab2f030e08ca53c4bc945c64a13d53a6ff452944695bfa961d6a0e1b64fc2"
+    },
+    "host-analyze": {
+      "status": "passed",
+      "logFile": "host-analyze.log.gz",
+      "logSha256": "3f4619356ce774c2ebc0a41e235ff22e63cee4ee19e5ea788be3cf715442c7ed",
+      "compressedSha256": "ef2c83f5c36c5672048a50982e9f4b1f928a14ef2f81fadcc1baf92d6924fb74"
+    },
+    "host-tests": {
+      "status": "passed",
+      "logFile": "host-tests.log.gz",
+      "logSha256": "a2a7c98a80e0aa96ca3986914a1be5d84ce56a89a9b788bb2c9518b38f2ea532",
+      "compressedSha256": "454471d0b455031201d5a5f9fa4da32014abb9d6706e80402cc941472cd7daeb"
+    },
+    "example-analyze": {
+      "status": "passed",
+      "logFile": "example-analyze.log.gz",
+      "logSha256": "962e974476a4977fbbacc29f26fc8edef0010bbb8c612e846e87f5badf51ffd2",
+      "compressedSha256": "5389c4ceadc50b830ed19d6d5eaec26e1e173762d52b15eb1074261f5615bc14"
+    },
+    "example-tests": {
+      "status": "passed",
+      "logFile": "example-tests.log.gz",
+      "logSha256": "c16c18408f85b582d588cd87834d9a3bb805d6e1d1129fb3255a1c1915428347",
+      "compressedSha256": "b0252091b4dda615d0fb1d9d3fb166ab80afa830da642851057f3a6a4a86f5f8"
+    },
+    "browser-tests": {
+      "status": "passed",
+      "logFile": "browser-tests.log.gz",
+      "logSha256": "3d625d333218e80bb6150cdf4065f7bd2627dd088980fbab682bae4ec192be25",
+      "compressedSha256": "30cad603002d979f7a23206a550eb20059a3f92c599b5fa6c293a239d06baf5c"
+    },
+    "rust-tests": {
+      "status": "passed",
+      "logFile": "rust-tests.log.gz",
+      "logSha256": "63194c30ff73aec9acd18f3d2de4041c9411eaae93ed3d2102bbcd660643e5f1",
+      "compressedSha256": "0d48deabaab26353801182e9147bba5fbee997fb5d19f1c5eac44b2c9aed21b4"
+    },
+    "parity": {
+      "status": "passed",
+      "logFile": "parity.log.gz",
+      "logSha256": "ca74c3e1aaa3b7b335b5b093c7e51793f23f5c35e46f1b6df9dd0a2286610d2a",
+      "compressedSha256": "f47abe38a84c3d5f227c50d8c5c3716673b9da4c3b7e935b73b974a5536f6bb6"
+    },
+    "parser-build": {
+      "status": "passed",
+      "logFile": "parser-build.log.gz",
+      "logSha256": "f2be6e5c1e006446b549553b6db9c1362bcfee23d852e2d13b5e2eb9ad4d2cb4",
+      "compressedSha256": "3356f80820c438ee1b8cd54d43b9f4b4bdc2d6f3adc4bb57fb948bd1864afbdd"
+    },
+    "build": {
+      "status": "passed",
+      "logFile": "build.log.gz",
+      "logSha256": "99e96a99b11cc9d496e879106baedfb70161f31bfa886162c437f16fee94f852",
+      "compressedSha256": "12997862e5ab18eb595e84dec49a4637d5d8198bd68a5b08f54438fcf36d015f"
+    },
+    "selection-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "selection-before.log.gz",
+      "logSha256": "526bf32dd8cddf00c5deedb3413087c942e1109db4cb86c16a73c8c7b57e1422",
+      "compressedSha256": "0690e768bc44fa758af46f8258531777d869534c650e6405dd06e122d381774c"
+    },
+    "pointer-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "pointer-before.log.gz",
+      "logSha256": "5b8000950688ff3042663f665b2509ce5a6a310c1c8c0baa648b8c73c777d840",
+      "compressedSha256": "b3ef3880db8ee64b868a137916c7bef8c499d9c465259b31581a0001f8128337"
+    },
+    "word-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "word-before.log.gz",
+      "logSha256": "3f7e9737151c8463897503dc420002ee74d4460ea306330eece853cddb79db37",
+      "compressedSha256": "79113fe671a67e9835080627238c5912346c59bdcef1849013ff86f7e1dfad6f"
+    },
+    "rust-link-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "rust-link-before.log.gz",
+      "logSha256": "0462beee379e8a6a67e8cff9677dd5d829ecab453b22a02503627db7f75b08ba",
+      "compressedSha256": "5e1928584857c335d33a896a061672d86bbd86b8215019e684cd220d42e36c9f"
+    },
+    "rust-angle-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "rust-angle-before.log.gz",
+      "logSha256": "429a2dfc312365d23279367d29b9c5a86f0b5415fb40b5cf93248556fdfe4f8b",
+      "compressedSha256": "f80c331b1544c20d84ae64642b6073678133c42c497b910a986500bfd721b2bc"
+    },
+    "clipboard-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "clipboard-before.log.gz",
+      "logSha256": "945677aed6080d29e930a4fbcb227e42008bc1e40e776a10d4985128373aa474",
+      "compressedSha256": "22c7fd0d1d533c3fe1d970554c54c10230c57555290c74625fa7da21699347ba"
+    },
+    "navigation-before": {
+      "status": "expected pre-fix failure",
+      "logFile": "navigation-before.log.gz",
+      "logSha256": "30475c2888d874ae1797cdba944f12c42cbc26afafc8dcb133aeadebeeb298d1",
+      "compressedSha256": "75846d92f852ae619700c1c193095799e547f4824064f3590f56473e496b707d"
+    }
+  },
+  "scopeNotes": [
+    "All final production changes preceded the final normal web rebuild. Documentation and test-only formatting were finalized afterward.",
+    "Core suite remains valid after final host-only navigation mapping.",
+    "Inherited earlier browser exploration remains dated evidence, not an exhaustive retest on this final binary."
+  ]
+}

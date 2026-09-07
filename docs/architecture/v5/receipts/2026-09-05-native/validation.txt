@@ -1,0 +1,31 @@
+LOCAL VALIDATION — 2026-09-05
+Candidate is the dirty local working tree; no commit, push or CI claim.
+
+PASS: 249 core tests, including 1,000 generated histories (seed 2026).
+PASS: 84 Flutter host tests and 24 workbench tests.
+PASS: 40 Rust tests; schema freshness; 1,322 native/bundled/fresh Wasm cases.
+PASS: Rust-free prebuilt consumer; all three package analyzers.
+PASS: normal macOS profile (lib/main.dart, no FLARK diagnostic defines) and web/Wasm builds.
+PASS: headless dense facade p99 insert 2,263 us and Backspace 2,020 us, under 4 ms.
+
+FAIL B1: full native 32 KiB sweep completed all 21 cases with source/caret paint checks.
+16 cases passed; five largest-paragraph cases missed the strict 16,667 us p99 frame gate.
+A quiet dense/largest-block reproduction also failed. Delay primarily precedes frame build.
+Cause is not established; no production code or performance gate was changed.
+
+REJECTED: corrected workbench workload reached sustained typing after 100 measured cycles,
+then lost foreground at 3:59. No complete timing/RSS receipt; not a lifecycle pass.
+REJECTED: minimal-surface comparator and extended trace failed initial foreground gates.
+CUA then reported the Mac locked; no automatic unlock is available.
+Startup/waiting CPU/timeline captures are not evidence of the failing measured interval.
+
+OBSERVED browser smoke: empty and retype italic/strong/strike/code/nested owner; plain-text
+outside owner; whitespace exits pending style; Undo/Redo; two consecutive spaces and caret.
+Browser clipboard attempts produced no observed paste; clipboard is not qualified.
+
+Profiles now log raw samples/progress for interruption diagnosis. Initial hidden-prefix
+caret expectations were corrected in the harness and covered by mounted scenarios.
+The normal app was rebuilt after profiling; owned native profilers and awake holds exited.
+Remaining: valid foreground performance diagnosis/retest, uninterrupted workbench profile,
+normal-binary AppKit input/menu/clipboard/focus/scroll/resize/process lifecycle canaries.
+D0 is open; candidate is not ready for user dogfooding.
