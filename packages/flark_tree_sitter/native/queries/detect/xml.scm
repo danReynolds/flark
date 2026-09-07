@@ -1,0 +1,1 @@
+[(XMLDecl) (doctypedecl)] @signal

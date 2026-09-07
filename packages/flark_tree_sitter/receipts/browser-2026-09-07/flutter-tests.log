@@ -1,0 +1,400 @@
+Resolving dependencies...
+Downloading packages...
+  clock 1.1.2 (1.1.3 available)
+  code_assets 1.0.0 (2.0.0 available)
+  hooks 1.0.3 (2.2.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.18.0 (1.19.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.14 available)
+  vector_math 2.2.0 (2.4.2 available)
+Got dependencies!
+10 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Resolving dependencies in `./example`...
+Downloading packages...
+Got dependencies in `./example`.
+00:00 +0: loading /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart
+00:00 +0: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +1: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +2: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +3: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +4: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +5: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +6: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +7: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +8: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +9: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical movement traverses blank code lines and block boundaries
+00:00 +10: /Users/dan/Coding/sovereign/packages/flark_flutter/test/geometry_frame_test.dart: line edge after an unpainted insertion uses current layout
+00:00 +11: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:01 +12: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:01 +13: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:01 +14: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:01 +15: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: choosing the current code language is an inert dismissal
+00:01 +16: /Users/dan/Coding/sovereign/packages/flark_flutter/test/vertical_navigation_test.dart: vertical arrows cross every blank line: source=true
+00:01 +17: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: language picker repaints unchanged text and keeps editing/history
+00:01 +18: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_tools_test.dart: Tab and Shift-Tab preserve selection through input and paints
+00:01 +19: /Users/dan/Coding/sovereign/packages/flark_flutter/test/source_window_test.dart: source inspection stays bounded and follows the canonical caret
+00:02 +20: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:02 +21: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:02 +22: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:02 +23: /Users/dan/Coding/sovereign/packages/flark_flutter/test/task_cursor_test.dart: checkbox hit target uses click cursor and restores text cursor
+00:02 +24: /Users/dan/Coding/sovereign/packages/flark_flutter/test/multiline_code_test.dart: multiline inline code paints its space and accepts the next key
+00:02 +25: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:02 +26: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=false burst=false
+00:02 +27: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:02 +28: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:02 +29: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: delayed colors preserve the first frame, geometry, selection and undo
+00:03 +30: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=true burst=true
+00:03 +31: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=true burst=true
+00:03 +32: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=false backward=true burst=true
+00:03 +33: /Users/dan/Coding/sovereign/packages/flark_flutter/test/tree_sitter_colors_test.dart: (tearDownAll)
+00:03 +33: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=true backward=false burst=false
+00:03 +34: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint * empty inside=true backward=false burst=true
+00:03 +35: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +36: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +37: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +38: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +39: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +40: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +41: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +42: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +43: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +44: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +45: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +46: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +47: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +48: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +49: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +50: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +51: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +52: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +53: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +54: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +55: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +56: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +57: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +58: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +59: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +60: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +61: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +62: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +63: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +64: /Users/dan/Coding/sovereign/packages/flark_flutter/test/code_selection_test.dart: dragged code selection is visibly blue and replacement is undoable
+00:03 +65: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +66: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +67: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +68: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +69: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +70: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +71: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +72: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +73: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +74: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +75: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +76: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +77: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +78: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +79: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +80: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +81: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +82: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +83: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +84: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +85: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +86: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +87: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +88: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +89: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +90: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +91: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:03 +92: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +93: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +94: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +95: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +96: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +97: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +98: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +99: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +100: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +101: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +102: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +103: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +104: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +105: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +106: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +107: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +108: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +109: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +110: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +111: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +112: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +113: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +114: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +115: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +116: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +117: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +118: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +119: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +120: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +121: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +122: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +123: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Option Backspace deletes a word and keeps the next key
+00:04 +124: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +125: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +126: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +127: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +128: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +129: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +130: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +131: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +132: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +133: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +134: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +135: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +136: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +137: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +138: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +139: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +140: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +141: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +142: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +143: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +144: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +145: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +146: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +147: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +148: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +149: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +150: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +151: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +152: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +153: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +154: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +155: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +156: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +157: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +158: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +159: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +160: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +161: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +162: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +163: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +164: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +165: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +166: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +167: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +168: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +169: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +170: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +171: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +172: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +173: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +174: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +175: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +176: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +177: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +178: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +179: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +180: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +181: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +182: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +183: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +184: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +185: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +186: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +187: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +188: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +189: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +190: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +191: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +192: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +193: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +194: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +195: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +196: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +197: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +198: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +199: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +200: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: platform deltas edit full source without echoing accepted input
+00:04 +201: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +202: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +203: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +204: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +205: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +206: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +207: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +208: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +209: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +210: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +211: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +212: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: replace a word selected from outside its closing syntax
+00:04 +213: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ~~ empty inside=true backward=true burst=false
+00:04 +214: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +215: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +216: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +217: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +218: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +219: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +220: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +221: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +222: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +223: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +224: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +225: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +226: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +227: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +228: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +229: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +230: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +231: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed input resynchronizes a formatting correction before the next key
+00:04 +232: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +233: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +234: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +235: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +236: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +237: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +238: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +239: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +240: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +241: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +242: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +243: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +244: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +245: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +246: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +247: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +248: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +249: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +250: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +251: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +252: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +253: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +254: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +255: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +256: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +257: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +258: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +259: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +260: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +261: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +262: /Users/dan/Coding/sovereign/packages/flark_flutter/test/whole_document_test.dart: Select All, paste, next key and undo preserve whole document paint
+00:04 +263: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:04 +264: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:04 +265: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:04 +266: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:04 +267: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: rebasing invalidates queued input from the old local coordinates
+00:04 +268: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +269: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +270: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +271: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +272: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +273: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +274: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +275: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +276: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +277: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +278: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +279: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +280: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +281: /Users/dan/Coding/sovereign/packages/flark_flutter/test/paint_families_test.dart: paint ` empty inside=false backward=false burst=true
+00:04 +282: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +283: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +284: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +285: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +286: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +287: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +288: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +289: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +290: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +291: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +292: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +293: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +294: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +295: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +296: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +297: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +298: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +299: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +300: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +301: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +302: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +303: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +304: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +305: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +306: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +307: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +308: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +309: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +310: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +311: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +312: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +313: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +314: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +315: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +316: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +317: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +318: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +319: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +320: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +321: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +322: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +323: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +324: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +325: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +326: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +327: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +328: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:04 +329: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +330: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +331: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +332: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +333: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +334: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +335: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +336: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +337: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +338: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +339: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +340: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +341: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +342: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +343: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +344: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +345: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +346: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +347: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:05 +348: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +349: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +350: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +351: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +352: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +353: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +354: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +355: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +356: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +357: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +358: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +359: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +360: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +361: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:06 +362: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +363: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +364: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +365: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +366: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +367: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +368: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +369: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +370: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +371: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +372: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +373: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +374: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +375: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +376: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:07 +377: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: continued Unicode typing crosses input contexts without losing the next key
+00:08 +378: /Users/dan/Coding/sovereign/packages/flark_flutter/test/input_context_test.dart: windowed composition commits and undoes as one exact source edit
+00:08 +379: All tests passed!

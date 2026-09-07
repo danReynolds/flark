@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Flark Tree-sitter worker qualification</title>
+<h1>Tree-sitter worker component probe</h1>
+<p>Real browser worker, source/range parity and changing-source timing. This is not the Flutter editor.</p>
+<p id="status">Running…</p><pre id="result"></pre>
+<script type="module">
+globalThis.flarkTreeSitterBytes = new Uint8Array(await (await fetch('../lib/assets/wasm/flark_tree_sitter.wasm')).arrayBuffer());
+if (new URL(location.href).searchParams.get('runtime') === 'wasm') {
+  const {compile} = await import('../build/browser_probe.mjs');
+  const module = await compile(await (await fetch('../build/browser_probe.wasm')).arrayBuffer());
+  (await module.instantiate({})).invokeMain();
+} else {
+  await import('../build/browser_probe.js');
+}
+</script>

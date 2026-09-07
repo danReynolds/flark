@@ -1,0 +1,29 @@
+{
+  "recordedAt": "2026-09-07T02:54:40.111196+00:00",
+  "machine": "Apple M1 Pro",
+  "baseCommit": "9fcb092f34a1ecd3a2b97d67b9bd3456e04ab410",
+  "dirtyCheckout": true,
+  "sourceVerification": "verification.json",
+  "baselineEngineVerification": "../verification.json",
+  "wasmBytes": 4151230,
+  "wasmGzipBytes": 819869,
+  "wasmSha256": "026cbe2e46f38276f2fe2cf3083a170a184e077466e6e3936da1ffdd04feecfa",
+  "scope": "Local component observations; no Flutter frame, host adoption, physical device or CI qualification.",
+  "timingMethod": "Changing-source synchronous journeys. Worker journeys schedule their next input after an 8 ms timer; callback and timer overhead can lengthen the period. Warm p50/p95, not worst-case bounds. Cold-first-Enter is one observation after ordinary insertion.",
+  "receiptHashes": {
+    "edit-final-js.json": "a7118abfe55ec59d3bdb513e99c439226c5f05f4e8599ed2bd083dbba5a82890",
+    "edit-final-native.json": "1403836851952fdd9822687435d328520fa853a85029f713f55c6bb70eb79667",
+    "stages-final.jsonl": "1c839e03411613e44516ae99de12f652a3cf7bb4fa1e9666784e59677ec6ec3b",
+    "typing-baseline-js.json": "1cfb8fc7d0bb37cfd2f6315d8e5e40316aa938ff4c5ed8eefbde707fdba0f1a3",
+    "typing-baseline-native.json": "3696432c9fc20a3aa8e023ef77aa8b123d0c9bcabcb5ae966f92789e47534f7b",
+    "typing-final-js.json": "dc44fe3c3ffaf318a12cbc5fb8981d5f74bc50ecf4e9b0704e658a3be65b939f",
+    "typing-final-native.json": "5c214354bd8f723bcf67bc5ac7cd16447311038e9b4aaf9ef8cea9de18a87b27",
+    "typing-reuse-js.json": "07ddb5a8cc2e83208442eb3efc80f43236cf94685bc0fb9871b2ad13350314d2",
+    "typing-reuse-native.json": "62239cea85e64f07017fd0a6691595feebaee4efcf34000d564bda7b7c2e77e3",
+    "verification.json": "23fbe9755bbc28cbf29b22f7a5018f4ed54e6b2c3e7b299b31f82855704dc28a",
+    "worker-browser-dart-wasm.json": "dfde6306b76faf93c7c29515cf5974af8a8137f3e7e4173d7e4b758b50c608f8",
+    "worker-browser-js.json": "cff8c13e7b9849ff23320301b5de12ae7e6ca72ef2a60081bb3d75f4210d4ba1",
+    "worker-native.json": "52827881c8147759a3606cce066c4f510675283c4300673a148953ee9c6f496e"
+  },
+  "browserPageSha256": "1879abae90f057c83d8513329e43c9cd8ffe099969b72ebe982093fcc9c236a5"
+}
