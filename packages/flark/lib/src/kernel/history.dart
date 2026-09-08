@@ -7,9 +7,18 @@ import 'document.dart';
 /// the caret or from an owner just emptied by a deletion. Part of the state
 /// history restores: undo brings back the typing intent, not just the text.
 final class PendingStyle {
-  const PendingStyle(this.open, this.close, this.styles);
+  const PendingStyle(
+    this.open,
+    this.close,
+    this.styles, {
+    this.continueAcrossSpaces = false,
+  });
   final String open, close;
   final int styles;
+
+  /// A nonempty span moved its closing syntax before newly typed whitespace.
+  /// Further spaces keep that typing intent; an emptied span still exits it.
+  final bool continueAcrossSpaces;
 }
 
 final class HistoryEntry {

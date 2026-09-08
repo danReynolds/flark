@@ -28,15 +28,31 @@ editor or platform gates below.
 The 2026-09-07 merge review is qualified locally at the owner's request; CI is
 explicitly skipped for this merge. The [merge review](merge_review_2026_09_07.md)
 records independent findings, their regressions, and the candidate's local
-checks. This exception does not close M2b's CI/performance gate or the native,
+checks. The named implementation passes the local kernel performance gate.
+The CI exception does not close M2b's CI gate or the native,
 physical-device, sustained-frame, and release gates below.
 
-M0 and M1 are complete. M2 remains open. The M2a semantic corrections and the
-first Flutter host are implemented and tested locally; M2b named-commit CI and
-M3 native/device qualification are not closed. Current evidence and remaining
-work are in the [implementation review](implementation_review_2026_09_04.md).
-The table below retains the milestone gates, not a claim that later host work
-closes the earlier qualification gates.
+M0 and M1 are complete. The M2 kernel, most of the M3 Flutter surface, and the
+M5 web/WASM implementation are merged on `main` through PR #41. The shared
+fourteen-language service, first-paint tests, and exploratory browser dogfooding
+are implemented too. M2 remains formally open only for its skipped CI check;
+M3 and M5 retain their platform, sustained-use, and performance gates. The
+[merge review](merge_review_2026_09_07.md) supersedes older implementation counts.
+
+The immediate work is to qualify this editor for everyday Flutter use: sustained
+browser editing with real coloring workers, the complete foreground macOS
+profile and native input canaries, then a consuming application's composer and
+viewer. Language expansion is deferred during this checkpoint. Images and
+link/image editing affordances remain product work; `flark_fleury` has not been
+implemented. The table below retains the exit gates while distinguishing them
+from the work already merged.
+
+The [everyday qualification review](everyday_review_2026_09_07.md) records the
+next working-tree checkpoint: actual Tree-sitter services in the native
+harnesses, repaired macOS SDK discovery, sustained browser input/coloring, and
+paragraph reuse for source transitions and reflow. Final native performance and
+attended input/lifecycle qualification remain open; a hidden-window run is
+rejected before measurement.
 
 | Checkpoint | Deliverable | Gate before moving on |
 | --- | --- | --- |

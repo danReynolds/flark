@@ -62,6 +62,11 @@ additional product principles or testing layers.
   rendered unit when moving or deleting across the break.
 - Typing ordinary whitespace after an emptied inline owner exits that owner
   unless a supported construct explicitly retains whitespace.
+- Typing whitespace at an existing emphasis/strong/strike content edge moves
+  that whitespace outside the parser-owned delimiters before publication.
+  Surviving text stays styled and the next word retains the typing context,
+  including after repeated spaces and Undo/Redo. Erasing the separating spaces
+  returns to the surviving owner. Source mode retains literal source editing.
 - Completing source-authored delimiters may atomically turn literal text into a
   rendered construct. The inserted delimiter itself must not flash as an
   unrelated intermediate state.
@@ -126,8 +131,12 @@ the smallest mounted regression case.
   preserving the horizontal goal through short lines. Shift extends the original
   selection base, and the next key edits at the reached line.
 - Pointer placement chooses a parser-authored target using actual glyph
-  geometry. When two semantic contexts share one visual boundary, leading and
-  trailing glyph halves may select different targets.
+  geometry. At the start or end of a word beside whitespace or a row edge,
+  choose that word's formatting, including when the hit falls slightly across
+  the painted caret. Clicking after the following space chooses its own
+  context. Between adjacent non-whitespace glyphs with different formatting,
+  the glyph half distinguishes their targets. Keyboard navigation keeps its
+  separate context-preserving rules and explicit formatting toggles.
 - Selection direction and affinity survive controller, platform-input, layout,
   and paint mapping.
 - Double-click selects the laid-out visible word. Replacement and Undo use
@@ -265,7 +274,7 @@ answer is part of that publication; there is no later parser result to adopt.
 | Inline owners | Emphasis, Strong, Strikethrough, Inline Code, representative nesting, and escaped-literal controls |
 | Commands | Insert, Backspace, Delete, range replacement, Return, selection collapse, Undo, and Redo |
 | Boundaries | Inside, outside, opening edge, closing edge, pointer placement, and arrow traversal |
-| Sequences | Delete-to-empty then type, repeated Return then type, terminal-gap Backspace then type, and delete/insert Undo/Redo |
+| Sequences | Author formatting, partially delete, type repeated spaces, continue a word, erase separators, and Undo/Redo; also delete-to-empty then type, repeated Return then type, terminal-gap Backspace then type |
 | Presentation | Current source, rendered text, style, block presentation, caret, selection, geometry, and no unrelated marker exposure on every paint |
 | Scale | The supported document presets, viewport movement, resize, live/source transitions, adversarial admitted shapes, and rapid input budgets in the dogfood milestone |
 

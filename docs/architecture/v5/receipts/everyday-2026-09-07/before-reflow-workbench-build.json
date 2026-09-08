@@ -1,0 +1,19 @@
+{
+  "gitHead": "a236eb2483d0208ec6ab6b91eae57bada0a7810b",
+  "dirty": true,
+  "sourceManifest": "frame-source-sha256.json",
+  "sha256": {
+    "Contents/Frameworks/App.framework/Versions/A/Resources/Info.plist": "08b03b58e4ff25c66f5e60193b2728ab5246563bc4f253211a5c4835bbc1d333",
+    "Contents/Frameworks/FlutterMacOS.framework/FlutterMacOS": "6e25a873c2a1f12076878d73c03402cefdf8a57eca12369f0815d88c97d734b3",
+    "Contents/Frameworks/FlutterMacOS.framework/Versions/A/FlutterMacOS": "6e25a873c2a1f12076878d73c03402cefdf8a57eca12369f0815d88c97d734b3",
+    "Contents/Frameworks/FlutterMacOS.framework/Versions/A/Resources/Info.plist": "9419bddcc7dcb5c3a3815628af6b84223e3611d7b60281a5744f69d94a7d1e95",
+    "Contents/Frameworks/flark_parse.framework/Versions/A/Resources/Info.plist": "618f2315f81eb936b472eae3d1d6dbbded453c41b0240a55f7439d7e93d537fe",
+    "Contents/Frameworks/flark_tree_sitter.framework/Versions/A/Resources/Info.plist": "05a05e9a67b17edb27dbe332ae2c7945fc4cac187496017f5d9a9a5506655cf9",
+    "Contents/Info.plist": "3b478f8f4edb0c590a476028b6139446e5578d32a724111c68e83ec5f51e0032",
+    "Contents/MacOS/flark_dogfood": "7e376cb11916906cc276f1637fe279d9d3ed03bd2b1f559ca3db56c5d3e8a2e0",
+    "Contents/Resources/shared_preferences_foundation_shared_preferences_foundation.bundle/Contents/Info.plist": "ce40a1ccc858b4044d8a82d9a7b5fd5f5732d7f48f6f04b07174b805ef806247",
+    "Contents/Frameworks/flark_tree_sitter.framework/Versions/A/flark_tree_sitter": "3362f9192ed1220ce3d48d4260e8cc1b3beb7779ace08a7f5b66e0da5eb80f89",
+    "Contents/Frameworks/App.framework/Versions/A/App": "be978f0661b989107eaa101df295bcad2394166e48eed6e38c08057b50f0340b",
+    "Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "96afb368bfa5931197f96b0db7a75dffd158e75ebb5035cb25b307eb0e3cdc6c"
+  }
+}

@@ -97,7 +97,7 @@ class _RowLayout {
   final String text;
   final List<int> styles;
   final TextPainter painter;
-  final double width;
+  double width;
   final String codeInfo;
   Rect rect = Rect.zero;
   Offset origin = Offset.zero;
@@ -139,6 +139,12 @@ class RenderFlarkSurface extends RenderBox
   bool _needsReveal = true;
   double _contentHeight = 0;
   List<_RowLayout> _rows = [];
+  // Keep one layout per mode. A temporary Source excursion must not discard
+  // every shaped live paragraph. Both lists remain bounded by admission/page
+  // limits, and every reused row is checked against the current presentation.
+  List<_RowLayout> _otherRows = [];
+  bool _sourceLayout = false;
+  int _otherColorRevision = -1;
   late FlarkEditorSnapshot _snapshot;
   int _revision = 0;
   double? _layoutWidth;
@@ -194,10 +200,12 @@ class RenderFlarkSurface extends RenderBox
 
   void _clearRows() {
     _layoutContent = null;
-    for (final row in _rows) {
+    for (final row in [..._rows, ..._otherRows]) {
       row.painter.dispose();
     }
     _rows = [];
+    _otherRows = [];
+    _otherColorRevision = -1;
   }
 
   @override
@@ -325,6 +333,17 @@ class RenderFlarkSurface extends RenderBox
   void _prepareRows() {
     _snapshot = controller.editor.snapshot;
     _revision = controller.editor.revision;
+    final sourceMode = _snapshot is FlarkSourceSnapshot;
+    if (sourceMode != _sourceLayout) {
+      final previousRows = _rows;
+      _rows = _otherRows;
+      _otherRows = previousRows;
+      final previousColors = _colorRevision;
+      _colorRevision = _otherColorRevision;
+      _otherColorRevision = previousColors;
+      _sourceLayout = sourceMode;
+      _layoutContent = null;
+    }
     final window = _snapshot is FlarkSourceSnapshot
         ? SourceWindow.at(_snapshot.source, _snapshot.selection.extent)
         : null;
@@ -392,13 +411,18 @@ class RenderFlarkSurface extends RenderBox
       _RowLayout layout;
       if (i < old.length &&
           !(colorsChanged && row?.kind == RowKind.codeBlock) &&
-          old[i].width == width &&
           old[i].text == text &&
           old[i].codeInfo == codeInfo &&
           _samePresentation(old[i].row, row)) {
         layout = old[i];
         layout.row = row;
         layout.sourceStart = row?.sourceStart ?? sourceOffset;
+        if (layout.width != width) {
+          // TextPainter can reflow its existing paragraph at a new width;
+          // rebuilding all spans and shaping again makes a resize expensive.
+          layout.painter.layout(maxWidth: width);
+          layout.width = width;
+        }
       } else {
         final bits = row?.segments.map((s) => s.styles).toList() ?? [0];
         final span = TextSpan(
@@ -547,9 +571,12 @@ class RenderFlarkSurface extends RenderBox
     final p = row.painter.getPositionForOffset(relative);
     if (row.row == null) return row.sourceStart + p.offset;
     final doc = (_snapshot as FlarkLiveSnapshot).document;
-    final candidates = doc.anchorsAt(row.row!.sourceForDisplay(p.offset));
     final caret = row.painter.getOffsetForCaret(p, _caretPrototype);
-    return relative.dx <= caret.dx ? candidates.first : candidates.last;
+    return doc.pointerAnchorAt(
+      row.row!.index,
+      p.offset,
+      leadingHalf: relative.dx > caret.dx,
+    );
   }
 
   _RowLayout _rowAt(Offset point) {

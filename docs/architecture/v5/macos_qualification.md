@@ -29,10 +29,13 @@ p99; an aggregate across easy and hard shapes cannot hide a failing group.
 
 `frame_profile_test.dart` measures 100 insert/delete pairs after 20 warmup pairs
 at the start, largest block and end of each admitted 32 KiB shape: prose, dense
-blocks, lists, tables, nested containers, unique references and Unicode. Its
+blocks, lists, tables, nested containers, unique references, Unicode and code
+regions (24 shape/site cases). The code fixture contains Dart, Ruby and JSON.
+Both production harnesses load the same Tree-sitter service and controller-owned
+color workers as the normal workbench; receipts report their presence. Its
 kernel/parse/projection diagnostics are separate from the complete frame result.
 
-`workbench_profile_test.dart` warms all thirteen cases twice, then measures 100
+`workbench_profile_test.dart` warms all fourteen cases twice, then measures 100
 open/edit/close cycles and 3,000 character edits with 100 ms between edits
 (at least five minutes). It adds the source ceiling and line width, line count,
 block count, run count and nesting violations. The live fixtures start one byte

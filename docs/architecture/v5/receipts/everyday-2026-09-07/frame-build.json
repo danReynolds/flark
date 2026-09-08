@@ -1,0 +1,21 @@
+{
+  "head": "a236eb2483d0208ec6ab6b91eae57bada0a7810b",
+  "dirty": true,
+  "binaries": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Info.plist": "3b478f8f4edb0c590a476028b6139446e5578d32a724111c68e83ec5f51e0032",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "c187623467a0e032c621ed6a5a537f7d42ab89d5effe9e03fa85565b402fa5c2",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/FlutterMacOS.framework/FlutterMacOS": "6e25a873c2a1f12076878d73c03402cefdf8a57eca12369f0815d88c97d734b3",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_tree_sitter.framework/Versions/A/Resources/Info.plist": "05a05e9a67b17edb27dbe332ae2c7945fc4cac187496017f5d9a9a5506655cf9",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/App.framework/Versions/A/Resources/Info.plist": "08b03b58e4ff25c66f5e60193b2728ab5246563bc4f253211a5c4835bbc1d333",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_parse.framework/Versions/A/Resources/Info.plist": "618f2315f81eb936b472eae3d1d6dbbded453c41b0240a55f7439d7e93d537fe",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/FlutterMacOS.framework/Versions/A/FlutterMacOS": "6e25a873c2a1f12076878d73c03402cefdf8a57eca12369f0815d88c97d734b3",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/FlutterMacOS.framework/Versions/A/Resources/Info.plist": "9419bddcc7dcb5c3a3815628af6b84223e3611d7b60281a5744f69d94a7d1e95",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Resources/shared_preferences_foundation_shared_preferences_foundation.bundle/Contents/Info.plist": "ce40a1ccc858b4044d8a82d9a7b5fd5f5732d7f48f6f04b07174b805ef806247"
+  },
+  "cachedAot": {
+    "path": "packages/flark_flutter/example/.dart_tool/flutter_build/c20b02c5f8c12230f16eacb3399687ce/App.framework/App",
+    "sha256": "07404f44acd3dc3ccc1bd02c9389c1a9a0387fbf235bff1c40b33bac0755e928",
+    "provenance": "Original frame-target build cache, identified by kernel stamp input; retained after workbench replaced the installed App.framework.",
+    "targetInput": "/Users/dan/Coding/sovereign/packages/flark_flutter/example/integration_test/frame_profile_test.dart"
+  }
+}

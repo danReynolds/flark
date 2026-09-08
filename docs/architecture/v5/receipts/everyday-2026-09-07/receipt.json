@@ -1,0 +1,87 @@
+{
+  "date": "2026-09-07",
+  "head": "a236eb2483d0208ec6ab6b91eae57bada0a7810b",
+  "branch": "codex/v5-editor-qualification",
+  "dirty": true,
+  "ci": "skipped at owner request",
+  "machine": {
+    "cpu": "Apple M1 Pro",
+    "os": "macOS 26.2",
+    "flutter": "3.44.4",
+    "dart": "3.12.2"
+  },
+  "sourceManifest": "after-source-sha256.json",
+  "currentLocalChecks": {
+    "analysis": [
+      "flark",
+      "flark_tree_sitter",
+      "flark_flutter",
+      "flark_flutter/example"
+    ],
+    "hostTests": 797,
+    "workbenchTests": 27,
+    "chromeRegressionTests": 25,
+    "sustainedBrowserTests": 2,
+    "sustainedBrowserInputs": 3000,
+    "sustainedBrowserInputContexts": 11,
+    "releaseWasmBuild": "passed",
+    "normalMacOSProfileBuild": "passed"
+  },
+  "beforeParagraphReuse": {
+    "frameSweep": "passed 24 cases / 4800 inputs",
+    "frameInsertMaxP99Us": 13725,
+    "frameDeleteMaxP99Us": 12795,
+    "workbenchCycles": 100,
+    "sustainedNativeInputs": 3000,
+    "sustainedInsertP99Us": 15608,
+    "sustainedDeleteP99Us": 15719,
+    "peakRssGrowthBytes": 30441472,
+    "retainedRssGrowthBytes": -8273920,
+    "workbenchStatus": "failed 17 transition/reflow groups"
+  },
+  "afterParagraphReuseNativeProfile": {
+    "status": "rejected before measurement",
+    "reason": "AppLifecycleState.hidden throughout 60-second initial foreground wait"
+  },
+  "handsOnBrowser": {
+    "origin": "http://127.0.0.1:8815/",
+    "logicalViewport": [
+      1280,
+      720
+    ],
+    "checks": [
+      "source/rendered formatting changes",
+      "inspection reflow in both directions",
+      "Ruby colors",
+      "double-space preservation",
+      "fence-scoped Select All and Copy",
+      "Cut then Undo then next input",
+      "exact whole-document clipboard comparison",
+      "reload persistence then next input"
+    ],
+    "consoleErrorsAndWarnings": 0
+  },
+  "nativeCanaries": {
+    "status": "open",
+    "originalDraftRestored": "alpha beta gamma!",
+    "observations": "Rapid double-space discrepancy needs comparison with standard Flutter input. Later observations are inconclusive after UI-tool timeout and loss of usable foreground."
+  },
+  "openGates": [
+    "final foreground macOS workbench and frame profiles",
+    "normal native input/clipboard/composition and process/background lifecycle canaries",
+    "native accessibility-tree errors",
+    "cross-browser and physical-device qualification",
+    "real consumer adoption and daily-use evidence"
+  ],
+  "artifactNotes": [
+    "The failed workbench driver did not replace its JSON result; actual workbench samples are preserved from stdout, not the stale frame-driver JSON.",
+    "The frame sweep predates paragraph reuse; its cached AOT artifact is identified by the build input stamp.",
+    "Browser debug paint timings do not establish release raster latency."
+  ],
+  "ownerPreview": {
+    "origin": "http://127.0.0.1:8813/",
+    "buildPrefix": "/_flark/05cf3a765c6d2199/",
+    "savedDraftPreserved": true,
+    "savedDraftCodeUnits": 1020
+  }
+}

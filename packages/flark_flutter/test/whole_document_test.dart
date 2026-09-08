@@ -5,6 +5,115 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final backend = createParseBackend();
+  for (final delta in [false, true]) {
+    testWidgets(
+      'bold typing, shortening and spaces preserve every paint delta=$delta',
+      (tester) async {
+        final c = FlarkController(FlarkEditor(backend, text: 'say ', caret: 4));
+        final paints = <FlarkPaintObservation>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: FlarkEditorWidget(
+                controller: c,
+                autofocus: true,
+                onPaint: paints.add,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+        Future<void> insert(
+          String text,
+          String expected,
+          String visible,
+          int caret,
+        ) async {
+          final before = c.value;
+          final at = before.selection.extentOffset;
+          final next = before.text.replaceRange(at, at, text);
+          paints.clear();
+          if (delta) {
+            final client =
+                (tester.testTextInput.log
+                            .lastWhere(
+                              (call) => call.method == 'TextInput.setClient',
+                            )
+                            .arguments
+                        as List)
+                    .first;
+            await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+              SystemChannels.textInput.name,
+              SystemChannels.textInput.codec.encodeMethodCall(
+                MethodCall('TextInputClient.updateEditingStateWithDeltas', [
+                  client,
+                  {
+                    'deltas': [
+                      {
+                        'oldText': before.text,
+                        'deltaText': text,
+                        'deltaStart': at,
+                        'deltaEnd': at,
+                        'selectionBase': at + text.length,
+                        'selectionExtent': at + text.length,
+                        'selectionAffinity': 'TextAffinity.downstream',
+                        'selectionIsDirectional': false,
+                        'composingBase': -1,
+                        'composingExtent': -1,
+                      },
+                    ],
+                  },
+                ]),
+              ),
+              (_) {},
+            );
+          } else {
+            tester.testTextInput.updateEditingValue(
+              TextEditingValue(
+                text: next,
+                selection: TextSelection.collapsed(offset: at + text.length),
+              ),
+            );
+          }
+          await tester.pump();
+          expect(c.text, expected);
+          expect(c.editor.selection.extent, caret);
+          expect(c.editor.typingContext, Style.strong);
+          expect(paints, isNotEmpty);
+          for (final p in paints) {
+            expect(p.rows, [visible]);
+            expect(p.styles.single, contains(Style.strong));
+            expect(p.caretSource, caret);
+            expect(p.revision, c.editor.revision);
+          }
+        }
+
+        var word = '';
+        for (final char in 'what'.split('')) {
+          word += char;
+          await insert(char, 'say **$word**', 'say $word', 6 + word.length);
+        }
+        paints.clear();
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await tester.pump();
+        expect(c.text, 'say **wha**');
+        expect(paints, isNotEmpty);
+        for (final p in paints) {
+          expect(p.rows, ['say wha']);
+          expect(p.caretSource, 9);
+        }
+        await insert(' ', 'say **wha** ', 'say wha ', 12);
+        await insert(' ', 'say **wha**  ', 'say wha  ', 13);
+        await insert('x', 'say **wha**  **x**', 'say wha  x', 16);
+        await insert('y', 'say **wha**  **xy**', 'say wha  xy', 17);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      },
+    );
+  }
   testWidgets('Option Backspace deletes a word and keeps the next key', (
     tester,
   ) async {

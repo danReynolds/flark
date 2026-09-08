@@ -94,7 +94,8 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
   An explicit noncollapsed whole-document selection retains `0..source.length`
   so Select All includes block syntax; collapsing it restores a legal caret.
   Movement keeps the context it came from; row edges take the outermost
-  anchor; pointer placement uses the glyph half.
+  anchor; pointer placement takes the word's context at an edge beside
+  whitespace, and uses the glyph half between adjacent non-whitespace glyphs.
 - The extraction derives what comrak does not expose and validates each
   derivation against comrak's own output; `native/flark_parse/REGISTER.md`
   lists every known comrak quirk and its correction.

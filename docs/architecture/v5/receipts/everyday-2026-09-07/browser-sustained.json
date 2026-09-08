@@ -1,0 +1,24 @@
+[
+  {
+    "label": "Automatic Ruby",
+    "inputs": 1500,
+    "inputContexts": 5,
+    "elapsedUs": 179725200,
+    "callbackP99Us": 4401,
+    "firstPaintObservedP99Us": 32799,
+    "colorRevisions": 1472,
+    "restoredExactSource": true,
+    "evidence": "debug browser transport and actual paint; not release raster timing"
+  },
+  {
+    "label": "large Dart",
+    "inputs": 1500,
+    "inputContexts": 6,
+    "elapsedUs": 184938000,
+    "callbackP99Us": 5900,
+    "firstPaintObservedP99Us": 33300,
+    "colorRevisions": 1486,
+    "restoredExactSource": true,
+    "evidence": "debug browser transport and actual paint; not release raster timing"
+  }
+]

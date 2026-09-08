@@ -24,6 +24,10 @@ const profileCycles = <String, String>{
   'reference':
       '[note__index__]: https://example.com/note/__index__\n\nA [reference][note__index__] and another [reference][note__index__].\n\n',
   'unicode': 'Café 👩‍👩‍👧‍👦 你好 **words** and a little more text.\n\n',
+  'code':
+      '```dart\nfinal answer = 42;\nprint(answer);\n```\n\n'
+      '```ruby\ndef hello\n  puts "hello"\nend\n```\n\n'
+      '```json\n{"ready": true, "count": 3}\n```\n\n',
 };
 
 /// Reach the byte boundary while retaining the densest repetition admitted by

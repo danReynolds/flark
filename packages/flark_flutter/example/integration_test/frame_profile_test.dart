@@ -8,6 +8,7 @@ import 'package:flark_dogfood/qualification.dart';
 import 'package:flark_dogfood/main.dart' show dense, DogfoodApp;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/code.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +26,8 @@ void main() {
     'input to actual raster across admitted document shapes',
     (tester) async {
       final backend = await loadBackend();
+      final code = await FlarkTreeSitter.load();
+      addTearDown(code.dispose);
       const appMode = bool.fromEnvironment('FLARK_PROFILE_APP');
       SharedPreferences? preferences;
       if (appMode) {
@@ -116,6 +119,7 @@ void main() {
           var c = FlarkController(
             FlarkEditor(
               backend,
+              codeEditing: code,
               text: text,
               caret: text.length,
               syncLimit: bytes,
@@ -161,6 +165,7 @@ void main() {
             await tester.pumpWidget(
               DogfoodApp(
                 backend: backend,
+                code: code,
                 preferences: preferences,
                 onPaint: paints.add,
               ),
@@ -294,6 +299,8 @@ void main() {
             'site': site,
             'bounded': bounded,
             'productionWorkbench': appMode,
+            'treeSitterEditing': true,
+            'treeSitterColors': c.codeColors != null,
             'blocks': c.editor.document.model.blockCount,
             'runs': c.editor.document.model.runCount,
             'maxRowCodeUnits': c.editor.projection.rows

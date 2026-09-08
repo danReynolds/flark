@@ -8,6 +8,7 @@ import 'package:flark_dogfood/backend.dart';
 import 'package:flark_dogfood/main.dart';
 import 'package:flark_dogfood/qualification.dart';
 import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/code.dart';
 // Qualification observes the host's bounded page without expanding its API.
 // ignore: implementation_imports
 import 'package:flark_flutter/src/source_window.dart';
@@ -47,6 +48,7 @@ int workbenchOpeningCaret(String shape) => switch (shape) {
   'dense' => 3,
   'list' || 'table' => 2,
   'nested' => 16,
+  'code' => 8,
   _ => 0,
 };
 
@@ -57,6 +59,8 @@ void main() {
     'production workbench opening, boundaries and sustained use',
     (tester) async {
       final backend = _CountedBackend(await loadBackend());
+      final code = await FlarkTreeSitter.load();
+      addTearDown(code.dispose);
       final sources = workbenchProfileSources(backend);
       SharedPreferences.setPrefix('flark.workbenchProfile.');
       final preferences = await SharedPreferences.getInstance();
@@ -97,6 +101,7 @@ void main() {
       Future<void> mount() => tester.pumpWidget(
         DogfoodApp(
           backend: backend,
+          code: code,
           preferences: preferences,
           onPaint: paints.add,
         ),
@@ -414,6 +419,8 @@ void main() {
       }
       final report = <String, Object>{
         'productionWorkbench': true,
+        'treeSitterEditing': true,
+        'treeSitterColors': true,
         'lifecycleTransitions': transitions,
         'logicalViewport': {
           'width':

@@ -28,18 +28,43 @@ void _navigationCases(FlarkParseBackend backend) {
       );
     });
 
-    test('pointer placement uses the glyph half at a boundary', () {
+    test('pointer placement takes the word context at either visible edge', () {
       final session = _Session(backend, source: '**bold** x');
       session.act(
         const PlaceCaret(0, 4, leadingHalf: false),
         anchor: 6,
         context: Style.strong,
       );
-      session.act(const PlaceCaret(0, 4), anchor: 8, context: 0);
+      session.act(
+        const PlaceCaret(0, 4),
+        applied: false,
+        anchor: 6,
+        context: Style.strong,
+      );
+      session.act(
+        const InsertText('x'),
+        source: '**boldx** x',
+        rows: ['boldx x'],
+        context: Style.strong,
+      );
       session.act(const PlaceCaret(0, 0), anchor: 2, context: Style.strong);
       session.act(
         const PlaceCaret(0, 0, leadingHalf: false),
-        anchor: 0,
+        applied: false,
+        anchor: 2,
+        context: Style.strong,
+      );
+      session.act(
+        const InsertText('y'),
+        source: '**yboldx** x',
+        rows: ['yboldx x'],
+        context: Style.strong,
+      );
+      session.act(const PlaceCaret(0, 7), anchor: 11, context: 0);
+      session.act(
+        const InsertText('z'),
+        source: '**yboldx** zx',
+        rows: ['yboldx zx'],
         context: 0,
       );
     });

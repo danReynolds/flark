@@ -28,6 +28,101 @@ void main() {
       ],
     );
   });
+  test(
+    'browser bold authoring, shortening, spaces and continued typing',
+    () async {
+      final c = FlarkController(FlarkEditor(backend, text: 'say ', caret: 4));
+      final focus = FocusNode();
+      final paints = <FlarkPaintObservation>[];
+      addTearDown(() async {
+        runApp(const SizedBox());
+        await binding.endOfFrame;
+        c.dispose();
+        focus.dispose();
+      });
+      runApp(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(
+              controller: c,
+              focusNode: focus,
+              autofocus: true,
+              onPaint: paints.add,
+            ),
+          ),
+        ),
+      );
+      await binding.endOfFrame;
+      await Future<void>.delayed(Duration.zero);
+      focus.requestFocus();
+      await binding.endOfFrame;
+      final input = web.document.querySelector('textarea.flt-text-editing')!;
+      expect(await pressPrimaryKey(input, 'KeyB', 'b'), isTrue);
+      for (final (character, source, visible, caret) in [
+        ('w', 'say **w**', 'say w', 7),
+        ('h', 'say **wh**', 'say wh', 8),
+        ('a', 'say **wha**', 'say wha', 9),
+        ('t', 'say **what**', 'say what', 10),
+        ('', 'say **wha**', 'say wha', 9),
+        (' ', 'say **wha** ', 'say wha ', 12),
+        (' ', 'say **wha**  ', 'say wha  ', 13),
+        ('x', 'say **wha**  **x**', 'say wha  x', 16),
+        ('y', 'say **wha**  **xy**', 'say wha  xy', 17),
+      ]) {
+        final input =
+            web.document.querySelector('textarea.flt-text-editing')!
+                as web.HTMLTextAreaElement;
+        final insert = character.isNotEmpty;
+        final at = input.selectionStart;
+        final end = input.selectionEnd;
+        final type = insert ? 'insertText' : 'deleteContentBackward';
+        input.dispatchEvent(
+          web.InputEvent(
+            'beforeinput',
+            web.InputEventInit(
+              bubbles: true,
+              cancelable: true,
+              inputType: type,
+              data: insert ? character : null,
+            ),
+          ),
+        );
+        input.value = input.value.replaceRange(
+          insert ? at : at - 1,
+          end,
+          character,
+        );
+        final next = at + (insert ? character.length : -1);
+        input.setSelectionRange(next, next);
+        paints.clear();
+        input.dispatchEvent(
+          web.InputEvent(
+            'input',
+            web.InputEventInit(
+              bubbles: true,
+              inputType: type,
+              data: insert ? character : null,
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await binding.endOfFrame;
+        expect(c.text, source);
+        expect(c.editor.selection.extent, caret);
+        expect(c.editor.typingContext, Style.strong);
+        expect(paints, isNotEmpty);
+        for (final paint in paints) {
+          expect(paint.rows, [visible]);
+          expect(paint.styles.single, contains(Style.strong));
+          expect(paint.caretSource, caret);
+          expect(identical(paint.snapshot, c.editor.snapshot), isTrue);
+        }
+      }
+      expect(c.command(const Undo()), isTrue);
+      expect(c.command(const Redo()), isTrue);
+      expect(c.text, 'say **wha**  **xy**');
+    },
+  );
   for (final hasBody in [true, false]) {
     test('browser literal fence paste, existing body: $hasBody', () async {
       final source = '```text\n${hasBody ? 'here\n' : ''}```\n\n# after';

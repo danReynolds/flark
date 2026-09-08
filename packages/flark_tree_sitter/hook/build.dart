@@ -211,7 +211,14 @@ class _Plan {
       };
       return t == null
           ? null
-          : _Plan(t, 'libflark_tree_sitter.dylib', () => const {});
+          : _Plan(
+              t,
+              'libflark_tree_sitter.dylib',
+              () => {
+                ..._appleEnvironment('macosx', t),
+                'MACOSX_DEPLOYMENT_TARGET': '${code.macOS.targetVersion}.0',
+              },
+            );
     }
     if (os == OS.linux) {
       final t = switch (arch) {

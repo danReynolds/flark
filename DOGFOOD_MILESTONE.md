@@ -145,9 +145,11 @@ when the OS route mattered.
 
 Current implementation and local evidence are in the
 [2026-09-04 review](docs/architecture/v5/implementation_review_2026_09_04.md).
-The new host and workbench pass local functional/paint checks and build on
-macOS and Flutter web/Wasm. The latest host suite has 110 passing tests and the
-workbench has 25, with three additional real-browser transport tests. Attended
+The merged V5 host and workbench pass local functional/paint checks and build on
+macOS and Flutter web/Wasm. The September 7 merge passes 494 core, 796 host,
+25 workbench, and 25 real-browser tests, plus 307 Tree-sitter Dart tests and
+native/WASM parity. See the [merge review](docs/architecture/v5/merge_review_2026_09_07.md)
+for source identity and proof boundaries. Attended
 native input and the sealed production performance/lifecycle profile remain
 open. A resumed foreground sweep completed with five frame-budget failures;
 the longer workload lost foreground during sustained typing. After unlocking,
