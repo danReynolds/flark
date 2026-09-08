@@ -1,6 +1,6 @@
 //! Flat render-model extraction over an unmodified comrak AST.
 //!
-//! See `schema/render_model_v3.json` and `SCHEMA.md` for the layout. The
+//! See `schema/render_model_v4.json` and `SCHEMA.md` for the layout. The
 //! extraction walks the tree once, iteratively, derives what comrak does not
 //! expose (per-line content ranges, reference definitions), corrects the two
 //! situations where comrak's inline positions are known to be off, and in
@@ -1001,7 +1001,8 @@ impl<'a> Extractor<'a> {
                     (run_kind::CODE, cs, ce)
                 }
             }
-            NodeValue::Link(_) => {
+            NodeValue::Link(link) => {
+                self.resolved_resource(&mut rec, &link.url, &link.title);
                 if s < e && bytes[s] == b'[' {
                     let (cs, ce) = { let (a, b) = self.children_span(node, cell, shift); if a == 0 && b == 0 { (s + 1, s + 1) } else { (a, b) } };
                     self.link_aux(&mut rec, ce, e);
@@ -1016,7 +1017,8 @@ impl<'a> Extractor<'a> {
                     (run_kind::AUTOLINK, cs, ce)
                 }
             }
-            NodeValue::Image(_) => {
+            NodeValue::Image(link) => {
+                self.resolved_resource(&mut rec, &link.url, &link.title);
                 if s < e && bytes[s] == b'!' {
                     let (cs, ce) = { let (a, b) = self.children_span(node, cell, shift); if a == 0 && b == 0 { (s + 2, s + 2) } else { (a, b) } };
                     self.link_aux(&mut rec, ce, e);
@@ -1112,6 +1114,13 @@ impl<'a> Extractor<'a> {
             rec[run::AUX2] = s as u32; rec[run::AUX3] = e as u32; rec[run::FLAGS] |= 2;
         }
         Some(source_offsets[p] + 1)
+    }
+
+    fn resolved_resource(&mut self, rec: &mut RunRec, destination: &str, title: &str) {
+        let (offset, length) = self.push_string(destination);
+        rec[run::DESTINATION_OFFSET] = offset; rec[run::DESTINATION_LENGTH] = length;
+        let (offset, length) = self.push_string(title);
+        rec[run::TITLE_OFFSET] = offset; rec[run::TITLE_LENGTH] = length;
     }
 
     fn link_aux(&self, rec: &mut RunRec, ce: usize, e: usize) {

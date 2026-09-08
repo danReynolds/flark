@@ -114,6 +114,10 @@ String describeCommand(FlarkCommand command) => switch (command) {
   SetCodeLanguage(:final language) => 'SetCodeLanguage($language)',
   Indent() => 'Indent()',
   Outdent() => 'Outdent()',
+  SetLink(:final destination) => 'SetLink(${jsonEncode(destination)})',
+  SetImage(:final destination) => 'SetImage(${jsonEncode(destination)})',
+  RemoveLink() => 'RemoveLink()',
+  RemoveImage() => 'RemoveImage()',
 };
 
 void main() {

@@ -23,3 +23,4 @@ export 'src/kernel/editor.dart'
         FlarkRejection;
 export 'src/kernel/history.dart' show History, HistoryEntry, PendingStyle;
 export 'src/kernel/projection.dart';
+export 'src/kernel/resource.dart';

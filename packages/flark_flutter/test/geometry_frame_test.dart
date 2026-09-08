@@ -111,7 +111,7 @@ void main() {
       final paint = paints.first;
       expect(paint.snapshot.source, edited);
       expect(paint.rows, ['Heading', '', 'word and another']);
-      expect(paint.resolvedStyles.first.single.fontSize, 17);
+      expect(paint.resolvedStyles.first.single.fontSize, 16);
       expect(paint.resolvedStyles.last.first.fontStyle, FontStyle.italic);
       expect(paint.resolvedStyles.last.last.fontWeight, FontWeight.w700);
       expect(paint.caretSource, edited.length);

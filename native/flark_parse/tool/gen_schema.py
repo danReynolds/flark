@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Derive Rust constants, Dart constants, and SCHEMA.md from schema/render_model_v3.json."""
+"""Derive Rust constants, Dart constants, and SCHEMA.md from schema/render_model_v4.json."""
 import json, pathlib, sys
 root = pathlib.Path(__file__).resolve().parent.parent
-schema_file = 'render_model_v3.json'
+schema_file = 'render_model_v4.json'
 schema = json.loads((root / 'schema' / schema_file).read_text())
 magic = int.from_bytes(schema['magic'].encode(), 'little')
 

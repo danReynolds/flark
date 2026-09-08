@@ -4,12 +4,14 @@ import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
 import 'package:flark/render_model.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'controller.dart';
-import 'code_font.dart';
+import 'theme.dart';
 import 'source_window.dart';
+import 'image_previews.dart';
 
 /// Emitted from actual paint, after all visible rows and the caret are drawn.
 /// Tests can distinguish a current, styled frame from a settled text transcript.
@@ -23,8 +25,9 @@ class FlarkPaintObservation {
     this.caretSource,
     this.selectionRects,
     this.resolvedStyles,
-    this.frameNumber,
-  );
+    this.frameNumber, {
+    this.images = const [],
+  });
   final int revision;
   final FlarkEditorSnapshot snapshot;
   final List<String> rows;
@@ -34,37 +37,65 @@ class FlarkPaintObservation {
   final Rect? caret;
   final int caretSource;
   final List<Rect> selectionRects;
+  final List<FlarkImageObservation> images;
+}
+
+class FlarkImageObservation {
+  const FlarkImageObservation(
+    this.sourceStart,
+    this.destination,
+    this.rect,
+    this.state,
+  );
+  final int sourceStart;
+  final String destination, state;
+  final Rect rect;
 }
 
 class FlarkSurface extends LeafRenderObjectWidget {
   const FlarkSurface({
     super.key,
     required this.controller,
-    required this.style,
+    required this.theme,
+    this.textScaler = TextScaler.noScaling,
     required this.focused,
     required this.viewportHeight,
     required this.scrollOffset,
     this.readOnly = false,
     this.onPaint,
+    this.onFocus,
     this.revealDuringLayout,
+    this.baseUri,
+    this.imageProvider,
+    this.showImagePreviews = true,
   });
+  final Uri? baseUri;
+  final FlarkImageProvider? imageProvider;
+  final bool showImagePreviews;
   final FlarkController controller;
-  final TextStyle style;
+  final FlarkThemeData theme;
+  final TextScaler textScaler;
   final bool focused, readOnly;
   final double viewportHeight, scrollOffset;
   final ValueChanged<FlarkPaintObservation>? onPaint;
+  final VoidCallback? onFocus;
   final double Function(Rect, double, double)? revealDuringLayout;
   @override
   RenderFlarkSurface createRenderObject(BuildContext context) =>
       RenderFlarkSurface(
         controller,
-        style,
+        theme,
+        textScaler,
         focused,
         readOnly,
         viewportHeight,
         scrollOffset,
         onPaint,
         revealDuringLayout,
+        onFocus: onFocus,
+        baseUri: baseUri,
+        imageProvider: imageProvider,
+        showImagePreviews: showImagePreviews,
       );
   @override
   void updateRenderObject(
@@ -72,13 +103,18 @@ class FlarkSurface extends LeafRenderObjectWidget {
     RenderFlarkSurface renderObject,
   ) => renderObject.update(
     controller,
-    style,
+    theme,
+    textScaler,
     focused,
     readOnly,
     viewportHeight,
     scrollOffset,
     onPaint,
     revealDuringLayout,
+    onFocus: onFocus,
+    baseUri: baseUri,
+    imageProvider: imageProvider,
+    showImagePreviews: showImagePreviews,
   );
 }
 
@@ -102,6 +138,7 @@ class _RowLayout {
   Rect rect = Rect.zero;
   Offset origin = Offset.zero;
   double indent = 22;
+  List<({InlineResource resource, Rect rect})> images = [];
 }
 
 /// Uses the same hit test as checkbox activation, including after scrolling or
@@ -118,20 +155,33 @@ class RenderFlarkSurface extends RenderBox
     with RelayoutWhenSystemFontsChangeMixin {
   RenderFlarkSurface(
     this.controller,
-    this.style,
+    this.theme,
+    this.textScaler,
     this.focused,
     this.readOnly,
     this.viewportHeight,
     this.scrollOffset,
     this.onPaint,
-    this.revealDuringLayout,
-  ) {
+    this.revealDuringLayout, {
+    this.onFocus,
+    Uri? baseUri,
+    FlarkImageProvider? imageProvider,
+    this.showImagePreviews = true,
+  }) {
+    _images.configure(baseUri, imageProvider);
     _snapshot = controller.editor.snapshot;
     controller.addListener(_changed);
     controller.codeColors?.addListener(_colorsChanged);
   }
+  late final _images = SurfaceImageCache(markNeedsPaint);
+  bool showImagePreviews;
   FlarkController controller;
-  TextStyle style;
+  FlarkThemeData theme;
+  TextScaler textScaler;
+  TextStyle get style => theme.styles[FlarkTextRole.body]!;
+  double metric(FlarkMetric role) => theme.metrics[role]!;
+  Color color(FlarkColorRole role) => theme.colors[role]!;
+  VoidCallback? onFocus;
   bool focused, readOnly;
   double viewportHeight, scrollOffset;
   ValueChanged<FlarkPaintObservation>? onPaint;
@@ -150,31 +200,55 @@ class RenderFlarkSurface extends RenderBox
   double? _layoutWidth;
   Object? _layoutContent;
   int _colorRevision = -1;
-  static const _padding = 16.0;
+  double get _padding => metric(FlarkMetric.documentPadding);
   static const _caretPrototype = Rect.fromLTWH(0, 0, 1.5, 22);
 
   void update(
     FlarkController next,
-    TextStyle nextStyle,
+    FlarkThemeData nextTheme,
+    TextScaler nextScaler,
     bool focus,
     bool readonly,
     double height,
     double scroll,
     ValueChanged<FlarkPaintObservation>? observer,
-    double Function(Rect, double, double)? reveal,
-  ) {
+    double Function(Rect, double, double)? reveal, {
+    VoidCallback? onFocus,
+    Uri? baseUri,
+    FlarkImageProvider? imageProvider,
+    bool showImagePreviews = true,
+  }) {
+    this.onFocus = onFocus;
+    _images.configure(baseUri, imageProvider);
+    if (this.showImagePreviews != showImagePreviews) {
+      this.showImagePreviews = showImagePreviews;
+      _clearRows();
+    }
     if (next != controller) {
       controller.removeListener(_changed);
       controller.codeColors?.removeListener(_colorsChanged);
       _needsReveal = true;
+      _images.clear();
       controller = next;
       controller.addListener(_changed);
       controller.codeColors?.addListener(_colorsChanged);
       _clearRows();
     }
-    if (nextStyle != style) {
-      style = nextStyle;
+    if (nextTheme != theme || nextScaler != textScaler) {
+      final geometryChanged =
+          nextScaler != textScaler ||
+          !mapEquals(nextTheme.metrics, theme.metrics) ||
+          {...theme.styles.keys, ...nextTheme.styles.keys}.any(
+            (role) =>
+                (theme.styles[role] ?? const TextStyle()).compareTo(
+                  nextTheme.styles[role] ?? const TextStyle(),
+                ) ==
+                RenderComparison.layout,
+          );
+      theme = nextTheme;
+      textScaler = nextScaler;
       _clearRows();
+      if (geometryChanged) _needsReveal = true;
     }
     if ((!focused && focus) || viewportHeight != height) _needsReveal = true;
     focused = focus;
@@ -221,67 +295,90 @@ class RenderFlarkSurface extends RenderBox
     controller.removeListener(_changed);
     controller.codeColors?.removeListener(_colorsChanged);
     _clearRows();
+    _images.clear();
     super.dispose();
   }
 
   TextStyle _rowStyle(ProjectedRow? row) {
     var s = style;
+    if (row?.shells.any((s) => s.kind == ShellKind.blockQuote) == true) {
+      s = s.merge(theme.styles[FlarkTextRole.quote]);
+    }
     if (row?.kind == RowKind.heading) {
-      s = s.copyWith(
-        fontSize:
-            (style.fontSize ?? 17) * (1.75 - (row!.headingLevel - 1) * .12),
-        fontWeight: FontWeight.w700,
-        height: 1.35,
-      );
+      s = s
+          .copyWith(
+            fontSize: style.fontSize! * (1.75 - (row!.headingLevel - 1) * .12),
+            fontWeight: FontWeight.w700,
+            height: 1.35,
+          )
+          .merge(
+            theme.styles[FlarkTextRole.values[FlarkTextRole.heading1.index +
+                row.headingLevel -
+                1]],
+          );
     }
     if (row?.kind == RowKind.codeBlock || controller.editor.sourceMode) {
-      s = s.copyWith(
-        fontFamily: flarkCodeFontFamily,
-        fontSize: (style.fontSize ?? 17) * .9,
-      );
+      s = s
+          .copyWith(fontSize: style.fontSize! * .9)
+          .merge(theme.styles[FlarkTextRole.codeBlock]);
     }
-    if (row?.header == true) s = s.copyWith(fontWeight: FontWeight.w700);
+    if (row?.header == true) {
+      s = s.merge(theme.styles[FlarkTextRole.tableHeader]);
+    }
     return s;
   }
 
-  TextStyle _inlineStyle(TextStyle base, int bits) => base.copyWith(
-    fontWeight: bits & Style.strong != 0 ? FontWeight.w700 : base.fontWeight,
-    fontStyle: bits & Style.emphasis != 0 ? FontStyle.italic : base.fontStyle,
-    fontFamily: bits & Style.code != 0 ? flarkCodeFontFamily : base.fontFamily,
-    backgroundColor: bits & Style.code != 0 ? const Color(0xffeceff4) : null,
-    color: bits & Style.link != 0 ? const Color(0xff2864c7) : base.color,
-    decoration: bits & Style.strikethrough != 0
-        ? TextDecoration.lineThrough
-        : bits & Style.link != 0
-        ? TextDecoration.underline
-        : null,
-  );
+  TextStyle _inlineStyle(TextStyle base, int bits) {
+    var result = base;
+    for (final (bit, role) in const [
+      (Style.strong, FlarkTextRole.strong),
+      (Style.emphasis, FlarkTextRole.emphasis),
+      (Style.code, FlarkTextRole.inlineCode),
+      (Style.strikethrough, FlarkTextRole.strikethrough),
+      (Style.link, FlarkTextRole.link),
+    ]) {
+      if (bits & bit == 0) continue;
+      final addition = theme.styles[role];
+      final decorations = [
+        if (result.decoration != null) result.decoration!,
+        if (addition?.decoration != null) addition!.decoration!,
+      ];
+      result = result.merge(addition);
+      if (decorations.isNotEmpty) {
+        result = result.copyWith(
+          decoration: TextDecoration.combine(decorations),
+        );
+      }
+    }
+    return result;
+  }
 
-  Color? _codeColor(String? kind) => switch (kind) {
-    'keyword' || 'selector-tag' || 'meta' => const Color(0xff8250df),
-    'string' ||
-    'regexp' ||
-    'attr' ||
-    'selector-attr' => const Color(0xff116329),
-    'number' ||
-    'constant' ||
-    'boolean' ||
-    'literal' ||
-    'built_in' => const Color(0xff0550ae),
-    'comment' || 'doctag' => const Color(0xff6e7781),
-    'title' ||
-    'function' ||
-    'constructor' ||
-    'type' ||
-    'class' => const Color(0xff953800),
-    'variable' ||
-    'property' ||
-    'tag' ||
-    'params' ||
-    'attribute' ||
-    'selector-class' => const Color(0xff9a6700),
-    _ => null,
-  };
+  Color? _codeColor(String? kind) =>
+      theme.syntaxColors[switch (kind) {
+        'keyword' || 'selector-tag' || 'meta' => FlarkSyntaxRole.keyword,
+        'string' ||
+        'regexp' ||
+        'attr' ||
+        'selector-attr' => FlarkSyntaxRole.string,
+        'number' ||
+        'constant' ||
+        'boolean' ||
+        'literal' ||
+        'built_in' => FlarkSyntaxRole.number,
+        'comment' || 'doctag' => FlarkSyntaxRole.comment,
+        'title' ||
+        'function' ||
+        'constructor' ||
+        'type' ||
+        'class' => FlarkSyntaxRole.function,
+        'variable' ||
+        'property' ||
+        'tag' ||
+        'params' ||
+        'attribute' ||
+        'selector-class' => FlarkSyntaxRole.variable,
+        _ => null,
+      }];
 
   bool _samePresentation(ProjectedRow? before, ProjectedRow? after) {
     if (before == null || after == null) return before == after;
@@ -370,6 +467,17 @@ class RenderFlarkSurface extends RenderBox
     final projected = _snapshot is FlarkLiveSnapshot
         ? (_snapshot as FlarkLiveSnapshot).projection.rows
         : null;
+    final imageRows = <int, List<InlineResource>>{};
+    if (showImagePreviews && _snapshot is FlarkLiveSnapshot) {
+      final doc = (_snapshot as FlarkLiveSnapshot).document;
+      for (final resource in doc.images) {
+        if (resource.isImage) {
+          (imageRows[doc.displayOf(resource.contentStart).row] ??= []).add(
+            resource,
+          );
+        }
+      }
+    }
     var sourceOffset = window?.start ?? 0, y = _padding;
     var tableRow = -1, tableTop = 0.0, tableHeight = 0.0;
     for (var i = 0; i < (projected?.length ?? sourceLines!.length); i++) {
@@ -384,15 +492,25 @@ class RenderFlarkSurface extends RenderBox
               .length ??
           0;
       final indent = depth == 0
-          ? 22.0
-          : math.min(22.0, math.max(0.0, available - 40) / depth);
+          ? metric(FlarkMetric.listIndent)
+          : math.min(
+              metric(FlarkMetric.listIndent),
+              math.max(0.0, available - 40) / depth,
+            );
+      final tablePadding = math.min(
+        metric(FlarkMetric.tablePadding),
+        available / 4,
+      );
+      final codePadding = row?.kind == RowKind.codeBlock
+          ? math.min(metric(FlarkMetric.codePadding), available / 4)
+          : 0.0;
       var x = _padding + depth * indent;
       var width = math.max(24.0, available - depth * indent);
       if (row?.kind == RowKind.tableCell) {
         final model = (_snapshot as FlarkLiveSnapshot).document.model;
         final columns = model.block(row!.tableBlock, BlockField.attr0);
-        width = math.max(24, available / columns - 16);
-        x = _padding + row.column * (width + 16) + 8;
+        width = math.max(24, available / columns - 2 * tablePadding);
+        x = _padding + row.column * (width + 2 * tablePadding) + tablePadding;
         if (tableRow != row.tableRowBlock) {
           y += tableHeight;
           tableTop = y;
@@ -404,6 +522,8 @@ class RenderFlarkSurface extends RenderBox
         tableHeight = 0;
         tableRow = -1;
       }
+      x += codePadding;
+      width = math.max(24.0, width - 2 * codePadding);
       final base = _rowStyle(row);
       final codeInfo = row?.fenced == true
           ? _snapshot.source.substring(row!.codeInfoStart, row.codeInfoEnd)
@@ -460,6 +580,7 @@ class RenderFlarkSurface extends RenderBox
         final painter = TextPainter(
           text: span,
           textDirection: TextDirection.ltr,
+          textScaler: textScaler,
           textAlign: row?.alignment == 2
               ? TextAlign.center
               : row?.alignment == 3
@@ -478,22 +599,59 @@ class RenderFlarkSurface extends RenderBox
         if (i < old.length) old[i].painter.dispose();
       }
       final height = math.max(
-        base.fontSize! * (base.height ?? 1.4),
+        textScaler.scale(base.fontSize!) * (base.height ?? 1.4),
         layout.painter.height,
       );
       final top = row?.kind == RowKind.tableCell ? tableTop : y;
+      final images = imageRows[i] ?? const <InlineResource>[];
+      // Stable slots keep async decoding out of caret/layout transactions.
+      layout.images = [
+        for (var n = 0; n < images.length; n++)
+          (
+            resource: images[n],
+            rect: Rect.fromLTWH(
+              x,
+              top +
+                  height +
+                  2 * codePadding +
+                  metric(FlarkMetric.imageSpacing) +
+                  n *
+                      (metric(FlarkMetric.imageHeight) +
+                          metric(FlarkMetric.imageSpacing)),
+              math.min(width, metric(FlarkMetric.imageMaxWidth)),
+              metric(FlarkMetric.imageHeight),
+            ),
+          ),
+      ];
+      final spacing = metric(
+        row?.kind == RowKind.heading
+            ? FlarkMetric.headingSpacing
+            : FlarkMetric.rowSpacing,
+      );
+      final totalHeight =
+          height +
+          spacing +
+          2 * codePadding +
+          images.length *
+              (metric(FlarkMetric.imageHeight) +
+                  metric(FlarkMetric.imageSpacing));
+
       layout.indent = indent;
-      layout.origin = Offset(x, top + 4);
+      layout.origin = Offset(
+        x,
+        top + math.min(metric(FlarkMetric.rowInset), spacing / 2) + codePadding,
+      );
       layout.rect = Rect.fromLTWH(
-        x - (row?.kind == RowKind.tableCell ? 8 : 0),
+        x - (row?.kind == RowKind.tableCell ? tablePadding : codePadding),
         top,
-        width + (row?.kind == RowKind.tableCell ? 16 : 0),
-        height + 8,
+        width +
+            2 * (row?.kind == RowKind.tableCell ? tablePadding : codePadding),
+        totalHeight,
       );
       if (row?.kind == RowKind.tableCell) {
-        tableHeight = math.max(tableHeight, height + 8);
+        tableHeight = math.max(tableHeight, totalHeight);
       } else {
-        y += height + 8;
+        y += totalHeight;
       }
       next.add(layout);
       sourceOffset += (sourceLines?[i].length ?? 0) + 1;
@@ -550,7 +708,7 @@ class RenderFlarkSurface extends RenderBox
       _caretPrototype,
     );
     final height = math.max(
-      style.fontSize! * 1.4,
+      textScaler.scale(style.fontSize!) * 1.4,
       row.painter.getFullHeightForCaret(
         TextPosition(offset: offset),
         _caretPrototype,
@@ -611,7 +769,12 @@ class RenderFlarkSurface extends RenderBox
       if (shell.kind == ShellKind.item) {
         if (shell.task &&
             row.firstLine == model.block(shell.block, BlockField.firstLine) &&
-            Rect.fromLTWH(x, layout.origin.dy, 22, 24).contains(point)) {
+            Rect.fromLTWH(
+              x,
+              layout.origin.dy,
+              math.max(layout.indent, textScaler.scale(style.fontSize!)),
+              math.max(24, textScaler.scale(style.fontSize!) * 1.4),
+            ).contains(point)) {
           return row.sourceStart;
         }
         x += layout.indent;
@@ -648,6 +811,78 @@ class RenderFlarkSurface extends RenderBox
         row.row?.sourceForDisplay(word.end, anchor: Anchor.before) ??
         row.sourceStart + word.end;
     controller.command(SetSelection(start, end));
+  }
+
+  InlineResource? imageAt(Offset point) {
+    _prepareRows();
+    for (final layout in _rows) {
+      for (final image in layout.images) {
+        if (image.rect.contains(point)) return image.resource;
+      }
+    }
+    return null;
+  }
+
+  InlineResource? linkAt(Offset point) {
+    _prepareRows();
+    if (_snapshot is! FlarkLiveSnapshot) return null;
+    final doc = (_snapshot as FlarkLiveSnapshot).document;
+    final layout = _rowAt(point);
+    final index = layout.row!.index;
+    for (final resource in doc.resources.reversed) {
+      if (resource.isImage) continue;
+      final start = doc.displayOf(resource.contentStart);
+      final end = doc.displayOf(resource.contentEnd);
+      if (index < start.row || index > end.row) continue;
+      final boxes = layout.painter.getBoxesForSelection(
+        TextSelection(
+          baseOffset: index == start.row ? start.offset : 0,
+          extentOffset: index == end.row ? end.offset : layout.text.length,
+        ),
+      );
+      if (boxes.any(
+        (box) => box.toRect().shift(layout.origin).contains(point),
+      )) {
+        return resource;
+      }
+      if (layout.images.any(
+        (image) =>
+            resource.start <= image.resource.start &&
+            image.resource.end <= resource.end &&
+            image.rect.contains(point),
+      )) {
+        return resource;
+      }
+    }
+    return null;
+  }
+
+  Rect? linkRect(InlineResource resource, {required int nearSource}) {
+    _prepareRows();
+    if (_snapshot is! FlarkLiveSnapshot) return null;
+    final doc = (_snapshot as FlarkLiveSnapshot).document;
+    final start = doc.displayOf(resource.contentStart),
+        end = doc.displayOf(resource.contentEnd);
+    final near = doc.displayOf(nearSource);
+    final rowIndex = near.row.clamp(start.row, end.row);
+    final row = _rows[rowIndex];
+    final boxes = row.painter.getBoxesForSelection(
+      TextSelection(
+        baseOffset: rowIndex == start.row ? start.offset : 0,
+        extentOffset: rowIndex == end.row ? end.offset : row.text.length,
+      ),
+    );
+    if (boxes.isEmpty) return null;
+    final caret = caretRect;
+    return boxes
+        .map((box) => box.toRect().shift(row.origin))
+        .reduce(
+          (a, b) =>
+              (a.center.dy - caret.center.dy).abs() <=
+                  (b.center.dy - caret.center.dy).abs()
+              ? a
+              : b,
+        );
   }
 
   bool vertical(bool down, {bool extend = false, double? goalX}) {
@@ -708,7 +943,9 @@ class RenderFlarkSurface extends RenderBox
   bool hitTestSelf(Offset position) => true;
   @override
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
-    if (!readOnly && _taskSourceAt(position) != null) {
+    if (!readOnly &&
+            (_taskSourceAt(position) != null || imageAt(position) != null) ||
+        readOnly && linkAt(position) != null) {
       result.add(HitTestEntry(const _TaskCursorTarget()));
     }
     return false;
@@ -718,31 +955,116 @@ class RenderFlarkSurface extends RenderBox
   void paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
     final selected = _snapshot.selection;
+    canvas.drawRect(
+      Rect.fromLTWH(
+        offset.dx,
+        offset.dy + scrollOffset,
+        size.width,
+        viewportHeight,
+      ),
+      Paint()..color = color(FlarkColorRole.canvas),
+    );
     final (baseRow, baseOffset) = _display(selected.start);
     final (endRow, endOffset) = _display(selected.end);
     final visible = Rect.fromLTWH(0, scrollOffset, size.width, viewportHeight);
+    _images.visible([
+      for (final layout in _rows)
+        for (final image in layout.images)
+          if (image.rect.overlaps(visible)) image.resource.destination,
+    ]);
     final painted = <String>[],
         styles = <List<int>>[],
         selectionRects = <Rect>[];
     final resolvedStyles = <List<TextStyle>>[];
+    final paintedImages = <FlarkImageObservation>[];
     for (var i = 0; i < _rows.length; i++) {
       final layout = _rows[i];
       if (!layout.rect.overlaps(visible)) continue;
+      if (layout.row?.shells.any((s) => s.kind == ShellKind.blockQuote) ==
+          true) {
+        canvas.drawRect(
+          layout.rect.shift(offset),
+          Paint()..color = color(FlarkColorRole.quoteBackground),
+        );
+      }
+      for (final image in layout.images) {
+        if (!image.rect.overlaps(visible)) continue;
+        final rect = image.rect.shift(offset);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            Radius.circular(metric(FlarkMetric.imageRadius)),
+          ),
+          Paint()..color = color(FlarkColorRole.imageBackground),
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            rect,
+            Radius.circular(metric(FlarkMetric.imageRadius)),
+          ),
+          Paint()
+            ..color = color(FlarkColorRole.imageBorder)
+            ..style = PaintingStyle.stroke,
+        );
+        final entry = _images.get(image.resource.destination);
+        paintedImages.add(
+          FlarkImageObservation(
+            image.resource.start,
+            image.resource.destination,
+            image.rect,
+            entry?.info != null
+                ? 'loaded'
+                : entry == null || entry.failed
+                ? 'failed'
+                : 'loading',
+          ),
+        );
+        if (entry?.info != null) {
+          paintImage(
+            canvas: canvas,
+            rect: rect.deflate(6),
+            image: entry!.info!.image,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+          );
+        } else {
+          final label = TextPainter(
+            text: TextSpan(
+              text: entry == null || entry.failed
+                  ? 'Image unavailable'
+                  : 'Loading image…',
+              style: style.merge(theme.styles[FlarkTextRole.imageLabel]),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout(maxWidth: math.max(1, rect.width - 16));
+          label.paint(
+            canvas,
+            rect.center - Offset(label.width / 2, label.height / 2),
+          );
+          label.dispose();
+        }
+      }
       final row = layout.row;
       if (row?.kind == RowKind.codeBlock) {
         canvas.drawRRect(
           RRect.fromRectAndRadius(
-            layout.rect.shift(offset).inflate(4),
-            const Radius.circular(5),
+            layout.rect.shift(offset),
+            Radius.circular(metric(FlarkMetric.codeRadius)),
           ),
-          Paint()..color = const Color(0xfff1f3f6),
+          Paint()..color = color(FlarkColorRole.codeBackground),
         );
       }
       if (row?.kind == RowKind.tableCell) {
+        if (row!.header) {
+          canvas.drawRect(
+            layout.rect.shift(offset),
+            Paint()..color = color(FlarkColorRole.tableHeaderBackground),
+          );
+        }
         canvas.drawRect(
           layout.rect.shift(offset),
           Paint()
-            ..color = const Color(0xffd6dce5)
+            ..color = color(FlarkColorRole.tableBorder)
             ..style = PaintingStyle.stroke,
         );
       }
@@ -751,8 +1073,8 @@ class RenderFlarkSurface extends RenderBox
           offset + layout.rect.centerLeft,
           offset + layout.rect.centerRight,
           Paint()
-            ..color = const Color(0xffabb5c3)
-            ..strokeWidth = 1,
+            ..color = color(FlarkColorRole.rule)
+            ..strokeWidth = metric(FlarkMetric.ruleWidth),
         );
       }
       if (row != null) {
@@ -763,8 +1085,8 @@ class RenderFlarkSurface extends RenderBox
               offset + Offset(indent + 5, layout.rect.top),
               offset + Offset(indent + 5, layout.rect.bottom),
               Paint()
-                ..color = const Color(0xffb9c5d7)
-                ..strokeWidth = 3,
+                ..color = color(FlarkColorRole.quoteRail)
+                ..strokeWidth = metric(FlarkMetric.quoteRailWidth),
             );
             indent += layout.indent;
           }
@@ -774,7 +1096,7 @@ class RenderFlarkSurface extends RenderBox
                 model.block(shell.block, BlockField.firstLine)) {
               if (shell.task) {
                 // Task state is UI geometry, independent of symbol-font fallback.
-                final fontSize = style.fontSize ?? 17;
+                final fontSize = textScaler.scale(style.fontSize!);
                 final box = Rect.fromLTWH(
                   offset.dx + indent,
                   offset.dy + layout.origin.dy + fontSize * .3,
@@ -782,16 +1104,21 @@ class RenderFlarkSurface extends RenderBox
                   fontSize * .8,
                 );
                 final pen = Paint()
-                  ..color = style.color ?? const Color(0xff253047)
+                  ..color = color(FlarkColorRole.taskBorder)
                   ..style = PaintingStyle.stroke
                   ..strokeWidth = 1.4
                   ..strokeCap = StrokeCap.round
                   ..strokeJoin = StrokeJoin.round;
                 canvas.drawRRect(
                   RRect.fromRectAndRadius(box, const Radius.circular(2)),
+                  Paint()..color = color(FlarkColorRole.taskFill),
+                );
+                canvas.drawRRect(
+                  RRect.fromRectAndRadius(box, const Radius.circular(2)),
                   pen,
                 );
                 if (shell.checked) {
+                  pen.color = color(FlarkColorRole.taskCheck);
                   canvas.drawPath(
                     Path()
                       ..moveTo(
@@ -814,7 +1141,11 @@ class RenderFlarkSurface extends RenderBox
                     ? '${shell.start + shell.itemIndex}.'
                     : '•';
                 final painter = TextPainter(
-                  text: TextSpan(text: marker, style: style),
+                  text: TextSpan(
+                    text: marker,
+                    style: style.merge(theme.styles[FlarkTextRole.listMarker]),
+                  ),
+                  textScaler: textScaler,
                   textDirection: TextDirection.ltr,
                 )..layout();
                 painter.paint(
@@ -840,7 +1171,7 @@ class RenderFlarkSurface extends RenderBox
           selectionRects.add(rect);
           canvas.drawRect(
             rect.shift(offset),
-            Paint()..color = const Color(0x553c82ed),
+            Paint()..color = color(FlarkColorRole.selection),
           );
         }
       }
@@ -869,7 +1200,7 @@ class RenderFlarkSurface extends RenderBox
     if (caret != null) {
       canvas.drawRect(
         caret.shift(offset),
-        Paint()..color = const Color(0xff2864c7),
+        Paint()..color = color(FlarkColorRole.caret),
       );
     }
     onPaint?.call(
@@ -883,6 +1214,7 @@ class RenderFlarkSurface extends RenderBox
         List.unmodifiable(selectionRects),
         List.unmodifiable(resolvedStyles),
         ui.PlatformDispatcher.instance.frameData.frameNumber,
+        images: List.unmodifiable(paintedImages),
       ),
     );
   }
@@ -894,6 +1226,10 @@ class RenderFlarkSurface extends RenderBox
     config.isTextField = !readOnly;
     config.isReadOnly = readOnly;
     config.isFocused = focused;
+    if (!readOnly) {
+      config.isEnabled = true;
+      config.onFocus = onFocus;
+    }
     config.isMultiline = true;
     config.textDirection = TextDirection.ltr;
     final current = controller.editor.snapshot;

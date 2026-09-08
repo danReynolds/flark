@@ -1,6 +1,6 @@
-# Render model schema v3
+# Render model schema v4
 
-Generated from `schema/render_model_v3.json`; edit the JSON, then run `tool/gen_schema.py`.
+Generated from `schema/render_model_v4.json`; edit the JSON, then run `tool/gen_schema.py`.
 
 Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker. Empty lines owned only by a container have a zero-width content record on the innermost container. Its prefix_start identifies only that container prefix; lifting it retains the outer containers.
 
@@ -63,7 +63,7 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | 6 | `prefix_start_byte` |
 | 7 | `prefix_start_utf16` |
 
-## Run record (16 words)
+## Run record (20 words)
 
 | Word | Field |
 | --- | --- |
@@ -83,6 +83,10 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | 13 | `aux2` |
 | 14 | `aux3` |
 | 15 | `flags` |
+| 16 | `destination_offset` |
+| 17 | `destination_length` |
+| 18 | `title_offset` |
+| 19 | `title_length` |
 
 ## Definition record (8 words)
 
@@ -181,13 +185,25 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | `link` | `aux2` | title start byte |
 | `link` | `aux3` | title end byte |
 | `link` | `flags` | bit0 reference style, bit1 has title |
+| `link` | `destination_offset` | Comrak resolved URL offset in UTF-8 string table |
+| `link` | `destination_length` | resolved URL byte length |
+| `link` | `title_offset` | Comrak resolved title offset in UTF-8 string table |
+| `link` | `title_length` | resolved title byte length |
 | `image` | `aux0` | destination start byte |
 | `image` | `aux1` | destination end byte |
 | `image` | `aux2` | title start byte |
 | `image` | `aux3` | title end byte |
 | `image` | `flags` | bit0 reference style, bit1 has title |
+| `image` | `destination_offset` | Comrak resolved URL offset in UTF-8 string table |
+| `image` | `destination_length` | resolved URL byte length |
+| `image` | `title_offset` | Comrak resolved title offset in UTF-8 string table |
+| `image` | `title_length` | resolved title byte length |
 | `autolink` | `aux0` | url start byte |
 | `autolink` | `aux1` | url end byte |
+| `autolink` | `destination_offset` | Comrak resolved URL offset in UTF-8 string table |
+| `autolink` | `destination_length` | resolved URL byte length |
+| `autolink` | `title_offset` | Comrak resolved title offset in UTF-8 string table |
+| `autolink` | `title_length` | resolved title byte length |
 | `replacement` | `aux0` | display text offset in the string table |
 | `replacement` | `aux1` | display text byte length |
 | `footnote_ref` | `aux0` | label start byte |
@@ -208,3 +224,4 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 - Every byte offset lies inside a UTF-8 scalar boundary; every UTF-16 offset equals the count of code units before its byte offset.
 - Definition records never overlap a block's content record.
 - Item marker endpoints lie within the first source line, after the marker start and before task checkboxes; attr0 remains a display-column indentation offset, never a source length. Non-item marker endpoints are zero.
+- Resolved destination/title string ranges are in bounds for every run. They are copied from Comrak link/image nodes, including reference and automatic links; other run kinds leave these fields zero.

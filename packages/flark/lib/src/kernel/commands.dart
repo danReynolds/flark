@@ -126,3 +126,28 @@ final class Paste extends FlarkCommand {
   const Paste(this.text);
   final String text;
 }
+
+/// Insert a link or edit the link containing the selection. Omitted text
+/// preserves selected/existing inline Markdown; supplied text is literal.
+final class SetLink extends FlarkCommand {
+  const SetLink(this.destination, {this.text, this.title});
+  final String destination;
+  final String? text, title;
+}
+
+/// Insert an image or edit the image containing the selection.
+final class SetImage extends FlarkCommand {
+  const SetImage(this.destination, {this.alt, this.title});
+  final String destination;
+  final String? alt, title;
+}
+
+/// Remove a link's wrapper while preserving its inline content.
+final class RemoveLink extends FlarkCommand {
+  const RemoveLink();
+}
+
+/// Remove the complete image containing the selection.
+final class RemoveImage extends FlarkCommand {
+  const RemoveImage();
+}

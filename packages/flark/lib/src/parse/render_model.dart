@@ -229,6 +229,15 @@ extension type const RunView._((RenderModel, int) _rec) {
   int get flags => field(RunField.flags);
   bool get spansLines => flags & (1 << 8) != 0;
 
+  /// Comrak's resolved values, including references, escapes and entities.
+  /// Only meaningful for link, image and autolink runs.
+  String get destination => model.string(
+    field(RunField.destinationOffset),
+    field(RunField.destinationLength),
+  );
+  String get title =>
+      model.string(field(RunField.titleOffset), field(RunField.titleLength));
+
   /// Display text for a run whose content is not a source slice: replacement
   /// runs always, code runs when the override flag is set.
   String? get displayOverride {

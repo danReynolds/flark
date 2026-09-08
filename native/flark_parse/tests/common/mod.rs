@@ -78,6 +78,9 @@ pub fn check_invariants(src: &str, w: &[u32]) -> Result<(), String> {
         if !(s <= cs && cs <= ce && ce <= e && e <= src.len()) { return Err(format!("run {i} order {s} {cs} {ce} {e}")); }
         if !is_boundary(s) || !is_boundary(e) || !is_boundary(cs) || !is_boundary(ce) { return Err(format!("run {i} not on boundary")); }
         if rw(run::START_UTF16) != utf16_of(s) || rw(run::END_UTF16) != utf16_of(e) || rw(run::CONTENT_START_UTF16) != utf16_of(cs) || rw(run::CONTENT_END_UTF16) != utf16_of(ce) { return Err(format!("run {i} utf16")); }
+        for (offset, length) in [(run::DESTINATION_OFFSET, run::DESTINATION_LENGTH), (run::TITLE_OFFSET, run::TITLE_LENGTH)] {
+            if rw(offset) as usize + rw(length) as usize > ns { return Err(format!("run {i} resolved string range")); }
+        }
         let b = rw(run::BLOCK); if b as usize >= nb { return Err(format!("run {i} block {b}")); }
         if b < prev_block { return Err(format!("run {i} block order")); } prev_block = b;
         let p = rw(run::PARENT); if p != u32::MAX { if p as usize >= i { return Err(format!("run {i} parent {p}")); } if w[runs_off + p as usize * run::WORDS + run::BLOCK] != b { return Err(format!("run {i} parent in other block")); } }

@@ -16,6 +16,7 @@ import 'projection.dart';
 part 'source_mode.dart';
 part 'admission.dart';
 part 'code_editing.dart';
+part 'resource_editing.dart';
 
 typedef FlarkListener = void Function();
 
@@ -150,6 +151,12 @@ final class FlarkEditor {
             ToggleStyle(:final style) => _toggleStyle(style),
             SetHeadingLevel(:final level) => _setHeading(level),
             SetCodeLanguage(:final language) => _setCodeLanguage(language),
+            SetLink(:final destination, :final text, :final title) =>
+              _setResource(false, destination, text, title),
+            SetImage(:final destination, :final alt, :final title) =>
+              _setResource(true, destination, alt, title),
+            RemoveLink() => _removeResource(false),
+            RemoveImage() => _removeResource(true),
             Indent() => _shiftBlock(outdent: false),
             Outdent() => _shiftBlock(outdent: true),
           };
@@ -381,6 +388,10 @@ final class FlarkEditor {
     ToggleStyle() ||
     SetHeadingLevel() ||
     SetCodeLanguage() ||
+    SetLink() ||
+    SetImage() ||
+    RemoveLink() ||
+    RemoveImage() ||
     Indent() ||
     Outdent() => false,
   };
