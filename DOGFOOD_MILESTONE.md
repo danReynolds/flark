@@ -6,6 +6,18 @@
 
 **Testing approach:** [live_editor_test_strategy.md](docs/testing/live_editor_test_strategy.md)
 
+**Latest checkpoint (2026-09-08 UTC):** the
+[resource/theme landing review](docs/architecture/v5/theming_merge_review_2026_09_08.md)
+covers parser-backed link/image editing, bounded image previews, Markdown themes,
+replaceable resource controls and the single-editor Flutter theme playground.
+Local automated checks and normal web/macOS builds pass; CI is skipped. The
+observed web accessibility-mode input failure is corrected and covered through
+Chrome's actual semantics transport. This is not a VoiceOver/TalkBack pass.
+The foreground native timing, OS input, lifecycle and physical-device gates
+remain open. The Fleury host/example remains M4/T4. The
+[revisited priorities](docs/architecture/v5/priorities_after_theming.md) describe
+the next work.
+
 **Delivery status (2026-09-06 automatic outdent):** D0-web is ready for exploratory
 owner dogfooding on the observed embedded browser. The
 [code editing review](docs/architecture/v5/code_closer_review_2026_09_06.md)

@@ -1,4 +1,47 @@
-# Flark V5 workbench
+# Flark Flutter example
+
+Run `flutter run -d macos --profile`, or use the web build instructions below.
+Open **Theme playground** with the palette button in the workbench. On the web,
+`?theme=1` opens the playground directly.
+
+The playground puts a theming panel beside one live editor. On narrow screens,
+the panel sits above the editor. Its sample document is separate from the
+workbench's saved Draft and Tour documents.
+
+Try this tour:
+
+1. Choose Light, Dark or Notebook, then click the link-color or app-accent swatch
+   to open a visual picker. The wheel, opacity slider and hex field update live.
+2. Explore Typography, Blocks and Syntax colors using the Customize selector.
+   Each setting updates the editor immediately.
+3. Enable Custom link controls, click a link, and use its branded popover and
+   editing sheet. Edit or remove the link, Undo, and keep typing.
+4. Switch between ambient theming and per-editor overrides. Reset theme keeps
+   your writing; Reset sample restores only the playground document.
+5. View or copy the Dart configuration. It includes a public-API widget with
+   editor wiring and the complete custom-control source when enabled. Supply
+   your editor controller; `lib/backend.dart` handles native/web setup.
+
+The example's application code imports public package exports only. The
+playground configuration is in `lib/theme_settings.dart`; the replaceable
+popover and editing sheet are in `lib/custom_controls.dart`. Defaults adapt to
+brightness. Explicit custom colors remain explicit, so check their contrast
+against the backgrounds you choose.
+
+Visual color selection uses [FlexColorPicker](https://pub.dev/packages/flex_color_picker/versions/3.8.0)
+in this example only. It adds no dependency to the Flark host or kernel.
+The public read-only viewer still accepts the same theme; its parity is covered
+by host tests without duplicating the playground document.
+
+Local example checks include compiled consumers generated from the actual
+configuration exporter:
+
+```sh
+flutter test test/theme_playground_test.dart
+flutter test .dart_tool/flark_theme_export_test.dart
+```
+
+## Editing workbench and qualification
 
 A standalone local-draft application for qualifying the editor before owner
 handoff. **D0-web is ready for exploratory owner dogfooding.** Vertical navigation,
@@ -9,6 +52,12 @@ web/Wasm build runs in Codex's embedded browser. See the
 [code editing review](../../../docs/architecture/v5/code_closer_review_2026_09_06.md).
 The separate D0-macOS gate still requires native input, frame-budget and
 lifecycle checks with the app foregrounded. This app is not a claim of Dune integration.
+
+Links and images have toolbar dialogs. Click a link for Open, Edit and Remove,
+use Cmd/Ctrl+K to insert/edit a link, or Cmd/Ctrl-click to open one. Shift+F10
+opens keyboard-accessible link actions at the caret. Image previews keep their alt text editable;
+click a preview to change its URL, alt text or title. Relative image URLs resolve
+against the web workbench's origin. Loading failures retain a stable placeholder.
 
 From this directory:
 

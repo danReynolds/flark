@@ -2,7 +2,7 @@
 
 The Flark v5 parse crate: **unmodified comrak** plus a single-pass extraction
 that writes a flat render model (see [SCHEMA.md](SCHEMA.md), generated from
-`schema/render_model_v3.json`). It is the only place Markdown meaning is
+`schema/render_model_v4.json`). It is the only place Markdown meaning is
 recognized. The Dart kernel consumes its ranges; explicit semantic commands
 may synthesize canonical syntax, then validate the candidate through Rust.
 

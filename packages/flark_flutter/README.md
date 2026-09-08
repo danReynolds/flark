@@ -40,6 +40,64 @@ On Flutter web, asynchronously load the declared
 conditional `backend.dart` shows both transports. The kernel remains Dart-first;
 the host does not contain a second Markdown interpreter.
 
+## Example app
+
+The [package example](example/README.md) also contains a live **Theme playground**
+for editor/viewer styling and replaceable link controls. It exports a Dart widget
+using the public API, including the custom-control source when selected.
+
+## Markdown themes and controls
+
+Both `FlarkEditorWidget` and `FlarkMarkdownView` accept the same `theme` override:
+
+```dart
+final markdownTheme = FlarkThemeData(
+  styles: {
+    FlarkTextRole.body: const TextStyle(fontSize: 18, height: 1.6),
+    FlarkTextRole.link: const TextStyle(color: Color(0xff276044)),
+  },
+  metrics: {FlarkMetric.documentPadding: 24},
+);
+FlarkEditorWidget(controller: controller, theme: markdownTheme);
+FlarkMarkdownView(controller: viewerController, theme: markdownTheme);
+```
+
+Import Flutter's `material.dart` for `TextStyle`/`Color`. For application-wide
+defaults, add `FlarkThemeData` to `ThemeData.extensions`. Resolution is toolkit
+defaults, ambient Flark overrides, then instance overrides. Maps merge by role;
+text styles also merge by field. `copyWith` replaces the supplied maps, while
+`merge` layers overrides. The legacy `style` argument overrides body typography
+last, and specific Markdown role styles remain more specific. Body typography
+now inherits the app's `textTheme.bodyLarge`; links use its primary color plus
+an underline. Explicit values in a custom palette retain their chosen colors
+when switching brightness.
+
+`FlarkTextRole`, `FlarkColorRole`, `FlarkMetric` and `FlarkSyntaxRole` describe
+the supported text, decoration, spacing and syntax-color options. Syntax
+overrides are colors only; code-block typography belongs to its text role.
+Theme changes preserve source, selection and history. Fonts, text scaling and
+spacing reflow the current surface; color-only updates retain scroll position
+and image streams. Image dimensions reserve stable slots in loading, failure
+and success states; decode/cache limits remain bounded independently of theme.
+
+Plain link clicks keep the text editable and open a contextual popover. Use
+Cmd/Ctrl-click to open, Cmd/Ctrl-K to edit, and Shift-F10/the context-menu key
+for keyboard access to actions. Escape or typing dismisses the popover.
+Read-only links open on ordinary click through the supplied callback.
+
+For different controls, supply `linkPopoverBuilder` and/or
+`presentResourceEditor`. The popover receives `FlarkLinkActions`; the presenter
+receives a `FlarkResourceSession` with values and guarded `save`, `remove` and
+`open` operations. No Markdown serialization or selection restoration is needed
+in custom UI. Close your dialog/sheet after successful application or cancel;
+complete its returned future when presentation ends. A session becomes inert
+after its target changes, it closes, or the host is replaced/disposed. Rejected
+submissions return `false`, letting the custom form display its own error.
+
+The complete [branded popover and editing sheet](example/lib/custom_controls.dart)
+demonstrate both hooks. Default controls use the ambient Material component
+themes. URL launching and image provision remain application callbacks.
+
 ## Optional Tree-sitter code regions
 
 The workbench uses `flark_tree_sitter` for all 14 code languages and Automatic
@@ -91,8 +149,38 @@ The editor supports inline styles, paragraphs, headings, lists, quotes, task
 checkboxes, code rows, tables and source inspection. Tab navigates table cells;
 Return moves to the next row in the same column, then exits the table. Deletion
 at a table-cell boundary rejects atomically; restructuring belongs in source
-mode. Images currently show their alt text; image previews and link-editing
-popovers remain unfinished surface work.
+mode. Link and Image toolbar controls insert or edit the resource at the
+selection. Cmd/Ctrl+K opens the link dialog; Cmd/Ctrl-click opens a link through
+the embedding application's callback. Read-only views open links with a normal
+click. Removing a link preserves its inline content; removing an image deletes
+the complete image. Each edit is one undoable kernel command and stale dialog
+submissions leave the newer document unchanged.
+
+Images display a preview below editable alt text. Click the preview to edit it.
+Loading and failure retain the same layout slot, so neither changes the caret
+or following text. The surface loads only visible images, retains at most 16
+streams, and requests decodes bounded by 960 × 640 pixels. Flutter's shared image
+cache retains its own application-level policy. Unsupported URLs and failed
+requests show an unavailable placeholder.
+
+```dart
+FlarkEditorWidget(
+  controller: controller,
+  baseUri: Uri.parse('https://example.com/notes/'),
+  onOpenLink: (uri) { /* open using the application's URL launcher */ },
+  // Optional: imageProvider: (uri) => an asset/file/authenticated provider.
+  // showImagePreviews: false keeps the alt-text-only presentation.
+);
+```
+
+The same options are available on `FlarkMarkdownView`. The default image
+provider permits HTTP(S); `baseUri` resolves relative destinations. Web image
+servers must permit cross-origin requests. The host's open-link action permits
+HTTP(S) and mailto URLs. Comrak supplies resolved URLs and titles, including
+reference definitions and escaped/entity values; the Flutter package adds no
+Markdown recognizer. The workbench uses `url_launcher` and its web origin as
+the base URI. Uploads, attachment storage and image resizing are outside this
+slice.
 
 Inside a rendered fence, Cmd/Ctrl+A selects its code body first; repeat to select
 the document. An empty fence stays empty on the first press so a following paste

@@ -269,15 +269,7 @@ class FlarkController extends ChangeNotifier {
   String get selectedText {
     final sel = editor.selection;
     if (editor.sourceMode) return text.substring(sel.start, sel.end);
-    final doc = editor.document;
-    final start = doc.displayOf(sel.start), end = doc.displayOf(sel.end);
-    return [
-      for (var i = start.row; i <= end.row; i++)
-        doc.projection.rows[i].text.substring(
-          i == start.row ? start.offset : 0,
-          i == end.row ? end.offset : doc.projection.rows[i].text.length,
-        ),
-    ].join('\n');
+    return editor.document.visibleText(sel.start, sel.end);
   }
 
   @override

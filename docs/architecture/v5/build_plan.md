@@ -39,13 +39,19 @@ are implemented too. M2 remains formally open only for its skipped CI check;
 M3 and M5 retain their platform, sustained-use, and performance gates. The
 [merge review](merge_review_2026_09_07.md) supersedes older implementation counts.
 
-The immediate work is to qualify this editor for everyday Flutter use: sustained
-browser editing with real coloring workers, the complete foreground macOS
-profile and native input canaries, then a consuming application's composer and
-viewer. Language expansion is deferred during this checkpoint. Images and
-link/image editing affordances remain product work; `flark_fleury` has not been
-implemented. The table below retains the exit gates while distinguishing them
-from the work already merged.
+Link/image editing, bounded image previews, Markdown theming and the interactive
+Flutter theme playground are implemented and reviewed in the
+[resource/theme landing checkpoint](theming_merge_review_2026_09_08.md). The
+playground contains a theming panel and one live editor, visual color controls,
+replaceable resource presentations and exported Dart configuration. The observed
+web semantic-field input defect is corrected with an actual Chrome regression.
+Those changes do not close native, device, performance or release gates.
+
+The [revisited priorities](priorities_after_theming.md) put foreground native
+qualification and real consumer adoption next. Fleury remains the next major
+implementation milestone: its real host and `flark_fleury/example` deliver T4
+of the [theming plan](theming_controls_plan.md). Language and theme-option
+expansion are deferred while completing those consumer and platform proofs.
 
 The [everyday qualification review](everyday_review_2026_09_07.md) records the
 next working-tree checkpoint: actual Tree-sitter services in the native
@@ -288,12 +294,16 @@ Fleury must preserve the same kernel semantics and revalidate the Flutter host.
 - Cell rendering with box-drawing shells; Fleury table widget for tables.
 - Terminal transport through the M1 hook; browser transport through the
   dart2js loader.
-- A Fleury sample app and direct host cases for shared editing behavior, cell
-  geometry, selection, input delivery, and history. The kernel suite remains
-  shared; do not build a universal cross-host replay driver.
+- A `flark_fleury/example` theming panel and single live editor with
+  replaceable controls and copyable Dart configuration, as
+  specified in the [theming plan](theming_controls_plan.md#package-example-apps).
+  Add direct host cases for shared editing behavior, cell geometry, selection,
+  input delivery, and history. The kernel suite remains shared; do not build
+  a universal cross-host replay driver.
 
-Exit: shared semantic cases and Fleury-specific input/rendering cases pass; browser and
-terminal receipts; the sample app installs from a clean machine.
+Exit: shared semantic cases and Fleury-specific input/rendering cases pass;
+browser and terminal receipts; the example installs from a clean machine and
+its customization tour and exported configuration work through public APIs.
 
 ## M5 — Flutter web and the envelope
 

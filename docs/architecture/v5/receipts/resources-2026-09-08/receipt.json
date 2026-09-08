@@ -1,0 +1,56 @@
+{
+  "base": "46304ddd6522fa974376161a1af9072ecc900f28",
+  "branch": "codex/v5-links-images",
+  "dirty": true,
+  "ci": "skipped at owner request",
+  "checks": {
+    "kernel": 685,
+    "host": 832,
+    "workbench": 27,
+    "chrome": 26,
+    "rust": 44,
+    "markdownTransportCases": 1322,
+    "normalWasmBuild": "passed",
+    "normalMacOSProfileBuild": "passed"
+  },
+  "sourceManifest": "source-sha256.json",
+  "nativeProfile": {
+    "status": "rejected before measurement",
+    "lifecycle": "inactive",
+    "initialWaitSeconds": 60,
+    "foregroundOwnerResponse": "pending"
+  },
+  "ownerPreview": {
+    "url": "http://127.0.0.1:8813/",
+    "savedDraftBytesBefore": 1158,
+    "savedDraftBytesAfter": 1158
+  },
+  "nativeBinarySha256": {
+    "Contents/MacOS/flark_dogfood": "14ec0a4cced9d05a0d2a154f8a08aea7bce701c821b5077ce584ddafb93c45d6",
+    "Contents/Frameworks/flark_parse.framework/flark_parse": "b7250f789b08e3bbd4c7630a7ab2abdf3fa72ab8b56bd0363c9671f8522cea68",
+    "Contents/Frameworks/App.framework/App": "e5a62f265099a4f8e672f912182fcce7418bbc8d2b23e495208678d29de01149",
+    "Contents/Frameworks/flark_tree_sitter.framework/flark_tree_sitter": "3362f9192ed1220ce3d48d4260e8cc1b3beb7779ace08a7f5b66e0da5eb80f89",
+    "Contents/Frameworks/flark_tree_sitter.framework/Versions/A/flark_tree_sitter": "3362f9192ed1220ce3d48d4260e8cc1b3beb7779ace08a7f5b66e0da5eb80f89",
+    "Contents/Frameworks/App.framework/Versions/A/App": "e5a62f265099a4f8e672f912182fcce7418bbc8d2b23e495208678d29de01149",
+    "Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "b7250f789b08e3bbd4c7630a7ab2abdf3fa72ab8b56bd0363c9671f8522cea68"
+  },
+  "limitations": [
+    "Foreground native frame/workbench and OS input/lifecycle canaries remain open",
+    "External-window navigation was not observable in the embedded browser",
+    "Broader browsers and physical devices remain unqualified"
+  ],
+  "flutter": {
+    "frameworkVersion": "3.44.4",
+    "channel": "[user-branch]",
+    "repositoryUrl": "unknown source",
+    "frameworkRevision": "ad70ec4617166f1c38e5d2bfd388af71fda14f06",
+    "frameworkCommitDate": "2026-06-24 11:07:06 -0700",
+    "engineRevision": "a10d8ac38de835021c8d2f920dbf50a920ccc030",
+    "engineCommitDate": "2026-06-23 23:09:55.000Z",
+    "engineContentHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+    "engineBuildDate": "2026-06-23 20:26:40.203",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.4"
+  }
+}

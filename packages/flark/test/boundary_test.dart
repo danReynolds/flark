@@ -48,6 +48,10 @@ void main() {
                 'SetHeadingLevel',
                 'SetCodeLanguage',
                 'Paste',
+                'SetLink',
+                'SetImage',
+                'RemoveLink',
+                'RemoveImage',
               }.contains(n),
         )
         .length;
@@ -56,7 +60,8 @@ void main() {
     // only one of FfiParseBackend and WasmParseBackend at a time.
     // The Flutter host names two more concepts: shared admission limits and
     // rejection reasons. Revision and composition stay on the existing facade.
-    expect(concepts, lessThanOrEqualTo(29), reason: 'exported: $exported');
+    // Link dialogs and image previews share one parser-owned resource record.
+    expect(concepts, lessThanOrEqualTo(30), reason: 'exported: $exported');
   });
 }
 

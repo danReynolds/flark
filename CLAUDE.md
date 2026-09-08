@@ -11,7 +11,7 @@ repository root is a non-publishable workspace.
 Active code:
 
 - `native/flark_parse`: Rust. Unmodified comrak plus a single-pass extraction
-  to a flat render model. The schema is `schema/render_model_v3.json`;
+  to a flat render model. The schema is `schema/render_model_v4.json`;
   `tool/gen_schema.py` derives `src/schema.rs`, `SCHEMA.md`, and the Dart
   constants. Three-function C ABI on cdylib, staticlib, and wasm32.
 - `packages/flark`: pure Dart, must not import Flutter. `src/parse` holds the

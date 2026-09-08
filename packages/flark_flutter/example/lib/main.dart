@@ -1,3 +1,4 @@
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show AppExitResponse;
@@ -9,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'backend.dart';
 import 'qualification.dart';
+import 'theme_playground.dart';
 
 const tour = '''# A place to think
 
@@ -99,6 +101,10 @@ class DogfoodApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     title: 'Flark — Live Markdown',
+    initialRoute: Uri.base.queryParameters['theme'] == '1' ? '/theme' : '/',
+    routes: {
+      '/theme': (_) => ThemePlayground(backend: backend, code: code),
+    },
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff3a628f)),
       useMaterial3: true,
@@ -273,6 +279,18 @@ class _WorkbenchState extends State<Workbench> {
                 ),
                 const SizedBox(width: 12),
                 IconButton(
+                  tooltip: 'Theme playground',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ThemePlayground(
+                        backend: widget.backend,
+                        code: widget.code,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.palette_outlined),
+                ),
+                IconButton(
                   tooltip: 'Inspect Markdown',
                   onPressed: () => setState(() => inspect = !inspect),
                   icon: Icon(inspect ? Icons.code_off : Icons.code),
@@ -300,6 +318,24 @@ class _WorkbenchState extends State<Workbench> {
                           key: ValueKey(active),
                           controller: c,
                           autofocus: true,
+                          baseUri: kIsWeb ? Uri.base : null,
+                          onOpenLink: (uri) async {
+                            try {
+                              if (await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              )) {
+                                return;
+                              }
+                            } catch (_) {}
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Could not open link.'),
+                                ),
+                              );
+                            }
+                          },
                           onPaint: widget.onPaint,
                         ),
                       ),

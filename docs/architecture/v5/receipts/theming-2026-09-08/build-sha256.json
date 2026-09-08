@@ -1,0 +1,14 @@
+{
+  "packages/flark_flutter/example/build/web/main.dart.wasm": {
+    "sha256": "2afe7f148704d013cd9c801295dcc021b36324ce8ffa11ac80a2907938ebbbd6",
+    "bytes": 2482386
+  },
+  "packages/flark_flutter/example/build/web/main.dart.mjs": {
+    "sha256": "fd2eef6c201ef0055142d5bc94a4f38c15c133a68da3b94714d1d08bb2aa93fa",
+    "bytes": 36153
+  },
+  "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": {
+    "sha256": "14ec0a4cced9d05a0d2a154f8a08aea7bce701c821b5077ce584ddafb93c45d6",
+    "bytes": 568976
+  }
+}

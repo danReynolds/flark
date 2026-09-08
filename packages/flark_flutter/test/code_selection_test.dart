@@ -75,6 +75,11 @@ void main() {
       final raster = GlobalKey();
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(
+            textSelectionTheme: const TextSelectionThemeData(
+              selectionColor: Color(0x553c82ed),
+            ),
+          ),
           home: Scaffold(
             body: RepaintBoundary(
               key: raster,

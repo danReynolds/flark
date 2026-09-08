@@ -7,6 +7,7 @@ import '../parse/backend.dart';
 import '../parse/render_model.dart';
 import '../parse/schema.g.dart';
 import 'projection.dart';
+import 'resource.dart';
 
 /// A selection in source UTF-16 offsets. Collapsed when base == extent.
 /// Ordinary endpoints are legal caret positions: never strictly inside a hidden
@@ -94,6 +95,48 @@ final class FlarkDocument {
   final RenderModel model;
   final Projection projection;
   final bool normalizedLineEndings;
+
+  late final List<InlineResource> resources =
+      _positions?.resources ??
+      List.unmodifiable([
+        for (final run in model.runs)
+          if (run.kind == RunKind.link ||
+              run.kind == RunKind.autolink ||
+              run.kind == RunKind.image)
+            InlineResource.fromRun(this, run),
+      ]);
+
+  /// Image-only view keeps ordinary layout from materializing link metadata.
+  late final List<InlineResource> images =
+      _positions?.images ??
+      List.unmodifiable([
+        for (final run in model.runs)
+          if (run.kind == RunKind.image) InlineResource.fromRun(this, run),
+      ]);
+
+  /// Innermost resource containing the selected content, of the requested kind.
+  InlineResource? resourceAt(FlarkSelection selection, {required bool image}) {
+    for (final resource in resources.reversed) {
+      if (resource.isImage == image &&
+          resource.start <= selection.start &&
+          selection.end <= resource.end) {
+        return resource;
+      }
+    }
+    return null;
+  }
+
+  /// Display text of a source range, derived entirely from the projection.
+  String visibleText(int start, int end) {
+    final first = displayOf(start), last = displayOf(end);
+    return [
+      for (var i = first.row; i <= last.row; i++)
+        projection.rows[i].text.substring(
+          i == first.row ? first.offset : 0,
+          i == last.row ? last.offset : projection.rows[i].text.length,
+        ),
+    ].join('\n');
+  }
 
   /// The same document with [source] replaced: one parse, one projection.
   FlarkDocument withSource(

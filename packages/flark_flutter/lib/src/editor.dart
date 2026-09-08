@@ -5,12 +5,17 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import 'controller.dart';
 import 'clipboard_binding_stub.dart'
     if (dart.library.js_interop) 'clipboard_binding_web.dart';
 import 'input_context.dart';
 import 'surface.dart';
 import 'source_window.dart';
+import 'resource_dialog.dart';
+import 'image_previews.dart';
+import 'theme.dart';
+import 'resource_controls.dart';
 
 /// Scrollable editing surface. All Markdown commands belong to the kernel;
 /// this widget owns platform input, focus, viewport and glyph geometry.
@@ -23,7 +28,14 @@ class FlarkEditorWidget extends StatefulWidget {
     this.showToolbar = true,
     this.onPaint,
     this.focusNode,
-    this.style = defaultStyle,
+    this.style,
+    this.theme,
+    this.linkPopoverBuilder,
+    this.presentResourceEditor,
+    this.baseUri,
+    this.imageProvider,
+    this.showImagePreviews = true,
+    this.onOpenLink,
   });
   static const defaultStyle = TextStyle(
     fontSize: 17,
@@ -33,7 +45,14 @@ class FlarkEditorWidget extends StatefulWidget {
   final FlarkController controller;
   final bool autofocus, readOnly, showToolbar;
   final FocusNode? focusNode;
-  final TextStyle style;
+  final TextStyle? style;
+  final FlarkThemeData? theme;
+  final FlarkLinkPopoverBuilder? linkPopoverBuilder;
+  final FlarkResourcePresenter? presentResourceEditor;
+  final Uri? baseUri;
+  final FlarkImageProvider? imageProvider;
+  final bool showImagePreviews;
+  final ValueChanged<Uri>? onOpenLink;
   final ValueChanged<FlarkPaintObservation>? onPaint;
   @override
   State<FlarkEditorWidget> createState() => _FlarkEditorWidgetState();
@@ -51,7 +70,18 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   int _epoch = 0;
   double? _goalX;
   bool _dragging = false;
+  ({InlineResource image, Offset point, int revision})? _pressedImage;
   bool _scheduled = false;
+  bool _resourceDialogOpen = false;
+  FlarkResourceSession? _resourceSession;
+  final _popover = OverlayPortalController();
+  final _popoverFocus = FocusScopeNode(debugLabel: 'Link actions');
+  InlineResource? _link;
+  FlarkController? _linkController;
+  TextSelection? _linkSelection;
+  int _linkRevision = -1, _linkEpoch = 0;
+  ({InlineResource resource, Offset point})? _pressedLink;
+
   int? _sourceWindowStart;
   RenderFlarkSurface? get _surface =>
       _surfaceKey.currentContext?.findRenderObject() as RenderFlarkSurface?;
@@ -78,6 +108,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   @override
   void didUpdateWidget(FlarkEditorWidget old) {
     super.didUpdateWidget(old);
+    if (old.controller != c || old.readOnly != widget.readOnly) {
+      _dismissLink();
+      _resourceSession?.close();
+    }
     if (old.controller != c) {
       old.controller.removeListener(_changed);
       old.controller.finishComposition();
@@ -100,6 +134,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   }
 
   void _scrolled() {
+    _dismissLink();
     if (mounted) {
       setState(() {});
       _scheduleGeometry();
@@ -174,6 +209,8 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   void _changed() {
     if (!mounted) return;
+    if (!_linkActive) _dismissLink();
+    if (_resourceSession?.active == false) _resourceSession!.close();
     final start = c.editor.sourceMode
         ? SourceWindow.at(c.text, c.editor.selection.extent).start
         : null;
@@ -246,6 +283,200 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
   }
 
+  Future<void> _editResource(bool image) async {
+    if (_resourceDialogOpen ||
+        widget.readOnly ||
+        c.editor.sourceMode ||
+        c.editor.document.rowAt(c.editor.selection.extent).kind ==
+            RowKind.codeBlock) {
+      return;
+    }
+    _dismissLink();
+    c.finishComposition();
+    final target = c,
+        revision = c.editor.revision,
+        selection = c.value.selection;
+    final resource = c.editor.document.resourceAt(
+      c.editor.selection,
+      image: image,
+    );
+    final uri = resource == null
+        ? null
+        : flarkOpenableUri(resource.destination, widget.baseUri);
+    final previousFocus = FocusManager.instance.primaryFocus;
+    final route = ModalRoute.of(context);
+    bool active() =>
+        mounted &&
+        identical(c, target) &&
+        !widget.readOnly &&
+        !target.editor.sourceMode &&
+        target.editor.revision == revision &&
+        target.value.selection == selection;
+    final session = FlarkResourceSession(
+      image: image,
+      resource: resource,
+      selectedText: target.selectedText,
+      isActive: active,
+      apply: (command) =>
+          active() && target.command(command, expectedRevision: revision),
+      onOpen: !image && uri != null && widget.onOpenLink != null
+          ? () {
+              if (active()) widget.onOpenLink?.call(uri);
+            }
+          : null,
+    );
+    _resourceDialogOpen = true;
+    _resourceSession = session;
+    try {
+      final presenter = widget.presentResourceEditor;
+      if (presenter != null) {
+        await presenter(context, session);
+      } else {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => ResourceDialog(session: session),
+        );
+      }
+    } finally {
+      session.close();
+      _resourceSession = null;
+      _resourceDialogOpen = false;
+      final focus = FocusManager.instance.primaryFocus;
+      if (mounted &&
+          identical(c, target) &&
+          !widget.readOnly &&
+          route?.isCurrent != false &&
+          (focus == previousFocus ||
+              focus == null ||
+              focus == _focus ||
+              focus is FocusScopeNode)) {
+        _focus.requestFocus();
+      }
+    }
+  }
+
+  bool get _linkActive =>
+      _link != null &&
+      mounted &&
+      identical(c, _linkController) &&
+      !widget.readOnly &&
+      !c.editor.sourceMode &&
+      c.editor.revision == _linkRevision &&
+      c.value.selection == _linkSelection;
+
+  void _dismissLink({bool restoreFocus = false}) {
+    _link = null;
+    _linkEpoch++;
+    if (_popover.isShowing) _popover.hide();
+    if (restoreFocus && mounted && !widget.readOnly) _focus.requestFocus();
+  }
+
+  bool _showSelectionLink() {
+    if (widget.readOnly ||
+        c.editor.sourceMode ||
+        !c.editor.selection.isCollapsed) {
+      return false;
+    }
+    final link = c.editor.document.resourceAt(c.editor.selection, image: false);
+    if (link == null) return false;
+    _showLink(link, keyboard: true);
+    return true;
+  }
+
+  void _showLink(InlineResource link, {bool keyboard = false}) {
+    if (widget.readOnly ||
+        _resourceDialogOpen ||
+        !c.editor.selection.isCollapsed) {
+      return;
+    }
+    _link = link;
+    _linkController = c;
+    _linkRevision = c.editor.revision;
+    _linkSelection = c.value.selection;
+    _linkEpoch++;
+    _popover.show();
+    if (keyboard) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _linkActive) _popoverFocus.nextFocus();
+      });
+    }
+  }
+
+  Widget _buildLinkPopover(
+    BuildContext overlayContext,
+    OverlayChildLayoutInfo info,
+  ) {
+    if (!_linkActive) return const SizedBox.shrink();
+    final link = _link!, epoch = _linkEpoch;
+    bool active() => epoch == _linkEpoch && _linkActive;
+    final uri = flarkOpenableUri(link.destination, widget.baseUri);
+    final actions = FlarkLinkActions(
+      resource: link,
+      dismiss: () {
+        if (active()) _dismissLink(restoreFocus: _popoverFocus.hasFocus);
+      },
+      open: uri == null || widget.onOpenLink == null
+          ? null
+          : () {
+              if (active()) widget.onOpenLink?.call(uri);
+            },
+      edit: () {
+        if (active()) unawaited(_editResource(false));
+      },
+      remove: () {
+        if (!active()) return;
+        _dismissLink();
+        _command(const RemoveLink());
+        _focus.requestFocus();
+      },
+    );
+    final media = MediaQuery.of(overlayContext);
+    return CustomSingleChildLayout(
+      delegate: LinkPopoverLayout(
+        () {
+          final surface = _surface;
+          if (surface == null || !active()) return Rect.zero;
+          final rect =
+              surface.linkRect(
+                link,
+                nearSource: _linkSelection!.extentOffset,
+              ) ??
+              surface.caretRect;
+          return MatrixUtils.transformRect(info.childPaintTransform, rect);
+        },
+        Rect.fromLTWH(
+          0,
+          media.padding.top,
+          info.overlaySize.width,
+          (info.overlaySize.height -
+                  media.padding.top -
+                  media.viewInsets.bottom -
+                  media.padding.bottom)
+              .clamp(0, double.infinity),
+        ),
+      ),
+      child: TapRegion(
+        groupId: this,
+        child: FocusScope(
+          node: _popoverFocus,
+          onKeyEvent: (_, event) {
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.escape) {
+              _dismissLink(restoreFocus: true);
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: SingleChildScrollView(
+            child:
+                widget.linkPopoverBuilder?.call(overlayContext, actions) ??
+                FlarkLinkPopover(actions: actions),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _tab(bool backward) {
     if (!c.editor.sourceMode) {
       final row = c.editor.document.rowAt(c.editor.selection.extent);
@@ -287,12 +518,21 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     final shift = keyboard.isShiftPressed,
         primary = keyboard.isMetaPressed || keyboard.isControlPressed;
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape && _popover.isShowing) {
+      _dismissLink();
+      return KeyEventResult.handled;
+    }
     if (c.editor.composing) {
       if (key == LogicalKeyboardKey.escape) {
         c.finishComposition(cancel: true);
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored;
+    }
+    if ((key == LogicalKeyboardKey.f10 && shift ||
+            key == LogicalKeyboardKey.contextMenu) &&
+        _showSelectionLink()) {
+      return KeyEventResult.handled;
     }
     if ((keyboard.isAltPressed || keyboard.isControlPressed) &&
         (key == LogicalKeyboardKey.backspace ||
@@ -339,6 +579,8 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         _command(const ToggleStyle(Style.strong));
       } else if (key == LogicalKeyboardKey.keyI) {
         _command(const ToggleStyle(Style.emphasis));
+      } else if (key == LogicalKeyboardKey.keyK) {
+        unawaited(_editResource(false));
       } else if (key == LogicalKeyboardKey.arrowLeft ||
           key == LogicalKeyboardKey.arrowRight) {
         _surface?.lineEdge(key == LogicalKeyboardKey.arrowRight, extend: shift);
@@ -419,6 +661,8 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   @override
   void dispose() {
+    _resourceSession?.close();
+    _popoverFocus.dispose();
     _clipboardBinding.dispose();
     c.removeListener(_changed);
     _focus.removeListener(_focusChanged);
@@ -431,6 +675,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   @override
   Widget build(BuildContext context) {
     final e = c.editor;
+    final resolvedTheme = FlarkThemeData.resolve(
+      context,
+      overrides: widget.theme,
+      bodyStyle: widget.style,
+    );
     final menuController = c, menuRevision = e.revision;
     final codeRow = !e.sourceMode ? e.document.rowAt(e.selection.extent) : null;
     final info = codeRow?.fenced == true
@@ -445,12 +694,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         ? SourceWindow.at(c.text, e.selection.extent)
         : null;
     _sourceWindowStart = window?.start;
-    return Column(
+    final contents = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.showToolbar && !widget.readOnly)
           Material(
-            color: const Color(0xfff7f8fb),
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
             child: Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
@@ -518,6 +767,20 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                   icon: const Icon(Icons.format_italic, size: 20),
                 ),
                 IconButton(
+                  tooltip: 'Link',
+                  icon: const Icon(Icons.link, size: 20),
+                  onPressed: e.sourceMode || codeRow?.kind == RowKind.codeBlock
+                      ? null
+                      : () => _editResource(false),
+                ),
+                IconButton(
+                  tooltip: 'Image',
+                  icon: const Icon(Icons.image_outlined, size: 20),
+                  onPressed: e.sourceMode || codeRow?.kind == RowKind.codeBlock
+                      ? null
+                      : () => _editResource(true),
+                ),
+                IconButton(
                   tooltip: 'Undo',
                   onPressed: e.history.canUndo
                       ? () {
@@ -549,7 +812,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
           ),
         if (e.sourceMode || c.notice != null)
           Material(
-            color: const Color(0xfffff3d6),
+            color: Theme.of(context).colorScheme.errorContainer,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Text(
@@ -617,6 +880,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
               },
               child: Focus(
                 focusNode: _focus,
+                // The surface owns the text-field semantics. A second focused
+                // ancestor makes Flutter web move DOM focus away from it.
+                includeSemantics: false,
                 autofocus: widget.autofocus,
                 onKeyEvent: _key,
                 child: MouseRegion(
@@ -636,30 +902,80 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                             }
                           },
                     child: Listener(
-                      onPointerDown: widget.readOnly
-                          ? null
-                          : (event) {
-                              _focus.requestFocus();
-                              _attach();
-                              _goalX = null;
-                              final surface = _surface;
-                              if (surface == null) return;
-                              if (surface.toggleTaskAt(
-                                surface.globalToLocal(event.position),
-                              )) {
-                                _dragging = false;
-                                return;
-                              }
-                              _dragging =
-                                  event.kind == PointerDeviceKind.mouse &&
-                                  event.buttons == kPrimaryButton;
-                              surface.place(
-                                surface.globalToLocal(event.position),
-                                extend:
-                                    HardwareKeyboard.instance.isShiftPressed,
-                              );
-                            },
+                      onPointerDown: (event) {
+                        _dismissLink();
+                        _pressedLink = null;
+                        final surface = _surface;
+                        if (surface == null) return;
+                        if (widget.readOnly ||
+                            HardwareKeyboard.instance.isMetaPressed ||
+                            HardwareKeyboard.instance.isControlPressed) {
+                          final link = surface.linkAt(
+                            surface.globalToLocal(event.position),
+                          );
+                          final uri = link == null
+                              ? null
+                              : flarkOpenableUri(
+                                  link.destination,
+                                  widget.baseUri,
+                                );
+                          if (uri != null && widget.onOpenLink != null) {
+                            widget.onOpenLink!(uri);
+                            return;
+                          }
+                        }
+                        if (widget.readOnly) return;
+                        _focus.requestFocus();
+                        _attach();
+                        _goalX = null;
+                        final image = surface.imageAt(
+                          surface.globalToLocal(event.position),
+                        );
+                        if (image != null) {
+                          _dragging = false;
+                          _pressedImage = (
+                            image: image,
+                            point: event.position,
+                            revision: c.editor.revision,
+                          );
+                          return;
+                        }
+                        if (surface.toggleTaskAt(
+                          surface.globalToLocal(event.position),
+                        )) {
+                          _dragging = false;
+                          return;
+                        }
+                        _dragging =
+                            event.kind == PointerDeviceKind.mouse &&
+                            event.buttons == kPrimaryButton;
+                        surface.place(
+                          surface.globalToLocal(event.position),
+                          extend: HardwareKeyboard.instance.isShiftPressed,
+                        );
+                        final link = surface.linkAt(
+                          surface.globalToLocal(event.position),
+                        );
+                        if (link != null &&
+                            !HardwareKeyboard.instance.isShiftPressed &&
+                            event.buttons == kPrimaryButton) {
+                          _pressedLink = (
+                            resource: link,
+                            point: event.position,
+                          );
+                        }
+                      },
                       onPointerMove: (event) {
+                        if (_pressedLink != null &&
+                            (event.position - _pressedLink!.point).distance >
+                                8) {
+                          _pressedLink = null;
+                        }
+                        if (_pressedImage != null &&
+                            (event.position - _pressedImage!.point).distance >
+                                8) {
+                          _pressedImage = null;
+                        }
                         if (_dragging) {
                           final surface = _surface;
                           if (surface != null) {
@@ -670,25 +986,56 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                           }
                         }
                       },
-                      onPointerUp: (_) => _dragging = false,
+                      onPointerUp: (_) {
+                        _dragging = false;
+                        final pressedLink = _pressedLink;
+                        _pressedLink = null;
+                        if (pressedLink != null) {
+                          _showLink(pressedLink.resource);
+                        }
+                        final pressed = _pressedImage;
+                        _pressedImage = null;
+                        if (pressed != null &&
+                            pressed.revision == c.editor.revision) {
+                          _command(
+                            SetSelection(
+                              pressed.image.contentStart,
+                              pressed.image.contentEnd,
+                            ),
+                          );
+                          unawaited(_editResource(true));
+                        }
+                      },
+                      onPointerCancel: (_) {
+                        _pressedLink = null;
+                        _dragging = false;
+                        _pressedImage = null;
+                      },
                       child: Scrollbar(
                         controller: _scroll,
                         child: SingleChildScrollView(
                           controller: _scroll,
-                          child: FlarkSurface(
-                            key: _surfaceKey,
-                            controller: c,
-                            style: FlarkEditorWidget.defaultStyle.merge(
-                              widget.style.copyWith(inherit: true),
+                          child: OverlayPortal.overlayChildLayoutBuilder(
+                            controller: _popover,
+                            overlayChildBuilder: _buildLinkPopover,
+                            child: FlarkSurface(
+                              key: _surfaceKey,
+                              controller: c,
+                              theme: resolvedTheme,
+                              textScaler: MediaQuery.textScalerOf(context),
+                              focused: _focus.hasFocus,
+                              readOnly: widget.readOnly,
+                              viewportHeight: constraints.maxHeight,
+                              scrollOffset: _scroll.hasClients
+                                  ? _scroll.offset
+                                  : 0,
+                              baseUri: widget.baseUri,
+                              imageProvider: widget.imageProvider,
+                              showImagePreviews: widget.showImagePreviews,
+                              onPaint: widget.onPaint,
+                              onFocus: _focus.requestFocus,
+                              revealDuringLayout: _revealDuringLayout,
                             ),
-                            focused: _focus.hasFocus,
-                            readOnly: widget.readOnly,
-                            viewportHeight: constraints.maxHeight,
-                            scrollOffset: _scroll.hasClients
-                                ? _scroll.offset
-                                : 0,
-                            onPaint: widget.onPaint,
-                            revealDuringLayout: _revealDuringLayout,
                           ),
                         ),
                       ),
@@ -700,6 +1047,19 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
           ),
         ),
       ],
+    );
+    return TapRegion(
+      groupId: this,
+      onTapOutside: (_) => _dismissLink(),
+      child: Semantics(
+        customSemanticsActions: {
+          if (!widget.readOnly)
+            const CustomSemanticsAction(label: 'Link actions'): () {
+              _showSelectionLink();
+            },
+        },
+        child: contents,
+      ),
     );
   }
 }
@@ -782,14 +1142,36 @@ class _InputClient with TextInputClient, DeltaTextInputClient {
 }
 
 class FlarkMarkdownView extends StatelessWidget {
-  const FlarkMarkdownView({super.key, required this.controller, this.onPaint});
+  const FlarkMarkdownView({
+    super.key,
+    required this.controller,
+    this.onPaint,
+    this.style,
+    this.theme,
+    this.baseUri,
+    this.imageProvider,
+    this.showImagePreviews = true,
+    this.onOpenLink,
+  });
   final FlarkController controller;
+  final TextStyle? style;
+  final FlarkThemeData? theme;
+  final Uri? baseUri;
+  final FlarkImageProvider? imageProvider;
+  final bool showImagePreviews;
+  final ValueChanged<Uri>? onOpenLink;
   final ValueChanged<FlarkPaintObservation>? onPaint;
   @override
   Widget build(BuildContext context) => FlarkEditorWidget(
     controller: controller,
+    style: style,
+    theme: theme,
     readOnly: true,
     showToolbar: false,
+    baseUri: baseUri,
+    imageProvider: imageProvider,
+    showImagePreviews: showImagePreviews,
+    onOpenLink: onOpenLink,
     onPaint: onPaint,
   );
 }
