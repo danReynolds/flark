@@ -353,6 +353,26 @@ final class FlarkDocument {
     return out;
   }
 
+  /// Resolve a pointer's nearest displayed caret to its source context.
+  /// At a word edge beside whitespace or the row boundary, take the word's
+  /// side. Tiny horizontal differences must not pick different formatting at
+  /// that same visible caret. Between two non-whitespace glyphs, the hit half
+  /// still distinguishes their contexts.
+  int pointerAnchorAt(int rowIndex, int offset, {required bool leadingHalf}) {
+    final row = projection.rows[rowIndex];
+    final at = offset.clamp(0, row.text.length);
+    final beforeSpace = at == 0 || row.text[at - 1].trim().isEmpty;
+    final afterSpace = at == row.text.length || row.text[at].trim().isEmpty;
+    final fromRight = beforeSpace != afterSpace ? beforeSpace : leadingHalf;
+    final anchors = anchorsAt(
+      row.sourceForDisplay(
+        at,
+        anchor: fromRight ? Anchor.after : Anchor.before,
+      ),
+    );
+    return fromRight ? anchors.last : anchors.first;
+  }
+
   static bool _owns(int kind) =>
       kind == RunKind.emph ||
       kind == RunKind.strong ||

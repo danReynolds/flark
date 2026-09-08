@@ -72,6 +72,60 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     c.dispose();
   });
+  testWidgets('source edits and resizing replace cached live presentation', (
+    tester,
+  ) async {
+    const original = '## Heading\n\n**word** and *another*';
+    const edited = '> Heading\n\n*word* and **another**';
+    final c = FlarkController(
+      FlarkEditor(backend, text: original, caret: original.length),
+    );
+    final paints = <FlarkPaintObservation>[];
+    Widget app(double width) => MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: width,
+          child: FlarkEditorWidget(
+            controller: c,
+            autofocus: true,
+            showToolbar: false,
+            onPaint: paints.add,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(app(600));
+    await tester.pump();
+    c.sourceMode(true);
+    await tester.pump();
+    expect(c.command(const ReplaceRange(0, original.length, edited)), isTrue);
+    await tester.pumpWidget(app(240));
+    c.sourceMode(false);
+    paints.clear();
+    await tester.pump();
+    for (final width in [240.0, 600.0]) {
+      if (width == 600) {
+        paints.clear();
+        await tester.pumpWidget(app(width));
+      }
+      final paint = paints.first;
+      expect(paint.snapshot.source, edited);
+      expect(paint.rows, ['Heading', '', 'word and another']);
+      expect(paint.resolvedStyles.first.single.fontSize, 17);
+      expect(paint.resolvedStyles.last.first.fontStyle, FontStyle.italic);
+      expect(paint.resolvedStyles.last.last.fontWeight, FontWeight.w700);
+      expect(paint.caretSource, edited.length);
+      expect(paint.caret, isNotNull);
+    }
+    paints.clear();
+    expect(c.command(const InsertText('!')), isTrue);
+    await tester.pump();
+    expect(paints.first.rows.last, 'word and another!');
+    expect(paints.first.caretSource, c.editor.selection.extent);
+    expect(c.text, '> Heading\n\n*word* and **another**!');
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
   testWidgets(
     'wrapped vertical input uses each preceding unpainted selection',
     (tester) async {

@@ -176,6 +176,12 @@ ranges never become runs. Replacement runs, such as entities, carry display
 text that differs from source and map to an edge by affinity. Bidirectional
 offset mapping is v4's `FlarkSurfaceTextRun`, about fifty lines, salvaged.
 
+*Pointer refinement (2026-09-07).* The active editing profile now chooses the
+word's context at a visible edge beside whitespace or a row boundary. Hit-half
+selection remains for boundaries between adjacent non-whitespace glyphs. This
+replaces the subpixel-dependent word-edge behavior described in the historical
+M2 account below; the source-anchor model and keyboard rules are unchanged.
+
 **The caret model** is a visible offset plus a source anchor. One visible
 position can have several legal source anchors, before or after a hidden
 range, and which one the selection holds is the semantic context: typing there

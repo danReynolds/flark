@@ -16,6 +16,14 @@ gate under [DOGFOOD_MILESTONE.md](../../../DOGFOOD_MILESTONE.md).
   double-click word selection, selection reached from both sides of hidden
   delimiters, word deletion toward whitespace, document-edge shortcuts and
   actual keyboard copy/cut/paste followed immediately by typing.
+- Check formatting as a sequence: turn it on, type a word, partially erase it,
+  type two spaces, continue the next word, erase the separator, and Undo/Redo.
+  Include bold, italic and nesting, and compare visible text and character
+  styles with an independent expectation after each edit. Parser/projection
+  agreement alone cannot prove that an edit preserved formatting intent.
+- Exit formatting, click back at the styled word's start and end, then type.
+  Hits slightly to either side of the same painted word edge must retain the
+  word's style. Click after its following space and verify plain continuation.
 - Type through multiple bounded-input contexts, verify the entire exported
   source against an independently constructed expectation, and continue typing
   immediately after selection, history and source/rendered transitions.

@@ -95,9 +95,9 @@ void main() {
   );
 
   testWidgets(
-    'pointer placement preserves distinct typing contexts at one glyph edge',
+    'pointer placement distinguishes touching non-whitespace styles',
     (tester) async {
-      final c = FlarkController(FlarkEditor(backend, text: '*ab*', caret: 0));
+      final c = FlarkController(FlarkEditor(backend, text: '*ab*c', caret: 3));
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -113,16 +113,16 @@ void main() {
       for (final inside in [false, true]) {
         await tester.tapAt(
           surface.localToGlobal(
-            Offset(edge.left + (inside ? 1 : -1), edge.center.dy),
+            Offset(edge.left + (inside ? -1 : 1), edge.center.dy),
           ),
         );
         expect(c.editor.typingContext, inside ? Style.emphasis : 0);
         expect(c.command(const InsertText('x')), isTrue);
-        expect(c.text, inside ? '*xab*' : 'x*ab*');
+        expect(c.text, inside ? '*abx*c' : '*ab*xc');
         await tester.pump();
         expect(c.command(const Undo()), isTrue);
         await tester.pump();
-        expect(c.text, '*ab*');
+        expect(c.text, '*ab*c');
       }
       await tester.pumpWidget(const SizedBox());
       await tester.pump(kDoubleTapMinTime);

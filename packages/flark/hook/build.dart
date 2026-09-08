@@ -107,7 +107,10 @@ class _Plan {
     final arch = code.targetArchitecture;
     if (os == OS.macOS) {
       final t = switch (arch) { Architecture.arm64 => 'aarch64-apple-darwin', Architecture.x64 => 'x86_64-apple-darwin', _ => null };
-      return t == null ? null : _Plan(t, 'libflark_parse.dylib', () => const {});
+      return t == null ? null : _Plan(t, 'libflark_parse.dylib', () => {
+        ..._appleEnvironment('macosx', t),
+        'MACOSX_DEPLOYMENT_TARGET': '${code.macOS.targetVersion}.0',
+      });
     }
     if (os == OS.linux) {
       final t = switch (arch) { Architecture.arm64 => 'aarch64-unknown-linux-gnu', Architecture.x64 => 'x86_64-unknown-linux-gnu', _ => null };

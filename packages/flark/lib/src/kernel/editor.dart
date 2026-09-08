@@ -536,10 +536,38 @@ final class FlarkEditor {
     var inserted = text;
     var caret = range.start + text.length;
     final p = _pending;
-    // A pending style wraps the next ordinary character; whitespace exits it.
+    PendingStyle? pending;
+    // Empty-owner intent exits on whitespace. A surviving span continues
+    // across spaces, keeping its delimiters around non-whitespace content.
     if (p != null && sel.isCollapsed && text.trim().isNotEmpty) {
-      inserted = '${p.open}$text${p.close}';
+      var first = 0, last = text.length;
+      if (p.styles & (Style.strong | Style.emphasis | Style.strikethrough) !=
+          0) {
+        while (first < last && _isSpace(text, first)) {
+          first++;
+        }
+        while (last > first && _isSpace(text, last - 1)) {
+          last--;
+        }
+      }
+      inserted =
+          '${text.substring(0, first)}${p.open}${text.substring(first, last)}${p.close}${text.substring(last)}';
       caret = sel.start + p.open.length + text.length;
+      if (last < text.length) {
+        caret += p.close.length;
+        pending = PendingStyle(
+          p.open,
+          p.close,
+          p.styles,
+          continueAcrossSpaces: true,
+        );
+      }
+    } else if (p != null &&
+        sel.isCollapsed &&
+        p.continueAcrossSpaces &&
+        !text.contains('\n') &&
+        !text.contains('\r')) {
+      pending = p;
     }
     var start = range.start, end = range.end;
     if (!sel.isCollapsed && text.trim().isEmpty) {
@@ -548,9 +576,17 @@ final class FlarkEditor {
       end = expanded.end;
       caret = start + inserted.length;
     }
+    final normalized = _normalizeInlineEdges(
+      start,
+      end,
+      inserted,
+      caret,
+      pending: pending,
+    );
     return _commit(
-      source.replaceRange(start, end, inserted),
-      FlarkSelection.collapsed(caret),
+      normalized.text,
+      FlarkSelection.collapsed(normalized.caret),
+      pending: normalized.pending,
       typing: typing && text != '\n' && text.characters.length == 1,
       completeTypedFence:
           typing &&
@@ -630,10 +666,17 @@ final class FlarkEditor {
     if (text.isEmpty) {
       return _deleteContent(s, e, typing: false);
     }
+    if (text.trim().isEmpty) {
+      final expanded = _rangeForEmptying(s, e);
+      s = expanded.start;
+      e = expanded.end;
+    }
+    final normalized = _normalizeInlineEdges(s, e, text, s + text.length);
     return _commit(
-      source.replaceRange(s, e, text),
-      FlarkSelection.collapsed(s + text.length),
+      normalized.text,
+      FlarkSelection.collapsed(normalized.caret),
       typing: false,
+      pending: normalized.pending,
     );
   }
 
@@ -699,19 +742,60 @@ final class FlarkEditor {
 
   bool _deleteContent(int start, int end, {required bool typing}) {
     final expanded = _rangeForEmptying(start, end);
-    var text = source.replaceRange(expanded.start, expanded.end, '');
     var caret = expanded.start;
     var pending = expanded.pending;
-    final removed = expanded.end - expanded.start;
+    final previous = _pending;
+    if (previous != null &&
+        previous.continueAcrossSpaces &&
+        selection.isCollapsed &&
+        source.substring(expanded.start, expanded.end).trim().isEmpty) {
+      pending = previous;
+      // Removing the separator returns to the surviving span. Do not place
+      // a new delimiter pair directly beside that span's closing syntax.
+      for (final anchor in _doc.anchorsAt(caret)) {
+        if (_doc.typingContextAt(anchor) == typingContext) {
+          caret = anchor;
+          pending = null;
+          break;
+        }
+      }
+    }
+    final normalized = _normalizeInlineEdges(
+      expanded.start,
+      expanded.end,
+      '',
+      caret,
+      pending: pending,
+    );
+    return _commit(
+      normalized.text,
+      FlarkSelection.collapsed(normalized.caret),
+      typing: typing,
+      pending: normalized.pending,
+    );
+  }
+
+  /// Both inserting and deleting can expose whitespace at a formatting edge.
+  /// Move it outside parser-owned emphasis delimiters before the next parse.
+  /// The same transaction publishes the visible caret and continuation intent.
+  ({String text, int caret, PendingStyle? pending}) _normalizeInlineEdges(
+    int start,
+    int end,
+    String inserted,
+    int caret, {
+    PendingStyle? pending,
+  }) {
+    var text = source.replaceRange(start, end, inserted);
+    final removed = end - start - inserted.length;
     final intent = _doc.ownersAt(selection.extent).map((o) => o.run).toSet();
     // Deleting the first/last word can expose whitespace at an emphasis edge.
     // Move it outside the authenticated delimiters so surviving words stay
     // styled. Work inside-out; each reordering preserves source length.
     final shared = _doc
-        .ownersAt(expanded.start)
+        .ownersAt(start)
         .where(
           (o) =>
-              expanded.end <= o.contentEnd &&
+              end <= o.contentEnd &&
               (o.kind == RunKind.emph ||
                   o.kind == RunKind.strong ||
                   o.kind == RunKind.strike),
@@ -749,15 +833,11 @@ final class FlarkEditor {
           '$open${pending?.open ?? ''}',
           '${pending?.close ?? ''}$close',
           (pending?.styles ?? 0) | o.style,
+          continueAcrossSpaces: true,
         );
       }
     }
-    return _commit(
-      text,
-      FlarkSelection.collapsed(caret),
-      typing: typing,
-      pending: pending,
-    );
+    return (text: text, caret: caret, pending: pending);
   }
 
   /// Expand a visible range through any inline owner that it empties, so its
@@ -1470,14 +1550,11 @@ final class FlarkEditor {
   bool _place(int rowIndex, int offset, bool leadingHalf, bool extend) {
     if (projection.rows.isEmpty) return false;
     final row = projection.rows[rowIndex.clamp(0, projection.rows.length - 1)];
-    // The half of the glyph hit says which side of a boundary was meant.
-    final anchors = _doc.anchorsAt(
-      row.sourceForDisplay(
-        offset,
-        anchor: leadingHalf ? Anchor.after : Anchor.before,
-      ),
+    final target = _doc.pointerAnchorAt(
+      row.index,
+      offset,
+      leadingHalf: leadingHalf,
     );
-    final target = leadingHalf ? anchors.last : anchors.first;
     return _select(
       extend
           ? FlarkSelection(selection.base, target)
