@@ -37,3 +37,9 @@ The final normal release-browser canary enabled accessibility, typed into the
 editor, changed a theme field, returned to styled text, opened/cancelled link
 controls and continued input/Undo. No browser warning/error logs were observed.
 This is not VoiceOver/TalkBack, native foreground, device or performance proof.
+
+The pinned kernel benchmark ran from `packages/flark` with
+`dart run tool/bench_editor.dart 16`, after the builds on clean commit
+`93891d801d3292aba3edb4ea87156b158f12a471`. `kernel-benchmark.log` includes
+the fixture/source hashes and measurements: insert p99 2.777 ms and backspace
+p99 2.615 ms, below the 4 ms gate. Native host input-to-paint remains unqualified.

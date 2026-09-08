@@ -1,0 +1,7 @@
+
+dense document 16694 UTF-8 bytes, 769 blocks, 2144 runs, 705 rows
+insert (facade)      p50 2.04 ms  p99 2.78 ms  min 1.84 ms
+backspace (facade)   p50 2.05 ms  p99 2.62 ms  min 1.85 ms
+parse only           p50 0.84 ms  p99 1.08 ms  min 0.82 ms
+projection only      p50 0.46 ms  p99 0.72 ms  min 0.44 ms
+{"head":"93891d801d3292aba3edb4ea87156b158f12a471","evidence":"local working tree","sourceTreeSha256":"aed8a03f72b32dcff0d20bd6269a8ec577166d7d414808e85f95078af97eba13","runtime":"3.12.2 (stable) (Tue Jun 9 01:11:39 2026 -0700) on \"macos_arm64\"","os":"Version 26.2 (Build 25C56)","fixture":"dense","sourceBytes":16694,"fixtureSha256":"81fecc5feda4e724a2622fb67ff1cc4a3a5bb5149394345124f269c18d28065f","modelSha256":"ced856311c7ba84da92c260493ccadca3448ca52b0c2ac86fb28aabaf3b74973","schema":4,"blocks":769,"runs":2144,"rows":705,"warmupPairs":100,"measuredPairs":400,"insertP99Us":2777,"backspaceP99Us":2615}
