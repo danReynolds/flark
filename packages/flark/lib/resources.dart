@@ -42,6 +42,19 @@ class FlarkResourceSession {
   String get destination => resource?.destination ?? '';
   String get title => resource?.title ?? '';
 
+  /// What the host's form is editing. Both hosts render these rather than
+  /// deriving them, so a terminal form cannot end up calling an image a link.
+  String get formTitle =>
+      '${resource == null ? 'Insert' : 'Edit'} ${image ? 'image' : 'link'}';
+  String get labelField => image ? 'Alt text' : 'Text';
+  String get destinationField => image ? 'Image URL' : 'Destination';
+  String get titleField => 'Title (optional)';
+
+  /// Why [save] or [remove] refused, for the host to show.
+  String failureFor(String destination) => destination.trim().isEmpty
+      ? 'Enter a destination.'
+      : 'This edit could not be applied. Cancel and reselect the text.';
+
   bool save({
     required String destination,
     required String label,

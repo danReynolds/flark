@@ -161,7 +161,7 @@ void main() {
       expect(
         tester
             .semantics()
-            .single(role: SemanticRole.textField, label: 'Link destination')
+            .single(role: SemanticRole.textField, label: 'Destination')
             .value,
         'https://dart.dev',
       );
@@ -170,7 +170,7 @@ void main() {
       expect(
         tester
             .semantics()
-            .single(role: SemanticRole.textField, label: 'Link destination')
+            .single(role: SemanticRole.textField, label: 'Destination')
             .value,
         'https://flutter.dev',
       );
@@ -187,7 +187,7 @@ void main() {
       tester.render();
       key(KeyCode.k, cmd: true);
       expect(tester.renderToString(), contains('Edit link'));
-      await value('Link text', 'discard');
+      await value('Text', 'discard');
       button('Cancel');
       await tester.settle();
       expect(editor.source, '[**hello**](https://dart.dev) world');
@@ -206,7 +206,7 @@ void main() {
       button('Save');
       expect(tester.renderToString(), contains('Enter a destination.'));
       expect(editor.source, 'hello world');
-      await value('Link destination', 'https://dart.dev');
+      await value('Destination', 'https://dart.dev');
       button('Save');
       expect(editor.source, '[hello](<https://dart.dev>) world');
       expect(

@@ -32,10 +32,12 @@ void main() {
       SharedPreferences? preferences;
       if (appMode) {
         SharedPreferences.setPrefix('flark.profile.');
-        preferences = await SharedPreferences.getInstance();
+        // Bound once: a nullable local captured by a closure does not stay
+        // promoted across an await, so `!` on the first call does not carry.
+        final store = preferences = await SharedPreferences.getInstance();
         addTearDown(() async {
-          await preferences!.remove('v5.active');
-          await preferences.remove('v5.source.Tour');
+          await store.remove('v5.active');
+          await store.remove('v5.source.Tour');
         });
       }
       final frames = <int, FrameTiming>{};
@@ -160,8 +162,9 @@ void main() {
           expect(c.editor.selection.extent, caret);
           if (appMode) {
             c.dispose();
-            await preferences!.setString('v5.active', 'Tour');
-            await preferences.setString('v5.source.Tour', text);
+            final store = preferences!;
+            await store.setString('v5.active', 'Tour');
+            await store.setString('v5.source.Tour', text);
             await tester.pumpWidget(
               DogfoodApp(
                 backend: backend,

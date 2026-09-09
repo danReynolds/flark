@@ -81,12 +81,22 @@ class _RenderSurface extends RenderObject {
     final cols = constraints.maxCols ?? 80;
     final viewport = widget.viewport;
     viewport.focus = widget.focus;
-    final layout = viewport.layout = CellDocumentLayout(
-      widget.controller,
-      cols,
-      widget.theme,
-      widget.policy,
-    );
+    final cached = viewport.layout;
+    final layout = viewport.layout =
+        cached != null &&
+            cached.describes(
+              widget.controller,
+              cols,
+              widget.theme,
+              widget.policy,
+            )
+        ? cached
+        : CellDocumentLayout(
+            widget.controller,
+            cols,
+            widget.theme,
+            widget.policy,
+          );
     final result = constraints.constrain(
       CellSize(cols, constraints.maxRows ?? layout.lines.length.clamp(1, 24)),
     );

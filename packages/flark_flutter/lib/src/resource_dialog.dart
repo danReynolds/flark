@@ -28,9 +28,7 @@ class _ResourceDialogState extends State<ResourceDialog> {
       Navigator.of(context).pop();
     } else {
       setState(
-        () => error = !remove && destination.text.trim().isEmpty
-            ? 'Enter a destination.'
-            : 'This edit could not be applied. Cancel and reselect the text.',
+        () => error = widget.session.failureFor(remove ? 'x' : destination.text),
       );
     }
   }
@@ -45,9 +43,7 @@ class _ResourceDialogState extends State<ResourceDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(
-      '${widget.session.resource == null ? 'Insert' : 'Edit'} ${widget.session.image ? 'image' : 'link'}',
-    ),
+    title: Text(widget.session.formTitle),
     content: SizedBox(
       width: 420,
       child: SingleChildScrollView(
@@ -57,14 +53,14 @@ class _ResourceDialogState extends State<ResourceDialog> {
             TextField(
               controller: label,
               decoration: InputDecoration(
-                labelText: widget.session.image ? 'Alt text' : 'Text',
+                labelText: widget.session.labelField,
               ),
             ),
             TextField(
               controller: destination,
               autofocus: true,
               decoration: InputDecoration(
-                labelText: widget.session.image ? 'Image URL' : 'Destination',
+                labelText: widget.session.destinationField,
               ),
               onSubmitted: (_) => submit(),
             ),

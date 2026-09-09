@@ -1,3 +1,4 @@
+import 'package:flark/code.dart';
 import 'package:fleury/fleury_core.dart';
 
 /// Plain cell styles, installed in ThemeData.extensions or on one editor.
@@ -16,7 +17,47 @@ final class FlarkCellTheme {
   });
 
   final CellStyle body, heading, marker, quote, link, code, selection, caret;
-  final Map<String, CellStyle> syntax;
+  /// Keyed by presentation role, not by the analyzer's scope names: keying
+  /// on raw scopes left `built_in`, `regexp`, `tag` and a dozen others
+  /// rendering as body text.
+  final Map<CodeSyntaxRole, CellStyle> syntax;
+
+  /// A value type: the host rebuilds one per frame when no theme extension is
+  /// installed, and the cell layout reuses its geometry only while the theme it
+  /// was built with still compares equal.
+  @override
+  bool operator ==(Object other) =>
+      other is FlarkCellTheme &&
+      other.body == body &&
+      other.heading == heading &&
+      other.marker == marker &&
+      other.quote == quote &&
+      other.link == link &&
+      other.code == code &&
+      other.selection == selection &&
+      other.caret == caret &&
+      _sameSyntax(other.syntax);
+
+  bool _sameSyntax(Map<CodeSyntaxRole, CellStyle> other) {
+    if (other.length != syntax.length) return false;
+    for (final entry in syntax.entries) {
+      if (other[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    body,
+    heading,
+    marker,
+    quote,
+    link,
+    code,
+    selection,
+    caret,
+    syntax.length,
+  );
 
   static FlarkCellTheme of(BuildContext context) {
     final theme = Theme.of(context);
@@ -29,11 +70,22 @@ final class FlarkCellTheme {
           heading: CellStyle(foreground: theme.colorScheme.primary, bold: true),
           link: CellStyle(foreground: theme.colorScheme.info, underline: true),
           syntax: {
-            'keyword': CellStyle(foreground: theme.colorScheme.primary),
-            'string': CellStyle(foreground: theme.colorScheme.success),
-            'number': CellStyle(foreground: theme.colorScheme.warning),
-            'function': CellStyle(foreground: theme.colorScheme.info),
-            'comment': theme.mutedStyle,
+            CodeSyntaxRole.keyword: CellStyle(
+              foreground: theme.colorScheme.primary,
+            ),
+            CodeSyntaxRole.string: CellStyle(
+              foreground: theme.colorScheme.success,
+            ),
+            CodeSyntaxRole.number: CellStyle(
+              foreground: theme.colorScheme.warning,
+            ),
+            CodeSyntaxRole.function: CellStyle(
+              foreground: theme.colorScheme.info,
+            ),
+            CodeSyntaxRole.variable: CellStyle(
+              foreground: theme.colorScheme.foreground,
+            ),
+            CodeSyntaxRole.comment: theme.mutedStyle,
           },
         );
   }

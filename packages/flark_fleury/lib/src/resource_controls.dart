@@ -66,18 +66,19 @@ class _ResourceDialogState extends State<FlarkResourceDialog> {
   late final title = TextEditingController(text: widget.session.title);
   String? error;
 
-  void submit() {
-    if (widget.session.save(
-      destination: destination.text,
-      label: label.text,
-      title: title.text,
-    )) {
+  void submit({bool remove = false}) {
+    final accepted = remove
+        ? widget.session.remove()
+        : widget.session.save(
+            destination: destination.text,
+            label: label.text,
+            title: title.text,
+          );
+    if (accepted) {
       Navigator.of(context).pop();
     } else {
       setState(
-        () => error = destination.text.trim().isEmpty
-            ? 'Enter a destination.'
-            : 'The document changed. Cancel and select the link again.',
+        () => error = widget.session.failureFor(remove ? 'x' : destination.text),
       );
     }
   }
@@ -92,29 +93,29 @@ class _ResourceDialogState extends State<FlarkResourceDialog> {
 
   @override
   Widget build(BuildContext context) => Dialog(
-    title: widget.session.resource == null ? 'Insert link' : 'Edit link',
+    title: widget.session.formTitle,
     width: (MediaQuery.of(context).size.cols - 4).clamp(16, 56),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('Text', allowSelect: false),
+        Text(widget.session.labelField, allowSelect: false),
         TextInput(
           controller: label,
-          semanticLabel: 'Link text',
+          semanticLabel: widget.session.labelField,
           onSubmit: (_) => submit(),
         ),
-        const Text('Destination', allowSelect: false),
+        Text(widget.session.destinationField, allowSelect: false),
         TextInput(
           controller: destination,
-          semanticLabel: 'Link destination',
+          semanticLabel: widget.session.destinationField,
           autofocus: true,
           onSubmit: (_) => submit(),
         ),
-        const Text('Title (optional)', allowSelect: false),
+        Text(widget.session.titleField, allowSelect: false),
         TextInput(
           controller: title,
-          semanticLabel: 'Link title',
+          semanticLabel: widget.session.titleField,
           onSubmit: (_) => submit(),
         ),
         if (error != null) Text(error!, maxLines: 2),
@@ -125,6 +126,8 @@ class _ResourceDialogState extends State<FlarkResourceDialog> {
               label: 'Cancel',
               onPressed: () => Navigator.of(context).pop(),
             ),
+            if (widget.session.resource != null)
+              Button(label: 'Remove', onPressed: () => submit(remove: true)),
             Button(label: 'Save', onPressed: submit),
           ],
         ),

@@ -85,7 +85,15 @@ class FlarkTreeSitter implements CodeEditingDelegate {
       language: selected,
       base: base,
       extent: extent,
-      action: CodeEditAction.values.byName(action.name),
+      action: switch (action) {
+        // A switch, not `byName`: the two enums are declared in packages that
+        // compile independently, so a member added to one must be a compile
+        // error here rather than an ArgumentError on a keystroke.
+        CodeEditingAction.insert => CodeEditAction.insert,
+        CodeEditingAction.newline => CodeEditAction.newline,
+        CodeEditingAction.indent => CodeEditAction.indent,
+        CodeEditingAction.outdent => CodeEditAction.outdent,
+      },
       text: text,
       indentUnit: indentUnit,
     );

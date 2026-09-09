@@ -1544,8 +1544,12 @@ final class FlarkEditor {
     required bool forward,
     required int cur,
   }) {
-    var current = row, offset = d, guard = projection.rows.length + 2;
-    while (true) {
+    var current = row, offset = d;
+    // Every branch either advances `offset` strictly within the row or steps
+    // `current` one row toward an end, so this terminates; the counter bounds
+    // it anyway, because a stall here is a hung keystroke.
+    var guard = projection.rows.length + row.text.length + 2;
+    while (guard-- > 0) {
       if (forward && offset < current.text.length) {
         final atomic = _adjacentAtomicSegment(current, offset, forward: true);
         final next =
@@ -1567,14 +1571,16 @@ final class FlarkEditor {
         continue;
       }
       final other = _rowAfter(current.index, forward: forward);
-      if (other == null || guard-- <= 0) {
+      if (other == null) {
         return forward ? _doc.anchorsAt(cur).last : _doc.anchorsAt(cur).first;
       }
       offset = forward ? 0 : other.text.length;
       final target = _anchorFor(other, offset, forward: forward);
       if (target != cur) return target;
       current = other;
+      guard += other.text.length;
     }
+    return forward ? _doc.anchorsAt(cur).last : _doc.anchorsAt(cur).first;
   }
 
   static Segment? _adjacentAtomicSegment(
