@@ -13,8 +13,10 @@ replaceable resource controls and the single-editor Flutter theme playground.
 Local automated checks and normal web/macOS builds pass; CI is skipped. The
 observed web accessibility-mode input failure is corrected and covered through
 Chrome's actual semantics transport. This is not a VoiceOver/TalkBack pass.
-The foreground native timing, OS input, lifecycle and physical-device gates
-remain open. The Fleury host/example remains M4/T4. The
+The [macOS continuation](docs/architecture/v5/macos_review_2026_09_08.md) passed
+the complete foreground frame sweep, but sustained insertion missed its p99
+limit and rapid native double-space input needs attribution. OS input, lifecycle
+and physical-device gates remain open. The Fleury host/example remains M4/T4. The
 [revisited priorities](docs/architecture/v5/priorities_after_theming.md) describe
 the next work.
 

@@ -1,0 +1,14 @@
+{
+  "reviewedAtUtc": "2026-09-09T01:17:07.389966+00:00",
+  "baseCommit": "25e6190aa4fe9bfc7588d12b5f39d87ed658be72",
+  "review": "Fresh implementation self-review; not independent peer review",
+  "validation": {
+    "exampleAnalysis": "passed",
+    "qualificationTests": 8,
+    "rawReceipts": "All counts and nearest-rank percentiles verified against raw samples",
+    "whitespace": "passed"
+  },
+  "productionChanges": false,
+  "nativeQualification": "remains open",
+  "ci": "skipped at owner request"
+}

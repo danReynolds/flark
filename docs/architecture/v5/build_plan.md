@@ -47,6 +47,11 @@ replaceable resource presentations and exported Dart configuration. The observed
 web semantic-field input defect is corrected with an actual Chrome regression.
 Those changes do not close native, device, performance or release gates.
 
+The [macOS continuation](macos_review_2026_09_08.md) now records a complete
+24-case foreground frame pass and a longer run with one sustained-insertion
+p99 miss. Rapid native double-space input also needs attribution. The later
+profiling-only change adds timing phases without changing the acceptance gates.
+
 The [revisited priorities](priorities_after_theming.md) put foreground native
 qualification and real consumer adoption next. Fleury remains the next major
 implementation milestone: its real host and `flark_fleury/example` deliver T4

@@ -1,0 +1,56 @@
+{
+  "candidate": "25e6190aa4fe9bfc7588d12b5f39d87ed658be72",
+  "scope": "Exploratory foreground macOS observations through CUA; incomplete native qualification",
+  "normalAppManifest": "normal-final-build.json",
+  "comparisonManifest": "input-comparison-build.json",
+  "observations": [
+    {
+      "check": "Rapid typeText in normal workbench",
+      "expected": "alpha beta  gamma!",
+      "actual": "alpha beta gamma!",
+      "status": "observed missing space"
+    },
+    {
+      "check": "Two explicit Space events in normal workbench",
+      "expected": "alpha beta  gamma!",
+      "actual": "alpha beta gamma!",
+      "status": "observed missing space"
+    },
+    {
+      "check": "Observe after each Space event, then following character",
+      "expected": "x  y",
+      "actual": "x  y",
+      "status": "passed"
+    },
+    {
+      "check": "Native clipboard replacement",
+      "status": "Expected source appeared; CUA timed out waiting for clipboard acknowledgement"
+    },
+    {
+      "check": "Rapid typeText in minimal Flark comparison",
+      "expected": "alpha beta  gamma!",
+      "actual": "alpha beta  gamma!",
+      "caret": 18,
+      "status": "passed once"
+    },
+    {
+      "check": "Same sequence in standard Flutter TextField",
+      "expected": "alpha beta  gamma!",
+      "actual": "alpha beta  gamma!",
+      "caret": 18,
+      "status": "passed once"
+    },
+    {
+      "check": "Repeat explicit rapid Space events in comparison",
+      "status": "Blocked before completion: Mac locked and CUA could not unlock automatically"
+    }
+  ],
+  "originalDraft": "Restored and source/17-byte count visually checked before quitting the normal workbench",
+  "pending": [
+    "Attribution and regression for rapid-space observation",
+    "Native Return/Delete/Backspace and styled editing families",
+    "Code fence editing, clipboard/menu Undo/Redo",
+    "Composition/IME and VoiceOver",
+    "Scroll/resize, ten process reopens and ten OS background/foreground cycles"
+  ]
+}
