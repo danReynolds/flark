@@ -106,19 +106,27 @@ pub(crate) fn scan_link_url(s: &[u8]) -> Option<(usize, usize, usize)> {
 }
 
 /// cmark `link_title`: "…", '…' or (…) with backslash escapes; may span lines.
+///
+/// The generated scanner's alternation lets a backslash be either an escape or
+/// an ordinary title character, and takes the longest overall match. Consuming
+/// escapes greedily instead loses `"a\\"`, whose only reading is a literal
+/// backslash followed by the closing quote — comrak accepts that as a
+/// definition title, so a paragraph the mirror keeps has no block at all.
 pub(crate) fn scan_link_title(s: &[u8]) -> Option<usize> {
     let open = *s.first()?;
     let close = match open { b'"' => b'"', b'\'' => b'\'', b'(' => b')', _ => return None };
-    let mut i = 1;
-    while i < s.len() {
+    let mut reachable = vec![false; s.len() + 1];
+    reachable[1] = true;
+    let mut best = None;
+    for i in 1..s.len() {
+        if !reachable[i] { continue; }
         let b = s[i];
-        if b == b'\\' && i + 1 < s.len() && ispunct(s[i + 1]) { i += 2; continue; }
-        if b == close { return Some(i + 1); }
-        if open == b'(' && b == b'(' { return None; }
-        if b == 0 { return None; }
-        i += 1;
+        if b == close { best = Some(i + 1); }
+        if b == 0 { continue; }
+        if b == b'\\' && i + 1 < s.len() && ispunct(s[i + 1]) { reachable[i + 2] = true; }
+        if b != close && !(open == b'(' && b == b'(') { reachable[i + 1] = true; }
     }
-    None
+    best
 }
 
 /// comrak `parse_reference_inline`, returning (consumed, label range, dest range).
@@ -159,6 +167,22 @@ mod mirror_tests {
     fn rejects_title_followed_by_text_on_same_line() { assert!(paragraph_definitions("[foo]: /url \"title\" ok").is_empty()); }
     #[test]
     fn multiline_label() { let d = paragraph_definitions("[\nfoo]: /url\nbar"); assert_eq!(d.len(), 1); assert_eq!(d[0].end, 13); }
+    #[test]
+    fn a_trailing_backslash_may_close_a_title() {
+        // The only reading of a title ending in a backslash-quote is a literal
+        // backslash then the closing quote; comrak takes it, so the whole line
+        // is a definition and the mirror must agree or leave a line with no
+        // block at all.
+        assert_eq!(scan_link_title(br#""a\""#), Some(4));
+        assert_eq!(paragraph_definitions("[foo]: /url \"a\\\"\n").len(), 1);
+        // The longest match still wins where an escape can close later.
+        assert_eq!(scan_link_title(br#""a\"""#), Some(5));
+        // Text after a title is still not a definition, and a title with
+        // nothing to close it is still none.
+        assert!(paragraph_definitions("[foo]: /url \"a\\\"b\n").is_empty());
+        assert!(paragraph_definitions("[foo]: /url \"a\n").is_empty());
+    }
+
     #[test]
     fn several_in_a_row() { assert_eq!(paragraph_definitions("[a]: /a\n[b]: /b\ntext").len(), 2); }
 }

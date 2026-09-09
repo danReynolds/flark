@@ -5,7 +5,11 @@
 /// delimiter row). A row's display text is its lines' content with hidden
 /// run ranges removed and replacements substituted, joined by line breaks.
 /// Segments map display ranges back to source ranges; hidden bytes are the
-/// gaps between segments and are never inspected, only skipped.
+/// gaps between segments and are never inspected, only skipped. A line the
+/// row's text does not represent — a fence, a setext underline, a blank line
+/// inside indented code — carries -1 and holds no caret: an edit there would
+/// be invisible, or would paint at another line's position. Bare empty
+/// heading/item prefixes remain literal authoring text until completed.
 library;
 
 import 'dart:collection';
@@ -533,7 +537,10 @@ final class _Builder {
       // the whole line.
       final contentEnd = _lineEnd(l);
       final shells = _shellsFor(containerOf[l]);
-      var prefixStart = contentEnd;
+      // Whitespace on a blank line outside any container is the author's, not
+      // a parser-owned prefix. Calling it prefix leaves a document that is
+      // only a tab with no caret before it and nothing Backspace can remove.
+      var prefixStart = shells.isEmpty ? m.lineStartUtf16(l) : contentEnd;
       if (shells.isNotEmpty) {
         final inner = shells.last;
         final first = m.block(inner.block, BlockField.contentOffset);
@@ -542,6 +549,28 @@ final class _Builder {
           if (m.content(c, ContentField.line) == l) {
             prefixStart = m.content(c, ContentField.prefixStartUtf16);
           }
+        }
+      }
+      // Comrak accepts a bare unordered marker as an empty item. Keep that
+      // parser-owned one-character prefix editable while the user may still
+      // be starting emphasis/strong. No marker recognition happens in Dart.
+      if (shells.isNotEmpty && shells.last.kind == ShellKind.item) {
+        final item = shells.last.block;
+        final start = m.block(item, BlockField.startUtf16);
+        if (m.block(item, BlockField.firstLine) == l &&
+            contentEnd - start == 1 &&
+            m.block(item, BlockField.endUtf16) == contentEnd) {
+          addRow(
+            _barePrefixRow(
+              rows.length,
+              item,
+              l,
+              start,
+              contentEnd,
+              shells.sublist(0, shells.length - 2),
+            ),
+          );
+          continue;
         }
       }
       addRow(
@@ -595,6 +624,42 @@ final class _Builder {
     }
     return Projection._(m, src, ordered, rowsByLine, options);
   }
+
+  /// Presentation of an authenticated empty block's bare opening prefix.
+  /// Ranges and heading level come from the parser; this does not recognize
+  /// Markdown or change its source/model. Whitespace commits the block on the
+  /// next parse, while a second asterisk can continue an inline delimiter.
+  ProjectedRow _barePrefixRow(
+    int index,
+    int block,
+    int line,
+    int start,
+    int end,
+    List<Shell> shells,
+  ) => ProjectedRow(
+    index: index,
+    kind: RowKind.paragraph,
+    block: block,
+    firstLine: line,
+    lineCount: 1,
+    text: src.substring(start, end),
+    segments: [
+      Segment(
+        displayStart: 0,
+        displayEnd: end - start,
+        sourceStart: start,
+        sourceEnd: end,
+        styles: 0,
+        exact: true,
+      ),
+    ],
+    shells: shells,
+    sourceStart: start,
+    sourceEnd: end,
+    contentStarts: [start],
+    contentEnds: [end],
+    prefixStarts: [start],
+  );
 
   void _computeStyles() {
     for (var i = 0; i < m.runCount; i++) {
@@ -796,9 +861,20 @@ final class _Builder {
       }
       if (sourceStart < 0) sourceStart = cs;
       sourceEnd = ce;
-      final prevEnd = c > 0
+      var prevEnd = c > 0
           ? breakStarts[m.content(co + c - 1, ContentField.line)]
           : null;
+      if (c > 0 && prevEnd == null) {
+        // Not every line ending has a break run: comrak reports none inside
+        // raw inline HTML, or where an unparsed bracket run spans lines. Only
+        // a gap the markup already hides — a link's destination continued on
+        // the next line — displays nothing. Otherwise the two lines would be
+        // joined with nothing between them, and both sides of the break would
+        // share one display position.
+        final gap = m.content(co + c - 1, ContentField.endUtf16);
+        final covered = hidden.any((h) => h.$1 <= gap && h.$2 >= cs);
+        if (!covered && cs > gap) prevEnd = gap;
+      }
       final codeBreak = c > 0
           ? codeBreaks[m.content(co + c - 1, ContentField.line)]
           : null;
@@ -940,10 +1016,24 @@ final class _Builder {
       }
       if (p < ce) emitGap(p, ce);
     }
-    _fillLineEnds(first, starts, ends, prefixes);
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:
+        final blockStart = m.block(block, BlockField.startUtf16);
+        final level = m.block(block, BlockField.attr0);
+        if (n == 1 &&
+            sourceStart == sourceEnd &&
+            sourceEnd == _lineEnd(first) &&
+            sourceEnd - blockStart == level) {
+          return _barePrefixRow(
+            index,
+            block,
+            first,
+            blockStart,
+            sourceEnd,
+            shells,
+          );
+        }
         return ProjectedRow(
           index: index,
           kind: RowKind.heading,
@@ -1037,22 +1127,6 @@ final class _Builder {
     for (var l = first; l < first + n && l < m.lineCount; l++) _lineEnd(l),
   ];
 
-  /// Lines of a row without a content record keep the caret at their end.
-  void _fillLineEnds(
-    int first,
-    List<int> starts,
-    List<int> ends,
-    List<int> prefixes,
-  ) {
-    for (var i = 0; i < starts.length; i++) {
-      if (starts[i] >= 0 || first + i >= m.lineCount) continue;
-      final e = _lineEnd(first + i);
-      starts[i] = e;
-      ends[i] = e;
-      prefixes[i] = e;
-    }
-  }
-
   ProjectedRow _literalRow(
     int index,
     int block,
@@ -1129,10 +1203,11 @@ final class _Builder {
         );
       }
     }
-    _fillLineEnds(first, starts, ends, prefixes);
     final flags = m.block(block, BlockField.flags);
-    // Fence lines hold no caret: an edit there would be invisible. The info
-    // string is a host affordance, not a caret position.
+    // A line the row's text does not represent holds no caret already: it has
+    // no content record, so its entry stays -1. Fence lines do have records,
+    // and hold no caret for the same reason — an edit there would be
+    // invisible. The info string is a host affordance, not a caret position.
     if (kind == BlockKind.codeBlock && flags & 1 != 0 && starts.isNotEmpty) {
       starts[0] = -1;
       ends[0] = -1;

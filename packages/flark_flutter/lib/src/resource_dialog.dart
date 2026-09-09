@@ -1,18 +1,6 @@
 import 'resource_controls.dart';
+export 'package:flark/resources.dart' show flarkResourceUri, flarkOpenableUri;
 import 'package:flutter/material.dart';
-
-/// Resolve document-relative resources without interpreting Markdown.
-Uri? flarkResourceUri(String value, Uri? base) {
-  final uri = Uri.tryParse(value);
-  return uri == null ? null : base?.resolveUri(uri) ?? uri;
-}
-
-Uri? flarkOpenableUri(String value, Uri? base) {
-  final uri = flarkResourceUri(value, base);
-  return uri != null && const {'https', 'http', 'mailto'}.contains(uri.scheme)
-      ? uri
-      : null;
-}
 
 class ResourceDialog extends StatefulWidget {
   const ResourceDialog({super.key, required this.session});

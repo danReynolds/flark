@@ -199,6 +199,16 @@ final class FlarkDocument {
   late final List<(int, int)> _atomicIntervals = () {
     if (_positions != null) return _positions._atomicIntervals;
     final intervals = <(int, int)>[];
+    // An escape displays one character behind a hidden backslash, so both of
+    // its ends are legal but the offset between them is a typing context that
+    // re-targets the escape: `a\*b` becomes `a\Z*b`, unhiding the backslash
+    // and arming the asterisk. The pair is one caret unit.
+    for (var r = 0; r < model.runCount; r++) {
+      if (model.run(r, RunField.kind) != RunKind.escape) continue;
+      final start = model.run(r, RunField.startUtf16);
+      final contentEnd = model.run(r, RunField.contentEndUtf16);
+      if (contentEnd > start) intervals.add((start, contentEnd));
+    }
     for (final row in projection.rows) {
       for (final segment in row.segments) {
         if (!segment.exact && segment.sourceEnd > segment.sourceStart) {

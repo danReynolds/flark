@@ -5,6 +5,10 @@ The Rust crate is inside this package at `native/`. It uses the official
 Tree-sitter runtime/highlighter and unmodified, pinned language grammar crates.
 Flutter and Fleury can consume the same source ranges and edit proposals.
 The package does not own Markdown fences or editor state.
+`package:flark_tree_sitter/flark.dart` provides the shared `FlarkTreeSitter`
+adapter to Flark's command contract. Flutter adds its asset-loading convenience
+in `flark_flutter/code.dart`; Fleury uses the same adapter directly. Its edit,
+closer and highlighting scenarios now run here without Flutter bindings.
 The [architecture decision](ARCHITECTURE.md) explains the Rust/Dart boundary and
 the alternatives considered.
 

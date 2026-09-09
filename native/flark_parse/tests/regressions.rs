@@ -23,6 +23,29 @@ impl M {
 }
 
 #[test]
+fn empty_atx_heading_separator_is_prefix_not_content() {
+    for level in 1..=6 {
+      for outer in ["", "> ", "- ", "  "] {
+       for separator in [" ", "  ", "\t", " \t"] {
+        for ending in ["", "\n", "\r\n"] {
+            let prefix = format!("{outer}{}{separator}", "#".repeat(level));
+            let src = format!("{prefix}{ending}");
+            let m = M::of(&src); m.clean();
+            let heading = (0..m.n(header::BLOCK_COUNT)).find(|&b| m.block(b, block::KIND) == block_kind::HEADING as usize).unwrap();
+            let c = m.block(heading, block::CONTENT_OFFSET);
+            assert_eq!(m.content(c, content::START_BYTE), prefix.len(), "for {src:?}");
+            assert_eq!(m.content(c, content::END_BYTE), prefix.len(), "for {src:?}");
+
+            let typed = format!("{prefix}é  {ending}");
+            let m = M::of(&typed); m.clean();
+            assert_eq!(m.contents(&typed), ["é  "], "for {typed:?}");
+        }
+       }
+      }
+    }
+}
+
+#[test]
 fn literal_tabs_do_not_hide_a_shifted_pipeless_cell() {
     for padding in ["", " ", "  ", "   "] {
       for body_padding in ["", " ", "  ", "   "] {
@@ -296,5 +319,51 @@ fn item_marker_endpoints_are_source_ranges_not_display_columns() {
         let end = m.block(item, block::MARKER_END_BYTE);
         assert_eq!(&src[start..end], marker, "for {src:?}");
         assert_eq!(m.block(item, block::MARKER_END_UTF16), src[..end].encode_utf16().count());
+    }
+}
+
+#[test]
+fn a_row_short_of_the_header_columns_has_empty_cells_not_delimiters() {
+    for (first, next) in [("", ""), ("> ", "> "), ("- ", "  ")] {
+      for ending in ["\n", "\r\n", ""] {
+        for (columns, body, cells) in [
+            (2, "| c |", vec![" c ", ""]),
+            (2, "| c", vec![" c", ""]),
+            (2, "c |", vec!["c ", ""]),
+            (2, "| c |   ", vec![" c ", ""]),
+            (3, "| c |", vec![" c ", "", ""]),
+            (3, "| c | d", vec![" c ", " d", ""]),
+            // A row that is not short keeps every derived range.
+            (2, "|  |  |", vec!["  ", "  "]),
+            (2, "| c ||", vec![" c ", ""]),
+            (2, "| c | d |", vec![" c ", " d "]),
+            (2, "| c \\| d |", vec![" c \\| d ", ""]),
+        ] {
+            let head: String = (0..columns).map(|i| format!("| h{i} ")).collect::<String>() + "|";
+            let delim: String = (0..columns).map(|_| "| --- ").collect::<String>() + "|";
+            let src = format!("{first}{head}{ending}{next}{delim}{ending}{next}{body}{ending}");
+            if ending.is_empty() { continue; }
+            let m = M::of(&src); m.clean();
+            let row = (0..m.n(header::BLOCK_COUNT))
+                .filter(|&b| m.block(b, block::KIND) == block_kind::TABLE_ROW as usize)
+                .next_back().unwrap();
+            let body_cells: Vec<usize> = (0..m.n(header::BLOCK_COUNT))
+                .filter(|&b| m.block(b, block::KIND) == block_kind::TABLE_CELL as usize
+                    && m.block(b, block::FIRST_LINE) >= m.block(row, block::FIRST_LINE))
+                .collect();
+            let text: Vec<&str> = body_cells.iter()
+                .map(|&b| &src[m.block(b, block::START_BYTE)..m.block(b, block::END_BYTE)])
+                .collect();
+            assert_eq!(text, cells, "for {src:?}");
+            // Every cell stays on its own line and inside the row.
+            let line_end = src[m.block(row, block::START_BYTE)..].find(['\n', '\r'])
+                .map_or(src.len(), |i| m.block(row, block::START_BYTE) + i);
+            for &b in &body_cells {
+                assert!(m.block(b, block::END_BYTE) <= line_end,
+                    "cell crosses its line in {src:?}");
+                assert!(m.block(b, block::START_BYTE) <= m.block(b, block::END_BYTE));
+            }
+        }
+      }
     }
 }

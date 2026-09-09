@@ -279,7 +279,19 @@ impl<'a> Extractor<'a> {
                 rec[block::ATTR0] = offset as u32;
                 container = Some(Container { kind: ContainerKind::Item, offset, first_line, checkbox });
             }
-            NodeValue::ThematicBreak => rec[block::KIND] = block_kind::THEMATIC_BREAK,
+            NodeValue::ThematicBreak => {
+                rec[block::KIND] = block_kind::THEMATIC_BREAK;
+                // A thematic break is one line. Ending a document with one
+                // makes comrak's sourcepos run on through the blank lines that
+                // follow; the rule's row would then own them, and each of
+                // their line ends would be a caret painting on the rule.
+                let le = self.li.line_end(first_line, self.src.len());
+                if end > le {
+                    rec[block::END_BYTE] = le as u32;
+                    rec[block::END_UTF16] = self.li.u16(le);
+                    rec[block::LINE_COUNT] = 1;
+                }
+            }
             NodeValue::Table(t) => {
                 rec[block::KIND] = block_kind::TABLE; rec[block::ATTR0] = t.num_columns as u32;
                 let mut packed = 0u32;
@@ -510,11 +522,22 @@ impl<'a> Extractor<'a> {
                     (p.cur.pos + 1) as isize - parent.sourcepos.start.column as isize
                 } else { 0 };
                 let corrected = shift_columns(sp, column_delta);
-                let (cs, ce) = sourcepos_range(corrected, &self.li, self.src.len()).unwrap_or((0, 0));
+                let (mut cs, mut ce) = sourcepos_range(corrected, &self.li, self.src.len()).unwrap_or((0, 0));
+                let bytes = self.src.as_bytes();
+                // A row short of the header's columns is filled with cells whose
+                // sourcepos is the row's closing delimiter, or its line break
+                // when the row has none; several missing cells repeat the one
+                // position. A cell's content can never begin at an unescaped
+                // pipe or cross the line end, so a childless cell there is the
+                // implicit empty cell, not the delimiter it points at.
+                let le = self.li.line_end(l0, self.src.len());
+                ce = ce.min(le);
+                cs = cs.min(ce);
+                if cs < ce && bytes[cs] == b'|' && leaf.node.first_child().is_none() { ce = cs; }
+                let (cs, ce) = (cs, ce);
                 let rec = &mut self.blocks[idx];
                 rec[block::START_BYTE] = cs as u32; rec[block::START_UTF16] = self.li.u16(cs);
                 rec[block::END_BYTE] = ce as u32; rec[block::END_UTF16] = self.li.u16(ce);
-                let bytes = self.src.as_bytes();
                 let mut a = cs;
                 while a < ce && bytes[a] == b' ' { a += 1; }
                 // Trailing cell padding is editable whitespace. Trimming it
@@ -528,7 +551,12 @@ impl<'a> Extractor<'a> {
                 let bytes = self.src.as_bytes();
                 let (mut cs, mut ce) = (span.start, span.end);
                 let mut p = cs; while p < ce && bytes[p] == b'#' { p += 1; }
-                while p < ce && (bytes[p] == b' ' || bytes[p] == b'\t') { p += 1; }
+                // paragraph_line trims trailing whitespace. In an empty ATX
+                // heading that includes the required opening separator, so
+                // consume it against the physical line end. It is prefix,
+                // not an editable leading space before the first character.
+                let line_end = self.li.line_end(l0, self.src.len());
+                while p < line_end && (bytes[p] == b' ' || bytes[p] == b'\t') { p += 1; }
                 cs = p;
                 let mut q = ce; while q > cs && bytes[q - 1] == b'#' { q -= 1; }
                 if q < ce && (q == cs || bytes[q - 1] == b' ' || bytes[q - 1] == b'\t') {

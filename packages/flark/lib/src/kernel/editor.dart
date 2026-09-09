@@ -915,14 +915,15 @@ final class FlarkEditor {
     if (row.kind == RowKind.tableCell) return false;
     if (row.kind == RowKind.heading) return _setHeading(0);
     if (row.fenced && row.text.isEmpty) {
+      // A fence that displays nothing goes whole, closed or not. An unclosed
+      // one owns the blank lines after it, so nothing else can reach them and
+      // refusing here leaves a fence the document can never be rid of.
       final block = _doc.model.blockAt(row.block);
-      if (block.flags & 2 != 0) {
-        return _commit(
-          source.replaceRange(block.startUtf16, block.endUtf16, ''),
-          FlarkSelection.collapsed(block.startUtf16),
-          typing: false,
-        );
-      }
+      return _commit(
+        source.replaceRange(block.startUtf16, block.endUtf16, ''),
+        FlarkSelection.collapsed(block.startUtf16),
+        typing: false,
+      );
     }
     final i = (_doc.model.lineOfUtf16(selection.extent) - row.firstLine).clamp(
       0,
@@ -945,7 +946,19 @@ final class FlarkEditor {
         typing: false,
       );
     }
-    if (row.index == 0) return false;
+    if (row.index == 0) {
+      // Nothing precedes this row to join onto. A row that displays nothing
+      // but owns source — a thematic break, an unclosed empty fence — would
+      // otherwise be markup the document can never be rid of.
+      if (row.text.isEmpty && row.sourceEnd > row.sourceStart) {
+        return _commit(
+          source.replaceRange(row.sourceStart, row.sourceEnd, ''),
+          FlarkSelection.collapsed(row.sourceStart),
+          typing: false,
+        );
+      }
+      return false;
+    }
     final prev = projection.rows[row.index - 1];
     if (prev.kind == RowKind.tableCell) return false;
     if (prev.firstLine + prev.lineCount > row.firstLine) return false;
@@ -1001,14 +1014,20 @@ final class FlarkEditor {
     for (var i = row.contentEnds.length - 1; i >= 0; i--) {
       if (row.contentEnds[i] >= 0) return row.contentEnds[i];
     }
-    return -1;
+    return _bodylessFenceAnchor(row);
   }
+
+  /// A bodyless fence has no content record; its one anchor is its source end,
+  /// as `Projection.lineSpans` publishes it. Without this the joins refuse and
+  /// the fence, and the line break after it, can never be deleted.
+  static int _bodylessFenceAnchor(ProjectedRow row) =>
+      row.fenced ? row.sourceEnd : -1;
 
   static int _firstCaretStart(ProjectedRow row) {
     for (final s in row.contentStarts) {
       if (s >= 0) return s;
     }
-    return -1;
+    return _bodylessFenceAnchor(row);
   }
 
   bool _newline(bool paragraph) {
@@ -1446,14 +1465,26 @@ final class FlarkEditor {
           );
           target = forward ? anchors.last : anchors.first;
         case MoveUnit.row:
-          final other = _rowAfter(row.index, forward: forward);
-          if (other == null) return false;
           final goal = _goalColumn ?? d;
-          target = _anchorFor(
-            other,
-            goal.clamp(0, other.text.length),
-            forward: forward,
-          );
+          // A row nothing displays — an empty table cell the source never
+          // wrote — anchors back into its neighbour. Vertical movement must
+          // leave the caret's own row, so keep looking past those.
+          var other = _rowAfter(row.index, forward: forward);
+          int? landing;
+          while (other != null) {
+            final candidate = _anchorFor(
+              other,
+              goal.clamp(0, other.text.length),
+              forward: forward,
+            );
+            if (_doc.displayOf(candidate).row != row.index) {
+              landing = candidate;
+              break;
+            }
+            other = _rowAfter(other.index, forward: forward);
+          }
+          if (landing == null) return false;
+          target = landing;
           final moved = _select(
             extend
                 ? FlarkSelection(sel.base, target)
@@ -1470,44 +1501,47 @@ final class FlarkEditor {
     );
   }
 
+  /// One grapheme step, continued until the caret actually moves. Virtual
+  /// leading spaces and a table cell a row never wrote both anchor back to the
+  /// offset the caret already holds; reporting that as the target stalls the
+  /// caret at the edge of a code block or inside a table forever.
   int _step(
     ProjectedRow row,
     int d, {
     required bool forward,
     required int cur,
   }) {
-    if (forward) {
-      if (d < row.text.length) {
-        final atomic = _adjacentAtomicSegment(row, d, forward: true);
-        if (atomic != null) {
-          return _anchorFor(row, atomic.displayEnd, forward: true);
-        }
-        return _anchorFor(
-          row,
-          d + row.text.substring(d).characters.first.length,
-          forward: true,
-        );
+    var current = row, offset = d, guard = projection.rows.length + 2;
+    while (true) {
+      if (forward && offset < current.text.length) {
+        final atomic = _adjacentAtomicSegment(current, offset, forward: true);
+        final next =
+            atomic?.displayEnd ??
+            offset + current.text.substring(offset).characters.first.length;
+        final target = _anchorFor(current, next, forward: true);
+        if (target != cur) return target;
+        offset = next;
+        continue;
       }
-      final next = _rowAfter(row.index, forward: true);
-      return next == null
-          ? _doc.anchorsAt(cur).last
-          : _anchorFor(next, 0, forward: true);
-    }
-    if (d > 0) {
-      final atomic = _adjacentAtomicSegment(row, d, forward: false);
-      if (atomic != null) {
-        return _anchorFor(row, atomic.displayStart, forward: false);
+      if (!forward && offset > 0) {
+        final atomic = _adjacentAtomicSegment(current, offset, forward: false);
+        final next =
+            atomic?.displayStart ??
+            offset - current.text.substring(0, offset).characters.last.length;
+        final target = _anchorFor(current, next, forward: false);
+        if (target != cur) return target;
+        offset = next;
+        continue;
       }
-      return _anchorFor(
-        row,
-        d - row.text.substring(0, d).characters.last.length,
-        forward: false,
-      );
+      final other = _rowAfter(current.index, forward: forward);
+      if (other == null || guard-- <= 0) {
+        return forward ? _doc.anchorsAt(cur).last : _doc.anchorsAt(cur).first;
+      }
+      offset = forward ? 0 : other.text.length;
+      final target = _anchorFor(other, offset, forward: forward);
+      if (target != cur) return target;
+      current = other;
     }
-    final prev = _rowAfter(row.index, forward: false);
-    return prev == null
-        ? _doc.anchorsAt(cur).first
-        : _anchorFor(prev, prev.text.length, forward: false);
   }
 
   static Segment? _adjacentAtomicSegment(

@@ -48,7 +48,7 @@ void main() {
   });
 
   test('rows: prefixes hidden, breaks kept, blank lines are rows', () {
-    final p = project('# Title\n\n> quote\n> more\n\n- item\n-\n');
+    final p = project('# Title\n\n> quote\n> more\n\n- item\n- \n');
     expect(p.rows.map((r) => (r.kind, r.text)), [
       (RowKind.heading, 'Title'),
       (RowKind.blank, ''),

@@ -1,5 +1,11 @@
 > **v5 in progress (2026-09).** The editor is being rebuilt on a synchronous core; see [RFC 030](docs/architecture/rfc/rfc_030_synchronous_core.md) and the [v5 build plan](docs/architecture/v5/build_plan.md). The v4 text below is historical; v4 lives under `legacy/v4/`.
 
+The v5 second-host experiment is now runnable in
+[`flark_fleury`](packages/flark_fleury/README.md): terminal and standalone browser
+editing, plus a Fleury theme playground. Its
+[milestone plan](docs/architecture/v5/fleury_host_plan.md) distinguishes the
+initial slice from the remaining M4 qualification.
+
 # Flark
 
 Flark is a high-performance, continuously rendered Markdown editor with a
