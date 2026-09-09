@@ -1,4 +1,5 @@
 import 'package:flark/flark.dart';
+import 'package:flark/resources.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -142,5 +143,29 @@ void main() {
     expect(e.source, '');
     expect(e.apply(const InsertText('x')), isTrue);
     expect(e.source, '**x**');
+  });
+
+  test('a resource session names the form it is editing', () {
+    // Both hosts render these rather than deriving them: a host that branches
+    // on `image` itself ends up calling an image a link in one of its dialogs.
+    FlarkResourceSession session(bool image, InlineResource? resource) =>
+        FlarkResourceSession(
+          image: image,
+          resource: resource,
+          selectedText: '',
+          isActive: () => true,
+          apply: (_) => true,
+        );
+    final e = FlarkEditor(backend, text: '![cat](/cat.png)', caret: 3);
+    final existing = e.document.resources.first;
+
+    expect(session(false, null).formTitle, 'Insert link');
+    expect(session(true, null).formTitle, 'Insert image');
+    expect(session(true, existing).formTitle, 'Edit image');
+    expect(session(true, existing).labelField, 'Alt text');
+    expect(session(false, existing).labelField, 'Text');
+    expect(session(true, existing).destinationField, 'Image URL');
+    expect(session(false, null).failureFor('  '), 'Enter a destination.');
+    expect(session(false, null).failureFor('/u'), contains('Cancel'));
   });
 }

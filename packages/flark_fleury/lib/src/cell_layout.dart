@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:characters/characters.dart';
+import 'package:flark/code.dart';
 import 'package:flark/flark.dart';
 import 'package:fleury/fleury_core.dart';
 
@@ -85,7 +88,17 @@ final class CellDocumentLayout {
       }
     }
     if (lines.isEmpty) lines.add(CellLine(null, 0, ''));
+    for (var i = 0; i < lines.length; i++) {
+      final row = lines[i].row;
+      if (row != null) _rowLine.putIfAbsent(row.index, () => i);
+    }
+    colorRevision = controller.colorRevision;
+    builds++;
   }
+
+  /// Layouts built in this isolate. A frame that rebuilds geometry it could
+  /// have reused shows up here, which is what the reuse regression asserts.
+  static int builds = 0;
 
   final FlarkFleuryController controller;
   final String source;
@@ -96,7 +109,29 @@ final class CellDocumentLayout {
   final lines = <CellLine>[];
   final _seenItems = <int>{};
   (int, int)? sourceWindow;
+  final _rowLine = <int, int>{};
+  late final int colorRevision;
   static const _widths = DefaultWidthResolver();
+
+  /// Whether this geometry still describes [controller] under these settings.
+  /// Laying the whole document out again per frame allocates a glyph for every
+  /// grapheme in it while only the viewport is painted.
+  bool describes(
+    FlarkFleuryController other,
+    int cols,
+    FlarkCellTheme theme,
+    CellWidthPolicy policy,
+  ) =>
+      identical(controller, other) &&
+      this.cols == cols &&
+      this.theme == theme &&
+      this.policy == policy &&
+      colorRevision == other.colorRevision &&
+      source == other.editor.source &&
+      (projection == null) == other.editor.sourceMode &&
+      (sourceWindow == null ||
+          (other.editor.selection.extent >= sourceWindow!.$1 &&
+              other.editor.selection.extent <= sourceWindow!.$2));
   static bool _lowSurrogate(int unit) => unit >= 0xdc00 && unit <= 0xdfff;
 
   late final String _quoteRail = _widths.widthOfText('▎', policy) == 1
@@ -135,10 +170,7 @@ final class CellDocumentLayout {
     int sourceStart = 0,
   }) {
     // Always leave a cell for a caret, even in a deeply nested narrow viewport.
-    prefix = prefix.substring(
-      0,
-      prefix.length.clamp(0, (cols - 2).clamp(0, cols)),
-    );
+    prefix = prefix.substring(0, math.min(prefix.length, math.max(cols - 2, 0)));
     var line = CellLine(row, 0, prefix, sourceStart: sourceStart);
     lines.add(line);
     var offset = 0;
@@ -167,10 +199,7 @@ final class CellDocumentLayout {
         safe = '◌$safe';
         width = 1;
       }
-      final capacity = (cols - prefix.length - 1).clamp(
-        1,
-        cols.clamp(1, cols + 1),
-      );
+      final capacity = math.max(cols - prefix.length - 1, 1);
       if (width > capacity) {
         safe = '�';
         width = 1;
@@ -243,8 +272,10 @@ final class CellDocumentLayout {
         if (colorIndex < colors.spans.length) {
           final span = colors.spans[colorIndex];
           if (offset >= span.start) {
-            final kind = span.scopes.lastOrNull?.split('.').first;
-            style = style.merge(theme.syntax[kind] ?? CellStyle.none);
+            final role = codeSyntaxRole(
+              span.scopes.lastOrNull?.split('.').first,
+            );
+            style = style.merge(theme.syntax[role] ?? CellStyle.none);
           }
         }
       }
@@ -275,10 +306,18 @@ final class CellDocumentLayout {
 
   CellOffset positionFor(int source) {
     final position = projection?.displayForSource(source);
+    // A row's lines are contiguous, so start at its first one rather than
+    // scanning the document for it.
+    var i = 0;
+    if (position != null) {
+      final start = _rowLine[position.row];
+      if (start == null) return const CellOffset(0, 0);
+      i = start;
+    }
     var result = const CellOffset(0, 0);
-    for (var i = 0; i < lines.length; i++) {
+    for (; i < lines.length; i++) {
       final line = lines[i];
-      if (position != null && line.row?.index != position.row) continue;
+      if (position != null && line.row?.index != position.row) break;
       final offset = position?.offset ?? source - line.sourceStart;
       if (offset < line.start) break;
       result = CellOffset(line.columnAt(offset), i);

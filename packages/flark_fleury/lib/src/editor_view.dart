@@ -26,6 +26,7 @@ class FlarkEditorView extends StatefulWidget {
     this.baseUri,
     this.linkPopoverBuilder,
     this.presentResourceEditor,
+    this.onNotice,
   });
 
   final FlarkFleuryController controller;
@@ -37,6 +38,11 @@ class FlarkEditorView extends StatefulWidget {
   final Uri? baseUri;
   final FlarkFleuryLinkPopoverBuilder? linkPopoverBuilder;
   final FlarkFleuryResourcePresenter? presentResourceEditor;
+
+  /// Told when input was accepted by the terminal but dropped here — a paste
+  /// abandoned because the document moved under it, or one over the source
+  /// limit. Without it those disappear with nothing to show the user.
+  final void Function(String reason)? onNotice;
 
   @override
   State<FlarkEditorView> createState() => _EditorState();
@@ -62,11 +68,12 @@ class _EditorState extends State<FlarkEditorView>
   CellDocumentLayout? get _inputLayout {
     final previous = _viewport.layout;
     if (previous == null) return null;
-    if (previous.source == _editor.source &&
-        (previous.projection == null) == _editor.sourceMode &&
-        (previous.sourceWindow == null ||
-            (_editor.selection.extent >= previous.sourceWindow!.$1 &&
-                _editor.selection.extent <= previous.sourceWindow!.$2))) {
+    if (previous.describes(
+      widget.controller,
+      previous.cols,
+      previous.theme,
+      previous.policy,
+    )) {
       return previous;
     }
     // Several input events can arrive before a frame. Movement must never use
@@ -257,6 +264,12 @@ class _EditorState extends State<FlarkEditorView>
       widget.controller.addListener(_changed);
       _resetInput();
       _viewport.top = 0;
+      // Geometry and caret reporting are bound to the editor they were built
+      // from; two documents with identical text would otherwise keep the old
+      // one. A presenter that never completed must not wedge the new editor's
+      // link editor either.
+      _viewport.layout = null;
+      _dialogOpen = false;
     }
     if (oldWidget.focusNode != widget.focusNode) {
       _detachFocus(oldWidget.focusNode);
@@ -322,10 +335,14 @@ class _EditorState extends State<FlarkEditorView>
     if (_paste == null ||
         event.pasteId != _pasteId ||
         _pasteRevision != _editor.revision) {
+      if (_paste != null) {
+        widget.onNotice?.call('Paste discarded: the document changed.');
+      }
       _paste = null;
       return KeyEventResult.handled;
     }
     if (_paste!.length + event.text.length > _editor.sourceLimit) {
+      widget.onNotice?.call('Paste discarded: too large for this document.');
       _paste = null;
       return KeyEventResult.handled;
     }

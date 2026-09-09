@@ -40,6 +40,36 @@ final class CodeToken {
   final String? kind;
 }
 
+/// The presentation roles a highlighter's scope names collapse to. Hosts theme
+/// these, not the scope vocabulary: the analyzer emits well over twenty names,
+/// and a host that keys its theme on raw scopes silently renders the ones it
+/// has not enumerated as ordinary body text.
+enum CodeSyntaxRole { keyword, string, number, comment, function, variable }
+
+/// The role a scope name carries, or null when it has no distinct one.
+CodeSyntaxRole? codeSyntaxRole(String? kind) => switch (kind) {
+  'keyword' || 'selector-tag' || 'meta' => CodeSyntaxRole.keyword,
+  'string' || 'regexp' || 'attr' || 'selector-attr' => CodeSyntaxRole.string,
+  'number' ||
+  'constant' ||
+  'boolean' ||
+  'literal' ||
+  'built_in' => CodeSyntaxRole.number,
+  'comment' || 'doctag' => CodeSyntaxRole.comment,
+  'title' ||
+  'function' ||
+  'constructor' ||
+  'type' ||
+  'class' => CodeSyntaxRole.function,
+  'variable' ||
+  'property' ||
+  'tag' ||
+  'params' ||
+  'attribute' ||
+  'selector-class' => CodeSyntaxRole.variable,
+  _ => null,
+};
+
 final class CodeHighlight {
   CodeHighlight(this.language, List<CodeToken> tokens)
     : tokens = List.unmodifiable(tokens);

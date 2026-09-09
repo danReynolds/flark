@@ -53,3 +53,49 @@ jobs:
         run: dart test
       - name: Consumer without Rust on PATH builds via a prebuilt
         run: packages/flark/tool/verify_prebuilt_consumer.sh
+
+  snippet-engine:
+    name: flark_tree_sitter · analyze, engine and adapter tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Analyze
+        working-directory: packages/flark_tree_sitter
+        run: dart pub get && dart analyze --fatal-infos
+      - name: Test
+        working-directory: packages/flark_tree_sitter
+        run: dart test
+
+  flutter-host:
+    name: flark_flutter · analyze and host tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Analyze
+        working-directory: packages/flark_flutter
+        run: flutter pub get && flutter analyze
+      - name: Test
+        working-directory: packages/flark_flutter
+        run: flutter test
+
+  # packages/flark_fleury has no job: it depends on `fleury` and
+  # `fleury_widgets`, which are not published, and its local path overrides live
+  # in a gitignored pubspec_overrides.yaml. Its 54 tests run locally only until
+  # those packages resolve from a registry. Do not read a green CI as covering
+  # that host.

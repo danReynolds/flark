@@ -353,32 +353,17 @@ class RenderFlarkSurface extends RenderBox
     return result;
   }
 
-  Color? _codeColor(String? kind) =>
-      theme.syntaxColors[switch (kind) {
-        'keyword' || 'selector-tag' || 'meta' => FlarkSyntaxRole.keyword,
-        'string' ||
-        'regexp' ||
-        'attr' ||
-        'selector-attr' => FlarkSyntaxRole.string,
-        'number' ||
-        'constant' ||
-        'boolean' ||
-        'literal' ||
-        'built_in' => FlarkSyntaxRole.number,
-        'comment' || 'doctag' => FlarkSyntaxRole.comment,
-        'title' ||
-        'function' ||
-        'constructor' ||
-        'type' ||
-        'class' => FlarkSyntaxRole.function,
-        'variable' ||
-        'property' ||
-        'tag' ||
-        'params' ||
-        'attribute' ||
-        'selector-class' => FlarkSyntaxRole.variable,
-        _ => null,
-      }];
+  Color? _codeColor(String? kind) => switch (codeSyntaxRole(kind)) {
+    // The scope-to-role table is shared with every other host; only the
+    // colours are this one's.
+    CodeSyntaxRole.keyword => theme.syntaxColors[FlarkSyntaxRole.keyword],
+    CodeSyntaxRole.string => theme.syntaxColors[FlarkSyntaxRole.string],
+    CodeSyntaxRole.number => theme.syntaxColors[FlarkSyntaxRole.number],
+    CodeSyntaxRole.comment => theme.syntaxColors[FlarkSyntaxRole.comment],
+    CodeSyntaxRole.function => theme.syntaxColors[FlarkSyntaxRole.function],
+    CodeSyntaxRole.variable => theme.syntaxColors[FlarkSyntaxRole.variable],
+    null => null,
+  };
 
   bool _samePresentation(ProjectedRow? before, ProjectedRow? after) {
     if (before == null || after == null) return before == after;

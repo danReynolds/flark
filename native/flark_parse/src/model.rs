@@ -533,7 +533,6 @@ impl<'a> Extractor<'a> {
                 ce = ce.min(le);
                 cs = cs.min(ce);
                 if cs < ce && bytes[cs] == b'|' && leaf.node.first_child().is_none() { ce = cs; }
-                let (cs, ce) = (cs, ce);
                 let rec = &mut self.blocks[idx];
                 rec[block::START_BYTE] = cs as u32; rec[block::START_UTF16] = self.li.u16(cs);
                 rec[block::END_BYTE] = ce as u32; rec[block::END_UTF16] = self.li.u16(ce);

@@ -250,8 +250,10 @@ void checkErasure(String label, FlarkEditor e) {
   for (final backward in [true, false]) {
     final editor = FlarkEditor(createBackend(),
         text: src, caret: backward ? src.length : 0);
+    // Every counted step strictly shrinks the source, so the loop terminates
+    // on its own; the bound only stops a future refusal from hanging the suite.
     var steps = 0;
-    while (editor.source.isNotEmpty && steps <= src.length * 4 + 16) {
+    while (editor.source.isNotEmpty && steps <= src.length + 2) {
       final before = editor.source;
       // The user keeps pressing at the same end of the document.
       editor.apply(SetSelection.caret(backward ? editor.source.length : 0));
@@ -300,7 +302,7 @@ void checkErasure(String label, FlarkEditor e) {
       }
       steps++;
     }
-    if (editor.source.isNotEmpty && steps > src.length * 4 + 16) {
+    if (editor.source.isNotEmpty && steps > src.length + 2) {
       fail_('erase-unbounded', '$label ${backward ? "backspace" : "delete"}: '
           '${jsonEncode(editor.source)}');
     }

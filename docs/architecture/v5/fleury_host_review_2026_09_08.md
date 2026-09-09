@@ -416,3 +416,81 @@ more than it removes was tried and dropped — a structural reparse can
 legitimately change the display by more than the source — so the fence-info
 splice is pinned by a named regression instead.
 
+## 2026-09-09 (follow-ups): the findings below the report cap
+
+The review round reported fifteen findings — the cap — and fixed them. The ten
+angles had returned roughly sixty candidates, and the remainder was merged
+without being put in front of anyone as a decision. This round works that
+remainder, and says plainly which parts are still open and why.
+
+**Cell geometry is no longer rebuilt per frame.** `performLayout` allocated a
+glyph for every grapheme in the document on every layout pass — each keystroke,
+each scroll tick, each arriving colouring result — while only the viewport was
+painted. A layout now describes the controller, width, theme, width policy and
+colour revision it was built from, and both the render object and the input path
+share that one test. `FlarkCellTheme` gained value equality so a host that
+rebuilds its theme per frame (which `FlarkCellTheme.of` does when no extension
+is installed) does not defeat it, and the controller publishes a colour revision
+that changes only when colours do, which the editor's own revision does not —
+it counts selection moves too. `positionFor` no longer scans the document for a
+row: the constructor indexes each row's first line. A regression asserts the
+counts directly — zero rebuilds for a repaint, a caret move or a selection
+change, one for an edit — and that the reuse test refuses a resize, a theme
+change, a width-policy change, an edit and a different controller with identical
+text.
+
+**A swapped controller invalidates what was bound to the old one.** The cached
+layout carries the editor it was built from, and `_dialogOpen` stayed true if a
+presenter never completed, wedging Ctrl+K permanently.
+
+**The scope-to-role table is shared.** `codeSyntaxRole` lives beside `CodeToken`
+in the kernel, and `FlarkCellTheme.syntax` is keyed by role rather than by the
+analyzer's scope names. Fleury had enumerated five of them, so `built_in`,
+`regexp`, `attr`, `tag`, `property`, `doctag` and a dozen more rendered as
+ordinary body text in the terminal while the Flutter host coloured them.
+
+**Both resource forms read their labels from the session.** They had drifted:
+the terminal form hardcoded link wording, so it would have called an image a
+link, and it never offered the `remove()` the shared session already provides.
+
+**`CodeEditAction.values.byName(action.name)`** coupled two independently
+compiled enums by string; a member added to one would have thrown on a
+keystroke. It is a switch now, so that is a compile error.
+
+**A dropped paste is observable.** `onNotice` reports a paste abandoned because
+the document moved under it, or one over the source limit; both vanished
+silently before.
+
+**CI grew two jobs.** `flark_tree_sitter` (355 tests) and `flark_flutter`
+(811) ran nowhere in CI, and the branch that added a whole host package left
+them there. They run now. `flark_fleury` still cannot: `fleury` and
+`fleury_widgets` are unpublished, and its path overrides live in a gitignored
+`pubspec_overrides.yaml`, so its 54 tests are local-only. The workflow says so
+in a comment, because a green CI does not cover that host.
+
+Smaller: `_step`'s guard counter bounded only row hops, so the loop it guarded
+was not the loop that could run long — it now decrements every iteration and
+grows with each row entered. Two nested `clamp`s whose outer bounds could never
+bind became `math.max`, a no-op rebinding left the table-cell arm, and the
+erase loop's bound in the corpus contract was four times larger than the number
+of steps it could ever take.
+
+### Still open, deliberately
+
+The largest reuse finding is not done: `FlarkFleuryController` and
+`FlarkCodeColors` still run two copies of the cache-plus-worker pipeline. The
+divergence that mattered — Fleury having neither the LRU bound nor the
+maxCodeUnits cap, and retrying a superseded analysis forever — is fixed, but the
+duplication that caused it remains. It is not a straight lift: `FlarkCodeColors`
+imports `flark_tree_sitter`, which the kernel must not depend on, and it also
+carries a visible-rows policy that is a Flutter viewport concern Fleury does not
+share. The shared part is the cache and the worker loop, not the visibility
+rule, and splitting them properly is its own change.
+
+Also still open: the random-command generator and corpus loader are copied
+across three test files, and cannot share `packages/flark/test/support/` because
+a package cannot import another's `test/` — a shared home would have to be a new
+public library in `packages/flark/lib/`. The deletion refusals, the unaddressable
+empty table cell, and the pre-existing quadratic in extracting definition-heavy
+documents are unchanged from the round above.
+

@@ -1,4 +1,5 @@
 import 'package:flark/flark.dart';
+import 'package:flark/code.dart';
 import 'package:flark_fleury/flark_fleury.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury_widgets/fleury_widgets_web.dart';
@@ -51,9 +52,9 @@ class _PlaygroundState extends State<Playground> {
   link: CellStyle(foreground: $_link, underline: true),
   code: CellStyle(background: ${_light ? 'RgbColor(235, 239, 244)' : 'RgbColor(30, 38, 48)'}),
   syntax: {
-    'keyword': CellStyle(foreground: $_keyword),
-    'string': CellStyle(foreground: Colors.green),
-    'comment': CellStyle(dim: true),
+    CodeSyntaxRole.keyword: CellStyle(foreground: $_keyword),
+    CodeSyntaxRole.string: CellStyle(foreground: Colors.green),
+    CodeSyntaxRole.comment: CellStyle(dim: true),
   },
 )''';
 
@@ -68,9 +69,9 @@ class _PlaygroundState extends State<Playground> {
             : const RgbColor(30, 38, 48),
       ),
       syntax: {
-        'keyword': CellStyle(foreground: _keyword),
-        'string': const CellStyle(foreground: Colors.green),
-        'comment': const CellStyle(dim: true),
+        CodeSyntaxRole.keyword: CellStyle(foreground: _keyword),
+        CodeSyntaxRole.string: const CellStyle(foreground: Colors.green),
+        CodeSyntaxRole.comment: const CellStyle(dim: true),
       },
     );
     final data = ThemeData(

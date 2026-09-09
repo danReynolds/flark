@@ -22,7 +22,13 @@ final class FlarkFleuryController extends ChangeNotifier {
   var _wanted = <(String, String)>{};
   final _failed = <(String, String)>{};
   int _colorUnits = 0;
+  int _colorRevision = 0;
   static const _maxSnippets = 32, _maxUnits = 65536;
+
+  /// Changes only when a snippet's colours do. Cell geometry bakes them in, so
+  /// this is what tells a cached layout it is out of date — the editor's own
+  /// revision also counts selection moves, which geometry does not depend on.
+  int get colorRevision => _colorRevision;
   String? _source;
   bool _sourceMode = false, _working = false, _closed = false;
   Object? _highlightError;
@@ -51,11 +57,13 @@ final class FlarkFleuryController extends ChangeNotifier {
       // Retain only current snippets: no old-revision ranges can reach paint.
       // A Set keeps this a hash lookup per entry; a List compared whole code
       // bodies against every wanted key on every keystroke.
+      final dropped = _colors.length;
       _colors.removeWhere((key, _) {
         if (_wanted.contains(key)) return false;
         _colorUnits -= key.$1.length;
         return true;
       });
+      if (_colors.length != dropped) _colorRevision++;
       _failed.removeWhere((key) => !_wanted.contains(key));
       if (!_working && _worker != null && _highlightError == null) {
         unawaited(_color());
@@ -90,6 +98,7 @@ final class FlarkFleuryController extends ChangeNotifier {
         if (_wanted.contains(key)) {
           _colors[key] = result;
           _colorUnits += key.$1.length;
+          _colorRevision++;
           while (_colors.length > _maxSnippets || _colorUnits > _maxUnits) {
             final coldest = _colors.keys.first;
             _colorUnits -= coldest.$1.length;
