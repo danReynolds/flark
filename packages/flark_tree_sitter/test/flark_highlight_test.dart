@@ -1,9 +1,8 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:flark_flutter/code.dart';
+import 'package:test/test.dart';
+import 'package:flark_tree_sitter/flark.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
   final code = FlarkTreeSitter.fromAnalyzer(CodeAnalyzer());
   tearDownAll(code.dispose);
   final h = code;

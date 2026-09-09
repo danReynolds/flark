@@ -70,6 +70,19 @@ additional product principles or testing layers.
 - Completing source-authored delimiters may atomically turn literal text into a
   rendered construct. The inserted delimiter itself must not flash as an
   unrelated intermediate state.
+- A parser-authenticated bare empty heading prefix (`#` through `######`) or
+  unordered item marker (`*`, `-`, `+`) stays visible and editable as a
+  paragraph. A separating space commits its block presentation. This lets
+  `*word*` and `**word**` be authored without a temporary list bullet and keeps
+  heading markers visible while choosing the level. The source and Comrak
+  model stay unchanged: the shared projection makes this presentation choice
+  from block kind, range and heading level, without recognizing Markdown in
+  either host. Loaded bare prefixes use the same presentation; completed
+  headings, lists, fences and thematic breaks retain their normal behavior.
+- A heading's opening separator belongs to its hidden prefix, including when
+  it has no content yet. Its empty rendered row is exactly empty and its caret
+  sits at the content origin; first-frame checks must not trim away a misplaced
+  separator or merely assert that a caret exists.
 
 ### Replacement
 

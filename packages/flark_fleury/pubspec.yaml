@@ -1,0 +1,20 @@
+name: flark_fleury
+description: Fleury cell rendering and input for the Flark Markdown kernel.
+version: 0.5.0-dev.1
+publish_to: none
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  characters: ^1.4.0
+  flark:
+    path: ../flark
+  flark_tree_sitter:
+    path: ../flark_tree_sitter
+  fleury: ^0.1.0
+  fleury_widgets: ^0.1.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.3

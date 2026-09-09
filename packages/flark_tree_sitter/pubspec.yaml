@@ -7,6 +7,8 @@ environment:
   sdk: ^3.10.4
 
 dependencies:
+  flark:
+    path: ../flark
   code_assets: ^1.0.0
   hooks: ^1.0.0
 

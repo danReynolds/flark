@@ -295,7 +295,10 @@ regression at the owning layer and a paint/native case where that adds evidence.
 May begin during M3c once shared contracts stabilize. Changes discovered through
 Fleury must preserve the same kernel semantics and revalidate the Flutter host.
 
-- `flark_fleury` editor over Fleury's `TextInput` and controller; view.
+- `flark_fleury` editor/view over Fleury's public input claimant and cell
+  rendering APIs. The first implementation found that `TextInput`/`TextArea`
+  own independent plain-text history, so their controllers must not mirror the
+  Flark document. See the [Fleury host plan](fleury_host_plan.md).
 - Cell rendering with box-drawing shells; Fleury table widget for tables.
 - Terminal transport through the M1 hook; browser transport through the
   dart2js loader.

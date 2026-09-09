@@ -5,7 +5,11 @@
 /// delimiter row). A row's display text is its lines' content with hidden
 /// run ranges removed and replacements substituted, joined by line breaks.
 /// Segments map display ranges back to source ranges; hidden bytes are the
-/// gaps between segments and are never inspected, only skipped.
+/// gaps between segments and are never inspected, only skipped. A line the
+/// row's text does not represent — a fence, a setext underline, a blank line
+/// inside indented code — carries -1 and holds no caret: an edit there would
+/// be invisible, or would paint at another line's position. Bare empty
+/// heading/item prefixes remain literal authoring text until completed.
 library;
 
 import 'dart:collection';
@@ -169,8 +173,10 @@ final class ProjectedRow {
 
   /// Per line of the row (index = line - firstLine): where the caret may sit
   /// on that line, and where the innermost container prefix begins (equal to
-  /// the content start when the line has none). A line without content, such
-  /// as a fence line, holds its line end so it stays reachable.
+  /// the content start when the line has none). All three are -1 for a line
+  /// the row owns but cannot show — a fence's delimiters, a setext underline,
+  /// the definition lines a paragraph swallowed — so every reader must treat a
+  /// negative entry as "no caret here" rather than as an offset.
   final List<int> contentStarts, contentEnds, prefixStarts;
   final int headingLevel;
   final bool fenced;
@@ -279,6 +285,12 @@ final class Projection {
     return false;
   }();
 
+  /// End of [line]'s content, excluding its terminator. A join boundary is a
+  /// line edge, not a caret span, so the editor needs this for a line whose
+  /// markup the row hides.
+  int lineContentEnd(int line) =>
+      line < 0 || line >= model.lineCount ? -1 : _lineEnd(line);
+
   /// Where the caret may sit on [line]: one (start, end) span per row on the
   /// line, sorted. Empty for a line with no caret positions (a fence line, a
   /// table's delimiter line). A bodyless fence has one anchor at its source end.
@@ -301,6 +313,16 @@ final class Projection {
     }
     out.sort((a, b) => a.$1 - b.$1);
     return out;
+  }
+
+  int _lineEnd(int l) {
+    final start = model.lineStartUtf16(l);
+    var e = l + 1 < model.lineCount ? model.lineStartUtf16(l + 1) : source.length;
+    while (e > start &&
+        (source.codeUnitAt(e - 1) == 0x0A || source.codeUnitAt(e - 1) == 0x0D)) {
+      e--;
+    }
+    return e;
   }
 
   /// Display position of a UTF-16 source offset; snapped out of hidden bytes.
@@ -533,7 +555,10 @@ final class _Builder {
       // the whole line.
       final contentEnd = _lineEnd(l);
       final shells = _shellsFor(containerOf[l]);
-      var prefixStart = contentEnd;
+      // Whitespace on a blank line outside any container is the author's, not
+      // a parser-owned prefix. Calling it prefix leaves a document that is
+      // only a tab with no caret before it and nothing Backspace can remove.
+      var prefixStart = shells.isEmpty ? m.lineStartUtf16(l) : contentEnd;
       if (shells.isNotEmpty) {
         final inner = shells.last;
         final first = m.block(inner.block, BlockField.contentOffset);
@@ -542,6 +567,39 @@ final class _Builder {
           if (m.content(c, ContentField.line) == l) {
             prefixStart = m.content(c, ContentField.prefixStartUtf16);
           }
+        }
+      }
+      // Comrak accepts a bare unordered marker as an empty item. Keep that
+      // parser-owned one-character prefix editable while the user may still
+      // be starting emphasis/strong. No marker recognition happens in Dart.
+      if (shells.isNotEmpty && shells.last.kind == ShellKind.item) {
+        final item = shells.last.block;
+        final list = m.block(item, BlockField.parent);
+        final start = m.block(item, BlockField.startUtf16);
+        // Only the marker that is starting its own list is authoring text. A
+        // bare marker between real items is one of them, and dropping its list
+        // shell would paint the row outside the list it belongs to and refuse
+        // Indent and list continuation there.
+        final alone =
+            list != noParent &&
+            m.block(list, BlockField.startUtf16) == start &&
+            m.block(list, BlockField.endUtf16) ==
+                m.block(item, BlockField.endUtf16);
+        if (alone &&
+            m.block(item, BlockField.firstLine) == l &&
+            contentEnd - start == 1 &&
+            m.block(item, BlockField.endUtf16) == contentEnd) {
+          addRow(
+            _barePrefixRow(
+              rows.length,
+              item,
+              l,
+              start,
+              contentEnd,
+              shells.sublist(0, (shells.length - 2).clamp(0, shells.length)),
+            ),
+          );
+          continue;
         }
       }
       addRow(
@@ -595,6 +653,42 @@ final class _Builder {
     }
     return Projection._(m, src, ordered, rowsByLine, options);
   }
+
+  /// Presentation of an authenticated empty block's bare opening prefix.
+  /// Ranges and heading level come from the parser; this does not recognize
+  /// Markdown or change its source/model. Whitespace commits the block on the
+  /// next parse, while a second asterisk can continue an inline delimiter.
+  ProjectedRow _barePrefixRow(
+    int index,
+    int block,
+    int line,
+    int start,
+    int end,
+    List<Shell> shells,
+  ) => ProjectedRow(
+    index: index,
+    kind: RowKind.paragraph,
+    block: block,
+    firstLine: line,
+    lineCount: 1,
+    text: src.substring(start, end),
+    segments: [
+      Segment(
+        displayStart: 0,
+        displayEnd: end - start,
+        sourceStart: start,
+        sourceEnd: end,
+        styles: 0,
+        exact: true,
+      ),
+    ],
+    shells: shells,
+    sourceStart: start,
+    sourceEnd: end,
+    contentStarts: [start],
+    contentEnds: [end],
+    prefixStarts: [start],
+  );
 
   void _computeStyles() {
     for (var i = 0; i < m.runCount; i++) {
@@ -782,6 +876,17 @@ final class _Builder {
     final starts = List<int>.filled(n, -1),
         ends = List<int>.filled(n, -1),
         prefixes = List<int>.filled(n, -1);
+    // Abutting hidden runs hide one continuous range; merged, a gap is covered
+    // by a single interval or by none.
+    final covered = <(int, int)>[];
+    for (final h in hidden) {
+      if (covered.isNotEmpty && h.$1 <= covered.last.$2) {
+        if (h.$2 > covered.last.$2) covered.last = (covered.last.$1, h.$2);
+      } else {
+        covered.add(h);
+      }
+    }
+    var coverIndex = 0;
     for (var c = 0; c < cn; c++) {
       final rec = m.content(co + c, ContentField.line);
       final cs = m.content(co + c, ContentField.startUtf16),
@@ -796,9 +901,29 @@ final class _Builder {
       }
       if (sourceStart < 0) sourceStart = cs;
       sourceEnd = ce;
-      final prevEnd = c > 0
+      var prevEnd = c > 0
           ? breakStarts[m.content(co + c - 1, ContentField.line)]
           : null;
+      if (c > 0 && prevEnd == null) {
+        // Not every line ending has a break run: comrak reports none inside
+        // raw inline HTML, or where an unparsed bracket run spans lines. Only
+        // a gap the markup already hides — a link's destination continued on
+        // the next line — displays nothing. Otherwise the two lines would be
+        // joined with nothing between them, and both sides of the break would
+        // share one display position.
+        final gap = m.content(co + c - 1, ContentField.endUtf16);
+        if (cs > gap) {
+          // Both this gap and the merged runs advance with c, so one cursor
+          // walks them together instead of rescanning per line.
+          while (coverIndex < covered.length &&
+              covered[coverIndex].$2 < cs) {
+            coverIndex++;
+          }
+          final over =
+              coverIndex < covered.length && covered[coverIndex].$1 <= gap;
+          if (!over) prevEnd = gap;
+        }
+      }
       final codeBreak = c > 0
           ? codeBreaks[m.content(co + c - 1, ContentField.line)]
           : null;
@@ -940,10 +1065,29 @@ final class _Builder {
       }
       if (p < ce) emitGap(p, ce);
     }
-    _fillLineEnds(first, starts, ends, prefixes);
+    // An inline leaf's lines without a record are never the row's to show: a
+    // paragraph's are the definition lines a definition row already covers,
+    // and a setext underline is markup this row hides. Giving either a caret
+    // would paint it at the end of the heading or the line above, where the
+    // next character silently rewrites markup the user cannot see.
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:
+        final blockStart = m.block(block, BlockField.startUtf16);
+        final level = m.block(block, BlockField.attr0);
+        if (n == 1 &&
+            sourceStart == sourceEnd &&
+            sourceEnd == _lineEnd(first) &&
+            sourceEnd - blockStart == level) {
+          return _barePrefixRow(
+            index,
+            block,
+            first,
+            blockStart,
+            sourceEnd,
+            shells,
+          );
+        }
         return ProjectedRow(
           index: index,
           kind: RowKind.heading,
@@ -1022,22 +1166,12 @@ final class _Builder {
     }
   }
 
-  /// Line end excluding the terminator.
-  int _lineEnd(int l) {
-    final start = m.lineStartUtf16(l);
-    var e = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : src.length;
-    while (e > start &&
-        (src.codeUnitAt(e - 1) == 0x0A || src.codeUnitAt(e - 1) == 0x0D)) {
-      e--;
-    }
-    return e;
-  }
-
-  List<int> _lineEnds(int first, int n) => [
-    for (var l = first; l < first + n && l < m.lineCount; l++) _lineEnd(l),
-  ];
-
-  /// Lines of a row without a content record keep the caret at their end.
+  /// A line the leaf owns but has no content record for keeps the caret at its
+  /// end, so it stays reachable: a fence's body line that carries only a
+  /// container prefix, a blank line comrak folded into the block. The rows that
+  /// hide such a line as markup — a fence's delimiters, a setext underline —
+  /// clear it again, because an edit there would be invisible or would paint at
+  /// another line's position.
   void _fillLineEnds(
     int first,
     List<int> starts,
@@ -1052,6 +1186,21 @@ final class _Builder {
       prefixes[i] = e;
     }
   }
+
+  /// Line end excluding the terminator.
+  int _lineEnd(int l) {
+    final start = m.lineStartUtf16(l);
+    var e = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : src.length;
+    while (e > start &&
+        (src.codeUnitAt(e - 1) == 0x0A || src.codeUnitAt(e - 1) == 0x0D)) {
+      e--;
+    }
+    return e;
+  }
+
+  List<int> _lineEnds(int first, int n) => [
+    for (var l = first; l < first + n && l < m.lineCount; l++) _lineEnd(l),
+  ];
 
   ProjectedRow _literalRow(
     int index,

@@ -23,7 +23,11 @@ pub(crate) fn split_pieces(slice: &str, literal: &str) -> Option<Vec<Piece>> {
         // An entity is one unit even when its decoded text begins with the
         // same character (`&amp;` decodes to `&`).
         if let Some(l) = entity_len(&slice[i..]) {
-            if let Some(jj) = resync_after(&slice[i + l..], literal, j) {
+            // An entity always decodes to at least one character. Without that
+            // floor, `agree` treats the next source entity's `&` as an
+            // immediate resync, so this entity would display nothing and hand
+            // its text to the following piece: adjacent entities collapse.
+            if let Some(jj) = resync_after(&slice[i + l..], literal, j, 1) {
                 if let Some((es, _)) = exact_start.take() { pieces.push(Piece { start: es, end: i, display: None }); }
                 pieces.push(Piece { start: i, end: i + l, display: Some((j, jj)) });
                 i += l; j = jj;
@@ -48,6 +52,11 @@ pub(crate) fn split_pieces(slice: &str, literal: &str) -> Option<Vec<Piece>> {
         'outer: for cost in 1..=(MAX_SOURCE + MAX_DISPLAY_CHARS) {
             for l in 0..=cost.min(MAX_SOURCE) {
                 let k = cost - l;
+                // Only a leading piece may display text the source does not
+                // hold (a partially consumed tab's virtual spaces). Anywhere
+                // else a zero-length source piece would put display text at an
+                // offset no caret can reach.
+                if l == 0 && i > 0 { continue; }
                 if k > MAX_DISPLAY_CHARS || i + l > sb.len() || !slice.is_char_boundary(i + l) { continue; }
                 let mut jj = j;
                 let mut ok = true;
@@ -93,11 +102,12 @@ fn entity_len(s: &str) -> Option<usize> {
 }
 
 /// After consuming source up to `rest`, the literal position from `j` (up
-/// to four characters on) where the texts agree again.
-fn resync_after(rest: &str, literal: &str, j: usize) -> Option<usize> {
+/// to four characters on) where the texts agree again, having displayed at
+/// least `least` characters.
+fn resync_after(rest: &str, literal: &str, j: usize, least: usize) -> Option<usize> {
     let mut jj = j;
-    for _ in 0..=MAX_DISPLAY_CHARS {
-        if agree(rest, &literal[jj..]) { return Some(jj); }
+    for shown in 0..=MAX_DISPLAY_CHARS {
+        if shown >= least && agree(rest, &literal[jj..]) { return Some(jj); }
         match literal[jj..].chars().next() { Some(c) => jj += c.len_utf8(), None => return None }
     }
     None
@@ -166,5 +176,39 @@ mod tests {
     #[test]
     fn unrelated_text_does_not_split() {
         assert_eq!(split_pieces("completely", "different words here"), None);
+    }
+
+    #[test]
+    fn adjacent_entities_each_display_their_own_text() {
+        assert_eq!(
+            shown("a&amp;&amp;b", "a&&b"),
+            vec![
+                ("a".into(), None),
+                ("&amp;".into(), Some("&".into())),
+                ("&amp;".into(), Some("&".into())),
+                ("b".into(), None),
+            ]
+        );
+        assert_eq!(
+            shown("&lt;&gt;", "<>"),
+            vec![("&lt;".into(), Some("<".into())), ("&gt;".into(), Some(">".into()))]
+        );
+        assert_eq!(
+            shown("a&#10;&#10;b", "a\n\nb"),
+            vec![
+                ("a".into(), None),
+                ("&#10;".into(), Some("\n".into())),
+                ("&#10;".into(), Some("\n".into())),
+                ("b".into(), None),
+            ]
+        );
+        // An entity-shaped run that CommonMark does not decode cannot be told
+        // apart greedily; the node stays one replacement rather than splitting
+        // into pieces whose displays sit at the wrong offsets.
+        assert_eq!(split_pieces("&nope;&amp;", "&nope;&"), None);
+        assert_eq!(
+            shown("&amp;amp;", "&amp;"),
+            vec![("&amp;".into(), Some("&".into())), ("amp;".into(), None)]
+        );
     }
 }

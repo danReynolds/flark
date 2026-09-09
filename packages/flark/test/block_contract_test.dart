@@ -1,6 +1,8 @@
 import 'package:flark/flark.dart';
 import 'package:test/test.dart';
 
+import 'support/invariants.dart';
+
 void main() {
   final backend = createParseBackend();
   for (final source in [
@@ -90,4 +92,50 @@ void main() {
       },
     );
   }
+
+  // A body row short of the header's columns is filled by the parser with
+  // cells that point at the row's closing delimiter or its line break. Those
+  // cells hold no content: a `|` row or a row whose text is a line break
+  // paints a delimiter as if it were the author's text.
+  for (final (body, cells) in [
+    ('| c |', ['c ', '']),
+    ('| c', ['c', '']),
+    ('c |', ['c ', '']),
+    ('| c |   ', ['c ', '']),
+    ('|  |  |', ['', '']),
+    ('| c ||', ['c ', '']),
+    ('| c | d |', ['c ', 'd ']),
+  ]) {
+    for (final outer in ['', '> ', '- ']) {
+      final next = outer == '- ' ? '  ' : outer;
+      test('a short table row projects empty cells: $outer$body', () {
+        final source =
+            '$outer| h | i |\n$next| - | - |\n$next$body\n';
+        final e = FlarkEditor(backend, text: source);
+        final projected = e.projection.rows
+            .where((r) => r.kind == RowKind.tableCell && r.firstLine == 2);
+        expect(projected.map((r) => r.text), cells);
+        for (final row in projected) {
+          expect(row.sourceEnd, lessThanOrEqualTo(source.indexOf('\n', row.sourceStart)));
+          expect(row.lineCount, 1);
+        }
+        checkInvariants(source, e.document.model, e.projection, source);
+      });
+    }
+  }
+
+  test('several missing cells do not repeat one delimiter range', () {
+    const source = '| a | b | c |\n| - | - | - |\n| x |\n';
+    final e = FlarkEditor(backend, text: source);
+    final body = e.projection.rows
+        .where((r) => r.kind == RowKind.tableCell && r.firstLine == 2)
+        .toList();
+    expect(body.map((r) => r.text), ['x ', '', '']);
+    for (final row in body.skip(1)) {
+      expect(row.sourceStart, row.sourceEnd,
+          reason: 'a cell the row never wrote holds no source');
+      expect(source[row.sourceStart], '|',
+          reason: 'it sits at the delimiter it must not swallow');
+    }
+  });
 }

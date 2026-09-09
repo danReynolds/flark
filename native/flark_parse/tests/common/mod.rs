@@ -87,6 +87,35 @@ pub fn check_invariants(src: &str, w: &[u32]) -> Result<(), String> {
         let (bs, be) = (blk(b as usize, block::START_BYTE) as usize, blk(b as usize, block::END_BYTE) as usize);
         if s < bs || e > be + 1 { return Err(format!("run {i} {s}..{e} outside block {b} {bs}..{be}")); }
     }
+    // A content record belongs to the line it names and stops at that line's
+    // end: a projected row's caret spans and per-line ranges assume both.
+    let mut line_start = vec![0usize; nl + 1];
+    for l in 0..nl { line_start[l] = w[lines_off + l * 2] as usize; }
+    line_start[nl] = src.len();
+    for c in 0..nc {
+        let cw = |f: usize| w[content_off + c * content::WORDS + f];
+        let (cs, ce, line) = (cw(content::START_BYTE) as usize, cw(content::END_BYTE) as usize, cw(content::LINE) as usize);
+        if line >= nl { return Err(format!("content {c} line {line} of {nl}")); }
+        let (ls, le) = (line_start[line], line_start[line + 1]);
+        if cs < ls || ce > le { return Err(format!("content {c} {cs}..{ce} outside line {line} {ls}..{le}")); }
+        let prefix = cw(content::PREFIX_START_BYTE) as usize;
+        if prefix < ls || prefix > cs { return Err(format!("content {c} prefix {prefix} outside {ls}..{cs}")); }
+    }
+    // Sibling blocks never overlap: a source offset belongs to one leaf and one
+    // table cell, so a row and a caret are unambiguous. Bucket by parent and
+    // compare neighbours; the pairwise form is a cliff on a large document.
+    let mut siblings: std::collections::HashMap<u32, Vec<usize>> = std::collections::HashMap::new();
+    for i in 0..nb { siblings.entry(blk(i, block::PARENT)).or_default().push(i); }
+    for group in siblings.values() {
+        let mut ordered: Vec<usize> = group.clone();
+        ordered.sort_by_key(|&i| (blk(i, block::START_BYTE), blk(i, block::END_BYTE)));
+        for w in ordered.windows(2) {
+            let (i, j) = (w[0], w[1]);
+            let (s, e) = (blk(i, block::START_BYTE) as usize, blk(i, block::END_BYTE) as usize);
+            let (js, je) = (blk(j, block::START_BYTE) as usize, blk(j, block::END_BYTE) as usize);
+            if js < e && je > s { return Err(format!("sibling blocks {i} {s}..{e} and {j} {js}..{je} overlap")); }
+        }
+    }
     let mut prev_def = 0usize;
     for i in 0..nd {
         let dw = |f: usize| w[defs_off + i * definition::WORDS + f];

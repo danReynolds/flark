@@ -5,6 +5,7 @@
 build/
 coverage/
 pubspec.lock
+pubspec_overrides.yaml
 
 packages/flark/native/comrak_bridge/target/
 packages/flark/native/comrak_bridge/dist/

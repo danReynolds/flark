@@ -913,9 +913,14 @@ final class FlarkEditor {
   /// the previous row.
   bool _joinBackward(ProjectedRow row) {
     if (row.kind == RowKind.tableCell) return false;
-    if (row.kind == RowKind.heading) return _setHeading(0);
+    if (row.kind == RowKind.heading || _isBareHeading(row)) {
+      return _setHeading(0);
+    }
     if (row.fenced && row.text.isEmpty) {
       final block = _doc.model.blockAt(row.block);
+      // Only a closed fence's block range is the whole construct. An unclosed
+      // one ends at its opening line, so deleting that range leaves any
+      // closing delimiter behind as a new unclosed block.
       if (block.flags & 2 != 0) {
         return _commit(
           source.replaceRange(block.startUtf16, block.endUtf16, ''),
@@ -945,10 +950,24 @@ final class FlarkEditor {
         typing: false,
       );
     }
-    if (row.index == 0) return false;
+    if (row.index == 0) {
+      // Nothing precedes this row to join onto. A thematic break is the one
+      // row that displays nothing yet owns a range the crate guarantees is
+      // exactly its line's content, so it can go on its own; anything else
+      // would be deleting through a range comrak does not pin down.
+      if (row.kind != RowKind.thematicBreak) return false;
+      return _commit(
+        source.replaceRange(row.sourceStart, row.sourceEnd, ''),
+        FlarkSelection.collapsed(row.sourceStart),
+        typing: false,
+      );
+    }
     final prev = projection.rows[row.index - 1];
     if (prev.kind == RowKind.tableCell) return false;
     if (prev.firstLine + prev.lineCount > row.firstLine) return false;
+    // A fence that displays nothing has only delimiter lines. Text joined onto
+    // one becomes its info string, where the editor never shows it again.
+    if (prev.fenced && prev.text.isEmpty && row.text.isNotEmpty) return false;
     final from = _lastCaretEnd(prev), to = _firstCaretStart(row);
     if (from < 0 || to < 0 || to <= from) return false;
     return _joinContent(from, to);
@@ -961,6 +980,9 @@ final class FlarkEditor {
     final next = projection.rows[row.index + 1];
     if (next.kind == RowKind.tableCell) return false;
     if (next.firstLine < row.firstLine + row.lineCount) return false;
+    // See _joinBackward: a fence that displays nothing has only delimiter
+    // lines, and text joined onto one stops being displayed.
+    if (row.fenced && row.text.isEmpty && next.text.isNotEmpty) return false;
     final from = _lastCaretEnd(row), to = _firstCaretStart(next);
     if (from < 0 || to < 0 || to <= from) return false;
     return _joinContent(from, to);
@@ -997,18 +1019,33 @@ final class FlarkEditor {
     );
   }
 
-  static int _lastCaretEnd(ProjectedRow row) {
+  /// Where a join from the following row lands: the end of this row's last
+  /// physical line, not of its last caret span. A closing fence and a setext
+  /// underline hold no caret, and joining from the content before them would
+  /// swallow the markup between — one Backspace erasing a whole `===` line, or
+  /// splicing the next row's text into a fence's info string, where it stops
+  /// being displayed.
+  int _lastCaretEnd(ProjectedRow row) {
+    final last = row.firstLine + row.lineCount - 1;
+    if (last >= 0 && last < _doc.model.lineCount) {
+      final end = projection.lineContentEnd(last);
+      if (end >= 0) return end;
+    }
     for (var i = row.contentEnds.length - 1; i >= 0; i--) {
       if (row.contentEnds[i] >= 0) return row.contentEnds[i];
     }
     return -1;
   }
 
+  /// Where a join onto the previous row starts. A fence that displays nothing
+  /// has no content record, but its markup begins at its own source start, so
+  /// a join takes only the line break before it — never the fence itself, as
+  /// reaching for its source end would.
   static int _firstCaretStart(ProjectedRow row) {
     for (final s in row.contentStarts) {
       if (s >= 0) return s;
     }
-    return -1;
+    return row.fenced ? row.sourceStart : -1;
   }
 
   bool _newline(bool paragraph) {
@@ -1040,8 +1077,13 @@ final class FlarkEditor {
     } else if (row.shells.isNotEmpty) {
       final prefixStart = row.prefixStarts[i],
           contentStart = row.contentStarts[i];
-      // Return on an empty container line exits the container.
-      if (row.text.isEmpty && prefixStart >= 0 && prefixStart < contentStart) {
+      // Return on an empty container line exits the container. An empty
+      // heading is not that line: its own markup is part of the prefix, so
+      // exiting would delete the heading with the container marker.
+      if (row.text.isEmpty &&
+          row.kind != RowKind.heading &&
+          prefixStart >= 0 &&
+          prefixStart < contentStart) {
         final outer = source.substring(
           _doc.model.lineStartUtf16(line),
           prefixStart,
@@ -1279,14 +1321,22 @@ final class FlarkEditor {
     return false;
   }
 
+  /// A bare `#` is projected as authoring text, but it is still the parser's
+  /// heading: a level command has to replace that marker, not prepend to it.
+  bool _isBareHeading(ProjectedRow row) =>
+      row.kind == RowKind.paragraph &&
+      row.block >= 0 &&
+      _doc.model.block(row.block, BlockField.kind) == BlockKind.heading;
+
   bool _setHeading(int level) {
     if (level < 0 || level > 6) return false;
     final row = _doc.rowAt(selection.extent);
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
       return false;
     }
+    final heading = row.kind == RowKind.heading || _isBareHeading(row);
     if (level > 0 &&
-        row.kind == RowKind.heading &&
+        heading &&
         row.contentStarts.where((s) => s >= 0).length > 1) {
       return false;
     }
@@ -1298,9 +1348,11 @@ final class FlarkEditor {
     if (row.kind == RowKind.heading && blockEnd > row.sourceEnd) {
       s = s.replaceRange(row.sourceEnd, blockEnd, '');
     }
-    s = s.replaceRange(blockStart, row.sourceStart, prefix);
-    final shift = prefix.length - (row.sourceStart - blockStart);
-    int move(int o) => o >= row.sourceStart ? o + shift : o;
+    // The bare marker is the row's own text, so it is what the prefix replaces.
+    final contentStart = _isBareHeading(row) ? row.sourceEnd : row.sourceStart;
+    s = s.replaceRange(blockStart, contentStart, prefix);
+    final shift = prefix.length - (contentStart - blockStart);
+    int move(int o) => o >= contentStart ? o + shift : o;
     return _commit(
       s,
       FlarkSelection(move(selection.base), move(selection.extent)),
@@ -1446,14 +1498,26 @@ final class FlarkEditor {
           );
           target = forward ? anchors.last : anchors.first;
         case MoveUnit.row:
-          final other = _rowAfter(row.index, forward: forward);
-          if (other == null) return false;
           final goal = _goalColumn ?? d;
-          target = _anchorFor(
-            other,
-            goal.clamp(0, other.text.length),
-            forward: forward,
-          );
+          // A row nothing displays — an empty table cell the source never
+          // wrote — anchors back into its neighbour. Vertical movement must
+          // leave the caret's own row, so keep looking past those.
+          var other = _rowAfter(row.index, forward: forward);
+          int? landing;
+          while (other != null) {
+            final candidate = _anchorFor(
+              other,
+              goal.clamp(0, other.text.length),
+              forward: forward,
+            );
+            if (_doc.displayOf(candidate).row != row.index) {
+              landing = candidate;
+              break;
+            }
+            other = _rowAfter(other.index, forward: forward);
+          }
+          if (landing == null) return false;
+          target = landing;
           final moved = _select(
             extend
                 ? FlarkSelection(sel.base, target)
@@ -1470,44 +1534,47 @@ final class FlarkEditor {
     );
   }
 
+  /// One grapheme step, continued until the caret actually moves. Virtual
+  /// leading spaces and a table cell a row never wrote both anchor back to the
+  /// offset the caret already holds; reporting that as the target stalls the
+  /// caret at the edge of a code block or inside a table forever.
   int _step(
     ProjectedRow row,
     int d, {
     required bool forward,
     required int cur,
   }) {
-    if (forward) {
-      if (d < row.text.length) {
-        final atomic = _adjacentAtomicSegment(row, d, forward: true);
-        if (atomic != null) {
-          return _anchorFor(row, atomic.displayEnd, forward: true);
-        }
-        return _anchorFor(
-          row,
-          d + row.text.substring(d).characters.first.length,
-          forward: true,
-        );
+    var current = row, offset = d, guard = projection.rows.length + 2;
+    while (true) {
+      if (forward && offset < current.text.length) {
+        final atomic = _adjacentAtomicSegment(current, offset, forward: true);
+        final next =
+            atomic?.displayEnd ??
+            offset + current.text.substring(offset).characters.first.length;
+        final target = _anchorFor(current, next, forward: true);
+        if (target != cur) return target;
+        offset = next;
+        continue;
       }
-      final next = _rowAfter(row.index, forward: true);
-      return next == null
-          ? _doc.anchorsAt(cur).last
-          : _anchorFor(next, 0, forward: true);
-    }
-    if (d > 0) {
-      final atomic = _adjacentAtomicSegment(row, d, forward: false);
-      if (atomic != null) {
-        return _anchorFor(row, atomic.displayStart, forward: false);
+      if (!forward && offset > 0) {
+        final atomic = _adjacentAtomicSegment(current, offset, forward: false);
+        final next =
+            atomic?.displayStart ??
+            offset - current.text.substring(0, offset).characters.last.length;
+        final target = _anchorFor(current, next, forward: false);
+        if (target != cur) return target;
+        offset = next;
+        continue;
       }
-      return _anchorFor(
-        row,
-        d - row.text.substring(0, d).characters.last.length,
-        forward: false,
-      );
+      final other = _rowAfter(current.index, forward: forward);
+      if (other == null || guard-- <= 0) {
+        return forward ? _doc.anchorsAt(cur).last : _doc.anchorsAt(cur).first;
+      }
+      offset = forward ? 0 : other.text.length;
+      final target = _anchorFor(other, offset, forward: forward);
+      if (target != cur) return target;
+      current = other;
     }
-    final prev = _rowAfter(row.index, forward: false);
-    return prev == null
-        ? _doc.anchorsAt(cur).first
-        : _anchorFor(prev, prev.text.length, forward: false);
   }
 
   static Segment? _adjacentAtomicSegment(
