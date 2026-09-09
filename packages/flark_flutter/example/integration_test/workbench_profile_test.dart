@@ -30,6 +30,21 @@ class _CountedBackend implements FlarkParseBackend {
   }
 }
 
+void recordFrameTiming(Map<String, Object> sample, FrameTiming frame) {
+  final start = sample['startUs'] as int;
+  sample.addAll({
+    'latencyUs': frame.timestampInMicroseconds(FramePhase.rasterFinish) - start,
+    'inputToBuildUs':
+        frame.timestampInMicroseconds(FramePhase.buildStart) - start,
+    'buildUs': frame.buildDuration.inMicroseconds,
+    'rasterUs': frame.rasterDuration.inMicroseconds,
+    'vsyncStartUs': frame.timestampInMicroseconds(FramePhase.vsyncStart),
+    'buildStartUs': frame.timestampInMicroseconds(FramePhase.buildStart),
+    'rasterStartUs': frame.timestampInMicroseconds(FramePhase.rasterStart),
+    'rasterFinishUs': frame.timestampInMicroseconds(FramePhase.rasterFinish),
+  });
+}
+
 Map<String, String> workbenchProfileSources(FlarkParseBackend backend) => {
   for (final shape in profileCycles.keys)
     shape: boundedProfileSource(backend, shape, candidateLiveBytes),
@@ -138,9 +153,7 @@ void main() {
         for (final sample in samples) {
           final frame = frames[sample['frameNumber']];
           if (frame != null) {
-            sample['latencyUs'] =
-                frame.timestampInMicroseconds(FramePhase.rasterFinish) -
-                (sample['startUs'] as int);
+            recordFrameTiming(sample, frame);
           }
         }
         // ignore: avoid_print
@@ -164,6 +177,7 @@ void main() {
         final parseStart = backend.calls;
         final start = Timeline.now;
         await action();
+        final actionUs = Timeline.now - start;
         await tester.pump();
         requireForeground();
         expect(tester.takeException(), isNull);
@@ -218,6 +232,7 @@ void main() {
             'shape': shape,
             'operation': operation,
             'startUs': start,
+            'actionUs': actionUs,
             'frameNumber': editable.first.frameNumber,
             'sourceMode': sourceMode,
             'parseCalls': parseCalls,
@@ -387,11 +402,9 @@ void main() {
           isNotNull,
           reason: 'matching engine raster frame required',
         );
-        final latency =
-            frame!.timestampInMicroseconds(FramePhase.rasterFinish) -
-            (sample['startUs'] as int);
+        recordFrameTiming(sample, frame!);
+        final latency = sample['latencyUs'] as int;
         expect(latency, greaterThan(0), reason: 'clock calibration');
-        sample['latencyUs'] = latency;
         final key = '${sample['shape']}: ${sample['operation']}';
         (grouped[key] ??= []).add(latency);
       }

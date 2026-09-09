@@ -1,0 +1,6 @@
+{
+  "file": "packages/flark_flutter/example/integration_test/workbench_profile_test.dart",
+  "sha256": "2d00b993d9b2b3871ca3b833b0dd7a33ab160e51a727c9a2d60e6b5999db4162",
+  "validation": "Example analysis clean; 8 qualification tests passed; normal main.dart profile build passed",
+  "foregroundRun": "Not yet run with the added timing fields"
+}
