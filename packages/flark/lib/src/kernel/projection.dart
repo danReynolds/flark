@@ -173,8 +173,10 @@ final class ProjectedRow {
 
   /// Per line of the row (index = line - firstLine): where the caret may sit
   /// on that line, and where the innermost container prefix begins (equal to
-  /// the content start when the line has none). A line without content, such
-  /// as a fence line, holds its line end so it stays reachable.
+  /// the content start when the line has none). All three are -1 for a line
+  /// the row owns but cannot show — a fence's delimiters, a setext underline,
+  /// the definition lines a paragraph swallowed — so every reader must treat a
+  /// negative entry as "no caret here" rather than as an offset.
   final List<int> contentStarts, contentEnds, prefixStarts;
   final int headingLevel;
   final bool fenced;
@@ -283,6 +285,12 @@ final class Projection {
     return false;
   }();
 
+  /// End of [line]'s content, excluding its terminator. A join boundary is a
+  /// line edge, not a caret span, so the editor needs this for a line whose
+  /// markup the row hides.
+  int lineContentEnd(int line) =>
+      line < 0 || line >= model.lineCount ? -1 : _lineEnd(line);
+
   /// Where the caret may sit on [line]: one (start, end) span per row on the
   /// line, sorted. Empty for a line with no caret positions (a fence line, a
   /// table's delimiter line). A bodyless fence has one anchor at its source end.
@@ -305,6 +313,16 @@ final class Projection {
     }
     out.sort((a, b) => a.$1 - b.$1);
     return out;
+  }
+
+  int _lineEnd(int l) {
+    final start = model.lineStartUtf16(l);
+    var e = l + 1 < model.lineCount ? model.lineStartUtf16(l + 1) : source.length;
+    while (e > start &&
+        (source.codeUnitAt(e - 1) == 0x0A || source.codeUnitAt(e - 1) == 0x0D)) {
+      e--;
+    }
+    return e;
   }
 
   /// Display position of a UTF-16 source offset; snapped out of hidden bytes.
@@ -556,8 +574,19 @@ final class _Builder {
       // be starting emphasis/strong. No marker recognition happens in Dart.
       if (shells.isNotEmpty && shells.last.kind == ShellKind.item) {
         final item = shells.last.block;
+        final list = m.block(item, BlockField.parent);
         final start = m.block(item, BlockField.startUtf16);
-        if (m.block(item, BlockField.firstLine) == l &&
+        // Only the marker that is starting its own list is authoring text. A
+        // bare marker between real items is one of them, and dropping its list
+        // shell would paint the row outside the list it belongs to and refuse
+        // Indent and list continuation there.
+        final alone =
+            list != noParent &&
+            m.block(list, BlockField.startUtf16) == start &&
+            m.block(list, BlockField.endUtf16) ==
+                m.block(item, BlockField.endUtf16);
+        if (alone &&
+            m.block(item, BlockField.firstLine) == l &&
             contentEnd - start == 1 &&
             m.block(item, BlockField.endUtf16) == contentEnd) {
           addRow(
@@ -567,7 +596,7 @@ final class _Builder {
               l,
               start,
               contentEnd,
-              shells.sublist(0, shells.length - 2),
+              shells.sublist(0, (shells.length - 2).clamp(0, shells.length)),
             ),
           );
           continue;
@@ -847,6 +876,17 @@ final class _Builder {
     final starts = List<int>.filled(n, -1),
         ends = List<int>.filled(n, -1),
         prefixes = List<int>.filled(n, -1);
+    // Abutting hidden runs hide one continuous range; merged, a gap is covered
+    // by a single interval or by none.
+    final covered = <(int, int)>[];
+    for (final h in hidden) {
+      if (covered.isNotEmpty && h.$1 <= covered.last.$2) {
+        if (h.$2 > covered.last.$2) covered.last = (covered.last.$1, h.$2);
+      } else {
+        covered.add(h);
+      }
+    }
+    var coverIndex = 0;
     for (var c = 0; c < cn; c++) {
       final rec = m.content(co + c, ContentField.line);
       final cs = m.content(co + c, ContentField.startUtf16),
@@ -872,8 +912,17 @@ final class _Builder {
         // joined with nothing between them, and both sides of the break would
         // share one display position.
         final gap = m.content(co + c - 1, ContentField.endUtf16);
-        final covered = hidden.any((h) => h.$1 <= gap && h.$2 >= cs);
-        if (!covered && cs > gap) prevEnd = gap;
+        if (cs > gap) {
+          // Both this gap and the merged runs advance with c, so one cursor
+          // walks them together instead of rescanning per line.
+          while (coverIndex < covered.length &&
+              covered[coverIndex].$2 < cs) {
+            coverIndex++;
+          }
+          final over =
+              coverIndex < covered.length && covered[coverIndex].$1 <= gap;
+          if (!over) prevEnd = gap;
+        }
       }
       final codeBreak = c > 0
           ? codeBreaks[m.content(co + c - 1, ContentField.line)]
@@ -1016,6 +1065,11 @@ final class _Builder {
       }
       if (p < ce) emitGap(p, ce);
     }
+    // An inline leaf's lines without a record are never the row's to show: a
+    // paragraph's are the definition lines a definition row already covers,
+    // and a setext underline is markup this row hides. Giving either a caret
+    // would paint it at the end of the heading or the line above, where the
+    // next character silently rewrites markup the user cannot see.
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:
@@ -1112,6 +1166,27 @@ final class _Builder {
     }
   }
 
+  /// A line the leaf owns but has no content record for keeps the caret at its
+  /// end, so it stays reachable: a fence's body line that carries only a
+  /// container prefix, a blank line comrak folded into the block. The rows that
+  /// hide such a line as markup — a fence's delimiters, a setext underline —
+  /// clear it again, because an edit there would be invisible or would paint at
+  /// another line's position.
+  void _fillLineEnds(
+    int first,
+    List<int> starts,
+    List<int> ends,
+    List<int> prefixes,
+  ) {
+    for (var i = 0; i < starts.length; i++) {
+      if (starts[i] >= 0 || first + i >= m.lineCount) continue;
+      final e = _lineEnd(first + i);
+      starts[i] = e;
+      ends[i] = e;
+      prefixes[i] = e;
+    }
+  }
+
   /// Line end excluding the terminator.
   int _lineEnd(int l) {
     final start = m.lineStartUtf16(l);
@@ -1203,11 +1278,10 @@ final class _Builder {
         );
       }
     }
+    _fillLineEnds(first, starts, ends, prefixes);
     final flags = m.block(block, BlockField.flags);
-    // A line the row's text does not represent holds no caret already: it has
-    // no content record, so its entry stays -1. Fence lines do have records,
-    // and hold no caret for the same reason — an edit there would be
-    // invisible. The info string is a host affordance, not a caret position.
+    // Fence lines hold no caret: an edit there would be invisible. The info
+    // string is a host affordance, not a caret position.
     if (kind == BlockKind.codeBlock && flags & 1 != 0 && starts.isNotEmpty) {
       starts[0] = -1;
       ends[0] = -1;

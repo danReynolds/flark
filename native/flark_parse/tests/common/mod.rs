@@ -102,11 +102,16 @@ pub fn check_invariants(src: &str, w: &[u32]) -> Result<(), String> {
         if prefix < ls || prefix > cs { return Err(format!("content {c} prefix {prefix} outside {ls}..{cs}")); }
     }
     // Sibling blocks never overlap: a source offset belongs to one leaf and one
-    // table cell, so a row and a caret are unambiguous.
-    for i in 0..nb {
-        let (s, e, p) = (blk(i, block::START_BYTE) as usize, blk(i, block::END_BYTE) as usize, blk(i, block::PARENT));
-        for j in i + 1..nb {
-            if blk(j, block::PARENT) != p { continue; }
+    // table cell, so a row and a caret are unambiguous. Bucket by parent and
+    // compare neighbours; the pairwise form is a cliff on a large document.
+    let mut siblings: std::collections::HashMap<u32, Vec<usize>> = std::collections::HashMap::new();
+    for i in 0..nb { siblings.entry(blk(i, block::PARENT)).or_default().push(i); }
+    for group in siblings.values() {
+        let mut ordered: Vec<usize> = group.clone();
+        ordered.sort_by_key(|&i| (blk(i, block::START_BYTE), blk(i, block::END_BYTE)));
+        for w in ordered.windows(2) {
+            let (i, j) = (w[0], w[1]);
+            let (s, e) = (blk(i, block::START_BYTE) as usize, blk(i, block::END_BYTE) as usize);
             let (js, je) = (blk(j, block::START_BYTE) as usize, blk(j, block::END_BYTE) as usize);
             if js < e && je > s { return Err(format!("sibling blocks {i} {s}..{e} and {j} {js}..{je} overlap")); }
         }

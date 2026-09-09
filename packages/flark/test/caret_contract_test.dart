@@ -140,24 +140,61 @@ void main() {
     }
   });
 
-  test('a fence that displays nothing can be deleted', () {
-    for (final source in ['~~~\n', '```\n', 'a\n\n~~~\n', '  ```\n\n  ']) {
+  test('the break after a fence that displays nothing can be deleted', () {
+    // The fence itself only goes whole when it is closed: an unclosed one ends
+    // at its opening line, so deleting that range would orphan any closer.
+    for (final (source, erased) in [
+      ('~~~\n', '~~~'),
+      ('a\n\n~~~\n', 'a\n\n~~~'),
+      ('~~~\n~~~\n', ''),
+    ]) {
       final e = FlarkEditor(backend, text: source, caret: source.length);
       var steps = 0;
-      while (e.source.isNotEmpty && steps < 12) {
+      while (e.source != erased && steps < 12) {
         e.apply(SetSelection.caret(e.source.length));
         expect(e.apply(const DeleteBackward()), isTrue,
             reason: 'stuck at ${e.source} from $source');
         steps++;
       }
-      expect(e.source, '');
+      expect(e.source, erased);
     }
   });
 
-  test('a document that is only a thematic break can be deleted', () {
-    final e = FlarkEditor(backend, text: '***', caret: 3);
-    expect(e.apply(const DeleteBackward()), isTrue);
-    expect(e.source, '');
+  test('a fence that displays nothing never absorbs a row', () {
+    // Its lines are all delimiters, so text joined onto one becomes the info
+    // string and the editor never shows it again.
+    for (final (source, caret, forward) in [
+      ('- ```ruby\n- def foo(x)\n- ```\n- ', 9, true),
+      ('- ```\n- [foo]: /url\n- ```\n- ', 5, true),
+    ]) {
+      final e = FlarkEditor(backend, text: source, caret: caret);
+      final visible = e.document.visibleText(0, source.length);
+      expect(
+        e.apply(forward ? const DeleteForward() : const DeleteBackward()),
+        isFalse,
+        reason: 'joined into a delimiter line of $source',
+      );
+      expect(e.source, source);
+      expect(e.document.visibleText(0, e.source.length), visible);
+    }
+  });
+
+  test('a thematic break is exactly its line, in a container too', () {
+    for (final (source, erased) in [
+      ('***', ''),
+      ('> ---\n\n', '> \n\n'),
+      ('> ***\nfoo', '> \nfoo'),
+      ('- *\t*\t*\t\n- ', '- \t\n- '),
+    ]) {
+      final rule = FlarkEditor(backend, text: source, caret: 0).projection.rows
+          .firstWhere((r) => r.kind == RowKind.thematicBreak);
+      expect(source.substring(rule.sourceStart, rule.sourceEnd).trim(),
+          isNot(isEmpty),
+          reason: 'the rule range must be the whole rule in $source');
+      final e = FlarkEditor(backend, text: source, caret: rule.sourceEnd);
+      expect(e.apply(const DeleteBackward()), isTrue);
+      expect(e.source, erased);
+    }
   });
 
   test('a title closed by a literal backslash is a definition', () {

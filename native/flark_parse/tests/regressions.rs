@@ -325,7 +325,7 @@ fn item_marker_endpoints_are_source_ranges_not_display_columns() {
 #[test]
 fn a_row_short_of_the_header_columns_has_empty_cells_not_delimiters() {
     for (first, next) in [("", ""), ("> ", "> "), ("- ", "  ")] {
-      for ending in ["\n", "\r\n", ""] {
+      for ending in ["\n", "\r\n"] {
         for (columns, body, cells) in [
             (2, "| c |", vec![" c ", ""]),
             (2, "| c", vec![" c", ""]),
@@ -342,7 +342,6 @@ fn a_row_short_of_the_header_columns_has_empty_cells_not_delimiters() {
             let head: String = (0..columns).map(|i| format!("| h{i} ")).collect::<String>() + "|";
             let delim: String = (0..columns).map(|_| "| --- ").collect::<String>() + "|";
             let src = format!("{first}{head}{ending}{next}{delim}{ending}{next}{body}{ending}");
-            if ending.is_empty() { continue; }
             let m = M::of(&src); m.clean();
             let row = (0..m.n(header::BLOCK_COUNT))
                 .filter(|&b| m.block(b, block::KIND) == block_kind::TABLE_ROW as usize)

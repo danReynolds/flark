@@ -913,17 +913,21 @@ final class FlarkEditor {
   /// the previous row.
   bool _joinBackward(ProjectedRow row) {
     if (row.kind == RowKind.tableCell) return false;
-    if (row.kind == RowKind.heading) return _setHeading(0);
+    if (row.kind == RowKind.heading || _isBareHeading(row)) {
+      return _setHeading(0);
+    }
     if (row.fenced && row.text.isEmpty) {
-      // A fence that displays nothing goes whole, closed or not. An unclosed
-      // one owns the blank lines after it, so nothing else can reach them and
-      // refusing here leaves a fence the document can never be rid of.
       final block = _doc.model.blockAt(row.block);
-      return _commit(
-        source.replaceRange(block.startUtf16, block.endUtf16, ''),
-        FlarkSelection.collapsed(block.startUtf16),
-        typing: false,
-      );
+      // Only a closed fence's block range is the whole construct. An unclosed
+      // one ends at its opening line, so deleting that range leaves any
+      // closing delimiter behind as a new unclosed block.
+      if (block.flags & 2 != 0) {
+        return _commit(
+          source.replaceRange(block.startUtf16, block.endUtf16, ''),
+          FlarkSelection.collapsed(block.startUtf16),
+          typing: false,
+        );
+      }
     }
     final i = (_doc.model.lineOfUtf16(selection.extent) - row.firstLine).clamp(
       0,
@@ -947,21 +951,23 @@ final class FlarkEditor {
       );
     }
     if (row.index == 0) {
-      // Nothing precedes this row to join onto. A row that displays nothing
-      // but owns source — a thematic break, an unclosed empty fence — would
-      // otherwise be markup the document can never be rid of.
-      if (row.text.isEmpty && row.sourceEnd > row.sourceStart) {
-        return _commit(
-          source.replaceRange(row.sourceStart, row.sourceEnd, ''),
-          FlarkSelection.collapsed(row.sourceStart),
-          typing: false,
-        );
-      }
-      return false;
+      // Nothing precedes this row to join onto. A thematic break is the one
+      // row that displays nothing yet owns a range the crate guarantees is
+      // exactly its line's content, so it can go on its own; anything else
+      // would be deleting through a range comrak does not pin down.
+      if (row.kind != RowKind.thematicBreak) return false;
+      return _commit(
+        source.replaceRange(row.sourceStart, row.sourceEnd, ''),
+        FlarkSelection.collapsed(row.sourceStart),
+        typing: false,
+      );
     }
     final prev = projection.rows[row.index - 1];
     if (prev.kind == RowKind.tableCell) return false;
     if (prev.firstLine + prev.lineCount > row.firstLine) return false;
+    // A fence that displays nothing has only delimiter lines. Text joined onto
+    // one becomes its info string, where the editor never shows it again.
+    if (prev.fenced && prev.text.isEmpty && row.text.isNotEmpty) return false;
     final from = _lastCaretEnd(prev), to = _firstCaretStart(row);
     if (from < 0 || to < 0 || to <= from) return false;
     return _joinContent(from, to);
@@ -974,6 +980,9 @@ final class FlarkEditor {
     final next = projection.rows[row.index + 1];
     if (next.kind == RowKind.tableCell) return false;
     if (next.firstLine < row.firstLine + row.lineCount) return false;
+    // See _joinBackward: a fence that displays nothing has only delimiter
+    // lines, and text joined onto one stops being displayed.
+    if (row.fenced && row.text.isEmpty && next.text.isNotEmpty) return false;
     final from = _lastCaretEnd(row), to = _firstCaretStart(next);
     if (from < 0 || to < 0 || to <= from) return false;
     return _joinContent(from, to);
@@ -1010,24 +1019,33 @@ final class FlarkEditor {
     );
   }
 
-  static int _lastCaretEnd(ProjectedRow row) {
+  /// Where a join from the following row lands: the end of this row's last
+  /// physical line, not of its last caret span. A closing fence and a setext
+  /// underline hold no caret, and joining from the content before them would
+  /// swallow the markup between — one Backspace erasing a whole `===` line, or
+  /// splicing the next row's text into a fence's info string, where it stops
+  /// being displayed.
+  int _lastCaretEnd(ProjectedRow row) {
+    final last = row.firstLine + row.lineCount - 1;
+    if (last >= 0 && last < _doc.model.lineCount) {
+      final end = projection.lineContentEnd(last);
+      if (end >= 0) return end;
+    }
     for (var i = row.contentEnds.length - 1; i >= 0; i--) {
       if (row.contentEnds[i] >= 0) return row.contentEnds[i];
     }
-    return _bodylessFenceAnchor(row);
+    return -1;
   }
 
-  /// A bodyless fence has no content record; its one anchor is its source end,
-  /// as `Projection.lineSpans` publishes it. Without this the joins refuse and
-  /// the fence, and the line break after it, can never be deleted.
-  static int _bodylessFenceAnchor(ProjectedRow row) =>
-      row.fenced ? row.sourceEnd : -1;
-
+  /// Where a join onto the previous row starts. A fence that displays nothing
+  /// has no content record, but its markup begins at its own source start, so
+  /// a join takes only the line break before it — never the fence itself, as
+  /// reaching for its source end would.
   static int _firstCaretStart(ProjectedRow row) {
     for (final s in row.contentStarts) {
       if (s >= 0) return s;
     }
-    return _bodylessFenceAnchor(row);
+    return row.fenced ? row.sourceStart : -1;
   }
 
   bool _newline(bool paragraph) {
@@ -1059,8 +1077,13 @@ final class FlarkEditor {
     } else if (row.shells.isNotEmpty) {
       final prefixStart = row.prefixStarts[i],
           contentStart = row.contentStarts[i];
-      // Return on an empty container line exits the container.
-      if (row.text.isEmpty && prefixStart >= 0 && prefixStart < contentStart) {
+      // Return on an empty container line exits the container. An empty
+      // heading is not that line: its own markup is part of the prefix, so
+      // exiting would delete the heading with the container marker.
+      if (row.text.isEmpty &&
+          row.kind != RowKind.heading &&
+          prefixStart >= 0 &&
+          prefixStart < contentStart) {
         final outer = source.substring(
           _doc.model.lineStartUtf16(line),
           prefixStart,
@@ -1298,14 +1321,22 @@ final class FlarkEditor {
     return false;
   }
 
+  /// A bare `#` is projected as authoring text, but it is still the parser's
+  /// heading: a level command has to replace that marker, not prepend to it.
+  bool _isBareHeading(ProjectedRow row) =>
+      row.kind == RowKind.paragraph &&
+      row.block >= 0 &&
+      _doc.model.block(row.block, BlockField.kind) == BlockKind.heading;
+
   bool _setHeading(int level) {
     if (level < 0 || level > 6) return false;
     final row = _doc.rowAt(selection.extent);
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
       return false;
     }
+    final heading = row.kind == RowKind.heading || _isBareHeading(row);
     if (level > 0 &&
-        row.kind == RowKind.heading &&
+        heading &&
         row.contentStarts.where((s) => s >= 0).length > 1) {
       return false;
     }
@@ -1317,9 +1348,11 @@ final class FlarkEditor {
     if (row.kind == RowKind.heading && blockEnd > row.sourceEnd) {
       s = s.replaceRange(row.sourceEnd, blockEnd, '');
     }
-    s = s.replaceRange(blockStart, row.sourceStart, prefix);
-    final shift = prefix.length - (row.sourceStart - blockStart);
-    int move(int o) => o >= row.sourceStart ? o + shift : o;
+    // The bare marker is the row's own text, so it is what the prefix replaces.
+    final contentStart = _isBareHeading(row) ? row.sourceEnd : row.sourceStart;
+    s = s.replaceRange(blockStart, contentStart, prefix);
+    final shift = prefix.length - (contentStart - blockStart);
+    int move(int o) => o >= contentStart ? o + shift : o;
     return _commit(
       s,
       FlarkSelection(move(selection.base), move(selection.extent)),

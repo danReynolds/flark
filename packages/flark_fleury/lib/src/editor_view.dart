@@ -282,7 +282,9 @@ class _EditorState extends State<FlarkEditorView>
   }
 
   void _finishInput() {
-    _editor.commitComposition();
+    // A read-only view shares the editor; committing here would land another
+    // view's in-flight composition in that editor's history.
+    if (!widget.readOnly) _editor.commitComposition();
     _resetInput();
   }
 
@@ -312,6 +314,9 @@ class _EditorState extends State<FlarkEditorView>
       _finishInput();
       _paste = StringBuffer();
       _pasteId = event.pasteId;
+      // Deliberately the revision, not the source: a selection change between
+      // chunks means the paste would land somewhere the user did not start it,
+      // and abandoning it is safer than moving it.
       _pasteRevision = _editor.revision;
     }
     if (_paste == null ||
@@ -341,7 +346,16 @@ class _EditorState extends State<FlarkEditorView>
     if (_editor.apply(
       ReplaceRange(_compositionStart!, _compositionEnd!, text),
     )) {
-      _compositionEnd = _compositionStart! + text.length;
+      // The kernel legalizes and may widen a replacement, so the preedit does
+      // not always land at start + text.length. Take the range it reports, or
+      // the next update overwrites whatever moved into it.
+      _compositionStart = _editor.selection.start - text.length >= 0
+          ? _editor.selection.extent - text.length
+          : _editor.selection.start;
+      _compositionEnd = _editor.selection.extent;
+      if (_compositionStart! > _compositionEnd!) {
+        _compositionStart = _compositionEnd;
+      }
     }
     return KeyEventResult.handled;
   }
@@ -358,6 +372,11 @@ class _EditorState extends State<FlarkEditorView>
     _editor.cancelComposition();
     _resetInput();
     return KeyEventResult.handled;
+  }
+
+  void _drag(int col, int row) {
+    _pressedLink = null;
+    _point(col, row, extend: true);
   }
 
   void _select(int source, bool extend) => _apply(
@@ -428,8 +447,12 @@ class _EditorState extends State<FlarkEditorView>
   void _key(KeyEvent event) {
     if (event.type == KeyEventType.up) return;
     final primary = event.hasCtrl || event.hasSuper;
+    // Only a plain Up/Down keeps the goal column; Cmd+Up jumps to the document
+    // start and the next Down must aim at that new column, not the old one.
     final vertical =
-        event.code == KeyCode.arrowUp || event.code == KeyCode.arrowDown;
+        (event.code == KeyCode.arrowUp || event.code == KeyCode.arrowDown) &&
+        !primary &&
+        !event.hasAlt;
     final goal = _goalColumn;
     _finishInput();
     if (vertical) _goalColumn = goal;
@@ -595,7 +618,7 @@ class _EditorState extends State<FlarkEditorView>
             },
     );
     return Positioned(
-      left: caret.col.clamp(0, layout.cols - width),
+      left: caret.col.clamp(0, (layout.cols - width).clamp(0, layout.cols)),
       top: y,
       width: width,
       child: KeyDetector(
@@ -642,14 +665,8 @@ class _EditorState extends State<FlarkEditorView>
           child: GestureDetector(
             onTapDownWithModifiers: _pointerDown,
             onTapUp: _pointerUp,
-            onDragUpdate: (col, row) {
-              _pressedLink = null;
-              _point(col, row, extend: true);
-            },
-            onDragStart: (col, row) {
-              _pressedLink = null;
-              _point(col, row, extend: true);
-            },
+            onDragUpdate: _drag,
+            onDragStart: _drag,
             child: PointerScrollListener(
               router: PointerRouterScope.maybeOf(context),
               onScrollUp: () => setState(() => _viewport.scroll(-3)),
@@ -675,7 +692,7 @@ class _EditorState extends State<FlarkEditorView>
   void dispose() {
     _resourceSession?.close();
     widget.controller.removeListener(_changed);
-    _editor.commitComposition();
+    if (!widget.readOnly) _editor.commitComposition();
     _detachFocus(widget.focusNode);
     _viewport.dispose();
     super.dispose();

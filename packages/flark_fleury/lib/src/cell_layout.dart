@@ -46,7 +46,6 @@ final class CellLine {
 
   int columnAt(int offset) {
     for (final glyph in glyphs) {
-      if (offset <= glyph.start) return glyph.col;
       if (offset < glyph.end) return glyph.col;
     }
     return endColumn;
@@ -100,27 +99,28 @@ final class CellDocumentLayout {
   static const _widths = DefaultWidthResolver();
   static bool _lowSurrogate(int unit) => unit >= 0xdc00 && unit <= 0xdfff;
 
+  late final String _quoteRail = _widths.widthOfText('▎', policy) == 1
+      ? '▎ '
+      : '| ';
+  // Some terminals give this glyph two cells. Preserve the one-cell marker
+  // plus one-cell gap contract there with an ASCII bullet.
+  late final String _bullet = _widths.widthOfText('●', policy) == 1
+      ? '● '
+      : '* ';
+
+  String _markerFor(Shell shell) => shell.task
+      ? (shell.checked ? '[x] ' : '[ ] ')
+      : shell.ordered
+      ? '${shell.start + shell.itemIndex}. '
+      : _bullet;
+
   String _prefix(ProjectedRow row) {
     final out = StringBuffer();
     for (final shell in row.shells) {
-      if (shell.kind == ShellKind.blockQuote) {
-        out.write(_widths.widthOfText('▎', policy) == 1 ? '▎ ' : '| ');
-      }
+      if (shell.kind == ShellKind.blockQuote) out.write(_quoteRail);
       if (shell.kind == ShellKind.item) {
-        final marker = shell.task
-            ? (shell.checked ? '[x] ' : '[ ] ')
-            : shell.ordered
-            ? '${shell.start + shell.itemIndex}. '
-            // Some terminals give this glyph two cells. Preserve the one-cell
-            // marker plus one-cell gap contract there with an ASCII bullet.
-            : _widths.widthOfText('●', policy) == 1
-            ? '● '
-            : '* ';
-        if (!_seenItems.add(shell.block)) {
-          out.write(' ' * marker.length);
-          continue;
-        }
-        out.write(marker);
+        final marker = _markerFor(shell);
+        out.write(_seenItems.add(shell.block) ? marker : ' ' * marker.length);
       }
     }
     if (row.kind == RowKind.codeBlock) out.write('  ');
@@ -195,11 +195,27 @@ final class CellDocumentLayout {
     }
   }
 
-  String _continuation(String prefix, ProjectedRow? row) =>
-      row?.kind == RowKind.codeBlock ||
-          row?.shells.any((s) => s.kind == ShellKind.blockQuote) == true
-      ? prefix
-      : ' ' * prefix.length;
+  /// A wrapped line keeps the rails that continue — a quote bar, a code
+  /// block's indent — and blanks the ones that do not. Repeating a bullet or a
+  /// task box would claim the wrap is a second item, and the host's own task
+  /// hit test reads this prefix, so the checkbox would be clickable there too.
+  String _continuation(String prefix, ProjectedRow? row) {
+    if (row == null) return ' ' * prefix.length;
+    final out = StringBuffer();
+    for (final shell in row.shells) {
+      if (shell.kind == ShellKind.blockQuote) {
+        out.write(_quoteRail);
+      } else if (shell.kind == ShellKind.item) {
+        out.write(' ' * _markerFor(shell).length);
+      }
+    }
+    if (row.kind == RowKind.codeBlock) out.write('  ');
+    if (row.kind == RowKind.tableCell) out.write('  ');
+    final continued = out.toString();
+    return continued.length == prefix.length
+        ? continued
+        : ' ' * prefix.length;
+  }
 
   CellStyle Function(int) _stylesFor(ProjectedRow? row) {
     var base = theme.body;

@@ -115,16 +115,26 @@ pub(crate) fn scan_link_url(s: &[u8]) -> Option<(usize, usize, usize)> {
 pub(crate) fn scan_link_title(s: &[u8]) -> Option<usize> {
     let open = *s.first()?;
     let close = match open { b'"' => b'"', b'\'' => b'\'', b'(' => b')', _ => return None };
-    let mut reachable = vec![false; s.len() + 1];
-    reachable[1] = true;
+    // A step reaches only the next byte or the one after it, so reachability
+    // fits in a two-slot window and the scan stops as soon as neither is live.
+    // Sweeping the whole buffer instead made a paragraph of titled definitions
+    // quadratic, on the parse the editor runs for every keystroke.
+    let (mut here, mut next) = (true, false);
     let mut best = None;
-    for i in 1..s.len() {
-        if !reachable[i] { continue; }
-        let b = s[i];
-        if b == close { best = Some(i + 1); }
-        if b == 0 { continue; }
-        if b == b'\\' && i + 1 < s.len() && ispunct(s[i + 1]) { reachable[i + 2] = true; }
-        if b != close && !(open == b'(' && b == b'(') { reachable[i + 1] = true; }
+    let mut i = 1;
+    while i < s.len() && (here || next) {
+        let mut after = false;
+        if here {
+            let b = s[i];
+            if b == close { best = Some(i + 1); }
+            if b != 0 {
+                if b == b'\\' && i + 1 < s.len() && ispunct(s[i + 1]) { after = true; }
+                if b != close && !(open == b'(' && b == b'(') { next = true; }
+            }
+        }
+        here = next;
+        next = after;
+        i += 1;
     }
     best
 }

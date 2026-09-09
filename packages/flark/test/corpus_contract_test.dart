@@ -264,6 +264,17 @@ void checkErasure(String label, FlarkEditor e) {
             if (editor.document.isLegal(o)) o,
         ].lastOrNull;
         final row = editor.document.rowAt(editor.selection.extent);
+        // An unclosed fence's block range is only its opening line, so a first
+        // row that is one has nothing a join can safely delete through.
+        final openFence = backward &&
+            row.index == 0 &&
+            row.fenced &&
+            row.text.isEmpty;
+        // A first row whose whole content is hidden markup — `[](/url)`, a
+        // link with no text — displays nothing and has no earlier row to join
+        // onto. RemoveLink is the command for it.
+        final hiddenLeaf =
+            backward && row.index == 0 && row.block >= 0 && row.text.isEmpty;
         // Forward delete has nothing to take from a row that displays nothing,
         // and neither direction may lift a pipe or a delimiter row, so a
         // document ending in a table stops here (see the review note).
@@ -272,7 +283,9 @@ void checkErasure(String label, FlarkEditor e) {
             : null;
         final atEnd = (!backward &&
                 (editor.selection.extent == last || row.text.isEmpty)) ||
-            (backward && previous?.kind == RowKind.tableCell);
+            (backward && previous?.kind == RowKind.tableCell) ||
+            openFence ||
+            hiddenLeaf;
         if (!atEnd) {
           fail_('erase-refused', '$label ${backward ? "backspace" : "delete"}: '
               'stuck at ${jsonEncode(editor.source)} '
@@ -403,6 +416,23 @@ void checkCommands(String label, FlarkEditor e) {
     }
     if (!editor.source.contains('Z')) {
       fail_('typing-lost', '$label at $at -> ${jsonEncode(editor.source)}');
+    }
+  }
+  // 9b. Every legal caret accepts some edit. A caret the user can reach and
+  //     see, where nothing at all can be typed, is a dead position.
+  for (var o = 0; o <= src.length; o++) {
+    if (!e.document.isLegal(o)) continue;
+    final editor = FlarkEditor(createBackend(), text: src, caret: o);
+    if (editor.selection.extent != o) continue;
+    final accepts = [
+      const InsertText('Z'),
+      const Newline(),
+      const DeleteBackward(),
+      const DeleteForward(),
+    ].any((c) => FlarkEditor(createBackend(), text: src, caret: o).apply(c));
+    if (!accepts) {
+      fail_('caret-accepts-nothing', '$label at $o: '
+          'row ${jsonEncode(editor.document.rowAt(o).text)}');
     }
   }
   // 10. Select all then delete empties the document, unless Select All is

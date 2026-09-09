@@ -279,19 +279,7 @@ impl<'a> Extractor<'a> {
                 rec[block::ATTR0] = offset as u32;
                 container = Some(Container { kind: ContainerKind::Item, offset, first_line, checkbox });
             }
-            NodeValue::ThematicBreak => {
-                rec[block::KIND] = block_kind::THEMATIC_BREAK;
-                // A thematic break is one line. Ending a document with one
-                // makes comrak's sourcepos run on through the blank lines that
-                // follow; the rule's row would then own them, and each of
-                // their line ends would be a caret painting on the rule.
-                let le = self.li.line_end(first_line, self.src.len());
-                if end > le {
-                    rec[block::END_BYTE] = le as u32;
-                    rec[block::END_UTF16] = self.li.u16(le);
-                    rec[block::LINE_COUNT] = 1;
-                }
-            }
+            NodeValue::ThematicBreak => rec[block::KIND] = block_kind::THEMATIC_BREAK,
             NodeValue::Table(t) => {
                 rec[block::KIND] = block_kind::TABLE; rec[block::ATTR0] = t.num_columns as u32;
                 let mut packed = 0u32;
@@ -509,7 +497,18 @@ impl<'a> Extractor<'a> {
                     self.push_content(line0, cs, le.min(be.max(cs)), p.cur.virt, ls + p.prefix_start);
                 }
             }
-            NodeValue::ThematicBreak => {}
+            NodeValue::ThematicBreak => {
+                // comrak's rule sourcepos is one column inside a container and
+                // runs past the line at a document's end. A rule is exactly its
+                // line's content, and a host that deletes it needs that range.
+                let mut p = self.prefix_cursor(l0, self.line_bytes(l0), chain);
+                p.cur.skip_whitespace();
+                let ls = self.li.line_start(l0);
+                let (cs, ce) = (ls + p.cur.pos, self.trimmed_end(l0, ls + p.cur.pos));
+                let rec = &mut self.blocks[idx];
+                rec[block::START_BYTE] = cs as u32; rec[block::START_UTF16] = self.li.u16(cs);
+                rec[block::END_BYTE] = ce as u32; rec[block::END_UTF16] = self.li.u16(ce);
+            }
             NodeValue::TableCell => {
                 // Comrak parses a body row from first_nonspace, but records its
                 // cells and inline line_offsets relative to the HEADER's column.
@@ -597,6 +596,7 @@ impl<'a> Extractor<'a> {
         drop(data);
         self.blocks[idx][block::CONTENT_COUNT] = self.content.len() as u32 - content_start;
         self.fit_block_to_content(idx);
+        self.trim_trailing_blank_lines(idx, chain);
         self.fit_block_to_runs(idx, first_run);
     }
 
@@ -620,6 +620,38 @@ impl<'a> Extractor<'a> {
     /// the block range follows it there. Anywhere else, content outside the
     /// block range is a derivation bug: reported, then widened so the schema
     /// invariant holds.
+    /// comrak's leaf sourcepos can run past the last line the leaf has content
+    /// for, onto blank lines that follow: a thematic break or an unclosed fence
+    /// ending a document, an indented code block before a blank separator. A
+    /// blank line is document structure, not the leaf's markup — leaving it
+    /// inside makes it a line the projected row owns and can never show, so its
+    /// caret would paint at the end of the line above. Lines that carry markup
+    /// the row hides (a closing fence, a setext underline, a container prefix)
+    /// are not blank and stay with the leaf.
+    fn trim_trailing_blank_lines(&mut self, idx: usize, chain: &[Container]) {
+        let (co, cn) = (self.blocks[idx][block::CONTENT_OFFSET] as usize, self.blocks[idx][block::CONTENT_COUNT] as usize);
+        let first_line = self.blocks[idx][block::FIRST_LINE] as usize;
+        let content_line = if cn == 0 { first_line } else { self.content[co + cn - 1][content::LINE] as usize };
+        let mut lines = self.blocks[idx][block::LINE_COUNT] as usize;
+        let bytes = self.src.as_bytes();
+        while lines > 1 && first_line + lines - 1 > content_line {
+            let line = first_line + lines - 1;
+            let mut p = self.prefix_cursor(line, self.line_bytes(line), chain);
+            p.cur.skip_whitespace();
+            let (ls, le) = (self.li.line_start(line), self.li.line_end(line, self.src.len()));
+            if ls + p.cur.pos < le && !bytes[ls + p.cur.pos..le].iter().all(|b| matches!(b, b' ' | b'\t')) { break; }
+            lines -= 1;
+        }
+        if lines == self.blocks[idx][block::LINE_COUNT] as usize { return; }
+        let end = self.li.line_end(first_line + lines - 1, self.src.len());
+        let rec = &mut self.blocks[idx];
+        rec[block::LINE_COUNT] = lines as u32;
+        if (rec[block::END_BYTE] as usize) > end {
+            rec[block::END_BYTE] = end as u32;
+            rec[block::END_UTF16] = self.li.u16(end);
+        }
+    }
+
     fn fit_block_to_content(&mut self, idx: usize) {
         let (co, cn) = (self.blocks[idx][block::CONTENT_OFFSET] as usize, self.blocks[idx][block::CONTENT_COUNT] as usize);
         if cn == 0 { return; }

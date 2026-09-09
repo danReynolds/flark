@@ -28,8 +28,8 @@ to flark_tree_sitter. Flutter retains a small compatible asset-loading wrapper.
 Each host owns its coloring worker/lifecycle; both use the same analyzer,
 language catalog, edit proposals and source-qualified asynchronous results.
 
-The adapter currently occupies approximately 1,100 production Dart lines
-against M4's 3,000-line budget, excluding the shared snippet adapter, tests and
+The adapter occupied approximately 1,100 production Dart lines at the time of
+this paragraph, against M4's 3,000-line budget, excluding the shared snippet adapter, tests and
 example. Table/resource work remains, so this is headroom rather than a final
 size prediction.
 
@@ -331,10 +331,88 @@ Five in the editor:
 
 ### Local evidence
 
-Rust gates pass, including the conformance corpus with zero deviations and the
-new sibling-overlap and content-line invariants in `check_invariants`. The
+Rust gates pass: spec HTML conformance 1,321/1,322 with example 354 registered,
+and the extraction with zero deviations plus the schema invariants, now
+including the new sibling-overlap and content-line checks in
+`check_invariants`. The
 rebuilt Wasm matched native across all 1,322 cases. 740 core tests (with 1,500
 extra matrix sequences on a fresh seed), 811 Flutter, 51 Fleury, 3 example and
 355 Tree-sitter tests passed, analysis clean in every package. No CI, merge,
 browser or device qualification was part of this round.
+
+## 2026-09-09 (review round): what the contracts missed
+
+A ten-angle review of the branch — two of the angles differentially executed
+this kernel and `main` over every legal caret in both corpora — found that
+several of the fixes above had bought their symptom at the cost of a worse one.
+The corrections, and what they say about where each fix belonged:
+
+**Deleting `_fillLineEnds` was too blunt.** It served three different cases at
+once. A line the row genuinely cannot show (a setext underline) must hold no
+caret; a line the row *can* show (a fence body carrying only a container
+prefix) must hold one, and without it `> ```` ``` ````\n> ` became a document with a
+caret where nothing could be typed at all; and a blank line comrak folded into
+a preceding leaf is neither — it is document structure, and belongs to nobody.
+The fill is back for literal rows only, and the third case is fixed where it
+started: `trim_trailing_blank_lines` in the crate takes a leaf's trailing lines
+back off when they carry no content after their container prefix, so a blank
+separator becomes its own row with its own caret. That one correction replaces
+the thematic-break clamp, which was the same quirk seen through one keyhole.
+
+**A join boundary is a line edge, not a caret span.** `_lastCaretEnd` returning
+the last content record let one Backspace erase a whole `===` underline, and
+`_bodylessFenceAnchor` let Delete splice a code line into a fence's info
+string, where the editor never showed it again. It now returns the end of the
+row's last physical line, and a fence that displays nothing refuses to absorb
+another row's content at all.
+
+**A block range is not reliably the whole construct.** The index-0 erase branch
+trusted `sourceStart..sourceEnd` and turned `> ---` into a literal `> --`.
+comrak reports a rule as one column inside a container and runs past its line
+at a document's end, so the crate now derives a thematic break's range from its
+own line; the Dart branch is narrowed to the one row kind that guarantee covers.
+
+**An unclosed fence's block ends at its opening line**, so the `closed` guard is
+back: deleting through it orphaned a closing delimiter into a new code block.
+
+**Presentation choices still have to answer to commands.** A bare `-` between
+two real items dropped its list shell, so it painted outside the list, refused
+Indent, and stopped continuing it; the marker is authoring text only when it is
+the sole item of its own list. A bare `#` is projected as a paragraph, so
+`SetHeadingLevel(2)` prepended and produced `## #`; the level commands now
+follow the block kind. And Return on `> ## ` took the empty-container-line exit
+and deleted the heading along with the quote marker.
+
+**`scan_link_title` was the expensive kind of correct.** The reachability
+rewrite never exited early and allocated a buffer the size of the rest of the
+paragraph, so a 1 MiB paragraph of titled definitions went from 1.62 ms to
+15.70 s. Reachability only ever reaches the next byte or the one after, so it
+fits in a two-slot window that stops when neither is live; `paragraph_definitions`
+now measures 34/66/131/271/534 µs at 16/32/64/128/256 KiB — linear. (A separate,
+pre-existing quadratic in extracting definition-heavy documents remains, and is
+not from this branch.) In the same spirit the projection's new break fallback
+walks the block's merged hidden runs with one cursor instead of rescanning per
+line, and merging also stops two abutting hidden runs from faking a break.
+
+Host corrections: a wrapped list row repeated its bullet and its `[ ]`, and the
+task hit test read that prefix, so the checkbox was clickable on the wrap; the
+link popover's clamp inverted at zero columns; the coloring cache had neither of
+the Flutter host's bounds and rescanned every code body per keystroke; a
+read-only view committed a shared editor's composition; the goal column survived
+`Cmd+Up`; and the IME preedit range was assumed rather than read back from the
+kernel.
+
+Left as is, deliberately: an unclosed fence that displays nothing still cannot
+be Backspaced away when it is the first row, and neither can a link with no text
+— both would mean deleting through a range the model does not pin down, and
+Select All or `RemoveLink` covers them. Backspace on the empty line after a
+table stays refused. The empty cell a short table row never wrote is painted but
+still not addressable; entering it should materialise `| `, the way a bodyless
+fence materialises its body, and that is table work rather than a caret fix.
+
+The corpus contract gained the rule that would have caught the first of these:
+every legal caret must accept some edit. The check that a delete may not hide
+more than it removes was tried and dropped — a structural reparse can
+legitimately change the display by more than the source — so the fence-info
+splice is pinned by a named regression instead.
 

@@ -17,8 +17,12 @@ final class FlarkFleuryController extends ChangeNotifier {
 
   final FlarkEditor editor;
   final CodeHighlightWorker? _worker;
+  /// Least-recently wanted first, so the bound drops the coldest snippet.
   final _colors = <(String, String), CodeAnalysis>{};
-  List<(String, String)> _wanted = [];
+  var _wanted = <(String, String)>{};
+  final _failed = <(String, String)>{};
+  int _colorUnits = 0;
+  static const _maxSnippets = 32, _maxUnits = 65536;
   String? _source;
   bool _sourceMode = false, _working = false, _closed = false;
   Object? _highlightError;
@@ -38,14 +42,21 @@ final class FlarkFleuryController extends ChangeNotifier {
       _source = editor.source;
       _sourceMode = editor.sourceMode;
       _wanted = editor.sourceMode
-          ? []
-          : [
+          ? <(String, String)>{}
+          : {
               for (final row in editor.projection.rows)
                 if (row.kind == RowKind.codeBlock)
                   (row.text, languageInfo(row)),
-            ];
+            };
       // Retain only current snippets: no old-revision ranges can reach paint.
-      _colors.removeWhere((key, _) => !_wanted.contains(key));
+      // A Set keeps this a hash lookup per entry; a List compared whole code
+      // bodies against every wanted key on every keystroke.
+      _colors.removeWhere((key, _) {
+        if (_wanted.contains(key)) return false;
+        _colorUnits -= key.$1.length;
+        return true;
+      });
+      _failed.removeWhere((key) => !_wanted.contains(key));
       if (!_working && _worker != null && _highlightError == null) {
         unawaited(_color());
       }
@@ -57,7 +68,9 @@ final class FlarkFleuryController extends ChangeNotifier {
     _working = true;
     try {
       while (!_closed) {
-        final next = _wanted.where((key) => !_colors.containsKey(key));
+        final next = _wanted.where(
+          (key) => !_colors.containsKey(key) && !_failed.contains(key),
+        );
         if (next.isEmpty) break;
         final key = next.first;
         final name =
@@ -68,8 +81,20 @@ final class FlarkFleuryController extends ChangeNotifier {
           language: codeLanguage(name),
         );
         if (_closed) break;
-        if (result != null && _wanted.contains(key)) {
+        // A superseded request resolves to null. Retrying it immediately would
+        // pick the same key forever, so the snippet waits for its next edit.
+        if (result == null) {
+          _failed.add(key);
+          continue;
+        }
+        if (_wanted.contains(key)) {
           _colors[key] = result;
+          _colorUnits += key.$1.length;
+          while (_colors.length > _maxSnippets || _colorUnits > _maxUnits) {
+            final coldest = _colors.keys.first;
+            _colorUnits -= coldest.$1.length;
+            _colors.remove(coldest);
+          }
           notifyListeners();
         }
       }
@@ -90,6 +115,7 @@ final class FlarkFleuryController extends ChangeNotifier {
     editor.removeListener(_changed);
     _worker?.dispose();
     _colors.clear();
+    _failed.clear();
     super.dispose();
   }
 }

@@ -172,9 +172,11 @@ final class FlarkDocument {
 
   /// Hidden intervals of inline runs (delimiters, break markers) in UTF-16,
   /// sorted by start.
-  late final List<(int, int)> hiddenIntervals = () {
-    if (_positions != null) return _positions.hiddenIntervals;
+  /// One pass over the runs for both interval sets: hidden syntax, and the
+  /// escapes whose backslash and escaped character are one caret unit.
+  late final ({List<(int, int)> hidden, List<(int, int)> escapes}) _runIntervals = () {
     final out = <(int, int)>[];
+    final escapes = <(int, int)>[];
     var sorted = true, last = -1;
     void add(int a, int b) {
       if (a < last) sorted = false;
@@ -189,26 +191,26 @@ final class FlarkDocument {
           ce = model.run(r, RunField.contentEndUtf16);
       if (cs > s) add(s, cs);
       if (e > ce) add(ce, e);
+      if (model.run(r, RunField.kind) == RunKind.escape && ce > s) {
+        escapes.add((s, ce));
+      }
     }
     if (!sorted) out.sort((a, b) => a.$1 - b.$1);
-    return List<(int, int)>.unmodifiable(out);
+    return (hidden: List<(int, int)>.unmodifiable(out), escapes: escapes);
   }();
+
+  late final List<(int, int)> hiddenIntervals =
+      _positions?.hiddenIntervals ?? _runIntervals.hidden;
 
   /// Source ranges represented by one non-exact display glyph (entities,
   /// escapes, and normalized code spans) are atomic caret units.
   late final List<(int, int)> _atomicIntervals = () {
     if (_positions != null) return _positions._atomicIntervals;
-    final intervals = <(int, int)>[];
     // An escape displays one character behind a hidden backslash, so both of
     // its ends are legal but the offset between them is a typing context that
     // re-targets the escape: `a\*b` becomes `a\Z*b`, unhiding the backslash
     // and arming the asterisk. The pair is one caret unit.
-    for (var r = 0; r < model.runCount; r++) {
-      if (model.run(r, RunField.kind) != RunKind.escape) continue;
-      final start = model.run(r, RunField.startUtf16);
-      final contentEnd = model.run(r, RunField.contentEndUtf16);
-      if (contentEnd > start) intervals.add((start, contentEnd));
-    }
+    final intervals = <(int, int)>[..._runIntervals.escapes];
     for (final row in projection.rows) {
       for (final segment in row.segments) {
         if (!segment.exact && segment.sourceEnd > segment.sourceStart) {

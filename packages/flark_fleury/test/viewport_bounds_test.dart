@@ -4,6 +4,7 @@
 library;
 
 import 'package:flark/flark.dart';
+import 'package:flark_fleury/src/cell_layout.dart';
 import 'package:flark_fleury/flark_fleury.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
@@ -57,4 +58,28 @@ void main() {
       focus.dispose();
     });
   }
+
+  test('a wrapped row keeps its rails and never repeats its marker', () {
+    for (final (source, first, rest) in [
+      ('> - a very long line of text here\n', '▎ ● ', '▎   '),
+      ('> - [ ] a very long task line here\n', '▎ [ ] ', '▎     '),
+      ('- a very long plain item that wraps here\n', '● ', '  '),
+    ]) {
+      final editor = FlarkEditor(backend, text: source, caret: 0);
+      final controller = FlarkFleuryController(editor);
+      final layout = CellDocumentLayout(
+          controller, 20, const FlarkCellTheme(), CellWidthPolicy.spec);
+      final wrapped = editor.projection.rows.first;
+      final owned =
+          layout.lines.where((l) => identical(l.row, wrapped)).toList();
+      expect(owned.length, greaterThan(1), reason: '$source did not wrap');
+      expect(owned.first.prefix, first);
+      for (final line in owned.skip(1)) {
+        expect(line.prefix, rest, reason: 'continuation of $source');
+        expect(line.prefix, isNot(contains('[')),
+            reason: 'a wrap must not offer a second checkbox');
+      }
+      controller.dispose();
+    }
+  });
 }
