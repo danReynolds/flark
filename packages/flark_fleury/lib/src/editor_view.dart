@@ -10,6 +10,8 @@ import 'theme.dart';
 import 'resource_controls.dart';
 
 part 'surface.dart';
+part 'link_anchor.dart';
+part 'interactive_semantics.dart';
 
 /// A viewport over a borrowed controller. Give it bounded width and height.
 /// Escape leaves editing focus; Tab indents in code/lists and traverses elsewhere.
@@ -161,7 +163,9 @@ class _EditorState extends State<FlarkEditorView>
       return;
     }
     final uri = flarkOpenableUri(pressed.resource.destination, widget.baseUri);
-    if (pressed.open && uri != null && widget.onOpenLink != null) {
+    if ((pressed.open || widget.readOnly) &&
+        uri != null &&
+        widget.onOpenLink != null) {
       widget.onOpenLink!(uri);
     } else {
       _showLink(pressed.resource);
@@ -249,7 +253,6 @@ class _EditorState extends State<FlarkEditorView>
     if (identical(_focus.textCompositionClaimant, this)) {
       _focus.textCompositionClaimant = null;
     }
-    _focus.caretRect = null;
     if (supplied == null) _focus.dispose();
   }
 
@@ -434,7 +437,7 @@ class _EditorState extends State<FlarkEditorView>
         ),
         mutation: false,
       );
-      final taskColumn = line.prefix.indexOf('['); // rendered shell, not source
+      final taskColumn = line.taskColumn;
       if (toggle &&
           !extend &&
           taskColumn >= 0 &&
@@ -595,13 +598,7 @@ class _EditorState extends State<FlarkEditorView>
   );
 
   Widget _buildLinkPopover(BuildContext context) {
-    final layout = _viewport.layout!, epoch = _linkEpoch, resource = _link!;
-    final caret = layout.positionFor(_editor.selection.extent);
-    final width = layout.cols.clamp(1, 52);
-    final height = width < 40 ? 8 : 6;
-    final below = caret.row - _viewport.top + 1;
-    final y = (below + height <= _viewport.rows ? below : below - height - 1)
-        .clamp(0, (_viewport.rows - height).clamp(0, _viewport.rows));
+    final epoch = _linkEpoch, resource = _link!;
     bool active() => mounted && epoch == _linkEpoch && _linkActive;
     final uri = flarkOpenableUri(resource.destination, widget.baseUri);
     final actions = FlarkLinkActions(
@@ -634,10 +631,8 @@ class _EditorState extends State<FlarkEditorView>
               }
             },
     );
-    return Positioned(
-      left: caret.col.clamp(0, (layout.cols - width).clamp(0, layout.cols)),
-      top: y,
-      width: width,
+    return _LinkAnchor(
+      viewport: _viewport,
       child: KeyDetector(
         onKey: (event) {
           if (event.code == KeyCode.escape) {
@@ -652,50 +647,70 @@ class _EditorState extends State<FlarkEditorView>
     );
   }
 
-  Widget _buildEditor(BuildContext context) => Semantics(
-    role: SemanticRole.textArea,
-    label: widget.semanticLabel,
-    value: _editor.source,
-    focused: _focus.hasFocus,
-    state: SemanticState({
-      'selectionBase': _editor.selection.base,
-      'selectionExtent': _editor.selection.extent,
-      'readOnly': widget.readOnly,
-      'textEditable': true,
-      'composingActive': _editor.composing,
-    }),
-    actions: {SemanticAction.focus, SemanticAction.copy},
-    onAction: (action) {
-      if (action == SemanticAction.focus) _focus.requestFocus();
-      if (action == SemanticAction.copy) unawaited(_copy());
+  Widget _buildEditor(BuildContext context) => _InteractiveSemantics(
+    controller: widget.controller,
+    viewport: _viewport,
+    readOnly: widget.readOnly,
+    onActivate: (col, row) {
+      _pointerDown(col, row, const {});
+      _pointerUp(col, row);
     },
-    child: KeyDetector(
-      onKey: _key,
-      child: FocusDetector(
-        onFocusChange: (focused) {
-          if (!focused) _finishInput();
-          _changed();
-        },
-        child: Focus(
-          focusNode: _focus,
-          autofocus: widget.autofocus,
-          child: GestureDetector(
-            onTapDownWithModifiers: _pointerDown,
-            onTapUp: _pointerUp,
-            onDragUpdate: _drag,
-            onDragStart: _drag,
-            child: PointerScrollListener(
-              router: PointerRouterScope.maybeOf(context),
-              onScrollUp: () => setState(() => _viewport.scroll(-3)),
-              onScrollDown: () => setState(() => _viewport.scroll(3)),
-              child: BoundsObserver(
-                notifier: _viewport.bounds,
-                child: _Surface(
-                  widget.controller,
-                  widget.theme ?? FlarkCellTheme.of(context),
-                  _focus,
-                  _viewport,
-                  MediaQuery.textPolicyOf(context).widths,
+    child: Semantics(
+      role: SemanticRole.textArea,
+      label: widget.semanticLabel,
+      value: _editor.source,
+      focused: _focus.hasFocus,
+      state: SemanticState({
+        'selectionBase': _editor.selection.base,
+        'selectionExtent': _editor.selection.extent,
+        'readOnly': widget.readOnly,
+        'textEditable': true,
+        'composingActive': _editor.composing,
+      }),
+      actions: {SemanticAction.focus, SemanticAction.copy},
+      onAction: (action) {
+        if (action == SemanticAction.focus) _focus.requestFocus();
+        if (action == SemanticAction.copy) unawaited(_copy());
+      },
+      child: KeyDetector(
+        onKey: _key,
+        child: FocusDetector(
+          onFocusChange: (focused) {
+            if (!focused) _finishInput();
+            _changed();
+          },
+          child: Focus(
+            focusNode: _focus,
+            autofocus: widget.autofocus,
+            child: GestureDetector(
+              onTapDown: (event) => _pointerDown(
+                event.globalPosition.col,
+                event.globalPosition.row,
+                event.modifiers,
+              ),
+              onTapUp: (event) => _pointerUp(
+                event.globalPosition.col,
+                event.globalPosition.row,
+              ),
+              onDragUpdate: (event) =>
+                  _drag(event.globalPosition.col, event.globalPosition.row),
+              onDragStart: (event) =>
+                  _drag(event.globalPosition.col, event.globalPosition.row),
+              child: MouseRegion(
+                onScroll: (event) {
+                  final before = _viewport.top;
+                  setState(() => _viewport.scroll(event.delta.row * 3));
+                  return before != _viewport.top;
+                },
+                child: BoundsObserver(
+                  notifier: _viewport.bounds,
+                  child: _Surface(
+                    widget.controller,
+                    widget.theme ?? FlarkCellTheme.of(context),
+                    _focus,
+                    _viewport,
+                    MediaQuery.textPolicyOf(context).widths,
+                  ),
                 ),
               ),
             ),

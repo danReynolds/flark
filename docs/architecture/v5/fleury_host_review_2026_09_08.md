@@ -494,3 +494,14 @@ public library in `packages/flark/lib/`. The deletion refusals, the unaddressabl
 empty table cell, and the pre-existing quadratic in extracting definition-heavy
 documents are unchanged from the round above.
 
+
+### September 15 closure
+
+The cache/worker duplication above is now replaced by the pure Dart
+`FlarkCodeHighlighting` in `flark_tree_sitter`. Each host reports its own visible
+rows; the shared lane owns exact source/language keys, work and memory bounds,
+stale output rejection and worker disposal. See
+[the dual-host closure review](dual_host_review_2026_09_15.md) for the dependency
+pin, current Fleury API migration and local receipts. The earlier statement
+that a registry release was required to resolve the host is also superseded: it
+now resolves through reviewed Git pins. The other open items above remain open.

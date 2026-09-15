@@ -10,6 +10,27 @@ typedef FlarkFleuryResourcePresenter =
 typedef FlarkFleuryLinkPopoverBuilder =
     Widget Function(BuildContext context, FlarkLinkActions actions);
 
+/// TextInput's base paint comes from interactiveStyle, while Text uses
+/// DefaultTextStyle. Supply the surface foreground to both, beneath explicit
+/// application styles, so an unfocused field remains readable on a light fill.
+class _ResourceTheme extends StatelessWidget {
+  const _ResourceTheme({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final base = CellStyle(foreground: theme.colorScheme.foreground);
+    return Theme(
+      data: theme.copyWith(
+        textStyle: base.merge(DefaultTextStyle.of(context)),
+        interactiveStyle: base.merge(theme.interactiveStyle ?? CellStyle.none),
+      ),
+      child: child,
+    );
+  }
+}
+
 /// Default link controls, replaceable without replacing their guarded actions.
 class FlarkLinkPopover extends StatelessWidget {
   const FlarkLinkPopover({super.key, required this.actions});
@@ -19,32 +40,40 @@ class FlarkLinkPopover extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     role: SemanticRole.region,
     label: 'Link actions',
-    child: Container(
-      color: Theme.of(context).colorScheme.background,
-      border: BoxBorder(style: Theme.of(context).borderStyle),
-      padding: const EdgeInsets.symmetric(horizontal: 1),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            actions.resource.destination,
-            allowSelect: false,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+    child: _ResourceTheme(
+      child: Container(
+        color: Theme.of(context).colorScheme.background,
+        border: BoxBorder(
+          style: Theme.of(context).borderStyle,
+          cellStyle: CellStyle(
+            foreground: Theme.of(context).colorScheme.foreground,
+            background: Theme.of(context).colorScheme.background,
           ),
-          Wrap(
-            spacing: 1,
-            children: [
-              Button(label: 'Open', onPressed: actions.open),
-              if (actions.edit != null)
-                Button(label: 'Edit', onPressed: actions.edit),
-              if (actions.remove != null)
-                Button(label: 'Remove', onPressed: actions.remove),
-              Button(label: 'Close', onPressed: actions.dismiss),
-            ],
-          ),
-        ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              actions.resource.destination,
+              allowSelect: false,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Wrap(
+              spacing: 1,
+              children: [
+                Button(label: 'Open', onPressed: actions.open),
+                if (actions.edit != null)
+                  Button(label: 'Edit', onPressed: actions.edit),
+                if (actions.remove != null)
+                  Button(label: 'Remove', onPressed: actions.remove),
+                Button(label: 'Close', onPressed: actions.dismiss),
+              ],
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -78,7 +107,8 @@ class _ResourceDialogState extends State<FlarkResourceDialog> {
       Navigator.of(context).pop();
     } else {
       setState(
-        () => error = widget.session.failureFor(remove ? 'x' : destination.text),
+        () =>
+            error = widget.session.failureFor(remove ? 'x' : destination.text),
       );
     }
   }
@@ -92,46 +122,60 @@ class _ResourceDialogState extends State<FlarkResourceDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => Dialog(
-    title: widget.session.formTitle,
-    width: (MediaQuery.of(context).size.cols - 4).clamp(16, 56),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(widget.session.labelField, allowSelect: false),
-        TextInput(
-          controller: label,
-          semanticLabel: widget.session.labelField,
-          onSubmit: (_) => submit(),
+  Widget build(BuildContext context) => _ResourceTheme(
+    child: Container(
+      color: Theme.of(context).colorScheme.background,
+      child: Dialog(
+        border: BoxBorder(
+          style: Theme.of(context).borderStyle,
+          cellStyle: CellStyle(
+            foreground: Theme.of(context).colorScheme.foreground,
+          ),
         ),
-        Text(widget.session.destinationField, allowSelect: false),
-        TextInput(
-          controller: destination,
-          semanticLabel: widget.session.destinationField,
-          autofocus: true,
-          onSubmit: (_) => submit(),
-        ),
-        Text(widget.session.titleField, allowSelect: false),
-        TextInput(
-          controller: title,
-          semanticLabel: widget.session.titleField,
-          onSubmit: (_) => submit(),
-        ),
-        if (error != null) Text(error!, maxLines: 2),
-        Wrap(
-          spacing: 1,
+        title: widget.session.formTitle,
+        width: (MediaQuery.of(context).size.cols - 4).clamp(16, 56),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Button(
-              label: 'Cancel',
-              onPressed: () => Navigator.of(context).pop(),
+            Text(widget.session.labelField, allowSelect: false),
+            TextInput(
+              controller: label,
+              semanticLabel: widget.session.labelField,
+              onSubmit: (_) => submit(),
             ),
-            if (widget.session.resource != null)
-              Button(label: 'Remove', onPressed: () => submit(remove: true)),
-            Button(label: 'Save', onPressed: submit),
+            Text(widget.session.destinationField, allowSelect: false),
+            TextInput(
+              controller: destination,
+              semanticLabel: widget.session.destinationField,
+              autofocus: true,
+              onSubmit: (_) => submit(),
+            ),
+            Text(widget.session.titleField, allowSelect: false),
+            TextInput(
+              controller: title,
+              semanticLabel: widget.session.titleField,
+              onSubmit: (_) => submit(),
+            ),
+            if (error != null) Text(error!, maxLines: 2),
+            Wrap(
+              spacing: 1,
+              children: [
+                Button(
+                  label: 'Cancel',
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                if (widget.session.resource != null)
+                  Button(
+                    label: 'Remove',
+                    onPressed: () => submit(remove: true),
+                  ),
+                Button(label: 'Save', onPressed: submit),
+              ],
+            ),
           ],
         ),
-      ],
+      ),
     ),
   );
 }

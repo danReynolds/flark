@@ -11,12 +11,17 @@ final class FlarkCellTheme {
     this.quote = const CellStyle(italic: true),
     this.link = const CellStyle(underline: true),
     this.code = CellStyle.none,
+    this.codePadding = 2,
     this.selection = const CellStyle(inverse: true),
     this.caret = const CellStyle(inverse: true),
     this.syntax = const {},
-  });
+  }) : assert(codePadding >= 0);
 
   final CellStyle body, heading, marker, quote, link, code, selection, caret;
+
+  /// Leading cells inside a fenced code surface, independent of source indent.
+  final int codePadding;
+
   /// Keyed by presentation role, not by the analyzer's scope names: keying
   /// on raw scopes left `built_in`, `regexp`, `tag` and a dozen others
   /// rendering as body text.
@@ -34,6 +39,7 @@ final class FlarkCellTheme {
       other.quote == quote &&
       other.link == link &&
       other.code == code &&
+      other.codePadding == codePadding &&
       other.selection == selection &&
       other.caret == caret &&
       _sameSyntax(other.syntax);
@@ -54,6 +60,7 @@ final class FlarkCellTheme {
     quote,
     link,
     code,
+    codePadding,
     selection,
     caret,
     syntax.length,

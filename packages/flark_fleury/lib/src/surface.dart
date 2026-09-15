@@ -5,28 +5,15 @@ final class _Viewport {
     bounds.addListener(_publishBounds);
   }
   final bounds = BoundsNotifier();
-  FocusNode? focus;
   CellDocumentLayout? layout;
   CellOffset origin = const CellOffset(0, 0);
   int top = 0, rows = 0;
   void _publishBounds() {
     // BoundsObserver also replays through cached/repositioned Fleury subtrees.
-    // Pointer and IME geometry must move even when our paint is cached.
-    final painted = bounds.bounds, visible = bounds.visibleBounds;
+    // Pointer geometry must move even when our paint is cached. Fleury derives
+    // IME geometry directly from the attached CaretHost.
+    final painted = bounds.bounds;
     if (painted != null) origin = painted.offset;
-    final current = layout, node = focus;
-    if (node == null) return;
-    node.caretRect = null;
-    if (current == null || visible == null || !node.hasFocus) return;
-    final selection = current.controller.editor.selection;
-    if (!selection.isCollapsed) return;
-    final caret = current.positionFor(selection.extent);
-    node.caretRect = CellRect.fromLTWH(
-      origin.col + caret.col,
-      origin.row + caret.row - top,
-      1,
-      1,
-    ).intersect(visible);
   }
 
   void dispose() {
@@ -55,6 +42,9 @@ class _Surface extends LeafRenderObjectWidget {
   final CellWidthPolicy policy;
 
   @override
+  LeafRenderObjectElement createElement() => _SurfaceElement(this);
+
+  @override
   RenderObject createRenderObject(BuildContext context) => _RenderSurface(this);
   @override
   void updateRenderObject(
@@ -63,24 +53,52 @@ class _Surface extends LeafRenderObjectWidget {
   ) => renderObject.update(this);
 }
 
-class _RenderSurface extends RenderObject {
-  _RenderSurface(this.widget);
+class _SurfaceElement extends LeafRenderObjectElement {
+  _SurfaceElement(_Surface super.widget);
+  @override
+  void unmount() {
+    final surface = maybeRenderObject as _RenderSurface?;
+    surface?.widget.focus.detachCaretHost(surface);
+    super.unmount();
+  }
+}
+
+class _RenderSurface extends RenderObject implements CaretHost {
+  _RenderSurface(this.widget) {
+    widget.focus.attachCaretHost(this);
+  }
   _Surface widget;
   int _revision = -1, _width = -1;
   FlarkEditor? _editor;
   bool _focused = false;
 
   void update(_Surface value) {
+    if (!identical(widget.focus, value.focus)) {
+      widget.focus.detachCaretHost(this);
+      value.focus.attachCaretHost(this);
+    }
     widget = value;
     markNeedsLayout();
     markNeedsPaint();
   }
 
   @override
+  CellRect? get localCaretRect {
+    final layout = widget.viewport.layout;
+    final selection = widget.controller.editor.selection;
+    if (layout == null || !widget.focus.hasFocus || !selection.isCollapsed) {
+      return null;
+    }
+    final caret = layout.positionFor(selection.extent);
+    final row = caret.row - widget.viewport.top;
+    if (row < 0 || row >= size.rows || caret.col >= size.cols) return null;
+    return CellRect.fromLTWH(caret.col, row, 1, 1);
+  }
+
+  @override
   CellSize performLayout(CellConstraints constraints) {
     final cols = constraints.maxCols ?? 80;
     final viewport = widget.viewport;
-    viewport.focus = widget.focus;
     final cached = viewport.layout;
     final layout = viewport.layout =
         cached != null &&
@@ -117,23 +135,22 @@ class _RenderSurface extends RenderObject {
     _editor = editor;
     _width = cols;
     _focused = widget.focus.hasFocus;
+    widget.controller.setVisibleRows({
+      for (final line in layout.lines.skip(viewport.top).take(result.rows))
+        if (line.row != null) line.row!.index,
+    });
     return result;
   }
 
   @override
-  void paint(
-    CellBuffer buffer,
-    CellOffset offset, {
-    CellOffset? screenOffset,
-    CellRect? clipRect,
-  }) {
+  void performPaint(CellBuffer buffer, CellOffset offset) {
     final viewport = widget.viewport;
     final layout = viewport.layout!;
-    final screen = viewport.origin = screenOffset ?? offset;
+    final geometry = screenGeometry();
+    viewport.origin = geometry?.bounds.offset ?? offset;
     final selection = widget.controller.editor.selection;
     final selectionByRow = <ProjectedRow, (int, int)>{};
     final caret = layout.positionFor(selection.extent);
-    widget.focus.caretRect = null;
     void write(
       int col,
       int row,
@@ -144,13 +161,9 @@ class _RenderSurface extends RenderObject {
       if (col < 0 || col + width > size.cols || row < 0 || row >= size.rows) {
         return;
       }
-      if (clipRect != null &&
-          (!clipRect.contains(CellOffset(screen.col + col, screen.row + row)) ||
-              !clipRect.contains(
-                CellOffset(screen.col + col + width - 1, screen.row + row),
-              ))) {
-        return;
-      }
+      // Paint the whole local surface into Fleury's buffer. Ancestor clipping
+      // belongs to composition, not cached content: a later scroll can reveal
+      // cells that were outside the screen when this cache was first painted.
       buffer.writeGrapheme(
         CellOffset(offset.col + col, offset.row + row),
         text,
@@ -218,15 +231,6 @@ class _RenderSurface extends RenderObject {
         if (caret.col == line.endColumn) {
           write(caret.col, y, ' ', background.merge(widget.theme.caret));
         }
-        final rect = CellRect.fromLTWH(
-          screen.col + caret.col,
-          screen.row + y,
-          1,
-          1,
-        );
-        widget.focus.caretRect = clipRect == null
-            ? rect
-            : rect.intersect(clipRect);
       }
     }
   }

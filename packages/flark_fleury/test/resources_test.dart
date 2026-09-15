@@ -95,6 +95,24 @@ void main() {
     expect(result.completed, isTrue);
   }
 
+  test('short link popover fits actions instead of filling its width cap', () {
+    mount('[hello](https://dart.dev)');
+    click(1, 0);
+    final popup = tester.semantics().byLabel('Link actions').single.bounds!;
+    final lines = tester.renderToString().split('\n');
+    final actions = lines.firstWhere((line) => line.contains('[ Open ]'));
+    final contentStart = actions.indexOf('[ Open ]');
+    final contentEnd = actions.indexOf('[ Close ]') + '[ Close ]'.length;
+    expect(
+      popup.size.cols,
+      contentEnd - contentStart + 4,
+      reason: 'one cell border and one cell padding on each side',
+    );
+    expect(popup.size.cols, lessThan(52));
+    button('Remove');
+    expect(editor.source, 'hello');
+  });
+
   test(
     'click opens controls, Open resolves relative URI and restores typing',
     () {
@@ -292,7 +310,7 @@ void main() {
   );
 
   test(
-    'read-only shows only Open and Close; unsafe destination disables Open',
+    'read-only click opens directly; unsafe destination has no mutation actions',
     () {
       late FlarkLinkActions actions;
       mount(
@@ -304,10 +322,8 @@ void main() {
         },
       );
       click(2, 0);
-      expect(actions.edit, isNull);
-      expect(actions.remove, isNull);
-      button('Open');
-      expect(opened, hasLength(1));
+      expect(opened, [Uri.parse('https://dart.dev')]);
+      expect(tester.renderToString(), isNot(contains('[ Open ]')));
       key(KeyCode.k, cmd: true);
       tester.type('X');
       expect(editor.source, '[hello](https://dart.dev) world');
@@ -317,8 +333,48 @@ void main() {
       tester.render();
       click(2, 0);
       expect(actions.open, isNull);
+      expect(actions.edit, isNull);
+      expect(actions.remove, isNull);
     },
   );
+
+  test('custom popover height is measured before flipping above a link', () {
+    tester.viewportSize = const CellSize(40, 18);
+    mount(
+      '${'line\n' * 14}[hello](https://dart.dev)',
+      popover: (_, actions) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < 9; i++) Text('Custom $i', allowSelect: false),
+          FlarkLinkPopover(actions: actions),
+        ],
+      ),
+    );
+    editor.apply(SetSelection.caret(editor.source.indexOf('hello') + 2));
+    tester.render();
+    click(focus.caretRect!.left, focus.caretRect!.top);
+    final frame = tester.renderToString();
+    expect(frame, contains('Custom 0'));
+    expect(frame, contains('Custom 8'));
+    expect(frame, contains('[ Close ]'));
+    button('Close');
+    expect(focus.hasFocus, isTrue);
+  });
+
+  test('an open popover stays usable in the first frame after resize', () {
+    mount('${'line\n' * 12}${'x' * 38} [hello](https://dart.dev)');
+    editor.apply(SetSelection.caret(editor.source.indexOf('hello') + 2));
+    tester.render();
+    click(focus.caretRect!.left, focus.caretRect!.top);
+    expect(tester.renderToString(), contains('[ Remove ]'));
+    final source = editor.source, selection = editor.selection;
+    tester.viewportSize = const CellSize(28, 8);
+    expect(tester.renderToString(), contains('[ Remove ]'));
+    expect(editor.source, source);
+    expect(editor.selection, selection);
+    button('Remove');
+    expect(editor.source, '${'line\n' * 12}${'x' * 38} hello');
+  });
 
   test('popover and editor work at narrow width and after scrolling', () {
     tester.viewportSize = const CellSize(28, 16);

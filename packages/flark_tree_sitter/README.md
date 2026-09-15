@@ -9,6 +9,12 @@ The package does not own Markdown fences or editor state.
 adapter to Flark's command contract. Flutter adds its asset-loading convenience
 in `flark_flutter/code.dart`; Fleury uses the same adapter directly. Its edit,
 closer and highlighting scenarios now run here without Flutter bindings.
+`package:flark_tree_sitter/flark_highlighting.dart` supplies the optional
+`FlarkCodeHighlighting` decoration lane used by both hosts. It borrows the
+editor, owns its worker, and bounds wanted/cached snippets to 32 and 65,536
+UTF-16 units. Hosts report visible row indices; exact source and resolved
+language guard every adopted result. The service never changes editor history,
+selection or text. Host wrappers retain their native notification APIs.
 The [architecture decision](ARCHITECTURE.md) explains the Rust/Dart boundary and
 the alternatives considered.
 
