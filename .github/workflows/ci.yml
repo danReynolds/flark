@@ -94,8 +94,5 @@ jobs:
         working-directory: packages/flark_flutter
         run: flutter test
 
-  # packages/flark_fleury has no job: it depends on `fleury` and
-  # `fleury_widgets`, which are not published, and its local path overrides live
-  # in a gitignored pubspec_overrides.yaml. Its 54 tests run locally only until
-  # those packages resolve from a registry. Do not read a green CI as covering
-  # that host.
+  # Fleury host/example dependencies now resolve from exact Git pins. Their
+  # qualification remains local-only; a green CI does not cover that host.

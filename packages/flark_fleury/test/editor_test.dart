@@ -32,6 +32,7 @@ void main() {
     bool readOnly = false,
     FlarkTreeSitter? code,
     CodeHighlightWorker? worker,
+    FlarkCellTheme? theme,
   }) {
     editor = FlarkEditor(
       backend,
@@ -48,6 +49,7 @@ void main() {
           autofocus: true,
           focusNode: focus,
           readOnly: readOnly,
+          theme: theme,
         ),
       ),
     );
@@ -95,6 +97,113 @@ void main() {
         col: col,
         row: row,
       ),
+    );
+  }
+
+  test(
+    'checkbox semantics match only the painted marker after wrapping',
+    () async {
+      mount('- [ ] a task that wraps across several narrow rows', caret: 6);
+      tester.render(size: const CellSize(16, 8));
+      final target = tester.semantics().byRole(SemanticRole.checkbox).single;
+      expect(target.bounds, CellRect.fromLTWH(0, 0, 3, 1));
+      expect(target.checked, isFalse);
+      expect(target.enabled, isTrue);
+      await tester.invokeSemanticAction(SemanticAction.activate, id: target.id);
+      expect(editor.source, startsWith('- [x]'));
+      expect(lines().first, startsWith('[x]'));
+      expect(
+        tester.semantics().byRole(SemanticRole.checkbox).single.checked,
+        isTrue,
+      );
+      editor.setSourceMode(true);
+      tester.render();
+      expect(tester.semantics().byRole(SemanticRole.checkbox), isEmpty);
+    },
+  );
+
+  test(
+    'read-only checkbox has no activation while links remain actionable',
+    () {
+      mount(
+        '- [ ] read only\n\n[a link](https://dart.dev)',
+        readOnly: true,
+        caret: 6,
+      );
+      final box = tester.semantics().byRole(SemanticRole.checkbox).single;
+      expect(box.enabled, isFalse);
+      expect(box.actions, isEmpty);
+      final link = tester.semantics().byRole(SemanticRole.link).single;
+      expect(link.bounds!.size.cols, 6);
+      expect(link.actions, contains(SemanticAction.activate));
+    },
+  );
+
+  test(
+    'checkbox targets follow scrolling and reject vanished targets',
+    () async {
+      final source = '- [ ] top\n\n${'paragraph\n\n' * 20}- [ ] bottom';
+      mount(source, caret: 6);
+      final first = tester.semantics().byRole(SemanticRole.checkbox).single;
+      editor.apply(SetSelection.caret(source.length));
+      tester.render();
+      final last = tester.semantics().byRole(SemanticRole.checkbox).single;
+      expect(last.label, 'bottom');
+      expect(last.bounds!.top, inInclusiveRange(0, 11));
+      final result = await tester.invokeSemanticAction(
+        SemanticAction.activate,
+        id: first.id,
+      );
+      expect(result.completed, isFalse);
+      expect(editor.source, source);
+      await tester.invokeSemanticAction(SemanticAction.activate, id: last.id);
+      expect(editor.source, endsWith('- [x] bottom'));
+      expect(lines().join('\n'), contains('[x] bottom'));
+    },
+  );
+
+  for (final padding in [0, 1, 3]) {
+    test(
+      'code padding $padding preserves source indent, caret and wrapping',
+      () {
+        const source =
+            '```ruby\ndef hello\n  puts 12345678901234567890\nend\n```';
+        mount(
+          source,
+          caret: source.indexOf('def'),
+          theme: FlarkCellTheme(codePadding: padding),
+        );
+        expect(lines().first, '${' ' * padding}def hello');
+        expect(focus.caretRect!.left, padding);
+        click(padding, 0);
+        expect(editor.selection.extent, source.indexOf('def'));
+        key(KeyCode.arrowDown);
+        key(KeyCode.home);
+        expect(lines()[1], startsWith('${' ' * (padding + 2)}puts'));
+        tester.render(size: const CellSize(16, 10));
+        expect(editor.source, source);
+        final layout = CellDocumentLayout(
+          controller,
+          16,
+          FlarkCellTheme(codePadding: padding),
+          CellWidthPolicy.spec,
+        );
+        expect(
+          layout.lines
+              .where((line) => line.row?.kind == RowKind.codeBlock)
+              .every((line) => line.prefix == ' ' * padding),
+          isTrue,
+        );
+        expect(
+          layout.describes(
+            controller,
+            16,
+            FlarkCellTheme(codePadding: padding + 1),
+            CellWidthPolicy.spec,
+          ),
+          isFalse,
+        );
+      },
     );
   }
 
@@ -459,6 +568,40 @@ void main() {
     tester.type('X');
     expect(editor.source, 'abXc');
     expect(lines(), contains('abXc'));
+  });
+
+  test('cached editor paints rows that scrolling later reveals', () {
+    mount('first\nsecond\nthird', caret: 1);
+    final scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    tester.viewportSize = const CellSize(20, 6);
+    tester.pumpWidget(
+      ScrollView(
+        controller: scroll,
+        child: Column(
+          children: [
+            const SizedBox(height: 4),
+            RepaintBoundary(
+              child: SizedBox(
+                height: 3,
+                child: FlarkEditorView(
+                  controller: controller,
+                  focusNode: focus,
+                  autofocus: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    expect(lines()[4], 'first');
+    expect(lines()[5], 'second');
+    scroll.jumpTo(2);
+    final revealed = lines();
+    expect(revealed.sublist(2, 5), ['first', 'second', 'third']);
+    expect(focus.caretRect!.top, 2);
   });
 
   test('wide and combining glyphs map pointer, selection and deletion', () {

@@ -11,9 +11,26 @@ dependencies:
   flark_tree_sitter:
     path: ../../flark_tree_sitter
   fleury: ^0.1.0
-  fleury_web: ^0.1.0
-  fleury_widgets: ^0.1.0
+  fleury_web:
+    git:
+      url: https://github.com/danReynolds/fleury.git
+      ref: d37f5a56bcd164acb40ad7dd45ccd633b42cc0a3
+      path: packages/fleury_web
+  fleury_widgets:
+    git:
+      url: https://github.com/danReynolds/fleury.git
+      ref: d37f5a56bcd164acb40ad7dd45ccd633b42cc0a3
+      path: packages/fleury_widgets
   web: ^1.1.1
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.26.3
+
+# The unpublished companion packages declare hosted fleury constraints. Keep
+# their shared core on the same reviewed revision until that release exists.
+dependency_overrides:
+  fleury:
+    git:
+      url: https://github.com/danReynolds/fleury.git
+      ref: d37f5a56bcd164acb40ad7dd45ccd633b42cc0a3
+      path: packages/fleury

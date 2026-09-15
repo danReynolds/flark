@@ -28,6 +28,10 @@ final class CellLine {
   final ProjectedRow? row;
   final int start, sourceStart;
   final String prefix;
+
+  /// Only the painted checkbox is actionable, never its continuation padding.
+  int get taskColumn =>
+      row?.shells.any((shell) => shell.task) == true ? prefix.indexOf('[') : -1;
   final glyphs = <CellGlyph>[];
   late int end = start;
   int get endColumn =>
@@ -158,7 +162,7 @@ final class CellDocumentLayout {
         out.write(_seenItems.add(shell.block) ? marker : ' ' * marker.length);
       }
     }
-    if (row.kind == RowKind.codeBlock) out.write('  ');
+    if (row.kind == RowKind.codeBlock) out.write(' ' * theme.codePadding);
     if (row.kind == RowKind.tableCell) out.write('| ');
     return out.toString();
   }
@@ -170,7 +174,10 @@ final class CellDocumentLayout {
     int sourceStart = 0,
   }) {
     // Always leave a cell for a caret, even in a deeply nested narrow viewport.
-    prefix = prefix.substring(0, math.min(prefix.length, math.max(cols - 2, 0)));
+    prefix = prefix.substring(
+      0,
+      math.min(prefix.length, math.max(cols - 2, 0)),
+    );
     var line = CellLine(row, 0, prefix, sourceStart: sourceStart);
     lines.add(line);
     var offset = 0;
@@ -238,12 +245,10 @@ final class CellDocumentLayout {
         out.write(' ' * _markerFor(shell).length);
       }
     }
-    if (row.kind == RowKind.codeBlock) out.write('  ');
+    if (row.kind == RowKind.codeBlock) out.write(' ' * theme.codePadding);
     if (row.kind == RowKind.tableCell) out.write('  ');
     final continued = out.toString();
-    return continued.length == prefix.length
-        ? continued
-        : ' ' * prefix.length;
+    return continued.length == prefix.length ? continued : ' ' * prefix.length;
   }
 
   CellStyle Function(int) _stylesFor(ProjectedRow? row) {
