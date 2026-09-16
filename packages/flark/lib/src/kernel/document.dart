@@ -12,12 +12,20 @@ import 'resource.dart';
 /// A selection in source UTF-16 offsets. Collapsed when base == extent.
 /// Ordinary endpoints are legal caret positions: never strictly inside a hidden
 /// range, always on a row's content. Which of several legal offsets a display
-/// position holds is the typing context, so the offset alone encodes the
-/// caret's anchor. A noncollapsed 0..source.length range explicitly selects the
+/// position holds is the typing context. Unwritten table cells additionally
+/// carry a projected cell address because they share a source boundary.
+/// A noncollapsed 0..source.length range explicitly selects the
 /// whole source, including block syntax outside the first/last caret spans.
 final class FlarkSelection {
-  const FlarkSelection(this.base, this.extent);
-  const FlarkSelection.collapsed(int offset) : base = offset, extent = offset;
+  const FlarkSelection(this.base, this.extent) : tableCell = null;
+  const FlarkSelection.collapsed(int offset, {this.tableCell})
+    : base = offset,
+      extent = offset;
+
+  /// Projected row index for an unwritten table cell. Valid only for this
+  /// source snapshot; hosts must use PlaceCaret instead of inventing indexes.
+  /// It distinguishes empty cells that share the same source boundary.
+  final int? tableCell;
   final int base;
   final int extent;
   bool get isCollapsed => base == extent;
@@ -25,9 +33,12 @@ final class FlarkSelection {
   int get end => base < extent ? extent : base;
   @override
   bool operator ==(Object other) =>
-      other is FlarkSelection && other.base == base && other.extent == extent;
+      other is FlarkSelection &&
+      other.base == base &&
+      other.extent == extent &&
+      other.tableCell == tableCell;
   @override
-  int get hashCode => Object.hash(base, extent);
+  int get hashCode => Object.hash(base, extent, tableCell);
   @override
   String toString() => isCollapsed ? 'caret $base' : 'selection $base..$extent';
 }
@@ -116,6 +127,7 @@ final class FlarkDocument {
 
   /// Innermost resource containing the selected content, of the requested kind.
   InlineResource? resourceAt(FlarkSelection selection, {required bool image}) {
+    if (selection.tableCell != null) return null;
     for (final resource in resources.reversed) {
       if (resource.isImage == image &&
           resource.start <= selection.start &&
@@ -161,6 +173,10 @@ final class FlarkDocument {
     source,
     !s.isCollapsed && s.start == 0 && s.end == source.length
         ? s
+        : projection.isMissingCell(s.tableCell) &&
+              s.isCollapsed &&
+              projection.rows[s.tableCell!].sourceStart == s.extent
+        ? s
         : FlarkSelection(legalize(s.base), legalize(s.extent)),
     model,
     projection,
@@ -168,13 +184,21 @@ final class FlarkDocument {
     positions: _positions ?? this,
   );
 
+  /// The caret retains an unwritten cell address separately from its source.
+  DisplayPosition get caretPosition => projection.displayForSource(
+    selection.extent,
+    tableCell: selection.tableCell,
+  )!;
+  ProjectedRow get caretRow => projection.rows[caretPosition.row];
+
   // ------------------------------------------------------------ positions
 
   /// Hidden intervals of inline runs (delimiters, break markers) in UTF-16,
   /// sorted by start.
   /// One pass over the runs for both interval sets: hidden syntax, and the
   /// escapes whose backslash and escaped character are one caret unit.
-  late final ({List<(int, int)> hidden, List<(int, int)> escapes}) _runIntervals = () {
+  late final ({List<(int, int)> hidden, List<(int, int)> escapes})
+  _runIntervals = () {
     final out = <(int, int)>[];
     final escapes = <(int, int)>[];
     var sorted = true, last = -1;

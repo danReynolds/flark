@@ -63,6 +63,11 @@ reconcile current-main findings, measure both hosts, finish native qualification
 then qualify real consumer use and release artifacts. Language and theme-option
 expansion remain deferred while completing those proofs.
 
+The [hardening follow-up](production_hardening_2026_09_16.md) fixes editing of
+omitted table cells in both hosts and moves default Fleury image preparation
+off the native UI isolate. Native foreground accessibility/performance remains
+the next gate; local semantic and browser success does not close it.
+
 The [everyday qualification review](everyday_review_2026_09_07.md) records the
 next working-tree checkpoint: actual Tree-sitter services in the native
 harnesses, repaired macOS SDK discovery, sustained browser input/coloring, and

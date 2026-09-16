@@ -482,17 +482,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   void _tab(bool backward) {
     if (!c.editor.sourceMode) {
-      final row = c.editor.document.rowAt(c.editor.selection.extent);
+      final row = c.editor.document.caretRow;
       if (row.kind == RowKind.tableCell) {
-        final index = row.index + (backward ? -1 : 1);
-        final rows = c.editor.projection.rows;
-        if (index >= 0 &&
-            index < rows.length &&
-            rows[index].tableBlock == row.tableBlock) {
-          _command(SetSelection.caret(rows[index].sourceStart));
-        } else if (!backward) {
-          _command(const Newline());
-        }
+        _command(MoveTableCell(backward: backward));
         return;
       }
     }

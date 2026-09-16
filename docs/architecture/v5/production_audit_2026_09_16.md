@@ -72,6 +72,11 @@ favorable repeat.
 
 ## Open findings and release decisions
 
+The [hardening follow-up](production_hardening_2026_09_16.md) closes the missing
+table-cell and synchronous image-preparation findings below. The table records
+the initial audit checkpoint; native accessibility and performance gates remain
+open, with the follow-up's current evidence and limitations.
+
 | Priority | Finding | Required next proof/change |
 | --- | --- | --- |
 | P1 | A parser-synthesized missing cell in a short table row shares a source anchor with the preceding cell. Placing in either missing column then typing `Z` edits `x` to `x Z` in the preceding column. | Design a shared cell-address/materialization command and first-paint pointer/Tab/typing/undo tests in both hosts. Do not claim arbitrary imported table-cell editing until this is fixed. Explicitly written empty cells are a separate, covered case. |

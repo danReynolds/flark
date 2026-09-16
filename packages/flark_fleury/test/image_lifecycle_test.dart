@@ -80,10 +80,12 @@ void main() {
           tester.render();
           await requestStarted('/ok');
           requests['/ok']!.complete(http.Response.bytes(png, 200));
-          for (var i = 0; i < 10; i++) {
-            await Future<void>.delayed(Duration.zero);
+          final loading = Stopwatch()..start();
+          while (tester.semantics().byRole(SemanticRole.image).isEmpty &&
+              loading.elapsed < const Duration(seconds: 5)) {
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+            tester.render();
           }
-          tester.render();
           expect(
             tester.semantics().byRole(SemanticRole.image).single.label,
             'photo',

@@ -44,7 +44,7 @@ final class _Viewport {
         cached?.theme != theme ||
         !identical(_editor, editor) ||
         (!_focused && focus.hasFocus)) {
-      final caret = layout.positionFor(editor.selection.extent);
+      final caret = layout.caretPosition;
       if (caret.row < viewport.top) viewport.top = caret.row;
       if (caret.row >= viewport.top + result.rows) {
         viewport.top = caret.row - result.rows + 1;
@@ -133,7 +133,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
     if (layout == null || !widget.focus.hasFocus || !selection.isCollapsed) {
       return null;
     }
-    final caret = layout.positionFor(selection.extent);
+    final caret = layout.caretPosition;
     final row = caret.row - widget.viewport.top;
     if (row < 0 || row >= size.rows || caret.col >= size.cols) return null;
     return CellRect.fromLTWH(caret.col, row, 1, 1);
@@ -158,7 +158,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
     viewport.origin = geometry?.bounds.offset ?? offset;
     final selection = widget.controller.editor.selection;
     final selectionByRow = <ProjectedRow, (int, int)>{};
-    final caret = layout.positionFor(selection.extent);
+    final caret = layout.caretPosition;
     void write(
       int col,
       int row,

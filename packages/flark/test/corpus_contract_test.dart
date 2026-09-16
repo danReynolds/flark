@@ -143,27 +143,27 @@ void checkStatic(String label, FlarkEditor e) {
 
 void checkTraversal(String label, FlarkEditor e) {
   final src = e.source;
-  // 7. Forward grapheme movement visits strictly increasing legal offsets and
+  // 7. Forward grapheme movement visits strictly increasing legal positions and
   //    terminates at the end; backward returns to the start.
   e.apply(SetSelection.caret(e.document.legalize(0)));
-  final visited = <int>[e.selection.extent];
-  for (var step = 0; step <= src.length + 4; step++) {
+  final visited = <FlarkSelection>[e.selection];
+  for (var step = 0; step <= src.length + e.projection.rows.length + 4; step++) {
     if (!e.apply(const MoveCaret(MoveDirection.forward))) break;
-    final at = e.selection.extent;
-    if (at <= visited.last) {
+    final at = e.selection;
+    if (selectionOrder(at, visited.last) <= 0) {
       fail_('forward-not-increasing', '$label: $at after ${visited.last}');
       break;
     }
     visited.add(at);
   }
-  if (visited.last != src.length && e.document.isLegal(src.length)) {
+  if (visited.last.extent != src.length && e.document.isLegal(src.length)) {
     fail_('forward-stops-early', '$label: stopped at ${visited.last} of ${src.length}');
   }
-  final backward = <int>[e.selection.extent];
-  for (var step = 0; step <= src.length + 4; step++) {
+  final backward = <FlarkSelection>[e.selection];
+  for (var step = 0; step <= src.length + e.projection.rows.length + 4; step++) {
     if (!e.apply(const MoveCaret(MoveDirection.backward))) break;
-    final at = e.selection.extent;
-    if (at >= backward.last) {
+    final at = e.selection;
+    if (selectionOrder(at, backward.last) >= 0) {
       fail_('backward-not-decreasing', '$label: $at after ${backward.last}');
       break;
     }
@@ -174,27 +174,34 @@ void checkTraversal(String label, FlarkEditor e) {
   }
 }
 
+// Source order is primary; unwritten cells at one source boundary follow
+// the real cell in projected column order. Visiting those cells is movement.
+int selectionOrder(FlarkSelection a, FlarkSelection b) {
+  final delta = a.extent - b.extent;
+  return delta != 0 ? delta : (a.tableCell ?? -1) - (b.tableCell ?? -1);
+}
+
 void checkMovement(String label, FlarkEditor e) {
   final src = e.source;
   // 13. Word movement terminates and never moves backwards.
   for (final forward in [true, false]) {
     e.apply(SetSelection.caret(
         e.document.legalize(forward ? 0 : src.length)));
-    var last = e.selection.extent;
-    for (var i = 0; i <= src.length + 4; i++) {
+    var last = e.selection;
+    for (var i = 0; i <= src.length + e.projection.rows.length + 4; i++) {
       if (!e.apply(MoveCaret(
           forward ? MoveDirection.forward : MoveDirection.backward,
           unit: MoveUnit.word))) {
         break;
       }
-      final at = e.selection.extent;
-      if (forward ? at <= last : at >= last) {
+      final at = e.selection;
+      if (forward ? selectionOrder(at, last) <= 0 : selectionOrder(at, last) >= 0) {
         fail_('word-move-stalls', '$label ${forward ? "fwd" : "back"}: '
             '$at after $last');
         break;
       }
       last = at;
-      if (i == src.length + 4) {
+      if (i == src.length + e.projection.rows.length + 4) {
         fail_('word-move-unbounded', '$label ${forward ? "fwd" : "back"}');
       }
     }

@@ -51,9 +51,7 @@ class _RenderLinkAnchor extends RenderObject
   bool presentsChild(RenderObject child) {
     final layout = viewport.layout;
     if (layout == null || size.isEmpty) return false;
-    final row =
-        layout.positionFor(layout.controller.editor.selection.extent).row -
-        viewport.top;
+    final row = layout.caretPosition.row - viewport.top;
     return row >= 0 && row < size.rows;
   }
 
@@ -65,7 +63,7 @@ class _RenderLinkAnchor extends RenderObject
   CellOffset childOffsetOf(RenderObject child) {
     final layout = viewport.layout;
     if (layout == null) return CellOffset.zero;
-    final caret = layout.positionFor(layout.controller.editor.selection.extent);
+    final caret = layout.caretPosition;
     return resolveAnchoredOffset(
       anchor: CellRect.fromLTWH(caret.col, caret.row - viewport.top, 1, 1),
       overlaySize: child.size,

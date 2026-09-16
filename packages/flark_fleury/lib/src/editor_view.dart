@@ -415,12 +415,19 @@ class _EditorState extends State<FlarkEditorView>
   void _vertical(int delta, bool extend) {
     final layout = _inputLayout;
     if (layout == null) return;
-    final caret = layout.positionFor(_editor.selection.extent);
+    final caret = layout.caretPosition;
     _goalColumn ??= caret.col;
     final index = (caret.row + delta).clamp(0, layout.lines.length - 1);
     final line = layout.lineAt(index, _goalColumn!, direction: delta);
     final hit = line.hit(_goalColumn!);
-    _select(line.sourceAt(hit.$1), extend);
+    if (line.row case final row?) {
+      _apply(
+        PlaceCaret(row.index, hit.$1, leadingHalf: hit.$2, extend: extend),
+        mutation: false,
+      );
+    } else {
+      _select(line.sourceAt(hit.$1), extend);
+    }
   }
 
   void _point(int col, int row, {bool extend = false, bool toggle = false}) {
@@ -464,7 +471,14 @@ class _EditorState extends State<FlarkEditorView>
         _apply(const ToggleTask());
       }
     } else {
-      _select(line.sourceAt(hit.$1), extend);
+      if (line.row case final row?) {
+        _apply(
+          PlaceCaret(row.index, hit.$1, leadingHalf: hit.$2, extend: extend),
+          mutation: false,
+        );
+      } else {
+        _select(line.sourceAt(hit.$1), extend);
+      }
     }
   }
 
@@ -521,20 +535,9 @@ class _EditorState extends State<FlarkEditorView>
       command = const Redo();
     } else if (event.code == KeyCode.tab) {
       if (widget.readOnly) return;
-      final pos = _editor.sourceMode
-          ? null
-          : _editor.projection.displayForSource(_editor.selection.extent);
-      final row = pos == null ? null : _editor.projection.rows[pos.row];
+      final row = _editor.sourceMode ? null : _editor.document.caretRow;
       if (row?.kind == RowKind.tableCell) {
-        final rows = _editor.projection.rows;
-        final index = row!.index + (event.hasShift ? -1 : 1);
-        if (index >= 0 &&
-            index < rows.length &&
-            rows[index].tableBlock == row.tableBlock) {
-          _apply(SetSelection.caret(rows[index].sourceStart), mutation: false);
-        } else if (!event.hasShift) {
-          _apply(const Newline());
-        }
+        _apply(MoveTableCell(backward: event.hasShift), mutation: false);
         event.consume();
         return;
       }
@@ -575,9 +578,13 @@ class _EditorState extends State<FlarkEditorView>
         case TextEditingKeyAction.moveLineEnd:
           final layout = _inputLayout;
           if (layout == null) return;
-          final caret = layout.positionFor(_editor.selection.extent);
+          final caret = layout.caretPosition;
           final line = layout.lineAt(caret.row, caret.col);
           final end = action == TextEditingKeyAction.moveLineEnd;
+          if (_editor.selection.tableCell != null) {
+            event.consume();
+            return;
+          }
           var target = line.sourceAt(
             end ? line.end : line.start,
             anchor: end ? Anchor.after : Anchor.before,

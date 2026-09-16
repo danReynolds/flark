@@ -102,6 +102,7 @@ String describeCommand(FlarkCommand command) => switch (command) {
     'ReplaceRange($start, $end, ${jsonEncode(text)})',
   SetSelection(:final base, :final extent) => 'SetSelection($base, $extent)',
   SelectAll() => 'SelectAll()',
+  MoveTableCell(:final backward) => 'MoveTableCell(backward: $backward)',
   PlaceCaret(:final row, :final offset, :final leadingHalf, :final extend) =>
     'PlaceCaret($row, $offset, leadingHalf: $leadingHalf, extend: $extend)',
   MoveCaret(:final direction, :final unit, :final extend) =>
