@@ -11,25 +11,38 @@ Future<PreviewPixels> decodePreviewPlatform(
   token.check();
   // Inspect the bounded encoded header before asking the browser to allocate
   // pixels. Dart does no full-frame decoding, resizing or PNG encoding here.
-  final (_, w, h) = checkedPreviewDecoder(bytes);
-  final (width, height) = previewSize(w, h);
+  checkedPreviewDecoder(bytes);
   final blob = web.Blob([bytes.toJS].toJS);
-  final bitmap = await web.window
-      .createImageBitmap(
-        blob,
-        web.ImageBitmapOptions(
-          resizeWidth: width,
-          resizeHeight: height,
-          resizeQuality: 'high',
-        ),
-      )
-      .toDart;
+  // The browser applies orientation metadata before reporting bitmap size.
+  // Resizing from the stored header's aspect ratio stretches rotated photos.
+  final bitmap = await web.window.createImageBitmap(blob).toDart;
+  web.ImageBitmap? resized;
   try {
     token.check();
+    final (width, height) = previewSize(bitmap.width, bitmap.height);
+    if (width != bitmap.width || height != bitmap.height) {
+      resized = await web.window
+          .createImageBitmap(
+            bitmap,
+            web.ImageBitmapOptions(
+              resizeWidth: width,
+              resizeHeight: height,
+              resizeQuality: 'high',
+            ),
+          )
+          .toDart;
+      token.check();
+    }
     final canvas = web.OffscreenCanvas(width, height);
     final context =
         canvas.getContext('2d')! as web.OffscreenCanvasRenderingContext2D;
-    context.drawImage(bitmap, 0, 0, width.toDouble(), height.toDouble());
+    context.drawImage(
+      resized ?? bitmap,
+      0,
+      0,
+      width.toDouble(),
+      height.toDouble(),
+    );
     final data = context.getImageData(0, 0, width, height).data.toDart;
     final png = await canvas
         .convertToBlob(web.ImageEncodeOptions(type: 'image/png'))
@@ -48,6 +61,7 @@ Future<PreviewPixels> decodePreviewPlatform(
       buffer.toDart.asUint8List(),
     );
   } finally {
+    resized?.close();
     bitmap.close();
   }
 }

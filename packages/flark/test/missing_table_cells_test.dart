@@ -1,5 +1,23 @@
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart';
 import 'package:test/test.dart';
+
+final class _PreparationFaultBackend implements FlarkParseBackend {
+  _PreparationFaultBackend(this.delegate, this.error);
+
+  final FlarkParseBackend delegate;
+  final Object error;
+  var fail = true;
+
+  @override
+  int get schemaVersion => delegate.schemaVersion;
+
+  @override
+  RenderModel parse(String source) {
+    if (fail && source.endsWith('| x | | |\n')) throw error;
+    return delegate.parse(source);
+  }
+}
 
 void main() {
   final backend = createParseBackend();
@@ -168,5 +186,97 @@ void main() {
     expect(e.sourceMode, isFalse);
     expect(e.source, table);
     expect(e.selection, selected);
+  });
+
+  for (final (style, marker) in [
+    (Style.strong, '**'),
+    (Style.emphasis, '*'),
+    (Style.code, '`'),
+  ]) {
+    test(
+      'pending $marker survives a missing-cell edit crossing the live limit',
+      () {
+        final e = FlarkEditor(backend, text: table, syncLimit: table.length);
+        final target = e.projection.rows
+            .lastWhere((r) => r.kind == RowKind.tableCell)
+            .index;
+        e.apply(PlaceCaret(target, 0));
+        e.apply(ToggleStyle(style));
+        final selected = e.selection;
+        final published = <String>[];
+        e.addListener(() => published.add(e.source));
+        expect(e.apply(const InsertText('Z')), isTrue);
+        expect(e.sourceMode, isTrue);
+        expect(
+          e.source,
+          table.replaceFirst('| x |', '| x | | ${marker}Z$marker|'),
+        );
+        expect(published, [e.source]);
+        expect(e.apply(const Undo()), isTrue);
+        expect(e.source, table);
+        expect(e.selection, selected);
+        expect(e.typingContext & style, style);
+      },
+    );
+  }
+
+  for (final deviation in [true, false]) {
+    test('private preparation rolls back after parser fault: $deviation', () {
+      final error = deviation
+          ? const FlarkParseException(
+              FlarkParseException.extractionDeviationCode,
+              'synthetic extraction deviation',
+            )
+          : StateError('synthetic backend fault');
+      final failing = _PreparationFaultBackend(backend, error);
+      final e = FlarkEditor(failing, text: table, syncLimit: table.length);
+      final target = e.projection.rows
+          .lastWhere((r) => r.kind == RowKind.tableCell)
+          .index;
+      e.apply(PlaceCaret(target, 0));
+      e.apply(const ToggleStyle(Style.strong));
+      final before = e.snapshot;
+      final published = <String>[];
+      e.addListener(() => published.add(e.source));
+      if (deviation) {
+        expect(e.apply(const InsertText('Z')), isFalse);
+        expect(e.lastRejection, FlarkRejection.extractionDeviation);
+      } else {
+        expect(() => e.apply(const InsertText('Z')), throwsA(same(error)));
+      }
+      expect(e.snapshot, same(before));
+      expect(e.typingContext & Style.strong, Style.strong);
+      expect(e.history.canUndo, isFalse);
+      expect(published, isEmpty);
+      failing.fail = false;
+      expect(e.apply(const InsertText('Z')), isTrue);
+      expect(e.source, contains('| x | | **Z**|'));
+      expect(published, [e.source]);
+      expect(e.apply(const Undo()), isTrue);
+      expect(e.source, before.source);
+      expect(e.selection, before.selection);
+    });
+  }
+
+  test('resource validation still refuses a final source-mode result', () {
+    for (final command in [
+      const SetLink('https://dart.dev', text: 'Dart'),
+      const SetImage('https://dart.dev/logo.png', alt: 'Dart'),
+    ]) {
+      for (final source in [table, table.replaceFirst('| x |', '| x | | |')]) {
+        final e = FlarkEditor(backend, text: source, syncLimit: source.length);
+        final target = e.projection.rows
+            .lastWhere((r) => r.kind == RowKind.tableCell)
+            .index;
+        e.apply(PlaceCaret(target, 0));
+        final before = e.snapshot;
+        final published = <String>[];
+        e.addListener(() => published.add(e.source));
+        expect(e.apply(command), isFalse);
+        expect(e.snapshot, same(before));
+        expect(e.history.canUndo, isFalse);
+        expect(published, isEmpty);
+      }
+    }
   });
 }

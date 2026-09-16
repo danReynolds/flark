@@ -5,6 +5,11 @@ at `cde7915`. CI remains skipped at the owner's request. This is implementation
 self-review with local tests and browser dogfooding, not independent peer review
 or a production qualification pass.
 
+The subsequent [dedicated code review](production_code_review_2026_09_16.md)
+found and corrected EXIF thumbnail sizing and pending formatting at the live
+admission boundary. Its final test counts supersede the counts below; these
+earlier receipts are preserved.
+
 ## Changes and review
 
 **Imported short table rows now support editing their omitted cells.** A row such

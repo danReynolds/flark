@@ -53,20 +53,34 @@ extension _TableEditing on FlarkEditor {
       at,
       '$prefix${closingPipe ? '' : '|'}',
     );
+    if (!_withinLiveByteLimit(materialized, sourceLimit)) {
+      _lastRejection = FlarkRejection.sourceLimit;
+      return false;
+    }
     var applied = false;
     _cellOrigin = before;
     try {
-      // The final commit checks the writable limit. Preparing this small
-      // delimiter prefix is private and cannot publish an over-limit source.
-      _snapshot = _buildSnapshot(
-        materialized,
-        FlarkSelection.collapsed(at + prefix.length),
+      // Only delimiters for this already-admitted table are added here. Keep
+      // the private preparation live so formatting uses the same semantics as
+      // an explicitly written empty cell. Admission belongs to the final edit,
+      // not this intermediate prefix; it can cross the live byte/line limit.
+      _snapshot = FlarkLiveSnapshot._(
+        FlarkDocument.load(
+          materialized,
+          _backend,
+          caret: at + prefix.length,
+          options: _options,
+        ),
       );
       final mapped = replacement
           ? ReplaceRange(selection.extent, selection.extent, command.text)
           : command;
-      applied = sourceMode ? _applySource(mapped) : _applyLive(mapped);
+      applied = _applyLive(mapped);
       return applied;
+    } on FlarkParseException catch (error) {
+      if (error.code != FlarkParseException.extractionDeviationCode) rethrow;
+      _lastRejection = FlarkRejection.extractionDeviation;
+      return false;
     } finally {
       _cellOrigin = null;
       if (!applied) {

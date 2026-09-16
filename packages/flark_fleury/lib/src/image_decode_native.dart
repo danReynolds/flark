@@ -7,9 +7,12 @@ import 'image_decode_types.dart';
 void _prepare((SendPort, TransferableTypedData) request) {
   try {
     final bytes = request.$2.materialize().asUint8List();
-    final (decoder, w, h) = checkedPreviewDecoder(bytes);
+    final (decoder, _, _) = checkedPreviewDecoder(bytes);
     final decoded = decoder.decodeFrame(0);
     if (decoded == null) throw const FormatException('Unsupported image');
+    // JPEG decoding applies EXIF rotation, so stored dimensions can differ
+    // from these pixels. Size the actual first frame, not its file header.
+    final w = decoded.width, h = decoded.height;
     final (width, height) = previewSize(w, h);
     final image = width == w && height == h
         ? decoded
