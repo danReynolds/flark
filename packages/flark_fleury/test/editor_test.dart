@@ -232,12 +232,17 @@ void main() {
       expect(editor.source, '${'#' * level} H');
       expect(editor.selection.extent, level + 2);
       expect(lines().first, 'H');
-      expect(tester.render().atColRow(0, 0).style.bold, isTrue);
+      expect(tester.render().atColRow(0, 0).style.bold, level <= 3);
+      expect(
+        tester.render().atColRow(0, 0).style.italic,
+        level == 3 || level == 4,
+      );
       key(KeyCode.enter);
       tester.type('x');
       expect(editor.source, '${'#' * level} H\nx');
-      expect(lines().take(2), ['H', 'x']);
-      expect(tester.render().atColRow(0, 1).style.bold, isFalse);
+      const paragraphRow = 1;
+      expect(lines()[paragraphRow], 'x');
+      expect(tester.render().atColRow(0, paragraphRow).style.bold, isFalse);
     });
   }
 
@@ -299,17 +304,17 @@ void main() {
   test('bullet and wrapped text share a row and stable content columns', () {
     tester.viewportSize = const CellSize(8, 8);
     mount('- abcdefghij');
-    expect(lines().take(2), ['● abcde', '  fghij']);
+    expect(lines().take(2), [' ●  abc', '    def']);
     final buffer = tester.render();
     expect(buffer.atColRow(0, 0).style.dim, isFalse);
     expect(buffer.atColRow(0, 0).style, buffer.atColRow(2, 0).style);
-    expect(buffer.atColRow(1, 0).grapheme, ' ');
-    click(2, 0);
+    expect(buffer.atColRow(2, 0).grapheme, ' ');
+    click(4, 0);
     expect(editor.selection.extent, 2);
     tester.type('X');
     expect(editor.source, '- Xabcdefghij');
-    expect(lines().take(3), ['● Xabcd', '  efghi', '  j']);
-    expect(focus.caretRect!.left, 3);
+    expect(lines().take(3), [' ●  Xab', '    cde', '    fgh']);
+    expect(focus.caretRect!.left, 5);
 
     final wide = CellDocumentLayout(
       controller,
@@ -317,10 +322,10 @@ void main() {
       const FlarkCellTheme(),
       CellWidthPolicy.cjk,
     );
-    expect(wide.lines.first.prefix, '* ');
-    expect(wide.lines.first.glyphs.first.col, 2);
-    expect(wide.lines[1].prefix, '  ');
-    expect(wide.positionFor(3).col, 3);
+    expect(wide.lines.first.prefix, ' *  ');
+    expect(wide.lines.first.glyphs.first.col, 4);
+    expect(wide.lines[1].prefix, '    ');
+    expect(wide.positionFor(3).col, 5);
   });
 
   for (final marker in ['*', '-', '+']) {
@@ -335,16 +340,16 @@ void main() {
       tester.type(marker);
       tester.type(' ');
       expect(editor.source, '$marker ');
-      expect(lines().first, '●');
+      expect(lines().first, ' ●');
       tester.type('x');
-      expect(lines().first, '● x');
+      expect(lines().first, ' ●  x');
       key(KeyCode.enter);
       expect(editor.source, '$marker x\n$marker ');
-      expect(lines().take(2), ['● x', '●']);
+      expect(lines().take(2), [' ●  x', ' ●']);
       key(KeyCode.enter);
       tester.type('p');
       expect(editor.source, '$marker x\n\np');
-      expect(lines().take(3), ['● x', '', 'p']);
+      expect(lines().take(3), [' ●  x', '', 'p']);
       expect(editor.projection.rows.last.shells, isEmpty);
     });
   }
@@ -359,6 +364,63 @@ void main() {
     expect(lines()[2], '    Xsecond');
   });
 
+  test(
+    'mixed list centers markers and keeps labels editable in a shared gutter',
+    () {
+      const source =
+          '- [ ] task\n- bullet\n  - nested\n\nparagraph\n\n- separate';
+      mount(source, caret: source.indexOf('task'));
+      expect(lines().take(3), ['[ ] task', ' ●  bullet', '     ●  nested']);
+      expect(lines().join('\n'), contains('\n ●  separate'));
+      click(4, 1);
+      tester.type('X');
+      expect(editor.source, source.replaceFirst('bullet', 'Xbullet'));
+      key(KeyCode.z, cmd: true);
+      expect(editor.source, source);
+      // Every visible bracket cell belongs to the checkbox; its label does not.
+      for (final col in [0, 1, 2]) {
+        click(col, 0);
+        expect(lines().first, '[x] task');
+        key(KeyCode.z, cmd: true);
+        expect(editor.source, source);
+      }
+      click(4, 0);
+      tester.type('Y');
+      expect(editor.source, source.replaceFirst('task', 'Ytask'));
+    },
+  );
+
+  test(
+    'code background stays flush while wrapped text keeps its internal padding',
+    () {
+      const source = '```text\nabcdefghi jkl\n```';
+      const page = RgbColor(16, 20, 24), code = RgbColor(32, 36, 40);
+      tester.viewportSize = const CellSize(12, 8);
+      mount(
+        source,
+        caret: source.indexOf('abc'),
+        theme: const FlarkCellTheme(
+          body: CellStyle(background: page),
+          code: CellStyle(background: code),
+          codePadding: 0.25,
+        ),
+      );
+      final frame = tester.render();
+      for (final row in [0, 1]) {
+        final edge = frame.atColRow(0, row);
+        expect(edge.grapheme ?? ' ', ' ');
+        expect(edge.style.background, code);
+      }
+      expect(focus.caretRect!.left, 1);
+      click(0, 0);
+      expect(editor.selection.extent, source.indexOf('abc'));
+      tester.type('X');
+      expect(editor.source, source.replaceFirst('abc', 'Xabc'));
+      key(KeyCode.z, cmd: true);
+      expect(editor.source, source);
+    },
+  );
+
   test('quote bar is substantial and code uses padding through wrapping', () {
     tester.viewportSize = const CellSize(12, 12);
     mount('> quoted words wrap\n\n```text\nabcdefghi jkl\n```');
@@ -366,8 +428,8 @@ void main() {
       '▎ quoted wo',
       '▎ rds wrap',
       '',
-      '  abcdefghi',
-      '   jkl',
+      '  abcdefg',
+      '  hi jkl',
       '',
     ]);
     expect(tester.render().atColRow(0, 0).grapheme, '▎');
@@ -378,7 +440,7 @@ void main() {
       editor.source,
       '> quoted words wrap\n\n```text\nXabcdefghi jkl\n```',
     );
-    expect(lines()[3], '  Xabcdefgh');
+    expect(lines()[3], '  Xabcdef');
   });
 
   test('typed bold, backspace, space and next character paint immediately', () {
@@ -482,7 +544,7 @@ void main() {
 
   test('task click and list Enter use kernel commands, then undo', () {
     mount('- [ ] task');
-    click(1, 0);
+    click(0, 0);
     expect(editor.source, '- [x] task');
     expect(lines().first, '[x] task');
     key(KeyCode.end);

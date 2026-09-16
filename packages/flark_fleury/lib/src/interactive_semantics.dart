@@ -54,12 +54,13 @@ class _InteractiveSemanticsElement extends ComponentElement
         int y,
         int width, {
         bool? checked,
+        int height = 1,
       }) {
         final bounds = CellRect.fromLTWH(
           viewport.origin.col + x,
           viewport.origin.row + y,
           width,
-          1,
+          height,
         ).intersect(visible);
         if (bounds == null || bounds.size.isEmpty) return;
         final enabled = role != SemanticRole.checkbox || !widget.readOnly;
@@ -79,41 +80,55 @@ class _InteractiveSemanticsElement extends ComponentElement
       for (var y = 0; y < viewport.rows; y++) {
         final index = viewport.top + y;
         if (index >= layout.lines.length) break;
-        final line = layout.lines[index];
-        final task = line.taskColumn;
-        if (task >= 0) {
-          add(
-            'task/$index',
-            SemanticRole.checkbox,
-            line.row!.text,
-            task,
-            y,
-            3,
-            checked: line.row!.shells.lastWhere((s) => s.task).checked,
-          );
-        }
-        for (final resource in editor.document.resources) {
-          if (resource.isImage) continue;
-          int? start, end;
-          for (final glyph in line.glyphs) {
-            final source = line.sourceAt(glyph.start);
-            if (source >= resource.contentStart &&
-                source < resource.contentEnd) {
-              start ??= glyph.col;
-              end = glyph.col + glyph.width;
-            }
-          }
-          if (start != null) {
+        final visual = layout.lines[index];
+        for (final line in visual.fragments) {
+          if (line.image != null) continue;
+          if (!line.labelVisible(editor.selection)) continue;
+          final task = line.taskColumn;
+          if (task >= 0) {
             add(
-              'link/${resource.start}/$index',
-              SemanticRole.link,
-              resource.destination,
-              start,
+              'task/$index',
+              SemanticRole.checkbox,
+              line.row!.text,
+              task,
               y,
-              end! - start,
+              line.taskWidth,
+              checked: line.row!.shells.lastWhere((s) => s.task).checked,
             );
           }
+          for (final resource in editor.document.resources) {
+            int? start, end;
+            for (final glyph in line.glyphs) {
+              final source = line.sourceAt(glyph.start);
+              if (source >= resource.contentStart &&
+                  source < resource.contentEnd) {
+                start ??= glyph.col;
+                end = glyph.col + glyph.width;
+              }
+            }
+            if (start != null) {
+              add(
+                'link/${resource.start}/$index',
+                SemanticRole.link,
+                resource.destination,
+                start,
+                y,
+                end! - start,
+              );
+            }
+          }
         }
+      }
+      for (final slot in layout.images) {
+        add(
+          'image/${slot.resource.start}',
+          SemanticRole.button,
+          'Image: ${slot.resource.text}',
+          slot.left,
+          slot.top - viewport.top,
+          slot.width,
+          height: slot.height,
+        );
       }
     }
     return SemanticNode(

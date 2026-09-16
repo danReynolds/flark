@@ -44,21 +44,26 @@ void main() {
           final editor = FlarkEditor(backend, text: source, caret: 0);
           final controller = FlarkFleuryController(editor);
           final focus = FocusNode();
-          final tester =
-              FleuryTester(viewportSize: CellSize(cols, 24));
-          tester.pumpWidget(Theme(
-            data: const ThemeData(),
-            child: FlarkEditorView(
-              controller: controller,
-              theme: theme,
-              autofocus: true,
-              focusNode: focus,
+          final tester = FleuryTester(viewportSize: CellSize(cols, 24));
+          tester.pumpWidget(
+            Theme(
+              data: const ThemeData(),
+              child: FlarkEditorView(
+                controller: controller,
+                theme: theme,
+                autofocus: true,
+                focusNode: focus,
+              ),
             ),
-          ));
+          );
           editor.apply(SetSelection(min(a, b), max(a, b)));
           final buffer = tester.render();
           final layout = CellDocumentLayout(
-              controller, cols, theme, CellWidthPolicy.spec);
+            controller,
+            cols,
+            theme,
+            CellWidthPolicy.spec,
+          );
           if (editor.selection.isCollapsed) {
             tester.dispose();
             controller.dispose();
@@ -69,19 +74,29 @@ void main() {
             final line = layout.lines[y];
             for (final glyph in line.glyphs) {
               if (glyph.col >= cols) continue;
-              final start = line.row!.sourceForDisplay(glyph.start,
-                  anchor: Anchor.after);
-              final end = line.row!
-                  .sourceForDisplay(glyph.end, anchor: Anchor.before);
-              final covered = editor.selection.start < end &&
-                  editor.selection.end > start;
-              final painted = buffer.atColRow(glyph.col, y).style.inverse;
+              final start = line.row!.sourceForDisplay(
+                glyph.start,
+                anchor: Anchor.after,
+              );
+              final end = line.row!.sourceForDisplay(
+                glyph.end,
+                anchor: Anchor.before,
+              );
+              final covered =
+                  editor.selection.start < end && editor.selection.end > start;
+              // Selection reverses the original paint, including a title band
+              // already using reverse video with unknown terminal colors.
+              final painted =
+                  buffer.atColRow(glyph.col, y).style.inverse !=
+                  glyph.style.inverse;
               if (painted) selectedCells++;
               if (covered != painted) {
-                failures.add('${jsonEncode(source)} cols $cols '
-                    'sel ${editor.selection.start}..${editor.selection.end} '
-                    'cell ($y,${glyph.col}) ${jsonEncode(glyph.text)} '
-                    'src $start..$end covered $covered painted $painted');
+                failures.add(
+                  '${jsonEncode(source)} cols $cols '
+                  'sel ${editor.selection.start}..${editor.selection.end} '
+                  'cell ($y,${glyph.col}) ${jsonEncode(glyph.text)} '
+                  'src $start..$end covered $covered painted $painted',
+                );
               }
             }
           }
@@ -91,10 +106,17 @@ void main() {
         }
       }
     }
-    expect(selectedCells, greaterThan(500),
-        reason: 'the trials must actually paint a selection');
-    expect(failures, isEmpty,
-        reason: '${failures.length} paint mismatches:\n'
-            '${failures.take(20).join('\n')}');
+    expect(
+      selectedCells,
+      greaterThan(500),
+      reason: 'the trials must actually paint a selection',
+    );
+    expect(
+      failures,
+      isEmpty,
+      reason:
+          '${failures.length} paint mismatches:\n'
+          '${failures.take(20).join('\n')}',
+    );
   });
 }

@@ -21,7 +21,13 @@ Future<void> main() async {
       ),
     );
     final controller = FlarkFleuryController(
-      FlarkEditor(parser, text: sample, codeEditing: code),
+      FlarkEditor(
+        parser,
+        text: Uri.base.queryParameters['sample'] == 'headings'
+            ? headingSample
+            : sample,
+        codeEditing: code,
+      ),
       highlightWorker: await CodeHighlightWorker.start(
         workerUri: Uri.base.resolve('highlight_worker.mjs'),
         wasmUri: Uri.base.resolve('flark_tree_sitter.wasm'),
@@ -31,6 +37,7 @@ Future<void> main() async {
     await mountApp(
       () => Playground(
         controller: controller,
+        baseUri: Uri.base,
         onOpenLink: (uri) {
           web.window.open(uri.toString(), '_blank', 'noopener,noreferrer');
         },

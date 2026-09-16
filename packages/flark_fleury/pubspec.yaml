@@ -8,6 +8,8 @@ environment:
 
 dependencies:
   characters: ^1.4.0
+  http: ^1.6.0
+  image: ^4.10.1
   flark:
     path: ../flark
   flark_tree_sitter:
@@ -16,7 +18,7 @@ dependencies:
   fleury_widgets:
     git:
       url: https://github.com/danReynolds/fleury.git
-      ref: d37f5a56bcd164acb40ad7dd45ccd633b42cc0a3
+      ref: 41967d499a6bd0fe53e5f5f07b31649df0adcc83
       path: packages/fleury_widgets
 
 dev_dependencies:
@@ -29,5 +31,5 @@ dependency_overrides:
   fleury:
     git:
       url: https://github.com/danReynolds/fleury.git
-      ref: d37f5a56bcd164acb40ad7dd45ccd633b42cc0a3
+      ref: 41967d499a6bd0fe53e5f5f07b31649df0adcc83
       path: packages/fleury

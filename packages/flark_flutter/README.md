@@ -75,6 +75,14 @@ when switching brightness.
 `FlarkTextRole`, `FlarkColorRole`, `FlarkMetric` and `FlarkSyntaxRole` describe
 the supported text, decoration, spacing and syntax-color options. Syntax
 overrides are colors only; code-block typography belongs to its text role.
+Block alignment follows a common containing edge: prose, quote rails, code
+backgrounds and table frames begin there, with text padding inside each block.
+`FlarkMetric.listIndent` sets the list content start; `listMarkerGap` reserves the
+gap after its marker. Bullets and checkboxes center in the remaining gutter.
+`quoteIndent` controls quoted content separately from lists. Code padding is
+symmetric inside its background; row spacing remains outside it. These metrics
+also drive nested layout and pointer targets.
+
 Theme changes preserve source, selection and history. Fonts, text scaling and
 spacing reflow the current surface; color-only updates retain scroll position
 and image streams. Image dimensions reserve stable slots in loading, failure

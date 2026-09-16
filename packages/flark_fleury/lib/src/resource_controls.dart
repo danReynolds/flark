@@ -31,7 +31,7 @@ class _ResourceTheme extends StatelessWidget {
   }
 }
 
-/// Default link controls, replaceable without replacing their guarded actions.
+/// Default resource controls, replaceable without replacing guarded actions.
 class FlarkLinkPopover extends StatelessWidget {
   const FlarkLinkPopover({super.key, required this.actions});
   final FlarkLinkActions actions;
@@ -39,7 +39,7 @@ class FlarkLinkPopover extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     role: SemanticRole.region,
-    label: 'Link actions',
+    label: actions.resource.isImage ? 'Image actions' : 'Link actions',
     child: _ResourceTheme(
       child: Container(
         color: Theme.of(context).colorScheme.background,
@@ -64,12 +64,12 @@ class FlarkLinkPopover extends StatelessWidget {
             Wrap(
               spacing: 1,
               children: [
-                Button(label: 'Open', onPressed: actions.open),
+                Button(text: 'Open', onPressed: actions.open),
                 if (actions.edit != null)
-                  Button(label: 'Edit', onPressed: actions.edit),
+                  Button(text: 'Edit', onPressed: actions.edit),
                 if (actions.remove != null)
-                  Button(label: 'Remove', onPressed: actions.remove),
-                Button(label: 'Close', onPressed: actions.dismiss),
+                  Button(text: 'Remove', onPressed: actions.remove),
+                Button(text: 'Close', onPressed: actions.dismiss),
               ],
             ),
           ],
@@ -162,15 +162,15 @@ class _ResourceDialogState extends State<FlarkResourceDialog> {
               spacing: 1,
               children: [
                 Button(
-                  label: 'Cancel',
+                  text: 'Cancel',
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 if (widget.session.resource != null)
                   Button(
-                    label: 'Remove',
+                    text: 'Remove',
                     onPressed: () => submit(remove: true),
                   ),
-                Button(label: 'Save', onPressed: submit),
+                Button(text: 'Save', onPressed: submit),
               ],
             ),
           ],

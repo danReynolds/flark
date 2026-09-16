@@ -23,6 +23,12 @@ Flutter retains its own asset loader and API entry point.
 
 ## Subsequent milestones
 
+The first milestone and the tables/images presentation milestone are implemented.
+The September 16 closeout reviews the framework changes, replaces development
+overrides with a merged Git revision, and verifies both Flark hosts from a clean
+checkout. Heading hierarchy and per-level theme controls are included. This
+locks the second-host architecture and current APIs, not all platform gates.
+
 1. Tables through Fleury's table surface, replaceable link/image controls,
    resource activation and terminal-appropriate image presentation.
 2. Large-source viewport qualification, terminal protocol/IME/lifecycle journeys,
@@ -40,6 +46,6 @@ Flutter retains its own asset loader and API entry point.
 - Is each remaining gap a host responsibility or evidence that the core
   contract lacks information? Record the distinction with a reproducer.
 
-The adjacent Fleury checkout has unrelated uncommitted work. Use it via ignored
-local dependency overrides for development; do not modify or merge that work.
-Record this dependency evidence limit in the milestone review.
+The adjacent Fleury checkout has unrelated uncommitted work. Keep it separate.
+Host and example dependencies must resolve to the reviewed Git pin for closeout;
+ignored local overrides are only for development, never installation evidence.

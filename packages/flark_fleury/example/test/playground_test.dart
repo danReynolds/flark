@@ -168,7 +168,21 @@ void main() {
         const RgbColor(25, 35, 45),
       );
       final code = findText('def hello');
-      expect(code.col, body.col, reason: 'code starts flush with prose');
+      expect(
+        code.col,
+        body.col + 1,
+        reason: 'code text and its caret stay on the cell grid',
+      );
+      expect(
+        findText('[ ] Click').col + 1,
+        findText('●').col,
+        reason: 'checkbox and unordered marker share the gutter',
+      );
+      expect(
+        findText('Click this task').col,
+        findText('Try Enter').col,
+        reason: 'both list labels start in the same column',
+      );
       expect(
         findText('puts').col,
         code.col + 2,
@@ -182,6 +196,9 @@ void main() {
         frame.atColRow(code.col, code.row).style.background,
         const RgbColor(235, 239, 244),
       );
+      final codeEdge = frame.atColRow(code.col - 1, code.row);
+      expect(codeEdge.grapheme ?? ' ', ' ');
+      expect(codeEdge.style.background, const RgbColor(235, 239, 244));
       final link = findText('a link');
       expect(
         frame.atColRow(link.col, link.row).style.foreground,

@@ -5,6 +5,7 @@ import 'package:flark/resources.dart';
 import 'package:fleury/fleury_core.dart';
 
 import 'cell_layout.dart';
+import 'image_previews.dart';
 import 'controller.dart';
 import 'theme.dart';
 import 'resource_controls.dart';
@@ -28,6 +29,7 @@ class FlarkEditorView extends StatefulWidget {
     this.baseUri,
     this.linkPopoverBuilder,
     this.presentResourceEditor,
+    this.imagePreviewBuilder,
     this.onNotice,
   });
 
@@ -40,6 +42,7 @@ class FlarkEditorView extends StatefulWidget {
   final Uri? baseUri;
   final FlarkFleuryLinkPopoverBuilder? linkPopoverBuilder;
   final FlarkFleuryResourcePresenter? presentResourceEditor;
+  final FlarkFleuryImagePreviewBuilder? imagePreviewBuilder;
 
   /// Told when input was accepted by the terminal but dropped here — a paste
   /// abandoned because the document moved under it, or one over the source
@@ -59,6 +62,7 @@ final class FlarkView extends FlarkEditorView {
     super.onOpenLink,
     super.baseUri,
     super.linkPopoverBuilder,
+    super.imagePreviewBuilder,
   }) : super(readOnly: true, semanticLabel: 'Markdown document');
 }
 
@@ -118,14 +122,15 @@ class _EditorState extends State<FlarkEditorView>
     if (layout == null || _editor.sourceMode) return null;
     final index = row - _viewport.origin.row + _viewport.top;
     if (index < 0 || index >= layout.lines.length) return null;
-    final line = layout.lines[index], x = col - _viewport.origin.col;
+    final x = col - _viewport.origin.col;
+    final line = layout.lines[index].cellAt(x);
+    if (line.image != null) return line.image;
+    if (!line.labelVisible(_editor.selection)) return null;
     for (final glyph in line.glyphs) {
       if (x < glyph.col || x >= glyph.col + glyph.width) continue;
       final source = line.sourceAt(glyph.start);
       for (final resource in _editor.document.resources) {
-        if (!resource.isImage &&
-            resource.contentStart <= source &&
-            source < resource.contentEnd) {
+        if (resource.contentStart <= source && source < resource.contentEnd) {
           return resource;
         }
       }
@@ -182,7 +187,7 @@ class _EditorState extends State<FlarkEditorView>
     setState(() {});
   }
 
-  Future<void> _editLink() async {
+  Future<void> _editLink({bool image = false}) async {
     if (_dialogOpen ||
         widget.readOnly ||
         _editor.sourceMode ||
@@ -197,7 +202,7 @@ class _EditorState extends State<FlarkEditorView>
     final editor = _editor,
         revision = editor.revision,
         selection = editor.selection;
-    final resource = editor.document.resourceAt(selection, image: false);
+    final resource = editor.document.resourceAt(selection, image: image);
     bool active() =>
         mounted &&
         identical(editor, _editor) &&
@@ -206,7 +211,7 @@ class _EditorState extends State<FlarkEditorView>
         editor.revision == revision &&
         editor.selection == selection;
     final session = FlarkResourceSession(
-      image: false,
+      image: image,
       resource: resource,
       selectedText: editor.document.visibleText(selection.start, selection.end),
       isActive: active,
@@ -410,7 +415,7 @@ class _EditorState extends State<FlarkEditorView>
     final caret = layout.positionFor(_editor.selection.extent);
     _goalColumn ??= caret.col;
     final index = (caret.row + delta).clamp(0, layout.lines.length - 1);
-    final line = layout.lines[index];
+    final line = layout.lineAt(index, _goalColumn!, direction: delta);
     final hit = line.hit(_goalColumn!);
     _select(line.sourceAt(hit.$1), extend);
   }
@@ -420,12 +425,21 @@ class _EditorState extends State<FlarkEditorView>
     if (layout == null) return;
     _finishInput();
     _focus.requestFocus();
-    final line =
-        layout.lines[(row - _viewport.origin.row + _viewport.top).clamp(
-          0,
-          layout.lines.length - 1,
-        )];
+    final index = (row - _viewport.origin.row + _viewport.top).clamp(
+      0,
+      layout.lines.length - 1,
+    );
     final localCol = col - _viewport.origin.col;
+    final painted = layout.lines[index].cellAt(localCol);
+    if (painted.image case final image?) {
+      _select(image.contentStart, extend);
+      return;
+    }
+    final line = layout.lineAt(
+      index,
+      localCol,
+      direction: painted.headingRule ? -1 : 1,
+    );
     final hit = line.hit(localCol);
     if (line.row case final projected?) {
       _apply(
@@ -442,7 +456,7 @@ class _EditorState extends State<FlarkEditorView>
           !extend &&
           taskColumn >= 0 &&
           localCol >= taskColumn &&
-          localCol < taskColumn + 3 &&
+          localCol < taskColumn + line.taskWidth &&
           projected.shells.any((s) => s.task)) {
         _apply(const ToggleTask());
       }
@@ -508,6 +522,19 @@ class _EditorState extends State<FlarkEditorView>
           ? null
           : _editor.projection.displayForSource(_editor.selection.extent);
       final row = pos == null ? null : _editor.projection.rows[pos.row];
+      if (row?.kind == RowKind.tableCell) {
+        final rows = _editor.projection.rows;
+        final index = row!.index + (event.hasShift ? -1 : 1);
+        if (index >= 0 &&
+            index < rows.length &&
+            rows[index].tableBlock == row.tableBlock) {
+          _apply(SetSelection.caret(rows[index].sourceStart), mutation: false);
+        } else if (!event.hasShift) {
+          _apply(const Newline());
+        }
+        event.consume();
+        return;
+      }
       if (row?.kind != RowKind.codeBlock &&
           row?.shells.any((s) => s.kind == ShellKind.item) != true) {
         return;
@@ -545,8 +572,8 @@ class _EditorState extends State<FlarkEditorView>
         case TextEditingKeyAction.moveLineEnd:
           final layout = _inputLayout;
           if (layout == null) return;
-          final line =
-              layout.lines[layout.positionFor(_editor.selection.extent).row];
+          final caret = layout.positionFor(_editor.selection.extent);
+          final line = layout.lineAt(caret.row, caret.col);
           final end = action == TextEditingKeyAction.moveLineEnd;
           var target = line.sourceAt(
             end ? line.end : line.start,
@@ -617,14 +644,14 @@ class _EditorState extends State<FlarkEditorView>
       edit: widget.readOnly
           ? null
           : () {
-              if (active()) unawaited(_editLink());
+              if (active()) unawaited(_editLink(image: resource.isImage));
             },
       remove: widget.readOnly
           ? null
           : () {
               if (active()) {
                 _editor.apply(
-                  const RemoveLink(),
+                  resource.isImage ? const RemoveImage() : const RemoveLink(),
                   expectedRevision: _linkRevision,
                 );
                 _dismissLink(restoreFocus: true);
@@ -704,13 +731,7 @@ class _EditorState extends State<FlarkEditorView>
                 },
                 child: BoundsObserver(
                   notifier: _viewport.bounds,
-                  child: _Surface(
-                    widget.controller,
-                    widget.theme ?? FlarkCellTheme.of(context),
-                    _focus,
-                    _viewport,
-                    MediaQuery.textPolicyOf(context).widths,
-                  ),
+                  child: _buildSurface(context),
                 ),
               ),
             ),
@@ -718,6 +739,60 @@ class _EditorState extends State<FlarkEditorView>
         ),
       ),
     ),
+  );
+
+  Widget _buildSurface(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final theme = widget.theme ?? FlarkCellTheme.of(context);
+      final policy = MediaQuery.textPolicyOf(context).widths;
+      final size = _viewport.prepare(
+        constraints,
+        widget.controller,
+        theme,
+        policy,
+        _focus,
+      );
+      final slots = _viewport.layout!.images.indexed.where(
+        (entry) =>
+            entry.$2.top < _viewport.top + size.rows &&
+            entry.$2.top + entry.$2.height > _viewport.top,
+      );
+      return SizedBox(
+        width: size.cols,
+        height: size.rows,
+        child: _ClipViewport(
+          child: Stack(
+            children: [
+              _Surface(widget.controller, theme, _focus, _viewport, policy),
+              for (final (index, slot) in slots.take(8))
+                Positioned(
+                  key: ValueKey('image/$index/${slot.resource.destination}'),
+                  left: slot.left,
+                  top: slot.top - _viewport.top,
+                  width: slot.width,
+                  height: slot.height,
+                  child:
+                      widget.imagePreviewBuilder?.call(
+                        context,
+                        slot.resource,
+                        flarkOpenableUri(
+                          slot.resource.destination,
+                          widget.baseUri ?? Uri.base,
+                        ),
+                      ) ??
+                      FlarkImagePreview(
+                        uri: flarkOpenableUri(
+                          slot.resource.destination,
+                          widget.baseUri ?? Uri.base,
+                        ),
+                        label: slot.resource.text,
+                      ),
+                ),
+            ],
+          ),
+        ),
+      );
+    },
   );
 
   @override

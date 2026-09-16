@@ -5,3 +5,5 @@ export 'src/controller.dart';
 export 'src/theme.dart';
 export 'src/editor_view.dart';
 export 'src/resource_controls.dart';
+export 'src/image_previews.dart'
+    show FlarkFleuryImagePreviewBuilder, FlarkImagePreview;
