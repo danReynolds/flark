@@ -1,10 +1,12 @@
 # flark_fleury
 
-An initial Fleury host for the Flark v5 Markdown kernel: cell rendering, input,
+A Fleury host for the Flark v5 Markdown kernel: cell rendering, input,
 selection and focus, without Flutter or a second Markdown recognizer.
 
-This is the first M4 slice, not complete host parity. It runs on the Dart VM
-with native hooks and in a standalone Fleury browser page with Wasm. See
+It runs on the Dart VM with native hooks and in a standalone Fleury browser
+page with Wasm. The editing, theming, table and image APIs are the supported
+second-host baseline; physical terminal/IME and large-document qualification
+remain separate from host parity. See
 [the milestone plan](../../docs/architecture/v5/fleury_host_plan.md) and
 [the first review](../../docs/architecture/v5/fleury_host_review_2026_09_08.md).
 
@@ -46,9 +48,62 @@ A custom `FlarkCellTheme` specifies the editor's cell styles. For an explicit
 light/dark surface, set its `body` foreground/background, Fleury's
 `ThemeData.textStyle`, and a surrounding `Container.color`, as the example
 does. Changing `ThemeData.brightness` alone does not paint a terminal background.
-`FlarkCellTheme.codePadding` controls leading cells inside a code surface
-(default `2`, example `0` for flush alignment). It never changes Markdown
-source indentation and applies equally to wrapped code lines.
+Block geometry is explicit and independent of source indentation:
+
+- `listIndent` (default `4` cells) gives bullet and task lists a stable content
+  start; markers center in the shared gutter. Ordered labels can expand it.
+- `quoteIndent` (default `2` cells) reserves the rail and the gap before text.
+- `codePadding` (default `2`, example `1`) pads both sides **inside** a code
+  background. Fractional values round up to whole text cells.
+- `codePaddingRows` (default `0`, example `0.25`) paints top/bottom padding in
+  eighth-row increments. A nonzero edge reserves a decorative row, which
+  pointer and keyboard navigation skip. Unpainted space is outside the block.
+  With an unknown terminal background the edge uses a full painted row.
+
+Paragraphs, quote rails, code backgrounds and table frames share their containing
+block's outer edge. Tables use edge-anchored Unicode frame glyphs where the cell
+width policy permits them, with inset internal rules and ordinary glyph fallbacks.
+Code padding and list gutters keep wrapped text and pointer/caret geometry in
+agreement; changing them never inserts spaces into Markdown source.
+
+Heading defaults use typography at one font size: H1/H2 are bold, H3 bold
+italic, H4 italic, H5 regular, and H6 dim. Bands, dividers, underlines and level
+labels are opt-in. The inherited Fleury theme accents H1 and uses body color for
+deeper levels. The example adds a slate H2 and an explicit muted H6 color, with
+light/dark counterparts. Without color H1/H2 can look alike; use the optional
+level gutter when exact hierarchy matters or italics are unavailable.
+
+`heading` remains the common text style. Override individual levels with
+`headingStyles`, and style decorations with `headingBand`, `headingDivider`,
+and `headingIndicator`. A null `headingBand` derives its fill from body colors.
+For example:
+
+```dart
+FlarkCellTheme(
+  heading: CellStyle(foreground: RgbColor(147, 197, 253), bold: true),
+  headingStyles: {
+    2: FlarkHeadingStyle(style: CellStyle(foreground: RgbColor(176, 195, 220))),
+    3: FlarkHeadingStyle(style: CellStyle(
+      foreground: RgbColor(220, 230, 240), italic: true,
+    )),
+  },
+  headingGutter: true,
+)
+```
+
+`headingGutter` reserves three cells beside the whole rendered document for
+H1–H6 labels, keeping text and block edges aligned. Narrow surfaces fall back to
+inline labels where space permits. Divider rows and labels are decorations:
+they never enter copied Markdown, source offsets, selection or undo history.
+Arrow navigation skips dividers, and clicking a divider places the caret in its
+heading. Wrapped headings retain the same text origin while focused or selected.
+
+The example's **Heading styles** disclosure edits each level's color, bold,
+italic, underline, band, divider and label, plus the global gutter.
+**Copy theme Dart** includes the resolved six-level palette and overrides.
+**Reset theme** restores them without changing the draft.
+**Heading sample** loads a document with all six levels; the web example also
+accepts `?sample=headings`, and the terminal example accepts `--headings`.
 
 Optional code editing uses `FlarkTreeSitter.fromAnalyzer(CodeAnalyzer())` from
 `package:flark_tree_sitter/flark.dart` as the editor's `codeEditing` delegate.
@@ -63,11 +118,15 @@ The example shows native and browser asset loading for both services.
 ## Develop and run
 
 The host and example pin Fleury's companion packages to reviewed Git revision
-`d37f5a56bcd164acb40ad7dd45ccd633b42cc0a3` (Fleury PR #253). A sibling checkout
+`41967d499a6bd0fe53e5f5f07b31649df0adcc83` ([Fleury #260](https://github.com/danReynolds/fleury/pull/260)). A sibling checkout
 is no longer required. The committed `dependency_overrides.fleury` keeps the
 companions' hosted core constraint on that same revision until publication.
 An application consuming this unpublished host must copy that core override
 into its own root pubspec; the example demonstrates the complete setup.
+
+The pinned framework includes the image-composition and block-frame fixes.
+No local Fleury checkout or ignored dependency override is required. See the
+[implementation and validation notes](../../docs/architecture/v5/fleury_tables_images_2026_09_15.md).
 
 ```sh
 dart pub get
@@ -77,6 +136,12 @@ cd example
 dart pub get
 dart run bin/main.dart
 ```
+
+To package the terminal example with its native libraries on Dart 3.12+, run
+`dart build cli --target bin/main.dart --output build/native` from `example`.
+Run `build/native/bundle/bin/main` from that directory so the sample image's
+relative asset path resolves. Copy the whole bundle when distributing it;
+`dart compile exe` does not include native build-hook assets on this SDK.
 
 For framework development only, `dart tool/use_local_fleury.dart /path/to/fleury`
 writes ignored local overrides. Remove the generated host/example
@@ -107,8 +172,8 @@ page; it does not stream a remote terminal or Flutter app.
   Preset accents have light/dark counterparts so the chosen hue stays readable
   when switching themes. Custom hex values outside the presets remain exact.
   Narrow views switch between controls and the live editor.
-- Headings currently share one bold cell style across all six levels. Level
-  styling remains a presentation decision: Fleury uses one font size per cell
+- Headings use per-level text styles and optional decorations. Level styling
+  remains a presentation decision: Fleury uses one font size per cell
   grid on both terminal and browser. Per-element font sizes require a Fleury
   rendering change. The shared kernel recognizes and edits each level.
   Bare `#`/`##` and unordered markers stay
@@ -116,9 +181,28 @@ page; it does not stream a remote terminal or Flutter app.
 - In editable documents, plain link clicks show controls and Cmd/Ctrl-click
   opens the URL. Read-only link clicks open directly when `onOpenLink` is supplied,
   matching Flutter. Unsafe/unhandled links retain non-mutating controls.
-- Tables currently appear as sequential cells; a real table surface is next.
-  Links have activation and replaceable editing controls; images currently have
-  styled text only, with image presentation still open.
+- Tables share column widths, honor Markdown alignment, wrap cell contents,
+  and paint borders with `tableBorder` and headers with `tableHeader`.
+  Tab/Shift-Tab traverses cells; Enter moves to the next row in the same column
+  and exits after the last row, matching Flutter. Extremely narrow viewports
+  stack cells with numbered column labels. Only cells with an addressable source
+  range are editable; omitted trailing cells retain the shared kernel's limitation.
+- Standalone images show the preview first. Clicking it opens Open/Edit/Remove
+  and reveals a centered, editable alt-text line immediately below the image.
+  Leaving the resource hides that line without moving following content.
+  Images inside prose, table cells or containers retain their projected text
+  and fixed-height preview below it. `imagePreviewRows` defaults to 8; zero
+  hides previews and keeps the editable alt text.
+  The default `FlarkImagePreview` resolves HTTP(S) images, loads at most eight
+  visible slots, limits each response to 4 MiB and four million pixels, decodes
+  the first frame, and retains a thumbnail no larger than 960 by 640 pixels.
+  Loading/error/success share the same geometry. Leaving the viewport cancels
+  the request and releases its decoded image. Browser requests follow CORS;
+  SVG rendering is not supplied by Fleury's raster image widget.
+  `imagePreviewBuilder(context, resource, uri)` can replace loading and paint
+  for application assets, authenticated resources, or different placeholders.
+  Set `baseUri` to resolve relative resources. The example bundles `demo.png`;
+  its terminal launcher resolves that asset through the same builder hook.
 - Raw source uses a window of 8192 UTF-16 code units around the caret. Large-source scrolling
   and performance need separate qualification. No full M4 performance claim.
 - Automated composition checks are not physical IME/terminal-protocol evidence.
@@ -127,3 +211,6 @@ page; it does not stream a remote terminal or Flutter app.
 
 The [visual dogfood review](../../docs/architecture/v5/fleury_visual_review_2026_09_12.md)
 records the browser checks and the local Fleury dependency fixes they require.
+
+The [table/image implementation review](../../docs/architecture/v5/fleury_tables_images_2026_09_15.md)
+records the new host journeys, compositor fixes and local dependency setup.

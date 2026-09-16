@@ -136,8 +136,9 @@ class _RowLayout {
   double width;
   final String codeInfo;
   Rect rect = Rect.zero;
+  Rect blockRect = Rect.zero;
   Offset origin = Offset.zero;
-  double indent = 22;
+  List<({Shell shell, double left, double width})> containers = const [];
   List<({InlineResource resource, Rect rect})> images = [];
 }
 
@@ -468,20 +469,30 @@ class RenderFlarkSurface extends RenderBox
     for (var i = 0; i < (projected?.length ?? sourceLines!.length); i++) {
       final row = projected?[i];
       final text = row?.text ?? sourceLines![i].replaceAll('\r', '');
-      final depth =
+      final shells =
           row?.shells
               .where(
                 (s) =>
                     s.kind == ShellKind.item || s.kind == ShellKind.blockQuote,
               )
-              .length ??
-          0;
-      final indent = depth == 0
-          ? metric(FlarkMetric.listIndent)
-          : math.min(
-              metric(FlarkMetric.listIndent),
-              math.max(0.0, available - 40) / depth,
-            );
+              .toList() ??
+          <Shell>[];
+      double inset(Shell shell) => metric(
+        shell.kind == ShellKind.blockQuote
+            ? FlarkMetric.quoteIndent
+            : FlarkMetric.listIndent,
+      );
+      final requested = shells.fold(0.0, (sum, shell) => sum + inset(shell));
+      final scale = requested == 0
+          ? 1.0
+          : math.min(1.0, math.max(0.0, available - 40) / requested);
+      final containers = <({Shell shell, double left, double width})>[];
+      var contentLeft = _padding;
+      for (final shell in shells) {
+        final width = inset(shell) * scale;
+        containers.add((shell: shell, left: contentLeft, width: width));
+        contentLeft += width;
+      }
       final tablePadding = math.min(
         metric(FlarkMetric.tablePadding),
         available / 4,
@@ -489,13 +500,16 @@ class RenderFlarkSurface extends RenderBox
       final codePadding = row?.kind == RowKind.codeBlock
           ? math.min(metric(FlarkMetric.codePadding), available / 4)
           : 0.0;
-      var x = _padding + depth * indent;
-      var width = math.max(24.0, available - depth * indent);
+      var x = contentLeft;
+      var width = math.max(24.0, available - (contentLeft - _padding));
       if (row?.kind == RowKind.tableCell) {
         final model = (_snapshot as FlarkLiveSnapshot).document.model;
         final columns = model.block(row!.tableBlock, BlockField.attr0);
-        width = math.max(24, available / columns - 2 * tablePadding);
-        x = _padding + row.column * (width + 2 * tablePadding) + tablePadding;
+        width = math.max(24, width / columns - 2 * tablePadding);
+        x =
+            contentLeft +
+            row.column * (width + 2 * tablePadding) +
+            tablePadding;
         if (tableRow != row.tableRowBlock) {
           y += tableHeight;
           tableTop = y;
@@ -621,7 +635,7 @@ class RenderFlarkSurface extends RenderBox
               (metric(FlarkMetric.imageHeight) +
                   metric(FlarkMetric.imageSpacing));
 
-      layout.indent = indent;
+      layout.containers = containers;
       layout.origin = Offset(
         x,
         top + math.min(metric(FlarkMetric.rowInset), spacing / 2) + codePadding,
@@ -633,6 +647,14 @@ class RenderFlarkSurface extends RenderBox
             2 * (row?.kind == RowKind.tableCell ? tablePadding : codePadding),
         totalHeight,
       );
+      layout.blockRect = row?.kind == RowKind.codeBlock
+          ? Rect.fromLTWH(
+              layout.rect.left,
+              top + math.min(metric(FlarkMetric.rowInset), spacing / 2),
+              layout.rect.width,
+              height + 2 * codePadding,
+            )
+          : layout.rect;
       if (row?.kind == RowKind.tableCell) {
         tableHeight = math.max(tableHeight, totalHeight);
       } else {
@@ -749,22 +771,19 @@ class RenderFlarkSurface extends RenderBox
         model = (_snapshot as FlarkLiveSnapshot).document.model;
     final row = layout.row;
     if (row == null) return null;
-    var x = _padding;
-    for (final shell in row.shells) {
+    for (final container in layout.containers) {
+      final shell = container.shell;
       if (shell.kind == ShellKind.item) {
         if (shell.task &&
             row.firstLine == model.block(shell.block, BlockField.firstLine) &&
             Rect.fromLTWH(
-              x,
+              container.left,
               layout.origin.dy,
-              math.max(layout.indent, textScaler.scale(style.fontSize!)),
+              container.width,
               math.max(24, textScaler.scale(style.fontSize!) * 1.4),
             ).contains(point)) {
           return row.sourceStart;
         }
-        x += layout.indent;
-      } else if (shell.kind == ShellKind.blockQuote) {
-        x += layout.indent;
       }
     }
     return null;
@@ -1033,7 +1052,7 @@ class RenderFlarkSurface extends RenderBox
       if (row?.kind == RowKind.codeBlock) {
         canvas.drawRRect(
           RRect.fromRectAndRadius(
-            layout.rect.shift(offset),
+            layout.blockRect.shift(offset),
             Radius.circular(metric(FlarkMetric.codeRadius)),
           ),
           Paint()..color = color(FlarkColorRole.codeBackground),
@@ -1047,7 +1066,7 @@ class RenderFlarkSurface extends RenderBox
           );
         }
         canvas.drawRect(
-          layout.rect.shift(offset),
+          layout.rect.shift(offset).deflate(.5),
           Paint()
             ..color = color(FlarkColorRole.tableBorder)
             ..style = PaintingStyle.stroke,
@@ -1063,17 +1082,21 @@ class RenderFlarkSurface extends RenderBox
         );
       }
       if (row != null) {
-        var indent = _padding;
-        for (final shell in row.shells) {
+        for (final container in layout.containers) {
+          final shell = container.shell;
           if (shell.kind == ShellKind.blockQuote) {
+            final railWidth = math.min(
+              metric(FlarkMetric.quoteRailWidth),
+              container.width,
+            );
             canvas.drawLine(
-              offset + Offset(indent + 5, layout.rect.top),
-              offset + Offset(indent + 5, layout.rect.bottom),
+              offset + Offset(container.left + railWidth / 2, layout.rect.top),
+              offset +
+                  Offset(container.left + railWidth / 2, layout.rect.bottom),
               Paint()
                 ..color = color(FlarkColorRole.quoteRail)
-                ..strokeWidth = metric(FlarkMetric.quoteRailWidth),
+                ..strokeWidth = railWidth,
             );
-            indent += layout.indent;
           }
           if (shell.kind == ShellKind.item) {
             final model = (_snapshot as FlarkLiveSnapshot).document.model;
@@ -1082,11 +1105,16 @@ class RenderFlarkSurface extends RenderBox
               if (shell.task) {
                 // Task state is UI geometry, independent of symbol-font fallback.
                 final fontSize = textScaler.scale(style.fontSize!);
+                final gutter = math.max(
+                  0.0,
+                  container.width - metric(FlarkMetric.listMarkerGap),
+                );
+                final boxSize = math.min(fontSize * .8, gutter);
                 final box = Rect.fromLTWH(
-                  offset.dx + indent,
+                  offset.dx + container.left + (gutter - boxSize) / 2,
                   offset.dy + layout.origin.dy + fontSize * .3,
-                  fontSize * .8,
-                  fontSize * .8,
+                  boxSize,
+                  boxSize,
                 );
                 final pen = Paint()
                   ..color = color(FlarkColorRole.taskBorder)
@@ -1133,14 +1161,27 @@ class RenderFlarkSurface extends RenderBox
                   textScaler: textScaler,
                   textDirection: TextDirection.ltr,
                 )..layout();
+                final gutter = math.max(
+                  0.0,
+                  container.width - metric(FlarkMetric.listMarkerGap),
+                );
                 painter.paint(
                   canvas,
-                  offset + Offset(indent, layout.origin.dy),
+                  offset +
+                      Offset(
+                        container.left +
+                            math.max(
+                              0.0,
+                              shell.ordered
+                                  ? gutter - painter.width
+                                  : (gutter - painter.width) / 2,
+                            ),
+                        layout.origin.dy,
+                      ),
                 );
                 painter.dispose();
               }
             }
-            indent += layout.indent;
           }
         }
       }

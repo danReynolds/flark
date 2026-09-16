@@ -16,6 +16,53 @@ final class _Viewport {
     if (painted != null) origin = painted.offset;
   }
 
+  int _revision = -1, _width = -1;
+  FlarkEditor? _editor;
+  bool _focused = false;
+
+  CellSize prepare(
+    CellConstraints constraints,
+    FlarkFleuryController controller,
+    FlarkCellTheme theme,
+    CellWidthPolicy policy,
+    FocusNode focus,
+  ) {
+    final cols = constraints.maxCols ?? 80;
+    final viewport = this;
+    final cached = viewport.layout;
+    final layout = viewport.layout =
+        cached != null && cached.describes(controller, cols, theme, policy)
+        ? cached
+        : CellDocumentLayout(controller, cols, theme, policy);
+    final result = constraints.constrain(
+      CellSize(cols, constraints.maxRows ?? layout.lines.length.clamp(1, 24)),
+    );
+    viewport.rows = result.rows;
+    final editor = controller.editor;
+    if (editor.revision != _revision ||
+        cols != _width ||
+        cached?.theme != theme ||
+        !identical(_editor, editor) ||
+        (!_focused && focus.hasFocus)) {
+      final caret = layout.positionFor(editor.selection.extent);
+      if (caret.row < viewport.top) viewport.top = caret.row;
+      if (caret.row >= viewport.top + result.rows) {
+        viewport.top = caret.row - result.rows + 1;
+      }
+    }
+    viewport.scroll(0);
+    _revision = editor.revision;
+    _editor = editor;
+    _width = cols;
+    _focused = focus.hasFocus;
+    controller.setVisibleRows({
+      for (final visual in layout.lines.skip(viewport.top).take(result.rows))
+        for (final line in visual.fragments)
+          if (line.row != null) line.row!.index,
+    });
+    return result;
+  }
+
   void dispose() {
     bounds.removeListener(_publishBounds);
     bounds.dispose();
@@ -68,9 +115,6 @@ class _RenderSurface extends RenderObject implements CaretHost {
     widget.focus.attachCaretHost(this);
   }
   _Surface widget;
-  int _revision = -1, _width = -1;
-  FlarkEditor? _editor;
-  bool _focused = false;
 
   void update(_Surface value) {
     if (!identical(widget.focus, value.focus)) {
@@ -97,49 +141,13 @@ class _RenderSurface extends RenderObject implements CaretHost {
 
   @override
   CellSize performLayout(CellConstraints constraints) {
-    final cols = constraints.maxCols ?? 80;
-    final viewport = widget.viewport;
-    final cached = viewport.layout;
-    final layout = viewport.layout =
-        cached != null &&
-            cached.describes(
-              widget.controller,
-              cols,
-              widget.theme,
-              widget.policy,
-            )
-        ? cached
-        : CellDocumentLayout(
-            widget.controller,
-            cols,
-            widget.theme,
-            widget.policy,
-          );
-    final result = constraints.constrain(
-      CellSize(cols, constraints.maxRows ?? layout.lines.length.clamp(1, 24)),
+    return widget.viewport.prepare(
+      constraints,
+      widget.controller,
+      widget.theme,
+      widget.policy,
+      widget.focus,
     );
-    viewport.rows = result.rows;
-    final editor = widget.controller.editor;
-    if (editor.revision != _revision ||
-        cols != _width ||
-        !identical(_editor, editor) ||
-        (!_focused && widget.focus.hasFocus)) {
-      final caret = layout.positionFor(editor.selection.extent);
-      if (caret.row < viewport.top) viewport.top = caret.row;
-      if (caret.row >= viewport.top + result.rows) {
-        viewport.top = caret.row - result.rows + 1;
-      }
-    }
-    viewport.scroll(0);
-    _revision = editor.revision;
-    _editor = editor;
-    _width = cols;
-    _focused = widget.focus.hasFocus;
-    widget.controller.setVisibleRows({
-      for (final line in layout.lines.skip(viewport.top).take(result.rows))
-        if (line.row != null) line.row!.index,
-    });
-    return result;
   }
 
   @override
@@ -172,66 +180,237 @@ class _RenderSurface extends RenderObject implements CaretHost {
       );
     }
 
+    // Reverse-video terminal bands still need a visible caret and selection.
+    CellStyle highlight(CellStyle base, CellStyle overlay) => base
+        .merge(overlay)
+        .copyWith(
+          inverse: overlay.inverse ? !base.inverse : overlay.inverseOrNull,
+        );
+
     for (var y = 0; y < size.rows; y++) {
-      final line = y + viewport.top < layout.lines.length
+      final visual = y + viewport.top < layout.lines.length
           ? layout.lines[y + viewport.top]
           : null;
-      final background = line?.row?.kind == RowKind.codeBlock
+      final background = visual?.row?.kind == RowKind.codeBlock
           ? widget.theme.body.merge(widget.theme.code)
+          : visual?.row?.kind == RowKind.heading && !visual!.headingRule
+          ? widget.theme.headingSurface(visual.row!.headingLevel)
           : widget.theme.body;
       for (var x = 0; x < size.cols; x++) {
-        write(x, y, ' ', background);
+        write(
+          x,
+          y,
+          ' ',
+          visual != null && (visual.codeEdgeTop != null || x < visual.blockLeft)
+              ? widget.theme.body
+              : background,
+        );
       }
-      if (line == null) continue;
-      final selectedRange = line.row == null
-          ? (
-              selection.start - line.sourceStart,
-              selection.end - line.sourceStart,
-            )
-          : selectionByRow.putIfAbsent(
-              line.row!,
-              () => (
-                line.row!.displayForSource(selection.start).$1,
-                line.row!.displayForSource(selection.end).$1,
-              ),
-            );
-      for (var x = 0; x < line.prefix.length; x++) {
-        write(x, y, line.prefix[x], background.merge(widget.theme.marker));
+      if (visual == null) continue;
+      if (visual.headingRule) {
+        for (var x = 0; x < visual.blockLeft; x++) {
+          write(
+            x,
+            y,
+            visual.prefix[x],
+            widget.theme.body.merge(widget.theme.marker),
+          );
+        }
+        final glyph = layout.tableRail == '|' ? '-' : '─';
+        for (var x = visual.blockLeft; x < size.cols; x++) {
+          write(
+            x,
+            y,
+            glyph,
+            widget.theme.body.merge(widget.theme.headingDivider),
+          );
+        }
+        continue;
       }
-      for (final glyph in line.glyphs) {
-        var style = glyph.style;
-        final selected =
-            !selection.isCollapsed &&
-            selectedRange.$1 < glyph.end &&
-            selectedRange.$2 > glyph.start;
-        if (selected) style = style.merge(widget.theme.selection);
-        if (widget.focus.hasFocus &&
-            selection.isCollapsed &&
-            caret.row == y + viewport.top &&
-            caret.col == glyph.col) {
-          style = style.merge(widget.theme.caret);
+      if (visual.rule case final rule?) {
+        var x = 0;
+        for (final rune in rule.runes) {
+          write(
+            x++,
+            y,
+            String.fromCharCode(rune),
+            background.merge(widget.theme.tableBorder),
+          );
+        }
+        continue;
+      }
+      if (visual.cells != null) {
+        for (var x = 0; x < visual.prefix.length; x++) {
+          write(x, y, visual.prefix[x], background.merge(widget.theme.marker));
         }
         write(
-          glyph.col,
+          visual.prefix.length,
           y,
-          glyph.text,
-          style,
-          width: glyph.text == ' ' ? 1 : glyph.width,
+          layout.tableLeftRail,
+          background.merge(widget.theme.tableBorder),
         );
-        // Tabs occupy several cells but keep one source grapheme.
-        if (glyph.text == ' ') {
-          for (var dx = 1; dx < glyph.width; dx++) {
-            write(glyph.col + dx, y, ' ', style);
+        for (final cell in visual.fragments) {
+          write(
+            cell.right,
+            y,
+            identical(cell, visual.cells!.last)
+                ? layout.tableRightRail
+                : layout.tableRail,
+            background.merge(widget.theme.tableBorder),
+          );
+        }
+      }
+      if (visual.codeEdgeTop case final top?) {
+        final theme = widget.theme;
+        final eighths = (theme.codePaddingRows * 8).round().clamp(0, 8);
+        final codeColor = background.background;
+        for (var x = 0; x < visual.blockLeft && x < visual.prefix.length; x++) {
+          write(x, y, visual.prefix[x], theme.body.merge(theme.marker));
+        }
+        if (eighths > 0 && codeColor != null) {
+          final full = eighths == 8 || theme.body.background == null;
+          final count = top || full ? eighths : 8 - eighths;
+          final glyph = full ? '█' : '▁▂▃▄▅▆▇█'[count - 1];
+          final style = CellStyle(
+            foreground: top || full ? codeColor : theme.body.background,
+            background: top || full ? theme.body.background : codeColor,
+          );
+          for (var x = visual.blockLeft; x < size.cols; x++) {
+            write(x, y, glyph, style);
+          }
+        }
+        continue;
+      }
+      for (final line in visual.fragments) {
+        if (!line.labelVisible(selection)) continue;
+        if (line.image != null) {
+          for (var x = 0; x < line.prefix.length; x++) {
+            write(x, y, line.prefix[x], background.merge(widget.theme.marker));
+          }
+          continue;
+        }
+        final selectedRange = line.row == null
+            ? (
+                selection.start - line.sourceStart,
+                selection.end - line.sourceStart,
+              )
+            : selectionByRow.putIfAbsent(
+                line.row!,
+                () => (
+                  line.row!.displayForSource(selection.start).$1,
+                  line.row!.displayForSource(selection.end).$1,
+                ),
+              );
+        for (var x = 0; x < line.prefix.length; x++) {
+          write(
+            line.left + x,
+            y,
+            line.prefix[x],
+            (line.left + x < line.blockLeft ? widget.theme.body : background)
+                .merge(widget.theme.marker),
+          );
+        }
+        if (line.headingLabelColumn case final col?) {
+          final label = 'H${line.row!.headingLevel}';
+          final labelBackground = col < line.blockLeft
+              ? widget.theme.body
+              : background;
+          for (var x = 0; x < label.length; x++) {
+            write(
+              col + x,
+              y,
+              label[x],
+              labelBackground.merge(widget.theme.headingIndicator),
+            );
+          }
+        }
+        for (final glyph in line.glyphs) {
+          var style = line.imageLabel == null ? glyph.style : widget.theme.body;
+          final selected =
+              !selection.isCollapsed &&
+              selectedRange.$1 < glyph.end &&
+              selectedRange.$2 > glyph.start;
+          if (selected) style = highlight(style, widget.theme.selection);
+          if (widget.focus.hasFocus &&
+              selection.isCollapsed &&
+              caret.row == y + viewport.top &&
+              caret.col == glyph.col) {
+            style = highlight(style, widget.theme.caret);
+          }
+          write(
+            glyph.col,
+            y,
+            glyph.text,
+            style,
+            width: glyph.text == ' ' ? 1 : glyph.width,
+          );
+          // Tabs occupy several cells but keep one source grapheme.
+          if (glyph.text == ' ') {
+            for (var dx = 1; dx < glyph.width; dx++) {
+              write(glyph.col + dx, y, ' ', style);
+            }
+          }
+        }
+        if (widget.focus.hasFocus &&
+            selection.isCollapsed &&
+            caret.row == y + viewport.top) {
+          if (caret.col == line.endColumn) {
+            write(caret.col, y, ' ', highlight(background, widget.theme.caret));
           }
         }
       }
-      if (widget.focus.hasFocus &&
-          selection.isCollapsed &&
-          caret.row == y + viewport.top) {
-        if (caret.col == line.endColumn) {
-          write(caret.col, y, ' ', background.merge(widget.theme.caret));
+    }
+  }
+}
+
+/// Clips glyphs and pixel placements to the same viewport. Partly scrolled
+/// images keep their original fit, independent of the visible slice.
+class _ClipViewport extends SingleChildRenderObjectWidget {
+  const _ClipViewport({required super.child});
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderClipViewport();
+}
+
+class _RenderClipViewport extends RenderObject
+    implements RenderObjectWithSingleChild {
+  RenderObject? _child;
+  CellBuffer? _scratch;
+  @override
+  RenderObject? get child => _child;
+  @override
+  set child(RenderObject? value) {
+    if (identical(_child, value)) return;
+    if (_child != null) dropChild(_child!);
+    _child = value;
+    if (value != null) adoptChild(value);
+  }
+
+  @override
+  CellSize performLayout(CellConstraints constraints) =>
+      _child?.layout(constraints) ?? constraints.constrain(CellSize.zero);
+  @override
+  CellRect childClipOf(RenderObject child) =>
+      CellRect(offset: CellOffset.zero, size: size);
+  @override
+  void performPaint(CellBuffer buffer, CellOffset offset) {
+    final scratch = _scratch = CellBuffer.acquire(_scratch, size);
+    _child?.paint(scratch, CellOffset.zero);
+    for (var y = 0; y < size.rows; y++) {
+      for (var x = 0; x < size.cols; x++) {
+        final tx = offset.col + x, ty = offset.row + y;
+        if (tx >= 0 &&
+            ty >= 0 &&
+            tx < buffer.size.cols &&
+            ty < buffer.size.rows) {
+          buffer.replayCellFrom(scratch, x, y, tx, ty);
         }
       }
     }
+    buffer.compositeImageRectFrom(
+      scratch,
+      CellRect(offset: CellOffset.zero, size: size),
+      offset,
+    );
   }
 }

@@ -20,16 +20,24 @@ void main() {
     const CellSize(80, 1),
   ]) {
     test('mounts and edits at $size', () {
-      final editor = FlarkEditor(backend,
-          text: '# H\n\n- a [link](http://x.y) b\n\n```\nc\n```\n', caret: 0);
+      final editor = FlarkEditor(
+        backend,
+        text: '# H\n\n- a [link](http://x.y) b\n\n```\nc\n```\n',
+        caret: 0,
+      );
       final controller = FlarkFleuryController(editor);
       final focus = FocusNode();
       final tester = FleuryTester(viewportSize: size);
-      tester.pumpWidget(Theme(
-        data: const ThemeData(),
-        child: FlarkEditorView(
-            controller: controller, autofocus: true, focusNode: focus),
-      ));
+      tester.pumpWidget(
+        Theme(
+          data: const ThemeData(),
+          child: FlarkEditorView(
+            controller: controller,
+            autofocus: true,
+            focusNode: focus,
+          ),
+        ),
+      );
       tester.render();
       tester.type('x');
       tester.render();
@@ -40,13 +48,22 @@ void main() {
       // Click every cell.
       for (var c = 0; c < size.cols; c++) {
         for (var y = 0; y < size.rows; y++) {
-          tester.sendMouse(MouseEvent(
+          tester.sendMouse(
+            MouseEvent(
               button: MouseButton.left,
               kind: MouseEventKind.down,
               col: c,
-              row: y));
-          tester.sendMouse(MouseEvent(
-              button: MouseButton.left, kind: MouseEventKind.up, col: c, row: y));
+              row: y,
+            ),
+          );
+          tester.sendMouse(
+            MouseEvent(
+              button: MouseButton.left,
+              kind: MouseEventKind.up,
+              col: c,
+              row: y,
+            ),
+          );
           tester.render();
         }
       }
@@ -61,23 +78,31 @@ void main() {
 
   test('a wrapped row keeps its rails and never repeats its marker', () {
     for (final (source, first, rest) in [
-      ('> - a very long line of text here\n', '▎ ● ', '▎   '),
+      ('> - a very long line of text here\n', '▎  ●  ', '▎     '),
       ('> - [ ] a very long task line here\n', '▎ [ ] ', '▎     '),
-      ('- a very long plain item that wraps here\n', '● ', '  '),
+      ('- a very long plain item that wraps here\n', ' ●  ', '    '),
     ]) {
       final editor = FlarkEditor(backend, text: source, caret: 0);
       final controller = FlarkFleuryController(editor);
       final layout = CellDocumentLayout(
-          controller, 20, const FlarkCellTheme(), CellWidthPolicy.spec);
+        controller,
+        20,
+        const FlarkCellTheme(),
+        CellWidthPolicy.spec,
+      );
       final wrapped = editor.projection.rows.first;
-      final owned =
-          layout.lines.where((l) => identical(l.row, wrapped)).toList();
+      final owned = layout.lines
+          .where((l) => identical(l.row, wrapped))
+          .toList();
       expect(owned.length, greaterThan(1), reason: '$source did not wrap');
       expect(owned.first.prefix, first);
       for (final line in owned.skip(1)) {
         expect(line.prefix, rest, reason: 'continuation of $source');
-        expect(line.prefix, isNot(contains('[')),
-            reason: 'a wrap must not offer a second checkbox');
+        expect(
+          line.prefix,
+          isNot(contains('[')),
+          reason: 'a wrap must not offer a second checkbox',
+        );
       }
       controller.dispose();
     }

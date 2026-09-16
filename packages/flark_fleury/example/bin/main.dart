@@ -5,18 +5,30 @@ import 'package:flark_tree_sitter/flark.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'package:flark_tree_sitter/highlight_worker.dart';
 import 'package:fleury/fleury.dart';
+import 'package:fleury_widgets/fleury_widgets_web.dart' as widgets;
 import 'package:flark_fleury_example/playground.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   final code = FlarkTreeSitter.fromAnalyzer(CodeAnalyzer());
   final controller = FlarkFleuryController(
-    FlarkEditor(createParseBackend(), text: sample, codeEditing: code),
+    FlarkEditor(
+      createParseBackend(),
+      text: args.contains('--headings') ? headingSample : sample,
+      codeEditing: code,
+    ),
     highlightWorker: await CodeHighlightWorker.start(),
   );
   try {
     await runApp(
       Playground(
         controller: controller,
+        imagePreviewBuilder: (context, resource, uri) =>
+            resource.destination == 'demo.png'
+            ? widgets.Image.file(
+                'assets/demo.png',
+                semanticLabel: resource.text,
+              )
+            : FlarkImagePreview(uri: uri, label: resource.text),
         onOpenLink: !(Platform.isMacOS || Platform.isLinux)
             ? null
             : (uri) {
