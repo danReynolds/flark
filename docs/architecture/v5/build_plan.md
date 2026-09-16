@@ -52,11 +52,16 @@ The [macOS continuation](macos_review_2026_09_08.md) now records a complete
 p99 miss. Rapid native double-space input also needs attribution. The later
 profiling-only change adds timing phases without changing the acceptance gates.
 
-The [revisited priorities](priorities_after_theming.md) put foreground native
-qualification and real consumer adoption next. Fleury remains the next major
-implementation milestone: its real host and `flark_fleury/example` deliver T4
-of the [theming plan](theming_controls_plan.md). Language and theme-option
-expansion are deferred while completing those consumer and platform proofs.
+The [Fleury closeout](fleury_support_closeout_2026_09_16.md) records the merged
+second host, tables, image previews, heading hierarchy, theming example and
+clean Git dependency installation. It supersedes the earlier priorities that
+still described Fleury as unimplemented. Physical terminal/IME and sustained
+presentation performance remain separate qualification work.
+
+The [production audit](production_audit_2026_09_16.md) now takes priority:
+reconcile current-main findings, measure both hosts, finish native qualification,
+then qualify real consumer use and release artifacts. Language and theme-option
+expansion remain deferred while completing those proofs.
 
 The [everyday qualification review](everyday_review_2026_09_07.md) records the
 next working-tree checkpoint: actual Tree-sitter services in the native

@@ -1,0 +1,5 @@
+{"case":"backspace","before":"```","applied":false,"source":"```","caret":3,"rejection":"unsupportedEdit"}
+{"case":"backspace","before":"[](/url)","applied":false,"source":"[](/url)","caret":8,"rejection":"unsupportedEdit"}
+{"case":"backspace","before":"| a |\n| - |\n| b |\n\n","applied":true,"source":"| a |\n| - |\n| b |\n","caret":18,"rejection":null}
+{"case":"missing table cell","requestedRow":4,"actualRow":3,"source":"| a | b | c |\n| - | - | - |\n| x Z|\n"}
+{"case":"missing table cell","requestedRow":5,"actualRow":3,"source":"| a | b | c |\n| - | - | - |\n| x Z|\n"}

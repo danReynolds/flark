@@ -101,7 +101,7 @@ class _EditorState extends State<FlarkEditorView>
   int _linkRevision = -1, _linkEpoch = 0;
   ({InlineResource resource, int revision, bool open})? _pressedLink;
   FlarkResourceSession? _resourceSession;
-  bool _dialogOpen = false;
+  bool get _dialogOpen => _resourceSession != null;
 
   bool get _linkActive =>
       _link != null &&
@@ -218,7 +218,6 @@ class _EditorState extends State<FlarkEditorView>
       apply: (command) =>
           active() && editor.apply(command, expectedRevision: revision),
     );
-    _dialogOpen = true;
     _resourceSession = session;
     try {
       final presenter = widget.presentResourceEditor;
@@ -232,9 +231,12 @@ class _EditorState extends State<FlarkEditorView>
       }
     } finally {
       session.close();
-      _resourceSession = null;
-      _dialogOpen = false;
-      if (mounted && identical(editor, _editor)) _focus.requestFocus();
+      // Completion belongs to this presentation, not whichever document or
+      // presentation replaced it while its custom future was pending.
+      if (identical(_resourceSession, session)) {
+        _resourceSession = null;
+        if (mounted && identical(editor, _editor)) _focus.requestFocus();
+      }
     }
   }
 
@@ -266,6 +268,7 @@ class _EditorState extends State<FlarkEditorView>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       _resourceSession?.close();
+      _resourceSession = null;
       _link = null;
       oldWidget.controller.editor.cancelComposition();
       oldWidget.controller.removeListener(_changed);
@@ -277,7 +280,6 @@ class _EditorState extends State<FlarkEditorView>
       // one. A presenter that never completed must not wedge the new editor's
       // link editor either.
       _viewport.layout = null;
-      _dialogOpen = false;
     }
     if (oldWidget.focusNode != widget.focusNode) {
       _detachFocus(oldWidget.focusNode);
@@ -285,6 +287,7 @@ class _EditorState extends State<FlarkEditorView>
     }
     if (oldWidget.readOnly != widget.readOnly) {
       _resourceSession?.close();
+      _resourceSession = null;
       _link = null;
       _editor.cancelComposition();
       _resetInput();

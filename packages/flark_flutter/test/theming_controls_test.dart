@@ -219,6 +219,57 @@ void main() {
   }
 
   testWidgets(
+    'document replacement retires a pending resource presenter independently',
+    (t) async {
+      final first = controller('first'), second = controller('second');
+      final sessions = <FlarkResourceSession>[];
+      final completions = <Completer<void>>[];
+      Future<void> show(FlarkController value) async {
+        await t.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: FlarkEditorWidget(
+                controller: value,
+                autofocus: true,
+                presentResourceEditor: (_, session) {
+                  sessions.add(session);
+                  final done = Completer<void>();
+                  completions.add(done);
+                  return done.future;
+                },
+              ),
+            ),
+          ),
+        );
+        await t.pump();
+      }
+
+      await show(first);
+      await t.tap(find.byTooltip('Link'));
+      expect(sessions, hasLength(1));
+      await show(second);
+      await t.tap(find.byTooltip('Link'));
+      expect(sessions, hasLength(2));
+      expect(sessions.first.active, isFalse);
+      completions.first.complete();
+      await t.pump();
+      await t.tap(find.byTooltip('Link'));
+      expect(
+        sessions,
+        hasLength(2),
+        reason: 'the second presentation still owns the dialog',
+      );
+      expect(sessions.last.active, isTrue);
+      completions.last.complete();
+      await t.pump();
+      await t.tap(find.byTooltip('Link'));
+      expect(sessions, hasLength(3));
+      completions.last.complete();
+      await close(t, [first, second]);
+    },
+  );
+
+  testWidgets(
     'old popover and presenter actions cannot edit a changed selection',
     (t) async {
       final c = controller('[hello](/old) tail', 3);

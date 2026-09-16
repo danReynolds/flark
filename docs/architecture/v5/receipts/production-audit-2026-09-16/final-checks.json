@@ -1,0 +1,25 @@
+{
+  "base": "50e13d43d449bf1aef65780f39639d82606237e5",
+  "branch": "codex/production-audit",
+  "browserCandidate": "http://localhost:8820/revisions/9285a2689efb/",
+  "CI": "skipped",
+  "independentReview": false,
+  "tests": {
+    "kernel": 742,
+    "flutterHost": 813,
+    "fleuryHost": 92,
+    "nativeParser": 49,
+    "transportParityCases": 1322
+  },
+  "sourceSha256": {
+    "native/flark_parse/src/model.rs": "efa1767883a1419b242c327f111849664de1d2f016f45508e742a5af981aa4d8",
+    "native/flark_parse/tests/regressions.rs": "976d81e198c2d8a3b1119cdbf1d32e1b9276d8d8b77a024a649f735e5019e656",
+    "native/flark_parse/examples/perf_audit.rs": "fd1c52d1b2a817fd1dabd870376e3589c2f4fb9fc13bf24447445fd03c623e29",
+    "packages/flark/lib/assets/wasm/flark_parse.wasm": "0e4a31a9ff9d1d89ac9ce4862eaa78ab0a7a89f8280f1fcf93440127aee3dace",
+    "packages/flark_fleury/lib/src/editor_view.dart": "188806954bd05848a173f33573c3420a1c50ea3df57fb146291f565d6b02d439",
+    "packages/flark_fleury/test/resources_test.dart": "9d8cc92abf21408bc12e2a29158635641052091d6b24bc8ab1ad8db5c8d5510d",
+    "packages/flark_fleury/tool/perf_audit.dart": "504fb4089fab384b0e4c9a41da3ed6fcd86051fcbcf02b7607d4283b211b9c26",
+    "packages/flark_flutter/lib/src/editor.dart": "693781614e8b5748062d13900fceb6c45e5c3a5b5b1bcdb0b27af2ee764384d9",
+    "packages/flark_flutter/test/theming_controls_test.dart": "d4c01cc133341fea5ed509a2641e85a27b2f11687874cff8a610a6094bd7af89"
+  }
+}
