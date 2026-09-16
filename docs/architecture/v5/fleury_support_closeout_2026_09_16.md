@@ -38,5 +38,33 @@ uses character-cell wrapping; word-aware wrapping is a possible follow-up.
 Image alignment is currently centered contain-fit, and custom builders remain
 the extension point for application assets/loading/presentation.
 
-CI is intentionally skipped at the owner's request. Final local receipts and
-merge links are appended after clean-checkout verification.
+## Local closeout receipts
+
+Clean worktree at Flark `d33b742` with no ignored overrides; all Fleury package
+roots resolved to Git cache revision `41967d499a6bd0fe53e5f5f07b31649df0adcc83`.
+
+- Fleury host: analysis clean; 91 tests passed. Example: analysis clean; six
+  tests passed.
+- Flutter host: analysis clean; 812 tests passed. Example: analysis clean;
+  31 tests passed. This includes the shared block-alignment pixel/edit fixture.
+- Fleury web compiled with both Wasm engines and its bundled image. The clean
+  candidate `/revisions/8789d010bf12/` was inspected in the browser; checkbox
+  activation/undo were verified again with the Git-installed framework.
+- `dart build cli --target bin/main.dart --output build/native` produced a
+  terminal bundle containing both native libraries. It rendered the sample in
+  a background PTY and exited cleanly through Ctrl+Q. `dart compile exe` does
+  not package build-hook assets on this SDK; the CLI bundler is required.
+- Framework full `fleury_dev check` passed across packages, Chrome, docs
+  examples, dart2js and all 64 terminal/remote integration cases. On final
+  commit `41967d49`, the core suite also passed 3,564 tests with repaint-cache
+  verification enabled (one existing skip). The diff property oracle follows
+  visible placement semantics; its earlier recorded-placement expectation was
+  corrected and rerun before that final full core pass.
+- Framework all eight fast gates, terminal wire gate and live serve-wire gate
+  passed without baseline changes. The regenerated embedded client passes its
+  freshness check. Analysis has no errors/warnings; pre-existing informational
+  lints remain in several framework packages.
+
+Framework PR: [Fleury #260](https://github.com/danReynolds/fleury/pull/260).
+CI is intentionally skipped at the owner's request. These receipts establish
+local host behavior and dependency installation, with the limits above.

@@ -118,7 +118,7 @@ The example shows native and browser asset loading for both services.
 ## Develop and run
 
 The host and example pin Fleury's companion packages to reviewed Git revision
-`41967d499a6bd0fe53e5f5f07b31649df0adcc83` (rendering closeout). A sibling checkout
+`41967d499a6bd0fe53e5f5f07b31649df0adcc83` ([Fleury #260](https://github.com/danReynolds/fleury/pull/260)). A sibling checkout
 is no longer required. The committed `dependency_overrides.fleury` keeps the
 companions' hosted core constraint on that same revision until publication.
 An application consuming this unpublished host must copy that core override
@@ -136,6 +136,12 @@ cd example
 dart pub get
 dart run bin/main.dart
 ```
+
+To package the terminal example with its native libraries on Dart 3.12+, run
+`dart build cli --target bin/main.dart --output build/native` from `example`.
+Run `build/native/bundle/bin/main` from that directory so the sample image's
+relative asset path resolves. Copy the whole bundle when distributing it;
+`dart compile exe` does not include native build-hook assets on this SDK.
 
 For framework development only, `dart tool/use_local_fleury.dart /path/to/fleury`
 writes ignored local overrides. Remove the generated host/example

@@ -166,10 +166,7 @@ class _ResourceDialogState extends State<FlarkResourceDialog> {
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 if (widget.session.resource != null)
-                  Button(
-                    text: 'Remove',
-                    onPressed: () => submit(remove: true),
-                  ),
+                  Button(text: 'Remove', onPressed: () => submit(remove: true)),
                 Button(text: 'Save', onPressed: submit),
               ],
             ),
