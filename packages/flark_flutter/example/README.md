@@ -146,6 +146,23 @@ flutter test
 ```
 
 Functional, browser-smoke, native-input and performance evidence are separate.
+
+For the attended macOS accessibility replacement comparison, run:
+
+```sh
+flutter run --profile -d macos --target=integration_test/semantics_native_probe.dart
+```
+
+Inspect the app with a native accessibility client and activate each Start
+button. It runs 50 mount/edit/unmount cycles and 1,000 checked edits per host,
+comparing a standard `TextField` with Flark. It requires OS-requested semantics,
+enabled frames and uninterrupted foreground; it uses no saved drafts. Preserve
+the `NATIVE_AX_RESULT` records and check the process log for AXTree errors.
+This normal-app diagnostic avoids the widget runner's forced semantics and
+its treatment of a newly OS-owned semantics handle as a test leak. It does not
+replace VoiceOver usability or physical IME testing. Rebuild the ordinary app
+with `flutter build macos --profile --target=lib/main.dart` afterward.
+
 See the repository's [D0 gate](../../../DOGFOOD_MILESTONE.md) and
 [implementation review](../../../docs/architecture/v5/implementation_review_2026_09_04.md).
 The [continuation record](../../../docs/architecture/v5/native_session_2026_09_04.md)
