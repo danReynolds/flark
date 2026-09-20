@@ -19,6 +19,12 @@ void main() {
         controller.dispose();
       });
       tester.pumpWidget(Playground(controller: controller));
+      await tester.invokeSemanticAction(
+        SemanticAction.activate,
+        role: SemanticRole.button,
+        label: 'Customize theme',
+      );
+      tester.render();
       final initialSelection = editor.selection;
 
       double luminance(Color color) {
@@ -131,6 +137,12 @@ void main() {
         controller.dispose();
       });
       tester.pumpWidget(Playground(controller: controller));
+      await tester.invokeSemanticAction(
+        SemanticAction.activate,
+        role: SemanticRole.button,
+        label: 'Customize theme',
+      );
+      tester.render();
       final selection = editor.selection;
       await tester.invokeSemanticAction(
         SemanticAction.activate,
@@ -257,6 +269,12 @@ void main() {
         controller.dispose();
       });
       tester.pumpWidget(Playground(controller: controller));
+      await tester.invokeSemanticAction(
+        SemanticAction.activate,
+        role: SemanticRole.button,
+        label: 'Customize theme',
+      );
+      tester.render();
       int copyRow() => tester
           .renderToString()
           .split('\n')
@@ -287,7 +305,19 @@ void main() {
       expect(tester.semantics().byLabel('Heading color').single.value, 'Red');
       for (final kind in [MouseEventKind.down, MouseEventKind.up]) {
         tester.sendMouse(
-          MouseEvent(kind: kind, button: MouseButton.left, col: 5, row: before),
+          MouseEvent(
+            kind: kind,
+            button: MouseButton.left,
+            col:
+                tester
+                    .semantics()
+                    .byLabel('Copy theme Dart')
+                    .single
+                    .bounds!
+                    .left +
+                2,
+            row: before,
+          ),
         );
         tester
             .render(); // focus/blur can change layout between press and release
@@ -309,17 +339,14 @@ void main() {
         controller.dispose();
       });
       tester.pumpWidget(Playground(controller: controller));
+      await tester.invokeSemanticAction(
+        SemanticAction.activate,
+        role: SemanticRole.button,
+        label: 'Customize theme',
+      );
+      tester.render();
       expect(tester.renderToString(), contains('Flark / Fleury'));
       final selection = editor.selection;
-      if (size.cols < 64) {
-        final result = await tester.invokeSemanticAction(
-          SemanticAction.activate,
-          role: SemanticRole.button,
-          label: 'Customize theme',
-        );
-        expect(result.status, SemanticActionInvocationStatus.completed);
-        expect(tester.renderToString(), contains('THEME'));
-      }
       await tester.invokeSemanticAction(
         SemanticAction.activate,
         role: SemanticRole.button,
@@ -332,7 +359,7 @@ void main() {
         await tester.invokeSemanticAction(
           SemanticAction.activate,
           role: SemanticRole.button,
-          label: 'Back to editor',
+          label: 'Close theme',
         );
         tester.render();
       }

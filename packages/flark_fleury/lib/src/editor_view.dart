@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flark/flark.dart';
 import 'package:flark/resources.dart';
 import 'package:fleury/fleury_core.dart';
+import 'package:fleury_widgets/fleury_widgets_web.dart'
+    show Select, SelectOption;
+import 'package:flark_tree_sitter/flark_tree_sitter.dart'
+    show codeLanguages, codeLanguageName;
 
 import 'cell_layout.dart';
 import 'image_previews.dart';
@@ -13,6 +17,7 @@ import 'resource_controls.dart';
 part 'surface.dart';
 part 'link_anchor.dart';
 part 'interactive_semantics.dart';
+part 'toolbar.dart';
 
 /// A viewport over a borrowed controller. Give it bounded width and height.
 /// Escape leaves editing focus; Tab indents in code/lists and traverses elsewhere.
@@ -24,6 +29,7 @@ class FlarkEditorView extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.readOnly = false,
+    this.showToolbar = false,
     this.semanticLabel = 'Markdown editor',
     this.onOpenLink,
     this.baseUri,
@@ -37,6 +43,9 @@ class FlarkEditorView extends StatefulWidget {
   final FlarkCellTheme? theme;
   final FocusNode? focusNode;
   final bool autofocus, readOnly;
+
+  /// Opt into the host's formatting and fenced-code language controls.
+  final bool showToolbar;
   final String semanticLabel;
   final void Function(Uri)? onOpenLink;
   final Uri? baseUri;
@@ -627,12 +636,22 @@ class _EditorState extends State<FlarkEditorView>
   }
 
   @override
-  Widget build(BuildContext context) => Stack(
-    children: [
-      _buildEditor(context),
-      if (_linkActive) _buildLinkPopover(context),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final surface = Stack(
+      children: [
+        _buildEditor(context),
+        if (_linkActive) _buildLinkPopover(context),
+      ],
+    );
+    return Column(
+      children: [
+        widget.showToolbar && !widget.readOnly
+            ? _buildToolbar()
+            : const SizedBox(height: 0),
+        Expanded(key: const ValueKey('editor-surface'), child: surface),
+      ],
+    );
+  }
 
   Widget _buildLinkPopover(BuildContext context) {
     final epoch = _linkEpoch, resource = _link!;

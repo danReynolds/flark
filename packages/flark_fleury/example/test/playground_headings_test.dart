@@ -19,6 +19,12 @@ void main() {
       controller.dispose();
     });
     tester.pumpWidget(Playground(controller: controller));
+    await tester.invokeSemanticAction(
+      SemanticAction.activate,
+      role: SemanticRole.button,
+      label: 'Customize theme',
+    );
+    tester.render();
     final selection = editor.selection;
     Future<void> press(String label) async {
       await tester.invokeSemanticAction(

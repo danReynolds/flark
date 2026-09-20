@@ -24,6 +24,7 @@ final controller = FlarkFleuryController(editor);
 final view = Expanded(child: FlarkEditorView(
   controller: controller,
   autofocus: true,
+  showToolbar: true,
 ));
 // Dispose controller after the view unmounts. The editor is borrowed.
 ```
@@ -98,7 +99,19 @@ they never enter copied Markdown, source offsets, selection or undo history.
 Arrow navigation skips dividers, and clicking a divider places the caret in its
 heading. Wrapped headings retain the same text origin while focused or selected.
 
-The example's **Heading styles** disclosure edits each level's color, bold,
+Set `showToolbar: true` to opt into the built-in composer controls (off by
+default for existing embedded views): paragraph/H1–H6, bold, italic,
+strikethrough, inline code, link/image forms, Undo/Redo and source mode. Inside
+a fence it adds the shared 14-language catalog, Automatic and Plain text.
+Language choices persist through `SetCodeLanguage` and participate in Undo.
+An open picker is invalidated when its source or selection changes. Read-only
+views omit all authoring controls. `thematicBreak` styles horizontal rules,
+which retain their containing block's gutter and exact Markdown source.
+
+The example opens as a large document composer with New document, Copy Markdown
+and optional Customize theme controls. New document can be undone. The theme
+panel moves above the document on narrow windows; the editor stays mounted.
+Its **Heading styles** disclosure edits each level's color, bold,
 italic, underline, band, divider and label, plus the global gutter.
 **Copy theme Dart** includes the resolved six-level palette and overrides.
 **Reset theme** restores them without changing the draft.
@@ -161,8 +174,7 @@ page; it does not stream a remote terminal or Flutter app.
 ## Current boundaries
 
 See the [Markdown coverage audit](../../docs/architecture/v5/markdown_coverage_2026_09_20.md)
-for syntax support and remaining presentation gaps, including horizontal rules
-and footnotes.
+for syntax support and remaining presentation gaps, including footnotes.
 
 - Paragraphs, inline styles, headings, lists/tasks, quotes and code bodies.
   Pointer/keyboard selection, grapheme deletion, cell wrapping, scrolling,

@@ -30,6 +30,8 @@ void main() {
       );
       await t.pumpWidget(MaterialApp(home: ThemePlayground(backend: backend)));
       await t.pump();
+      await t.tap(find.byTooltip('Customize theme'));
+      await t.pump();
       expect(find.byType(FlarkEditorWidget), findsOneWidget);
       final editor = t
           .widget<FlarkEditorWidget>(
@@ -106,8 +108,11 @@ void main() {
     addTearDown(t.view.resetDevicePixelRatio);
     await t.pumpWidget(MaterialApp(home: ThemePlayground(backend: backend)));
     await t.pump();
+    expect(find.text('Customize'), findsNothing);
+    expect(find.byTooltip('Customize theme'), findsOneWidget);
+    await t.tap(find.byTooltip('Customize theme'));
+    await t.pump();
     expect(find.text('Customize'), findsOneWidget);
-    expect(find.text('Live editor'), findsOneWidget);
     expect(find.text('Read-only preview'), findsNothing);
     expect(find.byType(FlarkEditorWidget), findsOneWidget);
     expect(find.byTooltip('Link'), findsOneWidget);
@@ -124,6 +129,8 @@ void main() {
       addTearDown(t.view.resetPhysicalSize);
       addTearDown(t.view.resetDevicePixelRatio);
       await t.pumpWidget(MaterialApp(home: ThemePlayground(backend: backend)));
+      await t.pump();
+      await t.tap(find.byTooltip('Customize theme'));
       await t.pump();
       final host = find.byKey(const ValueKey('playground-editor'));
       final editor = t.widget<FlarkEditorWidget>(host).controller;

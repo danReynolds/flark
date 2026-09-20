@@ -19,7 +19,7 @@ and preserving its source are weaker claims than a finished editing UI for it.
 | Links, reference links and autolinks | Supported | Supported | Open/Edit/Remove controls, keyboard access, application opener callbacks and relative-resource resolution. |
 | Raster images | Supported | Supported | Bounded previews, loading/error states, resource editing and custom resolution/presentation. Fleury previews use reserved cell rows and centered contain-fit; terminal graphics depend on protocol support. |
 | GFM pipe tables | Supported | Supported | Aligned/wrapped cells, headers/borders, cell navigation, missing trailing cell insertion and Undo. Not a spreadsheet UI for inserting/deleting/reordering columns and rows. |
-| Horizontal rules | Painted | **Gap: blank row** | Shared kernel recognizes the thematic break; Fleury currently does not paint its rule. Confirmed with an actual cell-buffer probe. |
+| Horizontal rules | Painted | Painted | Fleury now paints a themed rule within its container gutter; source and caret mapping remain shared. |
 | Footnotes | Partial | Partial | Recognized and source preserved. Reference markers remain literal and definition bodies stay in document order; no dedicated numbering, superscript, jump/backlink or footnote-editor UI. |
 | Raw inline/block HTML | Literal source | Literal source | HTML is preserved as editable text, not rendered or executed as browser HTML. |
 | Math, diagrams, front matter, definition lists, custom directives | No dedicated support | No dedicated support | These extensions are not enabled in the parser; their text may still match ordinary CommonMark syntax. |
@@ -33,9 +33,9 @@ Image previews do not imply SVG or arbitrary embedded HTML rendering.
 The single Tree-sitter integration covers **14 languages** for highlighting and
 snippet indentation: Dart, JavaScript, TypeScript, Python, Ruby, Rust, Go, JSON,
 YAML, CSS, Bash, HTML, XML and SQL. Automatic detection is conservative; manual
-language selection is authoritative. Flutter supplies a language picker;
-Fleury currently uses explicit fence labels/source editing or the shared
-`SetCodeLanguage` command, without an equivalent built-in picker.
+language selection is authoritative. Both hosts now supply language pickers using the same catalog and shared
+`SetCodeLanguage` command. Fleury opts into its built-in controls with
+`showToolbar: true`; its composer example enables them.
 Unsupported/unrecognized languages and
 oversized snippets use plain text and ordinary whitespace editing.
 
@@ -62,24 +62,25 @@ highlighter to maintain.
   example testing.
 - A temporary Fleury mounted probe confirmed Setext headings, literal HTML,
   literal footnote references/definition text, and the missing horizontal-rule
-  paint. Its source and output are retained with the review receipts. It checked
+  paint in the initial audit (fixed in the composer follow-up). Its source and output are retained with the review receipts. It checked
   source preservation and observed real cells; it is not a permanent test that
   locks in the missing rendering as intended behavior.
 - The [native performance results](native_attended_2026_09_20.md) apply to the
   measured Flutter/macOS workbench. They do not establish Fleury terminal frame
   budgets, physical IME behavior, or all accessibility journeys.
 
-## Priorities
+## Composer follow-up and priorities
 
-1. Close Fleury's horizontal-rule presentation gap with a visible-rule and
-   caret/selection regression.
-2. Decide the intended footnote experience before treating it as fully supported;
-   parser recognition alone is insufficient.
-   Add a Fleury language picker if matching Flutter's code controls is a goal.
-3. Finish ordinary-app OS-input/lifecycle, VoiceOver and physical IME/device
-   qualification, plus Fleury terminal/protocol and large-document profiling.
-4. Treat math/diagrams/custom directives and richer table manipulation as explicit
-   feature choices, not implied support from the Markdown label.
+The authorized composer follow-up closes both small Fleury gaps: horizontal-rule
+paint and a built-in code-language picker. Both existing playgrounds now open
+as document composers with formatting toolbars and optional theme panels.
+Blank documents accept a heading choice before typing. The shared kernel
+remains the only command/history owner. See [the composer review](composer_2026_09_20.md).
+
+The owner's updated priorities explicitly defer ordinary-app native/device
+qualification, table structure controls and dedicated footnote UX. They remain
+open work, not release qualifications waived by the composer improvements.
+Math, diagrams and custom directives remain separate feature decisions.
 
 The core defaults to a 16 KiB live-rendering budget; the measured Flutter workbench
 uses the separate 32 KiB live / 256 KiB source candidate. Larger accepted source

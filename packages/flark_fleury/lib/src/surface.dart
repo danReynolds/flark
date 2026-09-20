@@ -324,6 +324,18 @@ class _RenderSurface extends RenderObject implements CaretHost {
             );
           }
         }
+        if (line.row?.kind == RowKind.thematicBreak) {
+          final glyph = layout.tableRail == '|' ? '-' : '─';
+          var style = background.merge(widget.theme.thematicBreak);
+          if (!selection.isCollapsed &&
+              selection.start < line.row!.sourceEnd &&
+              selection.end > line.row!.sourceStart) {
+            style = highlight(style, widget.theme.selection);
+          }
+          for (var x = line.prefix.length; x < size.cols; x++) {
+            write(x, y, glyph, style);
+          }
+        }
         for (final glyph in line.glyphs) {
           var style = line.imageLabel == null ? glyph.style : widget.theme.body;
           final selected =

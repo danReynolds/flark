@@ -4,13 +4,17 @@ Run `flutter run -d macos --profile`, or use the web build instructions below.
 Open **Theme playground** with the palette button in the workbench. On the web,
 `?theme=1` opens the playground directly.
 
-The playground puts a theming panel beside one live editor. On narrow screens,
-the panel sits above the editor. Its sample document is separate from the
+The playground opens as a composer: a large document surface, a formatting bar
+with paragraph/H1–H6, bold, italic, strikethrough, inline code, links/images,
+Undo/Redo, source mode and the active fence's language picker. New document is
+undoable; Copy Markdown exports the exact source. Customize theme opens an
+optional panel beside the document (above it on narrow screens), preserving
+the editor, selection and history. Its sample document is separate from the
 workbench's saved Draft and Tour documents.
 
 Try this tour:
 
-1. Choose Light, Dark or Notebook, then click the link-color or app-accent swatch
+1. Open Customize theme. Choose Light, Dark or Notebook, then click the link-color or app-accent swatch
    to open a visual picker. The wheel, opacity slider and hex field update live.
 2. Explore Typography, Blocks and Syntax colors using the Customize selector.
    Each setting updates the editor immediately.

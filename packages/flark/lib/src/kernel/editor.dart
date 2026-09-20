@@ -1344,6 +1344,9 @@ final class FlarkEditor {
   bool _setHeading(int level) {
     if (level < 0 || level > 6) return false;
     final row = _doc.caretRow;
+    if (row.kind == RowKind.blank && selection.isCollapsed) {
+      return level > 0 && _insert('${'#' * level} ', typing: false);
+    }
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
       return false;
     }

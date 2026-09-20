@@ -62,6 +62,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   final _surfaceKey = GlobalKey();
   final _scroll = ScrollController();
   late FocusNode _focus;
+  (FlarkController, int, FlarkSelection)? _toolbarMenuTarget;
   late final EditorClipboardBinding _clipboardBinding;
   TextInputConnection? _connection;
   _InputClient? _client;
@@ -675,7 +676,6 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       overrides: widget.theme,
       bodyStyle: widget.style,
     );
-    final menuController = c, menuRevision = e.revision;
     final codeRow = !e.sourceMode ? e.document.rowAt(e.selection.extent) : null;
     final info = codeRow?.fenced == true
         ? e.source.substring(codeRow!.codeInfoStart, codeRow.codeInfoEnd)
@@ -685,6 +685,25 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         ? e.codeEditing?.resolveLanguage(codeRow!.text, info)
         : null;
     final detectedLabel = codeLanguages[detected];
+    final inlineFormatting =
+        codeRow != null && codeRow.kind != RowKind.codeBlock;
+    final headingFormatting =
+        codeRow != null &&
+        (codeRow.kind == RowKind.paragraph ||
+            codeRow.kind == RowKind.heading ||
+            (codeRow.kind == RowKind.blank && e.selection.isCollapsed));
+    void captureMenu() => _toolbarMenuTarget = (c, e.revision, e.selection);
+    bool menuActive() {
+      final target = _toolbarMenuTarget;
+      return mounted &&
+          target != null &&
+          identical(c, target.$1) &&
+          !widget.readOnly &&
+          !e.sourceMode &&
+          e.revision == target.$2 &&
+          e.selection == target.$3;
+    }
+
     final window = e.sourceMode
         ? SourceWindow.at(c.text, e.selection.extent)
         : null;
@@ -701,14 +720,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 if (codeRow?.fenced == true)
                   PopupMenuButton<String>(
                     tooltip: 'Code language',
+                    onOpened: captureMenu,
                     initialValue: codeLanguage,
                     onSelected: (language) {
-                      if (identical(c, menuController) &&
-                          language != codeLanguage) {
-                        menuController.command(
-                          SetCodeLanguage(language),
-                          expectedRevision: menuRevision,
-                        );
+                      if (menuActive() && language != codeLanguage) {
+                        _command(SetCodeLanguage(language));
                       }
                       _focus.requestFocus();
                     },
@@ -743,23 +759,84 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                       ),
                     ),
                   ),
+                PopupMenuButton<int>(
+                  tooltip: 'Paragraph style',
+                  onOpened: captureMenu,
+                  enabled: headingFormatting,
+                  initialValue: codeRow?.headingLevel ?? 0,
+                  onSelected: (level) {
+                    if (menuActive()) _command(SetHeadingLevel(level));
+                    _focus.requestFocus();
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 0, child: Text('Paragraph')),
+                    for (var level = 1; level <= 6; level++)
+                      PopupMenuItem(
+                        value: level,
+                        child: Text('Heading $level'),
+                      ),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          codeRow?.kind == RowKind.heading
+                              ? 'Heading ${codeRow!.headingLevel}'
+                              : 'Paragraph',
+                        ),
+                        const Icon(Icons.arrow_drop_down, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
                 IconButton(
                   tooltip: 'Bold',
                   isSelected: e.typingContext & Style.strong != 0,
-                  onPressed: () {
-                    _command(const ToggleStyle(Style.strong));
-                    _focus.requestFocus();
-                  },
+                  onPressed: !inlineFormatting
+                      ? null
+                      : () {
+                          _command(const ToggleStyle(Style.strong));
+                          _focus.requestFocus();
+                        },
                   icon: const Icon(Icons.format_bold, size: 20),
                 ),
                 IconButton(
                   tooltip: 'Italic',
                   isSelected: e.typingContext & Style.emphasis != 0,
-                  onPressed: () {
-                    _command(const ToggleStyle(Style.emphasis));
-                    _focus.requestFocus();
-                  },
+                  onPressed: !inlineFormatting
+                      ? null
+                      : () {
+                          _command(const ToggleStyle(Style.emphasis));
+                          _focus.requestFocus();
+                        },
                   icon: const Icon(Icons.format_italic, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Strikethrough',
+                  isSelected: e.typingContext & Style.strikethrough != 0,
+                  onPressed: !inlineFormatting
+                      ? null
+                      : () {
+                          _command(const ToggleStyle(Style.strikethrough));
+                          _focus.requestFocus();
+                        },
+                  icon: const Icon(Icons.format_strikethrough, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Inline code',
+                  isSelected: e.typingContext & Style.code != 0,
+                  onPressed: !inlineFormatting
+                      ? null
+                      : () {
+                          _command(const ToggleStyle(Style.code));
+                          _focus.requestFocus();
+                        },
+                  icon: const Icon(Icons.code, size: 20),
                 ),
                 IconButton(
                   tooltip: 'Link',
