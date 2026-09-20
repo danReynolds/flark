@@ -689,9 +689,12 @@ class RenderFlarkSurface extends RenderBox
     _contentHeight = y + tableHeight + _padding;
   }
 
-  (int, int) _display(int source) {
+  (int, int) _display(int source, {int? tableCell}) {
     if (_snapshot is FlarkLiveSnapshot) {
-      final p = (_snapshot as FlarkLiveSnapshot).document.displayOf(source);
+      final p = (_snapshot as FlarkLiveSnapshot).projection.displayForSource(
+        source,
+        tableCell: tableCell,
+      )!;
       return (p.row, p.offset);
     }
     for (var i = _rows.length - 1; i >= 0; i--) {
@@ -708,7 +711,10 @@ class RenderFlarkSurface extends RenderBox
   Rect get caretRect {
     if (_layoutWidth == null) return Rect.zero;
     _prepareRows();
-    final (index, offset) = _display(_snapshot.selection.extent);
+    final (index, offset) = _display(
+      _snapshot.selection.extent,
+      tableCell: _snapshot.selection.tableCell,
+    );
     final row = _rows[index];
     final p = row.painter.getOffsetForCaret(
       TextPosition(offset: offset),
@@ -796,9 +802,24 @@ class RenderFlarkSurface extends RenderBox
     return controller.command(const ToggleTask());
   }
 
-  void place(Offset point, {bool extend = false}) {
+  bool place(Offset point, {bool extend = false}) {
+    _prepareRows();
+    final layout = _rowAt(point), row = layout.row;
+    if (row != null) {
+      final relative = point - layout.origin;
+      final position = layout.painter.getPositionForOffset(relative);
+      final caret = layout.painter.getOffsetForCaret(position, _caretPrototype);
+      return controller.command(
+        PlaceCaret(
+          row.index,
+          position.offset,
+          leadingHalf: relative.dx > caret.dx,
+          extend: extend,
+        ),
+      );
+    }
     final target = sourceAt(point);
-    controller.command(
+    return controller.command(
       SetSelection(extend ? controller.editor.selection.base : target, target),
     );
   }
@@ -891,7 +912,10 @@ class RenderFlarkSurface extends RenderBox
 
   bool vertical(bool down, {bool extend = false, double? goalX}) {
     final caret = caretRect;
-    final (index, _) = _display(_snapshot.selection.extent);
+    final (index, _) = _display(
+      _snapshot.selection.extent,
+      tableCell: _snapshot.selection.tableCell,
+    );
     final row = _rows[index];
     final lines = row.painter.computeLineMetrics();
     final localY = caret.top - row.origin.dy;
@@ -914,15 +938,16 @@ class RenderFlarkSurface extends RenderBox
       y = down ? row.rect.bottom + .5 : row.rect.top - .5;
     }
     final x = goalX ?? caret.left;
-    final target = sourceAt(Offset(x, y));
-    return controller.command(
-      SetSelection(extend ? controller.editor.selection.base : target, target),
-    );
+    return place(Offset(x, y), extend: extend);
   }
 
   bool lineEdge(bool end, {bool extend = false}) {
+    if (_snapshot.selection.tableCell != null) return false;
     _prepareRows();
-    final (index, offset) = _display(_snapshot.selection.extent);
+    final (index, offset) = _display(
+      _snapshot.selection.extent,
+      tableCell: _snapshot.selection.tableCell,
+    );
     final row = _rows[index];
     final line = row.painter.getLineBoundary(TextPosition(offset: offset));
     final at = end ? line.end : line.start;
@@ -1267,11 +1292,14 @@ class RenderFlarkSurface extends RenderBox
         rows?.map((r) => r.text).toList() ??
         current.source.substring(window!.start, window.end).split('\n');
     config.value = texts.join('\n');
-    int displayOffset(int source) {
+    int displayOffset(int source, {int? tableCell}) {
       if (current is! FlarkLiveSnapshot) {
         return (source - window!.start).clamp(0, window.end - window.start);
       }
-      final p = current.document.displayOf(source);
+      final p = current.projection.displayForSource(
+        source,
+        tableCell: tableCell,
+      )!;
       return texts.take(p.row).fold(0, (sum, r) => sum + r.length + 1) +
           p.offset;
     }
@@ -1291,26 +1319,44 @@ class RenderFlarkSurface extends RenderBox
     }
 
     config.textSelection = TextSelection(
-      baseOffset: displayOffset(current.selection.base),
-      extentOffset: displayOffset(current.selection.extent),
+      baseOffset: displayOffset(
+        current.selection.base,
+        tableCell: current.selection.tableCell,
+      ),
+      extentOffset: displayOffset(
+        current.selection.extent,
+        tableCell: current.selection.tableCell,
+      ),
     );
     if (!readOnly) {
-      config.onSetSelection = (selection) => controller.command(
-        SetSelection(
-          sourceOffset(
-            selection.baseOffset,
-            anchor: selection.baseOffset <= selection.extentOffset
-                ? Anchor.after
-                : Anchor.before,
+      config.onSetSelection = (selection) {
+        if (rows != null && selection.isCollapsed) {
+          var offset = selection.extentOffset;
+          for (final row in rows) {
+            if (offset <= row.text.length) {
+              controller.command(PlaceCaret(row.index, offset));
+              return;
+            }
+            offset -= row.text.length + 1;
+          }
+        }
+        controller.command(
+          SetSelection(
+            sourceOffset(
+              selection.baseOffset,
+              anchor: selection.baseOffset <= selection.extentOffset
+                  ? Anchor.after
+                  : Anchor.before,
+            ),
+            sourceOffset(
+              selection.extentOffset,
+              anchor: selection.baseOffset < selection.extentOffset
+                  ? Anchor.before
+                  : Anchor.after,
+            ),
           ),
-          sourceOffset(
-            selection.extentOffset,
-            anchor: selection.baseOffset < selection.extentOffset
-                ? Anchor.before
-                : Anchor.after,
-          ),
-        ),
-      );
+        );
+      };
       config.onSetText = (text) {
         // A pathological single grapheme may exceed a source page. Never let
         // an accessibility page replacement expand into its neighboring page.

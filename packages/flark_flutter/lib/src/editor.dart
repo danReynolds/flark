@@ -72,7 +72,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   bool _dragging = false;
   ({InlineResource image, Offset point, int revision})? _pressedImage;
   bool _scheduled = false;
-  bool _resourceDialogOpen = false;
+  bool get _resourceDialogOpen => _resourceSession != null;
   FlarkResourceSession? _resourceSession;
   final _popover = OverlayPortalController();
   final _popoverFocus = FocusScopeNode(debugLabel: 'Link actions');
@@ -111,6 +111,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     if (old.controller != c || old.readOnly != widget.readOnly) {
       _dismissLink();
       _resourceSession?.close();
+      _resourceSession = null;
     }
     if (old.controller != c) {
       old.controller.removeListener(_changed);
@@ -325,7 +326,6 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
             }
           : null,
     );
-    _resourceDialogOpen = true;
     _resourceSession = session;
     try {
       final presenter = widget.presentResourceEditor;
@@ -339,18 +339,21 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       }
     } finally {
       session.close();
-      _resourceSession = null;
-      _resourceDialogOpen = false;
-      final focus = FocusManager.instance.primaryFocus;
-      if (mounted &&
-          identical(c, target) &&
-          !widget.readOnly &&
-          route?.isCurrent != false &&
-          (focus == previousFocus ||
-              focus == null ||
-              focus == _focus ||
-              focus is FocusScopeNode)) {
-        _focus.requestFocus();
+      // A document swap may already have opened a different presentation.
+      // Only the current session can release the guard or restore focus.
+      if (identical(_resourceSession, session)) {
+        _resourceSession = null;
+        final focus = FocusManager.instance.primaryFocus;
+        if (mounted &&
+            identical(c, target) &&
+            !widget.readOnly &&
+            route?.isCurrent != false &&
+            (focus == previousFocus ||
+                focus == null ||
+                focus == _focus ||
+                focus is FocusScopeNode)) {
+          _focus.requestFocus();
+        }
       }
     }
   }
@@ -479,17 +482,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   void _tab(bool backward) {
     if (!c.editor.sourceMode) {
-      final row = c.editor.document.rowAt(c.editor.selection.extent);
+      final row = c.editor.document.caretRow;
       if (row.kind == RowKind.tableCell) {
-        final index = row.index + (backward ? -1 : 1);
-        final rows = c.editor.projection.rows;
-        if (index >= 0 &&
-            index < rows.length &&
-            rows[index].tableBlock == row.tableBlock) {
-          _command(SetSelection.caret(rows[index].sourceStart));
-        } else if (!backward) {
-          _command(const Newline());
-        }
+        _command(MoveTableCell(backward: backward));
         return;
       }
     }

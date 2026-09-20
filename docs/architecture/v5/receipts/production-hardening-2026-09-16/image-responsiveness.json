@@ -1,0 +1,36 @@
+{
+  "fixture": "2048x2048 RGB gradient",
+  "encoded_bytes": 16856,
+  "timer_period_ms": 5,
+  "runs": [
+    {
+      "mode": "synchronous",
+      "work_ms": 262.349,
+      "ui_ticks_during_work": 0,
+      "max_timer_gap_ms": 263.894,
+      "output_width": 640
+    },
+    {
+      "mode": "queued",
+      "work_ms": 284.066,
+      "ui_ticks_during_work": 56,
+      "max_timer_gap_ms": 6.342,
+      "output_width": 640
+    },
+    {
+      "mode": "queued",
+      "work_ms": 230.207,
+      "ui_ticks_during_work": 45,
+      "max_timer_gap_ms": 6.832,
+      "output_width": 640
+    },
+    {
+      "mode": "queued",
+      "work_ms": 244.52,
+      "ui_ticks_during_work": 48,
+      "max_timer_gap_ms": 7.807,
+      "output_width": 640
+    }
+  ],
+  "scope": "Dart native diagnostic, not OS input or frame qualification"
+}

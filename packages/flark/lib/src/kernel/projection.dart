@@ -317,16 +317,34 @@ final class Projection {
 
   int _lineEnd(int l) {
     final start = model.lineStartUtf16(l);
-    var e = l + 1 < model.lineCount ? model.lineStartUtf16(l + 1) : source.length;
+    var e = l + 1 < model.lineCount
+        ? model.lineStartUtf16(l + 1)
+        : source.length;
     while (e > start &&
-        (source.codeUnitAt(e - 1) == 0x0A || source.codeUnitAt(e - 1) == 0x0D)) {
+        (source.codeUnitAt(e - 1) == 0x0A ||
+            source.codeUnitAt(e - 1) == 0x0D)) {
       e--;
     }
     return e;
   }
 
+  /// Whether the parser supplied a cell absent from the source row.
+  bool isMissingCell(int? index) {
+    if (index == null || index <= 0 || index >= rows.length) return false;
+    final row = rows[index], previous = rows[index - 1];
+    return row.kind == RowKind.tableCell &&
+        row.column > 0 &&
+        row.tableRowBlock == previous.tableRowBlock &&
+        row.sourceStart == row.sourceEnd &&
+        row.text.isEmpty &&
+        row.sourceStart == previous.sourceEnd;
+  }
+
   /// Display position of a UTF-16 source offset; snapped out of hidden bytes.
-  DisplayPosition? displayForSource(int source) {
+  DisplayPosition? displayForSource(int source, {int? tableCell}) {
+    if (isMissingCell(tableCell) && rows[tableCell!].sourceStart == source) {
+      return DisplayPosition(tableCell, 0);
+    }
     final line = model.lineOfUtf16(source);
     final candidates = _rowIndexesOnLine(line);
     if (candidates.isEmpty) {
@@ -915,8 +933,7 @@ final class _Builder {
         if (cs > gap) {
           // Both this gap and the merged runs advance with c, so one cursor
           // walks them together instead of rescanning per line.
-          while (coverIndex < covered.length &&
-              covered[coverIndex].$2 < cs) {
+          while (coverIndex < covered.length && covered[coverIndex].$2 < cs) {
             coverIndex++;
           }
           final over =

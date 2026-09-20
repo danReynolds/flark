@@ -282,6 +282,60 @@ void main() {
   });
 
   test(
+    'a stale presenter completion cannot release a replacement dialog',
+    () async {
+      final sessions = <FlarkResourceSession>[];
+      final completions = <Completer<void>>[];
+      void show(FlarkFleuryController value) {
+        tester.pumpWidget(
+          Theme(
+            data: const ThemeData(),
+            child: FlarkEditorView(
+              controller: value,
+              focusNode: focus,
+              autofocus: true,
+              presentResourceEditor: (_, session) {
+                sessions.add(session);
+                final done = Completer<void>();
+                completions.add(done);
+                return done.future;
+              },
+            ),
+          ),
+        );
+        tester.render();
+      }
+
+      editor = FlarkEditor(createParseBackend(), text: 'first');
+      final first = FlarkFleuryController(editor);
+      addTearDown(first.dispose);
+      show(first);
+      key(KeyCode.k, cmd: true);
+      expect(sessions, hasLength(1));
+      controller = FlarkFleuryController(
+        FlarkEditor(createParseBackend(), text: 'second'),
+      );
+      show(controller);
+      key(KeyCode.k, cmd: true);
+      expect(sessions, hasLength(2));
+      expect(sessions.first.active, isFalse);
+      completions.first.complete();
+      await Future<void>.delayed(Duration.zero);
+      tester.render();
+      key(KeyCode.k, cmd: true);
+      expect(sessions, hasLength(2), reason: 'the second dialog is still open');
+      expect(sessions.last.active, isTrue);
+      completions.last.complete();
+      await Future<void>.delayed(Duration.zero);
+      tester.render();
+      key(KeyCode.k, cmd: true);
+      expect(sessions, hasLength(3));
+      completions.last.complete();
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  test(
     'custom edit session refuses a moved target and a closed presentation',
     () async {
       late FlarkResourceSession session;

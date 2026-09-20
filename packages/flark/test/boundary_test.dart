@@ -39,6 +39,7 @@ void main() {
                 'SelectAll',
                 'PlaceCaret',
                 'MoveCaret',
+                'MoveTableCell',
                 'Undo',
                 'Redo',
                 'ToggleTask',

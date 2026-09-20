@@ -81,6 +81,12 @@ final class MoveCaret extends FlarkCommand {
   final bool extend;
 }
 
+/// Move between table cells, retaining addresses of unwritten cells.
+final class MoveTableCell extends FlarkCommand {
+  const MoveTableCell({this.backward = false});
+  final bool backward;
+}
+
 final class Undo extends FlarkCommand {
   const Undo();
 }

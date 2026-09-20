@@ -558,8 +558,13 @@ final class CellDocumentLayout {
     return lines[next].cellAt(col);
   }
 
-  CellOffset positionFor(int source) {
-    final position = projection?.displayForSource(source);
+  CellOffset get caretPosition => positionFor(
+    controller.editor.selection.extent,
+    tableCell: controller.editor.selection.tableCell,
+  );
+
+  CellOffset positionFor(int source, {int? tableCell}) {
+    final position = projection?.displayForSource(source, tableCell: tableCell);
     final candidates = position == null
         ? [for (var i = 0; i < lines.length; i++) (i, lines[i])]
         : _rowLines[position.row] ?? const <(int, CellLine)>[];

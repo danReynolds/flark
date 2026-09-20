@@ -76,6 +76,46 @@ void main() {
       '| alpha beta gamma | 界 | 42 |\n| tail | value | 7 |\n\nafter';
 
   test(
+    'pointer and Tab target missing cells without editing the previous column',
+    () {
+      const source = '| a | b | c |\n| --- | --- | --- |\n| x |\n';
+      mount(source);
+      final l = layout();
+      final a = l.positionFor(source.indexOf('x'));
+      final b = l.positionFor(source.indexOf('b'));
+      click(b.col, a.row);
+      expect(editor.document.caretRow.column, 1);
+      expect(editor.source, source);
+      tester.render();
+      expect(focus.caretRect!.left, b.col);
+      key(KeyCode.tab);
+      tester.render();
+      expect(editor.document.caretRow.column, 2);
+      final cellCaret = focus.caretRect;
+      tester.type('Z');
+      final frame = tester.render();
+      expect(editor.document.caretRow.column, 2);
+      expect(editor.document.caretRow.text.trim(), 'Z');
+      expect(frame.atColRow(cellCaret!.left, cellCaret.top).grapheme, 'Z');
+      key(KeyCode.z, cmd: true);
+      tester.render();
+      expect(editor.source, source);
+      expect(focus.caretRect, cellCaret);
+      key(KeyCode.tab, shift: true);
+      tester.type('Y');
+      expect(editor.document.caretRow.column, 1);
+      expect(tester.renderToString(), contains('Y'));
+      expect(
+        editor.projection.rows
+            .firstWhere((r) => r.kind == RowKind.tableCell && !r.header)
+            .text
+            .trim(),
+        'x',
+      );
+    },
+  );
+
+  test(
     'columns share rows, respect alignment, wrap and remain pointer-editable',
     () {
       mount(table);

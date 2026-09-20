@@ -23,6 +23,35 @@ impl M {
 }
 
 #[test]
+fn definition_buffer_index_preserves_multiline_unicode_and_container_ranges() {
+    for prefix in ["", "> ", "> > "] {
+        for newline in ["\n", "\r\n", "\r"] {
+            for trailing_text in [false, true] {
+                let mut src = String::new();
+                let mut expected = Vec::new();
+                for i in 0..128 {
+                    let label = format!("référence{i}");
+                    let dest = format!("/café/{i}");
+                    src.push_str(prefix);
+                    let start = src.len();
+                    src.push_str(&format!("[{label}]:{newline}{prefix}  {dest} \"title\"{newline}"));
+                    expected.push((start, src.len(), label, dest));
+                }
+                if trailing_text { src.push_str(&format!("{prefix}after **words**")); }
+                let m = M::of(&src); m.clean();
+                assert_eq!(m.n(header::DEFINITION_COUNT), expected.len());
+                for (i, (start, end, label, dest)) in expected.iter().enumerate() {
+                    assert_eq!(m.def(i, definition::START_BYTE), *start);
+                    assert_eq!(m.def(i, definition::END_BYTE), *end);
+                    assert_eq!(&src[m.def(i, definition::LABEL_START_BYTE)..m.def(i, definition::LABEL_END_BYTE)], label);
+                    assert_eq!(&src[m.def(i, definition::DEST_START_BYTE)..m.def(i, definition::DEST_END_BYTE)], dest);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn empty_atx_heading_separator_is_prefix_not_content() {
     for level in 1..=6 {
       for outer in ["", "> ", "- ", "  "] {

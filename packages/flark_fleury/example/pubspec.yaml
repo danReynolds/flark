@@ -14,12 +14,12 @@ dependencies:
   fleury_web:
     git:
       url: https://github.com/danReynolds/fleury.git
-      ref: 41967d499a6bd0fe53e5f5f07b31649df0adcc83
+      ref: ffb6d22d488a1979658578f4fc5634bb17b37b7f
       path: packages/fleury_web
   fleury_widgets:
     git:
       url: https://github.com/danReynolds/fleury.git
-      ref: 41967d499a6bd0fe53e5f5f07b31649df0adcc83
+      ref: ffb6d22d488a1979658578f4fc5634bb17b37b7f
       path: packages/fleury_widgets
   web: ^1.1.1
 dev_dependencies:
@@ -32,5 +32,5 @@ dependency_overrides:
   fleury:
     git:
       url: https://github.com/danReynolds/fleury.git
-      ref: 41967d499a6bd0fe53e5f5f07b31649df0adcc83
+      ref: ffb6d22d488a1979658578f4fc5634bb17b37b7f
       path: packages/fleury

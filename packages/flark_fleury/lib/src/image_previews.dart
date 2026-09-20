@@ -5,7 +5,7 @@ import 'package:flark/flark.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury_widgets/fleury_widgets_web.dart' as widgets;
 import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as pixels;
+import 'image_decode.dart';
 
 /// Replace the preview widget to resolve application assets, authenticated
 /// images, or a different loading/error presentation. Constraints are the fixed
@@ -30,6 +30,7 @@ class _ImagePreviewState extends State<FlarkImagePreview> {
   widgets.ImageSource? _source;
   String? _error;
   int _epoch = 0;
+  PreviewCancellation? _decode;
 
   @override
   void initState() {
@@ -46,6 +47,8 @@ class _ImagePreviewState extends State<FlarkImagePreview> {
   Future<void> _load() async {
     final epoch = ++_epoch;
     _client?.close();
+    _decode?.cancel();
+    final decode = _decode = PreviewCancellation();
     _source = null;
     _error = null;
     final uri = widget.uri;
@@ -58,6 +61,7 @@ class _ImagePreviewState extends State<FlarkImagePreview> {
       final source = await loadPreviewImage(
         uri,
         client,
+        cancellation: decode,
       ).timeout(const Duration(seconds: 15));
       if (mounted && epoch == _epoch) setState(() => _source = source);
     } catch (_) {
@@ -65,6 +69,7 @@ class _ImagePreviewState extends State<FlarkImagePreview> {
         setState(() => _error = 'Could not load image');
       }
     } finally {
+      decode.cancel();
       client.close();
     }
   }
@@ -90,6 +95,7 @@ class _ImagePreviewState extends State<FlarkImagePreview> {
   @override
   void dispose() {
     _epoch++;
+    _decode?.cancel();
     _client?.close();
     super.dispose();
   }
@@ -98,40 +104,25 @@ class _ImagePreviewState extends State<FlarkImagePreview> {
 /// Internal loader, kept separate from widget lifetime for transport tests.
 Future<widgets.ImageSource> loadPreviewImage(
   Uri uri,
-  http.Client client,
-) async {
-  const maxBytes = 4 * 1024 * 1024, maxPixels = 4 * 1024 * 1024;
+  http.Client client, {
+  PreviewCancellation? cancellation,
+}) async {
+  final token = cancellation ?? PreviewCancellation();
+  const maxBytes = 4 * 1024 * 1024;
+  token.check();
   final response = await client.send(http.Request('GET', uri));
   if (response.statusCode != 200 || (response.contentLength ?? 0) > maxBytes) {
     throw const FormatException('Image response exceeds preview limits');
   }
   final bytes = BytesBuilder(copy: false);
   await for (final chunk in response.stream) {
+    token.check();
     if (bytes.length + chunk.length > maxBytes) {
       throw const FormatException('Image response exceeds preview limits');
     }
     bytes.add(chunk);
   }
-  final encoded = bytes.takeBytes();
-  final decoder = pixels.findDecoderForData(encoded);
-  final info = decoder?.startDecode(encoded);
-  if (info == null ||
-      info.width <= 0 ||
-      info.height <= 0 ||
-      info.width * info.height > maxPixels) {
-    throw const FormatException('Image dimensions exceed preview limits');
-  }
-  final decoded = decoder!.decodeFrame(0);
-  if (decoded == null) throw const FormatException('Unsupported image');
-  // Keep the mounted preview's retained pixels bounded as well as the input.
-  final image = decoded.width > 960 || decoded.height > 640
-      ? pixels.copyResize(
-          decoded,
-          width: 960,
-          height: 640,
-          maintainAspect: true,
-          interpolation: pixels.Interpolation.average,
-        )
-      : decoded;
-  return widgets.ImageSource.decoded(image);
+  token.check();
+  final prepared = await previewDecoder.decode(bytes.takeBytes(), token);
+  return widgets.ImageSource.decoded(prepared.image, encodedPng: prepared.png);
 }

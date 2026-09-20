@@ -739,18 +739,22 @@ impl<'a> Extractor<'a> {
     /// Map definitions found in a line buffer back to source and record them.
     /// Returns how many whole lines the definitions consumed.
     fn record_buffer_definitions(&mut self, lines: &[LineSpan], defs: &[reference_definitions::BufferDefinition], exact: bool) -> usize {
+        // Definitions have several independently addressed endpoints. Index the
+        // reconstructed line buffer once; rescanning it for every endpoint made
+        // a paragraph of definitions quadratic in its line count.
+        let mut starts = Vec::with_capacity(lines.len() + 1);
+        starts.push(0usize);
+        for l in lines { starts.push(starts.last().unwrap() + l.end - l.start + 1); }
         let to_byte = |off: usize| -> usize {
-            let mut acc = 0usize;
-            for l in lines { let len = l.end - l.start; if off <= acc + len { return l.start + (off - acc); } acc += len + 1; }
-            lines.last().map(|l| l.end).unwrap_or(0)
+            let i = starts.partition_point(|&start| start <= off).saturating_sub(1).min(lines.len() - 1);
+            lines[i].start + (off - starts[i]).min(lines[i].end - lines[i].start)
         };
-        let buffer_len: usize = lines.iter().map(|l| l.end - l.start + 1).sum::<usize>();
+        let buffer_len = *starts.last().unwrap();
         let mut consumed_lines = 0usize;
         for d in defs {
             // A definition ends at a line end; its source range runs through
             // that line's terminator, never into the next line's prefix.
-            let mut acc = 0usize; let mut last_line = 0usize;
-            for (i, l) in lines.iter().enumerate() { let len = l.end - l.start; if d.end <= acc + len + 1 { last_line = i; break; } acc += len + 1; last_line = i; }
+            let last_line = starts.partition_point(|&start| start < d.end).saturating_sub(1).min(lines.len() - 1);
             let start = to_byte(d.start);
             let end = self.li.line_end_with_break(lines[last_line].line0, self.src.len());
             self.definitions.push(Definition { start, end, label: (to_byte(d.label.0), to_byte(d.label.1)), dest: (to_byte(d.dest.0), to_byte(d.dest.1)) });
@@ -889,9 +893,17 @@ impl<'a> Extractor<'a> {
         // Allow a small backward window: comrak can also place a run too far right.
         self.last_text_end = (self.blocks[blk as usize][block::START_BYTE] as usize).saturating_sub(8);
         let first_run = self.runs.len();
+        // Slot zero is the leaf's root children; every emitted run gets a
+        // child slot. A first child has no preceding sibling, so searching
+        // backward through all earlier runs for it is quadratic in flat markup.
+        let mut previous_siblings: Vec<Option<usize>> = vec![None];
         let mut stack: Vec<(&'b AstNode<'b>, u32)> = leaf.children().collect::<Vec<_>>().into_iter().rev().map(|n| (n, u32::MAX)).collect();
         while let Some((node, parent)) = stack.pop() {
-            if let Some(ri) = self.inline_record(node, blk, parent, cell, shift, content_from) {
+            let slot = if parent == u32::MAX { 0 } else { parent as usize - first_run + 1 };
+            let sibling_end = previous_siblings[slot].map_or(0, |i| self.runs[i][run::END_BYTE] as usize);
+            if let Some(ri) = self.inline_record(node, blk, parent, cell, shift, content_from, sibling_end) {
+                previous_siblings.resize(self.runs.len() - first_run + 1, None);
+                previous_siblings[slot] = Some(self.runs.len() - 1);
                 let children: Vec<_> = node.children().collect();
                 for ch in children.into_iter().rev() { stack.push((ch, ri)); }
             }
@@ -936,15 +948,15 @@ impl<'a> Extractor<'a> {
         }
     }
 
-    fn inline_record<'b>(&mut self, node: &'b AstNode<'b>, blk: u32, parent: u32, cell: Option<Cell>, shift: Option<&Shift>, content_from: usize) -> Option<u32> {
+    fn inline_record<'b>(&mut self, node: &'b AstNode<'b>, blk: u32, parent: u32, cell: Option<Cell>, shift: Option<&Shift>, content_from: usize, sibling_end: usize) -> Option<u32> {
         let data = node.data.borrow();
         let sp = data.sourcepos;
         let (mut s, mut e) = self.corrected_range(sp, cell, shift)?;
         if matches!(data.value, NodeValue::SoftBreak | NodeValue::LineBreak) && !self.src[s..e].contains(['\n', '\r']) {
             // comrak can leave a break's sourcepos inside a multiline link's
             // title. Its preceding sibling owns the true closing boundary.
-            if let Some(previous) = self.runs.iter().rev().take_while(|r| r[run::BLOCK] == blk).find(|r| r[run::PARENT] == parent) {
-                let end = previous[run::END_BYTE] as usize;
+            if sibling_end > 0 {
+                let end = sibling_end;
                 let line = self.li.line_of(end);
                 let line_end = self.li.line_end(line, self.src.len());
                 if end >= s && self.src.as_bytes()[end..line_end].iter().all(|b| matches!(b, b' ' | b'\t')) {
@@ -964,8 +976,6 @@ impl<'a> Extractor<'a> {
                 // multiline link even though comrak positioned it too early.
                 // Siblings cannot overlap: authenticate relocation after the
                 // preceding sibling's complete range, not only its text children.
-                let sibling_end = self.runs.iter().rev().take_while(|r| r[run::BLOCK] == blk)
-                    .find(|r| r[run::PARENT] == parent).map_or(0, |r| r[run::END_BYTE] as usize);
                 // Repair: comrak's inline line counter does not advance across a bare
                 // CR, so positions after one are short by the line-ending bytes.
                 // Find the literal forward of the last text run and carry the offset.

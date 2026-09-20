@@ -185,8 +185,9 @@ page; it does not stream a remote terminal or Flutter app.
   and paint borders with `tableBorder` and headers with `tableHeader`.
   Tab/Shift-Tab traverses cells; Enter moves to the next row in the same column
   and exits after the last row, matching Flutter. Extremely narrow viewports
-  stack cells with numbered column labels. Only cells with an addressable source
-  range are editable; omitted trailing cells retain the shared kernel's limitation.
+  stack cells with numbered column labels. Omitted trailing cells retain their
+  own caret position without changing the source. First insertion creates the
+  missing delimiters and content together; Undo restores the original row.
 - Standalone images show the preview first. Clicking it opens Open/Edit/Remove
   and reveals a centered, editable alt-text line immediately below the image.
   Leaving the resource hides that line without moving following content.
@@ -196,6 +197,13 @@ page; it does not stream a remote terminal or Flutter app.
   The default `FlarkImagePreview` resolves HTTP(S) images, loads at most eight
   visible slots, limits each response to 4 MiB and four million pixels, decodes
   the first frame, and retains a thumbnail no larger than 960 by 640 pixels.
+  Native decoding, resizing and PNG preparation run in an isolate; browser
+  previews use asynchronous native bitmap/PNG preparation with bounded pixel
+  readback. Across editors, at most two preparations run and eight wait.
+  Disposal drops queued work and terminates native workers. A cancelled browser
+  operation holds its slot until its native promise settles. The supplied PNG
+  avoids encoding during normal placement paint; terminal protocol conversion
+  and clipped iTerm2 placement remain separate performance qualification work.
   Loading/error/success share the same geometry. Leaving the viewport cancels
   the request and releases its decoded image. Browser requests follow CORS;
   SVG rendering is not supplied by Fleury's raster image widget.

@@ -17,6 +17,7 @@ part 'source_mode.dart';
 part 'admission.dart';
 part 'code_editing.dart';
 part 'resource_editing.dart';
+part 'table_editing.dart';
 
 typedef FlarkListener = void Function();
 
@@ -72,6 +73,7 @@ final class FlarkEditor {
   final History history = History();
   final List<FlarkListener> _listeners = [];
   late FlarkEditorSnapshot _snapshot;
+  FlarkEditorSnapshot? _cellOrigin;
   PendingStyle? _pending;
   // Empty code bodies have a collapsed selection, so selection coordinates
   // alone cannot distinguish their first Select All from the second.
@@ -100,7 +102,10 @@ final class FlarkEditor {
   /// flipped by any pending formatting command.
   int get typingContext => sourceMode
       ? 0
-      : _doc.typingContextAt(selection.extent) ^ (_pending?.styles ?? 0);
+      : (selection.tableCell == null
+                ? _doc.typingContextAt(selection.extent)
+                : 0) ^
+            (_pending?.styles ?? 0);
 
   void addListener(FlarkListener listener) => _listeners.add(listener);
   void removeListener(FlarkListener listener) => _listeners.remove(listener);
@@ -118,51 +123,11 @@ final class FlarkEditor {
     _now = at ?? _clock.elapsed;
     final applied = sourceMode
         ? _applySource(command)
-        : switch (command) {
-            InsertText(:final text) => _insert(text, typing: true),
-            Paste(:final text) => _insert(text, typing: false),
-            DeleteBackward(:final word) => _delete(backward: true, word: word),
-            DeleteForward(:final word) => _delete(backward: false, word: word),
-            Newline(:final paragraph) => _newline(paragraph),
-            ReplaceRange(:final start, :final end, :final text) => _replace(
-              start,
-              end,
-              text,
-            ),
-            SetSelection(:final base, :final extent) => _select(
-              FlarkSelection(base, extent),
-            ),
-            SelectAll() => _selectAll(),
-            PlaceCaret(
-              :final row,
-              :final offset,
-              :final leadingHalf,
-              :final extend,
-            ) =>
-              _place(row, offset, leadingHalf, extend),
-            MoveCaret(:final direction, :final unit, :final extend) => _move(
-              direction,
-              unit,
-              extend,
-            ),
-            Undo() => _undo(),
-            Redo() => _redo(),
-            ToggleTask() => _toggleTask(),
-            ToggleStyle(:final style) => _toggleStyle(style),
-            SetHeadingLevel(:final level) => _setHeading(level),
-            SetCodeLanguage(:final language) => _setCodeLanguage(language),
-            SetLink(:final destination, :final text, :final title) =>
-              _setResource(false, destination, text, title),
-            SetImage(:final destination, :final alt, :final title) =>
-              _setResource(true, destination, alt, title),
-            RemoveLink() => _removeResource(false),
-            RemoveImage() => _removeResource(true),
-            Indent() => _shiftBlock(outdent: false),
-            Outdent() => _shiftBlock(outdent: true),
-          };
+        : _withMissingCell(command);
     if (applied) {
       _notify();
     } else if (command is! SetSelection &&
+        command is! MoveTableCell &&
         command is! SelectAll &&
         command is! MoveCaret &&
         command is! PlaceCaret) {
@@ -170,6 +135,53 @@ final class FlarkEditor {
     }
     return applied;
   }
+
+  bool _applyLive(FlarkCommand command) => switch (command) {
+    InsertText(:final text) => _insert(text, typing: true),
+    Paste(:final text) => _insert(text, typing: false),
+    DeleteBackward(:final word) => _delete(backward: true, word: word),
+    DeleteForward(:final word) => _delete(backward: false, word: word),
+    Newline(:final paragraph) => _newline(paragraph),
+    ReplaceRange(:final start, :final end, :final text) => _replace(
+      start,
+      end,
+      text,
+    ),
+    SetSelection(:final base, :final extent) => _select(
+      FlarkSelection(base, extent),
+    ),
+    SelectAll() => _selectAll(),
+    PlaceCaret(:final row, :final offset, :final leadingHalf, :final extend) =>
+      _place(row, offset, leadingHalf, extend),
+    MoveCaret(:final direction, :final unit, :final extend) => _move(
+      direction,
+      unit,
+      extend,
+    ),
+    MoveTableCell(:final backward) => _moveTableCell(backward),
+    Undo() => _undo(),
+    Redo() => _redo(),
+    ToggleTask() => _toggleTask(),
+    ToggleStyle(:final style) => _toggleStyle(style),
+    SetHeadingLevel(:final level) => _setHeading(level),
+    SetCodeLanguage(:final language) => _setCodeLanguage(language),
+    SetLink(:final destination, :final text, :final title) => _setResource(
+      false,
+      destination,
+      text,
+      title,
+    ),
+    SetImage(:final destination, :final alt, :final title) => _setResource(
+      true,
+      destination,
+      alt,
+      title,
+    ),
+    RemoveLink() => _removeResource(false),
+    RemoveImage() => _removeResource(true),
+    Indent() => _shiftBlock(outdent: false),
+    Outdent() => _shiftBlock(outdent: true),
+  };
 
   void _notify() {
     _revision++;
@@ -318,8 +330,8 @@ final class FlarkEditor {
     }
     if (!composing) {
       history.recordState(
-        source,
-        selection,
+        _cellOrigin?.source ?? source,
+        _cellOrigin?.selection ?? selection,
         pending: _pending,
         typing: typing,
         at: _now,
@@ -342,7 +354,7 @@ final class FlarkEditor {
   }
 
   bool _selectAll() {
-    final row = _doc.rowAt(selection.extent);
+    final row = _doc.caretRow;
     if (!_selectedCodeScope &&
         !_wholeRange(selection.start, selection.end) &&
         row.fenced &&
@@ -383,6 +395,7 @@ final class FlarkEditor {
     ),
     Undo() => _undo(),
     Redo() => _redo(),
+    MoveTableCell() ||
     PlaceCaret() ||
     ToggleTask() ||
     ToggleStyle() ||
@@ -1066,7 +1079,7 @@ final class FlarkEditor {
       return _splitInline(range.start, range.end, paragraph ? '\n\n' : '\n');
     }
     final caret = sel.extent;
-    final pos = _doc.displayOf(caret);
+    final pos = _doc.caretPosition;
     final row = projection.rows[pos.row];
     if (row.kind == RowKind.tableCell) return _returnFromTable(row);
     final line = _doc.model.lineOfUtf16(caret);
@@ -1111,7 +1124,7 @@ final class FlarkEditor {
         break;
       }
       if (next.column == row.column && next.firstLine > row.firstLine) {
-        return _select(FlarkSelection.collapsed(next.sourceStart));
+        return _place(next.index, 0, true, false);
       }
     }
     // Keep a blank separator after the table even when a trailing gap already
@@ -1206,7 +1219,7 @@ final class FlarkEditor {
   /// sibling's content offset; Outdent removes the parent's. Every line of
   /// the item shifts at the item's own column.
   bool _shiftItem({required bool outdent}) {
-    final row = _doc.rowAt(selection.extent);
+    final row = _doc.caretRow;
     final shells = row.shells;
     var idx = -1;
     for (var i = shells.length - 1; i >= 0; i--) {
@@ -1330,7 +1343,7 @@ final class FlarkEditor {
 
   bool _setHeading(int level) {
     if (level < 0 || level > 6) return false;
-    final row = _doc.rowAt(selection.extent);
+    final row = _doc.caretRow;
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
       return false;
     }
@@ -1401,7 +1414,7 @@ final class FlarkEditor {
     final caret = sel.extent;
     // At an edge of an owner, step across its delimiter: out when inside,
     // in when outside. Strictly inside, unwrap it.
-    for (final o in _doc.ownersAt(caret)) {
+    for (final o in sel.tableCell == null ? _doc.ownersAt(caret) : <Owner>[]) {
       if (o.style != style) continue;
       if (caret == o.contentEnd) {
         return _select(FlarkSelection.collapsed(o.end));
@@ -1418,7 +1431,8 @@ final class FlarkEditor {
         typing: false,
       );
     }
-    for (final o in _doc.ownersTouching(caret)) {
+    for (final o
+        in sel.tableCell == null ? _doc.ownersTouching(caret) : <Owner>[]) {
       if (o.style != style) continue;
       return _select(
         FlarkSelection.collapsed(
@@ -1473,10 +1487,24 @@ final class FlarkEditor {
     final sel = selection;
     final forward = direction == MoveDirection.forward;
     final cur = sel.extent;
-    final pos = _doc.displayOf(cur);
+    final pos = _doc.caretPosition;
     final row = projection.rows[pos.row];
     final d = pos.offset;
     int target;
+    if (sel.tableCell != null) {
+      if (unit == MoveUnit.line) return false;
+      final other = _rowAfter(row.index, forward: forward);
+      return other != null &&
+          _place(other.index, forward ? 0 : other.text.length, forward, extend);
+    }
+    if (sel.isCollapsed &&
+        unit != MoveUnit.line &&
+        (forward ? d == row.text.length : d == 0)) {
+      final other = _rowAfter(row.index, forward: forward);
+      if (other != null && projection.isMissingCell(other.index)) {
+        return _place(other.index, 0, forward, extend);
+      }
+    }
     if (!extend && !sel.isCollapsed && unit == MoveUnit.grapheme) {
       target = forward ? sel.end : sel.start;
     } else {
@@ -1634,6 +1662,12 @@ final class FlarkEditor {
   bool _place(int rowIndex, int offset, bool leadingHalf, bool extend) {
     if (projection.rows.isEmpty) return false;
     final row = projection.rows[rowIndex.clamp(0, projection.rows.length - 1)];
+    if (projection.isMissingCell(row.index) &&
+        (!extend || selection.base == row.sourceStart)) {
+      return _select(
+        FlarkSelection.collapsed(row.sourceStart, tableCell: row.index),
+      );
+    }
     final target = _doc.pointerAnchorAt(
       row.index,
       offset,
