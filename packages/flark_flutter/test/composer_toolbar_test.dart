@@ -1,9 +1,116 @@
 import 'package:flark_flutter/flark_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final backend = createParseBackend();
+  testWidgets(
+    'active fill follows toolbar, public setters, keyboard and caret',
+    (t) async {
+      final c = FlarkController(FlarkEditor(backend));
+      final semantics = t.ensureSemantics();
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await t.pump();
+      IconButton bold() => t.widget<IconButton>(
+        find.byWidgetPredicate((w) => w is IconButton && w.tooltip == 'Bold'),
+      );
+      expect(bold().isSelected, isFalse);
+      await t.tap(find.byTooltip('Bold'));
+      await t.pump();
+      expect(bold().isSelected, isTrue);
+      final colors = Theme.of(
+        t.element(find.byType(FlarkEditorWidget)),
+      ).colorScheme;
+      expect(
+        bold().style!.backgroundColor!.resolve({WidgetState.selected}),
+        colors.secondaryContainer,
+      );
+      var notifications = 0;
+      c.addListener(() => notifications++);
+      expect(c.setStyle(Style.strong, enabled: true), isFalse);
+      expect(notifications, 0);
+      expect(c.notice, isNull);
+      expect(c.setStyle(Style.strong, enabled: false), isTrue);
+      await t.pump();
+      expect(bold().isSelected, isFalse);
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await t.sendKeyEvent(LogicalKeyboardKey.keyB);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await t.pump();
+      expect(bold().isSelected, isTrue);
+      c.command(const InsertText('hello'));
+      c.command(const SetSelection.caret(0));
+      await t.pump();
+      expect(bold().isSelected, isFalse);
+      c.command(const SetSelection.caret(3));
+      await t.pump();
+      expect(bold().isSelected, isTrue);
+      await t.pumpWidget(const SizedBox());
+      semantics.dispose();
+      c.dispose();
+    },
+  );
+
+  testWidgets('mixed style has a separate indicator and one click applies it', (
+    t,
+  ) async {
+    final semantics = t.ensureSemantics();
+    final c = FlarkController(FlarkEditor(backend, text: '**bold** plain'));
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: FlarkEditorWidget(controller: c)),
+      ),
+    );
+    c.command(const SelectAll());
+    await t.pump();
+    expect(c.styleState(Style.strong).isMixed, isTrue);
+    final boldSemantics = t
+        .getSemantics(
+          find.ancestor(
+            of: find.byTooltip('Bold'),
+            matching: find.byType(MergeSemantics),
+          ),
+        )
+        .getSemanticsData();
+    expect(boldSemantics.value, 'Mixed');
+    expect(boldSemantics.tooltip, 'Bold');
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.value == 'Mixed',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.remove), findsOneWidget);
+    await t.tap(find.byTooltip('Bold'));
+    await t.pump();
+    expect(c.text, '**bold plain**');
+    expect(find.byIcon(Icons.remove), findsNothing);
+    await t.tap(find.byTooltip('Undo'));
+    await t.pump();
+    expect(c.styleState(Style.strong).isMixed, isTrue);
+    c.sourceMode(true);
+    await t.pump();
+    expect(
+      t
+          .widget<IconButton>(
+            find.byWidgetPredicate(
+              (w) => w is IconButton && w.tooltip == 'Bold',
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    await t.pumpWidget(const SizedBox());
+    semantics.dispose();
+    c.dispose();
+  });
   for (final width in [360.0, 1100.0]) {
     testWidgets('composer selection, heading and undo at $width', (t) async {
       t.view.physicalSize = Size(width, 800);

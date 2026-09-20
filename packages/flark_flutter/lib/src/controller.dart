@@ -25,6 +25,13 @@ class FlarkController extends ChangeNotifier {
   bool _disposed = false;
   bool _batching = false;
   String get text => editor.source;
+
+  /// Current selection/typing style. Re-read when this controller notifies.
+  FlarkStyleState styleState(int style) => editor.styleState(style);
+
+  /// Idempotent formatting; shares command history and IME handling.
+  bool setStyle(int style, {required bool enabled}) =>
+      command(SetStyle(style, enabled: enabled));
   TextEditingValue get value => TextEditingValue(
     text: text,
     selection: TextSelection(

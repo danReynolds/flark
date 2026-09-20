@@ -42,6 +42,12 @@ the host does not contain a second Markdown interpreter.
 
 ## Example app
 
+Custom formatting controls can read `controller.styleState(Style.strong)` and
+call `controller.setStyle(Style.strong, enabled: true)` (or `false`). State
+reports on/off/mixed separately from command availability; controller listeners
+observe caret, selection, pending formatting and history changes. See the shared
+[formatting contract](../../docs/architecture/v5/formatting_controls.md).
+
 The [package example](example/README.md) also contains a live **Theme playground**
 for editor/viewer styling and replaceable link controls. It exports a Dart widget
 using the public API, including the custom-control source when selected.

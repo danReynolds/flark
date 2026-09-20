@@ -111,6 +111,8 @@ String describeCommand(FlarkCommand command) => switch (command) {
   Redo() => 'Redo()',
   ToggleTask() => 'ToggleTask()',
   ToggleStyle(:final style) => 'ToggleStyle($style)',
+  SetStyle(:final style, :final enabled) =>
+    'SetStyle($style, enabled: $enabled)',
   SetHeadingLevel(:final level) => 'SetHeadingLevel($level)',
   SetCodeLanguage(:final language) => 'SetCodeLanguage($language)',
   Indent() => 'Indent()',

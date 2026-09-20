@@ -34,6 +34,12 @@ with editing disabled. Both support selection/copy. Set a `FlarkCellTheme`
 on one view or put it in `ThemeData.extensions`. Defaults derive semantic roles
 from Fleury and preserve the terminal's unspecified foreground/background.
 
+Custom formatting controls can read `controller.styleState(Style.strong)` and
+call `controller.setStyle(Style.strong, enabled: true)` (or `false`). State
+reports on/off/mixed separately from command availability; controller listeners
+observe caret, selection, pending formatting and history changes. See the shared
+[formatting contract](../../docs/architecture/v5/formatting_controls.md).
+
 Clicking a link shows Open, Edit, Remove and Close. Cmd/Ctrl+click invokes
 `onOpenLink` directly; Cmd/Ctrl+K opens the link form. Supply `onOpenLink` to
 choose the application/browser opener and `baseUri` to resolve relative URLs.

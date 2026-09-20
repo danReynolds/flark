@@ -668,6 +668,68 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     super.dispose();
   }
 
+  Widget _styleButton(String label, IconData icon, int style) {
+    final state = c.styleState(style);
+    final colors = Theme.of(context).colorScheme;
+    return MergeSemantics(
+      child: Semantics(
+        value: state.isMixed ? 'Mixed' : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: IconButton(
+            tooltip: label,
+            isSelected: state.isOn,
+            style: ButtonStyle(
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return colors.secondaryContainer;
+                }
+                if (state.isMixed) {
+                  return colors.secondaryContainer.withValues(alpha: 0.45);
+                }
+                return null;
+              }),
+              foregroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? null
+                    : states.contains(WidgetState.selected)
+                    ? colors.onSecondaryContainer
+                    : null,
+              ),
+              side: WidgetStatePropertyAll(
+                state.isMixed
+                    ? BorderSide(color: colors.outline)
+                    : BorderSide.none,
+              ),
+            ),
+            onPressed: widget.readOnly || !state.canToggle
+                ? null
+                : () {
+                    _command(SetStyle(style, enabled: !state.isOn));
+                    _focus.requestFocus();
+                  },
+            icon: state.isMixed
+                ? Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(icon, size: 20),
+                      const Positioned(
+                        right: -5,
+                        bottom: -5,
+                        child: Icon(Icons.remove, size: 10),
+                      ),
+                    ],
+                  )
+                : Icon(icon, size: 20),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = c.editor;
@@ -685,8 +747,6 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         ? e.codeEditing?.resolveLanguage(codeRow!.text, info)
         : null;
     final detectedLabel = codeLanguages[detected];
-    final inlineFormatting =
-        codeRow != null && codeRow.kind != RowKind.codeBlock;
     final headingFormatting =
         codeRow != null &&
         (codeRow.kind == RowKind.paragraph ||
@@ -794,50 +854,14 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                     ),
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Bold',
-                  isSelected: e.typingContext & Style.strong != 0,
-                  onPressed: !inlineFormatting
-                      ? null
-                      : () {
-                          _command(const ToggleStyle(Style.strong));
-                          _focus.requestFocus();
-                        },
-                  icon: const Icon(Icons.format_bold, size: 20),
+                _styleButton('Bold', Icons.format_bold, Style.strong),
+                _styleButton('Italic', Icons.format_italic, Style.emphasis),
+                _styleButton(
+                  'Strikethrough',
+                  Icons.format_strikethrough,
+                  Style.strikethrough,
                 ),
-                IconButton(
-                  tooltip: 'Italic',
-                  isSelected: e.typingContext & Style.emphasis != 0,
-                  onPressed: !inlineFormatting
-                      ? null
-                      : () {
-                          _command(const ToggleStyle(Style.emphasis));
-                          _focus.requestFocus();
-                        },
-                  icon: const Icon(Icons.format_italic, size: 20),
-                ),
-                IconButton(
-                  tooltip: 'Strikethrough',
-                  isSelected: e.typingContext & Style.strikethrough != 0,
-                  onPressed: !inlineFormatting
-                      ? null
-                      : () {
-                          _command(const ToggleStyle(Style.strikethrough));
-                          _focus.requestFocus();
-                        },
-                  icon: const Icon(Icons.format_strikethrough, size: 20),
-                ),
-                IconButton(
-                  tooltip: 'Inline code',
-                  isSelected: e.typingContext & Style.code != 0,
-                  onPressed: !inlineFormatting
-                      ? null
-                      : () {
-                          _command(const ToggleStyle(Style.code));
-                          _focus.requestFocus();
-                        },
-                  icon: const Icon(Icons.code, size: 20),
-                ),
+                _styleButton('Inline code', Icons.code, Style.code),
                 IconButton(
                   tooltip: 'Link',
                   icon: const Icon(Icons.link, size: 20),

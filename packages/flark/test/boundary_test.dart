@@ -46,6 +46,7 @@ void main() {
                 'Indent',
                 'Outdent',
                 'ToggleStyle',
+                'SetStyle',
                 'SetHeadingLevel',
                 'SetCodeLanguage',
                 'Paste',
@@ -62,7 +63,9 @@ void main() {
     // The Flutter host names two more concepts: shared admission limits and
     // rejection reasons. Revision and composition stay on the existing facade.
     // Link dialogs and image previews share one parser-owned resource record.
-    expect(concepts, lessThanOrEqualTo(30), reason: 'exported: $exported');
+    // Formatting exposes the selection value and command availability to both
+    // hosts, rather than duplicating that interpretation in their toolbars.
+    expect(concepts, lessThanOrEqualTo(32), reason: 'exported: $exported');
   });
 }
 

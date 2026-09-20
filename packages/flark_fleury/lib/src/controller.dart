@@ -35,6 +35,13 @@ final class FlarkFleuryController extends ChangeNotifier {
   }
 
   final FlarkEditor editor;
+
+  /// Current selection/typing style. Re-read when this controller notifies.
+  FlarkStyleState styleState(int style) => editor.styleState(style);
+
+  /// Idempotent formatting, using the shared kernel's history and rules.
+  bool setStyle(int style, {required bool enabled}) =>
+      editor.apply(SetStyle(style, enabled: enabled));
   final FlarkCodeHighlighting? _colors;
   bool _closed = false;
   int get colorRevision => _colors?.revision ?? 0;

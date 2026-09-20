@@ -12,12 +12,14 @@ import 'commands.dart';
 import 'document.dart';
 import 'history.dart';
 import 'projection.dart';
+import 'style_state.dart';
 
 part 'source_mode.dart';
 part 'admission.dart';
 part 'code_editing.dart';
 part 'resource_editing.dart';
 part 'table_editing.dart';
+part 'inline_formatting.dart';
 
 typedef FlarkListener = void Function();
 
@@ -107,6 +109,10 @@ final class FlarkEditor {
                 : 0) ^
             (_pending?.styles ?? 0);
 
+  /// Read formatting without parsing or inspecting Markdown delimiters.
+  /// Listen to this editor (or a host controller) and read again on changes.
+  FlarkStyleState styleState(int style) => _styleState(style);
+
   void addListener(FlarkListener listener) => _listeners.add(listener);
   void removeListener(FlarkListener listener) => _listeners.remove(listener);
 
@@ -116,6 +122,13 @@ final class FlarkEditor {
     _lastRejection = null;
     if (expectedRevision != null && expectedRevision != revision) {
       _lastRejection = FlarkRejection.staleRevision;
+      return false;
+    }
+    if (command is SetStyle &&
+        !sourceMode &&
+        _styleDelimiter(command.style) != null &&
+        styleState(command.style).value ==
+            (command.enabled ? FlarkStyleValue.on : FlarkStyleValue.off)) {
       return false;
     }
     if (composing && (command is Undo || command is Redo)) commitComposition();
@@ -162,7 +175,8 @@ final class FlarkEditor {
     Undo() => _undo(),
     Redo() => _redo(),
     ToggleTask() => _toggleTask(),
-    ToggleStyle(:final style) => _toggleStyle(style),
+    ToggleStyle(:final style) => _setStyle(style, !styleState(style).isOn),
+    SetStyle(:final style, :final enabled) => _setStyle(style, enabled),
     SetHeadingLevel(:final level) => _setHeading(level),
     SetCodeLanguage(:final language) => _setCodeLanguage(language),
     SetLink(:final destination, :final text, :final title) => _setResource(
@@ -399,6 +413,7 @@ final class FlarkEditor {
     PlaceCaret() ||
     ToggleTask() ||
     ToggleStyle() ||
+    SetStyle() ||
     SetHeadingLevel() ||
     SetCodeLanguage() ||
     SetLink() ||
@@ -1376,44 +1391,8 @@ final class FlarkEditor {
     );
   }
 
-  bool _toggleStyle(int style) {
-    final delimiter = switch (style) {
-      Style.emphasis => '*',
-      Style.strong => '**',
-      Style.strikethrough => '~~',
-      Style.code => '`',
-      _ => null,
-    };
-    if (delimiter == null) return false;
+  bool _toggleCaretStyle(int style) {
     final sel = selection;
-    if (!sel.isCollapsed) {
-      final range = _contentRange(sel.start, sel.end);
-      for (final o in _doc.ownersOfContent(range.start, range.end)) {
-        if (o.style != style) continue;
-        final s = source
-            .replaceRange(o.contentEnd, o.end, '')
-            .replaceRange(o.start, o.contentStart, '');
-        return _commit(
-          s,
-          FlarkSelection(o.start, o.start + (o.contentEnd - o.contentStart)),
-          typing: false,
-        );
-      }
-      final contentStart = range.start + delimiter.length;
-      final contentEnd = range.end + delimiter.length;
-      return _commit(
-        source.replaceRange(
-          range.start,
-          range.end,
-          '$delimiter${source.substring(range.start, range.end)}$delimiter',
-        ),
-        FlarkSelection(contentStart, contentEnd),
-        typing: false,
-        accept: (next) => next
-            .ownersOfContent(contentStart, contentEnd)
-            .any((owner) => owner.style == style),
-      );
-    }
     final caret = sel.extent;
     // At an edge of an owner, step across its delimiter: out when inside,
     // in when outside. Strictly inside, unwrap it.

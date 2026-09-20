@@ -26,22 +26,26 @@ extension _EditorToolbar on _EditorState {
     }
 
     Widget toggle(String label, String text, int style) {
-      final selected = editor.typingContext & style != 0;
-      void activate() => command(ToggleStyle(style));
+      final state = widget.controller.styleState(style);
+      final selected = state.isOn;
+      final enabled = state.canToggle;
+      void activate() => command(SetStyle(style, enabled: !selected));
       return Semantics(
         role: SemanticRole.button,
         label: label,
+        value: state.isMixed ? 'Mixed' : null,
+        hint: state.isMixed ? 'Mixed formatting' : (selected ? 'On' : 'Off'),
         selected: selected,
-        enabled: inline,
+        enabled: enabled,
         includeChildren: false,
-        actions: inline ? {SemanticAction.activate} : {},
+        actions: enabled ? {SemanticAction.activate} : {},
         onAction: (action) {
-          if (inline && action == SemanticAction.activate) activate();
+          if (enabled && action == SemanticAction.activate) activate();
         },
         child: Button(
-          text: text,
+          text: state.isMixed ? '$text−' : text,
           style: CellStyle(inverse: selected),
-          onPressed: inline ? activate : null,
+          onPressed: enabled ? activate : null,
         ),
       );
     }

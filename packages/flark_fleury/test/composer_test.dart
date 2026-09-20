@@ -57,6 +57,41 @@ void main() {
 
   for (final width in [24, 100]) {
     test(
+      'mixed and pending formatting remain observable at $width columns',
+      () async {
+        mount('**bold** plain', width: width);
+        editor.apply(const SelectAll());
+        tester.render();
+        expect(controller.styleState(Style.strong).isMixed, isTrue);
+        expect(tester.semantics().byLabel('Bold').single.value, 'Mixed');
+        expect(
+          tester.semantics().byLabel('Bold').single.hint,
+          'Mixed formatting',
+        );
+        expect(tester.renderToString(), contains('B−'));
+        await press('Bold');
+        expect(editor.source, '**bold plain**');
+        expect(tester.semantics().byLabel('Bold').single.selected, isTrue);
+        await press('Undo');
+        expect(controller.styleState(Style.strong).isMixed, isTrue);
+        editor.apply(ReplaceRange(0, editor.source.length, ''));
+        var notifications = 0;
+        controller.addListener(() => notifications++);
+        expect(controller.setStyle(Style.strong, enabled: true), isTrue);
+        expect(notifications, 1);
+        expect(controller.setStyle(Style.strong, enabled: true), isFalse);
+        expect(notifications, 1);
+        tester.render();
+        expect(tester.semantics().byLabel('Bold').single.selected, isTrue);
+        tester.type('hello');
+        expect(editor.source, '**hello**');
+        editor.apply(const SetSelection.caret(0));
+        tester.render();
+        expect(tester.semantics().byLabel('Bold').single.selected, isFalse);
+      },
+    );
+
+    test(
       'rule paints in its container without changing source at $width columns',
       () {
         const source =
