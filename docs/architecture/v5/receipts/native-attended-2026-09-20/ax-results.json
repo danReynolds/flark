@@ -1,0 +1,18 @@
+[
+  {
+    "host": "TextField",
+    "cycles": 50,
+    "edits": 1000,
+    "nativeSemanticsEnabled": true,
+    "lifecycle": "resumed",
+    "transitions": []
+  },
+  {
+    "host": "Flark",
+    "cycles": 50,
+    "edits": 1000,
+    "nativeSemanticsEnabled": true,
+    "lifecycle": "resumed",
+    "transitions": []
+  }
+]

@@ -65,9 +65,20 @@ numbers, latency samples, parse counts and RSS readings in the driver's JSON
 result. Preserve that result with the build receipt.
 
 Both harnesses require a resumed Flutter lifecycle with frames enabled. They
-wait up to sixty seconds for initial foreground activation and reject any later
-loss of foreground. A capturable window, posted key, awake display or manually
+wait up to sixty seconds for initial foreground and native accessibility
+activation before the widget runner records its semantics-handle baseline.
+They use OS-requested semantics rather than a forced framework tree, require
+native semantics throughout measurement, and reject any later loss of foreground.
+Frame delivery is checked inside the test because the live binding disables
+frames during suite setup. Inspect the native accessibility tree and activate
+the title bar during preflight; do not click an unmounted test surface.
+A capturable window, posted key, awake display or manually
 pumped hidden test binding does not establish a valid run.
+
+Require complete receipts and inspect the process log for framework/native
+errors as well as the driver's exit status. A setup failure can leave the driver
+reporting success without having executed the widget test; missing workload
+receipts always reject that run.
 
 Opening measures the document-to-editable-viewport path after preferences are
 loaded; it excludes OS process startup and initial backend loading. The normal

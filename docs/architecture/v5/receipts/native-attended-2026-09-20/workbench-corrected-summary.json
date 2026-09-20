@@ -1,0 +1,752 @@
+{
+  "nativeSemantics": true,
+  "productionWorkbench": true,
+  "treeSitterEditing": true,
+  "treeSitterColors": true,
+  "lifecycleTransitions": [],
+  "logicalViewport": {
+    "width": 800.0,
+    "height": 600.0
+  },
+  "displayHz": 120.0,
+  "devicePixelRatio": 2.0,
+  "baselineRss": 269959168,
+  "peakRss": 304054272,
+  "retainedRss": 188153856,
+  "cycleRss": [
+    269959168,
+    279101440,
+    274808832,
+    280903680,
+    273793024,
+    271204352,
+    279920640,
+    282869760,
+    281100288,
+    289292288,
+    280920064,
+    271482880,
+    275005440,
+    278511616,
+    279937024,
+    283164672,
+    278036480,
+    280625152,
+    273416192,
+    278069248,
+    281886720,
+    284934144,
+    281100288,
+    284508160,
+    282296320,
+    272973824,
+    276316160,
+    280461312,
+    281886720,
+    285884416,
+    281149440,
+    283787264,
+    278872064,
+    281706496,
+    284082176,
+    288915456,
+    285179904,
+    294387712,
+    285425664,
+    276135936,
+    279642112,
+    282951680,
+    282378240,
+    288882688,
+    279396352,
+    284409856,
+    279937024,
+    279166976,
+    285261824,
+    289423360,
+    284590080,
+    295387136,
+    285474816,
+    276332544,
+    279838720,
+    282722304,
+    284229632,
+    288636928,
+    282607616,
+    288210944,
+    280494080,
+    279379968,
+    288047104,
+    291045376,
+    287309824,
+    296288256,
+    286441472,
+    276987904,
+    280510464,
+    283918336,
+    285360128,
+    289275904,
+    285409280,
+    287752192,
+    282312704,
+    282181632,
+    288718848,
+    291733504,
+    287391744,
+    296697856,
+    288686080,
+    279429120,
+    282853376,
+    286212096,
+    287604736,
+    294600704,
+    285163520,
+    287375360,
+    282394624,
+    281542656,
+    290177024,
+    293175296,
+    288800768,
+    297271296,
+    289210368,
+    279953408,
+    283361280,
+    286801920,
+    288210944,
+    291749888,
+    287604736
+  ],
+  "summaries": [
+    {
+      "operation": "prose: open",
+      "samples": 8,
+      "p99Us": 34098,
+      "maximumUs": 34098,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "prose: insert",
+      "samples": 8,
+      "p99Us": 11281,
+      "maximumUs": 11281,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "prose: enter source at byte boundary",
+      "samples": 8,
+      "p99Us": 12667,
+      "maximumUs": 12667,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "prose: return to live",
+      "samples": 8,
+      "p99Us": 10498,
+      "maximumUs": 10498,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "prose: undo boundary",
+      "samples": 8,
+      "p99Us": 9995,
+      "maximumUs": 9995,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "prose: redo boundary",
+      "samples": 8,
+      "p99Us": 10547,
+      "maximumUs": 10547,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "prose: delete",
+      "samples": 8,
+      "p99Us": 8306,
+      "maximumUs": 8306,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "prose: inspection reflow",
+      "samples": 16,
+      "p99Us": 9125,
+      "maximumUs": 9125,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "dense: open",
+      "samples": 8,
+      "p99Us": 35087,
+      "maximumUs": 35087,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "dense: insert",
+      "samples": 8,
+      "p99Us": 10389,
+      "maximumUs": 10389,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "dense: enter source at byte boundary",
+      "samples": 8,
+      "p99Us": 13550,
+      "maximumUs": 13550,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "dense: return to live",
+      "samples": 8,
+      "p99Us": 12256,
+      "maximumUs": 12256,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "dense: undo boundary",
+      "samples": 8,
+      "p99Us": 7826,
+      "maximumUs": 7826,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "dense: redo boundary",
+      "samples": 8,
+      "p99Us": 8466,
+      "maximumUs": 8466,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "dense: delete",
+      "samples": 8,
+      "p99Us": 9224,
+      "maximumUs": 9224,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "dense: inspection reflow",
+      "samples": 16,
+      "p99Us": 10136,
+      "maximumUs": 10136,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "list: open",
+      "samples": 7,
+      "p99Us": 30298,
+      "maximumUs": 30298,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "list: insert",
+      "samples": 7,
+      "p99Us": 10376,
+      "maximumUs": 10376,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "list: enter source at byte boundary",
+      "samples": 7,
+      "p99Us": 11854,
+      "maximumUs": 11854,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "list: return to live",
+      "samples": 7,
+      "p99Us": 10272,
+      "maximumUs": 10272,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "list: undo boundary",
+      "samples": 7,
+      "p99Us": 10177,
+      "maximumUs": 10177,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "list: redo boundary",
+      "samples": 7,
+      "p99Us": 11820,
+      "maximumUs": 11820,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "list: delete",
+      "samples": 7,
+      "p99Us": 10152,
+      "maximumUs": 10152,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "list: inspection reflow",
+      "samples": 14,
+      "p99Us": 9971,
+      "maximumUs": 9971,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "table: open",
+      "samples": 7,
+      "p99Us": 30389,
+      "maximumUs": 30389,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "table: insert",
+      "samples": 7,
+      "p99Us": 8639,
+      "maximumUs": 8639,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "table: enter source at byte boundary",
+      "samples": 7,
+      "p99Us": 11295,
+      "maximumUs": 11295,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "table: return to live",
+      "samples": 7,
+      "p99Us": 11226,
+      "maximumUs": 11226,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "table: undo boundary",
+      "samples": 7,
+      "p99Us": 9155,
+      "maximumUs": 9155,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "table: redo boundary",
+      "samples": 7,
+      "p99Us": 8621,
+      "maximumUs": 8621,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "table: delete",
+      "samples": 7,
+      "p99Us": 8809,
+      "maximumUs": 8809,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "table: inspection reflow",
+      "samples": 14,
+      "p99Us": 9712,
+      "maximumUs": 9712,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "nested: open",
+      "samples": 7,
+      "p99Us": 25126,
+      "maximumUs": 25126,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "nested: insert",
+      "samples": 7,
+      "p99Us": 8369,
+      "maximumUs": 8369,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "nested: enter source at byte boundary",
+      "samples": 7,
+      "p99Us": 10333,
+      "maximumUs": 10333,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "nested: return to live",
+      "samples": 7,
+      "p99Us": 12430,
+      "maximumUs": 12430,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "nested: undo boundary",
+      "samples": 7,
+      "p99Us": 6831,
+      "maximumUs": 6831,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "nested: redo boundary",
+      "samples": 7,
+      "p99Us": 8724,
+      "maximumUs": 8724,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "nested: delete",
+      "samples": 7,
+      "p99Us": 12000,
+      "maximumUs": 12000,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "nested: inspection reflow",
+      "samples": 14,
+      "p99Us": 10436,
+      "maximumUs": 10436,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "reference: open",
+      "samples": 7,
+      "p99Us": 47608,
+      "maximumUs": 47608,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "reference: insert",
+      "samples": 7,
+      "p99Us": 12552,
+      "maximumUs": 12552,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "reference: enter source at byte boundary",
+      "samples": 7,
+      "p99Us": 17177,
+      "maximumUs": 17177,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "reference: return to live",
+      "samples": 7,
+      "p99Us": 13361,
+      "maximumUs": 13361,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "reference: undo boundary",
+      "samples": 7,
+      "p99Us": 6631,
+      "maximumUs": 6631,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "reference: redo boundary",
+      "samples": 7,
+      "p99Us": 11036,
+      "maximumUs": 11036,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "reference: delete",
+      "samples": 7,
+      "p99Us": 11116,
+      "maximumUs": 11116,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "reference: inspection reflow",
+      "samples": 14,
+      "p99Us": 15295,
+      "maximumUs": 15295,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "unicode: open",
+      "samples": 7,
+      "p99Us": 38409,
+      "maximumUs": 38409,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "unicode: insert",
+      "samples": 7,
+      "p99Us": 11514,
+      "maximumUs": 11514,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "unicode: enter source at byte boundary",
+      "samples": 7,
+      "p99Us": 17991,
+      "maximumUs": 17991,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "unicode: return to live",
+      "samples": 7,
+      "p99Us": 15481,
+      "maximumUs": 15481,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "unicode: undo boundary",
+      "samples": 7,
+      "p99Us": 10687,
+      "maximumUs": 10687,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "unicode: redo boundary",
+      "samples": 7,
+      "p99Us": 11321,
+      "maximumUs": 11321,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "unicode: delete",
+      "samples": 7,
+      "p99Us": 11557,
+      "maximumUs": 11557,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "unicode: inspection reflow",
+      "samples": 14,
+      "p99Us": 11959,
+      "maximumUs": 11959,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "code: open",
+      "samples": 7,
+      "p99Us": 37027,
+      "maximumUs": 37027,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "code: insert",
+      "samples": 7,
+      "p99Us": 8173,
+      "maximumUs": 8173,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "code: enter source at byte boundary",
+      "samples": 7,
+      "p99Us": 13081,
+      "maximumUs": 13081,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "code: return to live",
+      "samples": 7,
+      "p99Us": 12665,
+      "maximumUs": 12665,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "code: undo boundary",
+      "samples": 7,
+      "p99Us": 8664,
+      "maximumUs": 8664,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "code: redo boundary",
+      "samples": 7,
+      "p99Us": 9150,
+      "maximumUs": 9150,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "code: delete",
+      "samples": 7,
+      "p99Us": 10065,
+      "maximumUs": 10065,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "code: inspection reflow",
+      "samples": 14,
+      "p99Us": 8817,
+      "maximumUs": 8817,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "source ceiling: open",
+      "samples": 7,
+      "p99Us": 26366,
+      "maximumUs": 26366,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "source ceiling: insert",
+      "samples": 7,
+      "p99Us": 18883,
+      "maximumUs": 18883,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "source ceiling: delete",
+      "samples": 7,
+      "p99Us": 20652,
+      "maximumUs": 20652,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "source ceiling: inspection reflow",
+      "samples": 14,
+      "p99Us": 16034,
+      "maximumUs": 16034,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "long line: open",
+      "samples": 7,
+      "p99Us": 21770,
+      "maximumUs": 21770,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "long line: insert",
+      "samples": 7,
+      "p99Us": 8581,
+      "maximumUs": 8581,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "long line: delete",
+      "samples": 7,
+      "p99Us": 7664,
+      "maximumUs": 7664,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "long line: inspection reflow",
+      "samples": 14,
+      "p99Us": 8602,
+      "maximumUs": 8602,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "line count: open",
+      "samples": 7,
+      "p99Us": 25664,
+      "maximumUs": 25664,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "line count: insert",
+      "samples": 7,
+      "p99Us": 10316,
+      "maximumUs": 10316,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "line count: delete",
+      "samples": 7,
+      "p99Us": 10452,
+      "maximumUs": 10452,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "line count: inspection reflow",
+      "samples": 14,
+      "p99Us": 9794,
+      "maximumUs": 9794,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "block count: open",
+      "samples": 7,
+      "p99Us": 24034,
+      "maximumUs": 24034,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "block count: insert",
+      "samples": 7,
+      "p99Us": 7661,
+      "maximumUs": 7661,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "block count: delete",
+      "samples": 7,
+      "p99Us": 8292,
+      "maximumUs": 8292,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "block count: inspection reflow",
+      "samples": 14,
+      "p99Us": 8724,
+      "maximumUs": 8724,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "run count: open",
+      "samples": 7,
+      "p99Us": 24849,
+      "maximumUs": 24849,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "run count: insert",
+      "samples": 7,
+      "p99Us": 8687,
+      "maximumUs": 8687,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "run count: delete",
+      "samples": 7,
+      "p99Us": 10463,
+      "maximumUs": 10463,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "run count: inspection reflow",
+      "samples": 14,
+      "p99Us": 10843,
+      "maximumUs": 10843,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "container depth: open",
+      "samples": 7,
+      "p99Us": 18575,
+      "maximumUs": 18575,
+      "budgetUs": 200000
+    },
+    {
+      "operation": "container depth: insert",
+      "samples": 7,
+      "p99Us": 8750,
+      "maximumUs": 8750,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "container depth: delete",
+      "samples": 7,
+      "p99Us": 5772,
+      "maximumUs": 5772,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "container depth: inspection reflow",
+      "samples": 14,
+      "p99Us": 11766,
+      "maximumUs": 11766,
+      "budgetUs": 50000
+    },
+    {
+      "operation": "sustained prose: sustained insert",
+      "samples": 1506,
+      "p99Us": 14399,
+      "maximumUs": 15197,
+      "budgetUs": 16667
+    },
+    {
+      "operation": "sustained prose: sustained delete",
+      "samples": 1494,
+      "p99Us": 14339,
+      "maximumUs": 15295,
+      "budgetUs": 16667
+    }
+  ],
+  "failures": []
+}

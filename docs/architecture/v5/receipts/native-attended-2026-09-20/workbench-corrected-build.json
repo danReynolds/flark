@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-09-20T14:13:51.824610+00:00",
+  "gitHead": "ef73d76e71b0803e17a50a9f6e4a5bc94b672e9d",
+  "modifiedInputs": [
+    "M docs/architecture/v5/macos_qualification.md",
+    " M packages/flark_flutter/example/README.md",
+    " M packages/flark_flutter/example/integration_test/frame_profile_test.dart",
+    " M packages/flark_flutter/example/integration_test/workbench_profile_test.dart",
+    "?? packages/flark_flutter/example/integration_test/native_profile.dart",
+    "?? packages/flark_flutter/example/test/native_profile_preflight_test.dart"
+  ],
+  "files": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "3ff000b78f6b403bda21a907c98906664362d769e69623b4258f741851bbe970",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/App.framework/Versions/A/App": "6460087a05db6c30a833ac21ad8cf8a110b2f9db6a7516a0f7597990dd88cec8",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/FlutterMacOS.framework/Versions/A/FlutterMacOS": "6e25a873c2a1f12076878d73c03402cefdf8a57eca12369f0815d88c97d734b3",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_parse.framework/Versions/A/flark_parse": "04c96bd4aa2d811ac9bd520c6ab1bb28556b7544164a7d8b69364c3e9d8a9078",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/flark_tree_sitter.framework/Versions/A/flark_tree_sitter": "3362f9192ed1220ce3d48d4260e8cc1b3beb7779ace08a7f5b66e0da5eb80f89"
+  },
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.2\nBuildVersion:\t\t25C56",
+  "cpu": "Apple M1 Pro",
+  "architecture": "arm64",
+  "flutter": {
+    "frameworkVersion": "3.44.4",
+    "channel": "[user-branch]",
+    "repositoryUrl": "unknown source",
+    "frameworkRevision": "ad70ec4617166f1c38e5d2bfd388af71fda14f06",
+    "frameworkCommitDate": "2026-06-24 11:07:06 -0700",
+    "engineRevision": "a10d8ac38de835021c8d2f920dbf50a920ccc030",
+    "engineCommitDate": "2026-06-23 23:09:55.000Z",
+    "engineContentHash": "700aebeca4c0e610f109a3979ee3e71b69d666bc",
+    "engineBuildDate": "2026-06-23 20:26:40.203",
+    "dartSdkVersion": "3.12.2",
+    "devToolsVersion": "2.57.0",
+    "flutterVersion": "3.44.4",
+    "flutterRoot": "/Users/dan/Coding/flutter_arm64"
+  }
+}

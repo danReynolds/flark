@@ -1,5 +1,7 @@
 # Native qualification follow-up — 2026-09-20
 
+Later attended results: [native qualification follow-up](native_attended_2026_09_20.md).
+
 Production baseline: merged `e7136388dd0cb5d080b05adfba2ef4099b570bf5`.
 The production renderer and the existing performance workloads/budgets were
 unchanged. CI remains skipped at the owner's request. This is a diagnostic

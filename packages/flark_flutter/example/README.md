@@ -112,8 +112,10 @@ caffeinate -dis flutter drive --profile -d macos \
 ```
 
 Run it with the Mac unlocked and the app in the foreground. Reject a run with
-failed foreground activation or a lock transition. The harness now requires
-Flutter's resumed lifecycle and enabled frames, and rejects foreground loss. The bounded fixture fills
+failed foreground activation or a lock transition. Inspect the native app's
+accessibility tree during preflight; the harness waits for OS-requested semantics
+before the widget test starts. During measurement it requires resumed lifecycle,
+enabled frames and native semantics, and rejects foreground loss. The bounded fixture fills
 the byte envelope while retaining as much of each structural pattern as the
 published count limit admits; the original unconstrained fixtures remain a
 separate diagnostic. Prose, dense blocks, lists, tables, nested containers, unique references, and

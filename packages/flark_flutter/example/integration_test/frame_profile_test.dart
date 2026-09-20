@@ -14,6 +14,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'native_profile.dart';
+
 int p99(List<int> values) {
   final sorted = [...values]..sort();
   return sorted[(sorted.length * .99).ceil() - 1];
@@ -22,6 +24,7 @@ int p99(List<int> values) {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  setUpAll(() => waitForNativeProfile(binding));
   testWidgets(
     'input to actual raster across admitted document shapes',
     (tester) async {
@@ -71,6 +74,7 @@ void main() {
               'The profile requires the actual foreground app, not a captured hidden window.',
         );
         expect(binding.framesEnabled, isTrue);
+        expect(binding.platformDispatcher.semanticsEnabled, isTrue);
         expect(
           lostForeground,
           isFalse,
@@ -302,6 +306,7 @@ void main() {
             'site': site,
             'bounded': bounded,
             'productionWorkbench': appMode,
+            'nativeSemantics': binding.platformDispatcher.semanticsEnabled,
             'treeSitterEditing': true,
             'treeSitterColors': c.codeColors != null,
             'blocks': c.editor.document.model.blockCount,
@@ -369,6 +374,7 @@ void main() {
         );
       }
     },
+    semanticsEnabled: false,
     timeout: const Timeout(Duration(minutes: 12)),
   );
 }
