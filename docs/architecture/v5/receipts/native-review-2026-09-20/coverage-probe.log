@@ -1,0 +1,7 @@
+Running build hooks...Running build hooks...00:00 +0: loading test/_coverage_probe_test.dart
+00:00 +0: inspect current Markdown rendering boundaries
+{"case":"rule","rows":[{"kind":"paragraph","text":"above"},{"kind":"blank","text":""},{"kind":"thematicBreak","text":""},{"kind":"blank","text":""},{"kind":"paragraph","text":"below"}],"painted":["above","","","","below","","","","","","",""]}
+{"case":"footnote","rows":[{"kind":"paragraph","text":"note[^n]"},{"kind":"blank","text":""},{"kind":"paragraph","text":"footnote body"}],"painted":["note[^n]","","footnote body","","","","","","","","",""]}
+{"case":"html","rows":[{"kind":"paragraph","text":"<b>inline</b>"},{"kind":"blank","text":""},{"kind":"htmlBlock","text":"<div>block</div>"}],"painted":["<b>inline</b>","","<div>block</div>","","","","","","","","",""]}
+{"case":"setext","rows":[{"kind":"heading","text":"heading"},{"kind":"blank","text":""},{"kind":"paragraph","text":"body"}],"painted":["heading","","body","","","","","","","","",""]}
+00:00 +1: All tests passed!

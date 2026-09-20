@@ -38,6 +38,8 @@ native OS input and device evidence are tracked separately.
 
 Current evidence and remaining release gates:
 
+- [Markdown coverage](docs/architecture/v5/markdown_coverage_2026_09_20.md)
+- [Attended native results](docs/architecture/v5/native_attended_2026_09_20.md)
 - [Production audit](docs/architecture/v5/production_audit_2026_09_16.md)
 - [Fleury support closeout](docs/architecture/v5/fleury_support_closeout_2026_09_16.md)
 - [macOS qualification and limits](docs/architecture/v5/macos_qualification.md)

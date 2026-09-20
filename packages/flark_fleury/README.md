@@ -118,7 +118,7 @@ The example shows native and browser asset loading for both services.
 ## Develop and run
 
 The host and example pin Fleury's companion packages to reviewed Git revision
-`41967d499a6bd0fe53e5f5f07b31649df0adcc83` ([Fleury #260](https://github.com/danReynolds/fleury/pull/260)). A sibling checkout
+`ffb6d22d488a1979658578f4fc5634bb17b37b7f` ([Fleury #262](https://github.com/danReynolds/fleury/pull/262)). A sibling checkout
 is no longer required. The committed `dependency_overrides.fleury` keeps the
 companions' hosted core constraint on that same revision until publication.
 An application consuming this unpublished host must copy that core override
@@ -158,7 +158,11 @@ reloading `/` can retain older subresources in an embedded browser cache.
 This executes Dart and both Wasm modules in the
 page; it does not stream a remote terminal or Flutter app.
 
-## First-slice boundaries
+## Current boundaries
+
+See the [Markdown coverage audit](../../docs/architecture/v5/markdown_coverage_2026_09_20.md)
+for syntax support and remaining presentation gaps, including horizontal rules
+and footnotes.
 
 - Paragraphs, inline styles, headings, lists/tasks, quotes and code bodies.
   Pointer/keyboard selection, grapheme deletion, cell wrapping, scrolling,

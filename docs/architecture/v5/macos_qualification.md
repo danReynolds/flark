@@ -75,10 +75,12 @@ the title bar during preflight; do not click an unmounted test surface.
 A capturable window, posted key, awake display or manually
 pumped hidden test binding does not establish a valid run.
 
-Require complete receipts and inspect the process log for framework/native
-errors as well as the driver's exit status. A setup failure can leave the driver
-reporting success without having executed the widget test; missing workload
-receipts always reject that run.
+Use `test_driver/profile.dart` for full qualification runs. It preserves the
+response data and rejects missing/incomplete receipts before returning success.
+A setup failure can leave the generic integration driver reporting success
+without having executed the widget test. Deliberately filtered diagnostics use
+the generic driver and do not qualify a full run. Inspect the process log for
+framework/native errors as well as the validated driver's exit status.
 
 Opening measures the document-to-editable-viewport path after preferences are
 loaded; it excludes OS process startup and initial backend loading. The normal

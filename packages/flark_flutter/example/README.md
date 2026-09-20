@@ -105,7 +105,7 @@ includes draft persistence and application UI:
 
 ```sh
 caffeinate -dis flutter drive --profile -d macos \
-  --driver=test_driver/integration_test.dart \
+  --driver=test_driver/profile.dart \
   --target=integration_test/frame_profile_test.dart \
   --dart-define=FLARK_PROFILE_BOUNDED=true \
   --dart-define=FLARK_PROFILE_APP=true
@@ -125,6 +125,10 @@ largest laid-out block and at the end. Profile persistence uses a separate
 
 Run the complementary opening, boundary, save/close, memory and sustained-input
 workload with the same driver and `--target=integration_test/workbench_profile_test.dart`.
+The profile driver rejects missing/incomplete receipts, including the false
+success banner possible after a suite-setup failure. It is for full qualification
+runs; deliberately filtered diagnostics can use `test_driver/integration_test.dart`
+and must not be reported as a full pass. Keep checking native/framework error logs.
 It always uses the production workbench, keeps its drafts under
 `flark.workbenchProfile.`, and requires a window wider than 650 logical pixels
 so the inspection toggle actually reflows the editor. Its measured sequence runs
