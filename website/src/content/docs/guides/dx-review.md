@@ -5,7 +5,7 @@ description: Constructive review of the proposed Flark API, before implementatio
 
 This is a design review by three independent AI reviewers acting as DX personas,
 plus a source-code check. It is not external user research, a code review of an
-implementation, or a performance result. The [Using Flark proposal](/guides/using-flark/)
+implementation, or a performance result. The [Using Flark proposal](../using-flark/)
 contains the revised consumer-facing examples.
 
 ## What the reviewers tested mentally

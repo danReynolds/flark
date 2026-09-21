@@ -11,3 +11,37 @@
 }
 .sl-markdown-content table { font-size: 0.95rem; }
 .sl-markdown-content h2 { margin-top: 3rem; }
+
+/* Homepage colors follow the same theme switch as the documentation. */
+:root {
+  --home-surface: #141a23;
+  --home-muted: #131923;
+  --home-border: #343e4d;
+  --home-glow: #478bc915;
+  --home-live: #91cfb4;
+  --home-live-halo: #91cfb417;
+}
+:root[data-theme='light'] {
+  --home-surface: #fff;
+  --home-muted: #f0f3f7;
+  --home-border: #dbe1e8;
+  --home-glow: #478bc90b;
+  --home-live: #3a8066;
+  --home-live-halo: #3a806614;
+}
+:root[data-has-hero] {
+  --sl-content-width: 72rem;
+  --sl-color-bg: #141a23;
+  --sl-color-bg-nav: #141a23;
+  --sl-color-hairline-shade: #2a3340;
+}
+:root[data-has-hero][data-theme='light'] {
+  --sl-color-bg: #f8fafc;
+  --sl-color-bg-nav: #f8fafc;
+  --sl-color-hairline-shade: #e2e7ee;
+}
+[data-has-hero] main, [data-has-hero] .content-panel { padding: 0; }
+[data-has-hero] .sl-container { max-width: none; }
+[data-has-hero] .sl-container > .sl-markdown-content,
+[data-has-hero] .sl-container > footer { display: none; }
+[data-has-hero] .header { padding-inline: clamp(1.25rem, 4vw, 4.5rem); }
