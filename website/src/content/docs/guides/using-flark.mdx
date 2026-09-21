@@ -1,0 +1,239 @@
+---
+title: Using Flark
+description: Review the proposed editing and read-only rendering API for Flutter and Fleury.
+---
+
+:::note[Approved API design · not implemented]
+Revised after three simulated DX persona reviews and approved for implementation.
+The examples describe the planned API. [Review decisions →](/guides/dx-review/)
+:::
+
+Flark manages Markdown rendering, selection, formatting, and undo. Your app owns
+its documents, persistence, and presentation.
+
+## Start with a widget
+
+```dart
+import 'package:flark_flutter/flark_flutter.dart';
+
+FlarkEditor(
+  key: ValueKey(note.id),
+  initialMarkdown: note.markdown,
+  onChanged: saveMarkdown,
+)
+```
+
+Render this after the note arrives. `initialMarkdown` seeds the session once;
+rebuilds preserve edits. A different key starts a fresh session for another note.
+The widget owns cleanup. Its toolbar and scrolling are included; use bounded
+space, such as `Expanded` inside a `Column`.
+
+**No global initialization or backend setup.** Flark automatically loads the
+native or Wasm implementation and provides loading, error, and retry UI.
+Standard host builds must include the assets without application bootstrap code.
+
+Fleury imports `package:flark_fleury/flark_fleury.dart` and exposes the same
+component names and common controller API, using Fleury's own UI types.
+
+## Render Markdown without editing
+
+```dart
+FlarkMarkdown(
+  markdown: article,
+  selectable: true,
+  onOpenLink: openLink,
+)
+```
+
+No controller is required. It updates with `markdown`, flows in its parent's
+layout, and leaves scrolling to the parent. `selectable` defaults to false;
+enabling it adds selection and copying.
+
+The dedicated rendering path shares parsing, layout, themes, and image previews.
+It creates no editing history, IME connection, or indentation service. Unchanged
+input reuses this widget's parsed content; width/theme changes update layout.
+
+Current read-only components reuse an editor. The new path needs measured
+validation. The existing 16 KiB live-rendering and shape limits, with bounded
+source fallback, remain until larger documents are separately qualified. Fallback
+must be visibly identified and provide access to the complete source.
+
+## Control the document
+
+For custom controls, create this once in your widget's `State`:
+
+```dart
+late final controller = FlarkController(markdown: widget.note.markdown);
+```
+
+```dart
+FlarkEditor(controller: controller, onChanged: saveMarkdown)
+```
+
+Supply either a controller or `initialMarkdown`. Your app disposes an external
+controller when finished. It survives remounts and supports one mounted editor
+at a time. No separate engine object is needed.
+
+```dart
+controller.toggleStyle(FlarkStyle.bold);
+controller.setStyle(FlarkStyle.italic, enabled: true);
+controller.undo();
+final markdown = controller.markdown;
+```
+
+| Operation | History | Edit/save notification |
+| --- | --- | --- |
+| Typing, formatting, undo, programmatic edits | Preserved | When Markdown changes |
+| `replaceMarkdown(text)` | One undoable replacement | When Markdown changes |
+| `loadMarkdown(text)` | Reset, along with selection and typing styles | None: establishes external content |
+
+`onChanged` forwards the controller's broadcast, non-replaying `changes` stream
+of Markdown strings while the widget is attached.
+Subscribe with `controller.changes.listen(saveMarkdown)` when saving must outlive
+widget attachment; cancel that subscription when finished. Use one save route.
+General controller listeners also report selection, mode, and loading changes.
+
+`loadMarkdown` can replace the seed during loading; the latest explicit load
+wins. It is not an edit queue. Avoid feeding saved edits back through it.
+Applications discard stale fetch results when switching notes.
+
+### Automatic readiness
+
+Preparation begins automatically when the controller is created. For immediate
+programmatic edits, including without a widget:
+
+```dart
+await controller.ready;
+controller.insertText('Hello'); // At the caret, replacing any selection.
+```
+
+`state.status` is `loading`, `ready`, `failed`, or `disposed`; `state.error`
+explains a failure. `ready` awaits the current attempt. After failure,
+`await controller.retryLoading()` starts a new attempt and preserves content.
+Edits before readiness return `rejected` with reason `notReady`; they are not
+queued. Disposal cancels this controller's readiness and ignores late
+completions; shared loading for other controllers can continue.
+
+## Insert, replace, or append
+
+`insertText` follows typing behavior at the selection, including active styles
+and Markdown shortcuts. Inserting `*word*` may create emphasis. It is not an
+escaped-literal API or an append operation.
+
+For an exact Markdown source edit:
+
+```dart
+final snapshot = controller.state;
+controller.replaceSourceRange(
+  start: 10,
+  end: 15,
+  markdown: 'world',
+  expectedRevision: snapshot.revision,
+);
+```
+
+Ranges are half-open UTF-16 source offsets, including Markdown markers. Append
+by setting both offsets to `snapshot.markdown.length`. Invalid boundaries are
+rejected; offsets are never silently snapped. An unaffected selection stays
+anchored through the edit; an overlapping selection collapses after the replacement.
+
+The optional revision guard rejects edits based on stale content or selection,
+including a different loaded document. The revision never resets on a load.
+This exact-source contract is new behavior, not a rename of today's normalized
+range edit. It remains subject to source validation and size limits.
+
+## Read state and build controls
+
+`controller.state` is an immutable snapshot. Re-read it on controller
+notifications:
+
+```dart
+final state = controller.state;
+state.styles.bold.isOn;
+state.styles.bold.isMixed;
+state.styles.bold.canToggle;
+state.styles[FlarkStyle.italic]; // Generated toolbar lookup.
+state.heading; // Level, mixed selection, and availability.
+state.link;    // Current link and set/remove availability.
+state.code;    // Fence context, language, and language-setting availability.
+state.mode;    // Rendered or source.
+state.selection;
+state.canUndo;
+state.canRedo;
+```
+
+At a caret, styles describe subsequent typing; over a selection, they describe
+selected text. Toggling mixed formatting enables it throughout. Explicitly
+setting an already-matching style is a no-op.
+
+```dart
+ListenableBuilder(
+  listenable: controller,
+  builder: (context, _) {
+    final bold = controller.state.styles.bold;
+    return IconButton(
+      isSelected: bold.isOn,
+      tooltip: bold.isMixed ? 'Bold (mixed)' : 'Bold',
+      icon: Icon(bold.isMixed ? Icons.remove : Icons.format_bold),
+      onPressed: !readOnly && bold.canToggle
+          ? () => controller.toggleStyle(FlarkStyle.bold)
+          : null,
+    );
+  },
+)
+```
+
+Set `showToolbar: false` for custom controls. Pass the same application-owned
+`readOnly` flag to the editor and your controls. It disables user editing;
+programmatic controller edits remain available. Capabilities describe supported
+operations, not application permissions. Built-in controls use this public API.
+
+## Editing API
+
+`FlarkStyle` contains `bold`, `italic`, `strikethrough`, and `inlineCode`.
+The first API pass covers these operation families:
+
+| Intent | Proposed methods |
+| --- | --- |
+| Inline formatting | `toggleStyle`, `setStyle` |
+| Paragraphs and headings | `setParagraph`, `setHeading(level)` |
+| Code and list editing | `setCodeLanguage`, `indent`, `outdent`, `toggleTask` |
+| Links and images | `setLink`, `removeLink`, `insertImage`, `updateImage`, `removeImage` |
+| Text and selection | `insertText`, `replaceSourceRange`, `setSelection`, `selectAll` |
+| History and document | `undo`, `redo`, `replaceMarkdown`, `loadMarkdown` |
+| Rendering mode | `setSourceMode(enabled)` |
+
+Results distinguish **changed**, **unchanged**, and **rejected**, with a rejection
+reason. Rejections leave document, selection, and history untouched.
+`selectAll()` selects the whole document; `scope: FlarkSelectionScope.codeBlock`
+explicitly selects a fence. The keyboard retains fence-first, then document behavior.
+
+Clear-formatting, list/quote conversion, code/table insertion, and row/column
+operations are later authoring work. They will need matching state/capability APIs.
+
+## Customize the surface
+
+Use Flutter's `FlarkThemeData` or Fleury's `FlarkCellTheme` with the respective
+`theme` argument. Both support host-native link/image controls through
+`linkPopoverBuilder` and `presentResourceEditor`.
+
+The supplied resource session remembers the target and handles stale edits and
+focus restoration. Use its save/remove actions for asynchronous dialogs;
+a delayed `setLink` would otherwise act on the current selection.
+
+Custom toolbar buttons can launch those same guarded dialogs:
+
+```dart
+controller.showLinkEditor();
+controller.showImageEditor();
+```
+
+These require a mounted, editable view and return the edit result when the
+dialog closes; cancelling returns `unchanged`. The target is captured before
+focus moves. `setLink` remains the immediate, data-only operation.
+
+The optional code-snippet service remains supported. Its simpler opt-in API is
+a follow-up design; read-only highlighting must not start indentation services.
+
+See the [review decisions and implementation gates](/guides/dx-review/) for the
+changes made during review and the work intentionally left separate.
