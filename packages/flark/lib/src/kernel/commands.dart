@@ -29,7 +29,8 @@ final class DeleteForward extends FlarkCommand {
 }
 
 /// Return: a line break, continuing or exiting a list or quote; a paragraph
-/// break when [paragraph] is set.
+/// break when [paragraph] is set. In a fenced code block, Return on a final
+/// blank line exits the block; [paragraph] keeps the break inside code instead.
 final class Newline extends FlarkCommand {
   const Newline({this.paragraph = false});
   final bool paragraph;

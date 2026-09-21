@@ -542,6 +542,13 @@ class _EditorState extends State<FlarkEditorView>
       command = event.hasShift ? const Redo() : const Undo();
     } else if (primary && event.code == KeyCode.y) {
       command = const Redo();
+    } else if (event.code == KeyCode.enter &&
+        event.hasShift &&
+        !primary &&
+        !event.hasAlt) {
+      // The default multiline keymap binds plain Enter only. Flark also uses
+      // Shift+Enter to retain an intentional blank line inside a code fence.
+      command = const Newline(paragraph: true);
     } else if (event.code == KeyCode.tab) {
       if (widget.readOnly) return;
       final row = _editor.sourceMode ? null : _editor.document.caretRow;

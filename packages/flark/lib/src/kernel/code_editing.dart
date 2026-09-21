@@ -380,6 +380,90 @@ extension _CodeEditing on FlarkEditor {
     );
   }
 
+  /// Enter on a final blank body line finishes the snippet. Null means this
+  /// gesture does not apply; a rejected exit must not fall through to newline.
+  bool? _exitCodeOnBlankLine(ProjectedRow row) {
+    if (!row.fenced || composing) return null;
+    final lastBreak = row.text.lastIndexOf('\n');
+    if (lastBreak < 0 ||
+        codeLeadingWhitespace(row.text.substring(lastBreak + 1)).length !=
+            row.text.length - lastBreak - 1) {
+      return null;
+    }
+    final line = _doc.model.lineOfUtf16(selection.extent);
+    final i = line - row.firstLine;
+    if (i < 0 ||
+        i >= row.contentStarts.length ||
+        row.contentStarts[i] < 0 ||
+        row.contentStarts.skip(i + 1).any((start) => start >= 0)) {
+      return null;
+    }
+
+    final model = _doc.model;
+    final block = model.blockAt(row.block);
+    final lineStart = model.lineStartUtf16(line);
+    final prefix = source.substring(lineStart, row.contentStarts[i]);
+    final newline = source.substring(row.contentEnds[i - 1], lineStart);
+    final edits = <(int, int, String)>[];
+    late int destination;
+    if (block.flags & 2 != 0) {
+      final closingLine = block.firstLine + block.lineCount - 1;
+      edits.add((lineStart, model.lineStartUtf16(closingLine), ''));
+      final after = closingLine + 1;
+      // Reuse the paragraph created along with a typed fence, when present.
+      // Otherwise insert a fresh line without consuming any following prose.
+      if (after < model.lineCount &&
+          source.substring(
+                model.lineStartUtf16(after),
+                _sourceLineEnd(model.lineStartUtf16(after)),
+              ) ==
+              prefix) {
+        destination = _sourceLineEnd(model.lineStartUtf16(after));
+      } else {
+        final end = _sourceLineEnd(model.lineStartUtf16(closingLine));
+        edits.add((end, end, '$newline$prefix'));
+        destination = end;
+      }
+    } else {
+      // Imported unclosed fences need an actual closer; moving the caret past
+      // their source range alone would leave the next character inside code.
+      final marker = String.fromCharCode(source.codeUnitAt(block.startUtf16));
+      edits.add((
+        lineStart,
+        row.contentEnds[i],
+        '$prefix${marker * block.attr0}$newline$prefix',
+      ));
+      destination = row.contentEnds[i];
+    }
+    final (edited, map) = _edited(edits);
+    final caret = map(destination);
+    var candidate = edited;
+    final followingStart = candidate.indexOf('\n', caret) + 1;
+    if (followingStart > 0 && followingStart < candidate.length) {
+      final end = candidate.indexOf('\n', followingStart);
+      final following = candidate
+          .substring(followingStart, end < 0 ? candidate.length : end)
+          .trim();
+      // Keep the new paragraph separate from any following content after the
+      // next character is typed, including inside a quote or list item.
+      if (following.isNotEmpty && following != prefix.trim()) {
+        candidate = candidate.replaceRange(caret, caret, '$newline$prefix');
+      }
+    }
+    return _commit(
+      candidate,
+      FlarkSelection.collapsed(caret),
+      typing: false,
+      acceptSourceMode: true,
+      accept: (next) =>
+          next.selection.extent == caret &&
+          next.rowAt(caret).kind == RowKind.blank &&
+          next.projection.rows[row.index].fenced &&
+          next.projection.rows[row.index].text ==
+              row.text.substring(0, lastBreak),
+    );
+  }
+
   bool _codeNewline(ProjectedRow row, int start, int end) {
     if (_doc.rowAt(end).index != row.index) return false;
     final delegated = _delegateCodeEdit(CodeEditingAction.newline);

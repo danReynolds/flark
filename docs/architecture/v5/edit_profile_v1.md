@@ -215,6 +215,16 @@ Automatic removes the language token; with remaining metadata it uses `auto`
 to preserve the metadata's position. Unknown tags remain intact and uncolored.
 
 Enter carries existing leading whitespace and parser-owned container prefixes.
+On a blank final body line after another code line, Enter instead exits the
+fence and removes that final blank line, including auto-indentation. Thus
+Enter twice after code finishes the snippet, with the next character entering
+a separate paragraph. The enclosing list or quote remains intact. A newly
+empty fence needs two Enters; blank lines in the middle remain code.
+Shift+Enter deliberately keeps a blank line inside the fence. Selected
+replacement, paste, composition and source-mode input retain literal breaks.
+Exiting an imported unclosed fence adds its matching closer. Each exit is one
+atomic Undo action and preserves following content and existing fence metadata.
+
 An opening brace, bracket or parenthesis increases the indentation, and Enter
 between a matching pair puts the closer on its own line. Python's trailing
 colon also increases indentation. Recognized comments, strings and regex literals do not

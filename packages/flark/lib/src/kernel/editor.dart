@@ -1101,6 +1101,10 @@ final class FlarkEditor {
     final i = (line - row.firstLine).clamp(0, row.contentStarts.length - 1);
     String text;
     if (row.kind == RowKind.codeBlock) {
+      if (!paragraph) {
+        final exited = _exitCodeOnBlankLine(row);
+        if (exited != null) return exited;
+      }
       return _codeNewline(row, caret, caret);
     } else if (row.shells.isNotEmpty) {
       final prefixStart = row.prefixStarts[i],
