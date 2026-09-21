@@ -18,6 +18,13 @@ The source remains bounded: the default rich-rendering limit is 16 KiB of UTF-8
 plus shape limits. Bigger or unsupported documents fall back explicitly. The
 read-only fallback offers the complete Markdown for copying.
 
+## Existing integrations
+
+The default host imports now expose the new widget/controller names. Existing
+advanced integrations can retain their API by importing
+`flark_flutter_legacy.dart` or `flark_fleury_legacy.dart`. These are unpublished
+development packages; no stable-version compatibility claim is made.
+
 ## Before package publication
 
 1. **Distribution:** replace development path/Git dependencies with published

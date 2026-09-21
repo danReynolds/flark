@@ -1,0 +1,34 @@
+[
+  {
+    "path": "engine",
+    "sourceBytes": 4720,
+    "samples": 200,
+    "p50Us": 386,
+    "p99Us": 645,
+    "maxUs": 660
+  },
+  {
+    "path": "session",
+    "sourceBytes": 4720,
+    "samples": 200,
+    "p50Us": 466,
+    "p99Us": 711,
+    "maxUs": 773
+  },
+  {
+    "path": "engine",
+    "sourceBytes": 14750,
+    "samples": 200,
+    "p50Us": 1192,
+    "p99Us": 1758,
+    "maxUs": 2246
+  },
+  {
+    "path": "session",
+    "sourceBytes": 14750,
+    "samples": 200,
+    "p50Us": 1452,
+    "p99Us": 2848,
+    "maxUs": 3964
+  }
+]
