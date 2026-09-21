@@ -1,5 +1,9 @@
 # Flark
 
+**[Homepage](https://danreynolds.github.io/flark/)** ·
+[Flutter](packages/flark_flutter/README.md) ·
+[Fleury](packages/flark_fleury/README.md)
+
 Flark V5 is a live Markdown editor with one Dart editing kernel and two hosts:
 Flutter and Fleury. Exact Markdown source stays canonical while the editor
 projects rendered text, formatting, tables and code regions with editable source
@@ -16,8 +20,19 @@ Both host packages include a runnable example with a theme panel and one live
 editor. Their READMEs cover setup, native/web builds and customization.
 
 The [Using Flark guide](website/src/content/docs/guides/using-flark.mdx) records
-the approved widget/controller API design, ahead of implementation.
+the widget/controller API used by the homepage composer.
 Run the [docs site locally](website/README.md) to read it and leave annotations.
+
+```dart
+import 'package:flark_flutter/flark_flutter.dart';
+
+FlarkEditor(initialMarkdown: '# My note', onChanged: saveMarkdown);
+FlarkMarkdown(markdown: article, selectable: true);
+```
+
+No parser setup or global initialization. Use `FlarkController(markdown: ...)`
+for programmatic editing, observable formatting state and undo. Fleury exposes
+the same component names and common controller API from its host package.
 
 ## Status and supported limits
 
@@ -34,6 +49,10 @@ native OS input and device evidence are tracked separately.
 
 Current evidence and remaining release gates:
 
+- [Release readiness](website/src/content/docs/guides/release-readiness.md)
+- [Consumer API implementation review](docs/architecture/v5/consumer_api_review_2026_09_21.md)
+- [Markdown coverage](docs/architecture/v5/markdown_coverage_2026_09_20.md)
+- [Attended native results](docs/architecture/v5/native_attended_2026_09_20.md)
 - [Production audit](docs/architecture/v5/production_audit_2026_09_16.md)
 - [Fleury support closeout](docs/architecture/v5/fleury_support_closeout_2026_09_16.md)
 - [macOS qualification and limits](docs/architecture/v5/macos_qualification.md)

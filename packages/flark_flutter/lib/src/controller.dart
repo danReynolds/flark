@@ -1,3 +1,4 @@
+import 'package:flark/rendering.dart';
 import 'package:flark/flark.dart';
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
@@ -6,16 +7,26 @@ import 'code_colors.dart';
 
 /// One Flutter-facing publication of the kernel. Platform values are input
 /// messages; the editor's snapshot remains the sole document authority.
-class FlarkController extends ChangeNotifier {
+abstract interface class FlarkSurfaceController implements Listenable {
+  FlarkDocumentState get editor;
+  FlarkCodeColors? get codeColors;
+  String get text;
+  bool command(FlarkCommand command, {int? expectedRevision});
+  void sourceMode(bool enabled);
+}
+
+class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   FlarkController(this.editor, {this.codeColors}) {
     if (codeColors != null && !identical(codeColors!.editor, editor)) {
       throw ArgumentError('Colors must belong to this editor');
     }
     editor.addListener(_changed);
   }
+  @override
   final FlarkEditor editor;
 
   /// Owned optional decoration service; disposed with this controller.
+  @override
   final FlarkCodeColors? codeColors;
   TextRange _composing = TextRange.empty;
   String? _compositionSource;
@@ -24,7 +35,15 @@ class FlarkController extends ChangeNotifier {
   String? notice;
   bool _disposed = false;
   bool _batching = false;
+  @override
   String get text => editor.source;
+
+  /// Current selection/typing style. Re-read when this controller notifies.
+  FlarkStyleState styleState(int style) => editor.styleState(style);
+
+  /// Idempotent formatting; shares command history and IME handling.
+  bool setStyle(int style, {required bool enabled}) =>
+      command(SetStyle(style, enabled: enabled));
   TextEditingValue get value => TextEditingValue(
     text: text,
     selection: TextSelection(
@@ -35,6 +54,10 @@ class FlarkController extends ChangeNotifier {
   );
 
   void _changed() {
+    if (!editor.composing) {
+      _composing = TextRange.empty;
+      _compositionSource = null;
+    }
     if (!_disposed && !_batching) notifyListeners();
   }
 
@@ -60,15 +83,18 @@ class FlarkController extends ChangeNotifier {
     }
   }
 
+  @override
   bool command(FlarkCommand command, {int? expectedRevision}) =>
       _batch(() => _command(command, expectedRevision: expectedRevision));
   bool _command(FlarkCommand command, {int? expectedRevision}) {
-    if (editor.composing) {
-      editor.commitComposition();
+    final changed = editor.applyAfterComposition(
+      command,
+      expectedRevision: expectedRevision,
+    );
+    if (!editor.composing) {
       _composing = TextRange.empty;
       _compositionSource = null;
     }
-    final changed = editor.apply(command, expectedRevision: expectedRevision);
     notice = changed ? null : _rejectionNotice;
     _changed();
     return changed;
@@ -260,6 +286,7 @@ class FlarkController extends ChangeNotifier {
     _changed();
   }
 
+  @override
   void sourceMode(bool enabled) => _batch(() {
     finishComposition();
     editor.setSourceMode(enabled);
@@ -274,6 +301,7 @@ class FlarkController extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     editor.removeListener(_changed);
     codeColors?.dispose();

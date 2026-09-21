@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flark_dogfood/theme_playground.dart';
 import 'package:flark_dogfood/theme_settings.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +29,8 @@ void main() {
         ),
       );
       await t.pumpWidget(MaterialApp(home: ThemePlayground(backend: backend)));
+      await t.pump();
+      await t.tap(find.byTooltip('Customize theme'));
       await t.pump();
       expect(find.byType(FlarkEditorWidget), findsOneWidget);
       final editor = t
@@ -106,8 +108,11 @@ void main() {
     addTearDown(t.view.resetDevicePixelRatio);
     await t.pumpWidget(MaterialApp(home: ThemePlayground(backend: backend)));
     await t.pump();
+    expect(find.text('Customize'), findsNothing);
+    expect(find.byTooltip('Customize theme'), findsOneWidget);
+    await t.tap(find.byTooltip('Customize theme'));
+    await t.pump();
     expect(find.text('Customize'), findsOneWidget);
-    expect(find.text('Live editor'), findsOneWidget);
     expect(find.text('Read-only preview'), findsNothing);
     expect(find.byType(FlarkEditorWidget), findsOneWidget);
     expect(find.byTooltip('Link'), findsOneWidget);
@@ -124,6 +129,8 @@ void main() {
       addTearDown(t.view.resetPhysicalSize);
       addTearDown(t.view.resetDevicePixelRatio);
       await t.pumpWidget(MaterialApp(home: ThemePlayground(backend: backend)));
+      await t.pump();
+      await t.tap(find.byTooltip('Customize theme'));
       await t.pump();
       final host = find.byKey(const ValueKey('playground-editor'));
       final editor = t.widget<FlarkEditorWidget>(host).controller;
@@ -202,7 +209,7 @@ void main() {
       File('.dart_tool/flark_theme_export_test.dart').writeAsStringSync('''
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'flark_theme_ambient.dart' as ambient;
 import 'flark_theme_instance.dart' as instance;
 void main() {

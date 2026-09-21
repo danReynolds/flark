@@ -1,6 +1,6 @@
 import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury_widgets/fleury_widgets_web.dart';
 
@@ -29,7 +29,9 @@ end
 
 ![Flutter logo](demo.png "Click to open or edit this image")
 
-Type here. Cmd/Ctrl+B toggles bold. Cmd/Ctrl+Z undoes.
+---
+
+Type here. Use the formatting bar or Markdown as you write.
 ''';
 
 const headingSample = '''# A weekend by the lake
@@ -237,6 +239,7 @@ class _PlaygroundState extends State<Playground> {
   heading: CellStyle(foreground: $_heading, bold: true),
   headingGutter: $_headingGutter,
   headingDivider: CellStyle(foreground: $_border),
+  thematicBreak: CellStyle(foreground: $_border),
   headingIndicator: CellStyle(foreground: $_secondary),
   headingStyles: {
 $_headingConfiguration
@@ -261,6 +264,7 @@ $_headingConfiguration
       headingGutter: _headingGutter,
       headingStyles: _configuredHeadings,
       headingDivider: CellStyle(foreground: _border),
+      thematicBreak: CellStyle(foreground: _border),
       headingIndicator: CellStyle(foreground: _secondary),
       link: CellStyle(foreground: _link, underline: true),
       codePadding: 1,
@@ -470,84 +474,108 @@ $_headingConfiguration
         ),
       ],
     );
+    final customization = ScrollView(
+      child: Padding(padding: const EdgeInsets.all(1), child: controls),
+    );
     return FleuryApp(
-      title: 'Flark · Fleury',
+      title: 'Flark composer · Fleury',
       theme: data,
       home: Container(
         color: _background,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              ' FLARK / FLEURY   ·   second-host playground',
-              style: CellStyle(bold: true),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1),
+              child: Wrap(
+                spacing: 2,
+                children: [
+                  const Text(
+                    'FLARK  /  Untitled document',
+                    style: CellStyle(bold: true),
+                  ),
+                  Button(
+                    text: 'New document',
+                    onPressed: () {
+                      editor.apply(ReplaceRange(0, editor.source.length, ''));
+                      _editorFocus.requestFocus();
+                    },
+                  ),
+                  Button(
+                    text: _showTheme ? 'Close theme' : 'Customize theme',
+                    onPressed: () => setState(() => _showTheme = !_showTheme),
+                  ),
+                  LayoutBuilder(
+                    builder: (context, _) => Button(
+                      text: 'Copy Markdown',
+                      onPressed: () async {
+                        await ClipboardScope.of(context).write(editor.source);
+                        if (mounted) {
+                          setState(() => _message = 'Markdown copied.');
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
             Expanded(
               child: LayoutBuilder(
-                builder: (context, constraints) =>
-                    (constraints.maxCols ?? 80) < 64
-                    ? Column(
-                        children: [
-                          Button(
-                            text: _showTheme
-                                ? 'Back to editor'
-                                : 'Customize theme',
-                            onPressed: () =>
-                                setState(() => _showTheme = !_showTheme),
-                          ),
-                          Expanded(
-                            child: _showTheme
-                                ? ScrollView(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(1),
-                                      child: controls,
-                                    ),
-                                  )
-                                : Padding(
-                                    padding: const EdgeInsets.all(1),
-                                    child: FlarkEditorView(
-                                      controller: widget.controller,
-                                      onOpenLink: widget.onOpenLink,
-                                      baseUri: widget.baseUri,
-                                      imagePreviewBuilder:
-                                          widget.imagePreviewBuilder,
-                                      focusNode: _editorFocus,
-                                      autofocus: true,
-                                    ),
+                builder: (context, constraints) {
+                  final wide = (constraints.maxCols ?? 80) >= 90;
+                  return Column(
+                    children: [
+                      // Keep the document mounted when opening settings so its
+                      // selection, viewport and input connection survive.
+                      SizedBox(
+                        height: _showTheme && !wide
+                            ? ((constraints.maxRows ?? 30) ~/ 3).clamp(1, 18)
+                            : 0,
+                        child: _showTheme && !wide
+                            ? customization
+                            : const SizedBox(),
+                      ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.all(1),
+                                child: Container(
+                                  border: BoxBorder(
+                                    cellStyle: CellStyle(foreground: _border),
                                   ),
-                          ),
-                        ],
-                      )
-                    : Row(
-                        children: [
-                          if ((constraints.maxCols ?? 80) >= 64)
-                            SizedBox(
-                              width: 30,
-                              child: ScrollView(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(1),
-                                  child: controls,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                    vertical: 1,
+                                  ),
+                                  child: FlarkEditorView(
+                                    controller: widget.controller,
+                                    showToolbar: !(_showTheme && !wide),
+                                    onOpenLink: widget.onOpenLink,
+                                    baseUri: widget.baseUri,
+                                    imagePreviewBuilder:
+                                        widget.imagePreviewBuilder,
+                                    focusNode: _editorFocus,
+                                    autofocus: true,
+                                    onNotice: (notice) =>
+                                        setState(() => _message = notice),
+                                  ),
                                 ),
                               ),
                             ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.all(1),
-                              child: FlarkEditorView(
-                                controller: widget.controller,
-                                onOpenLink: widget.onOpenLink,
-                                baseUri: widget.baseUri,
-                                imagePreviewBuilder: widget.imagePreviewBuilder,
-                                focusNode: _editorFocus,
-                                autofocus: true,
-                              ),
-                            ),
-                          ),
-                        ],
+                            if (_showTheme && wide)
+                              SizedBox(width: 32, child: customization),
+                          ],
+                        ),
                       ),
+                    ],
+                  );
+                },
               ),
             ),
             Text(
-              ' ${editor.sourceMode ? 'SOURCE (bounded window)' : 'RENDERED'} · ${editor.source.length} characters · ${editor.selection} · ${widget.controller.highlightError == null ? _message : 'Code colors unavailable'}',
+              ' ${editor.sourceMode ? 'SOURCE' : 'MARKDOWN'} · ${editor.source.length} characters · ${widget.controller.highlightError == null ? _message : 'Code colors unavailable'}',
               style: CellStyle(foreground: _secondary),
             ),
           ],

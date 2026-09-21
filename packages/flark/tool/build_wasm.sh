@@ -17,4 +17,7 @@ else
 fi
 mkdir -p "$(dirname "$OUT")"
 cp "$CRATE/target/$TARGET/release/flark_parse.wasm" "$OUT"
+if [ "$OUT" = "$PKG/lib/assets/wasm/flark_parse.wasm" ]; then
+  python3 "$HERE/embed_wasm.py"
+fi
 shasum -a 256 "$OUT"

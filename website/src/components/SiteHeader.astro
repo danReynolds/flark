@@ -1,0 +1,34 @@
+---
+import DefaultHeader from '@astrojs/starlight/components/Header.astro';
+import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+
+const isHome = Astro.locals.starlightRoute.entry.id === '';
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+---
+
+{isHome ? (
+  <div class="home-header">
+    <a class="wordmark" href={base} aria-label="Flark home"><span aria-hidden="true">f<span class="slash">/</span></span> Flark</a>
+    <nav aria-label="Main navigation">
+      <span class="header-note">The live Markdown editor</span>
+      <a href={`${base}guides/using-flark/`}>Get started</a>
+      <a class="github-link" href="https://github.com/danReynolds/flark">GitHub <span aria-hidden="true">↗</span></a>
+      <ThemeSelect />
+    </nav>
+  </div>
+) : <DefaultHeader />}
+
+<style>
+  .home-header { max-width: none; margin: 0; height: 100%; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .wordmark { display: flex; align-items: center; gap: .75rem; color: var(--sl-color-white); font-weight: 750; font-size: 1.3rem; letter-spacing: -.04em; text-decoration: none; }
+  .wordmark > span { font-family: monospace; font-size: 1.6rem; letter-spacing: -.2em; padding-right: .3em; }
+  .slash { color: var(--sl-color-accent-high); }
+  nav { display: flex; align-items: center; gap: 1.65rem; }
+  .header-note { color: var(--sl-color-gray-3); font-size: .75rem; margin-right: .6rem; }
+  nav > a { color: var(--sl-color-gray-2); font-size: .875rem; text-decoration: none; white-space: nowrap; }
+  nav > a:hover { color: var(--sl-color-white); }
+  a:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 5px; border-radius: 2px; }
+  @media (max-width: 38rem) { nav { gap: .85rem; } .header-note { display: none; } }
+  @media (max-width: 25rem) { .wordmark { gap: .35rem; font-size: 1.1rem; } nav { gap: .65rem; } nav > a { font-size: .75rem; } }
+  @media (max-width: 22rem) { .github-link { display: none; } }
+</style>

@@ -13,112 +13,34 @@ remain separate from host parity. See
 ## Use
 
 ```dart
-import 'package:flark/flark.dart';
 import 'package:flark_fleury/flark_fleury.dart';
 import 'package:fleury/fleury_core.dart';
 
-final editor = FlarkEditor(createParseBackend(), text: '**Hello**');
-final controller = FlarkFleuryController(editor);
-
-// Inside your FleuryApp, with bounded width/height:
-final view = Expanded(child: FlarkEditorView(
-  controller: controller,
-  autofocus: true,
-));
-// Dispose controller after the view unmounts. The editor is borrowed.
+// Inside FleuryApp, with bounded width and height:
+Expanded(child: FlarkEditor(initialMarkdown: '**Hello**', onChanged: saveMarkdown));
+FlarkMarkdown(markdown: article, selectable: true);
 ```
 
-`FlarkView(controller: controller)` uses the same projection and cell styles
-with editing disabled. Both support selection/copy. Set a `FlarkCellTheme`
-on one view or put it in `ThemeData.extensions`. Defaults derive semantic roles
-from Fleury and preserve the terminal's unspecified foreground/background.
+The parser loads automatically on native Dart and browser hosts. Web compilation
+embeds the parser: no manual Wasm asset placement or backend setup is needed.
+`FlarkMarkdown` uses a separate read-only path without editing history or IME.
+The parent owns its layout and scrolling.
 
-Clicking a link shows Open, Edit, Remove and Close. Cmd/Ctrl+click invokes
-`onOpenLink` directly; Cmd/Ctrl+K opens the link form. Supply `onOpenLink` to
-choose the application/browser opener and `baseUri` to resolve relative URLs.
-The default form needs a `FleuryApp`/`Navigator`. Customize the controls through
-`linkPopoverBuilder` and `presentResourceEditor`; their actions keep the shared
-resource session's revision and selection guards. Read-only views expose Open
-and Close. The default opener allows HTTP, HTTPS and mailto URIs.
-The popover sizes to its contents within the viewport. Browser pointer cursors
-follow the painted link text and task checkbox markers; task labels remain
-editable text. Read-only checkboxes have no activation action.
+Create `FlarkController(markdown: ...)` for custom controls, pass it to the editor,
+and dispose it after unmounting. Read `controller.state.styles.bold`, call
+`toggleStyle(FlarkStyle.bold)` or `setStyle(FlarkStyle.bold, enabled: true)`, and
+use `controller.markdown` to save. `loadMarkdown` resets to fetched content without
+a save event; `replaceMarkdown` is undoable. The [usage guide](../../website/src/content/docs/guides/using-flark.mdx)
+covers readiness, state and the full shared API.
 
-A custom `FlarkCellTheme` specifies the editor's cell styles. For an explicit
-light/dark surface, set its `body` foreground/background, Fleury's
-`ThemeData.textStyle`, and a surrounding `Container.color`, as the example
-does. Changing `ThemeData.brightness` alone does not paint a terminal background.
-Block geometry is explicit and independent of source indentation:
-
-- `listIndent` (default `4` cells) gives bullet and task lists a stable content
-  start; markers center in the shared gutter. Ordered labels can expand it.
-- `quoteIndent` (default `2` cells) reserves the rail and the gap before text.
-- `codePadding` (default `2`, example `1`) pads both sides **inside** a code
-  background. Fractional values round up to whole text cells.
-- `codePaddingRows` (default `0`, example `0.25`) paints top/bottom padding in
-  eighth-row increments. A nonzero edge reserves a decorative row, which
-  pointer and keyboard navigation skip. Unpainted space is outside the block.
-  With an unknown terminal background the edge uses a full painted row.
-
-Paragraphs, quote rails, code backgrounds and table frames share their containing
-block's outer edge. Tables use edge-anchored Unicode frame glyphs where the cell
-width policy permits them, with inset internal rules and ordinary glyph fallbacks.
-Code padding and list gutters keep wrapped text and pointer/caret geometry in
-agreement; changing them never inserts spaces into Markdown source.
-
-Heading defaults use typography at one font size: H1/H2 are bold, H3 bold
-italic, H4 italic, H5 regular, and H6 dim. Bands, dividers, underlines and level
-labels are opt-in. The inherited Fleury theme accents H1 and uses body color for
-deeper levels. The example adds a slate H2 and an explicit muted H6 color, with
-light/dark counterparts. Without color H1/H2 can look alike; use the optional
-level gutter when exact hierarchy matters or italics are unavailable.
-
-`heading` remains the common text style. Override individual levels with
-`headingStyles`, and style decorations with `headingBand`, `headingDivider`,
-and `headingIndicator`. A null `headingBand` derives its fill from body colors.
-For example:
-
-```dart
-FlarkCellTheme(
-  heading: CellStyle(foreground: RgbColor(147, 197, 253), bold: true),
-  headingStyles: {
-    2: FlarkHeadingStyle(style: CellStyle(foreground: RgbColor(176, 195, 220))),
-    3: FlarkHeadingStyle(style: CellStyle(
-      foreground: RgbColor(220, 230, 240), italic: true,
-    )),
-  },
-  headingGutter: true,
-)
-```
-
-`headingGutter` reserves three cells beside the whole rendered document for
-H1–H6 labels, keeping text and block edges aligned. Narrow surfaces fall back to
-inline labels where space permits. Divider rows and labels are decorations:
-they never enter copied Markdown, source offsets, selection or undo history.
-Arrow navigation skips dividers, and clicking a divider places the caret in its
-heading. Wrapped headings retain the same text origin while focused or selected.
-
-The example's **Heading styles** disclosure edits each level's color, bold,
-italic, underline, band, divider and label, plus the global gutter.
-**Copy theme Dart** includes the resolved six-level palette and overrides.
-**Reset theme** restores them without changing the draft.
-**Heading sample** loads a document with all six levels; the web example also
-accepts `?sample=headings`, and the terminal example accepts `--headings`.
-
-Optional code editing uses `FlarkTreeSitter.fromAnalyzer(CodeAnalyzer())` from
-`package:flark_tree_sitter/flark.dart` as the editor's `codeEditing` delegate.
-For coloring, give the controller a `CodeHighlightWorker`; it owns/disposes that
-worker. Both hosts use `FlarkCodeHighlighting` from
-`package:flark_tree_sitter/flark_highlighting.dart` for the bounded asynchronous
-cache and worker lifecycle. The Fleury surface supplies its visible rows; the
-active fence takes priority. The application owns the synchronous delegate. Pending colors paint
-the current text plainly; ranges from an older source never reach paint.
-The example shows native and browser asset loading for both services.
+The minimal native/web entry points are `example/bin/consumer.dart` and
+`example/web/consumer.dart`. The full theme playground retains optional code
+services through `flark_fleury_legacy.dart`.
 
 ## Develop and run
 
 The host and example pin Fleury's companion packages to reviewed Git revision
-`41967d499a6bd0fe53e5f5f07b31649df0adcc83` ([Fleury #260](https://github.com/danReynolds/fleury/pull/260)). A sibling checkout
+`ffb6d22d488a1979658578f4fc5634bb17b37b7f` ([Fleury #262](https://github.com/danReynolds/fleury/pull/262)). A sibling checkout
 is no longer required. The committed `dependency_overrides.fleury` keeps the
 companions' hosted core constraint on that same revision until publication.
 An application consuming this unpublished host must copy that core override
@@ -158,7 +80,10 @@ reloading `/` can retain older subresources in an embedded browser cache.
 This executes Dart and both Wasm modules in the
 page; it does not stream a remote terminal or Flutter app.
 
-## First-slice boundaries
+## Current boundaries
+
+See the [Markdown coverage audit](../../docs/architecture/v5/markdown_coverage_2026_09_20.md)
+for syntax support and remaining presentation gaps, including footnotes.
 
 - Paragraphs, inline styles, headings, lists/tasks, quotes and code bodies.
   Pointer/keyboard selection, grapheme deletion, cell wrapping, scrolling,

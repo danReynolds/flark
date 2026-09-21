@@ -1,4 +1,4 @@
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/code.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -63,6 +63,7 @@ class _ThemePlaygroundState extends State<ThemePlayground> {
   final settings = ThemeSettings();
   late final FlarkController editor;
   var section = 'Appearance', resetEpoch = 0;
+  bool showTheme = false;
   var textRole = FlarkTextRole.link, colorRole = FlarkColorRole.canvas;
   var metricRole = FlarkMetric.documentPadding,
       syntaxRole = FlarkSyntaxRole.keyword;
@@ -477,29 +478,38 @@ class _ThemePlaygroundState extends State<ThemePlayground> {
     );
   }
 
-  Widget pane(String title, Widget child) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+  Widget liveEditor() => Padding(
+    padding: const EdgeInsets.all(16),
+    child: Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1100),
+        child: Material(
+          clipBehavior: Clip.antiAlias,
+          elevation: 1,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(
+              color: settings.material.colorScheme.outlineVariant,
+            ),
+          ),
+          child: FlarkEditorWidget(
+            key: const ValueKey('playground-editor'),
+            controller: editor,
+            autofocus: true,
+            theme: settings.perInstance ? settings.theme : null,
+            baseUri: Uri.parse('https://example.com/'),
+            imageProvider: demoImageProvider,
+            onOpenLink: openLink,
+            linkPopoverBuilder: settings.customControls
+                ? brandedLinkPopover
+                : null,
+            presentResourceEditor: settings.customControls
+                ? showResourceSheet
+                : null,
+          ),
+        ),
       ),
-      const Divider(height: 1),
-      Expanded(child: child),
-    ],
-  );
-
-  Widget liveEditor() => pane(
-    'Live editor',
-    FlarkEditorWidget(
-      key: const ValueKey('playground-editor'),
-      controller: editor,
-      theme: settings.perInstance ? settings.theme : null,
-      baseUri: Uri.parse('https://example.com/'),
-      imageProvider: demoImageProvider,
-      onOpenLink: openLink,
-      linkPopoverBuilder: settings.customControls ? brandedLinkPopover : null,
-      presentResourceEditor: settings.customControls ? showResourceSheet : null,
     ),
   );
 
@@ -509,16 +519,41 @@ class _ThemePlaygroundState extends State<ThemePlayground> {
     child: Builder(
       builder: (context) => Scaffold(
         appBar: AppBar(
-          title: const Text('Theme playground'),
+          title: const Text('Flark · Untitled document'),
           actions: [
             IconButton(
-              tooltip: 'Reset theme',
-              onPressed: () => change(() {
-                settings.preset('Light');
-                resetEpoch++;
-              }),
-              icon: const Icon(Icons.restart_alt),
+              tooltip: 'New document',
+              onPressed: () =>
+                  editor.command(ReplaceRange(0, editor.text.length, '')),
+              icon: const Icon(Icons.note_add_outlined),
             ),
+            IconButton(
+              tooltip: showTheme ? 'Close theme' : 'Customize theme',
+              isSelected: showTheme,
+              onPressed: () => change(() => showTheme = !showTheme),
+              icon: const Icon(Icons.palette_outlined),
+            ),
+            IconButton(
+              tooltip: 'Copy Markdown',
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: editor.text));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Markdown copied.')),
+                  );
+                }
+              },
+              icon: const Icon(Icons.content_copy),
+            ),
+            if (showTheme)
+              IconButton(
+                tooltip: 'Reset theme',
+                onPressed: () => change(() {
+                  settings.preset('Light');
+                  resetEpoch++;
+                }),
+                icon: const Icon(Icons.restart_alt),
+              ),
             IconButton(
               tooltip: 'Reset sample',
               onPressed: () => editor.command(
@@ -526,34 +561,54 @@ class _ThemePlaygroundState extends State<ThemePlayground> {
               ),
               icon: const Icon(Icons.restore_page),
             ),
-            IconButton(
-              tooltip: 'View Dart configuration',
-              onPressed: () => configuration(context),
-              icon: const Icon(Icons.code),
-            ),
-            IconButton(
-              tooltip: 'Copy Dart configuration',
-              onPressed: () => configuration(context, copy: true),
-              icon: const Icon(Icons.copy),
-            ),
+            if (showTheme)
+              IconButton(
+                tooltip: 'View Dart configuration',
+                onPressed: () => configuration(context),
+                icon: const Icon(Icons.code),
+              ),
+            if (showTheme)
+              IconButton(
+                tooltip: 'Copy Dart configuration',
+                onPressed: () => configuration(context, copy: true),
+                icon: const Icon(Icons.copy),
+              ),
           ],
         ),
         body: LayoutBuilder(
           builder: (context, constraints) {
-            if (constraints.maxWidth >= 760) {
-              return Row(
-                children: [
-                  SizedBox(width: 300, child: controls(context)),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: liveEditor()),
-                ],
-              );
-            }
+            final wide = constraints.maxWidth >= 1000;
             return Column(
               children: [
-                SizedBox(height: 260, child: controls(context)),
-                const Divider(height: 1),
-                Expanded(child: liveEditor()),
+                SizedBox(
+                  height: showTheme && !wide
+                      ? (constraints.maxHeight * 0.45).clamp(0, 300)
+                      : 0,
+                  child: showTheme && !wide ? controls(context) : null,
+                ),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: liveEditor()),
+                      if (showTheme && wide)
+                        SizedBox(width: 300, child: controls(context)),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 8,
+                  ),
+                  child: ListenableBuilder(
+                    listenable: editor,
+                    builder: (context, _) => Text(
+                      '${editor.text.length} characters · Changes stay in this session',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ),
               ],
             );
           },

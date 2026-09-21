@@ -191,7 +191,7 @@ final class CellDocumentLayout {
   /// have reused shows up here, which is what the reuse regression asserts.
   static int builds = 0;
 
-  final FlarkFleuryController controller;
+  final FlarkCellController controller;
   final String source;
   final Projection? projection;
   final int cols;
@@ -219,7 +219,7 @@ final class CellDocumentLayout {
   /// Laying the whole document out again per frame allocates a glyph for every
   /// grapheme in it while only the viewport is painted.
   bool describes(
-    FlarkFleuryController other,
+    FlarkCellController other,
     int cols,
     FlarkCellTheme theme,
     CellWidthPolicy policy,

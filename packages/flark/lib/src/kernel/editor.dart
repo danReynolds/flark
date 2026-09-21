@@ -12,16 +12,19 @@ import 'commands.dart';
 import 'document.dart';
 import 'history.dart';
 import 'projection.dart';
+import 'style_state.dart';
 
 part 'source_mode.dart';
+part 'read_document.dart';
 part 'admission.dart';
 part 'code_editing.dart';
 part 'resource_editing.dart';
 part 'table_editing.dart';
+part 'inline_formatting.dart';
 
 typedef FlarkListener = void Function();
 
-final class FlarkEditor {
+final class FlarkEditor implements FlarkDocumentState {
   FlarkEditor(
     this._backend, {
     String text = '',
@@ -54,6 +57,7 @@ final class FlarkEditor {
   final FlarkParseBackend _backend;
 
   /// Optional, already initialized snippet service. Its caller owns disposal.
+  @override
   final CodeEditingDelegate? codeEditing;
   final ProjectionOptions _options;
 
@@ -64,6 +68,7 @@ final class FlarkEditor {
   /// Maximum writable UTF-8 source size, including source mode.
   final int sourceLimit;
   int _revision = 0;
+  @override
   int get revision => _revision;
   FlarkRejection? _lastRejection;
   FlarkRejection? get lastRejection => _lastRejection;
@@ -84,11 +89,17 @@ final class FlarkEditor {
   final Stopwatch _clock = Stopwatch()..start();
   Duration _now = Duration.zero;
 
+  @override
   FlarkEditorSnapshot get snapshot => _snapshot;
+  @override
   FlarkDocument get document => _doc;
+  @override
   String get source => _snapshot.source;
+  @override
   FlarkSelection get selection => _snapshot.selection;
+  @override
   Projection get projection => _doc.projection;
+  @override
   bool get sourceMode => _snapshot is FlarkSourceSnapshot;
 
   FlarkDocument get _doc => switch (_snapshot) {
@@ -107,6 +118,10 @@ final class FlarkEditor {
                 : 0) ^
             (_pending?.styles ?? 0);
 
+  /// Read formatting without parsing or inspecting Markdown delimiters.
+  /// Listen to this editor (or a host controller) and read again on changes.
+  FlarkStyleState styleState(int style) => _styleState(style);
+
   void addListener(FlarkListener listener) => _listeners.add(listener);
   void removeListener(FlarkListener listener) => _listeners.remove(listener);
 
@@ -116,6 +131,13 @@ final class FlarkEditor {
     _lastRejection = null;
     if (expectedRevision != null && expectedRevision != revision) {
       _lastRejection = FlarkRejection.staleRevision;
+      return false;
+    }
+    if (command is SetStyle &&
+        !sourceMode &&
+        _styleDelimiter(command.style) != null &&
+        styleState(command.style).value ==
+            (command.enabled ? FlarkStyleValue.on : FlarkStyleValue.off)) {
       return false;
     }
     if (composing && (command is Undo || command is Redo)) commitComposition();
@@ -134,6 +156,38 @@ final class FlarkEditor {
       _lastRejection ??= FlarkRejection.unsupportedEdit;
     }
     return applied;
+  }
+
+  /// Host actions close composition only if the action is accepted. Snapshot
+  /// references are cheap; the small history savepoint is needed only in IME.
+  bool applyAfterComposition(FlarkCommand command, {int? expectedRevision}) {
+    if (!composing ||
+        (expectedRevision != null && expectedRevision != revision)) {
+      return apply(command, expectedRevision: expectedRevision);
+    }
+    final composition = _composition;
+    final before = _snapshot, pending = _pending, origin = _cellOrigin;
+    final selectedCode = _selectedCodeScope, goal = _goalColumn;
+    final savedHistory = history.checkpoint();
+    void restore() {
+      _composition = composition;
+      _snapshot = before;
+      _pending = pending;
+      _cellOrigin = origin;
+      _selectedCodeScope = selectedCode;
+      _goalColumn = goal;
+      history.restore(savedHistory);
+    }
+
+    commitComposition();
+    try {
+      final accepted = apply(command, expectedRevision: expectedRevision);
+      if (!accepted) restore();
+      return accepted;
+    } catch (_) {
+      restore();
+      rethrow;
+    }
   }
 
   bool _applyLive(FlarkCommand command) => switch (command) {
@@ -162,7 +216,8 @@ final class FlarkEditor {
     Undo() => _undo(),
     Redo() => _redo(),
     ToggleTask() => _toggleTask(),
-    ToggleStyle(:final style) => _toggleStyle(style),
+    ToggleStyle(:final style) => _setStyle(style, !styleState(style).isOn),
+    SetStyle(:final style, :final enabled) => _setStyle(style, enabled),
     SetHeadingLevel(:final level) => _setHeading(level),
     SetCodeLanguage(:final language) => _setCodeLanguage(language),
     SetLink(:final destination, :final text, :final title) => _setResource(
@@ -182,6 +237,137 @@ final class FlarkEditor {
     Indent() => _shiftBlock(outdent: false),
     Outdent() => _shiftBlock(outdent: true),
   };
+
+  /// Whether the current selection supports creating or updating a resource.
+  bool canSetResource({bool image = false}) =>
+      !sourceMode && _canSetResource(image);
+
+  /// Exact UTF-16 source splice. Unlike input replacement this never snaps
+  /// the supplied range or preserves surrounding Markdown wrappers.
+  bool replaceSourceRange(
+    int start,
+    int end,
+    String text, {
+    int? expectedRevision,
+    bool replaceAll = false,
+  }) {
+    _lastRejection = null;
+    if (expectedRevision != null && expectedRevision != revision) {
+      _lastRejection = FlarkRejection.staleRevision;
+      return false;
+    }
+    bool boundary(int offset) =>
+        offset >= 0 &&
+        offset <= source.length &&
+        (offset == 0 ||
+            offset == source.length ||
+            source.codeUnitAt(offset) < 0xdc00 ||
+            source.codeUnitAt(offset) > 0xdfff);
+    if (start > end || !boundary(start) || !boundary(end)) {
+      _lastRejection = FlarkRejection.invalidSource;
+      return false;
+    }
+    final nextSource = source.replaceRange(start, end, text);
+    final delta = text.length - (end - start);
+    final old = selection;
+    final nextSelection = replaceAll
+        ? FlarkSelection.collapsed(nextSource.length)
+        : old.isCollapsed && old.extent >= start && old.extent <= end
+        ? FlarkSelection.collapsed(start + text.length)
+        : old.end <= start
+        ? old
+        : old.start >= end
+        ? FlarkSelection(old.base + delta, old.extent + delta)
+        : FlarkSelection.collapsed(start + text.length);
+    // Admission happens before composition/history changes. A rejected edit
+    // must not commit a preedit or consume an undo step.
+    final next = _admitSource(nextSource, nextSelection);
+    if (next == null) return false;
+    if (nextSource == source &&
+        next.selection == selection &&
+        _pending == null) {
+      return false;
+    }
+    commitComposition();
+    history.recordState(
+      source,
+      selection,
+      pending: _pending,
+      typing: false,
+      at: _clock.elapsed,
+    );
+    _snapshot = next;
+    _pending = null;
+    _cellOrigin = null;
+    _goalColumn = null;
+    _selectedCodeScope = false;
+    _notify();
+    return true;
+  }
+
+  FlarkEditorSnapshot? _admitSource(String text, FlarkSelection selected) {
+    try {
+      validateFlarkSource(text);
+    } on FormatException {
+      _lastRejection = FlarkRejection.invalidSource;
+      return null;
+    }
+    if (!_withinLiveByteLimit(text, sourceLimit)) {
+      _lastRejection = FlarkRejection.sourceLimit;
+      return null;
+    }
+    try {
+      return _buildSnapshot(text, selected, rejectDeviation: !sourceMode);
+    } on FlarkParseException catch (error) {
+      if (error.code != FlarkParseException.extractionDeviationCode) rethrow;
+      _lastRejection = FlarkRejection.extractionDeviation;
+      return null;
+    }
+  }
+
+  /// Establish external content without creating an undo step. Always
+  /// publishes a revision, even when resetting identical content.
+  bool loadMarkdown(String text, {int? expectedRevision}) {
+    _lastRejection = null;
+    if (expectedRevision != null && expectedRevision != revision) {
+      _lastRejection = FlarkRejection.staleRevision;
+      return false;
+    }
+    final next = _admitSource(text, const FlarkSelection.collapsed(0));
+    if (next == null) return false;
+    _composition = null;
+    _pending = null;
+    _cellOrigin = null;
+    _goalColumn = null;
+    _selectedCodeScope = false;
+    history.clear();
+    _snapshot = next;
+    _notify();
+    return true;
+  }
+
+  /// Programmatic selection has an explicit scope; keyboard SelectAll keeps
+  /// its familiar fence-first, then whole-document progression.
+  bool selectAll({bool codeBlock = false, int? expectedRevision}) {
+    if (expectedRevision != null && expectedRevision != revision) {
+      _lastRejection = FlarkRejection.staleRevision;
+      return false;
+    }
+    if (codeBlock) {
+      if (sourceMode || !_doc.caretRow.fenced) {
+        _lastRejection = FlarkRejection.unsupportedEdit;
+        return false;
+      }
+      final row = _doc.caretRow;
+      return applyAfterComposition(
+        SetSelection(
+          row.sourceForDisplay(0),
+          row.sourceForDisplay(row.text.length),
+        ),
+      );
+    }
+    return applyAfterComposition(SetSelection(0, source.length));
+  }
 
   void _notify() {
     _revision++;
@@ -253,26 +439,17 @@ final class FlarkEditor {
     bool rejectDeviation = false,
     RenderModel? parsed,
   }) {
-    if (_forceSourceMode ||
-        !_withinLiveByteLimit(text, syncLimit) ||
-        !liveLimits._admitsSource(text)) {
-      return FlarkSourceSnapshot._(text, selected);
-    }
-    try {
-      final model = parsed ?? _backend.parse(text);
-      if (!liveLimits._admitsModel(model)) {
-        return FlarkSourceSnapshot._(text, selected);
-      }
-      return FlarkLiveSnapshot._(
-        projectFlarkDocument(text, model, selected, _options),
-      );
-    } on FlarkParseException catch (error) {
-      if (error.code != FlarkParseException.extractionDeviationCode ||
-          rejectDeviation) {
-        rethrow;
-      }
-      return FlarkSourceSnapshot._(text, selected);
-    }
+    return _projectSnapshot(
+      _backend,
+      text,
+      selected,
+      _options,
+      liveLimits,
+      syncLimit,
+      forceSourceMode: _forceSourceMode,
+      rejectDeviation: rejectDeviation,
+      parsed: parsed,
+    );
   }
 
   /// Parse, admit and project before publishing source or history.
@@ -399,6 +576,7 @@ final class FlarkEditor {
     PlaceCaret() ||
     ToggleTask() ||
     ToggleStyle() ||
+    SetStyle() ||
     SetHeadingLevel() ||
     SetCodeLanguage() ||
     SetLink() ||
@@ -1086,6 +1264,10 @@ final class FlarkEditor {
     final i = (line - row.firstLine).clamp(0, row.contentStarts.length - 1);
     String text;
     if (row.kind == RowKind.codeBlock) {
+      if (!paragraph) {
+        final exited = _exitCodeOnBlankLine(row);
+        if (exited != null) return exited;
+      }
       return _codeNewline(row, caret, caret);
     } else if (row.shells.isNotEmpty) {
       final prefixStart = row.prefixStarts[i],
@@ -1344,6 +1526,9 @@ final class FlarkEditor {
   bool _setHeading(int level) {
     if (level < 0 || level > 6) return false;
     final row = _doc.caretRow;
+    if (row.kind == RowKind.blank && selection.isCollapsed) {
+      return level > 0 && _insert('${'#' * level} ', typing: false);
+    }
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
       return false;
     }
@@ -1373,44 +1558,8 @@ final class FlarkEditor {
     );
   }
 
-  bool _toggleStyle(int style) {
-    final delimiter = switch (style) {
-      Style.emphasis => '*',
-      Style.strong => '**',
-      Style.strikethrough => '~~',
-      Style.code => '`',
-      _ => null,
-    };
-    if (delimiter == null) return false;
+  bool _toggleCaretStyle(int style) {
     final sel = selection;
-    if (!sel.isCollapsed) {
-      final range = _contentRange(sel.start, sel.end);
-      for (final o in _doc.ownersOfContent(range.start, range.end)) {
-        if (o.style != style) continue;
-        final s = source
-            .replaceRange(o.contentEnd, o.end, '')
-            .replaceRange(o.start, o.contentStart, '');
-        return _commit(
-          s,
-          FlarkSelection(o.start, o.start + (o.contentEnd - o.contentStart)),
-          typing: false,
-        );
-      }
-      final contentStart = range.start + delimiter.length;
-      final contentEnd = range.end + delimiter.length;
-      return _commit(
-        source.replaceRange(
-          range.start,
-          range.end,
-          '$delimiter${source.substring(range.start, range.end)}$delimiter',
-        ),
-        FlarkSelection(contentStart, contentEnd),
-        typing: false,
-        accept: (next) => next
-            .ownersOfContent(contentStart, contentEnd)
-            .any((owner) => owner.style == style),
-      );
-    }
     final caret = sel.extent;
     // At an edge of an owner, step across its delimiter: out when inside,
     // in when outside. Strictly inside, unwrap it.

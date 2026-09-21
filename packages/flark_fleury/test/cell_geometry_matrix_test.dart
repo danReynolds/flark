@@ -11,7 +11,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flark/flark.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_fleury/src/cell_layout.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:test/test.dart';

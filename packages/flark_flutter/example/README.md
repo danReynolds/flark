@@ -4,13 +4,17 @@ Run `flutter run -d macos --profile`, or use the web build instructions below.
 Open **Theme playground** with the palette button in the workbench. On the web,
 `?theme=1` opens the playground directly.
 
-The playground puts a theming panel beside one live editor. On narrow screens,
-the panel sits above the editor. Its sample document is separate from the
+The playground opens as a composer: a large document surface, a formatting bar
+with paragraph/H1–H6, bold, italic, strikethrough, inline code, links/images,
+Undo/Redo, source mode and the active fence's language picker. New document is
+undoable; Copy Markdown exports the exact source. Customize theme opens an
+optional panel beside the document (above it on narrow screens), preserving
+the editor, selection and history. Its sample document is separate from the
 workbench's saved Draft and Tour documents.
 
 Try this tour:
 
-1. Choose Light, Dark or Notebook, then click the link-color or app-accent swatch
+1. Open Customize theme. Choose Light, Dark or Notebook, then click the link-color or app-accent swatch
    to open a visual picker. The wheel, opacity slider and hex field update live.
 2. Explore Typography, Blocks and Syntax colors using the Customize selector.
    Each setting updates the editor immediately.
@@ -105,15 +109,17 @@ includes draft persistence and application UI:
 
 ```sh
 caffeinate -dis flutter drive --profile -d macos \
-  --driver=test_driver/integration_test.dart \
+  --driver=test_driver/profile.dart \
   --target=integration_test/frame_profile_test.dart \
   --dart-define=FLARK_PROFILE_BOUNDED=true \
   --dart-define=FLARK_PROFILE_APP=true
 ```
 
 Run it with the Mac unlocked and the app in the foreground. Reject a run with
-failed foreground activation or a lock transition. The harness now requires
-Flutter's resumed lifecycle and enabled frames, and rejects foreground loss. The bounded fixture fills
+failed foreground activation or a lock transition. Inspect the native app's
+accessibility tree during preflight; the harness waits for OS-requested semantics
+before the widget test starts. During measurement it requires resumed lifecycle,
+enabled frames and native semantics, and rejects foreground loss. The bounded fixture fills
 the byte envelope while retaining as much of each structural pattern as the
 published count limit admits; the original unconstrained fixtures remain a
 separate diagnostic. Prose, dense blocks, lists, tables, nested containers, unique references, and
@@ -123,6 +129,10 @@ largest laid-out block and at the end. Profile persistence uses a separate
 
 Run the complementary opening, boundary, save/close, memory and sustained-input
 workload with the same driver and `--target=integration_test/workbench_profile_test.dart`.
+The profile driver rejects missing/incomplete receipts, including the false
+success banner possible after a suite-setup failure. It is for full qualification
+runs; deliberately filtered diagnostics can use `test_driver/integration_test.dart`
+and must not be reported as a full pass. Keep checking native/framework error logs.
 It always uses the production workbench, keeps its drafts under
 `flark.workbenchProfile.`, and requires a window wider than 650 logical pixels
 so the inspection toggle actually reflows the editor. Its measured sequence runs
@@ -146,6 +156,23 @@ flutter test
 ```
 
 Functional, browser-smoke, native-input and performance evidence are separate.
+
+For the attended macOS accessibility replacement comparison, run:
+
+```sh
+flutter run --profile -d macos --target=integration_test/semantics_native_probe.dart
+```
+
+Inspect the app with a native accessibility client and activate each Start
+button. It runs 50 mount/edit/unmount cycles and 1,000 checked edits per host,
+comparing a standard `TextField` with Flark. It requires OS-requested semantics,
+enabled frames and uninterrupted foreground; it uses no saved drafts. Preserve
+the `NATIVE_AX_RESULT` records and check the process log for AXTree errors.
+This normal-app diagnostic avoids the widget runner's forced semantics and
+its treatment of a newly OS-owned semantics handle as a test leak. It does not
+replace VoiceOver usability or physical IME testing. Rebuild the ordinary app
+with `flutter build macos --profile --target=lib/main.dart` afterward.
+
 See the repository's [D0 gate](../../../DOGFOOD_MILESTONE.md) and
 [implementation review](../../../docs/architecture/v5/implementation_review_2026_09_04.md).
 The [continuation record](../../../docs/architecture/v5/native_session_2026_09_04.md)

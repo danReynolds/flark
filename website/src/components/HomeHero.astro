@@ -1,0 +1,55 @@
+---
+import DefaultHero from '@astrojs/starlight/components/Hero.astro';
+import LiveEditor from './LiveEditor.astro';
+
+const isHome = Astro.locals.starlightRoute.entry.id === '';
+const repo = 'https://github.com/danReynolds/flark';
+---
+
+{isHome ? (
+  <section class="home-hero" aria-labelledby="_top">
+    <div class="introduction">
+      <div class="hero-copy">
+        <p class="eyebrow">A place for your words.</p>
+        <h1 id="_top" data-page-title>Rich editing. <span>Pure Markdown.</span></h1>
+        <p class="intro">Flark is a live Markdown editor for Flutter apps and Fleury terminals.<span class="intro-detail"><br /> Write in the document. Keep the Markdown. Make it yours.</span></p>
+      </div>
+      <div class="package-links" id="choose-your-host">
+        <span class="package-label">Bring it to your app</span>
+        <div>
+          <a href={`${repo}/tree/main/packages/flark_flutter#readme`}>Flutter <span aria-hidden="true">↗</span></a>
+          <a href={`${repo}/tree/main/packages/flark_fleury#readme`}>Fleury <span aria-hidden="true">↗</span></a>
+        </div>
+        <span class="package-note">Open source · In development</span>
+      </div>
+    </div>
+    <LiveEditor />
+  </section>
+) : <DefaultHero />}
+
+<style>
+  .home-hero { display: flex; flex-direction: column; height: calc(100svh - var(--sl-nav-height)); min-height: 38rem; }
+  .introduction { display: flex; justify-content: space-between; align-items: center; gap: 2rem; padding: clamp(1.5rem, 2vw, 2rem) clamp(1.25rem, 4vw, 4.5rem); background: radial-gradient(ellipse at 10% 0%, var(--home-glow), transparent 65%); }
+  .eyebrow { margin: 0 0 .7rem; color: var(--sl-color-gray-3); font-size: .6875rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+  h1 { color: var(--sl-color-white); font-size: clamp(1.9rem, 3.3vw, 3.2rem); font-weight: 600; line-height: 1.15; letter-spacing: -.045em; }
+  h1 span { color: var(--sl-color-accent-high); margin-inline-start: .12em; }
+  .intro { color: var(--sl-color-gray-2); font-size: .925rem; line-height: 1.7; margin: .85rem 0 0; }
+  .package-links { flex-shrink: 0; display: grid; gap: .65rem; }
+  .package-label { font-size: .75rem; color: var(--sl-color-gray-2); }
+  .package-links > div { display: flex; gap: .6rem; }
+  .package-links a { display: inline-flex; align-items: center; justify-content: space-between; gap: 1.6rem; padding: .55rem .85rem; border: 1px solid var(--home-border); border-radius: .35rem; color: var(--sl-color-white); font-size: .8rem; text-decoration: none; background: var(--home-surface); }
+  .package-links a span { color: var(--sl-color-accent-high); }
+  .package-links a:hover { border-color: var(--sl-color-accent); }
+  .package-links a:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 4px; }
+  .package-note { color: var(--sl-color-gray-3); font-size: .65rem; }
+  @media (max-width: 58rem) { .introduction { gap: 1.25rem; } h1 span { display: block; margin-inline-start: 0; } }
+  @media (max-width: 40rem) {
+    .home-hero { min-height: 38rem; }
+    .introduction { align-items: start; flex-direction: column; gap: 1.2rem; padding-block: 1.65rem; }
+    h1 { font-size: clamp(1.9rem, 6vw, 2.5rem); }
+    .intro { font-size: .85rem; }
+    .eyebrow, .intro-detail, .package-label, .package-note { display: none; }
+    .package-links a { padding: .35rem .7rem; font-size: .75rem; gap: 1rem; }
+  }
+  @media (max-height: 38rem) { .home-hero { height: auto; } }
+</style>

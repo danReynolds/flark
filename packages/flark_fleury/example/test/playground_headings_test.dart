@@ -1,5 +1,5 @@
 import 'package:flark/flark.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_fleury_example/playground.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
@@ -19,6 +19,12 @@ void main() {
       controller.dispose();
     });
     tester.pumpWidget(Playground(controller: controller));
+    await tester.invokeSemanticAction(
+      SemanticAction.activate,
+      role: SemanticRole.button,
+      label: 'Customize theme',
+    );
+    tester.render();
     final selection = editor.selection;
     Future<void> press(String label) async {
       await tester.invokeSemanticAction(

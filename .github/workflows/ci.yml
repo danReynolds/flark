@@ -51,6 +51,8 @@ jobs:
       - name: Test
         working-directory: packages/flark
         run: dart test
+      - name: Embedded browser parser matches the Wasm asset
+        run: python3 packages/flark/tool/embed_wasm.py --check
       - name: Consumer without Rust on PATH builds via a prebuilt
         run: packages/flark/tool/verify_prebuilt_consumer.sh
 

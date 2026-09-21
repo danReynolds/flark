@@ -29,7 +29,8 @@ final class DeleteForward extends FlarkCommand {
 }
 
 /// Return: a line break, continuing or exiting a list or quote; a paragraph
-/// break when [paragraph] is set.
+/// break when [paragraph] is set. In a fenced code block, Return on a final
+/// blank line exits the block; [paragraph] keeps the break inside code instead.
 final class Newline extends FlarkCommand {
   const Newline({this.paragraph = false});
   final bool paragraph;
@@ -108,10 +109,20 @@ final class Outdent extends FlarkCommand {
   const Outdent();
 }
 
-/// Toggle an inline style over the selection or the word at the caret.
+/// Toggle an inline style. Mixed selections become uniformly styled.
+/// At a caret, keep the existing span-edge and pending-typing behavior.
 final class ToggleStyle extends FlarkCommand {
   const ToggleStyle(this.style);
   final int style;
+}
+
+/// Explicitly enable or disable one inline style, using ToggleStyle's scope.
+/// Repeating the same value is an inert, successful no-op: apply returns false
+/// without a rejection, notification, or history entry.
+final class SetStyle extends FlarkCommand {
+  const SetStyle(this.style, {required this.enabled});
+  final int style;
+  final bool enabled;
 }
 
 /// Set the heading level of the caret's row (0 = paragraph).

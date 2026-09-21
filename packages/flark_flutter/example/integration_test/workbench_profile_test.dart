@@ -7,7 +7,7 @@ import 'package:flark/render_model.dart';
 import 'package:flark_dogfood/backend.dart';
 import 'package:flark_dogfood/main.dart';
 import 'package:flark_dogfood/qualification.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/code.dart';
 // Qualification observes the host's bounded page without expanding its API.
 // ignore: implementation_imports
@@ -16,6 +16,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'native_profile.dart';
 
 class _CountedBackend implements FlarkParseBackend {
   _CountedBackend(this.backend);
@@ -70,6 +72,7 @@ int workbenchOpeningCaret(String shape) => switch (shape) {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+  setUpAll(() => waitForNativeProfile(binding));
   testWidgets(
     'production workbench opening, boundaries and sustained use',
     (tester) async {
@@ -107,6 +110,7 @@ void main() {
       void requireForeground() {
         expect(binding.lifecycleState, AppLifecycleState.resumed);
         expect(binding.framesEnabled, isTrue);
+        expect(binding.platformDispatcher.semanticsEnabled, isTrue);
         expect(lostForeground, isFalse);
       }
 
@@ -431,6 +435,7 @@ void main() {
         failures.add('retained RSS');
       }
       final report = <String, Object>{
+        'nativeSemantics': binding.platformDispatcher.semanticsEnabled,
         'productionWorkbench': true,
         'treeSitterEditing': true,
         'treeSitterColors': true,
@@ -460,6 +465,7 @@ void main() {
       );
       expect(failures, isEmpty);
     },
+    semanticsEnabled: false,
     timeout: const Timeout(Duration(minutes: 15)),
   );
 }

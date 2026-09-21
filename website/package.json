@@ -7,8 +7,10 @@
     "npm": ">=9.6.5"
   },
   "scripts": {
-    "dev": "astro dev --host 127.0.0.1",
-    "build": "astro build",
+    "dev": "npm run build:playground && astro dev --host 127.0.0.1 --base /",
+    "dev:site": "astro dev --host 127.0.0.1 --base /",
+    "build:playground": "node scripts/build-playground.mjs",
+    "build": "npm run build:playground && astro build",
     "preview": "astro preview --host 127.0.0.1"
   },
   "dependencies": {

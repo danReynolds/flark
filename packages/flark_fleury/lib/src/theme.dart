@@ -34,6 +34,7 @@ final class FlarkCellTheme {
     this.headingStyles = const {},
     this.headingBand,
     this.headingDivider = CellStyle.none,
+    this.thematicBreak = CellStyle.none,
     this.headingIndicator = CellStyle.none,
     this.headingGutter = false,
     this.marker = CellStyle.none,
@@ -80,6 +81,9 @@ final class FlarkCellTheme {
   /// from heading text so they can be subdued without reducing text contrast.
   final CellStyle? headingBand;
   final CellStyle headingDivider, headingIndicator;
+
+  /// The horizontal rule painted for a Markdown thematic break.
+  final CellStyle thematicBreak;
 
   /// Reserve three cells beside the whole document for H1–H6 indicators.
   /// Text and containing block edges remain aligned. Under eight columns this
@@ -137,6 +141,7 @@ final class FlarkCellTheme {
       other.heading == heading &&
       other.headingBand == headingBand &&
       other.headingDivider == headingDivider &&
+      other.thematicBreak == thematicBreak &&
       other.headingIndicator == headingIndicator &&
       other.headingGutter == headingGutter &&
       other.headingStyles.length == headingStyles.length &&
@@ -172,6 +177,7 @@ final class FlarkCellTheme {
     heading,
     headingBand,
     headingDivider,
+    thematicBreak,
     headingIndicator,
     headingGutter,
     Object.hashAllUnordered(
@@ -218,6 +224,7 @@ final class FlarkCellTheme {
               ),
           },
           headingDivider: theme.mutedStyle,
+          thematicBreak: theme.mutedStyle,
           headingIndicator: theme.mutedStyle,
           link: CellStyle(foreground: theme.colorScheme.info, underline: true),
           tableBorder: theme.mutedStyle,

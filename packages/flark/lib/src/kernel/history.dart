@@ -78,6 +78,35 @@ final class History {
     _lastTypingAt = null;
   }
 
+  HistoryCheckpoint checkpoint() => HistoryCheckpoint(
+    List.of(_undo),
+    List.of(_redo),
+    _storedSourceCodeUnits,
+    _group,
+    _lastTypingAt,
+    _lastWasTyping,
+  );
+
+  void restore(HistoryCheckpoint checkpoint) {
+    _undo
+      ..clear()
+      ..addAll(checkpoint.undo);
+    _redo
+      ..clear()
+      ..addAll(checkpoint.redo);
+    _storedSourceCodeUnits = checkpoint.units;
+    _group = checkpoint.group;
+    _lastTypingAt = checkpoint.lastTypingAt;
+    _lastWasTyping = checkpoint.lastWasTyping;
+  }
+
+  /// Forget document history when loading unrelated external content.
+  void clear() {
+    _clear(_undo);
+    _clear(_redo);
+    breakCoalescing();
+  }
+
   /// Record the state before a change. Typing within the coalescing window
   /// joins the open group; anything else starts a new one. A joined change
   /// does not append another full-source snapshot: the group's first state
@@ -218,4 +247,20 @@ final class History {
       }
     }
   }
+}
+
+/// Internal savepoint for a command rejected while closing an IME preedit.
+final class HistoryCheckpoint {
+  const HistoryCheckpoint(
+    this.undo,
+    this.redo,
+    this.units,
+    this.group,
+    this.lastTypingAt,
+    this.lastWasTyping,
+  );
+  final List<HistoryEntry> undo, redo;
+  final int units, group;
+  final Duration? lastTypingAt;
+  final bool lastWasTyping;
 }

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Live Flark editor</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #fff; }
+    html[data-theme="dark"], html[data-theme="dark"] body { background: #141a23; }
+  </style>
+  <script>
+    document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light';
+  </script>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

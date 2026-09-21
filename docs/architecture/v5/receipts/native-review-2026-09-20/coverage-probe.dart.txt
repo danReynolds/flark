@@ -1,0 +1,28 @@
+import 'dart:convert';
+import 'package:flark/flark.dart';
+import 'package:flark_fleury/flark_fleury.dart';
+import 'package:fleury/fleury_core.dart';
+import 'package:fleury/fleury_test_support.dart';
+import 'package:test/test.dart';
+
+void main() {
+  test('inspect current Markdown rendering boundaries', () {
+    final backend = createParseBackend();
+    for (final entry in {
+      'rule': 'above\n\n---\n\nbelow',
+      'footnote': 'note[^n]\n\n[^n]: footnote body',
+      'html': '<b>inline</b>\n\n<div>block</div>',
+      'setext': 'heading\n=======\n\nbody',
+    }.entries) {
+      final editor = FlarkEditor(backend, text: entry.value);
+      final controller = FlarkFleuryController(editor);
+      final tester = FleuryTester(viewportSize: const CellSize(40, 12));
+      tester.pumpWidget(Theme(data: const ThemeData(), child: FlarkView(controller: controller)));
+      final buffer = tester.render();
+      final lines = [for (var y=0; y<12; y++) [for (var x=0; x<40; x++) buffer.atColRow(x,y).grapheme ?? ' '].join().trimRight()];
+      print(jsonEncode({'case':entry.key, 'rows':[for(final r in editor.projection.rows) {'kind':r.kind.name,'text':r.text}], 'painted':lines}));
+      expect(editor.source, entry.value);
+      tester.dispose(); controller.dispose();
+    }
+  });
+}

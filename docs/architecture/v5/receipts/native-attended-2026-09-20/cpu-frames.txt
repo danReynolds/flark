@@ -1,0 +1,12 @@
+ %CPU COMM
+98.0 Python
+65.2 flark_dogfood
+45.4 WindowServer
+40.0 Codex (Renderer)
+22.7 Codex (Service)
+5.7 SkyComputerUseService
+4.0 Google Chrome Helper (Renderer)
+3.7 Codex (Renderer)
+2.1 Google Chrome Helper
+1.7 com.apple.DriverKit-AppleBCMWLAN
+1.4 codex

@@ -1,3 +1,4 @@
+import 'package:flark/session.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'dart:async';
 import 'package:flark/flark.dart';
@@ -23,6 +24,8 @@ class FlarkEditorWidget extends StatefulWidget {
   const FlarkEditorWidget({
     super.key,
     required this.controller,
+    this.actions,
+    this.session,
     this.autofocus = false,
     this.readOnly = false,
     this.showToolbar = true,
@@ -43,6 +46,8 @@ class FlarkEditorWidget extends StatefulWidget {
     color: Color(0xff253047),
   );
   final FlarkController controller;
+  final FlarkActions? actions;
+  final FlarkSession? session;
   final bool autofocus, readOnly, showToolbar;
   final FocusNode? focusNode;
   final TextStyle? style;
@@ -62,6 +67,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   final _surfaceKey = GlobalKey();
   final _scroll = ScrollController();
   late FocusNode _focus;
+  (FlarkController, int, FlarkSelection)? _toolbarMenuTarget;
   late final EditorClipboardBinding _clipboardBinding;
   TextInputConnection? _connection;
   _InputClient? _client;
@@ -87,9 +93,22 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       _surfaceKey.currentContext?.findRenderObject() as RenderFlarkSurface?;
   FlarkController get c => widget.controller;
 
+  Future<FlarkEditResult> _presentResource(bool image) async {
+    if (widget.readOnly) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.readOnly);
+    }
+    if (_resourceDialogOpen ||
+        c.editor.sourceMode ||
+        c.editor.document.caretRow.kind == RowKind.codeBlock) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
+    }
+    return _editResource(image);
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.session?.resourcePresenter = _presentResource;
     // Initialize optional decoration before the input connection is opened.
     _focus = widget.focusNode ?? FocusNode(debugLabel: 'Flark editor');
     _focus.addListener(_focusChanged);
@@ -103,6 +122,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     );
     c.addListener(_changed);
     _scroll.addListener(_scrolled);
+    // A caller can request an external focus node while automatic loading is
+    // still showing its placeholder. Attach input when that focused view mounts.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _focus.hasFocus && !widget.readOnly) _attach();
+    });
   }
 
   @override
@@ -284,13 +308,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
   }
 
-  Future<void> _editResource(bool image) async {
+  Future<FlarkEditResult> _editResource(bool image) async {
     if (_resourceDialogOpen ||
         widget.readOnly ||
         c.editor.sourceMode ||
         c.editor.document.rowAt(c.editor.selection.extent).kind ==
             RowKind.codeBlock) {
-      return;
+      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
     }
     _dismissLink();
     c.finishComposition();
@@ -313,13 +337,14 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         !target.editor.sourceMode &&
         target.editor.revision == revision &&
         target.value.selection == selection;
+    var applied = false;
     final session = FlarkResourceSession(
       image: image,
       resource: resource,
       selectedText: target.selectedText,
       isActive: active,
-      apply: (command) =>
-          active() && target.command(command, expectedRevision: revision),
+      apply: (command) => (applied =
+          active() && target.command(command, expectedRevision: revision)),
       onOpen: !image && uri != null && widget.onOpenLink != null
           ? () {
               if (active()) widget.onOpenLink?.call(uri);
@@ -356,6 +381,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         }
       }
     }
+    if (applied) return const FlarkEditResult.changed();
+    if (!mounted || target.editor.revision != revision) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.staleRevision);
+    }
+    return const FlarkEditResult.unchanged();
   }
 
   bool get _linkActive =>
@@ -648,9 +678,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       case 'paste:':
         unawaited(_paste());
       case 'undo:':
-        _command(const Undo());
+        widget.actions == null
+            ? _command(const Undo())
+            : widget.actions!.undo();
       case 'redo:':
-        _command(const Redo());
+        widget.actions == null
+            ? _command(const Redo())
+            : widget.actions!.redo();
     }
   }
 
@@ -667,6 +701,77 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     super.dispose();
   }
 
+  Widget _styleButton(String label, IconData icon, int style) {
+    final publicStyle = FlarkStyle.values.firstWhere(
+      (value) => value.kernelStyle == style,
+    );
+    final state =
+        widget.actions?.state.styles[publicStyle] ?? c.styleState(style);
+    final colors = Theme.of(context).colorScheme;
+    return MergeSemantics(
+      child: Semantics(
+        value: state.isMixed ? 'Mixed' : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: IconButton(
+            tooltip: label,
+            isSelected: state.isOn,
+            style: ButtonStyle(
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              backgroundColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return colors.secondaryContainer;
+                }
+                if (state.isMixed) {
+                  return colors.secondaryContainer.withValues(alpha: 0.45);
+                }
+                return null;
+              }),
+              foregroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? null
+                    : states.contains(WidgetState.selected)
+                    ? colors.onSecondaryContainer
+                    : null,
+              ),
+              side: WidgetStatePropertyAll(
+                state.isMixed
+                    ? BorderSide(color: colors.outline)
+                    : BorderSide.none,
+              ),
+            ),
+            onPressed: widget.readOnly || !state.canToggle
+                ? null
+                : () {
+                    final actions = widget.actions;
+                    if (actions != null) {
+                      actions.setStyle(publicStyle, enabled: !state.isOn);
+                    } else {
+                      _command(SetStyle(style, enabled: !state.isOn));
+                    }
+                    _focus.requestFocus();
+                  },
+            icon: state.isMixed
+                ? Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(icon, size: 20),
+                      const Positioned(
+                        right: -5,
+                        bottom: -5,
+                        child: Icon(Icons.remove, size: 10),
+                      ),
+                    ],
+                  )
+                : Icon(icon, size: 20),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = c.editor;
@@ -675,7 +780,6 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       overrides: widget.theme,
       bodyStyle: widget.style,
     );
-    final menuController = c, menuRevision = e.revision;
     final codeRow = !e.sourceMode ? e.document.rowAt(e.selection.extent) : null;
     final info = codeRow?.fenced == true
         ? e.source.substring(codeRow!.codeInfoStart, codeRow.codeInfoEnd)
@@ -685,6 +789,23 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         ? e.codeEditing?.resolveLanguage(codeRow!.text, info)
         : null;
     final detectedLabel = codeLanguages[detected];
+    final headingFormatting =
+        codeRow != null &&
+        (codeRow.kind == RowKind.paragraph ||
+            codeRow.kind == RowKind.heading ||
+            (codeRow.kind == RowKind.blank && e.selection.isCollapsed));
+    void captureMenu() => _toolbarMenuTarget = (c, e.revision, e.selection);
+    bool menuActive() {
+      final target = _toolbarMenuTarget;
+      return mounted &&
+          target != null &&
+          identical(c, target.$1) &&
+          !widget.readOnly &&
+          !e.sourceMode &&
+          e.revision == target.$2 &&
+          e.selection == target.$3;
+    }
+
     final window = e.sourceMode
         ? SourceWindow.at(c.text, e.selection.extent)
         : null;
@@ -701,14 +822,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 if (codeRow?.fenced == true)
                   PopupMenuButton<String>(
                     tooltip: 'Code language',
+                    onOpened: captureMenu,
                     initialValue: codeLanguage,
                     onSelected: (language) {
-                      if (identical(c, menuController) &&
-                          language != codeLanguage) {
-                        menuController.command(
-                          SetCodeLanguage(language),
-                          expectedRevision: menuRevision,
-                        );
+                      if (menuActive() && language != codeLanguage) {
+                        (widget.actions == null
+                            ? _command(SetCodeLanguage(language))
+                            : widget.actions!.setCodeLanguage(language));
                       }
                       _focus.requestFocus();
                     },
@@ -743,43 +863,83 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                       ),
                     ),
                   ),
-                IconButton(
-                  tooltip: 'Bold',
-                  isSelected: e.typingContext & Style.strong != 0,
-                  onPressed: () {
-                    _command(const ToggleStyle(Style.strong));
+                PopupMenuButton<int>(
+                  tooltip: 'Paragraph style',
+                  onOpened: captureMenu,
+                  enabled:
+                      widget.actions?.state.heading.canSet ?? headingFormatting,
+                  initialValue: codeRow?.headingLevel ?? 0,
+                  onSelected: (level) {
+                    if (menuActive()) {
+                      if (widget.actions != null) {
+                        widget.actions!.setHeading(level);
+                      } else {
+                        _command(SetHeadingLevel(level));
+                      }
+                    }
                     _focus.requestFocus();
                   },
-                  icon: const Icon(Icons.format_bold, size: 20),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 0, child: Text('Paragraph')),
+                    for (var level = 1; level <= 6; level++)
+                      PopupMenuItem(
+                        value: level,
+                        child: Text('Heading $level'),
+                      ),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          codeRow?.kind == RowKind.heading
+                              ? 'Heading ${codeRow!.headingLevel}'
+                              : 'Paragraph',
+                        ),
+                        const Icon(Icons.arrow_drop_down, size: 18),
+                      ],
+                    ),
+                  ),
                 ),
-                IconButton(
-                  tooltip: 'Italic',
-                  isSelected: e.typingContext & Style.emphasis != 0,
-                  onPressed: () {
-                    _command(const ToggleStyle(Style.emphasis));
-                    _focus.requestFocus();
-                  },
-                  icon: const Icon(Icons.format_italic, size: 20),
+                _styleButton('Bold', Icons.format_bold, Style.strong),
+                _styleButton('Italic', Icons.format_italic, Style.emphasis),
+                _styleButton(
+                  'Strikethrough',
+                  Icons.format_strikethrough,
+                  Style.strikethrough,
                 ),
+                _styleButton('Inline code', Icons.code, Style.code),
                 IconButton(
                   tooltip: 'Link',
                   icon: const Icon(Icons.link, size: 20),
-                  onPressed: e.sourceMode || codeRow?.kind == RowKind.codeBlock
+                  onPressed:
+                      !(widget.actions?.state.link.canSet ?? e.canSetResource())
                       ? null
-                      : () => _editResource(false),
+                      : () =>
+                            widget.actions?.showLinkEditor() ??
+                            _editResource(false),
                 ),
                 IconButton(
                   tooltip: 'Image',
                   icon: const Icon(Icons.image_outlined, size: 20),
-                  onPressed: e.sourceMode || codeRow?.kind == RowKind.codeBlock
+                  onPressed: !e.canSetResource(image: true)
                       ? null
-                      : () => _editResource(true),
+                      : () =>
+                            widget.actions?.showImageEditor() ??
+                            _editResource(true),
                 ),
                 IconButton(
                   tooltip: 'Undo',
-                  onPressed: e.history.canUndo
+                  onPressed:
+                      (widget.actions?.state.canUndo ?? e.history.canUndo)
                       ? () {
-                          _command(const Undo());
+                          widget.actions == null
+                              ? _command(const Undo())
+                              : widget.actions!.undo();
                           _focus.requestFocus();
                         }
                       : null,
@@ -787,9 +947,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 ),
                 IconButton(
                   tooltip: 'Redo',
-                  onPressed: e.history.canRedo
+                  onPressed:
+                      (widget.actions?.state.canRedo ?? e.history.canRedo)
                       ? () {
-                          _command(const Redo());
+                          widget.actions == null
+                              ? _command(const Redo())
+                              : widget.actions!.redo();
                           _focus.requestFocus();
                         }
                       : null,
@@ -797,7 +960,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 ),
                 TextButton(
                   onPressed: () {
-                    c.sourceMode(!e.sourceMode);
+                    widget.actions == null
+                        ? c.sourceMode(!e.sourceMode)
+                        : widget.actions!.setSourceMode(!e.sourceMode);
                     _focus.requestFocus();
                   },
                   child: Text(e.sourceMode ? 'Rendered' : 'Source'),

@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:flark/flark.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_tree_sitter/flark.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'package:flark_tree_sitter/highlight_worker.dart';

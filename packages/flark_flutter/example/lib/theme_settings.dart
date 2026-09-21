@@ -1,4 +1,4 @@
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
 
 /// Example application state; all rendering still uses the public theme API.
@@ -63,7 +63,7 @@ class ThemeSettings {
       syntaxColors: {${syntaxColors.entries.map((e) => '\n        FlarkSyntaxRole.${e.key.name}: ${color(e.value)},').join()}\n      },
     )''';
     return '''import 'package:flutter/material.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 
 // Supply the editor controller from your application.
 // See the package example's backend.dart for native/web parser initialization.

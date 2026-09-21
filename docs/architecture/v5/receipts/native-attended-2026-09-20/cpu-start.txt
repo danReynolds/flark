@@ -1,0 +1,12 @@
+ %CPU COMM
+111.3 Code Helper (Renderer)
+96.0 Python
+50.4 dart
+42.0 WindowServer
+33.8 Codex (Renderer)
+25.7 Codex (Service)
+11.1 Codex (Renderer)
+9.6 codex
+7.7 flark_dogfood
+7.6 Code Helper (Plugin)
+5.9 SkyComputerUseService

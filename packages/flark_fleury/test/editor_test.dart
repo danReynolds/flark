@@ -1,5 +1,5 @@
 import 'package:flark/flark.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_fleury/src/cell_layout.dart';
 import 'package:flark_tree_sitter/flark.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
@@ -759,6 +759,38 @@ void main() {
       expect(editor.source, contains('def hello\nend'));
     },
   );
+
+  for (final width in [20, 80]) {
+    test('double Enter exits an auto-indented fence at width $width', () {
+      final code = FlarkTreeSitter.fromAnalyzer(CodeAnalyzer());
+      addTearDown(code.dispose);
+      const source = '```ruby\ndef hello\n```\n\nafter';
+      mount(source, caret: source.indexOf('hello') + 5, code: code);
+      tester.render(size: CellSize(width, 12));
+      key(KeyCode.enter);
+      expect(editor.document.caretRow.text, 'def hello\n  ');
+      final inside = editor.snapshot;
+      key(KeyCode.enter, shift: true);
+      expect(editor.document.caretRow.text, 'def hello\n  \n  ');
+      key(KeyCode.z, cmd: true);
+      expect(editor.source, inside.source);
+      key(KeyCode.enter);
+      expect(editor.source, '```ruby\ndef hello\n```\n\n\nafter');
+      expect(editor.document.caretRow.kind, RowKind.blank);
+      expect(editor.projection.rows.first.text, 'def hello');
+      expect(lines(), contains('  def hello'));
+      key(KeyCode.z, cmd: true);
+      expect(editor.source, inside.source);
+      expect(editor.selection, inside.selection);
+      key(KeyCode.z, cmd: true, shift: true);
+      expect(editor.document.caretRow.kind, RowKind.blank);
+      tester.type('Outside prose');
+      expect(lines(), contains('Outside prose'));
+      expect(editor.source, '```ruby\ndef hello\n```\nOutside prose\n\nafter');
+      expect(editor.document.caretRow.kind, RowKind.paragraph);
+      expect(editor.document.caretRow.text, 'Outside prose');
+    });
+  }
 
   test('composition replacement, cancel and commit preserve one undo unit', () {
     mount('a');

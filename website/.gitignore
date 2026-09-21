@@ -2,3 +2,9 @@ node_modules/
 .astro/
 dist/
 .env.local
+public/playground/
+src/generated/
+playground/.dart_tool/
+playground/build/
+playground/.flutter-plugins-dependencies
+playground/pubspec.lock

@@ -2,7 +2,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show AppExitResponse;
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/code.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -102,9 +102,7 @@ class DogfoodApp extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     title: 'Flark — Live Markdown',
     initialRoute: Uri.base.queryParameters['theme'] == '1' ? '/theme' : '/',
-    routes: {
-      '/theme': (_) => ThemePlayground(backend: backend, code: code),
-    },
+    routes: {'/theme': (_) => ThemePlayground(backend: backend, code: code)},
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff3a628f)),
       useMaterial3: true,

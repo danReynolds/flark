@@ -1,0 +1,13 @@
+{
+  "gitHead": "e7136388dd0cb5d080b05adfba2ef4099b570bf5",
+  "files": {
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/MacOS/flark_dogfood": "0950accc867838736cc30c38e9c5c7d01df6932c42803c7bfaa910ca1ad166c8",
+    "packages/flark_flutter/example/build/macos/Build/Products/Profile/flark_dogfood.app/Contents/Frameworks/App.framework/Versions/A/App": "e003dcd0f595889ffe0f1df35f900b367f2c24b3533fc766b3f177345700bc52"
+  },
+  "modifiedInputs": [
+    "packages/flark_flutter/example/integration_test/semantics_probe_test.dart"
+  ],
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.2\nBuildVersion:\t\t25C56",
+  "cpu": "Apple M1 Pro",
+  "architecture": "arm64"
+}

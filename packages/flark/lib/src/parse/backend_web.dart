@@ -4,6 +4,7 @@ import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'backend.dart';
+import 'bundled_wasm.g.dart';
 import 'render_model.dart';
 import 'schema.g.dart';
 
@@ -38,6 +39,35 @@ const int _initialInputCapacity = 4096;
 final class WasmParseBackend implements FlarkParseBackend {
   WasmParseBackend._(this._module) {
     _instantiate();
+  }
+
+  static Future<JSObject>? _bundledModule;
+
+  /// The package carries its own parser, including plain dart2js hosts and
+  /// non-root deployments. Compile once, allocate a separate instance per owner.
+  static Future<WasmParseBackend> bundled() async {
+    final pending = _bundledModule ??= _compile(
+      base64Decode(bundledParserBase64).toJS,
+    ).toDart;
+    try {
+      return WasmParseBackend._(await pending);
+    } catch (_) {
+      if (identical(_bundledModule, pending)) _bundledModule = null;
+      rethrow;
+    }
+  }
+
+  bool _disposed = false;
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _free(_input, _inputCapacity);
+    _free(_outCell, 16);
+    // Drop the WebAssembly memory/export references as well as its buffers.
+    _exports = JSObject();
+    _memory = JSObject();
+    _parseFn = _allocFn = _freeFn = _versionFn = null;
   }
 
   /// Compile and instantiate from raw module bytes.
@@ -84,7 +114,7 @@ final class WasmParseBackend implements FlarkParseBackend {
   final JSObject _module;
   late JSObject _exports;
   late JSObject _memory;
-  late JSFunction _parseFn, _allocFn, _freeFn, _versionFn;
+  JSFunction? _parseFn, _allocFn, _freeFn, _versionFn;
   late int _outCell;
   late int _input;
   late int _inputCapacity;
@@ -114,17 +144,18 @@ final class WasmParseBackend implements FlarkParseBackend {
   Uint8List _heap() =>
       _memory.getProperty<JSArrayBuffer>('buffer'.toJS).toDart.asUint8List();
   int _alloc(int len) =>
-      (_allocFn.callAsFunction(null, len.toJS) as JSNumber).toDartInt;
+      (_allocFn!.callAsFunction(null, len.toJS) as JSNumber).toDartInt;
   void _free(int ptr, int len) {
-    _freeFn.callAsFunction(null, ptr.toJS, len.toJS);
+    _freeFn!.callAsFunction(null, ptr.toJS, len.toJS);
   }
 
   @override
   int get schemaVersion =>
-      (_versionFn.callAsFunction(null) as JSNumber).toDartInt;
+      (_versionFn!.callAsFunction(null) as JSNumber).toDartInt;
 
   @override
   RenderModel parse(String source) {
+    if (_disposed) throw StateError('WasmParseBackend used after dispose');
     validateFlarkSourceText(source);
     final bytes = utf8.encode(source);
     if (bytes.length > _inputCapacity) {
@@ -136,7 +167,7 @@ final class WasmParseBackend implements FlarkParseBackend {
     final int rc;
     try {
       rc =
-          (_parseFn.callAsFunction(
+          (_parseFn!.callAsFunction(
                     null,
                     _input.toJS,
                     bytes.length.toJS,
