@@ -18,6 +18,7 @@ export default defineConfig({
         { label: 'Home', slug: '' },
         { label: 'Guides', items: [
           { label: 'Using Flark', slug: 'guides/using-flark' },
+          { label: 'Release readiness', slug: 'guides/release-readiness' },
           { label: 'DX review decisions', slug: 'guides/dx-review' },
         ] },
       ],

@@ -3,7 +3,7 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:flark_dogfood/main.dart';
 import 'package:flark_dogfood/qualification.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 // ignore: implementation_imports
 import 'package:flark_flutter/src/source_window.dart';
 import 'package:flutter/material.dart';

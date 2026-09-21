@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flark/flark.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
 import 'package:http/http.dart' as http;

@@ -17,44 +17,43 @@ its SIL Open Font License; the pinned upstream revision and file hashes are in
 ```dart
 import 'package:flark_flutter/flark_flutter.dart';
 
-final controller = FlarkController(
-  FlarkEditor(createParseBackend(), text: '# A note\n\nStart writing.'),
-);
+// A complete composer inside a bounded-height parent.
+FlarkEditor(initialMarkdown: '# My note', onChanged: saveMarkdown);
 
-// Place inside a bounded-height parent.
-FlarkEditorWidget(controller: controller, autofocus: true);
+// Read-only content flows in its parent's layout and scrolling.
+FlarkMarkdown(markdown: article, selectable: true);
+```
 
-// The same presentation in a read-only host.
-FlarkMarkdownView(controller: controller);
+Both load their parser automatically. No backend object, initialization helper or
+hand-copied Wasm asset is required. Native development builds use Dart build hooks;
+web builds include the parser in the compiled application.
 
-controller.command(const InsertText('hello'));
-final markdown = controller.text;
+For custom controls, create a controller once, then dispose it after unmounting:
 
-// Dispose the caller-owned controller after removing its widgets.
+```dart
+final controller = FlarkController(markdown: '# My note');
+FlarkEditor(controller: controller);
+await controller.ready; // Only needed for immediate programmatic edits.
+controller.toggleStyle(FlarkStyle.bold);
+controller.insertText('Hello');
+final bold = controller.state.styles.bold;
+final markdown = controller.markdown;
 controller.dispose();
 ```
 
-On Flutter web, asynchronously load the declared
-`packages/flark/lib/assets/wasm/flark_parse.wasm` asset and create a
-`WasmParseBackend.fromBytes` from `package:flark/wasm.dart`. The example's
-conditional `backend.dart` shows both transports. The kernel remains Dart-first;
-the host does not contain a second Markdown interpreter.
+`loadMarkdown` establishes fetched content and resets history without a save event.
+`replaceMarkdown` is undoable. `onChanged` and `controller.changes` report edits,
+including programmatic changes and undo; choose one save route.
+See the [usage guide](../../website/src/content/docs/guides/using-flark.mdx) for
+precise source edits, readiness/retry, state, and resource controls.
 
-## Example app
-
-Custom formatting controls can read `controller.styleState(Style.strong)` and
-call `controller.setStyle(Style.strong, enabled: true)` (or `false`). State
-reports on/off/mixed separately from command availability; controller listeners
-observe caret, selection, pending formatting and history changes. See the shared
-[formatting contract](../../docs/architecture/v5/formatting_controls.md).
-
-The [package example](example/README.md) also contains a live **Theme playground**
-for editor/viewer styling and replaceable link controls. It exports a Dart widget
-using the public API, including the custom-control source when selected.
+Run the minimal app with `cd example && flutter run -t lib/consumer.dart`.
+The full [workbench](example/README.md) also exercises advanced parser and
+code-service configuration through `flark_flutter_legacy.dart`.
 
 ## Markdown themes and controls
 
-Both `FlarkEditorWidget` and `FlarkMarkdownView` accept the same `theme` override:
+Both `FlarkEditor` and `FlarkMarkdown` accept the same `theme` override:
 
 ```dart
 final markdownTheme = FlarkThemeData(
@@ -64,8 +63,8 @@ final markdownTheme = FlarkThemeData(
   },
   metrics: {FlarkMetric.documentPadding: 24},
 );
-FlarkEditorWidget(controller: controller, theme: markdownTheme);
-FlarkMarkdownView(controller: viewerController, theme: markdownTheme);
+FlarkEditor(controller: controller, theme: markdownTheme);
+FlarkMarkdown(markdown: article, theme: markdownTheme);
 ```
 
 Import Flutter's `material.dart` for `TextStyle`/`Color`. For application-wide
@@ -121,6 +120,8 @@ indentation coverage and grammar versions. A manual choice is authoritative;
 unknown languages and plain text retain ordinary whitespace editing.
 
 ```dart
+// Advanced integration uses the explicit legacy entry point.
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/code.dart';
 
 // Load native assets or bundled Wasm and warm editing queries before mounting.
@@ -178,16 +179,15 @@ cache retains its own application-level policy. Unsupported URLs and failed
 requests show an unavailable placeholder.
 
 ```dart
-FlarkEditorWidget(
+FlarkEditor(
   controller: controller,
   baseUri: Uri.parse('https://example.com/notes/'),
   onOpenLink: (uri) { /* open using the application's URL launcher */ },
   // Optional: imageProvider: (uri) => an asset/file/authenticated provider.
-  // showImagePreviews: false keeps the alt-text-only presentation.
 );
 ```
 
-The same options are available on `FlarkMarkdownView`. The default image
+The same resource options are available on `FlarkMarkdown`. The default image
 provider permits HTTP(S); `baseUri` resolves relative destinations. Web image
 servers must permit cross-origin requests. The host's open-link action permits
 HTTP(S) and mailto URLs. Comrak supplies resolved URLs and titles, including
@@ -209,7 +209,8 @@ surrogate pair or CRLF. Page navigation changes the caret, not the source.
 Selection, copy, edits and Undo continue to use global offsets. A host must
 qualify its own byte, line, block, run, block-length, container-depth and writable-source limits.
 
-`FlarkSourceView(controller: controller)` provides read-only source inspection
+Advanced `flark_flutter_legacy.dart` integrations can use
+`FlarkSourceView(controller: controller)` for read-only source inspection
 using those same bounded pages and follows the editor's canonical caret.
 
 `onPaint` is an optional observation point after actual visible glyph drawing.

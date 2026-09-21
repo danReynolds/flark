@@ -68,12 +68,10 @@ What would you change?
 class HomepageDemo extends StatefulWidget {
   const HomepageDemo({
     super.key,
-    required this.backend,
     required this.brightness,
     required this.onOpenLink,
   });
 
-  final FlarkParseBackend backend;
   final ValueListenable<Brightness> brightness;
   final ValueChanged<Uri> onOpenLink;
 
@@ -87,7 +85,7 @@ class _HomepageDemoState extends State<HomepageDemo> {
   final controllers = <Starter, FlarkController>{};
   FlarkController get controller => controllers.putIfAbsent(
     starter,
-    () => FlarkController(FlarkEditor(widget.backend, text: starter.markdown)),
+    () => FlarkController(markdown: starter.markdown),
   );
 
   @override
@@ -106,16 +104,14 @@ class _HomepageDemoState extends State<HomepageDemo> {
   }
 
   void reset() {
-    controller.command(
-      ReplaceRange(0, controller.text.length, starter.markdown),
-    );
-    controller.command(const SetSelection.caret(0));
-    controller.sourceMode(false);
+    controller.replaceMarkdown(starter.markdown);
+    controller.setSelection(0, 0);
+    controller.setSourceMode(false);
   }
 
   Future<void> copy(BuildContext context) async {
     try {
-      await Clipboard.setData(ClipboardData(text: controller.text));
+      await Clipboard.setData(ClipboardData(text: controller.markdown));
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
@@ -235,7 +231,7 @@ class _HomepageDemoState extends State<HomepageDemo> {
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 1000),
                       child: LayoutBuilder(
-                        builder: (_, constraints) => FlarkEditorWidget(
+                        builder: (_, constraints) => FlarkEditor(
                           controller: controller,
                           focusNode: focusNode,
                           // Mounting the demo must not steal focus from the page.
@@ -292,7 +288,7 @@ class _HomepageDemoState extends State<HomepageDemo> {
                                 AnimatedBuilder(
                                   animation: controller,
                                   builder: (_, _) => Text(
-                                    '${controller.text.length} characters · Session only',
+                                    '${controller.markdown.length} characters · Session only',
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: colors.onSurfaceVariant,

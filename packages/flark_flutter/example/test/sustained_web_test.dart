@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:ui_web' as ui_web;
 import 'package:flark/wasm.dart';
 import 'package:flark_flutter/code.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'package:flark_tree_sitter/wasm.dart';
 import 'package:flutter/material.dart';

@@ -1,5 +1,5 @@
 import 'package:flark/flark.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_fleury/src/cell_layout.dart';
 import 'package:flark_tree_sitter/flark.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flark_dogfood/theme_playground.dart';
 import 'package:flark_dogfood/theme_settings.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -209,7 +209,7 @@ void main() {
       File('.dart_tool/flark_theme_export_test.dart').writeAsStringSync('''
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'flark_theme_ambient.dart' as ambient;
 import 'flark_theme_instance.dart' as instance;
 void main() {

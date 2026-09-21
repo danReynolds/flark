@@ -62,6 +62,8 @@ class FlarkSurface extends LeafRenderObjectWidget {
     required this.viewportHeight,
     required this.scrollOffset,
     this.readOnly = false,
+    this.selectable = false,
+    this.onCopy,
     this.onPaint,
     this.onFocus,
     this.revealDuringLayout,
@@ -72,10 +74,11 @@ class FlarkSurface extends LeafRenderObjectWidget {
   final Uri? baseUri;
   final FlarkImageProvider? imageProvider;
   final bool showImagePreviews;
-  final FlarkController controller;
+  final FlarkSurfaceController controller;
   final FlarkThemeData theme;
   final TextScaler textScaler;
-  final bool focused, readOnly;
+  final bool focused, readOnly, selectable;
+  final VoidCallback? onCopy;
   final double viewportHeight, scrollOffset;
   final ValueChanged<FlarkPaintObservation>? onPaint;
   final VoidCallback? onFocus;
@@ -93,6 +96,8 @@ class FlarkSurface extends LeafRenderObjectWidget {
         onPaint,
         revealDuringLayout,
         onFocus: onFocus,
+        selectable: selectable,
+        onCopy: onCopy,
         baseUri: baseUri,
         imageProvider: imageProvider,
         showImagePreviews: showImagePreviews,
@@ -112,6 +117,8 @@ class FlarkSurface extends LeafRenderObjectWidget {
     onPaint,
     revealDuringLayout,
     onFocus: onFocus,
+    selectable: selectable,
+    onCopy: onCopy,
     baseUri: baseUri,
     imageProvider: imageProvider,
     showImagePreviews: showImagePreviews,
@@ -165,6 +172,8 @@ class RenderFlarkSurface extends RenderBox
     this.onPaint,
     this.revealDuringLayout, {
     this.onFocus,
+    this.selectable = false,
+    this.onCopy,
     Uri? baseUri,
     FlarkImageProvider? imageProvider,
     this.showImagePreviews = true,
@@ -176,14 +185,15 @@ class RenderFlarkSurface extends RenderBox
   }
   late final _images = SurfaceImageCache(markNeedsPaint);
   bool showImagePreviews;
-  FlarkController controller;
+  FlarkSurfaceController controller;
   FlarkThemeData theme;
   TextScaler textScaler;
   TextStyle get style => theme.styles[FlarkTextRole.body]!;
   double metric(FlarkMetric role) => theme.metrics[role]!;
   Color color(FlarkColorRole role) => theme.colors[role]!;
   VoidCallback? onFocus;
-  bool focused, readOnly;
+  bool focused, readOnly, selectable;
+  VoidCallback? onCopy;
   double viewportHeight, scrollOffset;
   ValueChanged<FlarkPaintObservation>? onPaint;
   double Function(Rect, double, double)? revealDuringLayout;
@@ -201,11 +211,14 @@ class RenderFlarkSurface extends RenderBox
   double? _layoutWidth;
   Object? _layoutContent;
   int _colorRevision = -1;
+  double get _visibleHeight =>
+      viewportHeight > 0 ? viewportHeight : size.height;
+
   double get _padding => metric(FlarkMetric.documentPadding);
   static const _caretPrototype = Rect.fromLTWH(0, 0, 1.5, 22);
 
   void update(
-    FlarkController next,
+    FlarkSurfaceController next,
     FlarkThemeData nextTheme,
     TextScaler nextScaler,
     bool focus,
@@ -215,11 +228,15 @@ class RenderFlarkSurface extends RenderBox
     ValueChanged<FlarkPaintObservation>? observer,
     double Function(Rect, double, double)? reveal, {
     VoidCallback? onFocus,
+    bool selectable = false,
+    VoidCallback? onCopy,
     Uri? baseUri,
     FlarkImageProvider? imageProvider,
     bool showImagePreviews = true,
   }) {
     this.onFocus = onFocus;
+    this.selectable = selectable;
+    this.onCopy = onCopy;
     _images.configure(baseUri, imageProvider);
     if (this.showImagePreviews != showImagePreviews) {
       this.showImagePreviews = showImagePreviews;
@@ -402,7 +419,7 @@ class RenderFlarkSurface extends RenderBox
       );
       _needsReveal = false;
     }
-    final visible = Rect.fromLTWH(0, scrollOffset, size.width, viewportHeight);
+    final visible = Rect.fromLTWH(0, scrollOffset, size.width, _visibleHeight);
     controller.codeColors?.setVisibleRows([
       for (final layout in _rows)
         if (layout.row?.kind == RowKind.codeBlock &&
@@ -989,13 +1006,13 @@ class RenderFlarkSurface extends RenderBox
         offset.dx,
         offset.dy + scrollOffset,
         size.width,
-        viewportHeight,
+        _visibleHeight,
       ),
       Paint()..color = color(FlarkColorRole.canvas),
     );
     final (baseRow, baseOffset) = _display(selected.start);
     final (endRow, endOffset) = _display(selected.end);
-    final visible = Rect.fromLTWH(0, scrollOffset, size.width, viewportHeight);
+    final visible = Rect.fromLTWH(0, scrollOffset, size.width, _visibleHeight);
     _images.visible([
       for (final layout in _rows)
         for (final image in layout.images)
@@ -1277,7 +1294,7 @@ class RenderFlarkSurface extends RenderBox
     config.isTextField = !readOnly;
     config.isReadOnly = readOnly;
     config.isFocused = focused;
-    if (!readOnly) {
+    if (!readOnly || selectable) {
       config.isEnabled = true;
       config.onFocus = onFocus;
     }
@@ -1328,7 +1345,8 @@ class RenderFlarkSurface extends RenderBox
         tableCell: current.selection.tableCell,
       ),
     );
-    if (!readOnly) {
+    if (!readOnly || selectable) {
+      if (onCopy != null) config.onCopy = onCopy!;
       config.onSetSelection = (selection) {
         if (rows != null && selection.isCollapsed) {
           var offset = selection.extentOffset;
@@ -1357,6 +1375,8 @@ class RenderFlarkSurface extends RenderBox
           ),
         );
       };
+    }
+    if (!readOnly) {
       config.onSetText = (text) {
         // A pathological single grapheme may exceed a source page. Never let
         // an accessibility page replacement expand into its neighboring page.

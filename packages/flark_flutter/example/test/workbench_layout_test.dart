@@ -1,5 +1,5 @@
 import 'package:flark_dogfood/main.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

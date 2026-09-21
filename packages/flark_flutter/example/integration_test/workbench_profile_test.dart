@@ -7,7 +7,7 @@ import 'package:flark/render_model.dart';
 import 'package:flark_dogfood/backend.dart';
 import 'package:flark_dogfood/main.dart';
 import 'package:flark_dogfood/qualification.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/code.dart';
 // Qualification observes the host's bounded page without expanding its API.
 // ignore: implementation_imports

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 import 'package:flark_dogfood/main.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

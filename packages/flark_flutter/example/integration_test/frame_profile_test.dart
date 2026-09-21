@@ -7,7 +7,7 @@ import 'package:flark_dogfood/backend.dart';
 import 'package:flark_dogfood/qualification.dart';
 import 'package:flark_dogfood/main.dart' show dense, DogfoodApp;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/code.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

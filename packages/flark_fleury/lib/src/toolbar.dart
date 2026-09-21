@@ -7,7 +7,6 @@ extension _EditorToolbar on _EditorState {
     final row = editor.sourceMode
         ? null
         : editor.document.rowAt(selection.extent);
-    final inline = row != null && row.kind != RowKind.codeBlock;
     final heading =
         row != null &&
         (row.kind == RowKind.paragraph ||
@@ -21,12 +20,37 @@ extension _EditorToolbar on _EditorState {
         editor.selection == selection;
     void command(FlarkCommand command) {
       if (!active()) return;
-      _apply(command);
+      final actions = widget.actions;
+      if (actions == null) {
+        _apply(command);
+      } else {
+        switch (command) {
+          case SetStyle(:final style, :final enabled):
+            actions.setStyle(
+              FlarkStyle.values.firstWhere((s) => s.kernelStyle == style),
+              enabled: enabled,
+            );
+          case SetHeadingLevel(:final level):
+            actions.setHeading(level);
+          case SetCodeLanguage(:final language):
+            actions.setCodeLanguage(language);
+          case Undo():
+            actions.undo();
+          case Redo():
+            actions.redo();
+          default:
+            _apply(command);
+        }
+      }
       _focus.requestFocus();
     }
 
     Widget toggle(String label, String text, int style) {
-      final state = widget.controller.styleState(style);
+      final state =
+          widget.actions?.state.styles[FlarkStyle.values.firstWhere(
+            (s) => s.kernelStyle == style,
+          )] ??
+          widget.controller.styleState(style);
       final selected = state.isOn;
       final enabled = state.canToggle;
       void activate() => command(SetStyle(style, enabled: !selected));
@@ -64,13 +88,13 @@ extension _EditorToolbar on _EditorState {
         children: [
           Button(
             text: 'Undo',
-            onPressed: editor.history.canUndo
+            onPressed: (widget.actions?.state.canUndo ?? editor.history.canUndo)
                 ? () => command(const Undo())
                 : null,
           ),
           Button(
             text: 'Redo',
-            onPressed: editor.history.canRedo
+            onPressed: (widget.actions?.state.canRedo ?? editor.history.canRedo)
                 ? () => command(const Redo())
                 : null,
           ),
@@ -83,7 +107,7 @@ extension _EditorToolbar on _EditorState {
               for (var level = 1; level <= 6; level++)
                 SelectOption(value: level, label: 'Heading $level'),
             ],
-            onChanged: heading
+            onChanged: (widget.actions?.state.heading.canSet ?? heading)
                 ? (level) => command(SetHeadingLevel(level))
                 : null,
           ),
@@ -91,10 +115,20 @@ extension _EditorToolbar on _EditorState {
           toggle('Italic', 'I', Style.emphasis),
           toggle('Strikethrough', 'S', Style.strikethrough),
           toggle('Inline code', '`code`', Style.code),
-          Button(text: 'Link', onPressed: inline ? () => _editLink() : null),
+          Button(
+            text: 'Link',
+            onPressed:
+                (widget.actions?.state.link.canSet ?? editor.canSetResource())
+                ? () => widget.actions?.showLinkEditor() ?? _editLink()
+                : null,
+          ),
           Button(
             text: 'Image',
-            onPressed: inline ? () => _editLink(image: true) : null,
+            onPressed: editor.canSetResource(image: true)
+                ? () =>
+                      widget.actions?.showImageEditor() ??
+                      _editLink(image: true)
+                : null,
           ),
           if (row?.fenced == true)
             Select<String>(
@@ -125,7 +159,9 @@ extension _EditorToolbar on _EditorState {
             text: editor.sourceMode ? 'Rendered' : 'Source',
             onPressed: () {
               _finishInput();
-              editor.setSourceMode(!editor.sourceMode);
+              widget.actions == null
+                  ? editor.setSourceMode(!editor.sourceMode)
+                  : widget.actions!.setSourceMode(!editor.sourceMode);
               _focus.requestFocus();
             },
           ),

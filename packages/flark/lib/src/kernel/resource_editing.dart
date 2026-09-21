@@ -10,29 +10,15 @@ extension _ResourceEditing on FlarkEditor {
     final existing = _doc.resourceAt(selection, image: image);
     final start = existing?.start ?? selection.start;
     final end = existing?.end ?? selection.end;
-    if (!_supportedRange(start, end)) return false;
-    final row = _doc.rowAt(start);
-    if (row.kind == RowKind.codeBlock ||
-        _doc.rowAt(end).index != row.index ||
+    if (!_canSetResource(image) ||
         destination.isEmpty ||
         _resourceControl(destination) ||
         (label != null && _resourceControl(label)) ||
         (title != null && _resourceControl(title))) {
       return false;
     }
-    // No nested links or partial replacement of another resource. Images may
-    // remain inside an existing link when that image itself is being edited.
-    if (existing == null &&
-        _doc.resources.any(
-          (r) =>
-              start < r.end && end > r.start ||
-              start == end && r.contentStart <= start && start <= r.contentEnd,
-        )) {
-      return false;
-    }
     final from = existing?.contentStart ?? start;
     final to = existing?.contentEnd ?? end;
-    if (_doc.ownersAt(from).any((o) => o.kind == RunKind.code)) return false;
     final content = label != null
         ? _literalResourceText(label)
         : from == to && existing == null
@@ -61,6 +47,27 @@ extension _ResourceEditing on FlarkEditor {
             r.contentEnd == contentEnd,
       ),
     );
+  }
+
+  bool _canSetResource(bool image) {
+    final existing = _doc.resourceAt(selection, image: image);
+    final start = existing?.start ?? selection.start;
+    final end = existing?.end ?? selection.end;
+    if (!_supportedRange(start, end)) return false;
+    final row = _doc.rowAt(start);
+    if (row.kind == RowKind.codeBlock || _doc.rowAt(end).index != row.index) {
+      return false;
+    }
+    if (existing == null &&
+        _doc.resources.any(
+          (r) =>
+              start < r.end && end > r.start ||
+              start == end && r.contentStart <= start && start <= r.contentEnd,
+        )) {
+      return false;
+    }
+    final from = existing?.contentStart ?? start;
+    return !_doc.ownersAt(from).any((o) => o.kind == RunKind.code);
   }
 
   bool _removeResource(bool image) {

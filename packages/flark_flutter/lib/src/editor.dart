@@ -1,3 +1,4 @@
+import 'package:flark/session.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'dart:async';
 import 'package:flark/flark.dart';
@@ -23,6 +24,8 @@ class FlarkEditorWidget extends StatefulWidget {
   const FlarkEditorWidget({
     super.key,
     required this.controller,
+    this.actions,
+    this.session,
     this.autofocus = false,
     this.readOnly = false,
     this.showToolbar = true,
@@ -43,6 +46,8 @@ class FlarkEditorWidget extends StatefulWidget {
     color: Color(0xff253047),
   );
   final FlarkController controller;
+  final FlarkActions? actions;
+  final FlarkSession? session;
   final bool autofocus, readOnly, showToolbar;
   final FocusNode? focusNode;
   final TextStyle? style;
@@ -88,9 +93,22 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       _surfaceKey.currentContext?.findRenderObject() as RenderFlarkSurface?;
   FlarkController get c => widget.controller;
 
+  Future<FlarkEditResult> _presentResource(bool image) async {
+    if (widget.readOnly) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.readOnly);
+    }
+    if (_resourceDialogOpen ||
+        c.editor.sourceMode ||
+        c.editor.document.caretRow.kind == RowKind.codeBlock) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
+    }
+    return _editResource(image);
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.session?.resourcePresenter = _presentResource;
     // Initialize optional decoration before the input connection is opened.
     _focus = widget.focusNode ?? FocusNode(debugLabel: 'Flark editor');
     _focus.addListener(_focusChanged);
@@ -104,6 +122,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     );
     c.addListener(_changed);
     _scroll.addListener(_scrolled);
+    // A caller can request an external focus node while automatic loading is
+    // still showing its placeholder. Attach input when that focused view mounts.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _focus.hasFocus && !widget.readOnly) _attach();
+    });
   }
 
   @override
@@ -285,13 +308,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
   }
 
-  Future<void> _editResource(bool image) async {
+  Future<FlarkEditResult> _editResource(bool image) async {
     if (_resourceDialogOpen ||
         widget.readOnly ||
         c.editor.sourceMode ||
         c.editor.document.rowAt(c.editor.selection.extent).kind ==
             RowKind.codeBlock) {
-      return;
+      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
     }
     _dismissLink();
     c.finishComposition();
@@ -314,13 +337,14 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         !target.editor.sourceMode &&
         target.editor.revision == revision &&
         target.value.selection == selection;
+    var applied = false;
     final session = FlarkResourceSession(
       image: image,
       resource: resource,
       selectedText: target.selectedText,
       isActive: active,
-      apply: (command) =>
-          active() && target.command(command, expectedRevision: revision),
+      apply: (command) => (applied =
+          active() && target.command(command, expectedRevision: revision)),
       onOpen: !image && uri != null && widget.onOpenLink != null
           ? () {
               if (active()) widget.onOpenLink?.call(uri);
@@ -357,6 +381,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         }
       }
     }
+    if (applied) return const FlarkEditResult.changed();
+    if (!mounted || target.editor.revision != revision) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.staleRevision);
+    }
+    return const FlarkEditResult.unchanged();
   }
 
   bool get _linkActive =>
@@ -649,9 +678,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       case 'paste:':
         unawaited(_paste());
       case 'undo:':
-        _command(const Undo());
+        widget.actions == null
+            ? _command(const Undo())
+            : widget.actions!.undo();
       case 'redo:':
-        _command(const Redo());
+        widget.actions == null
+            ? _command(const Redo())
+            : widget.actions!.redo();
     }
   }
 
@@ -669,7 +702,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   }
 
   Widget _styleButton(String label, IconData icon, int style) {
-    final state = c.styleState(style);
+    final publicStyle = FlarkStyle.values.firstWhere(
+      (value) => value.kernelStyle == style,
+    );
+    final state =
+        widget.actions?.state.styles[publicStyle] ?? c.styleState(style);
     final colors = Theme.of(context).colorScheme;
     return MergeSemantics(
       child: Semantics(
@@ -708,7 +745,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
             onPressed: widget.readOnly || !state.canToggle
                 ? null
                 : () {
-                    _command(SetStyle(style, enabled: !state.isOn));
+                    final actions = widget.actions;
+                    if (actions != null) {
+                      actions.setStyle(publicStyle, enabled: !state.isOn);
+                    } else {
+                      _command(SetStyle(style, enabled: !state.isOn));
+                    }
                     _focus.requestFocus();
                   },
             icon: state.isMixed
@@ -784,7 +826,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                     initialValue: codeLanguage,
                     onSelected: (language) {
                       if (menuActive() && language != codeLanguage) {
-                        _command(SetCodeLanguage(language));
+                        (widget.actions == null
+                            ? _command(SetCodeLanguage(language))
+                            : widget.actions!.setCodeLanguage(language));
                       }
                       _focus.requestFocus();
                     },
@@ -822,10 +866,17 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 PopupMenuButton<int>(
                   tooltip: 'Paragraph style',
                   onOpened: captureMenu,
-                  enabled: headingFormatting,
+                  enabled:
+                      widget.actions?.state.heading.canSet ?? headingFormatting,
                   initialValue: codeRow?.headingLevel ?? 0,
                   onSelected: (level) {
-                    if (menuActive()) _command(SetHeadingLevel(level));
+                    if (menuActive()) {
+                      if (widget.actions != null) {
+                        widget.actions!.setHeading(level);
+                      } else {
+                        _command(SetHeadingLevel(level));
+                      }
+                    }
                     _focus.requestFocus();
                   },
                   itemBuilder: (_) => [
@@ -865,22 +916,30 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 IconButton(
                   tooltip: 'Link',
                   icon: const Icon(Icons.link, size: 20),
-                  onPressed: e.sourceMode || codeRow?.kind == RowKind.codeBlock
+                  onPressed:
+                      !(widget.actions?.state.link.canSet ?? e.canSetResource())
                       ? null
-                      : () => _editResource(false),
+                      : () =>
+                            widget.actions?.showLinkEditor() ??
+                            _editResource(false),
                 ),
                 IconButton(
                   tooltip: 'Image',
                   icon: const Icon(Icons.image_outlined, size: 20),
-                  onPressed: e.sourceMode || codeRow?.kind == RowKind.codeBlock
+                  onPressed: !e.canSetResource(image: true)
                       ? null
-                      : () => _editResource(true),
+                      : () =>
+                            widget.actions?.showImageEditor() ??
+                            _editResource(true),
                 ),
                 IconButton(
                   tooltip: 'Undo',
-                  onPressed: e.history.canUndo
+                  onPressed:
+                      (widget.actions?.state.canUndo ?? e.history.canUndo)
                       ? () {
-                          _command(const Undo());
+                          widget.actions == null
+                              ? _command(const Undo())
+                              : widget.actions!.undo();
                           _focus.requestFocus();
                         }
                       : null,
@@ -888,9 +947,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 ),
                 IconButton(
                   tooltip: 'Redo',
-                  onPressed: e.history.canRedo
+                  onPressed:
+                      (widget.actions?.state.canRedo ?? e.history.canRedo)
                       ? () {
-                          _command(const Redo());
+                          widget.actions == null
+                              ? _command(const Redo())
+                              : widget.actions!.redo();
                           _focus.requestFocus();
                         }
                       : null,
@@ -898,7 +960,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 ),
                 TextButton(
                   onPressed: () {
-                    c.sourceMode(!e.sourceMode);
+                    widget.actions == null
+                        ? c.sourceMode(!e.sourceMode)
+                        : widget.actions!.setSourceMode(!e.sourceMode);
                     _focus.requestFocus();
                   },
                   child: Text(e.sourceMode ? 'Rendered' : 'Source'),

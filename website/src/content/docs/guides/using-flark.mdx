@@ -1,11 +1,11 @@
 ---
 title: Using Flark
-description: Review the proposed editing and read-only rendering API for Flutter and Fleury.
+description: Edit and render Markdown in Flutter and Fleury with automatic parser loading.
 ---
 
-:::note[Approved API design · not implemented]
-Revised after three simulated DX persona reviews and approved for implementation.
-The examples describe the planned API. [Review decisions →](../dx-review/)
+:::note[Development packages]
+These APIs are implemented in the repository. Package publication and physical
+platform qualification remain separate [release gates](../release-readiness/).
 :::
 
 Flark manages Markdown rendering, selection, formatting, and undo. Your app owns
@@ -30,7 +30,7 @@ space, such as `Expanded` inside a `Column`.
 
 **No global initialization or backend setup.** Flark automatically loads the
 native or Wasm implementation and provides loading, error, and retry UI.
-Standard host builds must include the assets without application bootstrap code.
+The web parser is embedded in the compiled application; native builds use Dart build hooks.
 
 Fleury imports `package:flark_fleury/flark_fleury.dart` and exposes the same
 component names and common controller API, using Fleury's own UI types.
@@ -53,10 +53,9 @@ The dedicated rendering path shares parsing, layout, themes, and image previews.
 It creates no editing history, IME connection, or indentation service. Unchanged
 input reuses this widget's parsed content; width/theme changes update layout.
 
-Current read-only components reuse an editor. The new path needs measured
-validation. The existing 16 KiB live-rendering and shape limits, with bounded
-source fallback, remain until larger documents are separately qualified. Fallback
-must be visibly identified and provide access to the complete source.
+The 16 KiB live-rendering and shape limits still apply. Unsupported or oversized
+documents show an explicit fallback with a “Copy complete Markdown” action.
+Removing editing machinery is not a claim of faster parsing or larger-document support.
 
 ## Control the document
 
@@ -139,8 +138,7 @@ anchored through the edit; an overlapping selection collapses after the replacem
 
 The optional revision guard rejects edits based on stale content or selection,
 including a different loaded document. The revision never resets on a load.
-This exact-source contract is new behavior, not a rename of today's normalized
-range edit. It remains subject to source validation and size limits.
+Source validation and size limits still apply.
 
 ## Read state and build controls
 
@@ -193,7 +191,7 @@ operations, not application permissions. Built-in controls use this public API.
 `FlarkStyle` contains `bold`, `italic`, `strikethrough`, and `inlineCode`.
 The first API pass covers these operation families:
 
-| Intent | Proposed methods |
+| Intent | Methods |
 | --- | --- |
 | Inline formatting | `toggleStyle`, `setStyle` |
 | Paragraphs and headings | `setParagraph`, `setHeading(level)` |
@@ -232,8 +230,10 @@ These require a mounted, editable view and return the edit result when the
 dialog closes; cancelling returns `unchanged`. The target is captured before
 focus moves. `setLink` remains the immediate, data-only operation.
 
-The optional code-snippet service remains supported. Its simpler opt-in API is
-a follow-up design; read-only highlighting must not start indentation services.
+Advanced integrations with a supplied parser or code-snippet service remain
+available through `flark_flutter_legacy.dart` and `flark_fleury_legacy.dart`.
+The simple widgets render code with the code text style; they do not start an
+optional syntax or indentation service.
 
 See the [review decisions and implementation gates](../dx-review/) for the
 changes made during review and the work intentionally left separate.

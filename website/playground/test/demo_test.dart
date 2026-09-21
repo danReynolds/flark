@@ -5,58 +5,52 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final backend = createParseBackend();
-
   testWidgets(
     'editing survives source mode and page-theme changes; reset is undoable',
     (tester) async {
       final brightness = ValueNotifier(Brightness.light);
       addTearDown(brightness.dispose);
       await tester.pumpWidget(
-        HomepageDemo(
-          backend: backend,
-          brightness: brightness,
-          onOpenLink: (_) {},
-        ),
+        HomepageDemo(brightness: brightness, onOpenLink: (_) {}),
       );
       await tester.pump();
-      final editor = find.byType(FlarkEditorWidget);
-      final controller = tester.widget<FlarkEditorWidget>(editor).controller;
+      final editor = find.byType(FlarkEditor);
+      final controller = tester.widget<FlarkEditor>(editor).controller!;
       expect(tester.testTextInput.hasAnyClients, isFalse);
       await tester.tapAt(tester.getTopLeft(editor) + const Offset(70, 100));
       await tester.pump();
-      controller.command(SetSelection.caret(controller.text.length));
+      controller.setSelection(
+        controller.markdown.length,
+        controller.markdown.length,
+      );
       await tester.pump();
       tester.testTextInput.updateEditingValue(
         TextEditingValue(
-          text: '${controller.text}A homepage thought.',
+          text: '${controller.markdown}A homepage thought.',
           selection: TextSelection.collapsed(
-            offset: controller.text.length + 19,
+            offset: controller.markdown.length + 19,
           ),
         ),
       );
       await tester.pump();
-      final edited = controller.text;
+      final edited = controller.markdown;
       expect(edited, endsWith('A homepage thought.'));
       await tester.tap(find.text('Source'));
       await tester.pump();
-      expect(controller.editor.sourceMode, isTrue);
+      expect(controller.state.mode, FlarkMode.source);
       brightness.value = Brightness.dark;
       await tester.pump();
-      expect(
-        tester.widget<FlarkEditorWidget>(editor).controller,
-        same(controller),
-      );
-      expect(controller.text, edited);
-      expect(controller.editor.sourceMode, isTrue);
+      expect(tester.widget<FlarkEditor>(editor).controller, same(controller));
+      expect(controller.markdown, edited);
+      expect(controller.state.mode, FlarkMode.source);
       await tester.tap(find.text('Rendered'));
       await tester.pump();
       await tester.tap(find.text('Reset sample'));
       await tester.pump();
-      expect(controller.text, sampleMarkdown);
+      expect(controller.markdown, sampleMarkdown);
       await tester.tap(find.byTooltip('Undo'));
       await tester.pump();
-      expect(controller.text, edited);
+      expect(controller.markdown, edited);
       await tester.pumpWidget(const SizedBox());
       // Let the gesture recognizer's minimum double-tap interval expire.
       await tester.pump(const Duration(milliseconds: 300));
@@ -70,26 +64,23 @@ void main() {
     final brightness = ValueNotifier(Brightness.light);
     addTearDown(brightness.dispose);
     await tester.pumpWidget(
-      HomepageDemo(
-        backend: backend,
-        brightness: brightness,
-        onOpenLink: (_) {},
-      ),
+      HomepageDemo(brightness: brightness, onOpenLink: (_) {}),
     );
     await tester.pump();
-    FlarkController current() => tester
-        .widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget))
-        .controller;
+    FlarkController current() =>
+        tester.widget<FlarkEditor>(find.byType(FlarkEditor)).controller!;
     final welcome = current();
-    welcome.command(SetSelection.caret(welcome.text.length));
-    welcome.command(const InsertText('My welcome edit.'));
+    welcome.setSelection(welcome.markdown.length, welcome.markdown.length);
+    welcome.insertText('My welcome edit.');
     await tester.pump();
     await tester.tap(find.text('Meeting notes'));
     await tester.pump();
-    expect(current().text, meetingMarkdown);
+    await tester.pump();
+    expect(current().markdown, meetingMarkdown);
     await tester.tap(find.text('Blank page'));
     await tester.pump();
-    expect(current().text, isEmpty);
+    await tester.pump();
+    expect(current().markdown, isEmpty);
     tester.testTextInput.updateEditingValue(
       const TextEditingValue(
         text: 'My own document',
@@ -97,17 +88,19 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(current().text, 'My own document');
+    expect(current().markdown, 'My own document');
     await tester.tap(find.text('Welcome'));
     await tester.pump();
+    await tester.pump();
     expect(current(), same(welcome));
-    expect(welcome.text, endsWith('My welcome edit.'));
+    expect(welcome.markdown, endsWith('My welcome edit.'));
     await tester.tap(find.byTooltip('Undo'));
     await tester.pump();
-    expect(welcome.text, sampleMarkdown);
+    expect(welcome.markdown, sampleMarkdown);
     await tester.tap(find.text('Blank page'));
     await tester.pump();
-    expect(current().text, 'My own document');
+    await tester.pump();
+    expect(current().markdown, 'My own document');
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.takeException(), isNull);
@@ -139,22 +132,21 @@ void main() {
         ),
       );
       await tester.pumpWidget(
-        HomepageDemo(
-          backend: backend,
-          brightness: brightness,
-          onOpenLink: (_) {},
-        ),
+        HomepageDemo(brightness: brightness, onOpenLink: (_) {}),
       );
       await tester.pump();
       final controller = tester
-          .widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget))
-          .controller;
-      controller.command(SetSelection.caret(controller.text.length));
-      controller.command(const InsertText('Copied edit.'));
+          .widget<FlarkEditor>(find.byType(FlarkEditor))
+          .controller!;
+      controller.setSelection(
+        controller.markdown.length,
+        controller.markdown.length,
+      );
+      controller.insertText('Copied edit.');
       await tester.pump();
       await tester.tap(find.text('Copy Markdown'));
       await tester.pump();
-      expect(copied, controller.text);
+      expect(copied, controller.markdown);
       expect(copied, endsWith('Copied edit.'));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());

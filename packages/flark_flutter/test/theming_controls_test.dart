@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/src/surface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart' show PointerScrollEvent;

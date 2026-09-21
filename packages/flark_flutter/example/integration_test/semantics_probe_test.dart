@@ -2,7 +2,7 @@
 // Compare engine AXTree output for a standard TextField and Flark while each
 // is repeatedly replaced with accessibility enabled. No user preferences.
 import 'package:flark_dogfood/backend.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

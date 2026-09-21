@@ -17,16 +17,17 @@ final class _Viewport {
   }
 
   int _revision = -1, _width = -1;
-  FlarkEditor? _editor;
+  FlarkDocumentState? _editor;
   bool _focused = false;
 
   CellSize prepare(
     CellConstraints constraints,
-    FlarkFleuryController controller,
+    FlarkCellController controller,
     FlarkCellTheme theme,
     CellWidthPolicy policy,
-    FocusNode focus,
-  ) {
+    FocusNode focus, {
+    bool fullDocument = false,
+  }) {
     final cols = constraints.maxCols ?? 80;
     final viewport = this;
     final cached = viewport.layout;
@@ -35,21 +36,28 @@ final class _Viewport {
         ? cached
         : CellDocumentLayout(controller, cols, theme, policy);
     final result = constraints.constrain(
-      CellSize(cols, constraints.maxRows ?? layout.lines.length.clamp(1, 24)),
+      CellSize(
+        cols,
+        fullDocument
+            ? layout.lines.length
+            : (constraints.maxRows ?? layout.lines.length.clamp(1, 24)),
+      ),
     );
     viewport.rows = result.rows;
     final editor = controller.editor;
-    if (editor.revision != _revision ||
-        cols != _width ||
-        cached?.theme != theme ||
-        !identical(_editor, editor) ||
-        (!_focused && focus.hasFocus)) {
+    if (!fullDocument &&
+        (editor.revision != _revision ||
+            cols != _width ||
+            cached?.theme != theme ||
+            !identical(_editor, editor) ||
+            (!_focused && focus.hasFocus))) {
       final caret = layout.caretPosition;
       if (caret.row < viewport.top) viewport.top = caret.row;
       if (caret.row >= viewport.top + result.rows) {
         viewport.top = caret.row - result.rows + 1;
       }
     }
+    if (fullDocument) viewport.top = 0;
     viewport.scroll(0);
     _revision = editor.revision;
     _editor = editor;
@@ -80,9 +88,11 @@ class _Surface extends LeafRenderObjectWidget {
     this.theme,
     this.focus,
     this.viewport,
-    this.policy,
-  );
-  final FlarkFleuryController controller;
+    this.policy, {
+    this.fullDocument = false,
+  });
+  final bool fullDocument;
+  final FlarkCellController controller;
   final FlarkCellTheme theme;
   final FocusNode focus;
   final _Viewport viewport;
@@ -112,14 +122,14 @@ class _SurfaceElement extends LeafRenderObjectElement {
 
 class _RenderSurface extends RenderObject implements CaretHost {
   _RenderSurface(this.widget) {
-    widget.focus.attachCaretHost(this);
+    if (!widget.fullDocument) widget.focus.attachCaretHost(this);
   }
   _Surface widget;
 
   void update(_Surface value) {
     if (!identical(widget.focus, value.focus)) {
       widget.focus.detachCaretHost(this);
-      value.focus.attachCaretHost(this);
+      if (!value.fullDocument) value.focus.attachCaretHost(this);
     }
     widget = value;
     markNeedsLayout();
@@ -130,7 +140,10 @@ class _RenderSurface extends RenderObject implements CaretHost {
   CellRect? get localCaretRect {
     final layout = widget.viewport.layout;
     final selection = widget.controller.editor.selection;
-    if (layout == null || !widget.focus.hasFocus || !selection.isCollapsed) {
+    if (widget.fullDocument ||
+        layout == null ||
+        !widget.focus.hasFocus ||
+        !selection.isCollapsed) {
       return null;
     }
     final caret = layout.caretPosition;
@@ -147,6 +160,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
       widget.theme,
       widget.policy,
       widget.focus,
+      fullDocument: widget.fullDocument,
     );
   }
 
@@ -343,7 +357,8 @@ class _RenderSurface extends RenderObject implements CaretHost {
               selectedRange.$1 < glyph.end &&
               selectedRange.$2 > glyph.start;
           if (selected) style = highlight(style, widget.theme.selection);
-          if (widget.focus.hasFocus &&
+          if (!widget.fullDocument &&
+              widget.focus.hasFocus &&
               selection.isCollapsed &&
               caret.row == y + viewport.top &&
               caret.col == glyph.col) {
@@ -363,7 +378,8 @@ class _RenderSurface extends RenderObject implements CaretHost {
             }
           }
         }
-        if (widget.focus.hasFocus &&
+        if (!widget.fullDocument &&
+            widget.focus.hasFocus &&
             selection.isCollapsed &&
             caret.row == y + viewport.top) {
           if (caret.col == line.endColumn) {

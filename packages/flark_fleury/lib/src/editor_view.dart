@@ -1,3 +1,6 @@
+import 'package:flark/rendering.dart';
+import 'package:flark/session.dart';
+import 'package:flark_tree_sitter/flark_tree_sitter.dart' show CodeAnalysis;
 import 'dart:async';
 
 import 'package:flark/flark.dart';
@@ -15,6 +18,7 @@ import 'theme.dart';
 import 'resource_controls.dart';
 
 part 'surface.dart';
+part 'markdown.dart';
 part 'link_anchor.dart';
 part 'interactive_semantics.dart';
 part 'toolbar.dart';
@@ -25,6 +29,8 @@ class FlarkEditorView extends StatefulWidget {
   const FlarkEditorView({
     super.key,
     required this.controller,
+    this.actions,
+    this.session,
     this.theme,
     this.focusNode,
     this.autofocus = false,
@@ -40,6 +46,8 @@ class FlarkEditorView extends StatefulWidget {
   });
 
   final FlarkFleuryController controller;
+  final FlarkActions? actions;
+  final FlarkSession? session;
   final FlarkCellTheme? theme;
   final FocusNode? focusNode;
   final bool autofocus, readOnly;
@@ -196,16 +204,18 @@ class _EditorState extends State<FlarkEditorView>
     setState(() {});
   }
 
-  Future<void> _editLink({bool image = false}) async {
+  Future<FlarkEditResult> _editLink({bool image = false}) async {
     if (_dialogOpen ||
         widget.readOnly ||
         _editor.sourceMode ||
         _editor.document.rowAt(_editor.selection.extent).kind ==
             RowKind.codeBlock) {
-      return;
+      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
     }
     final navigator = Navigator.maybeOf(context);
-    if (navigator == null && widget.presentResourceEditor == null) return;
+    if (navigator == null && widget.presentResourceEditor == null) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
+    }
     _dismissLink();
     _finishInput();
     final editor = _editor,
@@ -219,13 +229,14 @@ class _EditorState extends State<FlarkEditorView>
         !editor.sourceMode &&
         editor.revision == revision &&
         editor.selection == selection;
+    var applied = false;
     final session = FlarkResourceSession(
       image: image,
       resource: resource,
       selectedText: editor.document.visibleText(selection.start, selection.end),
       isActive: active,
-      apply: (command) =>
-          active() && editor.apply(command, expectedRevision: revision),
+      apply: (command) => (applied =
+          active() && editor.apply(command, expectedRevision: revision)),
     );
     _resourceSession = session;
     try {
@@ -247,11 +258,29 @@ class _EditorState extends State<FlarkEditorView>
         if (mounted && identical(editor, _editor)) _focus.requestFocus();
       }
     }
+    if (applied) return const FlarkEditResult.changed();
+    if (!mounted || editor.revision != revision) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.staleRevision);
+    }
+    return const FlarkEditResult.unchanged();
+  }
+
+  Future<FlarkEditResult> _presentResource(bool image) async {
+    if (widget.readOnly) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.readOnly);
+    }
+    if (_dialogOpen ||
+        _editor.sourceMode ||
+        _editor.document.caretRow.kind == RowKind.codeBlock) {
+      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
+    }
+    return _editLink(image: image);
   }
 
   @override
   void initState() {
     super.initState();
+    widget.session?.resourcePresenter = _presentResource;
     _attachFocus();
     widget.controller.addListener(_changed);
   }

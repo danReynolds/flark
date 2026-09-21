@@ -1,8 +1,6 @@
 import 'dart:js_interop';
 
-import 'package:flark/wasm.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
 
 import 'demo.dart';
@@ -17,12 +15,6 @@ void notifyParent(String type) {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    final bytes = await rootBundle.load(
-      'packages/flark/lib/assets/wasm/flark_parse.wasm',
-    );
-    final backend = await WasmParseBackend.fromBytes(
-      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
-    );
     final brightness = ValueNotifier(
       Uri.base.queryParameters['theme'] == 'dark'
           ? Brightness.dark
@@ -47,7 +39,6 @@ Future<void> main() async {
     });
     runApp(
       HomepageDemo(
-        backend: backend,
         brightness: brightness,
         onOpenLink: (uri) =>
             web.window.open(uri.toString(), '_blank', 'noopener,noreferrer'),

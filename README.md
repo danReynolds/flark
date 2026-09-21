@@ -20,8 +20,19 @@ Both host packages include a runnable example with a theme panel and one live
 editor. Their READMEs cover setup, native/web builds and customization.
 
 The [Using Flark guide](website/src/content/docs/guides/using-flark.mdx) records
-the approved widget/controller API design, ahead of implementation.
+the widget/controller API used by the homepage composer.
 Run the [docs site locally](website/README.md) to read it and leave annotations.
+
+```dart
+import 'package:flark_flutter/flark_flutter.dart';
+
+FlarkEditor(initialMarkdown: '# My note', onChanged: saveMarkdown);
+FlarkMarkdown(markdown: article, selectable: true);
+```
+
+No parser setup or global initialization. Use `FlarkController(markdown: ...)`
+for programmatic editing, observable formatting state and undo. Fleury exposes
+the same component names and common controller API from its host package.
 
 ## Status and supported limits
 
@@ -38,6 +49,8 @@ native OS input and device evidence are tracked separately.
 
 Current evidence and remaining release gates:
 
+- [Release readiness](website/src/content/docs/guides/release-readiness.md)
+- [Consumer API implementation review](docs/architecture/v5/consumer_api_review_2026_09_21.md)
 - [Markdown coverage](docs/architecture/v5/markdown_coverage_2026_09_20.md)
 - [Attended native results](docs/architecture/v5/native_attended_2026_09_20.md)
 - [Production audit](docs/architecture/v5/production_audit_2026_09_16.md)

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flark/flark.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_fleury/src/image_decode.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';

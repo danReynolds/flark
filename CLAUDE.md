@@ -108,8 +108,10 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
 - The build hook resolves a bundled `prebuilt/<triple>/` library, then a
   consumer's `hooks: user_defines: flark: prebuilt_dir:`, then a cargo build.
   The hook runner sanitizes environment variables; they are not a channel.
-- Web packaging: the package declares `lib/assets/wasm/flark_parse.wasm` as a
-  Flutter asset; a dart2js page serves the module itself.
+- Web packaging: the consumer API embeds the Wasm module in the compiled app,
+  shares compilation, and creates a separate parser instance per document owner.
+  Advanced integrations may still load `lib/assets/wasm/flark_parse.wasm` explicitly.
+  `tool/embed_wasm.py --check` verifies that the embedded bytes match that asset.
 
 ## Conventions & quality bar
 

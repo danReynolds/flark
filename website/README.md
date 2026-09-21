@@ -7,9 +7,9 @@ sample. Welcome, meeting notes, and a blank page have independent editing sessio
 switching tabs preserves each document and its undo history. The introduction stays
 compact, and the composer fills the rest of the page. Edits are kept in memory for
 that page session, with no autosave.
-The **Using Flark** page presents the approved API design
-before implementation; its snippets are design examples, not
-executable examples of the current packages. Historical V4 guides remain in
+The **Using Flark** page documents the implemented consumer API. The homepage
+uses that API, and both hosts have minimal `consumer.dart` entry points plus
+behavioral tests. Historical V4 guides remain in
 `../docs` and are outside this site's navigation.
 
 Requires Node.js 22.12 or newer, npm 9.6.5 or newer, and Flutter 3.44.4 / Dart 3.12.2

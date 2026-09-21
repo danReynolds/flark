@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
-import 'package:flark_fleury/flark_fleury.dart';
+import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_tree_sitter/flark_highlighting.dart';
 import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'package:fleury/fleury_core.dart';

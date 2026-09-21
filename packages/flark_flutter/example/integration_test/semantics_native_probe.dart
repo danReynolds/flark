@@ -5,7 +5,7 @@
 // for a platform-owned semantics handle first activated during a test.
 import 'dart:convert';
 import 'package:flark_dogfood/backend.dart';
-import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
 
 Future<void> main() async {
