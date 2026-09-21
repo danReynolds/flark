@@ -15,6 +15,10 @@ anchors. Documents outside the configured live-rendering limits use source mode.
 Both host packages include a runnable example with a theme panel and one live
 editor. Their READMEs cover setup, native/web builds and customization.
 
+The [Using Flark guide](website/src/content/docs/guides/using-flark.mdx) records
+the approved widget/controller API design, ahead of implementation.
+Run the [docs site locally](website/README.md) to read it and leave annotations.
+
 ## Status and supported limits
 
 The Flutter, Flutter-web/Wasm and Fleury implementations are merged. They are
