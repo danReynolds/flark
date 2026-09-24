@@ -4,7 +4,9 @@ Every known comrak 0.54 behavior the extraction has to work around, with its
 correction. Each correction is validated in report mode against comrak's own
 output, and `cargo test` asserts zero deviations across the 652 CommonMark and
 670 GFM upstream cases plus the fuzz and regression suites. Anything new fails
-the extraction test.
+the extraction test. At runtime an inline deviation, or a leaf whose runs do
+not nest and follow each other, publishes that leaf without runs and flagged
+source only; any other deviation refuses the model.
 
 | comrak behavior | Correction | Validated by |
 | --- | --- | --- |

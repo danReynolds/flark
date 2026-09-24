@@ -20,11 +20,23 @@ pub type ContentRec = [u32; content::WORDS];
 pub type RunRec = [u32; run::WORDS];
 
 /// A validation finding from report mode. `rule` is a stable identifier.
+/// `leaf` names the paragraph, heading or table cell whose inline runs were
+/// dropped because of it, so the leaf shows its source as plain text; a
+/// finding without one refuses the whole model.
 #[derive(Clone, Debug)]
-pub struct Deviation { pub rule: &'static str, pub detail: String }
+pub struct Deviation { pub rule: &'static str, pub detail: String, pub leaf: Option<u32> }
+
+/// Deviations confined to one leaf's inline runs. Dropping the leaf's runs
+/// leaves a model that is exactly right, only less rendered.
+/// Block flags bit 23 (SCHEMA.md, `any`): a leaf published without runs.
+pub const SOURCE_ONLY: u32 = 1 << 23;
+
+const INLINE_RULES: &[&str] = &["text-mismatch", "emph-delims", "strong-delims", "strike-delims", "code-delims", "code-literal", "image-delims", "html-inline-end", "html-inline-literal", "heading-content", "run-structure"];
 
 /// Extraction refused to publish a model because a derived range or value did
-/// not agree with comrak's source positions or literal output.
+/// not agree with comrak's source positions or literal output, or because the
+/// model broke the schema's structural invariants. A deviation confined to
+/// one leaf's inlines does not refuse: that leaf publishes without runs.
 #[derive(Debug)]
 pub struct ExtractionError { pub deviations: Vec<Deviation> }
 
@@ -148,6 +160,8 @@ pub struct Extractor<'a> {
     run_delta: isize,
     last_text_end: usize,
     pub deviations: Vec<Deviation>,
+    /// Scratch for [leaf_run_problem], reused across leaves.
+    sibling_end: Vec<usize>,
 }
 
 impl<'a> Extractor<'a> {
@@ -155,12 +169,16 @@ impl<'a> Extractor<'a> {
     /// packed into the tail and padded to a whole word.
     pub fn extract(src: &'a str) -> Result<Vec<u32>, ExtractionError> {
         let (model, deviations) = Self::run(src, true);
-        if deviations.is_empty() { Ok(model) } else { Err(ExtractionError { deviations }) }
+        if deviations.iter().all(|d| d.leaf.is_some()) { Ok(model) } else { Err(ExtractionError { deviations }) }
     }
     pub fn extract_with_report(src: &'a str) -> (Vec<u32>, Vec<Deviation>) { Self::run(src, true) }
 
+    fn new(src: &'a str, collect: bool) -> Self {
+        Extractor { src, li: LineIndex::new(src), blocks: Vec::new(), content: Vec::new(), runs: Vec::new(), definitions: Vec::new(), strings: Vec::new(), containers: Vec::new(), collect, run_delta: 0, last_text_end: 0, deviations: Vec::new(), sibling_end: Vec::new() }
+    }
+
     fn run(src: &'a str, collect: bool) -> (Vec<u32>, Vec<Deviation>) {
-        let mut ex = Extractor { src, li: LineIndex::new(src), blocks: Vec::new(), content: Vec::new(), runs: Vec::new(), definitions: Vec::new(), strings: Vec::new(), containers: Vec::new(), collect, run_delta: 0, last_text_end: 0, deviations: Vec::new() };
+        let mut ex = Extractor::new(src, collect);
         let arena = Arena::new();
         let root = parse_document(&arena, src, &options());
         let leaves = ex.walk_blocks(root);
@@ -170,11 +188,12 @@ impl<'a> Extractor<'a> {
         ex.definitions.sort_by_key(|d| d.start);
         ex.definitions.dedup_by_key(|d| d.start);
         ex.empty_container_lines();
+        ex.check_structure();
         let buf = ex.encode();
         (buf, ex.deviations)
     }
 
-    fn dev(&mut self, rule: &'static str, detail: impl FnOnce() -> String) { if self.collect { let d = detail(); self.deviations.push(Deviation { rule, detail: d }); } }
+    fn dev(&mut self, rule: &'static str, detail: impl FnOnce() -> String) { if self.collect { let d = detail(); self.deviations.push(Deviation { rule, detail: d, leaf: None }); } }
 
     fn push_string(&mut self, s: &str) -> (u32, u32) { let off = self.strings.len() as u32; self.strings.extend_from_slice(s.as_bytes()); (off, s.len() as u32) }
 
@@ -482,6 +501,7 @@ impl<'a> Extractor<'a> {
         let sp = data.sourcepos;
         let content_start = self.content.len() as u32;
         let first_run = self.runs.len();
+        let first_deviation = self.deviations.len();
         self.blocks[idx][block::CONTENT_OFFSET] = content_start;
         if sp.start.line == 0 { return; }
         let (l0, l1) = (sp.start.line - 1, sp.end.line - 1);
@@ -594,11 +614,119 @@ impl<'a> Extractor<'a> {
             }
             _ => { self.walk_inlines(leaf.node, idx as u32, None, None); }
         }
+        let inline_leaf = !matches!(data.value, NodeValue::CodeBlock(_) | NodeValue::HtmlBlock(_) | NodeValue::ThematicBreak);
         drop(data);
+        if inline_leaf { self.settle_inlines(idx, first_run, first_deviation); }
         self.blocks[idx][block::CONTENT_COUNT] = self.content.len() as u32 - content_start;
         self.fit_block_to_content(idx);
         self.trim_trailing_blank_lines(idx, chain);
         self.fit_block_to_runs(idx, first_run);
+    }
+
+    /// A leaf whose inline extraction deviated, or whose runs do not nest and
+    /// follow each other, publishes without runs: it shows its source as
+    /// plain text and stays editable, while the rest of the document renders.
+    /// Its deviations are scoped to it; any other deviation still refuses.
+    fn settle_inlines(&mut self, idx: usize, first_run: usize, first_deviation: usize) {
+        if let Some(problem) = self.leaf_run_problem(first_run) { self.dev("run-structure", || format!("block {idx}: {problem}")); }
+        let mut degrade = false;
+        for d in &mut self.deviations[first_deviation..] {
+            if INLINE_RULES.contains(&d.rule) { d.leaf = Some(idx as u32); degrade = true; }
+        }
+        if degrade {
+            self.runs.truncate(first_run);
+            self.blocks[idx][block::FLAGS] |= SOURCE_ONLY;
+        }
+    }
+
+    /// Why the runs from [first_run], one leaf's, cannot be painted: a run
+    /// whose content lies outside it, whose parent is not an earlier run of
+    /// the leaf or does not contain it, or which starts before its previous
+    /// sibling ends. The projection walks runs in order, so an overlap would
+    /// show the shared source twice.
+    fn leaf_run_problem(&mut self, first_run: usize) -> Option<String> {
+        let mut sibling_end = std::mem::take(&mut self.sibling_end);
+        let problem = self.run_problem_with(first_run, &mut sibling_end);
+        self.sibling_end = sibling_end;
+        problem
+    }
+
+    fn run_problem_with(&self, first_run: usize, sibling_end: &mut Vec<usize>) -> Option<String> {
+        let runs = &self.runs[first_run..];
+        // Slot zero is the leaf itself; slot i + 1 holds run i's children.
+        sibling_end.clear();
+        sibling_end.resize(runs.len() + 1, 0);
+        for (i, r) in runs.iter().enumerate() {
+            let at = first_run + i;
+            let (s, e, cs, ce) = (r[run::START_BYTE] as usize, r[run::END_BYTE] as usize, r[run::CONTENT_START_BYTE] as usize, r[run::CONTENT_END_BYTE] as usize);
+            if !(s <= cs && cs <= ce && ce <= e) { return Some(format!("run {at} order {s} {cs} {ce} {e}")); }
+            let p = r[run::PARENT];
+            let slot = if p == u32::MAX { 0 } else {
+                let p = p as usize;
+                if p < first_run || p >= at { return Some(format!("run {at} parent {p} outside the leaf")); }
+                let (ps, pe) = (self.runs[p][run::START_BYTE] as usize, self.runs[p][run::END_BYTE] as usize);
+                if s < ps || e > pe { return Some(format!("run {at} {s}..{e} outside its parent {p} {ps}..{pe}")); }
+                p - first_run + 1
+            };
+            if s < sibling_end[slot] { return Some(format!("run {at} {s}..{e} overlaps its previous sibling, which ends at {}", sibling_end[slot])); }
+            sibling_end[slot] = e;
+        }
+        None
+    }
+
+    /// The model's structural invariants, checked before publishing: blocks
+    /// in document order, each inside its parent and clear of its previous
+    /// sibling; content records on their own line and inside their block;
+    /// runs in block order and inside their block. A host trusts all of these
+    /// to map carets and paint, so a model that breaks one is refused.
+    fn check_structure(&mut self) {
+        let src_len = self.src.len();
+        let mut problem: Option<(&'static str, String)> = None;
+        // The previous sibling under each parent, as the test invariant compares neighbours.
+        let mut sibling = vec![(0usize, 0usize); self.blocks.len() + 1];
+        let mut previous_start = 0usize;
+        for (i, b) in self.blocks.iter().enumerate() {
+            let (s, e) = (b[block::START_BYTE] as usize, b[block::END_BYTE] as usize);
+            if s > e || e > src_len { problem = Some(("block-tree", format!("block {i} range {s}..{e}"))); break; }
+            if i == 0 { continue; }
+            let p = b[block::PARENT] as usize;
+            if p >= i { problem = Some(("block-tree", format!("block {i} parent {p}"))); break; }
+            let (ps, pe) = (self.blocks[p][block::START_BYTE] as usize, self.blocks[p][block::END_BYTE] as usize);
+            if s < ps || e > pe { problem = Some(("block-tree", format!("block {i} {s}..{e} outside its parent {p} {ps}..{pe}"))); break; }
+            if s < previous_start { problem = Some(("block-tree", format!("block {i} starts before the block before it"))); break; }
+            previous_start = s;
+            let (qs, qe) = sibling[p];
+            if s < qe && e > qs { problem = Some(("block-tree", format!("block {i} {s}..{e} overlaps its previous sibling {qs}..{qe}"))); break; }
+            sibling[p] = (s, e);
+        }
+        if problem.is_none() {
+            'blocks: for (i, b) in self.blocks.iter().enumerate() {
+                let (s, e) = (b[block::START_BYTE] as usize, b[block::END_BYTE] as usize);
+                let (co, cn) = (b[block::CONTENT_OFFSET] as usize, b[block::CONTENT_COUNT] as usize);
+                let mut last_line: Option<usize> = None;
+                for c in self.content.get(co..co + cn).unwrap_or(&[]) {
+                    let (cs, ce, line, ps) = (c[content::START_BYTE] as usize, c[content::END_BYTE] as usize, c[content::LINE] as usize, c[content::PREFIX_START_BYTE] as usize);
+                    let (ls, le) = (self.li.line_start(line), self.li.line_end_with_break(line, src_len));
+                    if cs > ce || cs < s || ce > e + 1 || cs < ls || ce > le || ps < ls || ps > cs || last_line.is_some_and(|l| line <= l) {
+                        problem = Some(("content-structure", format!("block {i} content {cs}..{ce} on line {line}")));
+                        break 'blocks;
+                    }
+                    last_line = Some(line);
+                }
+            }
+        }
+        if problem.is_none() {
+            let mut previous_block = 0u32;
+            for (i, r) in self.runs.iter().enumerate() {
+                let b = r[run::BLOCK];
+                if b < previous_block || b as usize >= self.blocks.len() { problem = Some(("run-block", format!("run {i} block {b}"))); break; }
+                previous_block = b;
+                let (s, e) = (r[run::START_BYTE] as usize, r[run::END_BYTE] as usize);
+                let (bs, be) = (self.blocks[b as usize][block::START_BYTE] as usize, self.blocks[b as usize][block::END_BYTE] as usize);
+                if s < bs || e > be + 1 { problem = Some(("run-block", format!("run {i} {s}..{e} outside block {b} {bs}..{be}"))); break; }
+            }
+        }
+        if let Some((rule, detail)) = problem { self.dev(rule, || detail); }
     }
 
     /// comrak's block end column can fall short of its last inline across CR
@@ -1384,4 +1512,69 @@ fn lines_text(src: &str, lines: &[LineSpan]) -> String {
     let mut buffer = String::new();
     for l in lines { buffer.push_str(&src[l.start..l.end]); buffer.push('\n'); }
     buffer
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_rec(s: usize, e: usize, parent: u32) -> RunRec {
+        let mut r = [0; run::WORDS];
+        r[run::START_BYTE] = s as u32; r[run::END_BYTE] = e as u32;
+        r[run::CONTENT_START_BYTE] = s as u32; r[run::CONTENT_END_BYTE] = e as u32;
+        r[run::PARENT] = parent;
+        r
+    }
+
+    fn block_rec(kind: u32, parent: u32, s: usize, e: usize) -> BlockRec {
+        let mut b = [0; block::WORDS];
+        b[block::KIND] = kind; b[block::PARENT] = parent;
+        b[block::START_BYTE] = s as u32; b[block::END_BYTE] = e as u32;
+        b
+    }
+
+    #[test]
+    fn a_leaf_whose_runs_overlap_publishes_only_its_source() {
+        let mut ex = Extractor::new("abc def ghi", true);
+        ex.blocks.push(block_rec(block_kind::PARAGRAPH, u32::MAX, 0, 11));
+        ex.runs.push(run_rec(0, 5, u32::MAX));
+        ex.runs.push(run_rec(3, 11, u32::MAX));
+        ex.settle_inlines(0, 0, 0);
+        assert!(ex.runs.is_empty());
+        assert_ne!(ex.blocks[0][block::FLAGS] & SOURCE_ONLY, 0);
+        assert_eq!((ex.deviations[0].rule, ex.deviations[0].leaf), ("run-structure", Some(0)));
+    }
+
+    #[test]
+    fn a_run_outside_its_parent_or_before_its_sibling_is_a_problem() {
+        let mut ex = Extractor::new("abc def ghi", true);
+        ex.runs = vec![run_rec(0, 4, u32::MAX), run_rec(2, 6, 0)];
+        assert!(ex.leaf_run_problem(0).unwrap().contains("outside its parent"));
+        ex.runs = vec![run_rec(0, 11, u32::MAX), run_rec(0, 4, 0), run_rec(3, 6, 0)];
+        assert!(ex.leaf_run_problem(0).unwrap().contains("overlaps its previous sibling"));
+        ex.runs = vec![run_rec(0, 11, u32::MAX), run_rec(0, 4, 0), run_rec(4, 6, 0), run_rec(6, 11, u32::MAX)];
+        assert!(ex.leaf_run_problem(0).is_some(), "a root run after a root run that covers it");
+        ex.runs = vec![run_rec(0, 4, u32::MAX), run_rec(0, 2, 0), run_rec(4, 11, u32::MAX)];
+        assert_eq!(ex.leaf_run_problem(0), None);
+    }
+
+    #[test]
+    fn inline_deviations_are_scoped_to_their_leaf_and_others_refuse() {
+        let mut ex = Extractor::new("abc", true);
+        ex.blocks.push(block_rec(block_kind::PARAGRAPH, u32::MAX, 0, 3));
+        ex.runs.push(run_rec(0, 3, u32::MAX));
+        ex.dev("text-mismatch", || "synthetic".into());
+        ex.dev("code-content", || "synthetic".into());
+        ex.settle_inlines(0, 0, 0);
+        assert!(ex.runs.is_empty());
+        assert_eq!(ex.deviations.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("text-mismatch", Some(0)), ("code-content", None)]);
+    }
+
+    #[test]
+    fn overlapping_sibling_blocks_refuse_the_model() {
+        let mut ex = Extractor::new("abc def ghi", true);
+        ex.blocks = vec![block_rec(block_kind::DOCUMENT, u32::MAX, 0, 11), block_rec(block_kind::PARAGRAPH, 0, 0, 6), block_rec(block_kind::PARAGRAPH, 0, 4, 11)];
+        ex.check_structure();
+        assert_eq!((ex.deviations[0].rule, ex.deviations[0].leaf), ("block-tree", None));
+    }
 }

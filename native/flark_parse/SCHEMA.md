@@ -173,6 +173,7 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | `table` | `extra` | column alignments packed two bits per column, column 0 in the low bits |
 | `table_row` | `flags` | bit0 header row |
 | `footnote_definition` | `extra` | label start and end |
+| `any` | `flags` | bit23 source only: a paragraph, heading or table cell whose inline extraction could not be verified against comrak, published without runs so it displays its source as plain text |
 | `any` | `extra` | offset of the block's record in the extras section, or 0xFFFFFFFF when it has none |
 
 ## Run attributes
