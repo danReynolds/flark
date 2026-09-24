@@ -4,7 +4,9 @@ Every known comrak 0.54 behavior the extraction has to work around, with its
 correction. Each correction is validated in report mode against comrak's own
 output, and `cargo test` asserts zero deviations across the 652 CommonMark and
 670 GFM upstream cases plus the fuzz and regression suites. Anything new fails
-the extraction test.
+the extraction test. At runtime an inline deviation, or a leaf whose runs do
+not nest and follow each other, publishes that leaf without runs and flagged
+source only; any other deviation refuses the model.
 
 | comrak behavior | Correction | Validated by |
 | --- | --- | --- |
@@ -36,6 +38,14 @@ the extraction test.
 | Code block end line runs short or long of the literal (unclosed fences, trailing blank lines of a container) | the literal's line count is exact for unclosed and indented code | code literal |
 | Lazy continuation lines keep partial indentation and partially consumed tabs | cmark's buffer mirrored: whitespace kept on lazy lines, virtual spaces subtracted from positions | text literal check |
 | A text node's literal is one decoded string (entities, the backslash of an escaped pipe, a stray CR, virtual spaces of a partial tab) | the node is split into exact text runs and replacement runs by a lockstep walk that treats an entity reference as one unit; the pieces must rebuild the literal or the node stays one replacement run | literal rebuild in `text_pieces`, extraction test |
+| A line ending inside a link's parentheses (`[](\n)`) is not counted, so every later node of the paragraph is reported a line early | text, including text with entities, tabs or escaped pipes, is found from its literal when its slice cannot explain it; a tag is found from its literal; a code span starts at the nearest run of exactly its backticks; a drifted range covering only an entity's first bytes spans the entity; emphasis, strong and strikethrough are re-derived around their children after the leaf's repairs | literal and piece checks (`text_pieces::explains`); delimiter check after repairs; sibling runs may not overlap |
+| A blank line short of an item's indentation continues the item's block (cmark advances past its whitespace) | the prefix of a blank line in an item that holds a block consumes all its whitespace | code literal; a partial indent is never content |
+| An empty footnote definition followed by a blank line inside an item ends at its label's first byte | a container covers its own empty lines' content records, and its ancestors follow | content inside its block; structure check |
+| Task items report no list padding; after a partial tab the content column counted from the tab stop, and a blank rest or five spaces after the marker were ignored | the content column follows cmark's padding rule from the container's content column; the checkbox is matched after the first paragraph line's whitespace, also on a lazy line | the checkbox is never content; text literal check |
+| comrak resolves definitions before it removes a task checkbox, and `[x] ` cannot begin a definition | a paragraph led by its item's checkbox strips no definitions; a checkbox leading what definitions left is skipped even on a lazy line | text literal check; definition coverage |
+| An HTML block after a partially consumed tab ends a column past its last line (the virtual spaces are counted), and a list or item ending with it follows | an HTML block ends with its last line; a container that overlaps its next sibling ends at the reach of its children and own lines, and every container stays inside its parent | structure check (sibling blocks, containment) |
+| A code span whose content is spaces around a tab (`` ` \t ` ``) drops one space from each side | the all-spaces test counts only spaces, not tabs | code literal |
+| Two escaped pipes in a row, or an escape in a paragraph split to make a table header, shifted positions on later lines | pipes are unescaped by comrak's toggle rule when explaining a literal, and only escapes earlier on a position's own line move it | text literal check |
 
 ## Outside the contract
 

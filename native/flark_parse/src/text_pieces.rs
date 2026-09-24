@@ -14,6 +14,44 @@ pub(crate) struct Piece { pub start: usize, pub end: usize, pub display: Option<
 const MAX_SOURCE: usize = 40;
 const MAX_DISPLAY_CHARS: usize = 4;
 
+/// Whether [slice] holds [literal]: equal, or split into pieces whose every
+/// replacement has a known reason (an entity, the backslash of an escaped
+/// pipe, a stray CR, a partial tab's leading virtual spaces). A replacement
+/// for anything else means comrak placed the text where it is not.
+pub(crate) fn explains(slice: &str, literal: &str) -> bool {
+    if slice == literal || unescape_pipes(slice) == literal { return true; }
+    let Some(pieces) = split_pieces(slice, literal) else { return false };
+    pieces.iter().all(|p| match p.display {
+        None => true,
+        Some((a, b)) => {
+            let source = &slice[p.start..p.end];
+            (source.is_empty() && p.start == 0 && literal[a..b].bytes().all(|c| c == b' '))
+                || entity_len(source) == Some(source.len())
+                || (source == "\\" && a == b && slice[p.end..].starts_with('|'))
+                || (!source.is_empty() && source.bytes().all(|c| c == b'\r'))
+        }
+    })
+}
+
+/// [slice] with each escaped pipe's backslash removed, by comrak's toggle
+/// rule: a backslash escapes the byte after it, so `\\\\|` keeps its pipe.
+fn unescape_pipes(slice: &str) -> String {
+    let mut out = String::with_capacity(slice.len());
+    let mut chars = slice.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('|') => {}
+                Some(_) => { out.push(c); out.push(chars.next().unwrap()); continue; }
+                None => out.push(c),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 pub(crate) fn split_pieces(slice: &str, literal: &str) -> Option<Vec<Piece>> {
     let sb = slice.as_bytes();
     let mut pieces = Vec::new();
@@ -83,7 +121,8 @@ pub(crate) fn split_pieces(slice: &str, literal: &str) -> Option<Vec<Piece>> {
 }
 
 /// Byte length of a well-formed entity reference at the start of `s`.
-fn entity_len(s: &str) -> Option<usize> {
+/// Length of the entity reference at the start of [s], if there is one.
+pub(crate) fn entity_len(s: &str) -> Option<usize> {
     let b = s.as_bytes();
     if b.first() != Some(&b'&') { return None; }
     let mut i = 1;

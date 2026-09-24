@@ -426,3 +426,111 @@ fn a_multiline_tag_or_code_span_ends_on_its_own_line() {
         }
     }
 }
+
+#[test]
+fn a_blank_line_short_of_an_items_indent_still_belongs_to_its_block() {
+    // cmark continues an item that holds a block through a blank line,
+    // advancing to its first non-space, even without the item's indentation.
+    // Typing a fence in a list item leaves it open over such lines.
+    for src in ["- ```\n \n", "- ```\n  x\n \n", "+\t```\n \n", "-\t```\n \n", "1. ```\n \r", "1. - ```\n\t\n", "- a\n\n      code\n \n      more\n"] {
+        let m = M::of(src); m.clean();
+        for c in 0..m.n(header::CONTENT_COUNT) {
+            let (s, e) = (m.content(c, content::START_BYTE), m.content(c, content::END_BYTE));
+            assert!(src[s..e].trim().len() == e - s, "content {s}..{e} {:?} keeps a blank line's partial indent in {src:?}", &src[s..e]);
+        }
+    }
+}
+
+#[test]
+fn an_empty_container_covers_its_own_empty_lines() {
+    // comrak ends an empty footnote definition followed by a blank line inside
+    // an item at its label's first byte, short of the definition's own line.
+    for src in ["- [^1]:\n\n", "1. [^1]:\n\n", "> - [^1]:\n\n", "- [^1]:\n\n  x\n"] {
+        let m = M::of(src); m.clean();
+        let def = (0..m.n(header::BLOCK_COUNT)).find(|&b| m.block(b, block::KIND) == block_kind::FOOTNOTE_DEFINITION as usize).unwrap();
+        assert_eq!(&src[m.block(def, block::START_BYTE)..m.block(def, block::START_BYTE) + 5], "[^1]:", "for {src:?}");
+        assert!(m.block(def, block::END_BYTE) >= src.find(':').unwrap() + 1, "for {src:?}");
+    }
+}
+
+#[test]
+fn a_task_checkbox_after_a_partial_tab_or_on_the_second_line_is_skipped() {
+    // comrak reports no list padding for task items. The content column
+    // follows cmark's padding rule from where the container's content begins,
+    // and the checkbox leads the first paragraph line after its whitespace.
+    for src in [">\t- [x]\tb", ">\t1. [ ]", ">\t1. [x]", ">\t1.\t[x]", ">\t1. [ ]\n:", "1.\n   [ ]\\)", "*\n\t [x]", "+\n\t [x]\\!", "1.\n\t1. [x]", "10.\n    [x] ten"] {
+        let m = M::of(src); m.clean();
+        let checkbox = src.rfind(['[']).unwrap();
+        for c in 0..m.n(header::CONTENT_COUNT) {
+            let (s, e) = (m.content(c, content::START_BYTE), m.content(c, content::END_BYTE));
+            assert!(!(s <= checkbox && checkbox < e), "checkbox inside content {s}..{e} in {src:?}");
+        }
+    }
+}
+
+#[test]
+fn nodes_after_a_link_whose_parentheses_span_lines_are_placed_exactly() {
+    // comrak does not count a line ending inside a link's parentheses, so
+    // every later node of the paragraph is reported a line early. Text,
+    // entities, tags and code spans are found from their literals, and
+    // emphasis is re-derived around its children.
+    for src in [
+        "[](\n)\n&41", "[](\n )&m", "[](\n )&x", "[](\n )\t]", "[](\n)\n&mp;", "[](\n )&#1;", "[](\n)x]\n&mp;",
+        "[](\n)\n<v>", "[](\n )&*<v>", "[](\n)\n&1;<v>", "[](\n)\t\n*|<v>",
+        "[](\n)\n*]*", "_[](\n )_", "_[](\n)\n)_", "[](\n)_n\n;_", "[](\n)_n\n&amp;_", "~[](\n)\n;~", "~[](\n)\n&#1;~",
+        "[](\n)``\n` `", "[](\r\n)``\n` `", "[](\n)``\n&mp;",
+        "\\&amp; b", "x \\&ouml; y",
+    ] {
+        let m = M::of(src); m.clean();
+    }
+}
+
+#[test]
+fn a_code_span_of_spaces_around_a_tab_drops_one_space_each_side() {
+    // A tab is not a space for the stripping rule, so ` \t ` displays "\t".
+    for (src, content) in [("` \t `", "\t"), ("` \t\t `", "\t\t"), ("``` \t ```", "\t"), ("`   `", "   ")] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.run_contents(src).iter().find(|(k, _)| *k == run_kind::CODE as usize).map(|(_, t)| *t), Some(content), "for {src:?}");
+    }
+}
+
+#[test]
+fn an_html_block_after_a_partial_tab_ends_on_its_own_line() {
+    // comrak's end column counts the tab's virtual spaces and ran into the
+    // next line; the block, and a list ending with it, overlapped the next one.
+    for src in [">\t<v>\n*", ">\t<v>\nm", ">\t<d>\n.", "+\n\t<v>\nb", "-\n\t<v>\n#", "-\n\t<v>\n-", ">\t<v>\n\n*", "- <v>\n\t\\\n[", "- 1. (\n\t\\\n>"] {
+        // M::of checks the structural invariants, sibling overlap included.
+        let m = M::of(src); m.clean();
+    }
+}
+
+#[test]
+fn a_task_checkbox_and_a_definition_resolve_in_comraks_order() {
+    // comrak strips leading definitions first, then takes a checkbox leading
+    // what remains, even on a lazy line; `[x] ` cannot begin a definition, so
+    // a definition after the checkbox stays text.
+    for (src, text) in [
+        ("1. [a]:u\n[ ]", None), ("- [a]: /u\n[x] done", Some("done")), ("- [a]::\n[ ]", None), ("1.\t[a]:`\n[ ]", None),
+        ("- [x] [a]:;\n.", Some("[a]:;")), ("- [x] [1]:n\n]", Some("[1]:n")), ("1. [ ]\t[a]:u\n[", Some("[a]:u")),
+    ] {
+        let m = M::of(src); m.clean();
+        let checkbox = src.rfind(['[']).filter(|&i| src[i..].starts_with("[ ]") || src[i..].starts_with("[x]")).or_else(|| src.find("[ ]").or_else(|| src.find("[x]"))).unwrap();
+        for c in 0..m.n(header::CONTENT_COUNT) {
+            let (s, e) = (m.content(c, content::START_BYTE), m.content(c, content::END_BYTE));
+            assert!(!(s <= checkbox && checkbox < e), "checkbox inside content {s}..{e} in {src:?}");
+        }
+        if let Some(text) = text {
+            assert!(m.run_contents(src).iter().any(|(k, t)| *k == run_kind::TEXT as usize && t.starts_with(text)), "no text run starting {text:?} in {src:?}");
+        }
+    }
+}
+
+#[test]
+fn escaped_pipes_shift_only_their_own_line_and_run_in_pairs() {
+    // comrak unescapes `\|` in cells and in a paragraph it split to make a
+    // table header. Two escapes in a row keep both pipes, and in a split
+    // paragraph an escape moves only later columns of its own line.
+    for src in ["\\|\\|http://.\n:-", "]\n:-\n\\|\\|", "\\|\\|;\\>(\n-|", "&#1;\\|=bé\n|-", "\\|\n&\r\n<\n|-", "\\|\n\\| a\nb\n|-", "\\|\n*[*\n]\n-|", "a \\\\| b\n:-"] {
+        let m = M::of(src); m.clean();
+    }
+}

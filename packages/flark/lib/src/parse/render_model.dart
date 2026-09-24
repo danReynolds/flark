@@ -162,6 +162,14 @@ final class RenderModel {
       _block(index, BlockField.kindFlags) >> BlockKindFlags.flagsShift &
       BlockKindFlags.flagsMask;
 
+  /// Block flags bit 23, on any leaf: its inline extraction could not be
+  /// verified against the parser, so it publishes no runs and displays its
+  /// source as plain text while the rest of the document renders.
+  static const int sourceOnlyFlag = 1 << 23;
+
+  /// Whether block [index] shows its source because its runs were withheld.
+  bool blockSourceOnly(int index) => blockFlags(index) & sourceOnlyFlag != 0;
+
   /// The parent block's index, or [noParent] for the document.
   int blockParent(int index) => _block(index, BlockField.parent);
   int blockStart(int index) => _block(index, BlockField.start);
@@ -434,6 +442,7 @@ extension type const BlockView._((RenderModel, int) _rec) {
   int get contentCount => model.blockContentCount(index);
   int get attr => model.blockAttr(index);
   int get flags => model.blockFlags(index);
+  bool get sourceOnly => model.blockSourceOnly(index);
   bool get isLeaf =>
       kind == BlockKind.paragraph ||
       kind == BlockKind.heading ||
