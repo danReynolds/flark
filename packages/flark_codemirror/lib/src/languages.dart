@@ -1,11 +1,42 @@
 import 'mode.dart';
 import 'modes/javascript.dart';
 
+/// A ported language: its canonical name, display label and mode.
+final class CodeMirrorLanguage {
+  const CodeMirrorLanguage(
+    this.name,
+    this.label,
+    this.mode, {
+    this.valuesOnly = false,
+  });
+  final String name, label;
+  final Mode<Object?> Function(ModeConfig config) mode;
+
+  /// The language holds only values, as JSON does, so detection requires
+  /// that shape.
+  final bool valuesOnly;
+}
+
+/// The ported languages, in detection priority.
+final codeMirrorCatalog = [
+  CodeMirrorLanguage('javascript', 'JavaScript', JavaScriptMode.new),
+  CodeMirrorLanguage(
+    'typescript',
+    'TypeScript',
+    (config) =>
+        JavaScriptMode(config, const JavaScriptOptions(typescript: true)),
+  ),
+  CodeMirrorLanguage(
+    'json',
+    'JSON',
+    (config) => JavaScriptMode(config, const JavaScriptOptions(json: true)),
+    valuesOnly: true,
+  ),
+];
+
 /// Languages with a ported mode, by canonical name, with display labels.
-const codeMirrorLanguages = {
-  'javascript': 'JavaScript',
-  'typescript': 'TypeScript',
-  'json': 'JSON',
+final codeMirrorLanguages = {
+  for (final language in codeMirrorCatalog) language.name: language.label,
 };
 
 /// The canonical name for a fence's info string: its first word, lowercased,
@@ -35,12 +66,9 @@ String codeMirrorLanguageName(String info) {
 Mode<Object?>? codeMirrorMode(
   String language, [
   ModeConfig config = const ModeConfig(),
-]) => switch (language) {
-  'javascript' => JavaScriptMode(config),
-  'typescript' => JavaScriptMode(
-    config,
-    const JavaScriptOptions(typescript: true),
-  ),
-  'json' => JavaScriptMode(config, const JavaScriptOptions(json: true)),
-  _ => null,
-};
+]) {
+  for (final entry in codeMirrorCatalog) {
+    if (entry.name == language) return entry.mode(config);
+  }
+  return null;
+}

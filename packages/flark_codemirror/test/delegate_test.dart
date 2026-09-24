@@ -87,7 +87,7 @@ void main() {
       for (final (source, language) in [
         ('def f(): pass', 'python'),
         ('const x = 1;', 'text'),
-        ('const x = 1;', ''),
+        ('Just some words.', ''),
         ('x' * (FlarkCodeMirror.maxCodeUnits + 1), 'javascript'),
       ]) {
         final h = code.highlight(source, language);
@@ -99,10 +99,77 @@ void main() {
     });
   });
 
+  group('detection', () {
+    for (final (name, source, expected) in [
+      (
+        'interface and annotations',
+        'interface Point { x: number }\nconst p: Point = { x: 1 };',
+        'typescript',
+      ),
+      (
+        'plain JavaScript',
+        'function add(a, b) {\n  return a + b; // sum\n}',
+        'javascript',
+      ),
+      ('an object', '{\n  "answer": 42,\n  "ok": true\n}', 'json'),
+      ('an array of objects', '[{"id": 1}, {"id": 2}]', 'json'),
+      ('an array expression', '[1, 2, 3].map((x) => x * 2);', 'javascript'),
+      (
+        'a method with a return type',
+        'async test(): Promise<void> {\n'
+            '  [1,2,3].map((test) => console.log(test));\n}',
+        'javascript',
+      ),
+      (
+        'a JavaScript class that extends another',
+        'class Store extends EventTarget {\n  #items = new Map();\n}',
+        'javascript',
+      ),
+      ('prose', 'Just some words about the weather.', ''),
+      ('prose with keywords', 'Wait for it if you can, then do it.', ''),
+      ('nothing', '  \n', ''),
+      // flark_tree_sitter's detection cases for these languages and prose.
+      ('if (ready) {', 'if (ready) {', 'javascript'),
+      (
+        'const value',
+        "const value = 'hello'; console.log(value);",
+        'javascript',
+      ),
+      ('typed const', "const value: string = 'hello';", 'typescript'),
+      ('JSON with an array', '{"hello": [1, true]}', 'json'),
+      ('function hello', 'function hello() {', 'javascript'),
+      ('x', 'x', ''),
+      ('Hello world', 'Hello world', ''),
+      ('This is a simple test.', 'This is a simple test.', ''),
+      ('Please select the item.', 'Please select the item.', ''),
+      ('An end to the story.', 'An end to the story.', ''),
+      ('The final result is here.', 'The final result is here.', ''),
+      ('SQL is not JavaScript', "SELECT name FROM users WHERE name = 'x';", ''),
+      ('CSS is not JavaScript', '.card { color: red; content: "x"; }', ''),
+    ]) {
+      test(name, () => expect(detectCodeMirrorLanguage(source), expected));
+    }
+
+    test('an untagged fence highlights as what it looks like', () {
+      const source = 'interface Point { x: number }';
+      final h = code.highlight(source, '');
+      expect(h.language, 'typescript');
+      expect(kindOf(h, source, 'interface'), 'keyword');
+      expect(code.resolveLanguage(source, ''), 'typescript');
+      expect(code.resolveLanguage(source, 'json'), 'json');
+    });
+
+    test('typing below the sample keeps the answer', () {
+      final head = 'const answer = 42;\n' * 80;
+      expect(code.resolveLanguage(head, ''), 'javascript');
+      expect(code.resolveLanguage('$head{"not": "json"}', ''), 'javascript');
+    });
+  });
+
   test('language names', () {
     expect(code.resolveLanguage('', 'js title="x"'), 'javascript');
     expect(code.resolveLanguage('', 'TS'), 'typescript');
-    expect(code.resolveLanguage('{}', ''), '');
+    expect(code.resolveLanguage('Just words.', ''), '');
     expect(code.resolveLanguage('', 'auto'), '');
     expect(code.resolveLanguage('', 'py'), 'python');
     expect(code.resolveLanguage('', 'kotlin'), 'kotlin');

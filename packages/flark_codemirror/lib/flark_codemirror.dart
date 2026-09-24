@@ -5,16 +5,20 @@ library;
 
 import 'package:flark/code.dart';
 
+import 'src/detect.dart';
 import 'src/edit.dart';
 import 'src/highlight.dart';
 import 'src/languages.dart';
 import 'src/mode.dart';
 
-export 'src/languages.dart' show codeMirrorLanguages, codeMirrorLanguageName;
+export 'src/detect.dart' show detectCodeMirrorLanguage;
+export 'src/languages.dart'
+    show codeMirrorCatalog, codeMirrorLanguages, codeMirrorLanguageName;
 
 /// A [CodeEditingDelegate] backed by the ported modes. A fence without a
-/// language is plain: there is no automatic detection yet. Languages without
-/// a ported mode are plain, and their edits take the kernel's defaults.
+/// language is detected among the ported ones ([detectCodeMirrorLanguage]),
+/// or plain when none is recognized. Languages without a ported mode are
+/// plain, and their edits take the kernel's defaults.
 final class FlarkCodeMirror implements CodeEditingDelegate {
   /// Longer snippets are plain and edit without proposals, like the previous
   /// highlighter's bound.
@@ -23,9 +27,20 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
   final _colors = <(String, String), CodeHighlight>{};
   int _colorUnits = 0;
 
+  final _detected = <String, String>{};
+
   @override
-  String resolveLanguage(String source, String info) =>
-      codeMirrorLanguageName(info);
+  String resolveLanguage(String source, String info) {
+    final selected = codeMirrorLanguageName(info);
+    if (selected.isNotEmpty) return selected;
+    // Detection reads a prefix, so typing further down reuses its answer.
+    final sample = detectionSampleOf(source);
+    final cached = _detected.remove(sample);
+    final language = cached ?? detectCodeMirrorLanguage(source);
+    _detected[sample] = language;
+    if (_detected.length > 64) _detected.remove(_detected.keys.first);
+    return language;
+  }
 
   @override
   CodeHighlight highlight(String source, String info) {

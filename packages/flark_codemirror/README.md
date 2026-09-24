@@ -13,15 +13,19 @@ final editor = FlarkEditor(backend, codeEditing: FlarkCodeMirror(), text: markdo
 
 Status: JavaScript, TypeScript and JSON are ported (CodeMirror's `javascript`
 mode). Other fence languages are plain, and their edits take the kernel's
-defaults. A fence without a language is plain: there is no automatic
-detection yet. The hosts still use `flark_tree_sitter`; this package is meant
-to replace it once the remaining modes are ported.
+defaults. A fence without a language is detected among the ported ones
+(`lib/src/detect.dart`): each mode tokenizes a sample, and what it recognizes
+counts in inverse proportion to how many languages recognize it, so adding a
+language needs no detection data. The hosts still use `flark_tree_sitter`;
+this package is meant to replace it once the remaining modes are ported.
 
 ## Layout
 
 - `lib/src/stream.dart`, `lib/src/mode.dart`: CodeMirror's `StringStream` and
   the mode interface, with a `runMode` driver.
 - `lib/src/modes/`: one file per ported upstream mode, keeping its structure.
+- `lib/src/languages.dart`: the catalog of ported languages and their modes.
+- `lib/src/detect.dart`: the language of an untagged fence.
 - `lib/src/highlight.dart`: styles to the kinds hosts theme, as tokens that
   tile the snippet.
 - `lib/src/edit.dart`: Enter, typing and Tab proposals from a mode's
