@@ -11,6 +11,8 @@ dependencies:
     path: ../
   flark:
     path: ../../flark
+  flark_codemirror:
+    path: ../../flark_codemirror
   shared_preferences: ^2.5.3
   url_launcher: ^6.3.2
   flex_color_picker: ^3.8.0
