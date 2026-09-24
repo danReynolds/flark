@@ -1,10 +1,10 @@
-# Render model schema v4
+# Render model schema v5
 
-Generated from `schema/render_model_v4.json`; edit the JSON, then run `tool/gen_schema.py`.
+Generated from `schema/render_model_v5.json`; edit the JSON, then run `tool/gen_schema.py`.
 
-Flat little-endian u32 render model written by flark_parse. Every range is [start, end) and is given in both UTF-8 bytes and UTF-16 code units. Hidden bytes of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker. Empty lines owned only by a container have a zero-width content record on the innermost container. Its prefix_start identifies only that container prefix; lifting it retains the outer containers.
+Flat little-endian u32 render model written by flark_parse. Every offset is a UTF-16 code unit, the unit of the host's source string; the header also records the source's UTF-8 length. Every range is [start, end). Hidden units of a run are exactly its source range minus its content range. A line of a leaf block that has no content record is hidden entirely. A content record's prefix_start is where the innermost container's prefix (a quote marker, a list marker with its padding and task checkbox, a footnote indent) begins on that line; it equals the content start when the line has no such prefix, so a host lifts a prefix by deleting [prefix_start, start) and never scans for a marker. Empty lines owned only by a container have a zero-width content record on the innermost container. Its prefix_start identifies only that container prefix; lifting it retains the outer containers. Records are fixed-width and some words pack several fields. Values only some kinds carry live in the extras section: a block reaches its record through its extra word, and a run through the run-extra index, which is sorted by run.
 
-Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in this order: lines, blocks, content, runs, definitions, strings. The string table is padded to a multiple of four bytes.
+Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in this order: lines, blocks, content, runs, definitions, run_extras, extras, strings. The extras section is `extra_words` words long. The string table is padded to a multiple of four bytes.
 
 ## Header
 
@@ -19,87 +19,93 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 | 6 | `content_count` |
 | 7 | `run_count` |
 | 8 | `definition_count` |
-| 9 | `string_bytes` |
-| 10 | `reserved` |
+| 9 | `run_extra_count` |
+| 10 | `extra_words` |
+| 11 | `string_bytes` |
 
-## Line record (2 words)
-
-| Word | Field |
-| --- | --- |
-| 0 | `start_byte` |
-| 1 | `start_utf16` |
-
-## Block record (16 words)
+## Line record (1 words)
 
 | Word | Field |
 | --- | --- |
-| 0 | `kind` |
+| 0 | `start` |
+
+## Block record (10 words)
+
+| Word | Field |
+| --- | --- |
+| 0 | `kind_flags` |
 | 1 | `parent` |
-| 2 | `start_byte` |
-| 3 | `end_byte` |
-| 4 | `start_utf16` |
-| 5 | `end_utf16` |
-| 6 | `first_line` |
-| 7 | `line_count` |
-| 8 | `content_offset` |
-| 9 | `content_count` |
-| 10 | `attr0` |
-| 11 | `attr1` |
-| 12 | `attr2` |
-| 13 | `flags` |
-| 14 | `marker_end_byte` |
-| 15 | `marker_end_utf16` |
+| 2 | `start` |
+| 3 | `end` |
+| 4 | `first_line` |
+| 5 | `line_count` |
+| 6 | `content_offset` |
+| 7 | `first_run` |
+| 8 | `attr` |
+| 9 | `extra` |
 
-## Content record (8 words)
+## Content record (4 words)
 
 | Word | Field |
 | --- | --- |
-| 0 | `line` |
-| 1 | `start_byte` |
-| 2 | `start_utf16` |
-| 3 | `end_byte` |
-| 4 | `end_utf16` |
-| 5 | `virtual_leading_spaces` |
-| 6 | `prefix_start_byte` |
-| 7 | `prefix_start_utf16` |
+| 0 | `start` |
+| 1 | `end` |
+| 2 | `prefix_start` |
+| 3 | `line_virtual` |
 
-## Run record (20 words)
+## Run record (4 words)
 
 | Word | Field |
 | --- | --- |
-| 0 | `kind` |
-| 1 | `block` |
-| 2 | `parent` |
-| 3 | `start_byte` |
-| 4 | `end_byte` |
-| 5 | `content_start_byte` |
-| 6 | `content_end_byte` |
-| 7 | `start_utf16` |
-| 8 | `end_utf16` |
-| 9 | `content_start_utf16` |
-| 10 | `content_end_utf16` |
-| 11 | `aux0` |
-| 12 | `aux1` |
-| 13 | `aux2` |
-| 14 | `aux3` |
-| 15 | `flags` |
-| 16 | `destination_offset` |
-| 17 | `destination_length` |
-| 18 | `title_offset` |
-| 19 | `title_length` |
+| 0 | `start` |
+| 1 | `end` |
+| 2 | `hidden` |
+| 3 | `kind_flags_parent` |
 
-## Definition record (8 words)
+## Definition record (6 words)
 
 | Word | Field |
 | --- | --- |
-| 0 | `start_byte` |
-| 1 | `end_byte` |
-| 2 | `start_utf16` |
-| 3 | `end_utf16` |
-| 4 | `label_start_byte` |
-| 5 | `label_end_byte` |
-| 6 | `dest_start_byte` |
-| 7 | `dest_end_byte` |
+| 0 | `start` |
+| 1 | `end` |
+| 2 | `label_start` |
+| 3 | `label_end` |
+| 4 | `dest_start` |
+| 5 | `dest_end` |
+
+## Run extra record (2 words)
+
+| Word | Field |
+| --- | --- |
+| 0 | `run` |
+| 1 | `offset` |
+
+## Packed words
+
+| Word | Field | Bits |
+| --- | --- | --- |
+| `block.kind_flags` | `kind` | 0-7 |
+| `block.kind_flags` | `flags` | 8-31 |
+| `content.line_virtual` | `line` | 0-29 |
+| `content.line_virtual` | `virtual_leading_spaces` | 30-31 |
+| `run.hidden` | `before` | 0-15 |
+| `run.hidden` | `after` | 16-31 |
+| `run.kind_flags_parent` | `kind` | 0-7 |
+| `run.kind_flags_parent` | `flags` | 8-15 |
+| `run.kind_flags_parent` | `parent_distance` | 16-31 |
+
+## Extra records
+
+| Record | Owner | Words |
+| --- | --- | --- |
+| `code_block` | fenced `code_block` blocks | `info_start`, `info_end` |
+| `item` | `item` blocks | `marker_end`, `task_start`, `task_end` |
+| `table` | `table` blocks | `alignments` |
+| `footnote_definition` | `footnote_definition` blocks | `label_start`, `label_end` |
+| `wide_run` | runs with flags bit3; the other kind's record follows | `content_start`, `content_end`, `parent` |
+| `link` | `link`, `image` and `autolink` runs | `destination_start`, `destination_end`, `title_start`, `title_end`, `destination_offset`, `destination_length`, `title_offset`, `title_length` |
+| `display_text` | `replacement` runs, and `code` runs with flags bit1 | `offset`, `length` |
+| `footnote_ref` | `footnote_ref` runs | `label_start`, `label_end` |
 
 ## block_kind
 
@@ -153,75 +159,48 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 
 | Kind | Field | Meaning |
 | --- | --- | --- |
-| `heading` | `attr0` | level 1-6 |
+| `heading` | `attr` | level 1-6 |
 | `heading` | `flags` | bit0 setext |
-| `code_block` | `attr0` | fence length (0 for indented) |
-| `code_block` | `attr1` | info string start byte |
-| `code_block` | `attr2` | info string end byte |
+| `code_block` | `attr` | fence length (0 for indented) |
 | `code_block` | `flags` | bit0 fenced, bit1 closed by a fence line |
-| `list` | `attr0` | 1 if ordered |
-| `list` | `attr1` | start number |
-| `list` | `flags` | bit0 tight |
-| `item` | `attr0` | content column offset (marker_offset + padding) |
-| `item` | `attr1` | task symbol start byte (task items only) |
-| `item` | `attr2` | task symbol end byte |
+| `code_block` | `extra` | fenced blocks: info string start and end |
+| `list` | `attr` | start number |
+| `list` | `flags` | bit0 tight, bit1 ordered |
+| `item` | `attr` | content column offset (marker_offset + padding) |
 | `item` | `flags` | bit0 task item, bit1 checked |
-| `item` | `marker_end_byte` | exclusive end of the first-line list marker and padding, before any task checkbox |
-| `item` | `marker_end_utf16` | same marker endpoint in UTF-16; zero for other block kinds |
-| `table` | `attr0` | column count |
-| `table` | `attr1` | column alignments packed two bits per column, column 0 in the low bits |
+| `item` | `extra` | marker end (exclusive end of the first-line list marker and padding, before any task checkbox), then the task symbol start and end (zero unless a task item) |
+| `table` | `attr` | column count |
+| `table` | `extra` | column alignments packed two bits per column, column 0 in the low bits |
 | `table_row` | `flags` | bit0 header row |
-| `table_cell` | `attr0` | column index |
-| `table_cell` | `attr1` | alignment |
-| `footnote_definition` | `attr1` | label start byte |
-| `footnote_definition` | `attr2` | label end byte |
+| `footnote_definition` | `extra` | label start and end |
+| `any` | `extra` | offset of the block's record in the extras section, or 0xFFFFFFFF when it has none |
 
 ## Run attributes
 
 | Kind | Field | Meaning |
 | --- | --- | --- |
-| `link` | `aux0` | destination start byte |
-| `link` | `aux1` | destination end byte |
-| `link` | `aux2` | title start byte |
-| `link` | `aux3` | title end byte |
 | `link` | `flags` | bit0 reference style, bit1 has title |
-| `link` | `destination_offset` | Comrak resolved URL offset in UTF-8 string table |
-| `link` | `destination_length` | resolved URL byte length |
-| `link` | `title_offset` | Comrak resolved title offset in UTF-8 string table |
-| `link` | `title_length` | resolved title byte length |
-| `image` | `aux0` | destination start byte |
-| `image` | `aux1` | destination end byte |
-| `image` | `aux2` | title start byte |
-| `image` | `aux3` | title end byte |
+| `link` | `extra` | destination and title source ranges, then comrak's resolved destination and title in the string table |
 | `image` | `flags` | bit0 reference style, bit1 has title |
-| `image` | `destination_offset` | Comrak resolved URL offset in UTF-8 string table |
-| `image` | `destination_length` | resolved URL byte length |
-| `image` | `title_offset` | Comrak resolved title offset in UTF-8 string table |
-| `image` | `title_length` | resolved title byte length |
-| `autolink` | `aux0` | url start byte |
-| `autolink` | `aux1` | url end byte |
-| `autolink` | `destination_offset` | Comrak resolved URL offset in UTF-8 string table |
-| `autolink` | `destination_length` | resolved URL byte length |
-| `autolink` | `title_offset` | Comrak resolved title offset in UTF-8 string table |
-| `autolink` | `title_length` | resolved title byte length |
-| `replacement` | `aux0` | display text offset in the string table |
-| `replacement` | `aux1` | display text byte length |
-| `footnote_ref` | `aux0` | label start byte |
-| `footnote_ref` | `aux1` | label end byte |
-| `code` | `aux0` | backtick count |
-| `code` | `aux2` | display text offset in the string table when flags bit1 is set |
-| `code` | `aux3` | display text byte length when flags bit1 is set |
+| `image` | `extra` | as for link |
+| `autolink` | `extra` | as for link; the destination range is the URL and the title is empty |
+| `replacement` | `extra` | display text in the string table |
 | `code` | `flags` | bit1 content displays from the string table instead of the source slice (escaped pipes inside table cells) |
-| `any` | `flags` | bit8 run spans more than one line |
+| `code` | `extra` | with flags bit1: display text in the string table |
+| `footnote_ref` | `extra` | label start and end |
+| `any` | `flags` | bit2 run spans more than one line; bit3 wide: the exact content range and parent are in the run's extra record because a hidden length or the parent distance exceeds 0xFFFE, and the packed fields read 0xFFFF |
+| `any` | `hidden` | units hidden before and after the content; content_start = start + before, content_end = end - after |
+| `any` | `parent_distance` | runs back to the parent run, 0 when the run has none |
 
 ## Invariants
 
 - Leaf content retains editable trailing whitespace: paragraph and setext content reaches physical line ends, table cells retain trailing padding, and ATX closing markers keep one required separator outside content. Space-based hard-break runs expose their spaces as content; deleting across the break removes the full source range of its marker and newline. Backslash hard breaks and soft breaks have empty content ranges.
 - Blocks are in document order; a block's parent index is smaller than its own index or 0xFFFFFFFF for the document.
-- Runs are in document order and contiguous per block; a run's parent is an earlier run of the same block or 0xFFFFFFFF.
+- Runs are in document order and contiguous per block: block b owns runs [first_run(b), first_run(b + 1)), where first_run is non-decreasing and first_run(block_count) is run_count. A run's parent is an earlier run of the same block.
 - content_start >= start and content_end <= end and content_start <= content_end for every run.
-- Content records of a block are in line order and lie inside the block's source range.
-- Every byte offset lies inside a UTF-8 scalar boundary; every UTF-16 offset equals the count of code units before its byte offset.
+- Content records are in block order: block b owns records [content_offset(b), content_offset(b + 1)), where content_offset(block_count) is content_count. A block's records are in line order and lie inside its source range.
+- Every offset is at most src_utf16 and never falls between the two code units of a surrogate pair.
 - Definition records never overlap a block's content record.
-- Item marker endpoints lie within the first source line, after the marker start and before task checkboxes; attr0 remains a display-column indentation offset, never a source length. Non-item marker endpoints are zero.
-- Resolved destination/title string ranges are in bounds for every run. They are copied from Comrak link/image nodes, including reference and automatic links; other run kinds leave these fields zero.
+- Item marker endpoints lie within the first source line, after the marker start and before task checkboxes; attr remains a display-column indentation offset, never a source length.
+- The run-extra index lists, in run order, every run with an extra record: link, image, autolink, replacement and footnote_ref runs, code runs with flags bit1, and wide runs. String ranges are in bounds.
+- A content line is below 2^30 and virtual leading spaces are at most 3; a source beyond that fails extraction.

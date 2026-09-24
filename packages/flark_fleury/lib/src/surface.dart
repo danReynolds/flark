@@ -34,7 +34,7 @@ final class _Viewport {
     final layout = viewport.layout =
         cached != null && cached.describes(controller, cols, theme, policy)
         ? cached
-        : CellDocumentLayout(controller, cols, theme, policy);
+        : CellDocumentLayout(controller, cols, theme, policy, previous: cached);
     final result = constraints.constrain(
       CellSize(
         cols,

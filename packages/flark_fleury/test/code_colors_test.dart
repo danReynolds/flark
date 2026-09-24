@@ -101,10 +101,9 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       tester.render();
       expect(editor.snapshot, same(undo));
-      expect(
-        controller.colorsFor(editor.projection.rows.first)?.source,
-        'def hello\nend',
-      );
+      final exact = controller.colorsFor(editor.projection.rows.first);
+      expect(exact?.language, 'ruby');
+      expect(exact?.tokens.last.end, 'def hello\nend'.length);
       tester.type('x');
       expect(editor.source, contains('x'));
       tester.render();

@@ -8,9 +8,9 @@ import 'src/highlight_native.dart'
 import 'src/model.dart';
 
 /// Optional coloring worker; input, Markdown, selection and undo stay in Flark.
-/// A result is valid only for its exact source and language. Paint current text
-/// with the plain code style while
-/// waiting. Never reuse ranges from a previous source revision.
+/// A result is exact only for its source and language. While a newer result is
+/// pending, `FlarkCodeHighlighting` paints the previous colors shifted through
+/// the edit (`shiftCodeHighlight`), never the old ranges unchanged.
 final class CodeHighlightWorker {
   CodeHighlightWorker._(this._queue);
   final HighlightQueue _queue;

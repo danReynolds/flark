@@ -4,8 +4,8 @@ use flark_parse::{
 };
 
 #[test]
-fn abi_and_encoded_header_publish_schema_v4() {
-    assert_eq!(flark_parse_schema_version(), 4);
+fn abi_and_encoded_header_publish_schema_v5() {
+    assert_eq!(flark_parse_schema_version(), 5);
 
     let src = b"**ok**";
     let mut out = std::ptr::null_mut();
@@ -22,7 +22,7 @@ fn abi_and_encoded_header_publish_schema_v4() {
         )
     };
     assert_eq!(words[header::MAGIC], schema::MAGIC);
-    assert_eq!(words[header::VERSION], 4);
+    assert_eq!(words[header::VERSION], 5);
     flark_parse_free(out, out_len);
 }
 

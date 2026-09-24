@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
@@ -87,15 +86,15 @@ final class FfiParseBackend implements FlarkParseBackend {
   @override
   RenderModel parse(String source) {
     if (_disposed) throw StateError('FfiParseBackend used after dispose');
-    validateFlarkSourceText(source);
-    final bytes = utf8.encode(source);
-    if (bytes.length > _inputCapacity) {
+    // One UTF-16 code unit never needs more than three UTF-8 bytes. Keep
+    // headroom so typing does not reallocate on every keystroke.
+    if (source.length * 3 > _inputCapacity) {
       _free(_input, _inputCapacity);
-      _inputCapacity = bytes.length * 2;
+      _inputCapacity = source.length * 6;
       _input = _alloc(_inputCapacity);
     }
-    _input.asTypedList(_inputCapacity).setRange(0, bytes.length, bytes);
-    final rc = _parse(_input, bytes.length, _outPtr, _outLen);
+    final length = _encodeUtf8(source, _input.asTypedList(_inputCapacity));
+    final rc = _parse(_input, length, _outPtr, _outLen);
     if (rc != 0) throw FlarkParseException.fromCode(rc);
     final len = _outLen.value;
     final ptr = _outPtr.value;
@@ -113,6 +112,42 @@ final class FfiParseBackend implements FlarkParseBackend {
     _free(_input, _inputCapacity);
     _free(_outCell, 16);
   }
+}
+
+/// Write [source] into [out] as UTF-8 and return the byte length, validating
+/// as [validateFlarkSourceText] does in the same pass. Encoding straight into
+/// native memory avoids a Dart byte list and a copy on every parse.
+int _encodeUtf8(String source, Uint8List out) {
+  var o = 0;
+  final n = source.length;
+  for (var i = 0; i < n; i++) {
+    final unit = source.codeUnitAt(i);
+    if (unit < 0x80) {
+      out[o++] = unit;
+    } else if (unit < 0x800) {
+      out[o++] = 0xC0 | unit >> 6;
+      out[o++] = 0x80 | unit & 0x3F;
+    } else if (unit < 0xD800 || unit > 0xDFFF) {
+      out[o++] = 0xE0 | unit >> 12;
+      out[o++] = 0x80 | unit >> 6 & 0x3F;
+      out[o++] = 0x80 | unit & 0x3F;
+    } else {
+      final low = unit <= 0xDBFF && i + 1 < n ? source.codeUnitAt(i + 1) : 0;
+      if (low < 0xDC00 || low > 0xDFFF) {
+        throw FlarkParseException(
+          FlarkParseException.invalidHostTextCode,
+          'unpaired UTF-16 surrogate at offset $i',
+        );
+      }
+      final scalar = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+      out[o++] = 0xF0 | scalar >> 18;
+      out[o++] = 0x80 | scalar >> 12 & 0x3F;
+      out[o++] = 0x80 | scalar >> 6 & 0x3F;
+      out[o++] = 0x80 | scalar & 0x3F;
+      i++;
+    }
+  }
+  return o;
 }
 
 FlarkParseBackend createParseBackend() => FfiParseBackend();

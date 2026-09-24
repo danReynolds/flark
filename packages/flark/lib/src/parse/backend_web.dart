@@ -26,6 +26,17 @@ extension type _Response(JSObject _) implements JSObject {
   external JSPromise<JSArrayBuffer> arrayBuffer();
 }
 
+@JS('TextEncoder')
+extension type _TextEncoder._(JSObject _) implements JSObject {
+  external _TextEncoder();
+  external _EncodeResult encodeInto(JSString source, JSUint8Array target);
+}
+
+extension type _EncodeResult._(JSObject _) implements JSObject {
+  external JSNumber get read;
+  external JSNumber get written;
+}
+
 const int _initialInputCapacity = 4096;
 
 /// The web transport: comrak compiled to wasm32-unknown-unknown, loaded
@@ -112,6 +123,7 @@ final class WasmParseBackend implements FlarkParseBackend {
   ];
 
   final JSObject _module;
+  final _encoder = _TextEncoder();
   late JSObject _exports;
   late JSObject _memory;
   JSFunction? _parseFn, _allocFn, _freeFn, _versionFn;
@@ -141,8 +153,6 @@ final class WasmParseBackend implements FlarkParseBackend {
     _input = _alloc(_inputCapacity);
   }
 
-  Uint8List _heap() =>
-      _memory.getProperty<JSArrayBuffer>('buffer'.toJS).toDart.asUint8List();
   int _alloc(int len) =>
       (_allocFn!.callAsFunction(null, len.toJS) as JSNumber).toDartInt;
   void _free(int ptr, int len) {
@@ -157,20 +167,36 @@ final class WasmParseBackend implements FlarkParseBackend {
   RenderModel parse(String source) {
     if (_disposed) throw StateError('WasmParseBackend used after dispose');
     validateFlarkSourceText(source);
-    final bytes = utf8.encode(source);
-    if (bytes.length > _inputCapacity) {
+    // One UTF-16 code unit never needs more than three UTF-8 bytes. Keep
+    // headroom so typing does not reallocate on every keystroke.
+    if (source.length * 3 > _inputCapacity) {
       _free(_input, _inputCapacity);
-      _inputCapacity = bytes.length * 2;
+      _inputCapacity = source.length * 6;
       _input = _alloc(_inputCapacity);
     }
-    _heap().setRange(_input, _input + bytes.length, bytes);
+    // Encode directly into Wasm memory, read only after any allocation above
+    // grew it. utf8.encode plus a copy into the JS-backed heap took
+    // milliseconds per keystroke under dart2wasm. Validation above means the
+    // encoder never substitutes U+FFFD for a lone surrogate.
+    final encoded = _encoder.encodeInto(
+      source.toJS,
+      JSUint8Array(
+        _memory.getProperty<JSArrayBuffer>('buffer'.toJS),
+        _input,
+        _inputCapacity,
+      ),
+    );
+    if (encoded.read.toDartInt != source.length) {
+      throw StateError('flark_parse input buffer too small');
+    }
+    final length = encoded.written.toDartInt;
     final int rc;
     try {
       rc =
           (_parseFn!.callAsFunction(
                     null,
                     _input.toJS,
-                    bytes.length.toJS,
+                    length.toJS,
                     _outCell.toJS,
                     (_outCell + 8).toJS,
                   )
@@ -186,15 +212,20 @@ final class WasmParseBackend implements FlarkParseBackend {
       );
     }
     if (rc != 0) throw FlarkParseException.fromCode(rc);
-    final heap = _heap(); // re-read: memory may have grown
-    final view = ByteData.sublistView(heap);
-    final outPtr = view.getUint32(_outCell, Endian.little);
-    final outLen = view.getUint32(_outCell + 8, Endian.little);
-    final copy = Uint8List.fromList(
-      Uint8List.sublistView(heap, outPtr, outPtr + outLen),
+    // Re-read the buffer: memory may have grown. The out cell and the model
+    // are whole-word allocations, so both can be read as 32-bit words.
+    final heap = _memory.getProperty<JSArrayBuffer>('buffer'.toJS);
+    final cell = JSUint32Array(heap, _outCell, 3).toDart;
+    final outPtr = cell[0], outLen = cell[2];
+    // Copy words, not bytes. dart2wasm copies a JS array with one call per
+    // element, so this makes a quarter of the calls, and the copy is backed
+    // by a 32-bit array that RenderModel reads without assembling bytes.
+    // Together they made a 32 KiB keystroke 23-30% faster under dart2wasm.
+    final words = Uint32List.fromList(
+      JSUint32Array(heap, outPtr, outLen ~/ 4).toDart,
     );
     _free(outPtr, outLen);
-    return RenderModel(copy);
+    return RenderModel(words.buffer.asUint8List());
   }
 }
 

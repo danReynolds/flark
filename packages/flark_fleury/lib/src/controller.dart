@@ -1,6 +1,7 @@
+import 'package:flark/code.dart' show CodeHighlight;
 import 'package:flark/rendering.dart';
 import 'package:flark/flark.dart';
-import 'package:flark_tree_sitter/flark_tree_sitter.dart';
+
 import 'package:flark_tree_sitter/flark_highlighting.dart';
 import 'package:flark_tree_sitter/highlight_worker.dart';
 import 'package:fleury/fleury_core.dart';
@@ -12,7 +13,7 @@ abstract interface class FlarkCellController {
   FlarkDocumentState get editor;
   int get colorRevision;
   String languageInfo(ProjectedRow row);
-  CodeAnalysis? colorsFor(ProjectedRow row);
+  CodeHighlight? colorsFor(ProjectedRow row);
   void setVisibleRows(Iterable<int> rows);
 }
 
@@ -66,9 +67,10 @@ final class FlarkFleuryController extends ChangeNotifier
       ? ''
       : editor.source.substring(row.codeInfoStart, row.codeInfoEnd);
 
+  /// Colors to paint for [row]: exact, or shifted through a pending edit.
   @override
-  CodeAnalysis? colorsFor(ProjectedRow row) =>
-      _colors?.analysis(row.text, languageInfo(row));
+  CodeHighlight? colorsFor(ProjectedRow row) =>
+      _colors?.colors(row.text, languageInfo(row));
 
   /// The host reports its painted rows; the shared lane prioritizes these and
   /// the active fence, then applies its snippet/count/size bounds.

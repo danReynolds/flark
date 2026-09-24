@@ -1,6 +1,7 @@
 //! Shared test support: corpus loading and the schema invariants.
 #![allow(dead_code)]
-use flark_parse::schema::{self, block, block_kind, content, definition, header, run};
+use flark_parse::records::{self, block, content, definition, expand, header, run};
+use flark_parse::schema::{self, block_kind};
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]
@@ -18,13 +19,15 @@ pub fn corpus(file: &str) -> Vec<Case> {
 pub const FILES: [&str; 2] = ["common_mark_tests.json", "gfm_tests.json"];
 
 /// Structural invariants from the schema, checked on any model.
-pub fn check_invariants(src: &str, w: &[u32]) -> Result<(), String> {
-    if w.len() < schema::HEADER_WORDS { return Err("short header".into()); }
+pub fn check_invariants(src: &str, published: &[u32]) -> Result<(), String> {
+    let expanded = expand(src, published)?;
+    let w = &expanded[..];
+    if w.len() < records::HEADER_WORDS { return Err("short header".into()); }
     if w[header::MAGIC] != schema::MAGIC || w[header::VERSION] != schema::VERSION { return Err("bad magic/version".into()); }
     let (nl, nb, nc, nr, nd, ns) = (w[header::LINE_COUNT] as usize, w[header::BLOCK_COUNT] as usize, w[header::CONTENT_COUNT] as usize, w[header::RUN_COUNT] as usize, w[header::DEFINITION_COUNT] as usize, w[header::STRING_BYTES] as usize);
     if w[header::SRC_BYTES] as usize != src.len() { return Err("src_bytes".into()); }
     if w[header::SRC_UTF16] as usize != src.encode_utf16().count() { return Err("src_utf16".into()); }
-    let lines_off = schema::HEADER_WORDS; let blocks_off = lines_off + nl * 2; let content_off = blocks_off + nb * block::WORDS; let runs_off = content_off + nc * content::WORDS; let defs_off = runs_off + nr * run::WORDS;
+    let lines_off = records::HEADER_WORDS; let blocks_off = lines_off + nl * 2; let content_off = blocks_off + nb * block::WORDS; let runs_off = content_off + nc * content::WORDS; let defs_off = runs_off + nr * run::WORDS;
     let expected_words = defs_off + nd * definition::WORDS + (ns + 3) / 4;
     if w.len() != expected_words { return Err(format!("buffer words {} != expected {}", w.len(), expected_words)); }
     // Prefix table: O(n) once instead of O(n) per lookup.
@@ -86,6 +89,20 @@ pub fn check_invariants(src: &str, w: &[u32]) -> Result<(), String> {
         let p = rw(run::PARENT); if p != u32::MAX { if p as usize >= i { return Err(format!("run {i} parent {p}")); } if w[runs_off + p as usize * run::WORDS + run::BLOCK] != b { return Err(format!("run {i} parent in other block")); } }
         let (bs, be) = (blk(b as usize, block::START_BYTE) as usize, blk(b as usize, block::END_BYTE) as usize);
         if s < bs || e > be + 1 { return Err(format!("run {i} {s}..{e} outside block {b} {bs}..{be}")); }
+    }
+    // A run lies inside its parent and after its previous sibling: the
+    // projection walks a block's runs in order, so an overlap would show the
+    // shared bytes twice.
+    let mut sibling_end: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
+    for i in 0..nr {
+        let rw = |f: usize| w[runs_off + i * run::WORDS + f];
+        let (s, e, b, p) = (rw(run::START_BYTE) as usize, rw(run::END_BYTE) as usize, rw(run::BLOCK), rw(run::PARENT));
+        if let Some(&previous) = sibling_end.get(&(b, p)) { if s < previous { return Err(format!("run {i} {s}..{e} overlaps its previous sibling, which ends at {previous}")); } }
+        sibling_end.insert((b, p), e);
+        if p != u32::MAX {
+            let pw = |f: usize| w[runs_off + p as usize * run::WORDS + f] as usize;
+            if s < pw(run::START_BYTE) || e > pw(run::END_BYTE) { return Err(format!("run {i} {s}..{e} outside its parent {p} {}..{}", pw(run::START_BYTE), pw(run::END_BYTE))); }
+        }
     }
     // A content record belongs to the line it names and stops at that line's
     // end: a projected row's caret spans and per-line ranges assume both.

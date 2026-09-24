@@ -20,6 +20,12 @@ impl LineIndex {
         let mut count: u32 = 0;
         let mut i = 0;
         while i < bytes.len() {
+            // A run of ASCII other than line endings is one unit per byte.
+            let run = bytes[i..].iter().position(|&b| b >= 0x80 || b == b'\n' || b == b'\r').unwrap_or(bytes.len() - i);
+            utf16.extend(count..count + run as u32);
+            count += run as u32;
+            i += run;
+            if i == bytes.len() { break; }
             let b = bytes[i];
             let width = if b < 0x80 { 1 } else if b < 0xE0 { 2 } else if b < 0xF0 { 3 } else { 4 };
             let units = if width == 4 { 2 } else { 1 };

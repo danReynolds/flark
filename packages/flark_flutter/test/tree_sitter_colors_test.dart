@@ -161,17 +161,20 @@ void main() {
       expect(editor.history.canUndo, isFalse);
 
       // Edit while the next colors are withheld. The very next paint must show
-      // current text/caret, with no old token ranges and no font-metric change.
+      // current text/caret with the previous colors shifted through the edit:
+      // `final` keeps its keyword color and the replaced text takes none of
+      // the removed tokens' colors. Fonts never change.
+      final keyword = paints.last.resolvedStyles.first.first;
       c.command(const InsertText('message'));
       final edited = c.text, caret = editor.selection.extent;
       paints.clear();
       await tester.pump();
       expect(paints.first.rows.first, 'final message;');
       expect(paints.first.caretSource, caret);
-      expect(
-        paints.first.resolvedStyles.first.map((s) => s.color).toSet().length,
-        1,
-      );
+      final shifted = paints.first.resolvedStyles.first;
+      expect(shifted.first.color, keyword.color);
+      expect(shifted.map((s) => s.color).toSet().length, greaterThan(1));
+      expect(shifted.map((s) => s.fontFamily).toSet(), {keyword.fontFamily});
       final pending = jobs.last;
       c.command(const Undo());
       await tester.pump();

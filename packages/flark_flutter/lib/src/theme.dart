@@ -254,11 +254,12 @@ class FlarkThemeData extends ThemeExtension<FlarkThemeData> {
 
   @override
   bool operator ==(Object other) =>
+      identical(this, other) ||
       other is FlarkThemeData &&
-      mapEquals(styles, other.styles) &&
-      mapEquals(colors, other.colors) &&
-      mapEquals(metrics, other.metrics) &&
-      mapEquals(syntaxColors, other.syntaxColors);
+          mapEquals(styles, other.styles) &&
+          mapEquals(colors, other.colors) &&
+          mapEquals(metrics, other.metrics) &&
+          mapEquals(syntaxColors, other.syntaxColors);
   @override
   int get hashCode => Object.hash(
     Object.hashAllUnordered(

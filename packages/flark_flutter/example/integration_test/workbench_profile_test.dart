@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../test_driver/frame_gate.dart';
 import 'native_profile.dart';
 
 class _CountedBackend implements FlarkParseBackend {
@@ -398,7 +399,7 @@ void main() {
       final retainedRss = ProcessInfo.currentRss;
       final baselineRss = memory.first;
       final failures = <String>[];
-      final grouped = <String, List<int>>{};
+      final grouped = <String, List<Map>>{};
       for (final sample in samples) {
         final frame = frames[sample['frameNumber']];
         expect(
@@ -410,25 +411,28 @@ void main() {
         final latency = sample['latencyUs'] as int;
         expect(latency, greaterThan(0), reason: 'clock calibration');
         final key = '${sample['shape']}: ${sample['operation']}';
-        (grouped[key] ??= []).add(latency);
+        (grouped[key] ??= []).add(sample);
       }
+      final displayHz =
+          PlatformDispatcher.instance.views.first.display.refreshRate;
       final summaries = <Map<String, Object>>[];
-      for (final entry in grouped.entries) {
-        final values = entry.value..sort();
-        final p99 = values[(values.length * .99).ceil() - 1];
-        final budget =
-            samples.firstWhere(
-                  (s) => '${s['shape']}: ${s['operation']}' == entry.key,
-                )['budgetUs']
-                as int;
+      for (final MapEntry(key: group, value: members) in grouped.entries) {
+        final budget = members.first['budgetUs'] as int;
+        final gate = FrameGateResult(members, displayHz, budgetUs: budget);
+        final latencies = [for (final s in members) s['latencyUs'] as int]
+          ..sort();
         summaries.add({
-          'operation': entry.key,
-          'samples': values.length,
-          'p99Us': p99,
-          'maximumUs': values.last,
-          'budgetUs': budget,
+          'operation': group,
+          // Input-to-raster latency: reported, not gated.
+          'p99Us': gate.latencyP99Us,
+          'maximumUs': latencies.last,
+          ...gate.toJson(),
         });
-        if (p99 >= budget) failures.add('${entry.key}: $p99 >= $budget us');
+        // Live edits and reflows must reach their next frame; opening and
+        // source-mode work have multi-frame budgets.
+        failures.addAll(
+          gate.failures(group, nextFrame: budget == frameBudgetUs),
+        );
       }
       if (peakRss - baselineRss > 64 * 1024 * 1024) failures.add('peak RSS');
       if (retainedRss - baselineRss > 16 * 1024 * 1024) {
@@ -446,8 +450,7 @@ void main() {
           'height':
               tester.view.physicalSize.height / tester.view.devicePixelRatio,
         },
-        'displayHz':
-            PlatformDispatcher.instance.views.first.display.refreshRate,
+        'displayHz': displayHz,
         'devicePixelRatio': tester.view.devicePixelRatio,
         'baselineRss': baselineRss,
         'peakRss': peakRss,
