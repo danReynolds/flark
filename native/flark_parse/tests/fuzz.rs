@@ -34,6 +34,22 @@ fn random_markdown_never_panics_and_keeps_invariants() {
     for i in 0..iterations { let doc = random_doc(&mut rng); check(&doc, &format!("iteration {i}")); }
 }
 
+/// Long random runs still hit rare comrak position quirks (a few per million
+/// documents). Those must fail safe: a leaf that cannot be verified publishes
+/// as its source, anything else is refused. What must never happen is a
+/// published model that breaks the structural invariants.
+#[test]
+fn published_models_always_keep_the_invariants() {
+    let iterations: usize = std::env::var("FLARK_FUZZ_ITERATIONS").ok().and_then(|v| v.parse().ok()).map_or(100_000, |n: usize| n * 50);
+    let mut rng = XorShift(0x5EED_F00D);
+    for i in 0..iterations {
+        let doc = random_doc(&mut rng);
+        if let Ok(w) = Extractor::extract(&doc) {
+            if let Err(e) = check_invariants(&doc, &w) { panic!("iteration {i}: published model breaks {e} for {:?}", doc); }
+        }
+    }
+}
+
 #[test]
 fn corpus_mutations_never_panic() {
     let mut rng = XorShift(7);
