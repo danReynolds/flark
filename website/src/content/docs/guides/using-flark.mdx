@@ -53,8 +53,9 @@ The dedicated rendering path shares parsing, layout, themes, and image previews.
 It creates no editing history, IME connection, or indentation service. Unchanged
 input reuses this widget's parsed content; width/theme changes update layout.
 
-The 16 KiB live-rendering and shape limits still apply. Unsupported or oversized
-documents show an explicit fallback with a “Copy complete Markdown” action.
+The live-rendering limits still apply: 32 KiB of Markdown on desktop and in
+desktop browsers, 16 KiB on phones and tablets, plus shape limits. Unsupported or
+oversized documents show an explicit fallback with a “Copy complete Markdown” action.
 Removing editing machinery is not a claim of faster parsing or larger-document support.
 
 ## Control the document
@@ -112,6 +113,21 @@ explains a failure. `ready` awaits the current attempt. After failure,
 Edits before readiness return `rejected` with reason `notReady`; they are not
 queued. Disposal cancels this controller's readiness and ignores late
 completions; shared loading for other controllers can continue.
+
+### Live rendering limits
+
+A document renders live up to `flarkDefaultLiveBytes` of UTF-8 (32 KiB on
+desktop and in desktop browsers, 16 KiB on phones and tablets) and within
+`FlarkLiveLimits`; beyond either it stays editable as source. An app that has
+measured its own devices can set both:
+
+```dart
+FlarkController(
+  markdown: text,
+  syncLimit: 24 * 1024,
+  liveLimits: const FlarkLiveLimits(blocks: 1024),
+)
+```
 
 ## Insert, replace, or append
 

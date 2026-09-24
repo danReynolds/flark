@@ -10,8 +10,18 @@ import 'resource_controls.dart';
 /// Owns one editing session. Construction starts preparation automatically.
 /// Dispose externally supplied controllers after their last view is removed.
 class FlarkController extends ChangeNotifier with FlarkActions {
-  FlarkController({String markdown = ''})
-    : session = FlarkSession(markdown: markdown) {
+  /// [syncLimit] and [liveLimits] bound what renders live, by default
+  /// [flarkDefaultLiveBytes] and [FlarkLiveLimits]; beyond them the document
+  /// edits in source mode.
+  FlarkController({
+    String markdown = '',
+    int? syncLimit,
+    FlarkLiveLimits liveLimits = const FlarkLiveLimits(),
+  }) : session = FlarkSession(
+         markdown: markdown,
+         syncLimit: syncLimit,
+         liveLimits: liveLimits,
+       ) {
     session.addListener(_changed);
   }
   @override

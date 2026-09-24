@@ -560,3 +560,53 @@ Recommendation:
    16 KiB on web and phones until each is measured.
 3. Let hosts choose platform defaults; apps may override them.
 4. Rerun qualification with list- and table-heavy documents at the new caps.
+
+### Applied (2026-09-24)
+
+- The workbench candidate profile has the kernel's count caps, and its
+  boundary fixtures are derived from them.
+- `flarkDefaultLiveBytes` is 32 KiB on desktop and in desktop browsers, and
+  16 KiB on iOS, Android and phone or tablet browsers. Browsers are told apart
+  by user agent, plus touch points for iPadOS, which reports a Mac.
+  `FlarkSession`, `FlarkReader` and both hosts' `FlarkController` take
+  `syncLimit` and `liveLimits`; unset, the default applies.
+
+The web byte limit was settled with a browser frame profile,
+`example/integration_test/web_frame_profile.dart`. It runs the native frame
+profile's workloads in a release dart2wasm build: bounded 32 KiB fixtures at
+the candidate limits, each shape at its start, largest block and end, 120
+rounds per group with the first 20 discarded. Edits arrive as platform text
+deltas and are linked to the engine frame that painted them. The gate is the
+native one: UI work and raster each below 16,667 µs at p99, and the next
+frame. The page renders on its own thread, so the profile also reports the
+command plus the whole frame.
+
+Local receipt, commit `3e4b4997` (the harness gained a default-bytes field
+afterwards; the measured path is the same). M1 Pro, headless Chrome 153 on
+the GPU (ANGLE Metal), skwasm without cross-origin isolation, 60 Hz, device
+pixel ratio 2, 1280 × 813 viewport. Other work loaded the machine: load
+average 14 at the start and 82 by the end. All 24 groups pass, with no late
+frame in 8,000 linked samples. Worst of each shape's three sites:
+
+| Shape | Blocks | Command p50 / p99 | Build p50 / p99 | Raster p99 | Command + frame p99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Prose | 237 | 1.3 / 1.5 ms | 1.8 / 2.3 ms | 0.4 ms | 4.1 ms |
+| Dense | 2,037 | 3.4 / 4.5 ms | 5.6 / 7.8 ms | 0.7 ms | 12.8 ms |
+| List | 1,526 | 2.8 / 3.5 ms | 2.7 / 3.3 ms | 0.5 ms | 7.2 ms |
+| Table | 2,038 | 3.3 / 7.8 ms | 5.7 / 8.1 ms | 1.4 ms | 13.1 ms |
+| Nested quotes | 2,042 | 2.2 / 2.5 ms | 4.5 / 5.3 ms | 0.7 ms | 8.2 ms |
+| References | 338 | 2.5 / 4.6 ms | 3.8 / 7.4 ms | 0.6 ms | 11.8 ms |
+| Unicode | 445 | 1.8 / 4.6 ms | 2.6 / 5.2 ms | 0.6 ms | 9.3 ms |
+| Code | 411 | 2.1 / 4.6 ms | 4.9 / 6.8 ms | 0.9 ms | 11.8 ms |
+
+The worst UI work (command plus build) is 12.9 ms. Without cross-origin
+isolation the browser's timer resolves 100 µs. The dense, table and nested
+fixtures reach about 2,040 blocks, just under the new cap, and fill their
+remaining bytes with 4 KiB paragraphs. Edits in a fixture's largest block
+build slowest; the cause is not yet profiled. The Claude desktop app's browser
+pane could not take this run: while the pane is hidden the page has no size
+and nothing paints, which the harness now rejects.
+
+Still open: a phone or mobile-browser receipt before phones leave 16 KiB, and
+the attended macOS frame and workbench profiles at the new caps
+(recommendation 4). A browser receipt does not qualify native frames.
