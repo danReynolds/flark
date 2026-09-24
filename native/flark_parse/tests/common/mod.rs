@@ -90,6 +90,20 @@ pub fn check_invariants(src: &str, published: &[u32]) -> Result<(), String> {
         let (bs, be) = (blk(b as usize, block::START_BYTE) as usize, blk(b as usize, block::END_BYTE) as usize);
         if s < bs || e > be + 1 { return Err(format!("run {i} {s}..{e} outside block {b} {bs}..{be}")); }
     }
+    // A run lies inside its parent and after its previous sibling: the
+    // projection walks a block's runs in order, so an overlap would show the
+    // shared bytes twice.
+    let mut sibling_end: std::collections::HashMap<(u32, u32), usize> = std::collections::HashMap::new();
+    for i in 0..nr {
+        let rw = |f: usize| w[runs_off + i * run::WORDS + f];
+        let (s, e, b, p) = (rw(run::START_BYTE) as usize, rw(run::END_BYTE) as usize, rw(run::BLOCK), rw(run::PARENT));
+        if let Some(&previous) = sibling_end.get(&(b, p)) { if s < previous { return Err(format!("run {i} {s}..{e} overlaps its previous sibling, which ends at {previous}")); } }
+        sibling_end.insert((b, p), e);
+        if p != u32::MAX {
+            let pw = |f: usize| w[runs_off + p as usize * run::WORDS + f] as usize;
+            if s < pw(run::START_BYTE) || e > pw(run::END_BYTE) { return Err(format!("run {i} {s}..{e} outside its parent {p} {}..{}", pw(run::START_BYTE), pw(run::END_BYTE))); }
+        }
+    }
     // A content record belongs to the line it names and stops at that line's
     // end: a projected row's caret spans and per-line ranges assume both.
     let mut line_start = vec![0usize; nl + 1];

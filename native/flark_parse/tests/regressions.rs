@@ -400,3 +400,29 @@ fn a_row_short_of_the_header_columns_has_empty_cells_not_delimiters() {
       }
     }
 }
+
+#[test]
+fn a_multiline_tag_or_code_span_ends_on_its_own_line() {
+    // comrak places the end of an inline literal that crosses lines with the
+    // prefix width of the paragraph line numbered by the lines it crosses,
+    // not of the line it ends on. They differ when the literal starts after
+    // the paragraph's first line and ends on a line with another prefix: a
+    // lazy line has none, and a partial tab leaves virtual spaces.
+    for ending in ["\n", "\r\n"] {
+        for (first, next, last) in [
+            ("> ", "> ", ""), ("- ", "  ", ""), ("> > ", "> > ", ""), ("1. ", "   ", ""),
+            ("> 1. ", ">    ", ">\t"), ("> ", "> ", "> "), ("", "", ""),
+        ] {
+            for (kind, open, close, after) in [(run_kind::HTML_INLINE, "<a", "b>", " q"), (run_kind::CODE, "`a", "b`", " `")] {
+                for middle in ["", "c"] {
+                    let middle = if middle.is_empty() { String::new() } else { format!("{next}{middle}{ending}") };
+                    let src = format!("{first}x{ending}{next}{open}{ending}{middle}{last}{close}{after}");
+                    let m = M::of(&src); m.clean();
+                    let r = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == kind as usize).unwrap_or_else(|| panic!("no run for {src:?}"));
+                    let (s, e) = (src.find(open).unwrap(), src.rfind(close).unwrap() + close.len());
+                    assert_eq!((m.run(r, run::START_BYTE), m.run(r, run::END_BYTE)), (s, e), "for {src:?}");
+                }
+            }
+        }
+    }
+}

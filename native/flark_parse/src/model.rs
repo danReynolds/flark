@@ -851,6 +851,26 @@ impl<'a> Extractor<'a> {
         (target.start + content_col.saturating_sub(target.virt)).min(self.li.line_end_with_break(target.line0, self.src.len()))
     }
 
+    /// The end of an inline literal that crosses lines and starts at `s`.
+    /// comrak's end column adds the prefix width of the paragraph line
+    /// numbered by the lines the literal crosses, not of the line it ends on
+    /// (`adjust_node_newlines` counts from the node's line, `parse_inline`
+    /// from the paragraph's). The literal's last line instead lies at the
+    /// content start of the line it ends on, after that line's virtual
+    /// spaces. `None` when the source does not hold the literal there.
+    fn crossing_literal_end(&self, s: usize, literal: &str, content_from: usize, shift: Option<&Shift>) -> Option<usize> {
+        let (first, last) = (literal.find('\n')?, literal.rfind('\n')?);
+        let (bytes, lit) = (self.src.as_bytes(), literal.as_bytes());
+        if bytes.get(s..s + first + 1)? != &lit[..first + 1] { return None; }
+        let line = self.li.line_of(s) + lit.iter().filter(|&&b| b == b'\n').count();
+        let start = self.content[content_from..].iter().find(|r| r[content::LINE] as usize == line)?[content::START_BYTE] as usize;
+        let virt = shift.and_then(|sh| sh.lines.iter().find(|l| l.line0 == line)).map_or(0, |l| l.virt);
+        let tail = &lit[last + 1..];
+        if tail.len() < virt || tail[..virt].iter().any(|&b| b != b' ') { return None; }
+        let end = start + tail.len() - virt;
+        (bytes.get(start..end)? == &tail[virt..]).then_some(end)
+    }
+
     /// Bytes comrak removed from a table cell's raw text before `upto`: each
     /// `\|` whose backslash is not itself escaped loses the backslash.
     fn pipes_removed_before(&self, cell_start: usize, upto: usize) -> usize {
@@ -1030,10 +1050,14 @@ impl<'a> Extractor<'a> {
             NodeValue::Code(c) => {
                 let n = c.num_backticks.max(1);
                 rec[run::AUX0] = n as u32;
-                // comrak's end column drifts when a span crosses CR line endings;
-                // the closing run is the next backtick run of exactly n after the
-                // opener (CommonMark), validated below against the literal.
-                if s + n <= bytes.len() && bytes[s..s + n].iter().all(|b| *b == b'`') && !(e >= s + 2 * n && bytes[e - n..e].iter().all(|b| *b == b'`') && bytes.get(e) != Some(&b'`')) {
+                // comrak's end column drifts when a span crosses CR line endings,
+                // and a span crossing lines can take another line's prefix width
+                // (see crossing_literal_end), which can land just after an
+                // unrelated backtick run. The closing run is the next backtick
+                // run of exactly n after the opener (CommonMark), validated below
+                // against the literal.
+                let crosses = sp.start.line != sp.end.line;
+                if s + n <= bytes.len() && bytes[s..s + n].iter().all(|b| *b == b'`') && (crosses || !(e >= s + 2 * n && bytes[e - n..e].iter().all(|b| *b == b'`') && bytes.get(e) != Some(&b'`'))) {
                     let mut i = s + n;
                     while i < bytes.len() {
                         if bytes[i] == b'`' { let start = i; while i < bytes.len() && bytes[i] == b'`' { i += 1; } if i - start == n { e = i; break; } } else { i += 1; }
@@ -1108,7 +1132,18 @@ impl<'a> Extractor<'a> {
                     (run_kind::HARD_BREAK, s, line_end)
                 } else { (run_kind::HARD_BREAK, e, e) }
             }
-            NodeValue::HtmlInline(_) => (run_kind::HTML_INLINE, s, e),
+            NodeValue::HtmlInline(literal) => {
+                if literal.contains('\n') {
+                    match self.crossing_literal_end(s, literal, content_from, shift) {
+                        Some(end) => e = end,
+                        None => { let lit = literal.clone(); self.dev("html-inline-end", || format!("block {blk} {:?} at {s}", lit)); }
+                    }
+                } else if cell.is_none() && slice != literal.as_str() {
+                    let (sl, lit) = (slice.to_string(), literal.clone());
+                    self.dev("html-inline-literal", || format!("block {blk} {:?} vs literal {:?}", sl, lit));
+                }
+                (run_kind::HTML_INLINE, s, e)
+            }
             NodeValue::FootnoteReference(_) => { if e > s + 3 { rec[run::AUX0] = (s + 2) as u32; rec[run::AUX1] = (e - 1) as u32; } (run_kind::FOOTNOTE_REF, s, e) }
             NodeValue::Escaped => { let (a, b) = self.children_span(node, cell, shift); if a < b { (run_kind::ESCAPE, a, b) } else { (run_kind::ESCAPE, (s + 1).min(e), e) } }
             _ => (run_kind::OTHER, s, e),
