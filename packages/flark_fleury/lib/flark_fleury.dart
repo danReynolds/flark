@@ -14,7 +14,9 @@ export 'package:flark/session.dart'
         FlarkEditResult,
         FlarkEditOutcome,
         FlarkEditRejection,
-        FlarkSelectionScope;
+        FlarkSelectionScope,
+        FlarkLiveLimits,
+        flarkDefaultLiveBytes;
 export 'package:flark/flark.dart'
     show FlarkSelection, FlarkStyleState, FlarkStyleValue;
 export 'src/consumer.dart';

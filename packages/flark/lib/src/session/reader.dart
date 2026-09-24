@@ -2,6 +2,7 @@ import 'dart:async';
 import '../kernel/document.dart';
 import '../kernel/editor.dart';
 import 'backend_loader.dart';
+import 'platform_limits.dart';
 import 'state.dart';
 
 /// Automatic loading for the dedicated read-only path. One current document,
@@ -10,11 +11,16 @@ final class FlarkReader {
   FlarkReader(
     String markdown, {
     Future<FlarkBackendLease> Function()? backendLoader,
+    int? syncLimit,
+    this.liveLimits = const FlarkLiveLimits(),
   }) : _markdown = markdown,
-       _loader = backendLoader ?? loadFlarkBackend {
+       _loader = backendLoader ?? loadFlarkBackend,
+       syncLimit = syncLimit ?? flarkDefaultLiveBytes {
     _start();
   }
   final Future<FlarkBackendLease> Function() _loader;
+  final int syncLimit;
+  final FlarkLiveLimits liveLimits;
   String _markdown;
   FlarkBackendLease? _lease;
   FlarkReadDocument? document;
@@ -48,7 +54,12 @@ final class FlarkReader {
           }
           return;
         }
-        document = FlarkReadDocument(lease.backend, _markdown);
+        document = FlarkReadDocument(
+          lease.backend,
+          _markdown,
+          syncLimit: syncLimit,
+          liveLimits: liveLimits,
+        );
         _lease = lease;
         status = FlarkStatus.ready;
         _notify();
