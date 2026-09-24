@@ -1,0 +1,13 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "node --test \"test/**/*.js\""
+  },
+  "numbers": [0, -1, 2.5e10, 1E-7, 3],
+  "nested": { "deep": [[{ "x": null }, { "y": false }], []] },
+  "escapes": "quote \" backslash \\ unicode \u00e9 literal é tab \t",
+  "empty": {}
+}

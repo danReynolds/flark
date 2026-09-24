@@ -525,6 +525,77 @@ end and measuring size and speed before the rest. It follows the parse-crate
 pass. Both hosts depend on `flark_tree_sitter` directly today, so every app
 pays its 13–14 MB until the port replaces it.
 
+### Port results: JavaScript, TypeScript and JSON (2026-09-24)
+
+`packages/flark_codemirror` ports CodeMirror 5.65.21's `StringStream` and
+its `javascript` mode (960 lines of JavaScript, 1,618 of formatted Dart),
+which serves JavaScript, TypeScript and JSON. `FlarkCodeMirror` implements
+the kernel's `CodeEditingDelegate`; the hosts do not use it yet.
+
+Fidelity. CodeMirror itself, run in Node, records every token and, for each
+line, the indentation for the line as written and for an empty line in its
+place (what Enter asks). The committed fixture covers five corpus files, two
+of CodeMirror's own sources and 420 seeded mutations (deleted characters,
+stray brackets and quotes, tabs, CRLF): 429 cases and 3,865 lines, all
+identical. A wider local run over 1,365 files from the website's
+dependencies (465 TypeScript sources, 300 declaration files, 400 JavaScript
+files and 200 JSON files; 11 MB) plus 4,095 mutations matched in all 5,860
+cases after one fix: private class fields on consecutive lines register a
+variable with no name upstream, which the port had asserted against. That
+shape is now in the committed corpus.
+
+Speed, local, commit `5c9e6b70`, M1 Pro, machine loaded by other work
+(load average 6–12), median of 41 runs after warm-up (`tool/bench.dart`).
+Proposals tokenize everything before the caret, so they sit at the end of
+the snippet. Browser rows are headless Chrome 153 without cross-origin
+isolation, whose timer resolves 100 µs:
+
+| 8K snippet | VM JIT | dart2js | dart2wasm |
+| --- | ---: | ---: | ---: |
+| JavaScript highlight | 0.86 ms | 1.1 ms | 1.4 ms |
+| JavaScript Enter proposal | 0.67 ms | 0.9 ms | 1.2 ms |
+| TypeScript highlight | 0.71 ms | 1.0 ms | 1.2 ms |
+| JSON highlight | 0.46 ms | 0.7 ms | 0.8 ms |
+
+Tree-sitter's figures for about 8K units are 3.4 ms for JavaScript natively
+and 23.9 ms under dart2js, which is why RFC 031 moved colors to a worker. A
+32K JavaScript snippet highlights in 3.1 ms (VM), 4.2 ms (dart2js) and
+5.3 ms (dart2wasm). Replacing one-character regular expressions with string
+tests took dart2wasm from 2.4 to 1.4 ms and the VM from 1.95 to 0.89 ms for
+8K of JavaScript in an earlier run, since each regular expression calls into
+JavaScript under dart2wasm. The snippet cap stays at Tree-sitter's 8,192 units for now.
+
+Size: a program that highlights and proposes through the port, against the
+same program with a stub delegate:
+
+| Build | Added | Gzipped |
+| --- | ---: | ---: |
+| AOT (macOS arm64) | 197 KB | 71 KB |
+| dart2js -O2 | 66 KB | 19 KB |
+| dart2wasm -O2 | 63 KB | 21 KB |
+
+Tree-sitter is a 14 MB native library and 13.1 MB of Wasm (1.8 MB
+gzipped), instantiated twice on the web.
+
+Editing. Enter indents with the mode's indentation, as CodeMirror's
+`newlineAndIndent`, and opens an empty line between `[]` or `{}`, as its
+`closebrackets` addon, except inside a string or comment. Typing re-indents
+when the mode's electric input matches. Tab and Shift-Tab keep Flark's line
+shifts. Of the 25 hand-authored JavaScript, TypeScript and JSON scenarios in
+`flark_tree_sitter`, 22 held as written. Two Flark behaviours are kept as
+policy over CodeMirror: `)` and `]` starting a line re-indent it
+(CodeMirror's electric input covers braces only, but its indentation already
+handles every closer), and Enter on an indented empty line keeps its
+whitespace. One expectation changes: a closer typed without an opener takes
+the enclosing block's indentation instead of staying where it was typed.
+Indentation is CodeMirror's, which differs from Tree-sitter's in one visible
+way: continuation lines inside an open parenthesis align after it
+(`call(a,` puts the next line under `a`).
+
+Not yet covered: the other eleven languages, automatic detection (an
+untagged fence is plain), and the host swap, which would also drop the color
+workers and RFC 031's asynchronous path.
+
 ## Live limits
 
 A document over its live limits switches to source mode: raw, still

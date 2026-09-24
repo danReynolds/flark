@@ -39,6 +39,11 @@ Active code:
   hands-on browser journeys and host fixes. RFC 031 remains conditional on
   sustained color-transition/full-frame qualification; automated tests and
   observed screenshots do not close those performance or physical-device gates.
+- `packages/flark_codemirror`: CodeMirror 5's language modes ported to pure
+  Dart, meant to replace `flark_tree_sitter` as the single snippet engine.
+  JavaScript, TypeScript and JSON are ported so far; hosts do not use it yet.
+  `test/reference_test.dart` checks every token and indentation against
+  CodeMirror 5.65.21 itself, recorded in Node by `tool/reference/generate.cjs`.
 
 The new `packages/flark_flutter` host owns text input, focus, glyph geometry,
 painting and bounded source inspection. Its runnable local-draft workbench is
@@ -70,6 +75,9 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
   generated discovery matrix is `test/matrix_test.dart`
   (`FLARK_MATRIX_ITERATIONS`, `FLARK_MATRIX_SEED`). Minimize a failing matrix
   log into a directly named regression rather than storing a replay fixture.
+- CodeMirror port: `cd packages/flark_codemirror && dart analyze --fatal-infos && dart test`.
+  After changing its corpus, regenerate the reference fixture with
+  `node tool/reference/generate.cjs <unpacked codemirror@5.65.21> test/fixtures/reference.json`.
 - Keystroke diagnostic: `cd packages/flark && dart run tool/bench_editor.dart 16`
   (the current dense, 16 KiB-class structural fixture; add `--spike` only to
   compare with the historical M0 document).
