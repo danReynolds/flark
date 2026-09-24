@@ -12,6 +12,7 @@ abstract interface class FlarkDocumentState {
   CodeEditingDelegate? get codeEditing;
 }
 
+/// [live] is the byte/line admission a caller already computed for [text].
 FlarkEditorSnapshot _projectSnapshot(
   FlarkParseBackend backend,
   String text,
@@ -22,10 +23,12 @@ FlarkEditorSnapshot _projectSnapshot(
   bool forceSourceMode = false,
   bool rejectDeviation = false,
   RenderModel? parsed,
+  bool? live,
 }) {
   if (forceSourceMode ||
-      !_withinLiveByteLimit(text, syncLimit) ||
-      !liveLimits._admitsSource(text)) {
+      !(live ??
+          (_withinLiveByteLimit(text, syncLimit) &&
+              liveLimits._admitsSource(text)))) {
     return FlarkSourceSnapshot._(text, selected);
   }
   try {

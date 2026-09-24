@@ -11,9 +11,12 @@ typedef CodeColorRequest =
       required CodeLanguage language,
     });
 
-/// A single editor's optional decoration lane. Only exact current text and
-/// language may adopt colors. Selection, document revision and history never
-/// change here. Cache and pending work are bounded independently of source size.
+/// A single editor's optional decoration lane. Exact analyses belong to one
+/// text and language. Until the current text's analysis arrives, a changed
+/// fence paints its previous colors shifted through the edit
+/// ([shiftCodeHighlight]) instead of flashing plain. Colors never move glyphs,
+/// and selection, document revision and history never change here. Cache and
+/// pending work are bounded independently of source size.
 final class FlarkCodeHighlighting {
   FlarkCodeHighlighting(this.editor, {Uri? workerUri, Uri? wasmUri}) {
     editor.addListener(_refresh);
@@ -58,6 +61,13 @@ final class FlarkCodeHighlighting {
   CodeColorRequest? _request;
   void Function()? _disposeWorker;
   final _cache = <_Key, _Decoration>{};
+
+  /// Provisional colors for wanted keys that have no exact result yet.
+  final _shifted = <_Key, CodeHighlight>{};
+
+  /// The key each code row showed at the last refresh, to find the colors an
+  /// edited fence had before its text changed.
+  var _rowKeys = <int, _Key>{};
   final _unavailable = <_Key>{};
   List<_Key> _wanted = [];
   List<int>? _visibleRows;
@@ -122,11 +132,20 @@ final class FlarkCodeHighlighting {
   CodeAnalysis? analysis(String text, String info) =>
       _decoration(text, info)?.analysis;
 
-  CodeHighlight highlight(String text, String info) =>
-      _decoration(text, info)?.highlight ??
-      CodeHighlight(_key(text, info)?.$2.name, [
-        CodeToken(0, text.length, null),
-      ]);
+  CodeHighlight highlight(String text, String info) {
+    final key = _key(text, info);
+    return colors(text, info) ??
+        CodeHighlight(key?.$2.name, [CodeToken(0, text.length, null)]);
+  }
+
+  /// Colors to paint now: the exact analysis of this text when available,
+  /// else this fence's previous colors shifted through the edit, else null.
+  CodeHighlight? colors(String text, String info) {
+    final exact = _decoration(text, info)?.highlight;
+    if (exact != null) return exact;
+    final key = _key(text, info);
+    return key == null ? null : _shifted[key];
+  }
 
   static bool _sameRows(List<int> a, List<int>? b) {
     if (b == null || a.length != b.length) return false;
@@ -140,6 +159,7 @@ final class FlarkCodeHighlighting {
     if (_disposed) return;
     final snapshot = editor.snapshot;
     final wanted = <_Key>[];
+    final rowKeys = <int, _Key>{};
     if (snapshot is FlarkLiveSnapshot) {
       final active = snapshot.document.rowAt(snapshot.selection.extent);
       var units = 0;
@@ -158,6 +178,7 @@ final class FlarkCodeHighlighting {
             ? snapshot.source.substring(row.codeInfoStart, row.codeInfoEnd)
             : '';
         final key = _key(row.text, info);
+        if (key != null) rowKeys[row.index] = key;
         if (key == null || wanted.contains(key)) continue;
         if (wanted.length == _maxSnippets) break;
         if (units + row.text.length > _maxUnits) continue;
@@ -165,7 +186,22 @@ final class FlarkCodeHighlighting {
         units += row.text.length;
       }
     }
+    // A fence whose text just changed keeps the colors it showed, shifted
+    // through the edit, until the exact analysis of its new text arrives.
+    for (final MapEntry(key: index, value: key) in rowKeys.entries) {
+      if (_cache.containsKey(key) || _shifted.containsKey(key)) continue;
+      final previous = _rowKeys[index];
+      if (previous == null || previous == key || previous.$2 != key.$2) {
+        continue;
+      }
+      final colors = _cache[previous]?.highlight ?? _shifted[previous];
+      if (colors == null) continue;
+      final shifted = shiftCodeHighlight(colors, previous.$1, key.$1);
+      if (shifted != null) _shifted[key] = shifted;
+    }
+    _rowKeys = rowKeys;
     _wanted = wanted;
+    _shifted.removeWhere((key, _) => !wanted.contains(key));
     _unavailable.removeWhere((key) => !wanted.contains(key));
     _schedule();
   }
@@ -201,6 +237,7 @@ final class FlarkCodeHighlighting {
       // A completed response has no authority over a replaced/deleted fence.
       if (!_wanted.contains(key)) return;
       _cache[key] = _Decoration(analysis);
+      _shifted.remove(key);
       _cachedUnits += key.$1.length;
       while (_cache.length > _maxSnippets || _cachedUnits > _maxUnits) {
         final oldest = _cache.keys.firstWhere(
@@ -230,11 +267,83 @@ final class FlarkCodeHighlighting {
     editor.removeListener(_refresh);
     _closeWorker();
     _cache.clear();
+    _shifted.clear();
+    _rowKeys = {};
     _wanted = [];
     _unavailable.clear();
     _listeners.clear();
   }
 }
+
+/// Colors for [after] derived from [colors] of [before], for the frames
+/// between an edit and the exact analysis of the edited text. Text outside the
+/// edit keeps its colors. A short single-line insertion continues the token
+/// it extends; a larger one stays plain. Returns null when the edit kept no
+/// text, so a replaced snippet paints plain rather than borrowing colors.
+CodeHighlight? shiftCodeHighlight(
+  CodeHighlight colors,
+  String before,
+  String after,
+) {
+  final limit = before.length < after.length ? before.length : after.length;
+  var prefix = 0, suffix = 0;
+  while (prefix < limit &&
+      before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
+    prefix++;
+  }
+  while (suffix < limit - prefix &&
+      before.codeUnitAt(before.length - 1 - suffix) ==
+          after.codeUnitAt(after.length - 1 - suffix)) {
+    suffix++;
+  }
+  // Token edges must not split a surrogate pair on either side of the edit.
+  if (prefix > 0 && _isHighSurrogate(before.codeUnitAt(prefix - 1))) prefix--;
+  if (suffix > 0 && _isLowSurrogate(after.codeUnitAt(after.length - suffix))) {
+    suffix--;
+  }
+  if (prefix + suffix == 0) return null;
+  final removedEnd = before.length - suffix,
+      insertedEnd = after.length - suffix;
+  final shift = after.length - before.length;
+  final tokens = <CodeToken>[];
+  void add(int start, int end, String? kind) {
+    if (end <= start) return;
+    final last = tokens.lastOrNull;
+    if (last != null && last.kind == kind && last.end == start) {
+      tokens[tokens.length - 1] = CodeToken(last.start, end, kind);
+    } else {
+      tokens.add(CodeToken(start, end, kind));
+    }
+  }
+
+  String? continued;
+  for (final token in colors.tokens) {
+    if (token.start < prefix) {
+      add(token.start, token.end < prefix ? token.end : prefix, token.kind);
+    }
+    // The token holding the character before the edit, or the first token.
+    if (prefix == 0
+        ? token.start == 0
+        : token.start < prefix && prefix <= token.end) {
+      continued = token.kind;
+    }
+  }
+  final inserted = after.substring(prefix, insertedEnd);
+  final continues = inserted.length <= 32 && !inserted.contains('\n');
+  add(prefix, insertedEnd, continues ? continued : null);
+  for (final token in colors.tokens) {
+    if (token.end <= removedEnd) continue;
+    add(
+      (token.start > removedEnd ? token.start : removedEnd) + shift,
+      token.end + shift,
+      token.kind,
+    );
+  }
+  return CodeHighlight(colors.language, tokens);
+}
+
+bool _isHighSurrogate(int unit) => unit >= 0xd800 && unit <= 0xdbff;
+bool _isLowSurrogate(int unit) => unit >= 0xdc00 && unit <= 0xdfff;
 
 final class _Decoration {
   _Decoration(this.analysis)

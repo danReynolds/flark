@@ -878,7 +878,10 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       final row = editor.projection.rows.first;
-      expect(controller.colorsFor(row)?.language, CodeLanguage.ruby);
+      final exact = controller.colorsFor(row)!;
+      expect(exact.language, 'ruby');
+      final defKind = exact.kindAt(row.text.indexOf('def'));
+      expect(defKind, isNotNull);
       editor.apply(SetSelection.caret(editor.source.indexOf('hello') + 5));
       tester.type('x');
       expect(
@@ -889,7 +892,12 @@ void main() {
         ),
       );
       expect(lines().first, '  def hellox');
-      expect(controller.colorsFor(editor.projection.rows.first), isNull);
+      // Until the edited text's analysis arrives, the fence keeps its colors
+      // shifted through the edit instead of flashing plain.
+      final edited = editor.projection.rows.first;
+      final shifted = controller.colorsFor(edited)!;
+      expect(shifted.tokens.last.end, edited.text.length);
+      expect(shifted.kindAt(edited.text.indexOf('def')), defKind);
     },
   );
 }

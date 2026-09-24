@@ -1,6 +1,6 @@
 import 'package:flark/rendering.dart';
 import 'package:flark/session.dart';
-import 'package:flark_tree_sitter/flark_tree_sitter.dart' show CodeAnalysis;
+import 'package:flark/code.dart' show CodeHighlight;
 import 'dart:async';
 
 import 'package:flark/flark.dart';
@@ -106,6 +106,7 @@ class _EditorState extends State<FlarkEditorView>
       previous.cols,
       previous.theme,
       previous.policy,
+      previous: previous,
     );
   }
 

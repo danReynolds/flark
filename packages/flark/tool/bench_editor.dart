@@ -1,7 +1,7 @@
 /// Keystroke budget receipt: one InsertText and one DeleteBackward through
 /// the facade on a dense document, plus the parse and projection alone.
 /// Run from packages/flark:
-///   dart run tool/bench_editor.dart [kibibytes] [--spike|--flat-list|--prose]
+///   dart run tool/bench_editor.dart [kibibytes] [--spike|--flat-list|--prose|--paragraph]
 library;
 
 import 'dart:convert';
@@ -75,6 +75,18 @@ String proseDocument(int bytes) {
   return b.toString();
 }
 
+/// One paragraph of soft-wrapped lines with inline runs on each: the shape
+/// whose projection was quadratic in its line and run counts.
+String paragraphDocument(int bytes) {
+  final b = StringBuffer();
+  var i = 0;
+  while (b.length < bytes) {
+    b.writeln('line $i with *emphasis*, **strong** and `code` in one block');
+    i++;
+  }
+  return b.toString();
+}
+
 int percentile(List<int> xs, double p) {
   final s = List.of(xs)..sort();
   return s[((s.length - 1) * p).round()];
@@ -85,11 +97,14 @@ void main(List<String> args) {
   final spike = args.contains('--spike');
   final flatList = args.contains('--flat-list');
   final prose = args.contains('--prose');
+  final paragraph = args.contains('--paragraph');
   final backend = createParseBackend();
   final source = flatList
       ? flatListDocument(kb * 1024)
       : prose
       ? proseDocument(kb * 1024)
+      : paragraph
+      ? paragraphDocument(kb * 1024)
       : spike
       ? spikeDocument(kb * 1024)
       : denseDocument(kb * 1024);
@@ -153,6 +168,8 @@ void main(List<String> args) {
       ? 'flat-list'
       : prose
       ? 'prose'
+      : paragraph
+      ? 'paragraph'
       : spike
       ? 'spike'
       : 'dense';

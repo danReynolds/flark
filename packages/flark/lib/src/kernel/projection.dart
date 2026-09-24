@@ -578,13 +578,23 @@ final class _Builder {
       // only a tab with no caret before it and nothing Backspace can remove.
       var prefixStart = shells.isEmpty ? m.lineStartUtf16(l) : contentEnd;
       if (shells.isNotEmpty) {
+        // A block's content records are in line order (a schema invariant).
+        // Search them: scanning a large quote once per blank line in it made
+        // projection quadratic.
         final inner = shells.last;
-        final first = m.block(inner.block, BlockField.contentOffset);
-        final count = m.block(inner.block, BlockField.contentCount);
-        for (var c = first; c < first + count; c++) {
-          if (m.content(c, ContentField.line) == l) {
-            prefixStart = m.content(c, ContentField.prefixStartUtf16);
+        var lo = m.block(inner.block, BlockField.contentOffset);
+        var hi = lo + m.block(inner.block, BlockField.contentCount);
+        while (lo < hi) {
+          final mid = (lo + hi) >> 1;
+          if (m.content(mid, ContentField.line) <= l) {
+            lo = mid + 1;
+          } else {
+            hi = mid;
           }
+        }
+        if (lo > m.block(inner.block, BlockField.contentOffset) &&
+            m.content(lo - 1, ContentField.line) == l) {
+          prefixStart = m.content(lo - 1, ContentField.prefixStartUtf16);
         }
       }
       // Comrak accepts a bare unordered marker as an empty item. Keep that
@@ -904,7 +914,7 @@ final class _Builder {
         covered.add(h);
       }
     }
-    var coverIndex = 0;
+    var coverIndex = 0, leafCursor = 0;
     for (var c = 0; c < cn; c++) {
       final rec = m.content(co + c, ContentField.line);
       final cs = m.content(co + c, ContentField.startUtf16),
@@ -1037,8 +1047,19 @@ final class _Builder {
       void emitGap(int a, int b) {
         // Content bytes no leaf run claims: hidden if inside a delimiter interval, else shown exactly.
         var q = a;
-        for (final h in hidden) {
-          if (h.$2 <= q) continue;
+        // Merged intervals are sorted and disjoint. Search for the first one
+        // ending after q instead of rescanning the block's delimiters per gap.
+        var lo = 0, hi = covered.length;
+        while (lo < hi) {
+          final mid = (lo + hi) >> 1;
+          if (covered[mid].$2 <= q) {
+            lo = mid + 1;
+          } else {
+            hi = mid;
+          }
+        }
+        for (var k = lo; k < covered.length; k++) {
+          final h = covered[k];
           if (h.$1 >= b) break;
           if (h.$1 > q) emitExact(q, h.$1, 0, -1);
           q = h.$2 > q ? h.$2 : q;
@@ -1046,10 +1067,20 @@ final class _Builder {
         if (q < b) emitExact(q, b, 0, -1);
       }
 
-      for (final r in leafRuns) {
+      // Leaf runs are in source order, as the segment walk already requires.
+      // Lines only advance, so skip the runs ending before this one for good
+      // and stop at the first run starting after it. Visiting every leaf for
+      // every line made one long paragraph quadratic.
+      while (leafCursor < leafRuns.length &&
+          m.run(leafRuns[leafCursor], RunField.contentEndUtf16) <= cs) {
+        leafCursor++;
+      }
+      for (var j = leafCursor; j < leafRuns.length; j++) {
+        final r = leafRuns[j];
         final rs = m.run(r, RunField.contentStartUtf16),
             re = m.run(r, RunField.contentEndUtf16);
-        if (re <= cs || rs >= ce) continue;
+        if (rs >= ce) break;
+        if (re <= cs) continue;
         final a = rs < cs ? cs : rs, b = re > ce ? ce : re;
         if (a > p) emitGap(p, a);
         final k = m.run(r, RunField.kind);

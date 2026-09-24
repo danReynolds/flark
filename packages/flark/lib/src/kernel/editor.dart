@@ -433,11 +433,13 @@ final class FlarkEditor implements FlarkDocumentState {
     }
   }
 
+  /// [live] is the byte/line admission a caller already computed for [text].
   FlarkEditorSnapshot _buildSnapshot(
     String text,
     FlarkSelection selected, {
     bool rejectDeviation = false,
     RenderModel? parsed,
+    bool? live,
   }) {
     return _projectSnapshot(
       _backend,
@@ -449,6 +451,7 @@ final class FlarkEditor implements FlarkDocumentState {
       forceSourceMode: _forceSourceMode,
       rejectDeviation: rejectDeviation,
       parsed: parsed,
+      live: live,
     );
   }
 
@@ -462,22 +465,20 @@ final class FlarkEditor implements FlarkDocumentState {
     bool Function(FlarkDocument)? accept,
     bool acceptSourceMode = false,
   }) {
-    try {
-      validateFlarkSource(newSource);
-    } on FormatException {
+    final stats = _SourceStats.of(newSource);
+    if (!stats.valid) {
       _lastRejection = FlarkRejection.invalidSource;
       return false;
     }
-    if (!_withinLiveByteLimit(newSource, sourceLimit)) {
+    if (stats.utf8Bytes > sourceLimit) {
       _lastRejection = FlarkRejection.sourceLimit;
       return false;
     }
+    final live = stats.utf8Bytes <= syncLimit && liveLimits._admitsStats(stats);
     late FlarkEditorSnapshot next;
     try {
       RenderModel? parsed;
-      if (completeTypedFence &&
-          _withinLiveByteLimit(newSource, syncLimit) &&
-          liveLimits._admitsSource(newSource)) {
+      if (completeTypedFence && live) {
         parsed = _backend.parse(newSource);
         final completed = _completeTypedFence(newSource, sel.extent, parsed);
         if (completed != null) {
@@ -493,6 +494,7 @@ final class FlarkEditor implements FlarkDocumentState {
         sel,
         rejectDeviation: !sourceMode,
         parsed: parsed,
+        live: live,
       );
     } on FlarkParseException catch (error) {
       if (error.code != FlarkParseException.extractionDeviationCode) rethrow;

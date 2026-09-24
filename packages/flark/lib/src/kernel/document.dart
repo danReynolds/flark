@@ -243,33 +243,47 @@ final class FlarkDocument {
       }
       // Hidden syntax can separate source graphemes that become one displayed
       // grapheme, such as *a* followed by a combining accent. Keep the whole
-      // displayed unit atomic, including any replacement it intersects.
-      var offset = 0, segmentIndex = 0;
-      for (final grapheme in row.text.characters) {
-        final end = offset + grapheme.length;
-        while (segmentIndex < row.segments.length &&
-            row.segments[segmentIndex].displayEnd <= offset) {
-          segmentIndex++;
+      // displayed unit atomic, including any replacement it intersects. Only
+      // a grapheme crossing a segment boundary can be joined that way, so
+      // inspect the boundaries rather than every grapheme of the document. No
+      // grapheme rule joins two code units below U+0300 except CR LF.
+      final text = row.text, segments = row.segments;
+      var handled = 0;
+      for (var i = 0; i < segments.length; i++) {
+        final boundary = segments[i].displayEnd;
+        if (boundary <= 0 || boundary >= text.length || boundary < handled) {
+          continue;
         }
-        if (segmentIndex < row.segments.length &&
-            row.segments[segmentIndex].displayEnd < end) {
-          final first = row.segments[segmentIndex];
-          var lastIndex = segmentIndex;
-          while (row.segments[lastIndex].displayEnd < end) {
-            lastIndex++;
-          }
-          final last = row.segments[lastIndex];
-          final startSource = first.exact
-              ? first.sourceStart + offset - first.displayStart
-              : first.sourceStart;
-          final endSource = last.exact
-              ? last.sourceStart + end - last.displayStart
-              : last.sourceEnd;
-          if (endSource > startSource) {
-            intervals.add((startSource, endSource));
-          }
+        final before = text.codeUnitAt(boundary - 1),
+            after = text.codeUnitAt(boundary);
+        if (before < 0x300 &&
+            after < 0x300 &&
+            (before != 0x0D || after != 0x0A)) {
+          continue;
         }
-        offset = end;
+        final range = CharacterRange.at(text, boundary);
+        if (range.isEmpty) continue;
+        final offset = range.stringBeforeLength;
+        final end = offset + range.current.length;
+        handled = end;
+        var firstIndex = i;
+        while (firstIndex > 0 && segments[firstIndex - 1].displayEnd > offset) {
+          firstIndex--;
+        }
+        var lastIndex = firstIndex;
+        while (segments[lastIndex].displayEnd < end) {
+          lastIndex++;
+        }
+        final first = segments[firstIndex], last = segments[lastIndex];
+        final startSource = first.exact
+            ? first.sourceStart + offset - first.displayStart
+            : first.sourceStart;
+        final endSource = last.exact
+            ? last.sourceStart + end - last.displayStart
+            : last.sourceEnd;
+        if (endSource > startSource) {
+          intervals.add((startSource, endSource));
+        }
       }
     }
     return intervals..sort((a, b) => a.$1 - b.$1);
