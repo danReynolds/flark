@@ -162,7 +162,12 @@ final class FlarkDocument {
       newSource,
       const FlarkSelection.collapsed(0),
       model,
-      Projection.of(model, newSource, options: projection.options),
+      Projection.of(
+        model,
+        newSource,
+        options: projection.options,
+        previous: projection,
+      ),
       normalizedLineEndings,
     );
     return doc.withSelection(newSelection);
@@ -636,16 +641,24 @@ final class FlarkDocument {
 }
 
 /// Package-internal construction after the editor has admitted a parsed model.
+/// [previous], the document being replaced, lends the projection the rows of
+/// blocks the edit did not touch.
 FlarkDocument projectFlarkDocument(
   String source,
   RenderModel model,
   FlarkSelection selection,
-  ProjectionOptions options,
-) => FlarkDocument._(
+  ProjectionOptions options, {
+  FlarkDocument? previous,
+}) => FlarkDocument._(
   source,
   const FlarkSelection.collapsed(0),
   model,
-  Projection.of(model, source, options: options),
+  Projection.of(
+    model,
+    source,
+    options: options,
+    previous: previous?.projection,
+  ),
   false,
 ).withSelection(selection);
 

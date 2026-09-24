@@ -493,3 +493,94 @@ extension type const DefinitionView._((RenderModel, int) _rec) {
   int get destStartUtf16 => model.definitionDestinationStart(index);
   int get destEndUtf16 => model.definitionDestinationEnd(index);
 }
+
+/// Whether [count] content records of [a] from [aFirst] and of [b] from
+/// [bFirst] are the same with source offsets taken relative to [aBase] and
+/// [bBase] and lines relative to [aLine] and [bLine]. The projection compares
+/// a block this way before reusing its row; not exported.
+bool sameContentRecords(
+  RenderModel a,
+  int aFirst,
+  RenderModel b,
+  int bFirst,
+  int count, {
+  required int aBase,
+  required int bBase,
+  required int aLine,
+  required int bLine,
+}) {
+  const words = RenderModelSchema.contentWords;
+  final aw = a._words, bw = b._words;
+  var i = a._contentOff + aFirst * words, j = b._contentOff + bFirst * words;
+  for (var k = 0; k < count; k++, i += words, j += words) {
+    final av = aw[i + ContentField.lineVirtual];
+    final bv = bw[j + ContentField.lineVirtual];
+    if (aw[i + ContentField.start] - aBase !=
+            bw[j + ContentField.start] - bBase ||
+        aw[i + ContentField.end] - aBase != bw[j + ContentField.end] - bBase ||
+        aw[i + ContentField.prefixStart] - aBase !=
+            bw[j + ContentField.prefixStart] - bBase ||
+        (av >> ContentLineVirtual.lineShift & ContentLineVirtual.lineMask) -
+                aLine !=
+            (bv >> ContentLineVirtual.lineShift & ContentLineVirtual.lineMask) -
+                bLine ||
+        av >> ContentLineVirtual.virtualLeadingSpacesShift !=
+            bv >> ContentLineVirtual.virtualLeadingSpacesShift) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Whether [count] runs of [a] from [aFirst] and of [b] from [bFirst] are the
+/// same with source offsets taken relative to [aBase] and [bBase]: kind,
+/// flags, extent, hidden delimiters, parent and replacement text. A parent
+/// distance and hidden widths are already relative, so a record compares as
+/// words; a wide run keeps absolute values in the extras. The projection
+/// compares a block this way before reusing its row; not exported.
+bool sameRunRecords(
+  RenderModel a,
+  int aFirst,
+  RenderModel b,
+  int bFirst,
+  int count, {
+  required int aBase,
+  required int bBase,
+}) {
+  const words = RenderModelSchema.runWords;
+  final aw = a._words, bw = b._words;
+  var i = a._runsOff + aFirst * words, j = b._runsOff + bFirst * words;
+  for (var k = 0; k < count; k++, i += words, j += words) {
+    final hidden = aw[i + RunField.hidden];
+    final packed = aw[i + RunField.kindFlagsParent];
+    if (hidden != bw[j + RunField.hidden] ||
+        packed != bw[j + RunField.kindFlagsParent] ||
+        aw[i + RunField.start] - aBase != bw[j + RunField.start] - bBase ||
+        aw[i + RunField.end] - aBase != bw[j + RunField.end] - bBase) {
+      return false;
+    }
+    final r = aFirst + k, q = bFirst + k;
+    if (hidden == RenderModel._wideHidden &&
+        (a.runContentStart(r) - aBase != b.runContentStart(q) - bBase ||
+            a.runContentEnd(r) - aBase != b.runContentEnd(q) - bBase)) {
+      return false;
+    }
+    final distance =
+        packed >> RunKindFlagsParent.parentDistanceShift &
+        RunKindFlagsParent.parentDistanceMask;
+    if (distance == RenderModel._wideDistance &&
+        a.runParent(r) - aFirst != b.runParent(q) - bFirst) {
+      return false;
+    }
+    final kind =
+        packed >> RunKindFlagsParent.kindShift & RunKindFlagsParent.kindMask;
+    final flags =
+        packed >> RunKindFlagsParent.flagsShift & RunKindFlagsParent.flagsMask;
+    if ((kind == RunKind.replacement ||
+            kind == RunKind.code && flags & 2 != 0) &&
+        a.displayOverride(r) != b.displayOverride(q)) {
+      return false;
+    }
+  }
+  return true;
+}

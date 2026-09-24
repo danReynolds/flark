@@ -3,5 +3,5 @@
 /// and advanced consumers read it directly.
 library;
 
-export 'src/parse/render_model.dart';
+export 'src/parse/render_model.dart' hide sameContentRecords, sameRunRecords;
 export 'src/parse/schema.g.dart';

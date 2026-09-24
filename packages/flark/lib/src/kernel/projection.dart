@@ -156,6 +156,96 @@ final class ProjectedRow {
        contentEnds = UnmodifiableListView(contentEnds),
        prefixStarts = UnmodifiableListView(prefixStarts);
 
+  /// A row reused by a later projection: the same text and segments with
+  /// source offsets moved by [delta] and run indexes by [runDelta], and the
+  /// placement and container fields of its new block. Lists are shared when
+  /// nothing moved.
+  ProjectedRow _reused({
+    required int index,
+    required int block,
+    required int firstLine,
+    required List<Shell> shells,
+    required int delta,
+    required int runDelta,
+    required int tableBlock,
+    required int tableRowBlock,
+    required int column,
+    required bool header,
+    required int alignment,
+  }) {
+    int move(int offset) => offset < 0 ? offset : offset + delta;
+    final moved = delta != 0 || runDelta != 0;
+    return ProjectedRow._copy(
+      index: index,
+      kind: kind,
+      block: block,
+      firstLine: firstLine,
+      lineCount: lineCount,
+      text: text,
+      segments: moved
+          ? UnmodifiableListView([
+              for (final s in segments)
+                Segment(
+                  displayStart: s.displayStart,
+                  displayEnd: s.displayEnd,
+                  sourceStart: s.sourceStart + delta,
+                  sourceEnd: s.sourceEnd + delta,
+                  styles: s.styles,
+                  exact: s.exact,
+                  run: s.run < 0 ? s.run : s.run + runDelta,
+                  lineBreak: s.lineBreak,
+                ),
+            ])
+          : segments,
+      shells: UnmodifiableListView(shells),
+      sourceStart: sourceStart + delta,
+      sourceEnd: sourceEnd + delta,
+      contentStarts: delta != 0
+          ? UnmodifiableListView([for (final o in contentStarts) move(o)])
+          : contentStarts,
+      contentEnds: delta != 0
+          ? UnmodifiableListView([for (final o in contentEnds) move(o)])
+          : contentEnds,
+      prefixStarts: delta != 0
+          ? UnmodifiableListView([for (final o in prefixStarts) move(o)])
+          : prefixStarts,
+      headingLevel: headingLevel,
+      fenced: fenced,
+      codeInfoStart: move(codeInfoStart),
+      codeInfoEnd: move(codeInfoEnd),
+      tableBlock: tableBlock,
+      tableRowBlock: tableRowBlock,
+      column: column,
+      header: header,
+      alignment: alignment,
+    );
+  }
+
+  ProjectedRow._copy({
+    required int index,
+    required this.kind,
+    required this.block,
+    required this.firstLine,
+    required this.lineCount,
+    required this.text,
+    required this.segments,
+    required this.shells,
+    required this.sourceStart,
+    required this.sourceEnd,
+    required this.contentStarts,
+    required this.contentEnds,
+    required this.prefixStarts,
+    required this.headingLevel,
+    required this.fenced,
+    required this.codeInfoStart,
+    required this.codeInfoEnd,
+    required this.tableBlock,
+    required this.tableRowBlock,
+    required this.column,
+    required this.header,
+    required this.alignment,
+  }) : _index = index;
+
   /// Position in [Projection.rows], assigned once rows are ordered.
   int _index;
   int get index => _index;
@@ -264,11 +354,23 @@ final class Projection {
   final List<List<int>> _rowsByLine;
   final ProjectionOptions options;
 
+  /// Project [model] of [source]. [previous], a projection of an earlier
+  /// version of the source, lets rows of blocks an edit did not touch be
+  /// reused instead of rebuilt; the result is the same either way.
   factory Projection.of(
     RenderModel model,
     String source, {
     ProjectionOptions options = const ProjectionOptions(),
-  }) => _Builder(model, source, options).build();
+    Projection? previous,
+  }) => _Builder(
+    model,
+    source,
+    options,
+    previous != null &&
+            previous.options.softBreakAsNewline == options.softBreakAsNewline
+        ? _Reuse(previous, model, source)
+        : null,
+  ).build();
 
   /// Rows that own [line] (a table line holds one per cell).
   List<int> rowsOnLine(int line) =>
@@ -377,13 +479,15 @@ final class Projection {
 }
 
 final class _Builder {
-  _Builder(this.m, this.src, this.options);
+  _Builder(this.m, this.src, this.options, this._reuse);
   final RenderModel m;
   final String src;
   final ProjectionOptions options;
+  final _Reuse? _reuse;
 
+  /// Style bits of each run, filled per block as its inline row is built.
   late final List<int> _styleOf = List.filled(m.runCount, 0);
-  late final List<int> _linkOf = List.filled(m.runCount, -1);
+
   late final List<int> _itemIndexOf = () {
     final indexes = List<int>.filled(m.blockCount, 0);
     final nextForList = List<int>.filled(m.blockCount, 0);
@@ -408,7 +512,6 @@ final class _Builder {
   }();
 
   Projection build() {
-    _computeStyles();
     final lineCount = m.lineCount;
     final rowsByLine = List.generate(lineCount, (_) => <int>[]);
     final rows = <ProjectedRow>[];
@@ -528,9 +631,15 @@ final class _Builder {
       final n = m.blockLineCount(b);
       switch (kind) {
         case BlockKind.paragraph || BlockKind.heading || BlockKind.tableCell:
-          addRow(_inlineRow(rows.length, b, kind, containerOf));
+          addRow(
+            _reusedRow(rows.length, b, containerOf) ??
+                _inlineRow(rows.length, b, kind, containerOf),
+          );
         case BlockKind.codeBlock || BlockKind.htmlBlock:
-          addRow(_literalRow(rows.length, b, kind, containerOf));
+          addRow(
+            _reusedRow(rows.length, b, containerOf) ??
+                _literalRow(rows.length, b, kind, containerOf),
+          );
         case BlockKind.thematicBreak:
           addRow(
             ProjectedRow(
@@ -699,6 +808,28 @@ final class _Builder {
     );
   }
 
+  /// The previous projection's row for leaf block [b], moved into place, when
+  /// the edit left the block and its lines unchanged.
+  ProjectedRow? _reusedRow(int index, int b, List<int> containerOf) {
+    final match = _reuse?.match(b);
+    if (match == null) return null;
+    final first = m.blockFirstLine(b);
+    final cell = m.blockKind(b) == BlockKind.tableCell ? _cellFields(b) : null;
+    return match.row._reused(
+      index: index,
+      block: b,
+      firstLine: first,
+      shells: _shellsFor(containerOf[first]),
+      delta: match.delta,
+      runDelta: match.runDelta,
+      tableBlock: cell?.tableBlock ?? -1,
+      tableRowBlock: cell?.tableRowBlock ?? -1,
+      column: cell?.column ?? -1,
+      header: cell?.header ?? false,
+      alignment: cell?.alignment ?? 0,
+    );
+  }
+
   /// Presentation of an authenticated empty block's bare opening prefix.
   /// Ranges and heading level come from the parser; this does not recognize
   /// Markdown or change its source/model. Whitespace commits the block on the
@@ -735,8 +866,10 @@ final class _Builder {
     prefixStarts: [start],
   );
 
-  void _computeStyles() {
-    for (var i = 0; i < m.runCount; i++) {
+  /// Styles of the runs from [first] to [end], one block's: a run's own style
+  /// over its parent's. A parent precedes its children in the same block.
+  void _computeStyles(int first, int end) {
+    for (var i = first; i < end; i++) {
       final parent = m.runParent(i);
       final inherited = parent == noParent ? 0 : _styleOf[parent];
       final kind = m.runKind(i);
@@ -752,12 +885,6 @@ final class _Builder {
         _ => 0,
       };
       _styleOf[i] = inherited | own;
-      _linkOf[i] =
-          (kind == RunKind.link ||
-              kind == RunKind.image ||
-              kind == RunKind.autolink)
-          ? i
-          : (parent == noParent ? -1 : _linkOf[parent]);
     }
   }
 
@@ -857,6 +984,7 @@ final class _Builder {
     // its Text child); containers only contribute style and hidden ranges.
     final firstRun = m.firstRunOfBlock(block),
         endRun = m.firstRunOfBlock(block + 1);
+    _computeStyles(firstRun, endRun);
     final hasChildren = List<bool>.filled(endRun - firstRun, false);
     for (var r = firstRun; r < endRun; r++) {
       final parent = m.runParent(r);
@@ -1342,5 +1470,152 @@ final class _Builder {
           ? m.codeInfoEnd(block)
           : -1,
     );
+  }
+}
+
+/// Rows of an earlier projection that a new one can take over.
+///
+/// A leaf's row depends only on its block's own records and on the source of
+/// the lines it occupies; container shells and table fields are recomputed
+/// for every row. A row is reused when its block's lines lie wholly in source
+/// the edit left untouched, before the change or after it, and the block's
+/// records equal the old block's relative to where each block's lines start.
+final class _Reuse {
+  _Reuse(this.previous, this.m, String source)
+    : old = previous.model,
+      length = source.length,
+      oldLength = previous.source.length,
+      blockDelta = m.blockCount - previous.model.blockCount,
+      rowOfBlock = List.filled(previous.model.blockCount, null) {
+    final before = previous.source;
+    final shorter = length < oldLength ? length : oldLength;
+    // Whole chunks compare as substrings first: in the browser that measured
+    // 5 to 30 times faster than reading code units one at a time, and on the
+    // VM the two cost the same.
+    const chunk = 256;
+    var p = 0;
+    while (p + chunk <= shorter &&
+        before.substring(p, p + chunk) == source.substring(p, p + chunk)) {
+      p += chunk;
+    }
+    while (p < shorter && before.codeUnitAt(p) == source.codeUnitAt(p)) {
+      p++;
+    }
+    var q = 0;
+    while (q + chunk <= shorter - p &&
+        before.substring(oldLength - q - chunk, oldLength - q) ==
+            source.substring(length - q - chunk, length - q)) {
+      q += chunk;
+    }
+    while (q < shorter - p &&
+        before.codeUnitAt(oldLength - 1 - q) ==
+            source.codeUnitAt(length - 1 - q)) {
+      q++;
+    }
+    prefix = p;
+    suffix = q;
+    for (final row in previous.rows) {
+      final b = row.block;
+      if (b >= 0 && _isLeaf(old.blockKind(b))) rowOfBlock[b] = row;
+    }
+  }
+
+  final Projection previous;
+  final RenderModel m, old;
+  final int length, oldLength, blockDelta;
+  final List<ProjectedRow?> rowOfBlock;
+
+  /// Source both versions share at the start and at the end.
+  late final int prefix, suffix;
+
+  static bool _isLeaf(int kind) =>
+      kind == BlockKind.paragraph ||
+      kind == BlockKind.heading ||
+      kind == BlockKind.tableCell ||
+      kind == BlockKind.codeBlock ||
+      kind == BlockKind.htmlBlock;
+
+  /// Where the lines of block [b] start, or the block if it starts earlier.
+  static int _extentStart(RenderModel m, int b) {
+    final first = m.blockFirstLine(b), start = m.blockStart(b);
+    final line = first < m.lineCount ? m.lineStartUtf16(first) : start;
+    return start < line ? start : line;
+  }
+
+  /// Where the line after block [b] starts. A run may end one past its block.
+  static int _extentEnd(RenderModel m, int length, int b) {
+    final next = m.blockFirstLine(b) + m.blockLineCount(b);
+    final line = next < m.lineCount ? m.lineStartUtf16(next) : length;
+    final end = m.blockEnd(b) < length ? m.blockEnd(b) + 1 : length;
+    return end > line ? end : line;
+  }
+
+  /// The old row for new block [b], with how far its source offsets and run
+  /// indexes move, or null when the row must be rebuilt.
+  ({ProjectedRow row, int delta, int runDelta})? match(int b) {
+    if (m.blockLineCount(b) == 0) return null;
+    final start = _extentStart(m, b), end = _extentEnd(m, length, b);
+    final int ob, oldStart;
+    if (end <= prefix) {
+      ob = b;
+      oldStart = start;
+    } else if (start >= length - suffix) {
+      ob = b - blockDelta;
+      oldStart = start - (length - oldLength);
+    } else {
+      return null;
+    }
+    if (ob < 0 || ob >= old.blockCount) return null;
+    final row = rowOfBlock[ob];
+    if (row == null ||
+        _extentStart(old, ob) != oldStart ||
+        _extentEnd(old, oldLength, ob) != oldStart + (end - start) ||
+        !_sameBlock(b, ob, start, oldStart)) {
+      return null;
+    }
+    return (
+      row: row,
+      delta: start - oldStart,
+      runDelta: m.firstRunOfBlock(b) - old.firstRunOfBlock(ob),
+    );
+  }
+
+  /// Whether block [b] and old block [ob] have the same records relative to
+  /// [base] and [oldBase]: kind and attributes, content records and runs.
+  bool _sameBlock(int b, int ob, int base, int oldBase) {
+    final kind = m.blockKind(b), flags = m.blockFlags(b);
+    if (kind != old.blockKind(ob) ||
+        flags != old.blockFlags(ob) ||
+        m.blockAttr(b) != old.blockAttr(ob) ||
+        m.blockLineCount(b) != old.blockLineCount(ob) ||
+        m.blockStart(b) - base != old.blockStart(ob) - oldBase ||
+        m.blockEnd(b) - base != old.blockEnd(ob) - oldBase) {
+      return false;
+    }
+    if (kind == BlockKind.codeBlock &&
+        flags & 1 != 0 &&
+        (m.codeInfoStart(b) - base != old.codeInfoStart(ob) - oldBase ||
+            m.codeInfoEnd(b) - base != old.codeInfoEnd(ob) - oldBase)) {
+      return false;
+    }
+    final count = m.blockContentCount(b);
+    if (count != old.blockContentCount(ob) ||
+        !sameContentRecords(
+          m,
+          m.blockContentOffset(b),
+          old,
+          old.blockContentOffset(ob),
+          count,
+          aBase: base,
+          bBase: oldBase,
+          aLine: m.blockFirstLine(b),
+          bLine: old.blockFirstLine(ob),
+        )) {
+      return false;
+    }
+    final r0 = m.firstRunOfBlock(b), q0 = old.firstRunOfBlock(ob);
+    final runs = m.firstRunOfBlock(b + 1) - r0;
+    return runs == old.firstRunOfBlock(ob + 1) - q0 &&
+        sameRunRecords(m, r0, old, q0, runs, aBase: base, bBase: oldBase);
   }
 }

@@ -102,6 +102,12 @@ final class FlarkEditor implements FlarkDocumentState {
   @override
   bool get sourceMode => _snapshot is FlarkSourceSnapshot;
 
+  /// The live document, or null in source mode.
+  FlarkDocument? get _liveDocument => switch (_snapshot) {
+    FlarkLiveSnapshot(:final document) => document,
+    FlarkSourceSnapshot() => null,
+  };
+
   FlarkDocument get _doc => switch (_snapshot) {
     FlarkLiveSnapshot(:final document) => document,
     FlarkSourceSnapshot() => throw StateError(
@@ -422,7 +428,7 @@ final class FlarkEditor implements FlarkDocumentState {
     final previous = _forceSourceMode;
     _forceSourceMode = enabled;
     try {
-      final next = _buildSnapshot(source, selection);
+      final next = _buildSnapshot(source, selection, previous: _liveDocument);
       _snapshot = next;
       _pending = null;
       history.breakCoalescing();
@@ -434,12 +440,15 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// [live] is the byte/line admission a caller already computed for [text].
+  /// [previous], the live document being replaced, lends the new projection
+  /// the rows the edit did not touch.
   FlarkEditorSnapshot _buildSnapshot(
     String text,
     FlarkSelection selected, {
     bool rejectDeviation = false,
     RenderModel? parsed,
     bool? live,
+    FlarkDocument? previous,
   }) {
     return _projectSnapshot(
       _backend,
@@ -452,6 +461,7 @@ final class FlarkEditor implements FlarkDocumentState {
       rejectDeviation: rejectDeviation,
       parsed: parsed,
       live: live,
+      previous: previous,
     );
   }
 
@@ -495,6 +505,7 @@ final class FlarkEditor implements FlarkDocumentState {
         rejectDeviation: !sourceMode,
         parsed: parsed,
         live: live,
+        previous: _liveDocument,
       );
     } on FlarkParseException catch (error) {
       if (error.code != FlarkParseException.extractionDeviationCode) rethrow;
@@ -1871,5 +1882,5 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   FlarkEditorSnapshot _restoreSnapshot(HistoryEntry entry) =>
-      _buildSnapshot(entry.source, entry.selection);
+      _buildSnapshot(entry.source, entry.selection, previous: _liveDocument);
 }
