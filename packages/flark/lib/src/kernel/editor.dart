@@ -814,10 +814,10 @@ final class FlarkEditor implements FlarkDocumentState {
     for (final block in model.blocks) {
       if (block.kind != BlockKind.codeBlock ||
           block.flags & 1 == 0 ||
-          block.attr0 != 3 ||
+          block.attr != 3 ||
           block.firstLine != line ||
-          block.startUtf16 + block.attr0 != caret ||
-          block.attr1 != block.attr2) {
+          block.startUtf16 + block.attr != caret ||
+          model.codeInfoStart(block.index) != model.codeInfoEnd(block.index)) {
         continue;
       }
       final lineStart = model.lineStartUtf16(line);
@@ -843,7 +843,7 @@ final class FlarkEditor implements FlarkDocumentState {
       }
       final fence = candidate.substring(block.startUtf16, caret);
       // An empty info range may follow ASCII padding on the opener line.
-      final openerEnd = caret + block.attr1 - block.startByte - block.attr0;
+      final openerEnd = model.codeInfoStart(block.index);
       final newline = candidate.startsWith('\r\n', openerEnd) ? '\r\n' : '\n';
       final inserted =
           '$newline$prefix$newline$prefix$fence$newline$prefix'
@@ -1314,7 +1314,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // Keep a blank separator after the table even when a trailing gap already
     // exists. Typing into that gap alone would make it another table row.
     if (row.shells.isNotEmpty) return false;
-    final end = _doc.model.block(row.tableBlock, BlockField.endUtf16);
+    final end = _doc.model.blockEnd(row.tableBlock);
     return _commit(
       source.replaceRange(end, end, '\n\n'),
       FlarkSelection.collapsed(end + 2),
@@ -1381,11 +1381,11 @@ final class FlarkEditor implements FlarkDocumentState {
   /// the next number for ordered lists, an unchecked box for tasks.
   String _nextMarker(Shell item) {
     final m = _doc.model;
-    final itemLine = m.block(item.block, BlockField.firstLine),
-        itemStart = m.block(item.block, BlockField.startUtf16);
+    final itemLine = m.blockFirstLine(item.block),
+        itemStart = m.blockStart(item.block);
     // The parser converts column padding (including partially consumed tabs)
     // to an exact source endpoint before the optional task checkbox.
-    final markerEnd = m.block(item.block, BlockField.markerEndUtf16);
+    final markerEnd = m.itemMarkerEnd(item.block);
     final outer = source.substring(m.lineStartUtf16(itemLine), itemStart);
     var marker = source.substring(itemStart, markerEnd);
     if (item.ordered) {
@@ -1415,19 +1415,18 @@ final class FlarkEditor implements FlarkDocumentState {
     if (idx < 0) return false;
     final item = shells[idx];
     final m = _doc.model;
-    final list = m.block(item.block, BlockField.parent);
-    final first = m.block(item.block, BlockField.firstLine),
-        n = m.block(item.block, BlockField.lineCount);
-    final column =
-        m.block(item.block, BlockField.startUtf16) - m.lineStartUtf16(first);
+    final list = m.blockParent(item.block);
+    final first = m.blockFirstLine(item.block),
+        n = m.blockLineCount(item.block);
+    final column = m.blockStart(item.block) - m.lineStartUtf16(first);
     int width;
     if (!outdent) {
       var prev = -1;
       for (var b = list + 1; b < item.block; b++) {
-        if (m.block(b, BlockField.parent) == list) prev = b;
+        if (m.blockParent(b) == list) prev = b;
       }
       if (prev < 0) return false;
-      width = m.block(prev, BlockField.attr0);
+      width = m.blockAttr(prev);
     } else {
       Shell? parent;
       for (var i = idx - 1; i >= 0; i--) {
@@ -1437,7 +1436,7 @@ final class FlarkEditor implements FlarkDocumentState {
         }
       }
       if (parent == null) return false;
-      width = m.block(parent.block, BlockField.attr0);
+      width = m.blockAttr(parent.block);
     }
     final edits = <(int, int, String)>[];
     for (var l = first; l < first + n; l++) {
@@ -1523,7 +1522,7 @@ final class FlarkEditor implements FlarkDocumentState {
   bool _isBareHeading(ProjectedRow row) =>
       row.kind == RowKind.paragraph &&
       row.block >= 0 &&
-      _doc.model.block(row.block, BlockField.kind) == BlockKind.heading;
+      _doc.model.blockKind(row.block) == BlockKind.heading;
 
   bool _setHeading(int level) {
     if (level < 0 || level > 6) return false;
@@ -1541,8 +1540,8 @@ final class FlarkEditor implements FlarkDocumentState {
       return false;
     }
     final m = _doc.model;
-    final blockStart = m.block(row.block, BlockField.startUtf16),
-        blockEnd = m.block(row.block, BlockField.endUtf16);
+    final blockStart = m.blockStart(row.block),
+        blockEnd = m.blockEnd(row.block);
     final prefix = level == 0 ? '' : '${'#' * level} ';
     var s = source;
     if (row.kind == RowKind.heading && blockEnd > row.sourceEnd) {

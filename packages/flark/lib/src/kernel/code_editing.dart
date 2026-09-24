@@ -272,17 +272,17 @@ extension _CodeEditing on FlarkEditor {
     // Encode the literal body inside the parser-authenticated fence. Choosing
     // a delimiter longer than any same-character body run needs no Markdown
     // recognition, including when a paste joins two existing marker fragments.
-    var run = 0, length = block.attr0;
+    var run = 0, length = block.attr;
     for (final unit in body.codeUnits) {
       run = unit == marker ? run + 1 : 0;
       if (run >= length) length = run + 1;
     }
-    if (length == block.attr0 &&
+    if (length == block.attr &&
         row.contentStarts.any((start) => start >= 0) &&
         !row.segments.any((s) => !s.exact && !s.lineBreak)) {
       return _commit(candidate, selected, typing: typing);
     }
-    final openingGrowth = length - block.attr0;
+    final openingGrowth = length - block.attr;
     final fenceCharacter = String.fromCharCode(marker);
     if (block.flags & 2 != 0) {
       // The model identifies the closing line. Preserve its container prefix,
@@ -300,7 +300,7 @@ extension _CodeEditing on FlarkEditor {
       while (start > lineStart && source.codeUnitAt(start - 1) == marker) {
         start--;
       }
-      if (end - start < block.attr0) return false;
+      if (end - start < block.attr) return false;
       if (length > end - start) {
         final at = end + candidate.length - source.length;
         candidate = candidate.replaceRange(
@@ -310,7 +310,7 @@ extension _CodeEditing on FlarkEditor {
         );
       }
     }
-    final openingEnd = block.startUtf16 + block.attr0;
+    final openingEnd = block.startUtf16 + block.attr;
     candidate = candidate.replaceRange(
       openingEnd,
       openingEnd,
@@ -431,7 +431,7 @@ extension _CodeEditing on FlarkEditor {
       edits.add((
         lineStart,
         row.contentEnds[i],
-        '$prefix${marker * block.attr0}$newline$prefix',
+        '$prefix${marker * block.attr}$newline$prefix',
       ));
       destination = row.contentEnds[i];
     }

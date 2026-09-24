@@ -2,6 +2,7 @@
 //! three-function C ABI shared by the native (FFI) and wasm32 transports.
 pub mod lines;
 pub mod model;
+pub mod records;
 pub mod reference_definitions;
 pub mod schema;
 mod text_pieces;

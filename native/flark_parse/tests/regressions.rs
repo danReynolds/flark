@@ -2,13 +2,16 @@
 mod common;
 use common::check_invariants;
 use flark_parse::model::Extractor;
-use flark_parse::schema::{self, block, block_kind, content, definition, header, run, run_kind};
+use flark_parse::records::{self, block, content, definition, expand, header, run};
+use flark_parse::schema::{block_kind, run_kind};
 
+/// A published model expanded into the internal layout, so assertions can
+/// name UTF-8 byte ranges of the source as well as UTF-16 offsets.
 struct M { w: Vec<u32>, devs: Vec<String> }
 impl M {
-    fn of(src: &str) -> M { let (w, d) = Extractor::extract_with_report(src); check_invariants(src, &w).unwrap_or_else(|e| panic!("{e} for {src:?}")); M { w, devs: d.iter().map(|x| format!("{} {}", x.rule, x.detail)).collect() } }
+    fn of(src: &str) -> M { let (w, d) = Extractor::extract_with_report(src); check_invariants(src, &w).unwrap_or_else(|e| panic!("{e} for {src:?}")); M { w: expand(src, &w).unwrap(), devs: d.iter().map(|x| format!("{} {}", x.rule, x.detail)).collect() } }
     fn n(&self, f: usize) -> usize { self.w[f] as usize }
-    fn blocks_off(&self) -> usize { schema::HEADER_WORDS + self.n(header::LINE_COUNT) * 2 }
+    fn blocks_off(&self) -> usize { records::HEADER_WORDS + self.n(header::LINE_COUNT) * 2 }
     fn content_off(&self) -> usize { self.blocks_off() + self.n(header::BLOCK_COUNT) * block::WORDS }
     fn runs_off(&self) -> usize { self.content_off() + self.n(header::CONTENT_COUNT) * content::WORDS }
     fn defs_off(&self) -> usize { self.runs_off() + self.n(header::RUN_COUNT) * run::WORDS }
@@ -227,7 +230,9 @@ fn task_items_start_content_after_the_checkbox() {
     assert_eq!(m.block(2, block::ATTR0), 2, "container offset is the list padding");
     let src = "- [ ] foo\n\n  > quote";
     let m = M::of(src); m.clean();
-    assert_eq!(m.contents(src), ["foo", "quote", ""]);
+    // Content is in block order: the item's own blank line precedes the
+    // records of the paragraph and quote inside it.
+    assert_eq!(m.contents(src), ["", "foo", "quote"]);
 }
 
 #[test]

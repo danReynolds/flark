@@ -388,8 +388,8 @@ final class _Builder {
     final indexes = List<int>.filled(m.blockCount, 0);
     final nextForList = List<int>.filled(m.blockCount, 0);
     for (var b = 0; b < m.blockCount; b++) {
-      if (m.block(b, BlockField.kind) != BlockKind.item) continue;
-      final list = m.block(b, BlockField.parent);
+      if (m.blockKind(b) != BlockKind.item) continue;
+      final list = m.blockParent(b);
       if (list == noParent) continue;
       indexes[b] = nextForList[list]++;
     }
@@ -399,8 +399,8 @@ final class _Builder {
     final indexes = List<int>.filled(m.blockCount, 0);
     final nextForRow = List<int>.filled(m.blockCount, 0);
     for (var b = 0; b < m.blockCount; b++) {
-      if (m.block(b, BlockField.kind) != BlockKind.tableCell) continue;
-      final row = m.block(b, BlockField.parent);
+      if (m.blockKind(b) != BlockKind.tableCell) continue;
+      final row = m.blockParent(b);
       if (row == noParent) continue;
       indexes[b] = nextForRow[row]++;
     }
@@ -427,18 +427,18 @@ final class _Builder {
       }
     }
 
-    // Container line ranges from their (widened) byte ranges, innermost last.
+    // Container line ranges from their (widened) source ranges, innermost last.
     final containerOf = List<int>.filled(lineCount, -1);
     for (var b = 0; b < m.blockCount; b++) {
-      final kind = m.block(b, BlockField.kind);
+      final kind = m.blockKind(b);
       if (kind != BlockKind.blockQuote &&
           kind != BlockKind.item &&
           kind != BlockKind.footnoteDefinition) {
         continue;
       }
-      final first = m.lineOfByte(m.block(b, BlockField.startByte));
-      final end = m.block(b, BlockField.endByte);
-      final last = m.lineOfByte(end > 0 ? end - 1 : 0);
+      final first = m.lineOfUtf16(m.blockStart(b));
+      final end = m.blockEnd(b);
+      final last = m.lineOfUtf16(end > 0 ? end - 1 : 0);
       for (var l = first; l <= last && l < lineCount; l++) {
         containerOf[l] = b;
       }
@@ -446,9 +446,10 @@ final class _Builder {
     // 1. Definitions: source-only rows.
     for (var d = 0; d < m.definitionCount; d++) {
       final v = m.definitionAt(d);
-      final first = m.lineOfByte(v.startByte);
-      final endByte = v.endByte > v.startByte ? v.endByte - 1 : v.startByte;
-      final last = m.lineOfByte(endByte);
+      final first = m.lineOfUtf16(v.startUtf16);
+      final last = m.lineOfUtf16(
+        v.endUtf16 > v.startUtf16 ? v.endUtf16 - 1 : v.startUtf16,
+      );
       final raw = src.substring(v.startUtf16, v.endUtf16).trimRight();
       final end = v.startUtf16 + raw.length;
       final textBuffer = StringBuffer();
@@ -522,9 +523,9 @@ final class _Builder {
     }
     // 2. Leaf rows in document order; their lines without content are hidden.
     for (var b = 0; b < m.blockCount; b++) {
-      final kind = m.block(b, BlockField.kind);
-      final first = m.block(b, BlockField.firstLine);
-      final n = m.block(b, BlockField.lineCount);
+      final kind = m.blockKind(b);
+      final first = m.blockFirstLine(b);
+      final n = m.blockLineCount(b);
       switch (kind) {
         case BlockKind.paragraph || BlockKind.heading || BlockKind.tableCell:
           addRow(_inlineRow(rows.length, b, kind, containerOf));
@@ -541,8 +542,8 @@ final class _Builder {
               text: '',
               segments: const [],
               shells: _shellsFor(containerOf[first]),
-              sourceStart: m.block(b, BlockField.startUtf16),
-              sourceEnd: m.block(b, BlockField.endUtf16),
+              sourceStart: m.blockStart(b),
+              sourceEnd: m.blockEnd(b),
               contentStarts: _lineEnds(first, n),
               contentEnds: _lineEnds(first, n),
               prefixStarts: _lineEnds(first, n),
@@ -582,19 +583,19 @@ final class _Builder {
         // Search them: scanning a large quote once per blank line in it made
         // projection quadratic.
         final inner = shells.last;
-        var lo = m.block(inner.block, BlockField.contentOffset);
-        var hi = lo + m.block(inner.block, BlockField.contentCount);
+        var lo = m.blockContentOffset(inner.block);
+        var hi = lo + m.blockContentCount(inner.block);
         while (lo < hi) {
           final mid = (lo + hi) >> 1;
-          if (m.content(mid, ContentField.line) <= l) {
+          if (m.contentLine(mid) <= l) {
             lo = mid + 1;
           } else {
             hi = mid;
           }
         }
-        if (lo > m.block(inner.block, BlockField.contentOffset) &&
-            m.content(lo - 1, ContentField.line) == l) {
-          prefixStart = m.content(lo - 1, ContentField.prefixStartUtf16);
+        if (lo > m.blockContentOffset(inner.block) &&
+            m.contentLine(lo - 1) == l) {
+          prefixStart = m.contentPrefixStart(lo - 1);
         }
       }
       // Comrak accepts a bare unordered marker as an empty item. Keep that
@@ -602,21 +603,20 @@ final class _Builder {
       // be starting emphasis/strong. No marker recognition happens in Dart.
       if (shells.isNotEmpty && shells.last.kind == ShellKind.item) {
         final item = shells.last.block;
-        final list = m.block(item, BlockField.parent);
-        final start = m.block(item, BlockField.startUtf16);
+        final list = m.blockParent(item);
+        final start = m.blockStart(item);
         // Only the marker that is starting its own list is authoring text. A
         // bare marker between real items is one of them, and dropping its list
         // shell would paint the row outside the list it belongs to and refuse
         // Indent and list continuation there.
         final alone =
             list != noParent &&
-            m.block(list, BlockField.startUtf16) == start &&
-            m.block(list, BlockField.endUtf16) ==
-                m.block(item, BlockField.endUtf16);
+            m.blockStart(list) == start &&
+            m.blockEnd(list) == m.blockEnd(item);
         if (alone &&
-            m.block(item, BlockField.firstLine) == l &&
+            m.blockFirstLine(item) == l &&
             contentEnd - start == 1 &&
-            m.block(item, BlockField.endUtf16) == contentEnd) {
+            m.blockEnd(item) == contentEnd) {
           addRow(
             _barePrefixRow(
               rows.length,
@@ -682,6 +682,23 @@ final class _Builder {
     return Projection._(m, src, ordered, rowsByLine, options);
   }
 
+  /// A table cell's place in its table, which its row carries but its own
+  /// records do not determine.
+  ({int tableBlock, int tableRowBlock, int column, bool header, int alignment})
+  _cellFields(int block) {
+    final rowBlock = m.blockParent(block);
+    final tableBlock = rowBlock == noParent ? -1 : m.blockParent(rowBlock);
+    final column = _cellIndexOf[block];
+    final packed = tableBlock < 0 ? 0 : m.tableAlignments(tableBlock);
+    return (
+      tableBlock: tableBlock,
+      tableRowBlock: rowBlock,
+      column: column,
+      header: rowBlock != noParent && m.blockFlags(rowBlock) & 1 != 0,
+      alignment: column < 16 ? (packed >> (2 * column)) & 3 : 0,
+    );
+  }
+
   /// Presentation of an authenticated empty block's bare opening prefix.
   /// Ranges and heading level come from the parser; this does not recognize
   /// Markdown or change its source/model. Whitespace commits the block on the
@@ -720,9 +737,9 @@ final class _Builder {
 
   void _computeStyles() {
     for (var i = 0; i < m.runCount; i++) {
-      final parent = m.run(i, RunField.parent);
+      final parent = m.runParent(i);
       final inherited = parent == noParent ? 0 : _styleOf[parent];
-      final kind = m.run(i, RunField.kind);
+      final kind = m.runKind(i);
       final own = switch (kind) {
         RunKind.emph => Style.emphasis,
         RunKind.strong => Style.strong,
@@ -755,74 +772,50 @@ final class _Builder {
     final chain = <Shell>[];
     var b = container;
     while (b >= 0 && b != noParent) {
-      final kind = m.block(b, BlockField.kind);
+      final kind = m.blockKind(b);
       if (kind == BlockKind.blockQuote) {
         chain.add(Shell(kind: ShellKind.blockQuote, block: b));
       }
       if (kind == BlockKind.item) {
-        final flags = m.block(b, BlockField.flags);
+        final flags = m.blockFlags(b);
         final task = flags & 1 != 0;
-        final s = m.block(b, BlockField.attr1),
-            e = m.block(b, BlockField.attr2);
-        final list = m.block(b, BlockField.parent);
+        // The checkbox is the task symbol with its ASCII brackets.
+        final s = m.itemTaskStart(b), e = m.itemTaskEnd(b);
+        final list = m.blockParent(b);
         final itemIndex = _itemIndexOf[b];
-        final ordered =
-            list != noParent && m.block(list, BlockField.attr0) == 1;
+        final ordered = list != noParent && m.blockFlags(list) & 2 != 0;
         chain.add(
           Shell(
             kind: ShellKind.item,
             block: b,
             ordered: ordered,
-            start: ordered ? m.block(list, BlockField.attr1) : 1,
+            start: ordered ? m.blockAttr(list) : 1,
             task: task,
             checked: task && flags & 2 != 0,
-            checkboxStart: task && s > 0 ? _u16(s - 1) : -1,
-            checkboxEnd: task && e > 0 ? _u16(e + 1) : -1,
+            checkboxStart: task && s > 0 ? s - 1 : -1,
+            checkboxEnd: task && e > 0 ? e + 1 : -1,
             itemIndex: itemIndex,
           ),
         );
       }
       if (kind == BlockKind.list) {
+        final flags = m.blockFlags(b);
         chain.add(
           Shell(
             kind: ShellKind.list,
             block: b,
-            ordered: m.block(b, BlockField.attr0) == 1,
-            start: m.block(b, BlockField.attr1),
-            tight: m.block(b, BlockField.flags) & 1 != 0,
+            ordered: flags & 2 != 0,
+            start: m.blockAttr(b),
+            tight: flags & 1 != 0,
           ),
         );
       }
       if (kind == BlockKind.footnoteDefinition) {
         chain.add(Shell(kind: ShellKind.footnoteDefinition, block: b));
       }
-      b = m.block(b, BlockField.parent);
+      b = m.blockParent(b);
     }
     return chain.reversed.toList(growable: false);
-  }
-
-  int _u16(int byte) {
-    // UTF-16 offset of a byte offset via the line table plus a scan; only used for the rare checkbox range.
-    final line = m.lineOfByte(byte);
-    final lineByte = m.lineStartByte(line), lineUtf16 = m.lineStartUtf16(line);
-    var u = lineUtf16, bt = lineByte;
-    while (bt < byte && u < src.length) {
-      final c = src.codeUnitAt(u);
-      if (c >= 0xD800 && c <= 0xDBFF) {
-        bt += 4;
-        u += 2;
-      } else if (c < 0x80) {
-        bt += 1;
-        u += 1;
-      } else if (c < 0x800) {
-        bt += 2;
-        u += 1;
-      } else {
-        bt += 3;
-        u += 1;
-      }
-    }
-    return u;
   }
 
   /// Hidden UTF-16 intervals of a block's runs: delimiters plus break markers.
@@ -836,14 +829,14 @@ final class _Builder {
     }
 
     for (
-      var r = m.firstRunOfBlock(block);
-      r < m.runCount && m.run(r, RunField.block) == block;
+      var r = m.firstRunOfBlock(block), end = m.firstRunOfBlock(block + 1);
+      r < end;
       r++
     ) {
-      final s = m.run(r, RunField.startUtf16),
-          e = m.run(r, RunField.endUtf16),
-          cs = m.run(r, RunField.contentStartUtf16),
-          ce = m.run(r, RunField.contentEndUtf16);
+      final s = m.runStart(r),
+          e = m.runEnd(r),
+          cs = m.runContentStart(r),
+          ce = m.runContentEnd(r);
       if (cs > s) add(s, cs);
       if (e > ce) add(ce, e);
     }
@@ -857,46 +850,74 @@ final class _Builder {
     int kind,
     List<int> containerOf,
   ) {
-    final first = m.block(block, BlockField.firstLine),
-        n = m.block(block, BlockField.lineCount);
-    final co = m.block(block, BlockField.contentOffset),
-        cn = m.block(block, BlockField.contentCount);
+    final first = m.blockFirstLine(block), n = m.blockLineCount(block);
+    final co = m.blockContentOffset(block), cn = m.blockContentCount(block);
     final hidden = _hiddenIntervals(block);
     // Text comes from runs without children (a link's or autolink's text is
     // its Text child); containers only contribute style and hidden ranges.
-    final firstRun = m.firstRunOfBlock(block);
-    var endRun = firstRun;
-    while (endRun < m.runCount && m.run(endRun, RunField.block) == block) {
-      endRun++;
-    }
+    final firstRun = m.firstRunOfBlock(block),
+        endRun = m.firstRunOfBlock(block + 1);
     final hasChildren = List<bool>.filled(endRun - firstRun, false);
     for (var r = firstRun; r < endRun; r++) {
-      final parent = m.run(r, RunField.parent);
+      final parent = m.runParent(r);
       if (parent != noParent && parent >= firstRun) {
         hasChildren[parent - firstRun] = true;
       }
     }
-    final leafRuns = <int>[];
-    final breakStarts = <int, int>{};
-    final codeBreaks = <int, int>{};
+    // Leaf runs with their content ranges, read once: the per-line walk
+    // below revisits them.
+    final leafRuns = <int>[], leafStarts = <int>[], leafEnds = <int>[];
+    // Where each of the block's lines breaks, and the code run owning that
+    // break; -1 when none. A line outside the block keeps a map entry.
+    final breakStartOf = List<int>.filled(n, -1),
+        codeBreakOf = List<int>.filled(n, -1);
+    Map<int, int>? otherBreaks, otherCodeBreaks;
+    void setBreak(int line, int start, int codeRun) {
+      final i = line - first;
+      if (i >= 0 && i < n) {
+        breakStartOf[i] = start;
+        if (codeRun >= 0) codeBreakOf[i] = codeRun;
+      } else {
+        (otherBreaks ??= {})[line] = start;
+        if (codeRun >= 0) (otherCodeBreaks ??= {})[line] = codeRun;
+      }
+    }
+
+    int? breakStartAt(int line) {
+      final i = line - first;
+      if (i < 0 || i >= n) return otherBreaks?[line];
+      final start = breakStartOf[i];
+      return start < 0 ? null : start;
+    }
+
+    int? codeBreakAt(int line) {
+      final i = line - first;
+      if (i < 0 || i >= n) return otherCodeBreaks?[line];
+      final run = codeBreakOf[i];
+      return run < 0 ? null : run;
+    }
+
     for (var r = firstRun; r < endRun; r++) {
-      final k = m.run(r, RunField.kind);
+      final k = m.runKind(r);
       if (k == RunKind.softBreak || k == RunKind.hardBreak) {
-        final start = m.run(r, RunField.startUtf16);
-        final cs = m.run(r, RunField.contentStartUtf16);
-        final ce = m.run(r, RunField.contentEndUtf16);
-        breakStarts[m.lineOfUtf16(start)] = ce > cs ? ce : start;
+        final start = m.runStart(r);
+        final cs = m.runContentStart(r);
+        final ce = m.runContentEnd(r);
+        setBreak(m.lineOfUtf16(start), ce > cs ? ce : start, -1);
         continue;
       }
       if (k == RunKind.code) {
-        final first = m.lineOfUtf16(m.run(r, RunField.contentStartUtf16));
-        final last = m.lineOfUtf16(m.run(r, RunField.contentEndUtf16));
+        final first = m.lineOfUtf16(m.runContentStart(r));
+        final last = m.lineOfUtf16(m.runContentEnd(r));
         for (var line = first; line < last; line++) {
-          breakStarts[line] = _lineEnd(line);
-          codeBreaks[line] = r;
+          setBreak(line, _lineEnd(line), r);
         }
       }
-      if (!hasChildren[r - firstRun]) leafRuns.add(r);
+      if (!hasChildren[r - firstRun]) {
+        leafRuns.add(r);
+        leafStarts.add(m.runContentStart(r));
+        leafEnds.add(m.runContentEnd(r));
+      }
     }
     final text = StringBuffer();
     final segments = <Segment>[];
@@ -916,22 +937,16 @@ final class _Builder {
     }
     var coverIndex = 0, leafCursor = 0;
     for (var c = 0; c < cn; c++) {
-      final rec = m.content(co + c, ContentField.line);
-      final cs = m.content(co + c, ContentField.startUtf16),
-          ce = m.content(co + c, ContentField.endUtf16);
+      final rec = m.contentLine(co + c);
+      final cs = m.contentStart(co + c), ce = m.contentEnd(co + c);
       if (rec >= first && rec < first + n) {
         starts[rec - first] = cs;
         ends[rec - first] = ce;
-        prefixes[rec - first] = m.content(
-          co + c,
-          ContentField.prefixStartUtf16,
-        );
+        prefixes[rec - first] = m.contentPrefixStart(co + c);
       }
       if (sourceStart < 0) sourceStart = cs;
       sourceEnd = ce;
-      var prevEnd = c > 0
-          ? breakStarts[m.content(co + c - 1, ContentField.line)]
-          : null;
+      var prevEnd = c > 0 ? breakStartAt(m.contentLine(co + c - 1)) : null;
       if (c > 0 && prevEnd == null) {
         // Not every line ending has a break run: comrak reports none inside
         // raw inline HTML, or where an unparsed bracket run spans lines. Only
@@ -939,7 +954,7 @@ final class _Builder {
         // the next line — displays nothing. Otherwise the two lines would be
         // joined with nothing between them, and both sides of the break would
         // share one display position.
-        final gap = m.content(co + c - 1, ContentField.endUtf16);
+        final gap = m.contentEnd(co + c - 1);
         if (cs > gap) {
           // Both this gap and the merged runs advance with c, so one cursor
           // walks them together instead of rescanning per line.
@@ -951,9 +966,7 @@ final class _Builder {
           if (!over) prevEnd = gap;
         }
       }
-      final codeBreak = c > 0
-          ? codeBreaks[m.content(co + c - 1, ContentField.line)]
-          : null;
+      final codeBreak = c > 0 ? codeBreakAt(m.contentLine(co + c - 1)) : null;
       // Inline code normalizes each source line ending to a styled space.
       // Destination-only physical lines still contribute no displayed break.
       if (prevEnd != null) {
@@ -974,7 +987,7 @@ final class _Builder {
           ),
         );
       }
-      final virt = m.content(co + c, ContentField.virtualLeadingSpaces);
+      final virt = m.contentVirtualSpaces(co + c);
       if (virt > 0) {
         final d0 = text.length;
         text.write(' ' * virt);
@@ -1071,25 +1084,19 @@ final class _Builder {
       // Lines only advance, so skip the runs ending before this one for good
       // and stop at the first run starting after it. Visiting every leaf for
       // every line made one long paragraph quadratic.
-      while (leafCursor < leafRuns.length &&
-          m.run(leafRuns[leafCursor], RunField.contentEndUtf16) <= cs) {
+      while (leafCursor < leafRuns.length && leafEnds[leafCursor] <= cs) {
         leafCursor++;
       }
       for (var j = leafCursor; j < leafRuns.length; j++) {
         final r = leafRuns[j];
-        final rs = m.run(r, RunField.contentStartUtf16),
-            re = m.run(r, RunField.contentEndUtf16);
+        final rs = leafStarts[j], re = leafEnds[j];
         if (rs >= ce) break;
         if (re <= cs) continue;
         final a = rs < cs ? cs : rs, b = re > ce ? ce : re;
         if (a > p) emitGap(p, a);
-        final k = m.run(r, RunField.kind);
+
         final style = _styleOf[r];
-        String? override = k == RunKind.replacement
-            ? m.string(m.run(r, RunField.aux0), m.run(r, RunField.aux1))
-            : (k == RunKind.code && m.run(r, RunField.flags) & 2 != 0
-                  ? m.string(m.run(r, RunField.aux2), m.run(r, RunField.aux3))
-                  : null);
+        final override = m.displayOverride(r);
         if (override != null && rs >= cs && re <= ce) {
           final d0 = text.length;
           text.write(override);
@@ -1121,8 +1128,8 @@ final class _Builder {
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:
-        final blockStart = m.block(block, BlockField.startUtf16);
-        final level = m.block(block, BlockField.attr0);
+        final blockStart = m.blockStart(block);
+        final level = m.blockAttr(block);
         if (n == 1 &&
             sourceStart == sourceEnd &&
             sourceEnd == _lineEnd(first) &&
@@ -1145,26 +1152,15 @@ final class _Builder {
           text: text.toString(),
           segments: segments,
           shells: shells,
-          sourceStart: sourceStart < 0
-              ? m.block(block, BlockField.startUtf16)
-              : sourceStart,
-          sourceEnd: sourceEnd < 0
-              ? m.block(block, BlockField.endUtf16)
-              : sourceEnd,
+          sourceStart: sourceStart < 0 ? m.blockStart(block) : sourceStart,
+          sourceEnd: sourceEnd < 0 ? m.blockEnd(block) : sourceEnd,
           contentStarts: starts,
           contentEnds: ends,
           prefixStarts: prefixes,
-          headingLevel: m.block(block, BlockField.attr0),
+          headingLevel: m.blockAttr(block),
         );
       case BlockKind.tableCell:
-        final rowBlock = m.block(block, BlockField.parent);
-        final tableBlock = rowBlock == noParent
-            ? -1
-            : m.block(rowBlock, BlockField.parent);
-        final column = _cellIndexOf[block];
-        final packed = tableBlock < 0
-            ? 0
-            : m.block(tableBlock, BlockField.attr1);
+        final cell = _cellFields(block);
         return ProjectedRow(
           index: index,
           kind: RowKind.tableCell,
@@ -1174,22 +1170,16 @@ final class _Builder {
           text: text.toString(),
           segments: segments,
           shells: shells,
-          sourceStart: sourceStart < 0
-              ? m.block(block, BlockField.startUtf16)
-              : sourceStart,
-          sourceEnd: sourceEnd < 0
-              ? m.block(block, BlockField.endUtf16)
-              : sourceEnd,
+          sourceStart: sourceStart < 0 ? m.blockStart(block) : sourceStart,
+          sourceEnd: sourceEnd < 0 ? m.blockEnd(block) : sourceEnd,
           contentStarts: starts,
           contentEnds: ends,
           prefixStarts: prefixes,
-          tableBlock: tableBlock,
-          tableRowBlock: rowBlock,
-          column: column,
-          header:
-              rowBlock != noParent &&
-              m.block(rowBlock, BlockField.flags) & 1 != 0,
-          alignment: column < 16 ? (packed >> (2 * column)) & 3 : 0,
+          tableBlock: cell.tableBlock,
+          tableRowBlock: cell.tableRowBlock,
+          column: cell.column,
+          header: cell.header,
+          alignment: cell.alignment,
         );
       default:
         return ProjectedRow(
@@ -1201,12 +1191,8 @@ final class _Builder {
           text: text.toString(),
           segments: segments,
           shells: shells,
-          sourceStart: sourceStart < 0
-              ? m.block(block, BlockField.startUtf16)
-              : sourceStart,
-          sourceEnd: sourceEnd < 0
-              ? m.block(block, BlockField.endUtf16)
-              : sourceEnd,
+          sourceStart: sourceStart < 0 ? m.blockStart(block) : sourceStart,
+          sourceEnd: sourceEnd < 0 ? m.blockEnd(block) : sourceEnd,
           contentStarts: starts,
           contentEnds: ends,
           prefixStarts: prefixes,
@@ -1256,10 +1242,8 @@ final class _Builder {
     int kind,
     List<int> containerOf,
   ) {
-    final first = m.block(block, BlockField.firstLine),
-        n = m.block(block, BlockField.lineCount);
-    final co = m.block(block, BlockField.contentOffset),
-        cn = m.block(block, BlockField.contentCount);
+    final first = m.blockFirstLine(block), n = m.blockLineCount(block);
+    final co = m.blockContentOffset(block), cn = m.blockContentCount(block);
     final text = StringBuffer();
     final segments = <Segment>[];
     var sourceStart = -1, sourceEnd = -1;
@@ -1267,21 +1251,17 @@ final class _Builder {
         ends = List<int>.filled(n, -1),
         prefixes = List<int>.filled(n, -1);
     for (var c = 0; c < cn; c++) {
-      final rec = m.content(co + c, ContentField.line);
-      final cs = m.content(co + c, ContentField.startUtf16),
-          ce = m.content(co + c, ContentField.endUtf16);
+      final rec = m.contentLine(co + c);
+      final cs = m.contentStart(co + c), ce = m.contentEnd(co + c);
       if (rec >= first && rec < first + n) {
         starts[rec - first] = cs;
         ends[rec - first] = ce;
-        prefixes[rec - first] = m.content(
-          co + c,
-          ContentField.prefixStartUtf16,
-        );
+        prefixes[rec - first] = m.contentPrefixStart(co + c);
       }
       if (sourceStart < 0) sourceStart = cs;
       sourceEnd = ce;
       if (c > 0) {
-        final prevEnd = m.content(co + c - 1, ContentField.endUtf16);
+        final prevEnd = m.contentEnd(co + c - 1);
         final d0 = text.length;
         text.write('\n');
         segments.add(
@@ -1296,7 +1276,7 @@ final class _Builder {
           ),
         );
       }
-      final virt = m.content(co + c, ContentField.virtualLeadingSpaces);
+      final virt = m.contentVirtualSpaces(co + c);
       if (virt > 0) {
         final d0 = text.length;
         text.write(' ' * virt);
@@ -1327,7 +1307,7 @@ final class _Builder {
       }
     }
     _fillLineEnds(first, starts, ends, prefixes);
-    final flags = m.block(block, BlockField.flags);
+    final flags = m.blockFlags(block);
     // Fence lines hold no caret: an edit there would be invisible. The info
     // string is a host affordance, not a caret position.
     if (kind == BlockKind.codeBlock && flags & 1 != 0 && starts.isNotEmpty) {
@@ -1349,21 +1329,17 @@ final class _Builder {
       text: text.toString(),
       segments: segments,
       shells: _shellsFor(containerOf[first]),
-      sourceStart: sourceStart < 0
-          ? m.block(block, BlockField.startUtf16)
-          : sourceStart,
-      sourceEnd: sourceEnd < 0
-          ? m.block(block, BlockField.endUtf16)
-          : sourceEnd,
+      sourceStart: sourceStart < 0 ? m.blockStart(block) : sourceStart,
+      sourceEnd: sourceEnd < 0 ? m.blockEnd(block) : sourceEnd,
       contentStarts: starts,
       contentEnds: ends,
       prefixStarts: prefixes,
       fenced: kind == BlockKind.codeBlock && flags & 1 != 0,
       codeInfoStart: kind == BlockKind.codeBlock && flags & 1 != 0
-          ? _u16(m.block(block, BlockField.attr1))
+          ? m.codeInfoStart(block)
           : -1,
       codeInfoEnd: kind == BlockKind.codeBlock && flags & 1 != 0
-          ? _u16(m.block(block, BlockField.attr2))
+          ? m.codeInfoEnd(block)
           : -1,
     );
   }

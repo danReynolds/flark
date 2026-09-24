@@ -1,7 +1,8 @@
 //! Flat render-model extraction over an unmodified comrak AST.
 //!
-//! See `schema/render_model_v4.json` and `SCHEMA.md` for the layout. The
-//! extraction walks the tree once, iteratively, derives what comrak does not
+//! See `schema/render_model_v5.json` and `SCHEMA.md` for the published
+//! layout and `records` for the richer internal one. The extraction walks the
+//! tree once, iteratively, derives what comrak does not
 //! expose (per-line content ranges, reference definitions), corrects the two
 //! situations where comrak's inline positions are known to be off, and in
 //! report mode validates every derivation against comrak's own output.
@@ -9,7 +10,8 @@
 use crate::text_pieces;
 use crate::lines::LineIndex;
 use crate::reference_definitions::{self, Definition};
-use crate::schema::{self, block, block_kind, content, definition, header, run, run_kind, table_alignment};
+use crate::records::{block, content, run};
+use crate::schema::{self, block_kind, run_kind, table_alignment};
 use comrak::nodes::{AstNode, ListType, NodeCodeBlock, NodeValue, Sourcepos, TableAlignment};
 use comrak::{parse_document, Arena, Options};
 
@@ -1213,24 +1215,123 @@ impl<'a> Extractor<'a> {
 
     // ---------------------------------------------------------------- encode
 
-    fn encode(&self) -> Vec<u32> {
-        let words = schema::HEADER_WORDS + self.li.line_count() * 2 + self.blocks.len() * block::WORDS + self.content.len() * content::WORDS + self.runs.len() * run::WORDS + self.definitions.len() * definition::WORDS;
-        let string_words = (self.strings.len() + 3) / 4;
-        let mut out: Vec<u32> = Vec::with_capacity(words + string_words);
+    /// Pack the internal records into the published model: UTF-16 offsets
+    /// only, fixed-width records, and one extras section for values only some
+    /// kinds carry. Content records are emitted in block order, so a block's
+    /// records end where the next block's begin.
+    fn encode(&mut self) -> Vec<u32> {
+        use schema::{block as wb, content as wc, extra, header as wh, run as wr};
+        let u16 = |li: &LineIndex, b: u32| li.u16(b as usize);
+        let (nb, nr) = (self.blocks.len(), self.runs.len());
+        // Block b owns runs [first_run[b], first_run[b + 1]).
+        let mut first_run = vec![0u32; nb + 1];
+        let mut r = 0usize;
+        for (b, slot) in first_run.iter_mut().enumerate() {
+            while r < nr && (self.runs[r][run::BLOCK] as usize) < b { r += 1; }
+            *slot = r as u32;
+        }
+        let mut extras: Vec<u32> = Vec::new();
+        let mut blocks: Vec<u32> = Vec::with_capacity(nb * wb::WORDS);
+        let mut content: Vec<u32> = Vec::with_capacity(self.content.len() * wc::WORDS);
+        let mut packing_overflow = None;
+        for (b, rec) in self.blocks.iter().enumerate() {
+            let kind = rec[block::KIND];
+            let mut flags = rec[block::FLAGS];
+            let mut attr = rec[block::ATTR0];
+            let mut extra = extra::NONE;
+            match kind {
+                block_kind::CODE_BLOCK if flags & 1 != 0 => {
+                    extra = extras.len() as u32;
+                    extras.extend([u16(&self.li, rec[block::ATTR1]), u16(&self.li, rec[block::ATTR2])]);
+                }
+                block_kind::LIST => { flags |= (rec[block::ATTR0] & 1) << 1; attr = rec[block::ATTR1]; }
+                block_kind::ITEM => {
+                    extra = extras.len() as u32;
+                    extras.extend([rec[block::MARKER_END_UTF16], u16(&self.li, rec[block::ATTR1]), u16(&self.li, rec[block::ATTR2])]);
+                }
+                block_kind::TABLE => { extra = extras.len() as u32; extras.push(rec[block::ATTR1]); }
+                block_kind::FOOTNOTE_DEFINITION => {
+                    extra = extras.len() as u32;
+                    extras.extend([u16(&self.li, rec[block::ATTR1]), u16(&self.li, rec[block::ATTR2])]);
+                }
+                _ => {}
+            }
+            blocks.extend([
+                kind | flags << wb::kind_flags::FLAGS_SHIFT,
+                rec[block::PARENT], rec[block::START_UTF16], rec[block::END_UTF16],
+                rec[block::FIRST_LINE], rec[block::LINE_COUNT],
+                (content.len() / wc::WORDS) as u32, first_run[b], attr, extra,
+            ]);
+            let (co, cn) = (rec[block::CONTENT_OFFSET] as usize, rec[block::CONTENT_COUNT] as usize);
+            for c in &self.content[co..co + cn] {
+                let (line, virt) = (c[content::LINE], c[content::VIRTUAL_LEADING_SPACES]);
+                if line > wc::line_virtual::LINE_MASK || virt > wc::line_virtual::VIRTUAL_LEADING_SPACES_MASK {
+                    packing_overflow = Some(format!("content line {line} with {virt} virtual spaces"));
+                }
+                content.extend([c[content::START_UTF16], c[content::END_UTF16], c[content::PREFIX_START_UTF16], line | virt << wc::line_virtual::VIRTUAL_LEADING_SPACES_SHIFT]);
+            }
+        }
+        if let Some(detail) = packing_overflow { self.dev("content-packing", || detail); }
+        if content.len() / wc::WORDS != self.content.len() {
+            let (kept, all) = (content.len() / wc::WORDS, self.content.len());
+            self.dev("content-owner", || format!("{kept} of {all} content records belong to a block"));
+        }
+        let mut runs: Vec<u32> = Vec::with_capacity(nr * wr::WORDS);
+        let mut run_extras: Vec<u32> = Vec::new();
+        const WIDE: u32 = 0xFFFF;
+        for (i, rec) in self.runs.iter().enumerate() {
+            let kind = rec[run::KIND];
+            let (s, e, cs, ce) = (rec[run::START_UTF16], rec[run::END_UTF16], rec[run::CONTENT_START_UTF16], rec[run::CONTENT_END_UTF16]);
+            let (before, after) = (cs - s, e - ce);
+            let parent = rec[run::PARENT];
+            let distance = if parent == u32::MAX { 0 } else { i as u32 - parent };
+            let wide = before >= WIDE || after >= WIDE || distance >= WIDE;
+            let mut flags = rec[run::FLAGS] & 3 | (rec[run::FLAGS] >> 8 & 1) << 2;
+            if wide { flags |= 1 << 3; }
+            let offset = extras.len() as u32;
+            if wide { extras.extend([cs, ce, parent]); }
+            match kind {
+                run_kind::LINK | run_kind::IMAGE | run_kind::AUTOLINK => extras.extend([
+                    u16(&self.li, rec[run::AUX0]), u16(&self.li, rec[run::AUX1]), u16(&self.li, rec[run::AUX2]), u16(&self.li, rec[run::AUX3]),
+                    rec[run::DESTINATION_OFFSET], rec[run::DESTINATION_LENGTH], rec[run::TITLE_OFFSET], rec[run::TITLE_LENGTH],
+                ]),
+                run_kind::REPLACEMENT => extras.extend([rec[run::AUX0], rec[run::AUX1]]),
+                run_kind::CODE if rec[run::FLAGS] & 2 != 0 => extras.extend([rec[run::AUX2], rec[run::AUX3]]),
+                run_kind::FOOTNOTE_REF => extras.extend([u16(&self.li, rec[run::AUX0]), u16(&self.li, rec[run::AUX1])]),
+                _ => {}
+            }
+            if extras.len() as u32 > offset { run_extras.extend([i as u32, offset]); }
+            let (before, after, distance) = if wide { (WIDE, WIDE, WIDE) } else { (before, after, distance) };
+            runs.extend([
+                s, e,
+                before | after << wr::hidden::AFTER_SHIFT,
+                kind | flags << wr::kind_flags_parent::FLAGS_SHIFT | distance << wr::kind_flags_parent::PARENT_DISTANCE_SHIFT,
+            ]);
+        }
+        let nl = self.li.line_count();
+        let nd = self.definitions.len();
+        let string_words = self.strings.len().div_ceil(4);
+        let words = schema::HEADER_WORDS + nl * schema::line::WORDS + blocks.len() + content.len() + runs.len() + nd * schema::definition::WORDS + run_extras.len() + extras.len() + string_words;
+        let mut out: Vec<u32> = Vec::with_capacity(words);
         let mut hdr = [0u32; schema::HEADER_WORDS];
-        hdr[header::MAGIC] = schema::MAGIC; hdr[header::VERSION] = schema::VERSION;
-        hdr[header::SRC_BYTES] = self.src.len() as u32; hdr[header::SRC_UTF16] = self.li.u16(self.src.len());
-        hdr[header::LINE_COUNT] = self.li.line_count() as u32; hdr[header::BLOCK_COUNT] = self.blocks.len() as u32;
-        hdr[header::CONTENT_COUNT] = self.content.len() as u32; hdr[header::RUN_COUNT] = self.runs.len() as u32;
-        hdr[header::DEFINITION_COUNT] = self.definitions.len() as u32; hdr[header::STRING_BYTES] = self.strings.len() as u32;
+        hdr[wh::MAGIC] = schema::MAGIC; hdr[wh::VERSION] = schema::VERSION;
+        hdr[wh::SRC_BYTES] = self.src.len() as u32; hdr[wh::SRC_UTF16] = self.li.u16(self.src.len());
+        hdr[wh::LINE_COUNT] = nl as u32; hdr[wh::BLOCK_COUNT] = nb as u32;
+        hdr[wh::CONTENT_COUNT] = (content.len() / wc::WORDS) as u32; hdr[wh::RUN_COUNT] = nr as u32;
+        hdr[wh::DEFINITION_COUNT] = nd as u32; hdr[wh::RUN_EXTRA_COUNT] = (run_extras.len() / schema::run_extra::WORDS) as u32;
+        hdr[wh::EXTRA_WORDS] = extras.len() as u32; hdr[wh::STRING_BYTES] = self.strings.len() as u32;
         out.extend_from_slice(&hdr);
-        for l in 0..self.li.line_count() { let s = self.li.line_start(l); out.push(s as u32); out.push(self.li.u16(s)); }
-        for r in &self.blocks { out.extend_from_slice(r); }
-        for r in &self.content { out.extend_from_slice(r); }
-        for r in &self.runs { out.extend_from_slice(r); }
-        for d in &self.definitions { out.extend_from_slice(&[d.start as u32, d.end as u32, self.li.u16(d.start), self.li.u16(d.end), d.label.0 as u32, d.label.1 as u32, d.dest.0 as u32, d.dest.1 as u32]); }
+        for l in 0..nl { out.push(self.li.u16(self.li.line_start(l))); }
+        out.extend_from_slice(&blocks);
+        out.extend_from_slice(&content);
+        out.extend_from_slice(&runs);
+        for d in &self.definitions {
+            out.extend([d.start, d.end, d.label.0, d.label.1, d.dest.0, d.dest.1].map(|b| self.li.u16(b)));
+        }
+        out.extend_from_slice(&run_extras);
+        out.extend_from_slice(&extras);
         for chunk in self.strings.chunks(4) { let mut b = [0u8; 4]; b[..chunk.len()].copy_from_slice(chunk); out.push(u32::from_le_bytes(b)); }
-        debug_assert_eq!(out.len(), words + string_words);
+        debug_assert_eq!(out.len(), words);
         out
     }
 }

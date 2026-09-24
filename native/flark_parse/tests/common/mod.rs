@@ -1,6 +1,7 @@
 //! Shared test support: corpus loading and the schema invariants.
 #![allow(dead_code)]
-use flark_parse::schema::{self, block, block_kind, content, definition, header, run};
+use flark_parse::records::{self, block, content, definition, expand, header, run};
+use flark_parse::schema::{self, block_kind};
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]
@@ -18,13 +19,15 @@ pub fn corpus(file: &str) -> Vec<Case> {
 pub const FILES: [&str; 2] = ["common_mark_tests.json", "gfm_tests.json"];
 
 /// Structural invariants from the schema, checked on any model.
-pub fn check_invariants(src: &str, w: &[u32]) -> Result<(), String> {
-    if w.len() < schema::HEADER_WORDS { return Err("short header".into()); }
+pub fn check_invariants(src: &str, published: &[u32]) -> Result<(), String> {
+    let expanded = expand(src, published)?;
+    let w = &expanded[..];
+    if w.len() < records::HEADER_WORDS { return Err("short header".into()); }
     if w[header::MAGIC] != schema::MAGIC || w[header::VERSION] != schema::VERSION { return Err("bad magic/version".into()); }
     let (nl, nb, nc, nr, nd, ns) = (w[header::LINE_COUNT] as usize, w[header::BLOCK_COUNT] as usize, w[header::CONTENT_COUNT] as usize, w[header::RUN_COUNT] as usize, w[header::DEFINITION_COUNT] as usize, w[header::STRING_BYTES] as usize);
     if w[header::SRC_BYTES] as usize != src.len() { return Err("src_bytes".into()); }
     if w[header::SRC_UTF16] as usize != src.encode_utf16().count() { return Err("src_utf16".into()); }
-    let lines_off = schema::HEADER_WORDS; let blocks_off = lines_off + nl * 2; let content_off = blocks_off + nb * block::WORDS; let runs_off = content_off + nc * content::WORDS; let defs_off = runs_off + nr * run::WORDS;
+    let lines_off = records::HEADER_WORDS; let blocks_off = lines_off + nl * 2; let content_off = blocks_off + nb * block::WORDS; let runs_off = content_off + nc * content::WORDS; let defs_off = runs_off + nr * run::WORDS;
     let expected_words = defs_off + nd * definition::WORDS + (ns + 3) / 4;
     if w.len() != expected_words { return Err(format!("buffer words {} != expected {}", w.len(), expected_words)); }
     // Prefix table: O(n) once instead of O(n) per lookup.

@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
-import 'package:flark/render_model.dart';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/gestures.dart';
@@ -610,7 +610,7 @@ class RenderFlarkSurface extends RenderBox
       var width = math.max(24.0, available - (contentLeft - _padding));
       if (row?.kind == RowKind.tableCell) {
         final model = (_snapshot as FlarkLiveSnapshot).document.model;
-        final columns = model.block(row!.tableBlock, BlockField.attr0);
+        final columns = model.blockAttr(row!.tableBlock);
         width = math.max(24, width / columns - 2 * tablePadding);
         x =
             contentLeft +
@@ -891,7 +891,7 @@ class RenderFlarkSurface extends RenderBox
       final shell = container.shell;
       if (shell.kind == ShellKind.item) {
         if (shell.task &&
-            row.firstLine == model.block(shell.block, BlockField.firstLine) &&
+            row.firstLine == model.blockFirstLine(shell.block) &&
             Rect.fromLTWH(
               container.left,
               layout.origin.dy,
@@ -1241,8 +1241,7 @@ class RenderFlarkSurface extends RenderBox
           }
           if (shell.kind == ShellKind.item) {
             final model = (_snapshot as FlarkLiveSnapshot).document.model;
-            if (row.firstLine ==
-                model.block(shell.block, BlockField.firstLine)) {
+            if (row.firstLine == model.blockFirstLine(shell.block)) {
               if (shell.task) {
                 // Task state is UI geometry, independent of symbol-font fallback.
                 final fontSize = textScaler.scale(style.fontSize!);
