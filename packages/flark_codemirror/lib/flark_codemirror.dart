@@ -10,6 +10,7 @@ import 'src/edit.dart';
 import 'src/highlight.dart';
 import 'src/languages.dart';
 import 'src/mode.dart';
+import 'src/modes/brackets.dart';
 
 export 'src/detect.dart' show detectCodeMirrorLanguage;
 export 'src/languages.dart'
@@ -17,8 +18,9 @@ export 'src/languages.dart'
 
 /// A [CodeEditingDelegate] backed by the ported modes. A fence without a
 /// language is detected among the ported ones ([detectCodeMirrorLanguage]),
-/// or plain when none is recognized. Languages without a ported mode are
-/// plain, and their edits take the kernel's defaults.
+/// or plain when none is recognized. A fence in a language without a ported
+/// mode is plain but indents by its brackets ([BracketsMode]); plain text
+/// and undetected fences take the kernel's editing defaults.
 final class FlarkCodeMirror implements CodeEditingDelegate {
   /// Longer snippets are plain and edit without proposals, like the previous
   /// highlighter's bound.
@@ -74,14 +76,16 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
     required String text,
     required String indentUnit,
   }) {
-    if (source.length > maxCodeUnits || codeMirrorMode(language) == null) {
+    if (source.length > maxCodeUnits ||
+        language.isEmpty ||
+        language == 'text') {
       return null;
     }
     return proposeCodeEdit(
-      (columns) => codeMirrorMode(
-        language,
-        ModeConfig(indentUnit: columns, tabSize: codeTabSize),
-      )!,
+      (columns) {
+        final config = ModeConfig(indentUnit: columns, tabSize: codeTabSize);
+        return codeMirrorMode(language, config) ?? BracketsMode(config);
+      },
       source,
       base: base,
       extent: extent,

@@ -166,6 +166,32 @@ void main() {
     });
   });
 
+  test('changing a fence to an unknown language clears its colors', () {
+    const source = 'def greet(name):\n    return name';
+    expect(code.highlight(source, 'python').tokens.length, greaterThan(1));
+    final unknown = code.highlight(source, 'haskell');
+    expect(unknown.language, isNull);
+    expect(unknown.tokens.single.kind, isNull);
+  });
+
+  test('aliases and extensions name their language', () {
+    for (final (alias, language) in [
+      ('zsh', 'bash'),
+      ('yml', 'yaml'),
+      ('kt', 'kotlin'),
+      ('c++', 'cpp'),
+      ('cs', 'csharp'),
+      ('ps1', 'powershell'),
+      ('pgsql', 'postgresql'),
+      ('tsx', 'typescript'),
+      ('jsonc', 'json'),
+      ('py3', 'python'),
+      ('plaintext', 'text'),
+    ]) {
+      expect(code.resolveLanguage('', alias), language, reason: alias);
+    }
+  });
+
   test('language names', () {
     expect(code.resolveLanguage('', 'js title="x"'), 'javascript');
     expect(code.resolveLanguage('', 'TS'), 'typescript');
@@ -196,7 +222,7 @@ void main() {
         source.replaceRange(edit.start, edit.end, edit.text);
 
     test('declines what it cannot serve', () {
-      expect(propose('x', 1, language: 'haskell'), isNull);
+      expect(propose('x', 1, language: 'text'), isNull);
       expect(propose('x', 1, language: ''), isNull);
       final long = 'x' * (FlarkCodeMirror.maxCodeUnits + 1);
       expect(propose(long, long.length), isNull);
@@ -219,6 +245,32 @@ void main() {
         expect(apply(commented, propose(commented, 4)!), '// {\n}');
       },
     );
+
+    test('an unported language indents by its brackets', () {
+      const block = 'fn main() {';
+      expect(
+        apply(block, propose(block, block.length, language: 'zig')!),
+        'fn main() {\n  ',
+      );
+      const closing = 'fn main() {\n  run(\n    1,\n    2\n    ';
+      final closer = propose(
+        closing,
+        closing.length,
+        language: 'zig',
+        action: CodeEditingAction.insert,
+        text: ')',
+      )!;
+      expect(
+        apply(closing, closer),
+        '${closing.substring(0, closing.length - 4)}  )',
+      );
+      const flat = 'defmodule Greeter do\n  def hello';
+      expect(
+        apply(flat, propose(flat, flat.length, language: 'elixir')!),
+        '$flat\n  ',
+      );
+      expect(code.highlight(block, 'zig').tokens.single.kind, isNull);
+    });
 
     test('tabs indent with tabs, measured at four columns', () {
       const source = 'if (a) {\n\tif (b) {';

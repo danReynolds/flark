@@ -42,27 +42,89 @@ final codeMirrorLanguages = {
 };
 
 /// The canonical name for a fence's info string: its first word, lowercased,
-/// with the aliases Flark's language picker accepts. Empty for none or
-/// `auto`. Names without a ported mode are returned as written.
+/// through [codeMirrorAliases]. Empty for none or `auto`. Names without an
+/// alias are returned as written.
 String codeMirrorLanguageName(String info) {
   final name = info.trim().split(RegExp(r'\s+')).first.toLowerCase();
-  return const {
-        'auto': '',
-        'js': 'javascript',
-        'ts': 'typescript',
-        'py': 'python',
-        'rb': 'ruby',
-        'rs': 'rust',
-        'golang': 'go',
-        'sh': 'bash',
-        'shell': 'bash',
-        'yml': 'yaml',
-        'txt': 'text',
-        'plaintext': 'text',
-        'plain': 'text',
-      }[name] ??
-      name;
+  return codeMirrorAliases[name] ?? name;
 }
+
+/// Other names for languages, as fences write them: common aliases and file
+/// extensions, and close relatives a language's mode reads well (JSX as
+/// JavaScript). `text` and its aliases name plain text.
+const codeMirrorAliases = {
+  'auto': '',
+  'js': 'javascript',
+  'mjs': 'javascript',
+  'cjs': 'javascript',
+  'jsx': 'javascript',
+  'node': 'javascript',
+  'ecmascript': 'javascript',
+  'ts': 'typescript',
+  'mts': 'typescript',
+  'cts': 'typescript',
+  'tsx': 'typescript',
+  'jsonc': 'json',
+  'json5': 'json',
+  'jsonl': 'json',
+  'ndjson': 'json',
+  'webmanifest': 'json',
+  'py': 'python',
+  'py3': 'python',
+  'python3': 'python',
+  'pyi': 'python',
+  'pyw': 'python',
+  'starlark': 'python',
+  'bzl': 'python',
+  'h': 'c',
+  'c++': 'cpp',
+  'cc': 'cpp',
+  'cxx': 'cpp',
+  'hpp': 'cpp',
+  'hh': 'cpp',
+  'hxx': 'cpp',
+  'ino': 'cpp',
+  'cs': 'csharp',
+  'c#': 'csharp',
+  'kt': 'kotlin',
+  'kts': 'kotlin',
+  'sh': 'bash',
+  'shell': 'bash',
+  'zsh': 'bash',
+  'ksh': 'bash',
+  'shellscript': 'bash',
+  'yml': 'yaml',
+  'golang': 'go',
+  'rb': 'ruby',
+  'rake': 'ruby',
+  'gemspec': 'ruby',
+  'podspec': 'ruby',
+  'rs': 'rust',
+  'ps1': 'powershell',
+  'psm1': 'powershell',
+  'psd1': 'powershell',
+  'pwsh': 'powershell',
+  'posh': 'powershell',
+  'xsd': 'xml',
+  'xsl': 'xml',
+  'xslt': 'xml',
+  'svg': 'xml',
+  'plist': 'xml',
+  'rss': 'xml',
+  'atom': 'xml',
+  'wsdl': 'xml',
+  'htm': 'html',
+  'xhtml': 'html',
+  'postgres': 'postgresql',
+  'pgsql': 'postgresql',
+  'psql': 'postgresql',
+  'mariadb': 'mysql',
+  'txt': 'text',
+  'plaintext': 'text',
+  'plain': 'text',
+  'output': 'text',
+  'log': 'text',
+};
 
 /// A mode for [language], or null when none is ported.
 Mode<Object?>? codeMirrorMode(
