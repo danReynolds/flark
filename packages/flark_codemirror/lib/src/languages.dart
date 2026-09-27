@@ -1,5 +1,6 @@
 import 'mode.dart';
 import 'modes/clike.dart';
+import 'modes/css.dart';
 import 'modes/go.dart';
 import 'modes/javascript.dart';
 import 'modes/powershell.dart';
@@ -7,6 +8,7 @@ import 'modes/python.dart';
 import 'modes/ruby.dart';
 import 'modes/rust.dart';
 import 'modes/shell.dart';
+import 'modes/sql.dart';
 import 'modes/xml.dart';
 import 'modes/yaml.dart';
 
@@ -60,6 +62,12 @@ final codeMirrorCatalog = [
     'HTML',
     (config) => XmlMode(config, XmlOptions.html),
   ),
+  CodeMirrorLanguage('sql', 'SQL', SqlMode.standardSql),
+  CodeMirrorLanguage('postgresql', 'PostgreSQL', SqlMode.pgSql),
+  CodeMirrorLanguage('mysql', 'MySQL', SqlMode.mySql),
+  CodeMirrorLanguage('css', 'CSS', CssMode.css),
+  CodeMirrorLanguage('scss', 'SCSS', CssMode.scss),
+  CodeMirrorLanguage('less', 'LESS', CssMode.less),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.

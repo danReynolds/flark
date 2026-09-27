@@ -1,0 +1,111 @@
+@use 'sass:math';
+@use "sass:map" as m;
+@import 'partials/reset', 'partials/type';
+
+// Design tokens
+$brand: #3b82f6 !default;
+$brand-dark: darken($brand, 12%);
+$radius: 4px;
+$gutter: 16px !global;
+$breakpoints: (
+  'small': 576px,
+  'medium': 768px,
+  'large': 992px
+);
+$icons: (home: '\e900', search: '\e901', close: '\e902');
+
+/* A block comment
+   over two lines */
+
+%visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+@function rem($px, $base: 16px) {
+  @return math.div($px, $base) * 1rem;
+}
+
+@mixin respond($name) {
+  $width: map-get($breakpoints, $name);
+  @if $width == null {
+    @warn "Unknown breakpoint `#{$name}`.";
+  } @else if $width > 900px {
+    @media (min-width: $width) and (hover: hover) { @content; }
+  } @else {
+    @media (min-width: $width) {
+      @content;
+    }
+  }
+}
+
+@mixin button-variant($bg, $fg: white, $border...) {
+  background-color: $bg;
+  color: $fg;
+  border: 1px solid darken($bg, 5%);
+  &:hover { background-color: lighten($bg, 8%); }
+}
+
+.button {
+  @include button-variant($brand);
+  padding: rem(8px) rem($gutter * 1.5);
+  border-radius: $radius;
+  font: {
+    family: $font-stack;
+    size: rem(14px);
+    weight: 600;
+  }
+
+  &--large { padding: rem(12px) rem(24px); }
+  &.is-disabled,
+  &[disabled] {
+    opacity: .5;
+    pointer-events: none;
+  }
+  & + & { margin-left: $gutter / 2; }
+  .icon + & { margin: 0; }
+
+  @include respond('medium') {
+    display: inline-flex;
+  }
+}
+
+@each $name, $glyph in $icons {
+  .icon-#{$name}::before {
+    content: $glyph;
+    #{$prop}-top: 1px;
+  }
+}
+
+@for $i from 1 through 4 {
+  .mt-#{$i} { margin-top: #{$i * 4}px; }
+}
+
+$i: 6;
+@while $i > 0 {
+  .item-#{$i} { width: 2em * $i; }
+  $i: $i - 2;
+}
+
+.sr-only {
+  @extend %visually-hidden;
+}
+
+.card {
+  $local: 2px;
+  box-shadow: 0 $local ($local * 2) rgba(#000, .15);
+  width: calc(100% - #{$gutter * 2});
+  > .title { font-weight: bold; }
+  ~ .card { border-top: none; }
+  &:not(.flat):hover { transform: translateY(-1px); }
+
+  @media screen and (max-width: 600px) {
+    padding: 0;
+  }
+}
+
+@debug "radius is #{$radius}";
+@error "stop" if false;
+.unit { margin: -$gutter auto -1px; line-height: 1.4; color: #ABCDEF; }

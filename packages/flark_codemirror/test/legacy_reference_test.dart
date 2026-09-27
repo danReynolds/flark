@@ -28,18 +28,20 @@ void main() {
       indentUnit: fixture['indentUnit'] as int,
       tabSize: fixture['tabSize'] as int,
     );
+    // One mode for every case, in order, as the generator runs one parser:
+    // an export's closure can keep a value between tokens, and so between
+    // cases (css.js's `type`).
+    final mode = codeMirrorMode(language, config);
     group(language, () {
       test('comes from the ported release', () {
         expect(
           fixture['source'],
           startsWith('@codemirror/legacy-modes 6.5.4 '),
         );
-        expect(codeMirrorMode(language, config), isNotNull);
+        expect(mode, isNotNull);
       });
       for (final c in (fixture['cases'] as List).cast<Map<String, dynamic>>()) {
-        test(c['name'], () {
-          checkReferenceCase(codeMirrorMode(language, config)!, c, styles);
-        });
+        test(c['name'], () => checkReferenceCase(mode!, c, styles));
       }
     });
   }
