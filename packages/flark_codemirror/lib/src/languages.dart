@@ -1,6 +1,9 @@
 import 'mode.dart';
 import 'modes/javascript.dart';
+import 'modes/powershell.dart';
 import 'modes/python.dart';
+import 'modes/rust.dart';
+import 'modes/xml.dart';
 
 /// A ported language: its canonical name, display label and mode.
 final class CodeMirrorLanguage {
@@ -34,6 +37,14 @@ final codeMirrorCatalog = [
     valuesOnly: true,
   ),
   CodeMirrorLanguage('python', 'Python', PythonMode.new),
+  CodeMirrorLanguage('rust', 'Rust', RustMode.new),
+  CodeMirrorLanguage('powershell', 'PowerShell', PowerShellMode.new),
+  CodeMirrorLanguage('xml', 'XML', XmlMode.new),
+  CodeMirrorLanguage(
+    'html',
+    'HTML',
+    (config) => XmlMode(config, XmlOptions.html),
+  ),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.

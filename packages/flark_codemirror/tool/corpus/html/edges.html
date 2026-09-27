@@ -1,0 +1,81 @@
+<!doctype html>
+<HTML>
+<HEAD><TITLE>Edge cases</TITLE></HEAD>
+<Body>
+<ul>
+  <li>One
+  <li>Two
+    <ul>
+      <li>Nested one
+      <li>Nested two
+    </ul>
+  <li>Three
+</ul>
+<ol><li>Inline<li>items</ol>
+<p>Paragraph closed by a list
+<ul><li>x</ul>
+<p>Paragraph closed by a table
+<table>
+  <caption>Rows
+  <colgroup><col span=2><col>
+  <tr><td>a<td>b
+  <tr>
+    <td>c
+    <th>d
+  </tr>
+</table>
+<p>Paragraph closed by a heading
+<h2>Heading</h2>
+<P>Upper-case paragraph
+<DIV>closes it</DIV>
+<select>
+  <option>One
+  <optgroup label=g>
+    <option>Two
+  <optgroup label=h>
+    <option>Three
+</select>
+<ruby>base<rt>annotation<rp>(<rt>again</ruby>
+<dl><dt>t<dd>d<dt>t2</dl>
+<img src=/images/a.png/>
+<img src=/images/b.png />
+<a href=https://example.com/path/?q=1&amp;r=2>link</a>
+<a href= "spaced" title = 'also spaced'>text</a>
+<input type=checkbox checked disabled value='it''s'>
+<br/><hr/><wbr>
+<embed src=x.swf><param name=a value=b><source src=a.mp4><track src=a.vtt>
+<area shape=rect><base href=/><keygen><command><frame><menuitem>
+< p>space before the name</p>
+<p>unclosed <b>bold <i>italic</b> mismatched</i>
+<script>
+  if (a < b && c > d) { document.write("</div>"); }
+  const html = '<p class="x">';
+</script>
+<style>
+  a > b { color: red; }
+</style>
+<textarea>
+  <b>not bold</b> &amp; raw
+</textarea>
+<pre>
+Pre text
+    <b>bold inside pre</b>
+</pre>
+<div>
+  <pre>nested pre
+  line two</pre>
+  <span>after pre</span>
+</div>
+<p>Entities &#128512; &#x1F600; &AElig; &amp;amp; &;
+<![CDATA[ cdata in html ]]>
+<?php echo "processing"; ?>
+<!-- comment -- with -- dashes -->
+<div
+  class="a"
+  id=b
+  hidden
+>content</div>
+<custom-element some-attr="1"></custom-element>
+<svg:rect xlink:href="#x"/>
+</Body>
+</HTML>

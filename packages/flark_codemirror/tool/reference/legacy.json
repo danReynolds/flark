@@ -1,3 +1,7 @@
 {
-  "python": {"module": "python", "export": "python"}
+  "python": {"module": "python", "export": "python"},
+  "rust": {"module": "rust", "export": "rust"},
+  "powershell": {"module": "powershell", "export": "powerShell"},
+  "xml": {"module": "xml", "export": "xml"},
+  "html": {"module": "xml", "export": "html"}
 }
