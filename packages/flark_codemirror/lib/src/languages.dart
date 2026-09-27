@@ -2,9 +2,12 @@ import 'mode.dart';
 import 'modes/clike.dart';
 import 'modes/go.dart';
 import 'modes/javascript.dart';
+import 'modes/powershell.dart';
 import 'modes/python.dart';
 import 'modes/ruby.dart';
+import 'modes/rust.dart';
 import 'modes/shell.dart';
+import 'modes/xml.dart';
 import 'modes/yaml.dart';
 
 /// A ported language: its canonical name, display label and mode.
@@ -49,6 +52,14 @@ final codeMirrorCatalog = [
   CodeMirrorLanguage('yaml', 'YAML', YamlMode.new),
   CodeMirrorLanguage('go', 'Go', GoMode.new),
   CodeMirrorLanguage('ruby', 'Ruby', RubyMode.new),
+  CodeMirrorLanguage('rust', 'Rust', RustMode.new),
+  CodeMirrorLanguage('powershell', 'PowerShell', PowerShellMode.new),
+  CodeMirrorLanguage('xml', 'XML', XmlMode.new),
+  CodeMirrorLanguage(
+    'html',
+    'HTML',
+    (config) => XmlMode(config, XmlOptions.html),
+  ),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.

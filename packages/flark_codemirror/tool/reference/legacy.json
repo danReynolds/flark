@@ -9,5 +9,9 @@
   "bash": {"module": "shell", "export": "shell"},
   "yaml": {"module": "yaml", "export": "yaml"},
   "go": {"module": "go", "export": "go"},
-  "ruby": {"module": "ruby", "export": "ruby"}
+  "ruby": {"module": "ruby", "export": "ruby"},
+  "rust": {"module": "rust", "export": "rust"},
+  "powershell": {"module": "powershell", "export": "powerShell"},
+  "xml": {"module": "xml", "export": "xml"},
+  "html": {"module": "xml", "export": "html"}
 }

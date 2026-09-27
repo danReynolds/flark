@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?xml-stylesheet type="text/xsl" href="catalog.xsl"?>
+<!DOCTYPE catalog [
+  <!ELEMENT catalog (book+)>
+  <!ATTLIST book id ID #REQUIRED>
+  <!ENTITY publisher "Example &amp; Sons">
+  <!-- a comment inside the internal subset -->
+]>
+<!-- A catalog of books,
+     written to exercise the highlighter. -->
+<catalog xmlns="urn:example:catalog"
+         xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="urn:example:catalog catalog.xsd">
+  <book id="bk101" lang='en'>
+    <dc:title>XML Developer&apos;s Guide</dc:title>
+    <dc:creator>Gambardella, Matthew</dc:creator>
+    <price currency="USD">44.95</price>
+    <published>2000-10-01</published>
+    <description>
+      An in-depth look at creating applications
+      with XML. &publisher; &#169; &#x00AE; &bogus entity
+    </description>
+    <cover src="covers/bk101.png"/>
+    <cover src="covers/bk101-back.png" />
+  </book>
+  <book id="bk102"
+        lang="fr"
+        format="paperback">
+    <dc:title>Midnight Rain</dc:title>
+    <notes><![CDATA[Use <b>bold</b> & "quotes" freely here.]]></notes>
+    <script><![CDATA[
+      function matches(a, b) {
+        return a < b && b > 0;
+      }
+    ]]></script>
+    <summary lang="en">A former architect battles corporate zombies
+      and an evil sorceress.</summary>
+  </book>
+  <book id="bk103">
+    <dc:title>Maeve Ascendant</dc:title>
+    <empty></empty>
+    <mismatched>text</wrong>
+    <unquoted value=bare />
+    <missing value />
+    <broken attr="never closed
+      across lines">
+    </broken>
+    <tag <inner/>
+  </book>
+  <?process-me now please?>
+  <deep>
+    <deeper>
+      <deepest level="3">
+        <leaf/>
+      </deepest>
+    </deeper>
+  </deep>
+  <mixed>Text with <em>inline</em> markup and a stray &amp; ampersand</mixed>
+  <list>
+    <item n="1">one</item>
+    <item n="2">two</item>
+    <item
+      n="3">three</item>
+  </list>
+</catalog>
