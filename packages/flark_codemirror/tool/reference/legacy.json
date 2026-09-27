@@ -1,3 +1,9 @@
 {
-  "python": {"module": "python", "export": "python"}
+  "python": {"module": "python", "export": "python"},
+  "sql": {"module": "sql", "export": "standardSQL"},
+  "postgresql": {"module": "sql", "export": "pgSQL"},
+  "mysql": {"module": "sql", "export": "mySQL"},
+  "css": {"module": "css", "export": "css"},
+  "scss": {"module": "css", "export": "sCSS"},
+  "less": {"module": "css", "export": "less"}
 }

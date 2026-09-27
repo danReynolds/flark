@@ -1,0 +1,113 @@
+@import (reference) "bootstrap/mixins.less";
+@import url("theme.less");
+@plugin "my-plugin";
+
+// Variables and operations
+@base: #f04615;
+@width: 10px;
+@height: @width + 10px;
+@gutter: (@width * 2);
+@half: (@width / 2);
+@min768: ~"(min-width: 768px)";
+@selector: ~".banner";
+@property: color;
+@images: "../img";
+@my-ruleset: {
+  .my-selector {
+    background-color: black;
+  }
+};
+
+/* Mixins with defaults, guards and pattern matching */
+.bordered(@width: 2px; @style: solid) {
+  border: @width @style black;
+}
+
+.mixin(@a) when (lightness(@a) >= 50%) {
+  background-color: black;
+}
+.mixin(@a) when (lightness(@a) < 50%) {
+  background-color: white;
+}
+.mixin(@a; @b: 2) when (default()) {
+  width: @b;
+}
+.truth(@a) when (@a = true) and (isnumber(@b)), (@c) { x: 1; }
+
+.button {
+  .bordered(4px; dashed);
+  .mixin(#ddd);
+  color: darken(@base, 10%);
+  background+: url(1.png);
+  background+_: url(2.png);
+  @media @min768 {
+    font-size: 1.2rem;
+  }
+  &-ok { background-image: url("@{images}/ok.png"); }
+  &:hover { color: fade(@base, 50%) !important; }
+  & & { margin: 0; }
+  .inner& { padding: 0; }
+}
+
+@{selector}-title {
+  @{property}: #999;
+  width: ~"calc(100% - @{gutter})";
+  filter: ~"ms:alwaysHasItsOwnSyntax.For.Stuff()";
+  height: e("calc(1px + 2px)");
+  content: %("%d/%d", @width, @height);
+}
+
+#namespace {
+  .mixin() {
+    color: red;
+  }
+}
+.use-namespace {
+  #namespace > .mixin();
+  #namespace.mixin();
+}
+
+.loop(@i) when (@i > 0) {
+  .w-@{i} {
+    width: (@i * 100% / 5);
+  }
+  .loop(@i - 1);
+}
+.loop(5);
+
+.e:extend(.f all) {}
+.c {
+  &:extend(.d);
+  @my-ruleset();
+}
+
+@config: {
+  option1: true;
+  option2: false;
+};
+.lookup {
+  enabled: @config[option1];
+  @r: { color: red };
+  size: if((@width > 5px), large, small);
+}
+
+@media screen {
+  @media (min-width: 768px) {
+    .nested { color: spin(@base, 30); }
+  }
+}
+
+.guard when (@mode = huge) { width: 100% }
+@detached: {
+  background: red;
+};
+.call {
+  @detached();
+  margin: -@gutter;
+  padding: @width * 2 @height;
+  border-radius: (@width / 4) !important;
+}
+
+@keyframes pulse { from { opacity: 1; } to { opacity: .4; } }
+@font-face { font-family: "Less Sans"; src: url(less.woff); }
+// End of file

@@ -1,6 +1,8 @@
 import 'mode.dart';
+import 'modes/css.dart';
 import 'modes/javascript.dart';
 import 'modes/python.dart';
+import 'modes/sql.dart';
 
 /// A ported language: its canonical name, display label and mode.
 final class CodeMirrorLanguage {
@@ -34,6 +36,12 @@ final codeMirrorCatalog = [
     valuesOnly: true,
   ),
   CodeMirrorLanguage('python', 'Python', PythonMode.new),
+  CodeMirrorLanguage('sql', 'SQL', SqlMode.standardSql),
+  CodeMirrorLanguage('postgresql', 'PostgreSQL', SqlMode.pgSql),
+  CodeMirrorLanguage('mysql', 'MySQL', SqlMode.mySql),
+  CodeMirrorLanguage('css', 'CSS', CssMode.css),
+  CodeMirrorLanguage('scss', 'SCSS', CssMode.scss),
+  CodeMirrorLanguage('less', 'LESS', CssMode.less),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.
