@@ -75,7 +75,8 @@ bool _truthy(String? value) => value != null && value.isNotEmpty;
 /// except for what it reads before its start: [anchors] for `^` and
 /// lookbehinds, [boundaries] for `\b` and `\B`.
 final class _Regex {
-  _Regex._(this.regex, this.anchors, this.boundaries);
+  _Regex._(this.regex, this.anchors, this.boundaries)
+    : firstUnits = _firstUnits(regex.pattern, regex.isCaseSensitive);
 
   factory _Regex(
     String source, {
@@ -111,6 +112,255 @@ final class _Regex {
 
   final RegExp regex;
   final bool anchors, boundaries;
+
+  /// The ASCII code units a match can begin with, or null for any: a rule
+  /// is not tried where the line continues with another.
+  final List<bool>? firstUnits;
+}
+
+/// The ASCII code units a match of [source] can begin with, or null when it
+/// may begin with any or match nothing, or the reading fails.
+List<bool>? _firstUnits(String source, bool caseSensitive) {
+  try {
+    final reader = _FirstUnits(source, caseSensitive);
+    final (units, empty) = reader.alternatives();
+    return empty || reader.i < source.length ? null : units;
+  } on Object {
+    return null;
+  }
+}
+
+List<bool> _none() => List.filled(128, false);
+
+List<bool>? _union(List<bool>? a, List<bool>? b) {
+  if (a == null || b == null) return null;
+  return [for (var u = 0; u < 128; u++) a[u] || b[u]];
+}
+
+final class _FirstUnits {
+  _FirstUnits(this.s, this.caseSensitive);
+  final String s;
+  final bool caseSensitive;
+  var i = 0;
+
+  /// Alternatives up to a `)` or the end: their first units, and whether
+  /// one may match nothing.
+  (List<bool>?, bool) alternatives() {
+    List<bool>? all = _none();
+    var empty = false;
+    for (;;) {
+      final (units, maybeEmpty) = _sequence();
+      all = _union(all, units);
+      empty = empty || maybeEmpty;
+      if (i < s.length && s[i] == '|') {
+        i++;
+        continue;
+      }
+      return (all, empty);
+    }
+  }
+
+  (List<bool>?, bool) _sequence() {
+    List<bool>? first = _none();
+    var empty = true;
+    while (i < s.length && s[i] != '|' && s[i] != ')') {
+      final (units, maybeEmpty) = _element();
+      if (empty) {
+        first = _union(first, units);
+        empty = maybeEmpty;
+      }
+    }
+    return (first, empty);
+  }
+
+  (List<bool>?, bool) _element() {
+    final c = s[i];
+    List<bool>? units;
+    var empty = false;
+    if (c == '^' || c == r'$') {
+      i++;
+      return (_none(), true);
+    } else if (c == r'\' && i + 1 < s.length && 'bB'.contains(s[i + 1])) {
+      i += 2;
+      return (_none(), true);
+    } else if (c == '(') {
+      final look = s.startsWith('(?=', i) || s.startsWith('(?!', i);
+      final lookBehind = s.startsWith('(?<=', i) || s.startsWith('(?<!', i);
+      if (look || s.startsWith('(?:', i)) {
+        i += 3;
+      } else if (lookBehind) {
+        i += 4;
+      } else if (s.startsWith('(?<', i)) {
+        i = s.indexOf('>', i) + 1;
+      } else {
+        i++;
+      }
+      final (inner, innerEmpty) = alternatives();
+      if (i >= s.length || s[i] != ')') throw const FormatException();
+      i++;
+      if (look || lookBehind) return (_none(), true);
+      units = inner;
+      empty = innerEmpty;
+    } else if (c == '[') {
+      units = _class();
+    } else if (c == '.') {
+      i++;
+    } else if (c == r'\') {
+      units = _escape();
+    } else {
+      i++;
+      units = _unit(c.codeUnitAt(0));
+    }
+    if (i < s.length) {
+      final q = s[i];
+      if (q == '?' || q == '*') {
+        i++;
+        empty = true;
+      } else if (q == '+') {
+        i++;
+      } else if (q == '{') {
+        final close = s.indexOf('}', i);
+        final least = int.parse(s.substring(i + 1, close).split(',').first);
+        if (least == 0) empty = true;
+        i = close + 1;
+      }
+      if (i < s.length && s[i] == '?') i++;
+    }
+    return (units, empty);
+  }
+
+  List<bool> _unit(int u) {
+    final units = _none();
+    _add(units, u);
+    return units;
+  }
+
+  void _add(List<bool> units, int u) {
+    if (u >= 128) return;
+    units[u] = true;
+    if (!caseSensitive) {
+      if (u >= 0x41 && u <= 0x5a) units[u + 0x20] = true;
+      if (u >= 0x61 && u <= 0x7a) units[u - 0x20] = true;
+    }
+  }
+
+  /// A class escape's units, or null for any; [i] is at the backslash.
+  List<bool>? _escape() {
+    final e = s[i + 1];
+    i += 2;
+    final units = _none();
+    switch (e) {
+      case 'd':
+        for (var u = 0x30; u <= 0x39; u++) {
+          units[u] = true;
+        }
+      case 'w':
+        for (var u = 0; u < 128; u++) {
+          if (_isWordUnit(u)) units[u] = true;
+        }
+      case 's':
+        for (final u in [9, 10, 11, 12, 13, 32]) {
+          units[u] = true;
+        }
+      case 'n':
+        units[10] = true;
+      case 't':
+        units[9] = true;
+      case 'r':
+        units[13] = true;
+      case 'f':
+        units[12] = true;
+      case 'v':
+        units[11] = true;
+      case 'x':
+        _add(units, int.parse(s.substring(i, i + 2), radix: 16));
+        i += 2;
+      case 'u':
+        if (s[i] == '{') {
+          final close = s.indexOf('}', i);
+          _add(units, int.parse(s.substring(i + 1, close), radix: 16));
+          i = close + 1;
+        } else {
+          _add(units, int.parse(s.substring(i, i + 4), radix: 16));
+          i += 4;
+        }
+      case 'D' || 'W' || 'S' || 'c' || 'p' || 'P' || 'k':
+        return null;
+      default:
+        if (RegExp(r'[0-9]').hasMatch(e)) return null;
+        _add(units, e.codeUnitAt(0));
+    }
+    return units;
+  }
+
+  /// A character class's units, or null for any; [i] is at its `[`.
+  List<bool>? _class() {
+    i++;
+    final negated = i < s.length && s[i] == '^';
+    if (negated) i++;
+    final units = _none();
+    var first = true;
+    while (i < s.length && (s[i] != ']' || first)) {
+      first = false;
+      int? low;
+      if (s[i] == r'\') {
+        final e = s[i + 1];
+        if ('dwsDWSpPcbB'.contains(e) || RegExp(r'[0-9]').hasMatch(e)) {
+          final set = _escape();
+          if (set == null) {
+            _skipClass();
+            return null;
+          }
+          for (var u = 0; u < 128; u++) {
+            if (set[u]) units[u] = true;
+          }
+          continue;
+        }
+        final save = i;
+        final set = _escape();
+        low = set?.indexOf(true);
+        if (low == null || low < 0) {
+          // A non-ASCII unit.
+          low = 0x10000;
+          i = save + 2;
+          if (s[save + 1] == 'u' || s[save + 1] == 'x') {
+            i = save;
+            _escape();
+          }
+        }
+      } else {
+        low = s.codeUnitAt(i);
+        i++;
+      }
+      if (i + 1 < s.length && s[i] == '-' && s[i + 1] != ']') {
+        i++;
+        int high;
+        if (s[i] == r'\') {
+          final set = _escape();
+          high = set == null ? 0x10000 : set.indexOf(true);
+          if (high < 0) high = 0x10000;
+        } else {
+          high = s.codeUnitAt(i);
+          i++;
+        }
+        for (var u = low; u <= high && u < 128; u++) {
+          _add(units, u);
+        }
+      } else {
+        _add(units, low);
+      }
+    }
+    if (i >= s.length) throw const FormatException();
+    i++;
+    return negated ? null : units;
+  }
+
+  void _skipClass() {
+    while (i < s.length && s[i] != ']') {
+      i += s[i] == r'\' ? 2 : 1;
+    }
+    i++;
+  }
 }
 
 _Regex _toRegex(Object? val) {
@@ -235,7 +485,12 @@ class SimpleMode extends Mode<SimpleState> {
     }
 
     final curState = spec._states[state._state]!;
+    final unit = stream.pos < stream.string.length
+        ? stream.string.codeUnitAt(stream.pos)
+        : 128;
     for (final rule in curState) {
+      final first = rule.regex.firstUnits;
+      if (first != null && unit < 128 && !first[unit]) continue;
       final data = rule.data;
       final matches = !data.sol || stream.sol()
           ? _match(stream, rule.regex)

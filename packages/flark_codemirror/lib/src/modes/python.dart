@@ -7,7 +7,26 @@
 import '../mode.dart';
 import '../stream.dart';
 
-RegExp _wordRegexp(List<String> words) => RegExp('((${words.join(')|(')}))\\b');
+/// Upstream's `wordRegexp`, `((w1)|(w2)|...)\\b` matched at the stream,
+/// succeeds exactly where the ASCII word there is one of the words, which a
+/// set tells without trying each.
+Set<String> _wordSet(List<String> words) => words.toSet();
+
+/// The run of ASCII word characters at [stream]'s position.
+String _asciiWordAt(StringStream stream) {
+  final s = stream.string;
+  var end = stream.pos;
+  while (end < s.length && _isAsciiWordUnit(s.codeUnitAt(end))) {
+    end++;
+  }
+  return s.substring(stream.pos, end);
+}
+
+bool _isAsciiWordUnit(int u) =>
+    (u >= 0x30 && u <= 0x39) ||
+    (u >= 0x41 && u <= 0x5a) ||
+    (u >= 0x61 && u <= 0x7a) ||
+    u == 0x5f;
 
 const _commonKeywords = [
   'as', 'assert', 'break', 'class', 'continue', //
@@ -32,13 +51,13 @@ const _commonBuiltins = [
 
 const _error = 'error';
 
-final _wordOperators = _wordRegexp(['and', 'or', 'not', 'is']);
-final _keywords = _wordRegexp([
+final _wordOperators = _wordSet(['and', 'or', 'not', 'is']);
+final _keywords = _wordSet([
   ..._commonKeywords,
   'nonlocal', 'None', 'aiter', 'anext', 'async', 'await', 'breakpoint', //
   'match', 'case',
 ]);
-final _builtins = _wordRegexp([
+final _builtins = _wordSet([
   ..._commonBuiltins,
   'ascii', 'bytes', 'exec', 'print', //
 ]);
@@ -65,7 +84,6 @@ final _octal = RegExp('0o[0-7_]+', caseSensitive: false);
 final _decimal = RegExp(r'[1-9][\d_]*(e[\+\-]?[\d_]+)?');
 final _zero = RegExp(r'0(?![\dx])', caseSensitive: false);
 final _long = RegExp('L', caseSensitive: false);
-final _self = RegExp(r'(self|cls)\b');
 final _formatBody = RegExp(r'''[^'"\{\}\\]''');
 final _stringBody = RegExp(r'''[^'"\\]''');
 final _quote = RegExp(r'''['"]''');
@@ -211,12 +229,19 @@ final class PythonMode extends Mode<PythonState> {
     if (state._lastToken == '.' && stream.match(_identifiers) != null) {
       return 'property';
     }
-    if (stream.match(_keywords) != null ||
-        stream.match(_wordOperators) != null) {
+    final word = _asciiWordAt(stream);
+    if (_keywords.contains(word) || _wordOperators.contains(word)) {
+      stream.pos += word.length;
       return 'keyword';
     }
-    if (stream.match(_builtins) != null) return 'builtin';
-    if (stream.match(_self) != null) return 'self';
+    if (_builtins.contains(word)) {
+      stream.pos += word.length;
+      return 'builtin';
+    }
+    if (word == 'self' || word == 'cls') {
+      stream.pos += word.length;
+      return 'self';
+    }
     if (stream.match(_identifiers) != null) {
       if (state._lastToken == 'def' || state._lastToken == 'class') {
         return 'def';
