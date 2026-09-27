@@ -12,7 +12,11 @@ void main() {
   group('highlight', () {
     test('tokens tile the snippet, including Unicode, tabs and newlines', () {
       const source = '// 😀 café\nconst text = "λ";\n\t42\r\n\n}';
-      for (final language in [...codeMirrorLanguages.keys, 'text', 'kotlin']) {
+      for (final language in [
+        ...CodeMirrorLanguages.all.map((l) => l.name),
+        'text',
+        'kotlin',
+      ]) {
         final h = code.highlight(source, language);
         expect(
           h.tokens.map((t) => source.substring(t.start, t.end)).join(),
@@ -118,7 +122,7 @@ void main() {
         'a method with a return type',
         'async test(): Promise<void> {\n'
             '  [1,2,3].map((test) => console.log(test));\n}',
-        'javascript',
+        'typescript',
       ),
       (
         'a JavaScript class that extends another',
@@ -129,7 +133,8 @@ void main() {
       ('prose with keywords', 'Wait for it if you can, then do it.', ''),
       ('nothing', '  \n', ''),
       // flark_tree_sitter's detection cases for these languages and prose.
-      ('if (ready) {', 'if (ready) {', 'javascript'),
+      // Too little to tell among the C-like languages.
+      ('if (ready) {', 'if (ready) {', ''),
       (
         'const value',
         "const value = 'hello'; console.log(value);",
@@ -144,10 +149,66 @@ void main() {
       ('Please select the item.', 'Please select the item.', ''),
       ('An end to the story.', 'An end to the story.', ''),
       ('The final result is here.', 'The final result is here.', ''),
-      ('SQL is not JavaScript', "SELECT name FROM users WHERE name = 'x';", ''),
-      ('CSS is not JavaScript', '.card { color: red; content: "x"; }', ''),
+      // The rest of flark_tree_sitter's cases, for the other languages.
+      ('SQL', "SELECT name FROM users WHERE name = 'hello';", 'sql'),
+      ('CSS', '.card { color: red; content: "hello"; }', 'css'),
+      ('if true; then', 'if true; then', 'bash'),
+      ('an if block', 'if true; then\n  echo "hello"\nfi', 'bash'),
+      ('for x in', 'for x in one two; do', 'bash'),
+      ('while true', 'while true; do', 'bash'),
+      ('echo', 'echo "hello"', 'bash'),
+      ('void main', "void main() { print('hello'); }", 'dart'),
+      ('for final', 'for (final x in [1,2,3]) {', 'dart'),
+      ('def hello():', "def hello():\n    print('hello')", 'python'),
+      ('def with a colon', 'def hello():', 'python'),
+      ('YAML', 'name: "hello"\nitems: [one, two]', 'yaml'),
+      ('a block scalar', 'settings: |', 'yaml'),
+      ('def ... end', "def hello\n  print 'hello'\nend", 'ruby'),
+      ('def without a colon', 'def hello', 'ruby'),
+      ('fn main', 'fn main() { println!("hello"); }', 'rust'),
+      ('package main', 'package main\nfunc main() { println("hello") }', 'go'),
+      ('a div', '<div class="card">hello</div>', 'html'),
+      ('XML', '<?xml version="1.0"?><note>hello</note>', 'xml'),
+      ('PHP', '<?php echo \$greeting; ?>', 'php'),
+      (
+        'PowerShell',
+        'Get-ChildItem -Path . | Where-Object { \$_.Length -gt 1kb }',
+        'powershell',
+      ),
+      (
+        'Kotlin',
+        'fun main() {\n  val items = listOf(1, 2)\n  println(items)\n}',
+        'kotlin',
+      ),
+      (
+        'Java',
+        'public static void main(String[] args) {\n'
+            '  System.out.println("hello");\n}',
+        'java',
+      ),
+      ('C#', 'using System;\n\nConsole.WriteLine("hello");', 'csharp'),
+      ('C', '#include <stdio.h>\nint main(void) { printf("hi"); }', 'c'),
+      ('C++', '#include <iostream>\nint main() { std::cout << "hi"; }', 'cpp'),
+      ('SCSS', '\$accent: red;\n.card { color: \$accent; }', 'scss'),
+      ('a shell session', r'$ npm install flark', 'bash'),
+      (
+        'a sentence with SQL words',
+        'Please select the item from the list.',
+        '',
+      ),
+      (
+        'a list of notes',
+        '- Prefer one way to do each thing.\n- Keep it small.',
+        '',
+      ),
     ]) {
-      test(name, () => expect(detectCodeMirrorLanguage(source), expected));
+      test(
+        name,
+        () => expect(
+          detectCodeMirrorLanguage(source, CodeMirrorLanguages.all),
+          expected,
+        ),
+      );
     }
 
     test('an untagged fence highlights as what it looks like', () {
@@ -172,6 +233,29 @@ void main() {
     final unknown = code.highlight(source, 'haskell');
     expect(unknown.language, isNull);
     expect(unknown.tokens.single.kind, isNull);
+  });
+
+  test('an app highlights the languages it chooses', () {
+    final python = FlarkCodeMirror.only([CodeMirrorLanguages.python]);
+    expect(python.languages.map((l) => l.name), ['python']);
+    const js = 'function add(a, b) {\n  return a + b; // sum\n}';
+    expect(code.resolveLanguage(js, ''), 'javascript');
+    expect(python.resolveLanguage(js, ''), '');
+    expect(python.highlight(js, 'javascript').language, isNull);
+    const def = 'def add(a, b):\n    return a + b';
+    expect(python.resolveLanguage(def, ''), 'python');
+    expect(python.highlight(def, '').language, 'python');
+    // A language left out still indents by its brackets.
+    final edit = python.propose(
+      'f() {',
+      language: 'javascript',
+      base: 5,
+      extent: 5,
+      action: CodeEditingAction.newline,
+      text: '',
+      indentUnit: '  ',
+    )!;
+    expect(edit.text, '\n  ');
   });
 
   test('aliases and extensions name their language', () {

@@ -14,7 +14,7 @@ import 'src/modes/brackets.dart';
 
 export 'src/detect.dart' show detectCodeMirrorLanguage;
 export 'src/languages.dart'
-    show codeMirrorCatalog, codeMirrorLanguages, codeMirrorLanguageName;
+    show CodeMirrorLanguage, CodeMirrorLanguages, codeMirrorLanguageName;
 
 /// A [CodeEditingDelegate] backed by the ported modes. A fence without a
 /// language is detected among the ported ones ([detectCodeMirrorLanguage]),
@@ -22,6 +22,19 @@ export 'src/languages.dart'
 /// mode is plain but indents by its brackets ([BracketsMode]); plain text
 /// and undetected fences take the kernel's editing defaults.
 final class FlarkCodeMirror implements CodeEditingDelegate {
+  /// Every ported language.
+  FlarkCodeMirror() : this.only(CodeMirrorLanguages.all);
+
+  /// Only [languages]: a fence in another is plain but indents by its
+  /// brackets, detection chooses among these alone, and the other languages'
+  /// modes stay out of the build.
+  FlarkCodeMirror.only(Iterable<CodeMirrorLanguage> languages)
+    : languages = List.unmodifiable(languages);
+
+  /// The languages this delegate highlights, in detection priority.
+  final List<CodeMirrorLanguage> languages;
+  late final _byName = {for (final l in languages) l.name: l};
+
   /// Longer snippets are plain and edit without proposals, like the previous
   /// highlighter's bound.
   static const maxCodeUnits = 8192;
@@ -38,7 +51,7 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
     // Detection reads a prefix, so typing further down reuses its answer.
     final sample = detectionSampleOf(source);
     final cached = _detected.remove(sample);
-    final language = cached ?? detectCodeMirrorLanguage(source);
+    final language = cached ?? detectCodeMirrorLanguage(source, languages);
     _detected[sample] = language;
     if (_detected.length > 64) _detected.remove(_detected.keys.first);
     return language;
@@ -52,7 +65,9 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
       _colors[key] = cached;
       return cached;
     }
-    final mode = source.length > maxCodeUnits ? null : codeMirrorMode(name);
+    final mode = source.length > maxCodeUnits
+        ? null
+        : _byName[name]?.mode(const ModeConfig());
     final colors = mode == null
         ? CodeHighlight(null, [CodeToken(0, source.length, null)])
         : CodeHighlight(name, codeMirrorTokens(mode, source));
@@ -84,7 +99,7 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
     return proposeCodeEdit(
       (columns) {
         final config = ModeConfig(indentUnit: columns, tabSize: codeTabSize);
-        return codeMirrorMode(language, config) ?? BracketsMode(config);
+        return _byName[language]?.mode(config) ?? BracketsMode(config);
       },
       source,
       base: base,

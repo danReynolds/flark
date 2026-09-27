@@ -13,6 +13,7 @@ import 'modes/shell.dart';
 import 'modes/sql.dart';
 import 'modes/xml.dart';
 import 'modes/yaml.dart';
+import 'signs.dart';
 
 /// A ported language: its canonical name, display label and mode.
 final class CodeMirrorLanguage {
@@ -20,59 +21,223 @@ final class CodeMirrorLanguage {
     this.name,
     this.label,
     this.mode, {
+    this.signs = const [],
+    this.baseSigns = const [],
+    this.dialect = false,
     this.valuesOnly = false,
   });
   final String name, label;
   final Mode<Object?> Function(ModeConfig config) mode;
+
+  /// What an untagged fence in this language looks like; without any, it is
+  /// never detected.
+  final List<DetectionSign> signs;
+
+  /// The signs of the language this one extends, which count for it too.
+  final List<DetectionSign> baseSigns;
+
+  /// A dialect is detected only where [baseSigns] alone reach half the
+  /// threshold, since its own signs (a LESS mixin call, MySQL's quoted names)
+  /// also appear in other code.
+  final bool dialect;
 
   /// The language holds only values, as JSON does, so detection requires
   /// that shape.
   final bool valuesOnly;
 }
 
-/// The ported languages, in detection priority.
-final codeMirrorCatalog = [
-  CodeMirrorLanguage('javascript', 'JavaScript', JavaScriptMode.new),
-  CodeMirrorLanguage(
+/// The ported languages. An app that highlights only some names them,
+/// `FlarkCodeMirror.only([CodeMirrorLanguages.python, ...])`, and the others'
+/// modes stay out of its build.
+abstract final class CodeMirrorLanguages {
+  static final javascript = CodeMirrorLanguage(
+    'javascript',
+    'JavaScript',
+    JavaScriptMode.new,
+    signs: javascriptSigns,
+  );
+  static final typescript = CodeMirrorLanguage(
     'typescript',
     'TypeScript',
-    (config) =>
-        JavaScriptMode(config, const JavaScriptOptions(typescript: true)),
-  ),
-  CodeMirrorLanguage(
+    _typescript,
+    signs: typescriptSigns,
+    baseSigns: javascriptSigns,
+  );
+  static final json = CodeMirrorLanguage(
     'json',
     'JSON',
-    (config) => JavaScriptMode(config, const JavaScriptOptions(json: true)),
+    _json,
     valuesOnly: true,
-  ),
-  CodeMirrorLanguage('python', 'Python', PythonMode.new),
-  CodeMirrorLanguage('c', 'C', ClikeMode.c),
-  CodeMirrorLanguage('cpp', 'C++', ClikeMode.cpp),
-  CodeMirrorLanguage('java', 'Java', ClikeMode.java),
-  CodeMirrorLanguage('csharp', 'C#', ClikeMode.csharp),
-  CodeMirrorLanguage('kotlin', 'Kotlin', ClikeMode.kotlin),
-  CodeMirrorLanguage('dart', 'Dart', ClikeMode.dart),
-  CodeMirrorLanguage('bash', 'Bash', ShellMode.new),
-  CodeMirrorLanguage('yaml', 'YAML', YamlMode.new),
-  CodeMirrorLanguage('go', 'Go', GoMode.new),
-  CodeMirrorLanguage('ruby', 'Ruby', RubyMode.new),
-  CodeMirrorLanguage('rust', 'Rust', RustMode.new),
-  CodeMirrorLanguage('powershell', 'PowerShell', PowerShellMode.new),
-  CodeMirrorLanguage('xml', 'XML', XmlMode.new),
-  CodeMirrorLanguage('html', 'HTML', HtmlMixedMode.new),
-  CodeMirrorLanguage('sql', 'SQL', SqlMode.standardSql),
-  CodeMirrorLanguage('postgresql', 'PostgreSQL', SqlMode.pgSql),
-  CodeMirrorLanguage('mysql', 'MySQL', SqlMode.mySql),
-  CodeMirrorLanguage('css', 'CSS', CssMode.css),
-  CodeMirrorLanguage('scss', 'SCSS', CssMode.scss),
-  CodeMirrorLanguage('less', 'LESS', CssMode.less),
-  CodeMirrorLanguage('php', 'PHP', PhpMode.new),
-];
+  );
+  static final python = CodeMirrorLanguage(
+    'python',
+    'Python',
+    PythonMode.new,
+    signs: pythonSigns,
+  );
+  static final c = CodeMirrorLanguage('c', 'C', ClikeMode.c, signs: cSigns);
+  static final cpp = CodeMirrorLanguage(
+    'cpp',
+    'C++',
+    ClikeMode.cpp,
+    signs: cppSigns,
+    baseSigns: cSigns,
+  );
+  static final java = CodeMirrorLanguage(
+    'java',
+    'Java',
+    ClikeMode.java,
+    signs: javaSigns,
+  );
+  static final csharp = CodeMirrorLanguage(
+    'csharp',
+    'C#',
+    ClikeMode.csharp,
+    signs: csharpSigns,
+  );
+  static final kotlin = CodeMirrorLanguage(
+    'kotlin',
+    'Kotlin',
+    ClikeMode.kotlin,
+    signs: kotlinSigns,
+  );
+  static final dart = CodeMirrorLanguage(
+    'dart',
+    'Dart',
+    ClikeMode.dart,
+    signs: dartSigns,
+  );
+  static final bash = CodeMirrorLanguage(
+    'bash',
+    'Bash',
+    ShellMode.new,
+    signs: bashSigns,
+  );
+  static final yaml = CodeMirrorLanguage(
+    'yaml',
+    'YAML',
+    YamlMode.new,
+    signs: yamlSigns,
+  );
+  static final go = CodeMirrorLanguage('go', 'Go', GoMode.new, signs: goSigns);
+  static final ruby = CodeMirrorLanguage(
+    'ruby',
+    'Ruby',
+    RubyMode.new,
+    signs: rubySigns,
+  );
+  static final rust = CodeMirrorLanguage(
+    'rust',
+    'Rust',
+    RustMode.new,
+    signs: rustSigns,
+  );
+  static final powershell = CodeMirrorLanguage(
+    'powershell',
+    'PowerShell',
+    PowerShellMode.new,
+    signs: powershellSigns,
+  );
+  static final xml = CodeMirrorLanguage(
+    'xml',
+    'XML',
+    XmlMode.new,
+    signs: xmlSigns,
+  );
+  static final html = CodeMirrorLanguage(
+    'html',
+    'HTML',
+    HtmlMixedMode.new,
+    signs: htmlSigns,
+  );
+  static final sql = CodeMirrorLanguage(
+    'sql',
+    'SQL',
+    SqlMode.standardSql,
+    signs: sqlSigns,
+  );
+  static final postgresql = CodeMirrorLanguage(
+    'postgresql',
+    'PostgreSQL',
+    SqlMode.pgSql,
+    signs: postgresqlSigns,
+    baseSigns: sqlSigns,
+    dialect: true,
+  );
+  static final mysql = CodeMirrorLanguage(
+    'mysql',
+    'MySQL',
+    SqlMode.mySql,
+    signs: mysqlSigns,
+    baseSigns: sqlSigns,
+    dialect: true,
+  );
+  static final css = CodeMirrorLanguage(
+    'css',
+    'CSS',
+    CssMode.css,
+    signs: cssSigns,
+  );
+  static final scss = CodeMirrorLanguage(
+    'scss',
+    'SCSS',
+    CssMode.scss,
+    signs: scssSigns,
+    baseSigns: cssSigns,
+    dialect: true,
+  );
+  static final less = CodeMirrorLanguage(
+    'less',
+    'LESS',
+    CssMode.less,
+    signs: lessSigns,
+    baseSigns: cssSigns,
+    dialect: true,
+  );
+  static final php = CodeMirrorLanguage(
+    'php',
+    'PHP',
+    PhpMode.new,
+    signs: phpSigns,
+    baseSigns: htmlSigns,
+  );
 
-/// Languages with a ported mode, by canonical name, with display labels.
-final codeMirrorLanguages = {
-  for (final language in codeMirrorCatalog) language.name: language.label,
-};
+  /// Every ported language, in detection priority: the earlier of two with
+  /// equal evidence wins.
+  static final all = [
+    javascript,
+    typescript,
+    json,
+    python,
+    c,
+    cpp,
+    java,
+    csharp,
+    kotlin,
+    dart,
+    bash,
+    yaml,
+    go,
+    ruby,
+    rust,
+    powershell,
+    xml,
+    html,
+    sql,
+    postgresql,
+    mysql,
+    css,
+    scss,
+    less,
+    php,
+  ];
+}
+
+Mode<Object?> _typescript(ModeConfig config) =>
+    JavaScriptMode(config, const JavaScriptOptions(typescript: true));
+
+Mode<Object?> _json(ModeConfig config) =>
+    JavaScriptMode(config, const JavaScriptOptions(json: true));
 
 /// The canonical name for a fence's info string: its first word, lowercased,
 /// through [codeMirrorAliases]. Empty for none or `auto`. Names without an
@@ -159,12 +324,12 @@ const codeMirrorAliases = {
   'log': 'text',
 };
 
-/// A mode for [language], or null when none is ported.
+/// A mode for [language] among every ported one, or null when none is.
 Mode<Object?>? codeMirrorMode(
   String language, [
   ModeConfig config = const ModeConfig(),
 ]) {
-  for (final entry in codeMirrorCatalog) {
+  for (final entry in CodeMirrorLanguages.all) {
     if (entry.name == language) return entry.mode(config);
   }
   return null;

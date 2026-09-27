@@ -1,5 +1,6 @@
 import 'package:flark/code.dart';
 import 'package:flark_codemirror/flark_codemirror.dart';
+import 'package:flark_codemirror/src/detect.dart';
 import 'package:flark_codemirror/src/highlight.dart';
 import 'package:flark_codemirror/src/languages.dart';
 
@@ -36,8 +37,10 @@ int median(void Function() run, {int rounds = 41, int warm = 20}) {
 }
 
 /// Highlighting and edit proposals over [snippets] (language to source) at
-/// each size in [sizes]. The delegate's cache is bypassed: every highlight
-/// tokenizes.
+/// each size in [sizes], and detection of the snippet as an untagged fence,
+/// which reads its first [detectionSample] units whatever its size. The
+/// delegate's caches are bypassed: every highlight tokenizes and every
+/// detection reads.
 List<Map<String, Object>> benchCodeMirror(
   Map<String, String> snippets, {
   List<int> sizes = const [2048, 8192, 32768],
@@ -46,6 +49,11 @@ List<Map<String, Object>> benchCodeMirror(
   final delegate = FlarkCodeMirror();
   for (final MapEntry(key: language, value: source) in snippets.entries) {
     final mode = codeMirrorMode(language)!;
+    var detected = '';
+    final detectUs = median(
+      () =>
+          detected = detectCodeMirrorLanguage(source, CodeMirrorLanguages.all),
+    );
     for (final units in sizes) {
       final text = sized(source, units);
       var tokens = 0;
@@ -85,6 +93,8 @@ List<Map<String, Object>> benchCodeMirror(
         'highlightUs': highlightUs,
         'enterUs': enterUs,
         'typeCloserUs': typeUs,
+        'detectUs': detectUs,
+        'detected': detected,
       });
     }
   }

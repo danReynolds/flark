@@ -1,50 +1,56 @@
 import 'languages.dart';
-import 'mode.dart';
+import 'signs.dart';
 
 /// Detection reads at most this many code units of a fence.
-const detectionSample = 1024;
+const detectionSample = 512;
 
-/// The language of an untagged fence, or '' when nothing is recognized.
+/// Less evidence than this leaves a fence of three or more lines plain; a
+/// shorter one needs half a point less a line (1.5 for one), since a line
+/// can show only so much.
+const detectionThreshold = 2.5;
+
+/// The language of an untagged fence among [languages], such as
+/// [CodeMirrorLanguages.all], or '' when nothing is recognized.
 ///
-/// Each ported language tokenizes a sample with its own mode. What a mode
-/// recognizes is evidence for it: keywords, builtins and atoms by text, type
-/// annotations (a type after `:`; TypeScript also reads `extends X` as a
-/// type, which says nothing), comment markers, declarations and
-/// multi-character operators. Each
-/// piece is weighted by how few languages recognize it, so a word only one
-/// language knows decides more than one most share. Declarations count
-/// once, since modes differ in what they call one; comment markers count
-/// half, since `#` also opens JavaScript's private names; and each token a
-/// mode rejects as an error counts half against it. A language whose reading
-/// of the sample looks like prose (no code punctuation outside strings and
-/// comments, and mostly plain names or a sentence's end) is out, as is a
-/// values-only language (JSON)
-/// when the sample is not shaped like one; when it is, that shape counts.
-/// Ties go to the language listed first in [codeMirrorCatalog].
-String detectCodeMirrorLanguage(String source) {
+/// Each language's signs ([CodeMirrorLanguage.signs]) are patterns that its
+/// code shows and other text rarely does, such as `def f():` for Python or
+/// `err != nil` for Go, each weighted by how sure a sign it is, and some
+/// counting against it. The language with the most evidence wins if it has
+/// at least [detectionThreshold] (less for one or two lines); ties go to the
+/// one listed first. A variant
+/// (TypeScript, C++, a SQL dialect) carries its base language's signs and
+/// its own, so it wins only on the latter. A values-only language (JSON)
+/// has no signs: it is the answer when the sample holds only values. A
+/// sample that reads as prose stays plain whatever its signs.
+String detectCodeMirrorLanguage(
+  String source,
+  Iterable<CodeMirrorLanguage> languages,
+) {
   final sample = detectionSampleOf(source);
-  if (sample.trim().isEmpty) return '';
-  final evidence = <String, _Evidence>{};
-  for (final language in codeMirrorCatalog) {
-    final found = _evidence(language, sample);
-    if (found != null) evidence[language.name] = found;
+  if (sample.trim().isEmpty || _looksLikeProse(sample)) return '';
+  var lines = 0;
+  for (final line in sample.split('\n')) {
+    if (line.trim().isNotEmpty && ++lines == 3) break;
   }
-  final shared = <String, int>{};
-  for (final found in evidence.values) {
-    for (final key in found.words.keys) {
-      shared[key] = (shared[key] ?? 0) + 1;
-    }
-  }
+  final threshold = detectionThreshold - 0.5 * (3 - lines);
   var best = '';
-  var bestScore = 0.0;
-  for (final MapEntry(key: language, value: found) in evidence.entries) {
-    var score = -0.5 * found.errors;
-    for (final MapEntry(:key, value: count) in found.words.entries) {
-      final weight = key.startsWith('comment ') ? 0.5 : 1.0;
-      score += weight * count / shared[key]!;
+  var bestScore = threshold - 1e-9;
+  // Variants share their base's signs: score each list once.
+  final scores = Map<List<DetectionSign>, double>.identity();
+  final read = DetectionSample(sample);
+  double scoreOf(List<DetectionSign> signs) =>
+      scores[signs] ??= signs.fold(0.0, (sum, sign) => sum + sign.score(read));
+  for (final language in languages) {
+    final double score;
+    if (language.valuesOnly) {
+      score = _holdsOnlyValues(sample) ? 8 : 0;
+    } else {
+      final base = scoreOf(language.baseSigns);
+      if (language.dialect && base < threshold / 2) continue;
+      score = base + scoreOf(language.signs);
     }
     if (score > bestScore) {
-      best = language;
+      best = language.name;
       bestScore = score;
     }
   }
@@ -60,80 +66,57 @@ String detectionSampleOf(String source) {
   return end > 0 ? sample.substring(0, end) : sample;
 }
 
-final _name = RegExp(r'^[A-Za-z_$][\w$]*$');
-final _codePunctuation = RegExp(r'[{}()\[\];=<>]');
-final _sentenceEnd = RegExp(r'[.!?]\s*$');
+final _valueToken = RegExp(
+  r'\s+|"(?:[^"\\\n]|\\.)*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|'
+  r'true\b|false\b|null\b|[{}\[\],:]|//[^\n]*|/\*[\s\S]*?\*/',
+);
 
-typedef _Evidence = ({Map<String, int> words, int errors});
-
-/// What [language]'s mode recognizes in [sample], or null when the language
-/// rules itself out.
-_Evidence? _evidence(CodeMirrorLanguage language, String sample) {
-  final values = language.valuesOnly;
-  if (values && !_opensValues(sample)) return null;
-  final words = <String, int>{};
-  var names = 0, plainNames = 0, errors = 0, punctuation = false;
-  final mode = language.mode(const ModeConfig());
-  final state = mode.startState();
-  final lines = splitLines(sample).lines;
-  final oracle = LineList(lines);
-  void count(String key) => words[key] = (words[key] ?? 0) + 1;
-  var previous = '';
-  for (var i = 0; i < lines.length; i++) {
-    final line = lines[i];
-    oracle.line = i;
-    final stream = streamFor(mode, line, oracle);
-    if (line.isEmpty) mode.blankLine(state);
-    while (!stream.eol()) {
-      final style = readToken(mode, stream, state);
-      final text = line.substring(stream.start, stream.pos);
-      final before = previous;
-      if (text.trim().isNotEmpty) previous = text;
-      if (_name.hasMatch(text)) {
-        names++;
-        if (style == null || style == 'variable') plainNames++;
-      }
-      if (style == null || style == 'operator' || style == 'bracket') {
-        if (_codePunctuation.hasMatch(text)) punctuation = true;
-      }
-      if (style == null) continue;
-      if (style.contains('error') || style.contains('invalid')) {
-        errors++;
-      } else if (style.contains('comment')) {
-        count('comment ${text.length < 2 ? text : text.substring(0, 2)}');
-      } else if (style == 'string property') {
-        // Shapes count once; how often a mode sees them says little.
-        words[style] = 1;
-      } else if (style.contains('type')) {
-        if (before == ':') count('$style $text');
-      } else if (style.contains('keyword') ||
-          style.contains('builtin') ||
-          style.contains('atom')) {
-        if (values && style.contains('keyword')) return null;
-        count('$style $text');
-      } else if (style == 'def') {
-        if (values) return null;
-        words[style] = 1;
-      } else if (style == 'operator' && text.length > 1) {
-        count('$style $text');
-      } else if (values &&
-          (style.contains('variable') || style.contains('property'))) {
-        // Values hold no names.
-        return null;
-      }
+/// Whether [sample] holds only JSON values, perhaps excerpted and with
+/// comments, and at least one key or two values.
+bool _holdsOnlyValues(String sample) {
+  final text = sample.trim();
+  // An excerpt may start inside an object or array.
+  if (text.isEmpty || !'{["}]'.contains(text[0])) return false;
+  var pos = 0, strings = 0, values = 0, keys = 0;
+  String? previous;
+  while (pos < text.length) {
+    final match = _valueToken.matchAsPrefix(text, pos);
+    if (match == null) {
+      // A string cut by the sample's end.
+      return text.indexOf('\n', pos) < 0 && text[pos] == '"' && values > 0;
     }
+    final token = match[0]!;
+    pos = match.end;
+    if (token.trim().isEmpty || token.startsWith('/')) continue;
+    if (token == ':') {
+      if (previous == null || !previous.startsWith('"')) return false;
+      keys++;
+    } else if (!'{}[],'.contains(token)) {
+      values++;
+      if (token.startsWith('"')) strings++;
+    }
+    previous = token;
   }
-  // Prose: no code punctuation, and mostly plain names or a sentence's end.
-  if (!punctuation &&
-      (plainNames * 10 >= names * 7 || _sentenceEnd.hasMatch(sample))) {
-    return null;
-  }
-  // A value-shaped sample is itself evidence for a values-only language.
-  if (values) count('values');
-  return (words: words, errors: errors);
+  return keys > 0 || values - strings >= 2 || values >= 2;
 }
 
-bool _opensValues(String sample) {
-  final text = sample.trimLeft();
-  return text.startsWith('{') || text.startsWith('[');
+final _commentLine = RegExp(r'^\s*(?://|#|\*|/\*|--|<!--|;|%)');
+
+// Four plain lowercase words in a row, and a word prose needs and code
+// rarely names.
+final _wordRun = RegExp(r'(?:\b[a-z]+[,;:]? ){3}[a-z]+\b');
+final _functionWord = RegExp(
+  r'\b(?:the|an|to|of|that|are|be|was|were|you|we|our|your|which|should|'
+  r'would|will|than|its|there|their|these|those|been|has|have)\b',
+);
+
+/// Whether at least half the lines outside comments read as sentences.
+bool _looksLikeProse(String sample) {
+  var lines = 0, prose = 0;
+  for (final line in sample.split('\n')) {
+    if (line.trim().isEmpty || _commentLine.hasMatch(line)) continue;
+    lines++;
+    if (_wordRun.hasMatch(line) && _functionWord.hasMatch(line)) prose++;
+  }
+  return lines > 0 && prose * 2 >= lines;
 }
