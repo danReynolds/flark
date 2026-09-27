@@ -1,7 +1,6 @@
 import 'package:flark/code.dart';
 
 import 'mode.dart';
-import 'stream.dart';
 
 /// Columns a tab spans when indentation is measured, as CodeMirror's default.
 const codeTabSize = 4;
@@ -92,7 +91,7 @@ int _lineEnd(String s, int p) {
 Object? _stateBefore(Mode<Object?> mode, String text, int lineStart) =>
     lineStart == 0
     ? mode.startState()
-    : runMode(mode, text.substring(0, lineStart - 1), tabSize: codeTabSize);
+    : runMode(mode, text.substring(0, lineStart - 1));
 
 /// Indentation for [column]: spaces, or tabs then spaces when the snippet
 /// indents with tabs, as CodeMirror's `indentWithTabs`.
@@ -124,7 +123,7 @@ CodeEditProposal _newline(
   final textAfter = rest.substring(restSpace.length);
   // The caret line as Enter leaves it, then the state after it.
   final head = source.substring(0, start);
-  final state = runMode(mode, head, tabSize: codeTabSize);
+  final state = runMode(mode, head);
   final previous = codeLeadingWhitespace(before);
   String indentFor(Object? state, String after) {
     final column = _smart(mode, state, after, after);
@@ -138,7 +137,7 @@ CodeEditProposal _newline(
       !_literalAt(mode, source, start - 1)) {
     final middle = indentFor(state, '');
     // The closer's line follows an empty one.
-    final blank = runMode(mode, '$head\n', tabSize: codeTabSize);
+    final blank = runMode(mode, '$head\n');
     final closer = indentFor(blank, textAfter);
     final inserted = '\n$middle\n$closer';
     final caret = start + 1 + middle.length;
@@ -167,17 +166,16 @@ bool _literalAt(Mode<Object?> mode, String source, int offset) {
   final line = _lineStart(source, offset);
   final state = _stateBefore(mode, source, line);
   final text = source.substring(line, _lineEnd(source, offset));
-  final stream = StringStream(text, codeTabSize);
+  final stream = streamFor(mode, text);
   final column = offset - line;
   while (!stream.eol()) {
-    final style = mode.token(stream, state);
+    final style = readToken(mode, stream, state);
     if (stream.pos > column) {
       return style != null &&
           (style.contains('string') ||
               style.contains('comment') ||
               style.contains('regexp'));
     }
-    stream.start = stream.pos;
   }
   return false;
 }

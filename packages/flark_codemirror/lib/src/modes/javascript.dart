@@ -248,14 +248,13 @@ String _lastTwo(String value) =>
 /// JavaScript, TypeScript and JSON: CodeMirror's `javascript` mode.
 final class JavaScriptMode extends Mode<JsState> {
   JavaScriptMode([
-    this.config = const ModeConfig(),
+    super.config = const ModeConfig(),
     this.options = const JavaScriptOptions(),
   ]) : _jsonldMode = options.jsonld,
        _jsonMode = options.json || options.jsonld,
        _isTS = options.typescript,
        _wordRE = options.wordCharacters;
 
-  final ModeConfig config;
   final JavaScriptOptions options;
   final bool _jsonldMode, _jsonMode, _isTS;
   final RegExp? _wordRE;

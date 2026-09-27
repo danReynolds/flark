@@ -85,7 +85,7 @@ void main() {
 
     test('unported, plain and oversized snippets are one plain token', () {
       for (final (source, language) in [
-        ('def f(): pass', 'python'),
+        ('main = putStrLn "hi"', 'haskell'),
         ('const x = 1;', 'text'),
         ('Just some words.', ''),
         ('x' * (FlarkCodeMirror.maxCodeUnits + 1), 'javascript'),
@@ -196,7 +196,7 @@ void main() {
         source.replaceRange(edit.start, edit.end, edit.text);
 
     test('declines what it cannot serve', () {
-      expect(propose('x', 1, language: 'python'), isNull);
+      expect(propose('x', 1, language: 'haskell'), isNull);
       expect(propose('x', 1, language: ''), isNull);
       final long = 'x' * (FlarkCodeMirror.maxCodeUnits + 1);
       expect(propose(long, long.length), isNull);

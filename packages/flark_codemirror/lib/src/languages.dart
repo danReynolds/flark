@@ -1,5 +1,6 @@
 import 'mode.dart';
 import 'modes/javascript.dart';
+import 'modes/python.dart';
 
 /// A ported language: its canonical name, display label and mode.
 final class CodeMirrorLanguage {
@@ -32,6 +33,7 @@ final codeMirrorCatalog = [
     (config) => JavaScriptMode(config, const JavaScriptOptions(json: true)),
     valuesOnly: true,
   ),
+  CodeMirrorLanguage('python', 'Python', PythonMode.new),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.

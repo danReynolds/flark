@@ -16,10 +16,20 @@ abstract interface class LineOracle {
 /// on the rest of the line mean.
 final class StringStream {
   StringStream(this.string, [int? tabSize, this.lineOracle])
-    : tabSize = tabSize == null || tabSize == 0 ? 8 : tabSize;
+    : tabSize = tabSize == null || tabSize == 0 ? 8 : tabSize,
+      indentUnit = 2;
+
+  /// A stream with CodeMirror 6's [indentUnit], which its stream parsers read.
+  StringStream.withUnit(
+    this.string,
+    int tabSize,
+    this.lineOracle, {
+    required this.indentUnit,
+  }) : tabSize = tabSize == 0 ? 8 : tabSize;
 
   final String string;
   final int tabSize;
+  final int indentUnit;
   final LineOracle? lineOracle;
   int pos = 0, start = 0;
   int lastColumnPos = 0, lastColumnValue = 0;

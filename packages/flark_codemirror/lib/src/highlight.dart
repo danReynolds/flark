@@ -1,17 +1,12 @@
 import 'package:flark/code.dart';
 
 import 'mode.dart';
-import 'stream.dart';
 
 /// Tokens of [source] under [mode] as Flark code tokens: code-body UTF-16
 /// ranges that tile the source, with a kind from the vocabulary hosts theme
 /// ([codeSyntaxRole]) or null. Adjacent tokens of one kind are merged, as
 /// CodeMirror's `flattenSpans` does.
-List<CodeToken> codeMirrorTokens(
-  Mode<Object?> mode,
-  String source, {
-  int tabSize = 4,
-}) {
+List<CodeToken> codeMirrorTokens(Mode<Object?> mode, String source) {
   final tokens = <CodeToken>[];
   // The pending run: where it starts and its kind.
   var start = 0;
@@ -33,17 +28,16 @@ List<CodeToken> codeMirrorTokens(
     // The line break before this line is unstyled.
     if (i > 0) add(starts[i - 1] + lines[i - 1].length, null);
     oracle.line = i;
-    final stream = StringStream(line, tabSize, oracle);
+    final stream = streamFor(mode, line, oracle);
     if (line.isEmpty) mode.blankLine(state);
     while (!stream.eol()) {
-      final style = mode.token(stream, state);
+      final style = readToken(mode, stream, state);
       add(
         offset + stream.start,
         style == null
             ? null
             : codeMirrorKind(style, line, stream.start, stream.pos),
       );
-      stream.start = stream.pos;
     }
   }
   if (source.length > start || tokens.isEmpty) {
@@ -55,39 +49,83 @@ List<CodeToken> codeMirrorTokens(
 final _constantName = RegExp(r'^_*[A-Z][A-Z\d_]+$');
 final _capitalized = RegExp(r'^[A-Z]');
 
+/// Kinds for CodeMirror's style names: CodeMirror 5's classes and the tag
+/// names CodeMirror 6's stream parsers return. Names are resolved by
+/// [codeMirrorKind]; those absent here have no kind.
+const _kinds = {
+  'keyword': 'keyword',
+  'operator': 'operator',
+  'atom': 'constant',
+  'bool': 'constant',
+  'null': 'constant',
+  'number': 'number',
+  'string': 'string',
+  'string-2': 'string',
+  'string.special': 'string',
+  'character': 'string',
+  'link': 'string',
+  'comment': 'comment',
+  'quote': 'comment',
+  'meta': 'meta',
+  'macroName': 'meta',
+  'header': 'keyword',
+  'heading': 'keyword',
+  'type': 'type',
+  'typeName': 'type',
+  'variable-3': 'type',
+  'className': 'type',
+  'namespace': 'type',
+  'variableName.function': 'function',
+  'tag': 'tag',
+  'tagName': 'tag',
+  'attribute': 'attribute',
+  'attributeName': 'attribute',
+  'qualifier': 'selector-class',
+  'self': 'variable',
+  'labelName': 'variable',
+};
+
+/// Styles whose kind depends on the name: definitions, variables,
+/// properties and builtins.
+const _names = {
+  'def',
+  'variable',
+  'variable-2',
+  'variableName',
+  'variableName.special',
+  'variableName.definition',
+  'property',
+  'propertyName',
+  'builtin',
+};
+
 /// The Flark kind for a CodeMirror style. CodeMirror styles definitions,
 /// variables and properties alike; like Flark's previous highlighter, a name
 /// followed by `(` is a function, a capitalized one a constructor and an
-/// all-caps one a constant.
+/// all-caps one a constant. A builtin is a function when called and a type
+/// otherwise. A style of several names (`string property`) takes the first
+/// with a kind, ignoring `error`.
 String? codeMirrorKind(String style, String line, int start, int end) {
-  switch (style) {
-    case 'keyword':
-      return 'keyword';
-    case 'atom':
-      return 'constant';
-    case 'number' || 'number property':
-      return 'number';
-    case 'string' || 'string-2' || 'string property':
-      return 'string';
-    case 'comment':
-      return 'comment';
-    case 'meta':
-      return 'meta';
-    case 'type' || 'variable-3':
-      return 'type';
-    case 'operator':
-      return 'operator';
-    case 'def' || 'variable' || 'variable-2' || 'property':
-      final name = line.substring(start, end);
-      if (_constantName.hasMatch(name) && style != 'property') {
-        return 'constant';
-      }
-      if (_calls(line, end)) return 'function';
-      if (style == 'property') return 'property';
-      if (_capitalized.hasMatch(name)) return 'constructor';
-      return 'variable';
+  if (style.contains(' ')) {
+    for (final part in style.split(' ')) {
+      final kind = part == 'error' || part == 'invalid'
+          ? null
+          : codeMirrorKind(part, line, start, end);
+      if (kind != null) return kind;
+    }
+    return null;
   }
-  return null;
+  final kind = _kinds[style];
+  if (kind != null) return kind;
+  if (!_names.contains(style)) return null;
+  final name = line.substring(start, end);
+  final property = style == 'property' || style == 'propertyName';
+  if (style == 'builtin') return _calls(line, end) ? 'function' : 'type';
+  if (_constantName.hasMatch(name) && !property) return 'constant';
+  if (_calls(line, end)) return 'function';
+  if (property) return 'property';
+  if (_capitalized.hasMatch(name)) return 'constructor';
+  return 'variable';
 }
 
 /// Whether the rest of [line] after [end] starts with a call's `(`, past
