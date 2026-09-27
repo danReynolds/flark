@@ -90,7 +90,23 @@ final _quote = RegExp(r'''['"]''');
 final _bracketTail = RegExp(r'[\s\[\{\(]*(?:#|$)');
 final _lineTail = RegExp(r'\s*(?:#|$)');
 final _nonSpace = RegExp(r'\S');
-final _stringOrComment = RegExp('string|comment');
+
+/// Whether [text] holds a character JavaScript's `\S` matches; printable
+/// ASCII answers without the pattern.
+bool _isNonSpace(String text) {
+  if (text.isEmpty) return false;
+  final c = text.codeUnitAt(0);
+  if (c > 0x20 && c < 0x7f) return true;
+  return _nonSpace.hasMatch(text);
+}
+
+/// The units [_stringPrefixes] can start with: a prefix letter or a quote.
+bool _startsString(int c) =>
+    c == 0x22 || c == 0x27 || 'rbufRBUF'.codeUnits.contains(c);
+
+/// The units [_operators] and [_delimiters] can start with.
+final _operatorStarts = '-+*/%&|^<>=!~@.'.codeUnits.toSet();
+final _delimiterStarts = r'()[]{}@,:`=;.\'.codeUnits.toSet();
 final _branch = RegExp(r'^(else:|elif |except |finally:)');
 
 typedef _Run = String? Function(StringStream stream, PythonState state);
@@ -182,12 +198,20 @@ final class PythonMode extends Mode<PythonState> {
     bool inFormat = false,
   ]) {
     if (stream.eatSpace()) return null;
+    // Each pattern below matches at the stream or not at all, so one that
+    // cannot start with the next character is not tried.
+    final c = stream.pos < stream.string.length
+        ? stream.string.codeUnitAt(stream.pos)
+        : -1;
 
     // Comments
-    if (!inFormat && stream.match(_comment) != null) return 'comment';
+    if (!inFormat && c == 0x23 && stream.match(_comment) != null) {
+      return 'comment';
+    }
 
     // Number literals
-    if (stream.match(_numberStart, consume: false) != null) {
+    if ((c >= 0x30 && c <= 0x39 || c == 0x2e) &&
+        stream.match(_numberStart, consume: false) != null) {
       var floatLiteral = false;
       if (stream.match(_float) != null) floatLiteral = true;
       if (stream.match(_pointFloat) != null) floatLiteral = true;
@@ -216,7 +240,7 @@ final class PythonMode extends Mode<PythonState> {
     }
 
     // Strings
-    if (stream.match(_stringPrefixes) != null) {
+    if (_startsString(c) && stream.match(_stringPrefixes) != null) {
       final isFmtString = stream.current().toLowerCase().contains('f');
       state._tokenize = isFmtString
           ? _formatStringFactory(stream.current(), state._tokenize)
@@ -224,8 +248,18 @@ final class PythonMode extends Mode<PythonState> {
       return state._tokenize.run(stream, state);
     }
 
-    if (stream.match(_operators) != null) return 'operator';
-    if (stream.match(_delimiters) != null) return 'punctuation';
+    if (c >= 0 &&
+        c < 0x80 &&
+        _operatorStarts.contains(c) &&
+        stream.match(_operators) != null) {
+      return 'operator';
+    }
+    if (c >= 0 &&
+        c < 0x80 &&
+        _delimiterStarts.contains(c) &&
+        stream.match(_delimiters) != null) {
+      return 'punctuation';
+    }
     if (state._lastToken == '.' && stream.match(_identifiers) != null) {
       return 'property';
     }
@@ -371,7 +405,7 @@ final class PythonMode extends Mode<PythonState> {
           : 'operator';
     }
 
-    if (_nonSpace.hasMatch(current)) state._beginningOfLine = false;
+    if (_isNonSpace(current)) state._beginningOfLine = false;
 
     if ((style == 'variable' || style == 'builtin') &&
         state._lastToken == 'meta') {
@@ -389,7 +423,10 @@ final class PythonMode extends Mode<PythonState> {
       _pushPyScope(stream, state);
     }
 
-    if (current.length == 1 && !_stringOrComment.hasMatch(style ?? 'null')) {
+    final styled = style ?? 'null';
+    if (current.length == 1 &&
+        !styled.contains('string') &&
+        !styled.contains('comment')) {
       var index = '[({'.indexOf(current);
       if (index != -1) {
         _pushBracketScope(stream, state, '])}'.substring(index, index + 1));
