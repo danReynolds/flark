@@ -1,4 +1,5 @@
 import 'mode.dart';
+import 'modes/clike.dart';
 import 'modes/javascript.dart';
 import 'modes/python.dart';
 
@@ -34,6 +35,12 @@ final codeMirrorCatalog = [
     valuesOnly: true,
   ),
   CodeMirrorLanguage('python', 'Python', PythonMode.new),
+  CodeMirrorLanguage('c', 'C', ClikeMode.c),
+  CodeMirrorLanguage('cpp', 'C++', ClikeMode.cpp),
+  CodeMirrorLanguage('java', 'Java', ClikeMode.java),
+  CodeMirrorLanguage('csharp', 'C#', ClikeMode.csharp),
+  CodeMirrorLanguage('kotlin', 'Kotlin', ClikeMode.kotlin),
+  CodeMirrorLanguage('dart', 'Dart', ClikeMode.dart),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.

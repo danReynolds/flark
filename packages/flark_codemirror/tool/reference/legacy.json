@@ -1,3 +1,9 @@
 {
-  "python": {"module": "python", "export": "python"}
+  "python": {"module": "python", "export": "python"},
+  "c": {"module": "clike", "export": "c"},
+  "cpp": {"module": "clike", "export": "cpp"},
+  "java": {"module": "clike", "export": "java"},
+  "csharp": {"module": "clike", "export": "csharp"},
+  "kotlin": {"module": "clike", "export": "kotlin"},
+  "dart": {"module": "clike", "export": "dart"}
 }
