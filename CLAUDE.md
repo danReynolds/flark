@@ -39,11 +39,15 @@ Active code:
   hands-on browser journeys and host fixes. RFC 031 remains conditional on
   sustained color-transition/full-frame qualification; automated tests and
   observed screenshots do not close those performance or physical-device gates.
-- `packages/flark_codemirror`: CodeMirror 5's language modes ported to pure
+- `packages/flark_codemirror`: CodeMirror's language modes ported to pure
   Dart, meant to replace `flark_tree_sitter` as the single snippet engine.
-  JavaScript, TypeScript and JSON are ported so far; hosts do not use it yet.
-  `test/reference_test.dart` checks every token and indentation against
-  CodeMirror 5.65.21 itself, recorded in Node by `tool/reference/generate.cjs`.
+  25 languages (CodeMirror 5's JavaScript, htmlmixed and PHP; the rest from
+  `@codemirror/legacy-modes` 6.5.4); hosts do not use it yet. The
+  `test/*reference_test.dart` suites check every token and indentation
+  against the upstream modes, recorded in Node by `tool/reference/`.
+  Untagged fences are detected by per-language signs (`lib/src/signs.dart`),
+  measured with `tool/detect_eval.dart`; `FlarkCodeMirror.only` limits the
+  languages an app builds in.
 
 The new `packages/flark_flutter` host owns text input, focus, glyph geometry,
 painting and bounded source inspection. Its runnable local-draft workbench is

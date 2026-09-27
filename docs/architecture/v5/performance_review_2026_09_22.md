@@ -596,6 +596,78 @@ Not yet covered: the other eleven languages, automatic detection (an
 untagged fence is plain), and the host swap, which would also drop the color
 workers and RFC 031's asynchronous path.
 
+### Wave 1: 25 languages (2026-09-27)
+
+The port covers 25 languages:
+- JavaScript, TypeScript and JSON from CodeMirror 5.
+- Python, C, C++, Java, C#, Kotlin, Dart, Bash, YAML, Go, Ruby, Rust,
+  PowerShell, XML, CSS, SCSS, LESS, SQL, PostgreSQL and MySQL from
+  `@codemirror/legacy-modes` 6.5.4, CodeMirror 6's collection of its version
+  5 modes.
+- HTML (with CSS and JavaScript inside) and PHP, composed as CodeMirror 5's
+  `htmlmixed` and `php` compose them.
+
+`lib/` is 10,400 lines of Dart, about 950 of them detection signs. Fence names
+resolve through aliases, and a fence in any other language is plain but
+indents by its brackets. `FlarkCodeMirror.only([...])` highlights only the
+languages an app names, and the other modes stay out of its build.
+
+Fidelity. Each port is compared with its upstream running in Node, as for
+JavaScript. The legacy modes run on CodeMirror 6's own `StringStream`.
+- The committed fixtures hold 1,782 cases across the 25, all identical.
+- Wider local runs over real files on this machine match as well: Python
+  1,000 cases; Rust, XML and the xml mode's HTML 4,000 each; mixed HTML
+  600; PHP 3,005 (two local files and the corpus, heavily mutated); LESS 8;
+  80 to 600 for each other language.
+- Two differences remain:
+  - For three characters, Node's Unicode 17 case tables disagree with the
+    Dart VM's. C and C++ read case for reserved identifiers.
+  - Ruby returns null indentation where upstream returns NaN.
+
+Detection. Reading an untagged fence with every mode stopped working at 25
+languages: SQL's 800-word vocabulary and PHP's builtins claimed most text.
+- Before: over windows of real files it named the right family for 13%,
+  claimed 70% of the repository's Markdown paragraphs, and took 4.9 ms a
+  read.
+- Now: each language carries weighted signs, patterns its code shows and
+  other text rarely does, some counting against it.
+  - Variants carry their base's signs; dialects need their base's evidence.
+  - JSON is a shape check.
+  - Samples that are mostly sentences stay plain.
+- After, over 12,540 windows with at least 30 characters of code: right
+  family 76% (right language 67%), and right 97% of the times it named one.
+  It claimed 13 of 4,684 paragraphs.
+- On 995 windows of local test and build logs it named a language for 451.
+  400 were the JSON reporter's lines, which are JSON; about 50 are
+  misclaims (Rust 19, CSS 7, YAML 6, Dart 8 and others).
+
+Each sign runs only where its possible first tokens occur. A detection reads
+512 code units and takes 0.2–0.9 ms (local AOT).
+
+Speed, local AOT, M1 Pro, machine loaded by other work, commit `e75b9110`
+(`tool/bench.dart`, median of 41 runs):
+- Highlighting 8K of each corpus file takes 0.3 ms (XML) to 2.4 ms
+  (Python); most languages take 0.5–1.2 ms.
+- Enter proposals take slightly less.
+- Two changes got there, with the same tokens as before:
+  - Simple-mode rules skip positions they cannot start at: Rust 8.1 to
+    1.9 ms.
+  - Python looks its keywords up in sets: 3.6 to 2.4 ms.
+
+Size, `-O4`, over a program with a stub delegate:
+
+| Languages | dart2js | gzipped | dart2wasm | gzipped |
+| --- | ---: | ---: | ---: | ---: |
+| All 25 | 241 KB | 78 KB | 252 KB | 90 KB |
+| JavaScript, TypeScript, JSON | 83 KB | 26 KB | 87 KB | 30 KB |
+| Python alone | 51 KB | 18 KB | 54 KB | 22 KB |
+
+The workbench example's `lib/codemirror_demo.dart` shows ten of the
+languages and three untagged fences.
+
+Not yet covered: the host swap (both hosts still depend on
+`flark_tree_sitter`), and languages beyond these 25.
+
 ## Live limits
 
 A document over its live limits switches to source mode: raw, still

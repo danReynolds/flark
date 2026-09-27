@@ -1,6 +1,6 @@
-/// Try `flark_codemirror`, CodeMirror 5's JavaScript mode ported to Dart, on
-/// TypeScript in the Flutter editor, with the current Tree-sitter engine one
-/// click away for comparison:
+/// Try `flark_codemirror`, CodeMirror's language modes ported to Dart, on
+/// fences in its 25 languages in the Flutter editor, with the current
+/// Tree-sitter engine one click away for comparison:
 ///
 /// ```sh
 /// flutter build web --wasm -t lib/codemirror_demo.dart
@@ -124,7 +124,7 @@ class _DemoState extends State<_Demo> {
     ),
     home: Scaffold(
       appBar: AppBar(
-        title: const Text('Code engine demo: TypeScript'),
+        title: const Text('Code engine demo'),
         actions: [
           TextButton(
             onPressed: () => _replace(_sample, 0),
@@ -277,34 +277,112 @@ export class Queue<T> extends EventEmitter {
 }''';
 
 final _sample =
-    '''# The CodeMirror engine on TypeScript
+    '''# The CodeMirror engine
 
-Fences below are colored and indented by `flark_codemirror`: CodeMirror 5's
-JavaScript mode, ported to Dart. Things to try:
+Fences below are colored and indented by `flark_codemirror`: CodeMirror's
+language modes ported to Dart, for 25 languages, synchronous on the UI thread.
+Things to try:
 
 - Enter after `{`, and between `{}` or `[]`
 - Enter inside an open call, such as after `sort(`
 - `}` or `]` typed at the start of an indented line
 - Tab and Shift-Tab over selected lines
+- Delete a fence's language: an untagged fence takes the language it looks like
 - The switch at the top: the same document with Tree-sitter
 
 ```ts
 $_module
 ```
 
-JavaScript and JSON use the same mode:
+```python
+from dataclasses import dataclass
 
-```js
-const queue = new Queue(2).add({ id: 'a', payload: 1 });
-queue.run(async (task) => console.log(task.id));
+@dataclass
+class Task:
+    id: str
+    priority: int = 0
+
+def ordered(tasks: list[Task]) -> list[Task]:
+    return sorted(tasks, key=lambda t: -t.priority)
 ```
 
-```json
-{ "compilerOptions": { "strict": true, "target": "ES2022" }, "include": ["src"] }
+```rust
+pub fn ordered(tasks: &mut Vec<Task>) -> &[Task] {
+    tasks.sort_by_key(|t| std::cmp::Reverse(t.priority));
+    &tasks[..]
+}
 ```
 
-A fence without a language is detected among these three; other languages
-are plain for now.
+```go
+func Ordered(tasks []Task) []Task {
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Priority > tasks[j].Priority
+	})
+	return tasks
+}
+```
+
+```sql
+SELECT id, priority FROM tasks
+WHERE state = 'idle'
+ORDER BY priority DESC
+LIMIT 10;
+```
+
+```html
+<!doctype html>
+<style>
+  .task { color: #333; padding: 4px 8px; }
+</style>
+<ul class="tasks"><li class="task">Write</li></ul>
+<script>
+  document.querySelectorAll('.task').forEach((el) => el.remove());
+</script>
+```
+
+```php
+<?php
+function ordered(array \$tasks): array {
+    usort(\$tasks, fn(\$a, \$b) => \$b['priority'] <=> \$a['priority']);
+    return \$tasks;
+}
+```
+
+```bash
+#!/usr/bin/env bash
+for task in "\$@"; do
+  echo "running \$task"
+done
+```
+
+```yaml
+tasks:
+  - id: write
+    priority: 2
+  - id: review
+    priority: 1
+```
+
+These fences have no language; each takes the one it looks like:
+
+```
+def greet(name):
+    return f"Hello, {name}!"
+```
+
+```
+SELECT name FROM users WHERE active;
+```
+
+```
+fn main() {
+    println!("hello");
+}
+```
+
+Also Kotlin, Java, C#, C, C++, Dart, Ruby, PowerShell, XML, CSS, SCSS,
+LESS, JavaScript, JSON, PostgreSQL and MySQL. A fence in another language is
+plain but still indents by its brackets.
 ''';
 
 /// About 8,000 units of TypeScript, just under the engine's snippet cap.
