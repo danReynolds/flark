@@ -1,1 +1,6 @@
 include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    # Samples the modes tokenize, not code of the package.
+    - tool/corpus/**
