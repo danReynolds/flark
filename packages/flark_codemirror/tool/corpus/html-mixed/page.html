@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mixed &amp; matched</title>
+  <link rel="stylesheet" href="app.css">
+  <style>
+    :root { --accent: #3a628f; }
+    body {
+      margin: 0 auto;
+      font: 16px/1.5 system-ui, sans-serif;
+    }
+    @media (max-width: 600px) {
+      .card { padding: 8px; }
+    }
+  </style>
+  <style type="text/less">
+    .ignored { color: red }
+  </style>
+</head>
+<body class="home" data-count=3>
+  <!-- A comment spanning
+       two lines -->
+  <main>
+    <h1 id="title">Hello <em>world</em></h1>
+    <p>Some text with an entity &mdash; and a <a href="/x?a=1&b=2">link</a>.
+    <p>An implicitly closed paragraph
+    <ul>
+      <li>One
+      <li>Two</li>
+    </ul>
+    <img src="a.png" alt="An image">
+    <br/>
+    <input type=checkbox checked disabled>
+    <textarea>
+  raw <b>text</b>
+    </textarea>
+    <pre><code>if (a < b) { return; }</code></pre>
+  </main>
+  <script>
+    const items = document.querySelectorAll('.card');
+    for (const item of items) {
+      item.addEventListener('click', event => {
+        console.log(`clicked ${event.target.id}`);
+      });
+    }
+    if (a < b && c > d) {
+      window.alert("</not a close");
+    }
+  </script>
+  <script type="module">
+    import { start } from './app.js';
+    start({ debug: true });
+  </script>
+  <script type="text/template">
+    <div class="card">{{ name }}</div>
+  </script>
+  <script src="vendor.js"></script>
+</body>
+</html>
