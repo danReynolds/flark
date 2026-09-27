@@ -1,7 +1,11 @@
 import 'mode.dart';
 import 'modes/clike.dart';
+import 'modes/go.dart';
 import 'modes/javascript.dart';
 import 'modes/python.dart';
+import 'modes/ruby.dart';
+import 'modes/shell.dart';
+import 'modes/yaml.dart';
 
 /// A ported language: its canonical name, display label and mode.
 final class CodeMirrorLanguage {
@@ -41,6 +45,10 @@ final codeMirrorCatalog = [
   CodeMirrorLanguage('csharp', 'C#', ClikeMode.csharp),
   CodeMirrorLanguage('kotlin', 'Kotlin', ClikeMode.kotlin),
   CodeMirrorLanguage('dart', 'Dart', ClikeMode.dart),
+  CodeMirrorLanguage('bash', 'Bash', ShellMode.new),
+  CodeMirrorLanguage('yaml', 'YAML', YamlMode.new),
+  CodeMirrorLanguage('go', 'Go', GoMode.new),
+  CodeMirrorLanguage('ruby', 'Ruby', RubyMode.new),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.

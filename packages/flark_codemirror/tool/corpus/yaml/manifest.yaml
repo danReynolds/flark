@@ -1,0 +1,79 @@
+# Deployment manifest with flow collections and scalars of every style.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes-api
+  labels: {app: notes, tier: backend, "team/owner": docs}
+  annotations:
+    checksum/config: 3f2a9c
+    description: "Serves notes; see https://example.test/docs#api"
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: notes}
+  template:
+    metadata:
+      labels: {app: notes, version: "1.8"}
+    spec:
+      containers:
+        - name: api
+          image: example.test/notes-api:1.8.2
+          args: ["--port", "8080", --verbose]
+          ports: [{containerPort: 8080, protocol: TCP}, {containerPort: 9090}]
+          resources:
+            requests: {cpu: 0.25, memory: 128Mi}
+            limits: {cpu: 1, memory: 512Mi}
+          env:
+            - {name: MODE, value: production}
+            - name: GREETING
+              value: >-
+                Hello from the notes service,
+                folded onto one line.
+            - name: SCRIPT
+              value: |
+                #!/bin/sh
+                echo "not a comment: # inside a block"
+                exit 0
+            - name: WEIRD
+              value: "tab\tand newline\n escapes, plus \\ backslash"
+          readinessProbe:
+            httpGet: {path: /ready, port: 8080}
+            periodSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: notes-config}
+data:
+  limits.json: '{"max": 100, "burst": 20}'
+  feature.enabled: "true"
+  ratio: 0.5
+  sizes: [1, 2, 3, 5, 8]
+  mixed: [1, two, 3.0, "four", {five: 5}]
+  nested: {outer: {inner: [a, b, {deep: yes}]}, flag: off}
+  bools: [true, False, YES, no, On]
+  negative: -12
+  version_list: 1.2.3
+  comma, key: value
+  plain: this has # a comment after a space
+  hashy: value#not-a-comment
+  list:
+  - flush left item
+  - &shared {retries: 2, backoff: 1.5}
+  - *shared
+  - ? mapping key in a list
+    : its value
+multiline plain: first line
+  continues here
+empty flow map: {}
+empty flow seq: []
+anchor on scalar: &version 1.8.2
+alias to scalar: *version
+tilde: ~
+date: 2026-01-31
+time: 12:30:45
+octal-ish: 0o755
+hex: 0xFF
+inf: .inf
+not a number: .NaN
+...
