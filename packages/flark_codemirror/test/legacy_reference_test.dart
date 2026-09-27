@@ -5,9 +5,18 @@ import 'dart:io';
 
 import 'package:flark_codemirror/src/languages.dart';
 import 'package:flark_codemirror/src/mode.dart';
+import 'package:flark_codemirror/src/modes/xml.dart';
 import 'package:test/test.dart';
 
 import 'support/reference.dart';
+
+/// Languages whose catalog mode composes the recorded one with others: the
+/// catalog's html is mixed HTML, checked by mixed_reference_test.dart, and
+/// its fixture here records the xml mode's html export alone.
+final _recordedAlone = {
+  'html': (String language, ModeConfig config) =>
+      XmlMode(config, XmlOptions.html),
+};
 
 void main() {
   // One fixture from a wider local run, or every committed one.
@@ -31,7 +40,7 @@ void main() {
     // One mode for every case, in order, as the generator runs one parser:
     // an export's closure can keep a value between tokens, and so between
     // cases (css.js's `type`).
-    final mode = codeMirrorMode(language, config);
+    final mode = (_recordedAlone[language] ?? codeMirrorMode)(language, config);
     group(language, () {
       test('comes from the ported release', () {
         expect(

@@ -157,6 +157,9 @@ final class XmlState {
   _Context? _context;
   int? _stringStartCol;
 
+  /// The name of the tag being read, which htmlmixed reads.
+  String? get tagName => _tagName;
+
   /// The upstream default copy: contexts are shared.
   XmlState copy() => XmlState._(
     _tokenize,

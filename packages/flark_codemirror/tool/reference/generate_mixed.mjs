@@ -11,10 +11,12 @@
 // did; and a PHP fence starts in PHP, with `<?php` styled meta, unless it
 // opens with an HTML tag, since fences usually hold bare PHP.
 //
-//   node tool/reference/generate_mixed.mjs <legacy-modes dir> <language dir> <codemirror 5 dir>
+//   node tool/reference/generate_mixed.mjs <legacy-modes dir> <language dir> <codemirror 5 dir> [language]
 //
 // Cases are the files in tool/corpus/html-mixed/ and tool/corpus/php/ with
 // seeded mutations; the fixtures are test/fixtures/mixed/<language>.json.
+// For wider local checks, `--corpus <dir> --out <file>` runs one language
+// over another directory, and `--mutations <n>` sets the mutations per file.
 import fs from 'node:fs';
 import path from 'node:path';
 import {createRequire} from 'node:module';
@@ -22,9 +24,18 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
-const [legacyDir, languageDir, cm5Dir] = process.argv.slice(2);
-if (!legacyDir || !languageDir || !cm5Dir) {
-  console.error('usage: generate_mixed.mjs <legacy-modes dir> <language dir> <codemirror 5 dir>');
+const args = process.argv.slice(2);
+const option = name => {
+  const i = args.indexOf(name);
+  if (i < 0) return null;
+  const [value] = args.splice(i, 2).slice(1);
+  return value;
+};
+const otherCorpus = option('--corpus'), otherOut = option('--out');
+const mutationCount = Number(option('--mutations') ?? (otherCorpus ? 3 : 40));
+const [legacyDir, languageDir, cm5Dir, only] = args;
+if (!legacyDir || !languageDir || !cm5Dir || (otherCorpus && !only)) {
+  console.error('usage: generate_mixed.mjs <legacy-modes dir> <language dir> <codemirror 5 dir> [language]');
   process.exit(2);
 }
 const version = dir => JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version;
@@ -337,13 +348,15 @@ function mutate(text, next) {
 function generate(language, corpus, mode, seed) {
   styles = [null];
   styleIds = new Map([[null, 0]]);
-  const corpusDir = path.join(root, 'tool', 'corpus', corpus);
+  if (only && only !== language) return;
+  const corpusDir = otherCorpus || path.join(root, 'tool', 'corpus', corpus);
   const sources = fs.readdirSync(corpusDir).sort()
+    .filter(file => fs.statSync(path.join(corpusDir, file)).isFile())
     .map(file => ({name: `${corpus}/${file}`, text: fs.readFileSync(path.join(corpusDir, file), 'utf8')}));
   const cases = [...sources];
   const next = random(seed);
   for (const source of sources) {
-    for (let i = 0; i < 40; i++) cases.push({name: `${source.name} mutation ${i}`, text: mutate(source.text, next)});
+    for (let i = 0; i < mutationCount; i++) cases.push({name: `${source.name} mutation ${i}`, text: mutate(source.text, next)});
   }
   const out = cases.map(c => {
     try {
@@ -352,7 +365,7 @@ function generate(language, corpus, mode, seed) {
       return {name: c.name, text: c.text, error: String(e && e.message || e)};
     }
   });
-  const file = path.join(root, 'test', 'fixtures', 'mixed', `${language}.json`);
+  const file = otherOut || path.join(root, 'test', 'fixtures', 'mixed', `${language}.json`);
   fs.mkdirSync(path.dirname(file), {recursive: true});
   fs.writeFileSync(file, JSON.stringify({
     source: language == 'html'

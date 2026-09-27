@@ -2,7 +2,9 @@ import 'mode.dart';
 import 'modes/clike.dart';
 import 'modes/css.dart';
 import 'modes/go.dart';
+import 'modes/htmlmixed.dart';
 import 'modes/javascript.dart';
+import 'modes/php.dart';
 import 'modes/powershell.dart';
 import 'modes/python.dart';
 import 'modes/ruby.dart';
@@ -57,17 +59,14 @@ final codeMirrorCatalog = [
   CodeMirrorLanguage('rust', 'Rust', RustMode.new),
   CodeMirrorLanguage('powershell', 'PowerShell', PowerShellMode.new),
   CodeMirrorLanguage('xml', 'XML', XmlMode.new),
-  CodeMirrorLanguage(
-    'html',
-    'HTML',
-    (config) => XmlMode(config, XmlOptions.html),
-  ),
+  CodeMirrorLanguage('html', 'HTML', HtmlMixedMode.new),
   CodeMirrorLanguage('sql', 'SQL', SqlMode.standardSql),
   CodeMirrorLanguage('postgresql', 'PostgreSQL', SqlMode.pgSql),
   CodeMirrorLanguage('mysql', 'MySQL', SqlMode.mySql),
   CodeMirrorLanguage('css', 'CSS', CssMode.css),
   CodeMirrorLanguage('scss', 'SCSS', CssMode.scss),
   CodeMirrorLanguage('less', 'LESS', CssMode.less),
+  CodeMirrorLanguage('php', 'PHP', PhpMode.new),
 ];
 
 /// Languages with a ported mode, by canonical name, with display labels.
