@@ -635,11 +635,12 @@ languages: SQL's 800-word vocabulary and PHP's builtins claimed most text.
   - JSON is a shape check.
   - Samples that are mostly sentences stay plain.
 - After, over 12,540 windows with at least 30 characters of code: right
-  family 76% (right language 67%), and right 97% of the times it named one.
-  It claimed 13 of 4,684 paragraphs.
-- On 995 windows of local test and build logs it named a language for 451.
-  400 were the JSON reporter's lines, which are JSON; about 50 are
-  misclaims (Rust 19, CSS 7, YAML 6, Dart 8 and others).
+  family 78% (right language 68%), and right 96% of the times it named one.
+  It claimed 20 of 4,684 paragraphs. The threshold is 2 points (1.5 for one
+  or two lines); 2.5 gave 76%, 97% and 13 paragraphs.
+- On 995 windows of local test and build logs it named a language for 460.
+  400 were the JSON reporter's lines, which are JSON; the other 60 are
+  misclaims (Rust 25, Dart 8, CSS 7, YAML 6 and others).
 
 Each sign runs only where its possible first tokens occur. A detection reads
 512 code units and takes 0.2–0.9 ms (local AOT).

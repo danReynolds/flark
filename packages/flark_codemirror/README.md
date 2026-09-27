@@ -56,12 +56,12 @@ A fence without a language takes the language it looks like
 patterns its code shows and other text rarely does, such as `def f():` for
 Python or `err != nil` for Go, each weighted by how sure a sign it is, and
 some counting against it. The language with the most evidence wins if it
-reaches 2.5 points (half a point less a line for one or two lines), and
-ties go to the language listed first. TypeScript, C++ and PHP carry their
-base language's signs and win on their own; a dialect (SCSS, LESS and the
-SQL dialects) needs its base's signs to reach half the threshold. JSON is a
-strict shape check. A sample that is mostly sentences stays plain.
-Detection reads the fence's first 512 code units.
+reaches 2 points (1.5 for one or two lines), and ties go to the language
+listed first. TypeScript, C++ and PHP carry their base language's signs and
+win on their own; a dialect (SCSS, LESS and the SQL dialects) needs its
+base's signs to reach half the threshold. JSON is a strict shape check. A
+sample that is mostly sentences stays plain. Detection reads the fence's
+first 512 code units.
 
 Signs run only where they can match: one pass lists the sample's tokens and
 each line's first, and each pattern's possible first tokens, read from its
@@ -71,10 +71,11 @@ source, decide which lines it tries or whether it scans at all.
 language, as fences excerpt them, and on the repository's Markdown
 paragraphs, which should stay plain. Wider local directories can be added
 as `language=dir`. Over real files on one machine (12,540 windows with at
-least 30 characters of code), it named the right language for 67% and the
+least 30 characters of code), it named the right language for 68% and the
 right family (JavaScript for TypeScript, C for C++, a SQL dialect for SQL)
-for 76%; when it named one, it was right 97% of the time, and it claimed 13
-of 4,684 paragraphs.
+for 78%; when it named one, it was right 96% of the time, and it claimed 20
+of 4,684 paragraphs. A threshold of 2.5 claims less (13 paragraphs) and
+finds less (76%).
 
 ## Checked against CodeMirror
 

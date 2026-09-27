@@ -1,13 +1,14 @@
+import 'dart:math' as math;
+
 import 'languages.dart';
 import 'signs.dart';
 
 /// Detection reads at most this many code units of a fence.
 const detectionSample = 512;
 
-/// Less evidence than this leaves a fence of three or more lines plain; a
-/// shorter one needs half a point less a line (1.5 for one), since a line
-/// can show only so much.
-const detectionThreshold = 2.5;
+/// Less evidence than this leaves a fence of three or more lines plain; one
+/// of one or two lines needs 1.5, since a line can show only so much.
+const detectionThreshold = 2.0;
 
 /// The language of an untagged fence among [languages], such as
 /// [CodeMirrorLanguages.all], or '' when nothing is recognized.
@@ -16,7 +17,7 @@ const detectionThreshold = 2.5;
 /// code shows and other text rarely does, such as `def f():` for Python or
 /// `err != nil` for Go, each weighted by how sure a sign it is, and some
 /// counting against it. The language with the most evidence wins if it has
-/// at least [detectionThreshold] (less for one or two lines); ties go to the
+/// at least [detectionThreshold] (1.5 for one or two lines); ties go to the
 /// one listed first. A variant
 /// (TypeScript, C++, a SQL dialect) carries its base language's signs and
 /// its own, so it wins only on the latter. A values-only language (JSON)
@@ -32,7 +33,7 @@ String detectCodeMirrorLanguage(
   for (final line in sample.split('\n')) {
     if (line.trim().isNotEmpty && ++lines == 3) break;
   }
-  final threshold = detectionThreshold - 0.5 * (3 - lines);
+  final threshold = math.max(1.5, detectionThreshold - 0.5 * (3 - lines));
   var best = '';
   var bestScore = threshold - 1e-9;
   // Variants share their base's signs: score each list once.
