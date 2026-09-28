@@ -78,9 +78,7 @@ void main() {
       final char = String.fromCharCode(rune);
       e.apply(char == '\n' ? const Newline() : InsertText(char));
     }
-    // CodeMirror's shell mode has no indentation rules, so a new line keeps
-    // the previous one's.
-    expect(e.source, '```\nif true; then\necho "hello"\nfi\n```\n\nafter');
+    expect(e.source, '```\nif true; then\n  echo "hello"\nfi\n```\n\nafter');
     final before = e.source;
     e.history.breakCoalescing();
     e.apply(const InsertText('x'));
