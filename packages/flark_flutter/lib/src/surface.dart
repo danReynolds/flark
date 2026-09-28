@@ -70,6 +70,7 @@ class FlarkSurface extends LeafRenderObjectWidget {
     this.baseUri,
     this.imageProvider,
     this.showImagePreviews = true,
+    this.handles,
   });
   final Uri? baseUri;
   final FlarkImageProvider? imageProvider;
@@ -83,6 +84,9 @@ class FlarkSurface extends LeafRenderObjectWidget {
   final ValueChanged<FlarkPaintObservation>? onPaint;
   final VoidCallback? onFocus;
   final double Function(Rect, double, double)? revealDuringLayout;
+
+  /// Anchors for touch selection handles at the selection's start and end.
+  final (LayerLink, LayerLink)? handles;
   @override
   RenderFlarkSurface createRenderObject(BuildContext context) =>
       RenderFlarkSurface(
@@ -101,6 +105,7 @@ class FlarkSurface extends LeafRenderObjectWidget {
         baseUri: baseUri,
         imageProvider: imageProvider,
         showImagePreviews: showImagePreviews,
+        handles: handles,
       );
   @override
   void updateRenderObject(
@@ -122,6 +127,7 @@ class FlarkSurface extends LeafRenderObjectWidget {
     baseUri: baseUri,
     imageProvider: imageProvider,
     showImagePreviews: showImagePreviews,
+    handles: handles,
   );
 }
 
@@ -182,6 +188,7 @@ class RenderFlarkSurface extends RenderBox
     Uri? baseUri,
     FlarkImageProvider? imageProvider,
     this.showImagePreviews = true,
+    this.handles,
   }) {
     _images.configure(baseUri, imageProvider);
     _snapshot = controller.editor.snapshot;
@@ -208,6 +215,12 @@ class RenderFlarkSurface extends RenderBox
   double Function(Rect, double, double)? revealDuringLayout;
   bool _needsReveal = true;
   double _contentHeight = 0;
+
+  /// Leaders for the selection handles, painted at the bottom of the
+  /// selection's first and last carets while a touch selection shows them.
+  (LayerLink, LayerLink)? handles;
+  @override
+  bool get alwaysNeedsCompositing => handles != null;
   List<_RowLayout> _rows = [];
   // Keep one layout per mode. A temporary Source excursion must not discard
   // every shaped live paragraph. Both lists remain bounded by admission/page
@@ -243,6 +256,7 @@ class RenderFlarkSurface extends RenderBox
     Uri? baseUri,
     FlarkImageProvider? imageProvider,
     bool showImagePreviews = true,
+    (LayerLink, LayerLink)? handles,
   }) {
     // The editor rebuilds for every edit, focus change and toolbar update.
     // Edits already reach this object through its controller listener, so only
@@ -263,6 +277,11 @@ class RenderFlarkSurface extends RenderBox
       this.showImagePreviews = showImagePreviews;
       _clearRows();
       layout = true;
+    }
+    if (this.handles != handles) {
+      this.handles = handles;
+      markNeedsCompositingBitsUpdate();
+      paint = true;
     }
     if (next != controller) {
       controller.removeListener(_changed);
@@ -787,11 +806,29 @@ class RenderFlarkSurface extends RenderBox
 
   Rect get caretRect {
     if (_layoutWidth == null) return Rect.zero;
+    // Preparing rows catches the snapshot up with unpainted input.
     _prepareRows();
-    final (index, offset) = _display(
-      _snapshot.selection.extent,
-      tableCell: _snapshot.selection.tableCell,
-    );
+    final selection = _snapshot.selection;
+    return caretRectAt(selection.extent, tableCell: selection.tableCell);
+  }
+
+  /// The visible part of the document, in this surface's coordinates.
+  Rect get visibleRect =>
+      Rect.fromLTWH(0, scrollOffset, size.width, _visibleHeight);
+
+  /// The line holding a caret at [source]: its row's width at the caret's
+  /// height.
+  Rect lineRectAt(int source) {
+    final caret = caretRectAt(source);
+    if (_layoutWidth == null) return caret;
+    final row = _rows[_display(source).$1].rect;
+    return Rect.fromLTRB(row.left, caret.top, row.right, caret.bottom);
+  }
+
+  Rect caretRectAt(int source, {int? tableCell}) {
+    if (_layoutWidth == null) return Rect.zero;
+    _prepareRows();
+    final (index, offset) = _display(source, tableCell: tableCell);
     final row = _rows[index];
     final p = row.painter.getOffsetForCaret(
       TextPosition(offset: offset),
@@ -902,6 +939,12 @@ class RenderFlarkSurface extends RenderBox
   }
 
   void selectWordAt(Offset point) {
+    final (start, end) = wordAt(point);
+    controller.command(SetSelection(start, end));
+  }
+
+  /// The source range of the word drawn at [point].
+  (int, int) wordAt(Offset point) {
     _prepareRows();
     final row = _rowAt(point);
     final position = row.painter.getPositionForOffset(point - row.origin);
@@ -912,7 +955,7 @@ class RenderFlarkSurface extends RenderBox
     final end =
         row.row?.sourceForDisplay(word.end, anchor: Anchor.before) ??
         row.sourceStart + word.end;
-    controller.command(SetSelection(start, end));
+    return (start, end);
   }
 
   InlineResource? imageAt(Offset point) {
@@ -1345,6 +1388,22 @@ class RenderFlarkSurface extends RenderBox
         caret.shift(offset),
         Paint()..color = color(FlarkColorRole.caret),
       );
+    }
+    final handles = this.handles;
+    if (handles != null && !selected.isCollapsed) {
+      for (final (link, source) in [
+        (handles.$1, selected.start),
+        (handles.$2, selected.end),
+      ]) {
+        // An end scrolled out of view has no leader, so its handle hides.
+        final end = caretRectAt(source).bottomLeft;
+        if (end.dy < visible.top - .5 || end.dy > visible.bottom + .5) continue;
+        context.pushLayer(
+          LeaderLayer(link: link, offset: offset + end),
+          (_, _) {},
+          Offset.zero,
+        );
+      }
     }
     onPaint?.call(
       FlarkPaintObservation(

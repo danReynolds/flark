@@ -2,6 +2,8 @@ import 'package:flark/session.dart';
 import 'package:flark_codemirror/flark_codemirror.dart';
 import 'dart:async';
 import 'package:flark/flark.dart';
+import 'package:flutter/cupertino.dart'
+    show cupertinoTextSelectionHandleControls;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -149,6 +151,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     super.didUpdateWidget(old);
     if (old.theme != widget.theme || old.style != widget.style) _theme = null;
     if (old.controller != c || old.readOnly != widget.readOnly) {
+      _hideTouchSelection(rebuild: false);
       _dismissLink();
       _resourceSession?.close();
       _resourceSession = null;
@@ -177,6 +180,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   void _scrolled() {
     _dismissLink();
     if (!mounted) return;
+    final overlay = _touchSelection;
+    if (overlay != null && overlay.toolbarIsVisible && _handleDrag == null) {
+      overlay.hideToolbar();
+      _menuAfterScroll = true;
+    }
     // Only the surface's viewport changed. Rebuilding this widget per scroll
     // frame also rebuilt the toolbar and re-resolved the theme.
     _surface?.scrolled(_scroll.hasClients ? _scroll.offset : 0);
@@ -189,6 +197,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     } else {
       c.finishComposition();
       _close();
+      _hideTouchSelection(rebuild: false);
     }
     if (mounted) setState(() {});
   }
@@ -261,6 +270,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
     _sourceWindowStart = start;
     _sync();
+    _syncTouchSelection();
     setState(() {});
     _scheduleGeometry();
   }
@@ -332,6 +342,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       }
     }
     if (widget.readOnly) return;
+    _hideTouchSelection();
     _focus.requestFocus();
     if (touch && _connection?.attached == true) _connection!.show();
     _attach();
@@ -356,6 +367,304 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     if (link != null && !HardwareKeyboard.instance.isShiftPressed && primary) {
       _pressedLink = (resource: link, point: position);
     }
+  }
+
+  // Touch selection. A long press, or a double tap by touch, selects a word
+  // and shows handles and a context menu over the document. The surface
+  // paints the handles' leaders at the selection's ends, so they follow
+  // scrolling; the menu follows the editor.
+  final _startHandle = LayerLink(), _endHandle = LayerLink();
+  final _menuLink = LayerLink();
+  SelectionOverlay? _touchSelection;
+  bool _touchHandles = false, _menuAfterScroll = false;
+
+  /// The source the touch selection was made in; an edit ends it.
+  String? _touchSource;
+
+  /// A caret the menu was shown at; moving it ends the touch selection.
+  FlarkSelection? _touchCaret;
+  (int, int)? _longPressWord;
+  ({Offset grab, int fixed})? _handleDrag;
+
+  void _showTouchSelection({bool menu = true}) {
+    final surface = _surface;
+    if (surface == null || !mounted || widget.readOnly) return;
+    final selection = c.editor.selection;
+    _touchSource = c.text;
+    _touchCaret = selection.isCollapsed ? selection : null;
+    final overlay = _touchSelection ??= _createTouchSelection(surface);
+    _updateTouchSelection();
+    if (!selection.isCollapsed && !_touchHandles) {
+      overlay.showHandles();
+      setState(() => _touchHandles = true);
+    }
+    if (menu) {
+      overlay.showToolbar(context: context, contextMenuBuilder: _touchMenu);
+    }
+  }
+
+  void _hideTouchSelection({bool rebuild = true}) {
+    final overlay = _touchSelection;
+    if (overlay == null) return;
+    _touchSelection = _touchSource = _touchCaret = null;
+    _longPressWord = _handleDrag = null;
+    _menuAfterScroll = false;
+    overlay.dispose();
+    if (_touchHandles) {
+      _touchHandles = false;
+      if (rebuild && mounted) setState(() {});
+    }
+  }
+
+  /// Typing ends the touch selection, and so does a caret it was not shown
+  /// at. An edit that keeps a selection (a style) keeps the handles without
+  /// the menu. Otherwise the handles and menu follow the selection.
+  void _syncTouchSelection() {
+    final overlay = _touchSelection;
+    if (overlay == null) return;
+    final selection = c.editor.selection;
+    final edited = c.text != _touchSource;
+    if (selection.isCollapsed && (edited || selection != _touchCaret)) {
+      _hideTouchSelection();
+      return;
+    }
+    if (edited) {
+      _touchSource = c.text;
+      overlay.hideToolbar();
+    }
+    _updateTouchSelection();
+  }
+
+  (Rect, Rect) _touchEnds(RenderFlarkSurface surface) {
+    final selection = c.editor.selection;
+    return (
+      surface.caretRectAt(selection.start),
+      surface.caretRectAt(selection.end),
+    );
+  }
+
+  SelectionOverlay _createTouchSelection(RenderFlarkSurface surface) {
+    final (start, end) = _touchEnds(surface);
+    return SelectionOverlay(
+      context: context,
+      debugRequiredFor: widget,
+      startHandleType: TextSelectionHandleType.left,
+      lineHeightAtStart: start.height,
+      onStartHandleDragStart: (details) => _startHandleDrag(details, true),
+      onStartHandleDragUpdate: (details) => _updateHandleDrag(details, true),
+      onStartHandleDragEnd: _endHandleDrag,
+      endHandleType: TextSelectionHandleType.right,
+      lineHeightAtEnd: end.height,
+      onEndHandleDragStart: (details) => _startHandleDrag(details, false),
+      onEndHandleDragUpdate: (details) => _updateHandleDrag(details, false),
+      onEndHandleDragEnd: _endHandleDrag,
+      selectionEndpoints: [
+        TextSelectionPoint(start.bottomLeft, TextDirection.ltr),
+        TextSelectionPoint(end.bottomLeft, TextDirection.ltr),
+      ],
+      selectionControls: Theme.of(context).platform == TargetPlatform.iOS
+          ? cupertinoTextSelectionHandleControls
+          : materialTextSelectionHandleControls,
+      // Required, although deprecated; the menu is built by _touchMenu.
+      // ignore: deprecated_member_use
+      selectionDelegate: null,
+      clipboardStatus: null,
+      startHandleLayerLink: _startHandle,
+      endHandleLayerLink: _endHandle,
+      toolbarLayerLink: _menuLink,
+      magnifierConfiguration: TextMagnifier.adaptiveMagnifierConfiguration,
+    );
+  }
+
+  void _updateTouchSelection() {
+    final overlay = _touchSelection, surface = _surface;
+    if (overlay == null || surface == null) return;
+    final (start, end) = _touchEnds(surface);
+    overlay
+      ..lineHeightAtStart = start.height
+      ..lineHeightAtEnd = end.height
+      ..selectionEndpoints = [
+        TextSelectionPoint(start.bottomLeft, TextDirection.ltr),
+        TextSelectionPoint(end.bottomLeft, TextDirection.ltr),
+      ];
+  }
+
+  MagnifierInfo _magnifierAt(Offset gesture, int source) {
+    final surface = _surface!;
+    Rect global(Rect rect) =>
+        MatrixUtils.transformRect(surface.getTransformTo(null), rect);
+    return MagnifierInfo(
+      globalGesturePosition: gesture,
+      caretRect: global(surface.caretRectAt(source)),
+      currentLineBoundaries: global(surface.lineRectAt(source)),
+      fieldBounds: global(surface.visibleRect),
+    );
+  }
+
+  void _longPressStart(LongPressStartDetails details) {
+    // The lift ends the long press; it must not place a caret.
+    _touch = null;
+    final surface = _surface;
+    if (surface == null || widget.readOnly) return;
+    _dismissLink();
+    _focus.requestFocus();
+    if (_connection?.attached == true) _connection!.show();
+    _attach();
+    _goalX = null;
+    final word = surface.wordAt(surface.globalToLocal(details.globalPosition));
+    _longPressWord = word;
+    _touchSelection?.hideToolbar();
+    _command(SetSelection(word.$1, word.$2));
+    unawaited(Feedback.forLongPress(context));
+    _showTouchSelection(menu: false);
+    _touchSelection?.showMagnifier(
+      _magnifierAt(details.globalPosition, c.editor.selection.extent),
+    );
+  }
+
+  /// Dragging a long press extends the selection by words.
+  void _longPressMove(LongPressMoveUpdateDetails details) {
+    final surface = _surface, origin = _longPressWord;
+    if (surface == null || origin == null) return;
+    final word = surface.wordAt(surface.globalToLocal(details.globalPosition));
+    _command(
+      word.$2 >= origin.$2
+          ? SetSelection(origin.$1, word.$2)
+          : SetSelection(origin.$2, word.$1),
+    );
+    _showTouchSelection(menu: false);
+    _touchSelection?.updateMagnifier(
+      _magnifierAt(details.globalPosition, c.editor.selection.extent),
+    );
+  }
+
+  void _longPressEnd(LongPressEndDetails details) {
+    if (_longPressWord == null) return;
+    _longPressWord = null;
+    _touchSelection?.hideMagnifier();
+    _showTouchSelection();
+  }
+
+  void _startHandleDrag(DragStartDetails details, bool start) {
+    final surface = _surface;
+    if (surface == null) return;
+    final selection = c.editor.selection;
+    final moving = start ? selection.start : selection.end;
+    final line = surface.localToGlobal(surface.caretRectAt(moving).center);
+    _handleDrag = (
+      // A handle hangs below its line. The finger keeps its height from the
+      // line's middle and moves the end with its own x, as Flutter's text
+      // fields do.
+      grab: Offset(0, line.dy - details.globalPosition.dy),
+      fixed: start ? selection.end : selection.start,
+    );
+    _touchSelection
+      ?..hideToolbar()
+      ..showMagnifier(_magnifierAt(details.globalPosition, moving));
+  }
+
+  void _updateHandleDrag(DragUpdateDetails details, bool start) {
+    final surface = _surface, drag = _handleDrag;
+    if (surface == null || drag == null) return;
+    final target = surface.sourceAt(
+      surface.globalToLocal(details.globalPosition + drag.grab),
+    );
+    // The ends keep their order and never meet.
+    if (start ? target < drag.fixed : target > drag.fixed) {
+      _command(SetSelection(drag.fixed, target));
+    }
+    _touchSelection?.updateMagnifier(
+      _magnifierAt(details.globalPosition, c.editor.selection.extent),
+    );
+  }
+
+  void _endHandleDrag(DragEndDetails details) {
+    if (_handleDrag == null) return;
+    _handleDrag = null;
+    _touchSelection?.hideMagnifier();
+    _showTouchSelection();
+  }
+
+  /// Over a selection on one line, or across the document's width, clamped
+  /// to what is visible.
+  TextSelectionToolbarAnchors _touchMenuAnchors() {
+    final surface = _surface;
+    if (surface == null) {
+      return const TextSelectionToolbarAnchors(primaryAnchor: Offset.zero);
+    }
+    final (start, end) = _touchEnds(surface);
+    final visible = surface.visibleRect;
+    final oneLine = start.top == end.top;
+    final x = oneLine
+        ? (start.left + end.right) / 2
+        : (visible.left + visible.right) / 2;
+    return TextSelectionToolbarAnchors(
+      primaryAnchor: surface.localToGlobal(
+        Offset(x, start.top.clamp(visible.top, visible.bottom)),
+      ),
+      secondaryAnchor: surface.localToGlobal(
+        Offset(x, end.bottom.clamp(visible.top, visible.bottom)),
+      ),
+    );
+  }
+
+  Widget _touchMenu(BuildContext context) {
+    final selection = c.editor.selection;
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: _touchMenuAnchors(),
+      buttonItems: [
+        if (!selection.isCollapsed) ...[
+          ContextMenuButtonItem(
+            type: ContextMenuButtonType.cut,
+            onPressed: () {
+              _hideTouchSelection();
+              unawaited(_copy(cut: true));
+            },
+          ),
+          ContextMenuButtonItem(
+            type: ContextMenuButtonType.copy,
+            onPressed: () {
+              final end = c.editor.selection.end;
+              unawaited(_copy());
+              // Android collapses a copied selection; iOS keeps it.
+              if (Theme.of(this.context).platform == TargetPlatform.iOS) {
+                _touchSelection?.hideToolbar();
+              } else {
+                _command(SetSelection.caret(end));
+              }
+            },
+          ),
+        ],
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.paste,
+          onPressed: () {
+            _hideTouchSelection();
+            unawaited(_paste());
+          },
+        ),
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.selectAll,
+          onPressed: () {
+            _selectAll();
+            _showTouchSelection();
+          },
+        ),
+      ],
+    );
+  }
+
+  /// A scroll hides the menu; it returns when the scroll ends with the
+  /// selection in view.
+  bool _scrollEnded(ScrollEndNotification notification) {
+    final surface = _surface, overlay = _touchSelection;
+    if (_menuAfterScroll && surface != null && overlay != null) {
+      _menuAfterScroll = false;
+      final (start, end) = _touchEnds(surface);
+      if (start.expandToInclude(end).overlaps(surface.visibleRect)) {
+        overlay.showToolbar(context: context, contextMenuBuilder: _touchMenu);
+      }
+    }
+    return false;
   }
 
   Future<void> _copy({bool cut = false}) async {
@@ -760,6 +1069,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   @override
   void dispose() {
+    _touchSelection?.dispose();
     _resourceSession?.close();
     _popoverFocus.dispose();
     _clipboardBinding.dispose();
@@ -1130,128 +1440,155 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                       ? SystemMouseCursors.basic
                       : SystemMouseCursors.text,
                   child: GestureDetector(
-                    onDoubleTapDown: widget.readOnly
+                    // The surface owns the text field's semantics; a long
+                    // press action on an ancestor would select at the origin.
+                    excludeFromSemantics: true,
+                    // A mouse held still before a drag selects by dragging.
+                    supportedDevices: const {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.stylus,
+                      PointerDeviceKind.invertedStylus,
+                    },
+                    onLongPressStart: widget.readOnly ? null : _longPressStart,
+                    onLongPressMoveUpdate: widget.readOnly
                         ? null
-                        : (details) {
-                            _dragging = false;
-                            // The second touch must not collapse the word
-                            // when it lifts.
-                            _touch = null;
-                            final surface = _surface;
-                            if (surface != null) {
-                              surface.selectWordAt(
-                                surface.globalToLocal(details.globalPosition),
-                              );
-                            }
-                          },
-                    child: Listener(
-                      onPointerDown: (event) {
-                        _dismissLink();
-                        _pressedLink = null;
-                        if (_isTouch(event.kind)) return;
-                        _press(
-                          event.position,
-                          primary: event.buttons == kPrimaryButton,
-                          drag:
-                              event.kind == PointerDeviceKind.mouse &&
-                              event.buttons == kPrimaryButton,
-                        );
-                      },
-                      onPointerMove: (event) {
-                        final touch = _touch;
-                        if (touch != null &&
-                            touch.pointer == event.pointer &&
-                            (event.position - touch.position).distance >
-                                kTouchSlop) {
-                          _touch = null;
-                        }
-                        if (_pressedLink != null &&
-                            (event.position - _pressedLink!.point).distance >
-                                8) {
-                          _pressedLink = null;
-                        }
-                        if (_pressedImage != null &&
-                            (event.position - _pressedImage!.point).distance >
-                                8) {
-                          _pressedImage = null;
-                        }
-                        if (_dragging) {
-                          final surface = _surface;
-                          if (surface != null) {
-                            surface.place(
-                              surface.globalToLocal(event.position),
-                              extend: true,
-                            );
-                          }
-                        }
-                      },
-                      onPointerUp: (event) {
-                        final touch = _touch;
-                        _touch = null;
-                        if (touch != null && touch.pointer == event.pointer) {
-                          _press(touch.position, touch: true);
-                        }
-                        _dragging = false;
-                        final pressedLink = _pressedLink;
-                        _pressedLink = null;
-                        if (pressedLink != null) {
-                          _showLink(pressedLink.resource);
-                        }
-                        final pressed = _pressedImage;
-                        _pressedImage = null;
-                        if (pressed != null &&
-                            pressed.revision == c.editor.revision) {
-                          _command(
-                            SetSelection(
-                              pressed.image.contentStart,
-                              pressed.image.contentEnd,
-                            ),
-                          );
-                          unawaited(_editResource(true));
-                        }
-                      },
-                      onPointerCancel: (_) {
-                        _touch = null;
-                        _pressedLink = null;
-                        _dragging = false;
-                        _pressedImage = null;
-                      },
-                      child: Scrollbar(
-                        controller: _scroll,
-                        child: SingleChildScrollView(
-                          controller: _scroll,
-                          // The scroll view ignores its content's pointers
-                          // while it moves, so a touch that stops a fling is
-                          // never recorded here.
-                          child: Listener(
-                            onPointerDown: (event) {
-                              if (_isTouch(event.kind)) {
-                                _touch = (
-                                  pointer: event.pointer,
-                                  position: event.position,
+                        : _longPressMove,
+                    onLongPressEnd: widget.readOnly ? null : _longPressEnd,
+                    child: GestureDetector(
+                      onDoubleTapDown: widget.readOnly
+                          ? null
+                          : (details) {
+                              _dragging = false;
+                              // The second touch must not collapse the word
+                              // when it lifts.
+                              _touch = null;
+                              final surface = _surface;
+                              if (surface != null) {
+                                surface.selectWordAt(
+                                  surface.globalToLocal(details.globalPosition),
                                 );
+                                if (_isTouch(details.kind!)) {
+                                  _showTouchSelection();
+                                }
                               }
                             },
-                            child: OverlayPortal.overlayChildLayoutBuilder(
-                              controller: _popover,
-                              overlayChildBuilder: _buildLinkPopover,
-                              child: FlarkSurface(
-                                key: _surfaceKey,
-                                controller: c,
-                                theme: resolvedTheme,
-                                textScaler: MediaQuery.textScalerOf(context),
-                                focused: _focus.hasFocus,
-                                readOnly: widget.readOnly,
-                                viewportHeight: constraints.maxHeight,
-                                scrollOffset: _scroll.hasClients
-                                    ? _scroll.offset
-                                    : 0,
-                                baseUri: widget.baseUri,
-                                imageProvider: widget.imageProvider,
-                                showImagePreviews: widget.showImagePreviews,
-                                onPaint: widget.onPaint,
-                                onFocus: _focus.requestFocus,
-                                revealDuringLayout: _revealDuringLayout,
+                      child: Listener(
+                        onPointerDown: (event) {
+                          _dismissLink();
+                          _pressedLink = null;
+                          if (_isTouch(event.kind)) return;
+                          _press(
+                            event.position,
+                            primary: event.buttons == kPrimaryButton,
+                            drag:
+                                event.kind == PointerDeviceKind.mouse &&
+                                event.buttons == kPrimaryButton,
+                          );
+                        },
+                        onPointerMove: (event) {
+                          final touch = _touch;
+                          if (touch != null &&
+                              touch.pointer == event.pointer &&
+                              (event.position - touch.position).distance >
+                                  kTouchSlop) {
+                            _touch = null;
+                          }
+                          if (_pressedLink != null &&
+                              (event.position - _pressedLink!.point).distance >
+                                  8) {
+                            _pressedLink = null;
+                          }
+                          if (_pressedImage != null &&
+                              (event.position - _pressedImage!.point).distance >
+                                  8) {
+                            _pressedImage = null;
+                          }
+                          if (_dragging) {
+                            final surface = _surface;
+                            if (surface != null) {
+                              surface.place(
+                                surface.globalToLocal(event.position),
+                                extend: true,
+                              );
+                            }
+                          }
+                        },
+                        onPointerUp: (event) {
+                          final touch = _touch;
+                          _touch = null;
+                          if (touch != null && touch.pointer == event.pointer) {
+                            _press(touch.position, touch: true);
+                          }
+                          _dragging = false;
+                          final pressedLink = _pressedLink;
+                          _pressedLink = null;
+                          if (pressedLink != null) {
+                            _showLink(pressedLink.resource);
+                          }
+                          final pressed = _pressedImage;
+                          _pressedImage = null;
+                          if (pressed != null &&
+                              pressed.revision == c.editor.revision) {
+                            _command(
+                              SetSelection(
+                                pressed.image.contentStart,
+                                pressed.image.contentEnd,
+                              ),
+                            );
+                            unawaited(_editResource(true));
+                          }
+                        },
+                        onPointerCancel: (_) {
+                          _touch = null;
+                          _pressedLink = null;
+                          _dragging = false;
+                          _pressedImage = null;
+                        },
+                        child: NotificationListener<ScrollEndNotification>(
+                          onNotification: _scrollEnded,
+                          child: Scrollbar(
+                            controller: _scroll,
+                            child: SingleChildScrollView(
+                              controller: _scroll,
+                              // The scroll view ignores its content's pointers
+                              // while it moves, so a touch that stops a fling is
+                              // never recorded here.
+                              child: Listener(
+                                onPointerDown: (event) {
+                                  if (_isTouch(event.kind)) {
+                                    _touch = (
+                                      pointer: event.pointer,
+                                      position: event.position,
+                                    );
+                                  }
+                                },
+                                child: OverlayPortal.overlayChildLayoutBuilder(
+                                  controller: _popover,
+                                  overlayChildBuilder: _buildLinkPopover,
+                                  child: FlarkSurface(
+                                    key: _surfaceKey,
+                                    controller: c,
+                                    theme: resolvedTheme,
+                                    textScaler: MediaQuery.textScalerOf(
+                                      context,
+                                    ),
+                                    focused: _focus.hasFocus,
+                                    readOnly: widget.readOnly,
+                                    viewportHeight: constraints.maxHeight,
+                                    scrollOffset: _scroll.hasClients
+                                        ? _scroll.offset
+                                        : 0,
+                                    baseUri: widget.baseUri,
+                                    imageProvider: widget.imageProvider,
+                                    showImagePreviews: widget.showImagePreviews,
+                                    onPaint: widget.onPaint,
+                                    onFocus: _focus.requestFocus,
+                                    revealDuringLayout: _revealDuringLayout,
+                                    handles: _touchHandles
+                                        ? (_startHandle, _endHandle)
+                                        : null,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1266,17 +1603,21 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         ),
       ],
     );
-    return TapRegion(
-      groupId: this,
-      onTapOutside: (_) => _dismissLink(),
-      child: Semantics(
-        customSemanticsActions: {
-          if (!widget.readOnly)
-            const CustomSemanticsAction(label: 'Link actions'): () {
-              _showSelectionLink();
-            },
-        },
-        child: contents,
+    // The touch selection menu follows the editor.
+    return CompositedTransformTarget(
+      link: _menuLink,
+      child: TapRegion(
+        groupId: this,
+        onTapOutside: (_) => _dismissLink(),
+        child: Semantics(
+          customSemanticsActions: {
+            if (!widget.readOnly)
+              const CustomSemanticsAction(label: 'Link actions'): () {
+                _showSelectionLink();
+              },
+          },
+          child: contents,
+        ),
       ),
     );
   }
