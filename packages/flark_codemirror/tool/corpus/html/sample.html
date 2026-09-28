@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang=en>
+<head>
+  <meta charset=utf-8>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Field notes &mdash; a sample page</title>
+  <link rel=stylesheet href="/styles/site.css">
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; }
+    .note > p:first-child { margin-top: 0; }
+  </style>
+  <script type="module">
+    import { start } from "./app.js";
+    if (window.innerWidth < 600 && start) start();
+  </script>
+</head>
+<body class="notes" data-theme='dark'>
+  <!-- The header, with a
+       comment across lines. -->
+  <header>
+    <h1>Field notes</h1>
+    <nav>
+      <ul>
+        <li><a href="#today">Today</a>
+        <li><a href="#archive" title="Older &amp; archived notes">Archive</a>
+        <li class=current>About
+      </ul>
+    </nav>
+  </header>
+  <main>
+    <p>First paragraph, left open.
+    <p>Second paragraph with an <em>emphasis</em>, a <br> break
+       and an image <img src="bird.png" alt="A bird" width=320 height=200>.
+    <div class="note">
+      <p>Closed by the div below
+    </div>
+    <p>Entities: &lt;tag&gt; &copy; &#8212; &#x2014; &nbsp; &notanentity and a lone & sign.
+    <form action="/search" method=get>
+      <label for=q>Search</label>
+      <input id=q name=q type=search required autofocus>
+      <select name=sort>
+        <option value=new selected>Newest
+        <option value=old>Oldest
+        <optgroup label="Other">
+          <option>Random
+        </optgroup>
+      </select>
+      <textarea name=body rows=3>Some <b>text</b> inside</textarea>
+      <button type=submit disabled>Go</button>
+    </form>
+    <table>
+      <thead>
+        <tr><th>Name<th>Count
+      <tbody>
+        <tr>
+          <td>Robins
+          <td>12
+        <tr>
+          <td>Wrens
+          <td>3
+      </tbody>
+    </table>
+    <dl>
+      <dt>Term
+      <dd>Definition one
+      <dt>Another term
+      <dd>Definition two
+    </dl>
+    <pre>
+  preformatted text
+      keeps its own indentation
+    </pre>
+    <PRE>
+upper-case pre
+    </PRE>
+    <section
+      id="details"
+      class="wide padded">
+      <h2 id=details-title>Details</h2>
+      <p>A <span style="color: red">red</span> word and an unclosed <b>bold
+      <hr>
+      <p>Mismatched </i> closing tag.
+    </section>
+    <ruby>漢<rp>(<rt>kan<rp>)</ruby>
+    <video controls src=clip.webm><track kind=captions src=clip.vtt></video>
+    <svg width="24" height="24" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>
+  </main>
+  <footer>
+    <p>&copy; 2026 Example. <a href=/privacy>Privacy</a>
+  </footer>
+</body>
+</html>

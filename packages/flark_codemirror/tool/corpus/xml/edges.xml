@@ -1,0 +1,59 @@
+<!doctype svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [
+  <!ENTITY % local "<!ENTITY nested 'value'>">
+  %local;
+]>
+<?processing instruction
+    that spans lines ?>
+<!-- comment -- with dashes
+  and a second line -->
+<!foo not a declaration>
+<![NOT-CDATA[ plain text ]]>
+<root xmlns:a="urn:a" a:attr="1">
+  <a:child/>
+  <a:child a:x="1"b="2"/>
+  <entities>&#x; &#12 &amp &a.b-c:d; &#xABCDEF; &#65;&#x41;</entities>
+  <multi first="1"
+         second='two
+three' third="3">
+    body
+  </multi>
+  <attrs
+    one="1"
+    two="2"
+  />
+  < space>
+  </>
+  <a/ >
+  <b / >
+  <c =x>
+  <d e==f>
+  <e f g h="1" i>
+  </e>
+  <same><line>text</line></same>
+  <open><here>
+    deep text
+  </here></open>
+  <x><y><z>
+        inner
+      </z>
+    </y>
+  </x>
+  <p>
+    <li>xml has no implicit closing
+  </p>
+  <unclosed>
+    <inner>text
+  </unclosed>
+  <cdata><![CDATA[first
+    <second> & "third"
+  ]]></cdata>
+  <quoted title='a "double" inside' other="an 'apostrophe'"/>
+  <text>greater > than and less &lt; than</text>
+  <empty-attr attr=""/>
+  <weird-name.with_dots:and-colons attr-with:colon="ok"/>
+  <DIV>Upper case</DIV>
+  <div>mixed</DIV>
+  <tag>trailing text without close
+</root>
+<after-root/>

@@ -76,6 +76,28 @@ jobs:
         working-directory: packages/flark_tree_sitter
         run: dart test
 
+  codemirror-port:
+    name: flark_codemirror · analyze, CodeMirror reference and adapter tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The adapter tests edit through the kernel, whose build hook compiles
+      # the parse crate.
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Analyze
+        working-directory: packages/flark_codemirror
+        run: dart pub get && dart analyze --fatal-infos
+      - name: Test
+        working-directory: packages/flark_codemirror
+        run: dart test
+
   flutter-host:
     name: flark_flutter · analyze and host tests
     runs-on: macos-latest

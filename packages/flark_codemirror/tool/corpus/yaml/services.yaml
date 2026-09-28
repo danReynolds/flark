@@ -1,0 +1,116 @@
+%YAML 1.2
+# Service catalog for the staging cluster.
+---
+version: 3
+updated: 2026-04-18T09:30:00Z
+owner: "platform team"
+contact: 'ops@example.test' # rotates weekly
+enabled: true
+maintenance: off
+replicas: 3
+ratio: -0.75
+budget: 1,250.50
+timeout_ms: 1500
+empty_value:
+nothing: ~
+explicit_null: null
+
+defaults: &defaults
+  image: registry.example.test/base:1.4
+  restart: unless-stopped
+  env: &default_env
+    LOG_LEVEL: info
+    COLOR: "#00ff88"
+    FEATURE_FLAGS: [search, "dark mode", beta]
+  limits: {cpu: 500m, memory: 256Mi, pids: 64}
+
+services:
+  web:
+    <<: *defaults
+    image: registry.example.test/web:2.1
+    ports:
+      - "8080:80"
+      - 8443:443
+    env:
+      <<: *default_env
+      LOG_LEVEL: debug
+      GREETING: 'it''s alive'
+      QUOTE: "she said \"hi\" twice"
+    healthcheck:
+      test: [CMD, curl, -f, "http://localhost/health"]
+      interval: 30s
+      retries: 5
+  worker:
+    <<: *defaults
+    command: >
+      python -m worker
+      --queue default
+      --concurrency 4
+    depends_on: [web, cache]
+    scale: 2
+  cache:
+    image: redis:7
+    command: |
+      redis-server
+        --save 60 1
+        --maxmemory 64mb
+    volumes:
+      - cache-data:/data   # persisted
+      - ./conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
+
+volumes:
+  cache-data: {}
+
+matrix:
+  - {os: linux, arch: amd64, primary: yes}
+  - {os: macos, arch: arm64, primary: no}
+  - [windows, amd64]
+  - name: nested list item
+    tags:
+      - a
+      - b
+
+notes: |-
+  Deploys happen on weekdays only.
+  Keys like url: http://x.test/#anchor stay text.
+folded: >+
+  one
+  two
+
+tags:
+  source: !!str 12345
+  custom: !vault encrypted-blob
+  url: http://example.test/path#fragment
+  path: C:\tools\bin
+"quoted key": value
+'single key': 42
+? complex key
+: complex value
+key with spaces: and a value with: colons
+...
+---
+# Second document: a small workflow.
+name: ci
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request: {}
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install
+        run: npm ci --no-audit
+      - name: Test
+        run: |
+          npm test -- --coverage
+          echo "done: ${{ job.status }}"
+        env:
+          CI: true
+          RETRIES: 3
+...

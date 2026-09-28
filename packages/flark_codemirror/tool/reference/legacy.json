@@ -1,0 +1,23 @@
+{
+  "python": {"module": "python", "export": "python"},
+  "c": {"module": "clike", "export": "c"},
+  "cpp": {"module": "clike", "export": "cpp"},
+  "java": {"module": "clike", "export": "java"},
+  "csharp": {"module": "clike", "export": "csharp"},
+  "kotlin": {"module": "clike", "export": "kotlin"},
+  "dart": {"module": "clike", "export": "dart"},
+  "bash": {"module": "shell", "export": "shell"},
+  "yaml": {"module": "yaml", "export": "yaml"},
+  "go": {"module": "go", "export": "go"},
+  "ruby": {"module": "ruby", "export": "ruby"},
+  "rust": {"module": "rust", "export": "rust"},
+  "powershell": {"module": "powershell", "export": "powerShell"},
+  "xml": {"module": "xml", "export": "xml"},
+  "html": {"module": "xml", "export": "html"},
+  "sql": {"module": "sql", "export": "standardSQL"},
+  "postgresql": {"module": "sql", "export": "pgSQL"},
+  "mysql": {"module": "sql", "export": "mySQL"},
+  "css": {"module": "css", "export": "css"},
+  "scss": {"module": "css", "export": "sCSS"},
+  "less": {"module": "css", "export": "less"}
+}

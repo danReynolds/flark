@@ -569,6 +569,159 @@ end and measuring size and speed before the rest. It follows the parse-crate
 pass. Both hosts depend on `flark_tree_sitter` directly today, so every app
 pays its 13–14 MB until the port replaces it.
 
+### Port results: JavaScript, TypeScript and JSON (2026-09-24)
+
+`packages/flark_codemirror` ports CodeMirror 5.65.21's `StringStream` and
+its `javascript` mode (960 lines of JavaScript, 1,618 of formatted Dart),
+which serves JavaScript, TypeScript and JSON. `FlarkCodeMirror` implements
+the kernel's `CodeEditingDelegate`; the hosts do not use it yet.
+
+Fidelity. CodeMirror itself, run in Node, records every token and, for each
+line, the indentation for the line as written and for an empty line in its
+place (what Enter asks). The committed fixture covers five corpus files, two
+of CodeMirror's own sources and 420 seeded mutations (deleted characters,
+stray brackets and quotes, tabs, CRLF): 429 cases and 3,865 lines, all
+identical. A wider local run over 1,365 files from the website's
+dependencies (465 TypeScript sources, 300 declaration files, 400 JavaScript
+files and 200 JSON files; 11 MB) plus 4,095 mutations matched in all 5,860
+cases after one fix: private class fields on consecutive lines register a
+variable with no name upstream, which the port had asserted against. That
+shape is now in the committed corpus.
+
+Speed, local, commit `5c9e6b70`, M1 Pro, machine loaded by other work
+(load average 6–12), median of 41 runs after warm-up (`tool/bench.dart`).
+Proposals tokenize everything before the caret, so they sit at the end of
+the snippet. Browser rows are headless Chrome 153 without cross-origin
+isolation, whose timer resolves 100 µs:
+
+| 8K snippet | VM JIT | dart2js | dart2wasm |
+| --- | ---: | ---: | ---: |
+| JavaScript highlight | 0.86 ms | 1.1 ms | 1.4 ms |
+| JavaScript Enter proposal | 0.67 ms | 0.9 ms | 1.2 ms |
+| TypeScript highlight | 0.71 ms | 1.0 ms | 1.2 ms |
+| JSON highlight | 0.46 ms | 0.7 ms | 0.8 ms |
+
+Tree-sitter's figures for about 8K units are 3.4 ms for JavaScript natively
+and 23.9 ms under dart2js, which is why RFC 031 moved colors to a worker. A
+32K JavaScript snippet highlights in 3.1 ms (VM), 4.2 ms (dart2js) and
+5.3 ms (dart2wasm). Replacing one-character regular expressions with string
+tests took dart2wasm from 2.4 to 1.4 ms and the VM from 1.95 to 0.89 ms for
+8K of JavaScript in an earlier run, since each regular expression calls into
+JavaScript under dart2wasm. The snippet cap stays at Tree-sitter's 8,192 units for now.
+
+Size: a program that highlights and proposes through the port, against the
+same program with a stub delegate:
+
+| Build | Added | Gzipped |
+| --- | ---: | ---: |
+| AOT (macOS arm64) | 197 KB | 71 KB |
+| dart2js -O2 | 66 KB | 19 KB |
+| dart2wasm -O2 | 63 KB | 21 KB |
+
+Tree-sitter is a 14 MB native library and 13.1 MB of Wasm (1.8 MB
+gzipped), instantiated twice on the web.
+
+Editing. Enter indents with the mode's indentation, as CodeMirror's
+`newlineAndIndent`, and opens an empty line between `[]` or `{}`, as its
+`closebrackets` addon, except inside a string or comment. Typing re-indents
+when the mode's electric input matches. Tab and Shift-Tab keep Flark's line
+shifts. Of the 25 hand-authored JavaScript, TypeScript and JSON scenarios in
+`flark_tree_sitter`, 22 held as written. Two Flark behaviours are kept as
+policy over CodeMirror: `)` and `]` starting a line re-indent it
+(CodeMirror's electric input covers braces only, but its indentation already
+handles every closer), and Enter on an indented empty line keeps its
+whitespace. One expectation changes: a closer typed without an opener takes
+the enclosing block's indentation instead of staying where it was typed.
+Indentation is CodeMirror's, which differs from Tree-sitter's in one visible
+way: continuation lines inside an open parenthesis align after it
+(`call(a,` puts the next line under `a`).
+
+Not yet covered: the other eleven languages, automatic detection (an
+untagged fence is plain), and the host swap, which would also drop the color
+workers and RFC 031's asynchronous path.
+
+### Wave 1: 25 languages (2026-09-27)
+
+The port covers 25 languages:
+- JavaScript, TypeScript and JSON from CodeMirror 5.
+- Python, C, C++, Java, C#, Kotlin, Dart, Bash, YAML, Go, Ruby, Rust,
+  PowerShell, XML, CSS, SCSS, LESS, SQL, PostgreSQL and MySQL from
+  `@codemirror/legacy-modes` 6.5.4, CodeMirror 6's collection of its version
+  5 modes.
+- HTML (with CSS and JavaScript inside) and PHP, composed as CodeMirror 5's
+  `htmlmixed` and `php` compose them.
+
+`lib/` is 10,400 lines of Dart, about 950 of them detection signs. Fence names
+resolve through aliases, and a fence in any other language is plain but
+indents by its brackets. `FlarkCodeMirror.only([...])` highlights only the
+languages an app names, and the other modes stay out of its build.
+
+Fidelity. Each port is compared with its upstream running in Node, as for
+JavaScript. The legacy modes run on CodeMirror 6's own `StringStream`.
+- The committed fixtures hold 1,782 cases across the 25, all identical.
+- Wider local runs over real files on this machine match as well: Python
+  1,000 cases; Rust, XML and the xml mode's HTML 4,000 each; mixed HTML
+  600; PHP 3,005 (two local files and the corpus, heavily mutated); LESS 8;
+  80 to 600 for each other language.
+- Two differences remain:
+  - For three characters, Node's Unicode 17 case tables disagree with the
+    Dart VM's. C and C++ read case for reserved identifiers.
+  - Ruby returns null indentation where upstream returns NaN.
+
+Detection. Reading an untagged fence with every mode stopped working at 25
+languages: SQL's 800-word vocabulary and PHP's builtins claimed most text.
+- Before: over windows of real files it named the right family for 13%,
+  claimed 70% of the repository's Markdown paragraphs, and took 4.9 ms a
+  read.
+- Now: each language carries weighted signs, patterns its code shows and
+  other text rarely does, some counting against it.
+  - Variants carry their base's signs; dialects need their base's evidence.
+  - JSON is a shape check.
+  - Samples that are mostly sentences stay plain.
+- After, over 12,540 windows with at least 30 characters of code: right
+  family 78% (right language 68%), and right 96% of the times it named one.
+  It claimed 20 of 4,684 paragraphs. The threshold is 2 points (1.5 for one
+  or two lines); 2.5 gave 76%, 97% and 13 paragraphs.
+- On 995 windows of local test and build logs it named a language for 460.
+  400 were the JSON reporter's lines, which are JSON; the other 60 are
+  misclaims (Rust 25, Dart 8, CSS 7, YAML 6 and others).
+
+Each sign runs only where its possible first tokens occur. A detection reads
+512 code units and takes 0.2–0.9 ms (local AOT).
+
+Speed, local AOT, M1 Pro, machine loaded by other work, commit `e75b9110`
+(`tool/bench.dart`, median of 41 runs):
+- Highlighting 8K of each corpus file takes 0.3 ms (XML) to 2.4 ms
+  (Python); most languages take 0.5–1.2 ms.
+- Enter proposals take slightly less.
+- Two changes got there, with the same tokens as before:
+  - Simple-mode rules skip positions they cannot start at: Rust 8.1 to
+    1.9 ms.
+  - Python looks its keywords up in sets: 3.6 to 2.4 ms.
+- Later changes, also with identical tokens (2026-09-28):
+  - Python tries each token pattern only where the next character can
+    start it: 2.4 to 1.3 ms.
+  - PowerShell matches its grammar tables by lookup instead of regexes:
+    2.3 to 0.4 ms. Its tables were checked against upstream's patterns
+    enumerated independently, with a 456-case generated run against
+    upstream.
+  - At commit `4c0b6f5d` (load average 41–51), 8K highlights take
+    0.3–2.0 ms across the 25 languages, Rust the slowest.
+
+Size, `-O4`, over a program with a stub delegate:
+
+| Languages | dart2js | gzipped | dart2wasm | gzipped |
+| --- | ---: | ---: | ---: | ---: |
+| All 25 | 241 KB | 78 KB | 252 KB | 90 KB |
+| JavaScript, TypeScript, JSON | 83 KB | 26 KB | 87 KB | 30 KB |
+| Python alone | 51 KB | 18 KB | 54 KB | 22 KB |
+
+The workbench example's `lib/codemirror_demo.dart` shows ten of the
+languages and three untagged fences.
+
+Not yet covered: the host swap (both hosts still depend on
+`flark_tree_sitter`), and languages beyond these 25.
+
 ## Live limits
 
 A document over its live limits switches to source mode: raw, still

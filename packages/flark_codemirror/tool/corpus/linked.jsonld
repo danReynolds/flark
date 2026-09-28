@@ -1,0 +1,9 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "@id": "https://example.com/#me",
+  "name": "Ada",
+  "knows": [{ "@type": "Person", "@id": "_:b0", "name": "Charles" }],
+  "@graph": [],
+  "@language": "en"
+}
