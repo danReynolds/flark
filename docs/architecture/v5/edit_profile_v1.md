@@ -79,6 +79,14 @@ additional product principles or testing layers.
   from block kind, range and heading level, without recognizing Markdown in
   either host. Loaded bare prefixes use the same presentation; completed
   headings, lists, fences and thematic breaks retain their normal behavior.
+- Typed `-` or `=` on the empty line under a paragraph would be a setext
+  underline: the paragraph would become a heading and the underline would be
+  hidden markup with no caret position, sending the next character to the
+  heading's line. The kernel inserts a blank line (keeping container markers)
+  before the typed line instead, so it starts its own block: the bare marker
+  above, a paragraph, or a thematic break for `---`. The parser identifies the
+  underline and confirms the separation. Paste, IME preedit and source mode
+  keep Markdown's literal meaning.
 - A heading's opening separator belongs to its hidden prefix, including when
   it has no content yet. Its empty rendered row is exactly empty and its caret
   sits at the content origin; first-frame checks must not trim away a misplaced

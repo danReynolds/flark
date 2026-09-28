@@ -471,6 +471,7 @@ final class FlarkEditor implements FlarkDocumentState {
     FlarkSelection sel, {
     required bool typing,
     bool completeTypedFence = false,
+    String? typedUnderline,
     PendingStyle? pending,
     bool Function(FlarkDocument)? accept,
     bool acceptSourceMode = false,
@@ -496,6 +497,23 @@ final class FlarkEditor implements FlarkDocumentState {
             completed.source,
             FlarkSelection.collapsed(completed.caret),
             typing: false,
+          );
+        }
+      }
+      if (typedUnderline != null && live) {
+        parsed = _backend.parse(newSource);
+        final separated = _separateTypedUnderline(
+          newSource,
+          sel.extent,
+          typedUnderline,
+          parsed,
+        );
+        if (separated != null) {
+          return _commit(
+            separated.source,
+            FlarkSelection.collapsed(separated.caret),
+            pending: pending,
+            typing: typing,
           );
         }
       }
@@ -809,8 +827,61 @@ final class FlarkEditor implements FlarkDocumentState {
           sel.isCollapsed &&
           inserted == text &&
           (text == '`' || text == '```' || text == '~' || text == '~~~') &&
-          _doc.rowAt(sel.extent).kind != RowKind.codeBlock,
+          row.kind != RowKind.codeBlock,
+      typedUnderline:
+          typing &&
+              !composing &&
+              sel.isCollapsed &&
+              inserted == text &&
+              row.text.isEmpty &&
+              row.kind != RowKind.codeBlock &&
+              _underlineRun.hasMatch(text)
+          ? text
+          : null,
     );
+  }
+
+  /// Typing `-` or `=` on the empty line under a paragraph makes that line a
+  /// setext underline: the paragraph becomes a heading, and the underline is
+  /// hidden markup with no caret position, so the next character would land
+  /// at the end of the heading's text. A blank line before the typed line
+  /// gives it a block of its own, the bare list marker or paragraph the user
+  /// is starting (`---` becomes a thematic break). The parser identifies the
+  /// heading and confirms the separation; paste, IME preedit and source mode
+  /// keep Markdown's literal meaning.
+  ({String source, int caret})? _separateTypedUnderline(
+    String candidate,
+    int caret,
+    String typed,
+    RenderModel model,
+  ) {
+    bool underlines(RenderModel model, int line) => model.blocks.any(
+      (block) =>
+          block.kind == BlockKind.heading &&
+          block.lineCount > 1 &&
+          block.firstLine + block.lineCount - 1 == line,
+    );
+    final start = caret - typed.length;
+    final line = model.lineOfUtf16(caret);
+    if (start < 0 ||
+        model.lineOfUtf16(start) != line ||
+        !underlines(model, line)) {
+      return null;
+    }
+    // The typed row was empty, so the text before the typed characters is
+    // only its container prefix (quote markers, item indentation).
+    final lineStart = model.lineStartUtf16(line);
+    final newline =
+        lineStart >= 2 && candidate.startsWith('\r\n', lineStart - 2)
+        ? '\r\n'
+        : '\n';
+    final blank =
+        '${candidate.substring(lineStart, start).trimRight()}$newline';
+    final separated = candidate.replaceRange(lineStart, lineStart, blank);
+    final moved = caret + blank.length;
+    final check = _backend.parse(separated);
+    if (underlines(check, check.lineOfUtf16(moved))) return null;
+    return (source: separated, caret: moved);
   }
 
   /// The parser identifies a newly typed, bare three-character opener. Pair it
@@ -1884,3 +1955,6 @@ final class FlarkEditor implements FlarkDocumentState {
   FlarkEditorSnapshot _restoreSnapshot(HistoryEntry entry) =>
       _buildSnapshot(entry.source, entry.selection, previous: _liveDocument);
 }
+
+/// Characters that can underline a setext heading.
+final _underlineRun = RegExp(r'^(?:-+|=+)$');

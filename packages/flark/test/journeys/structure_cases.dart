@@ -112,6 +112,66 @@ void _structureCases(FlarkParseBackend backend) {
       session.act(const InsertText('p'), source: '# T\np', rows: ['T', 'p']);
     });
 
+    test('a dash typed under a paragraph starts a list, not a heading', () {
+      final session = _Session(backend, source: 'para', caret: 4);
+      session.act(
+        const Newline(),
+        source: 'para\n',
+        rows: ['para', ''],
+        caret: const DisplayPosition(1, 0),
+      );
+      // Alone under a paragraph, `-` would underline a setext heading and
+      // hide itself; it gets a block of its own as a bare list marker.
+      session.act(
+        const InsertText('-'),
+        source: 'para\n\n-',
+        rows: ['para', '', '-'],
+        caret: const DisplayPosition(2, 1),
+      );
+      session.act(
+        const InsertText(' '),
+        source: 'para\n\n- ',
+        rows: ['para', '', ''],
+        caret: const DisplayPosition(2, 0),
+      );
+      session.act(
+        const InsertText('a'),
+        source: 'para\n\n- a',
+        rows: ['para', '', 'a'],
+        caret: const DisplayPosition(2, 1),
+      );
+      session.act(
+        const Undo(),
+        source: 'para\n',
+        caret: const DisplayPosition(1, 0),
+      );
+    });
+
+    test('dashes typed under a paragraph make a rule; = stays text', () {
+      final rule = _Session(backend, source: 'para\n', caret: 5);
+      rule.act(const InsertText('-'), times: 3, source: 'para\n\n---');
+      final text = _Session(backend, source: 'para\n', caret: 5);
+      text.act(
+        const InsertText('='),
+        source: 'para\n\n=',
+        rows: ['para', '', '='],
+        caret: const DisplayPosition(2, 1),
+      );
+    });
+
+    test('a dash typed under a quoted paragraph stays in the quote', () {
+      final session = _Session(backend, source: '> para', caret: 6);
+      session.act(const Newline(), source: '> para\n> ');
+      session.act(const InsertText('-'), source: '> para\n>\n> -');
+      session.act(const InsertText(' '), source: '> para\n>\n> - ');
+      session.act(
+        const InsertText('a'),
+        source: '> para\n>\n> - a',
+        rows: ['para', '', 'a'],
+        caret: const DisplayPosition(2, 1),
+      );
+    });
+
     test('backspace at an item start lifts the marker into a paragraph', () {
       final session = _Session(backend, source: '- one\n- two', caret: 8);
       session.expectState(caret: const DisplayPosition(1, 0));
