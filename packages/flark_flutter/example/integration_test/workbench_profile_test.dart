@@ -442,8 +442,7 @@ void main() {
       final report = <String, Object>{
         'nativeSemantics': binding.platformDispatcher.semanticsEnabled,
         'productionWorkbench': true,
-        'treeSitterEditing': true,
-        'treeSitterColors': true,
+        'codeEngine': 'flark_codemirror',
         'lifecycleTransitions': transitions,
         'logicalViewport': {
           'width':

@@ -55,14 +55,14 @@ String _gpu() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final backend = await loadBackend();
-  final code = await FlarkTreeSitter.load();
+  final code = FlarkCodeMirror();
   runApp(_WebFrameProfile(backend, code));
 }
 
 class _WebFrameProfile extends StatefulWidget {
   const _WebFrameProfile(this.backend, this.code);
   final FlarkParseBackend backend;
-  final FlarkTreeSitter code;
+  final FlarkCodeMirror code;
 
   @override
   State<_WebFrameProfile> createState() => _WebFrameProfileState();

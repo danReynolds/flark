@@ -331,7 +331,6 @@ void main() {
             'bounded': bounded,
             'productionWorkbench': appMode,
             'nativeSemantics': binding.platformDispatcher.semanticsEnabled,
-            'treeSitterEditing': true,
             'codeEngine': 'flark_codemirror',
             'blocks': c.editor.document.model.blockCount,
             'runs': c.editor.document.model.runCount,
