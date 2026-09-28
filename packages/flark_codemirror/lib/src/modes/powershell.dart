@@ -12,7 +12,7 @@ import '../stream.dart';
 // character outside `[A-Za-z\d\-_]` and a word operator by one outside
 // `\w`, so each matches exactly when the whole run of such characters at the
 // stream is one of its words. The port reads the words out of the patterns
-// once and looks the run up.
+// once and looks the run up in place.
 const _keywordPatterns = [
   'begin|break|catch|continue|data|default|do|dynamicparam',
   'else|elseif|end|exit|filter|finally|for|foreach|from|function|if|in',
@@ -169,6 +169,8 @@ bool _isNameUnit(int u) => _isWordUnit(u) || u == 0x2d;
 
 bool _isLetter(int u) => (u >= 0x41 && u <= 0x5a) || (u >= 0x61 && u <= 0x7a);
 
+bool _isDigit(int u) => u >= 0x30 && u <= 0x39;
+
 /// Upstream's `varNames`, `[\w\-:]`.
 bool _isVarNameUnit(int u) => _isNameUnit(u) || u == 0x3a;
 
@@ -185,12 +187,9 @@ int _runEnd(String s, int start, bool Function(int) unit) {
 bool _endsName(String s, int i) =>
     i >= s.length || !_isNameUnit(s.codeUnitAt(i));
 
-/// The words [patterns] match, lower-cased: each is a run of [unit] units,
-/// or one other character.
-Set<String> _words(
-  List<String> patterns, [
-  bool Function(int) unit = _isNameUnit,
-]) {
+/// The words [patterns] match: each is a run of [unit] units, or one other
+/// character.
+_Words _words(List<String> patterns, [bool Function(int) unit = _isNameUnit]) {
   final words = <String>{};
   for (final pattern in patterns) {
     for (final word in _Expander(pattern).expand()) {
@@ -201,7 +200,57 @@ Set<String> _words(
       words.add(word.toLowerCase());
     }
   }
-  return words;
+  return _Words(words);
+}
+
+/// ASCII lower case, which is all the `i` flag folds into ASCII.
+int _lower(int u) => u >= 0x41 && u <= 0x5a ? u + 0x20 : u;
+
+int _hash(String s, int start, int end) {
+  var hash = 0;
+  for (var i = start; i < end; i++) {
+    hash = (hash * 31 + _lower(s.codeUnitAt(i))) & 0x3fffffff;
+  }
+  return hash;
+}
+
+/// Lower-cased words, found by a span of text without copying it.
+final class _Words {
+  _Words(Set<String> words)
+    : _slots = List.filled(_sizeFor(words.length), null) {
+    for (final word in words) {
+      (_slots[_hash(word, 0, word.length) & (_slots.length - 1)] ??= []).add(
+        word,
+      );
+    }
+  }
+
+  static int _sizeFor(int count) {
+    var size = 16;
+    while (size < 2 * count) {
+      size *= 2;
+    }
+    return size;
+  }
+
+  final List<List<String>?> _slots;
+
+  /// Whether [s] from [start] to [end], lower-cased, is one of the words.
+  bool contains(String s, int start, int end) {
+    final slot = _slots[_hash(s, start, end) & (_slots.length - 1)];
+    if (slot == null) return false;
+    search:
+    for (final word in slot) {
+      if (word.length != end - start) continue;
+      for (var i = 0; i < word.length; i++) {
+        if (_lower(s.codeUnitAt(start + i)) != word.codeUnitAt(i)) {
+          continue search;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
 }
 
 /// The words a pattern of the tables above matches. Its syntax is literal
@@ -278,8 +327,7 @@ int _operatorLength(String s, int pos) {
   final next = pos + 1 < s.length ? s.codeUnitAt(pos + 1) : -1;
   if (c == 0x2d) {
     final end = _runEnd(s, pos + 1, _isWordUnit);
-    if (end > pos + 1 &&
-        _wordOperators.contains(s.substring(pos + 1, end).toLowerCase())) {
+    if (end > pos + 1 && _wordOperators.contains(s, pos + 1, end)) {
       return end - pos;
     }
   }
@@ -306,8 +354,8 @@ int _operatorLength(String s, int pos) {
 
 /// Upstream's `builtins`: `[A-Z]:`, `%`, `\?`, a named builtin, or `\$` and a
 /// variable builtin, then its lookahead. [end] ends the run of name units at
-/// [pos], and [name] is that run lower-cased. The length matched, or 0.
-int _builtinLength(String s, int pos, int end, String name) {
+/// [pos]. The length matched, or 0.
+int _builtinLength(String s, int pos, int end) {
   final c = s.codeUnitAt(pos);
   if (_isLetter(c) &&
       pos + 1 < s.length &&
@@ -316,20 +364,18 @@ int _builtinLength(String s, int pos, int end, String name) {
     return 2;
   }
   if ((c == 0x25 || c == 0x3f) && _endsName(s, pos + 1)) return 1;
-  if (_namedBuiltins.contains(name)) return end - pos;
+  if (end > pos && _namedBuiltins.contains(s, pos, end)) return end - pos;
   if (c == 0x24 && pos + 1 < s.length) {
     final d = s.codeUnitAt(pos + 1);
     if (!_isNameUnit(d)) {
       // A variable builtin of one other character: `$`, `?` or `^`.
-      return _variableBuiltins.contains(String.fromCharCode(d)) &&
+      return _variableBuiltins.contains(s, pos + 1, pos + 2) &&
               _endsName(s, pos + 2)
           ? 2
           : 0;
     }
     final variableEnd = _runEnd(s, pos + 1, _isNameUnit);
-    if (_variableBuiltins.contains(
-      s.substring(pos + 1, variableEnd).toLowerCase(),
-    )) {
+    if (_variableBuiltins.contains(s, pos + 1, variableEnd)) {
       return variableEnd - pos;
     }
   }
@@ -409,28 +455,31 @@ String? _tokenBase(StringStream stream, PowerShellState state) {
 
   if (stream.eatSpace()) return null;
 
-  if (stream.eat('(') != null) {
+  final s = stream.string, pos = stream.pos;
+  final c = s.codeUnitAt(pos);
+  if (c == 0x28) {
+    stream.pos++;
     state._bracketNesting += 1;
     return 'punctuation';
   }
 
-  if (stream.eat(')') != null) {
+  if (c == 0x29) {
+    stream.pos++;
     state._bracketNesting -= 1;
     return 'punctuation';
   }
 
   // Upstream's grammar: keyword, number, operator, builtin, punctuation and
   // variable patterns, tried in turn at the stream.
-  final s = stream.string, pos = stream.pos;
-  final c = s.codeUnitAt(pos);
   final end = _runEnd(s, pos, _isNameUnit);
-  final name = end > pos ? s.substring(pos, end).toLowerCase() : '';
-  if (_keywords.contains(name)) {
+  if (end > pos && _keywords.contains(s, pos, end)) {
     stream.pos = end;
     return 'keyword';
   }
-  // A number starts with a digit or a point.
-  if ((c >= 0x30 && c <= 0x39 || c == 0x2e) && stream.match(_numbers) != null) {
+  // A number starts with a digit, or a point before one.
+  if ((_isDigit(c) ||
+          c == 0x2e && pos + 1 < s.length && _isDigit(s.codeUnitAt(pos + 1))) &&
+      stream.match(_numbers) != null) {
     return 'number';
   }
   final operator = _operatorLength(s, pos);
@@ -438,7 +487,7 @@ String? _tokenBase(StringStream stream, PowerShellState state) {
     stream.pos += operator;
     return 'operator';
   }
-  final builtin = _builtinLength(s, pos, end, name);
+  final builtin = _builtinLength(s, pos, end);
   if (builtin > 0) {
     stream.pos += builtin;
     return 'builtin';
