@@ -6,235 +6,360 @@
 import '../mode.dart';
 import '../stream.dart';
 
-final _special = RegExp(r'[-\/\\^$*+?.()|[\]{}]');
-
-/// Upstream's `buildRegexp`: [patterns], regular expressions or literal
-/// strings, as alternatives between [prefix] and [suffix], ignoring case.
-/// Upstream's default prefix is `^`, which [StringStream.match] implies.
-RegExp _buildRegexp(
-  List<Object> patterns, {
-  String prefix = '',
-  String suffix = r'\b',
-}) {
-  final sources = [
-    for (final pattern in patterns)
-      pattern is RegExp
-          ? pattern.pattern
-          : (pattern as String).replaceAllMapped(_special, (m) => '\\${m[0]}'),
-  ];
-  return RegExp('$prefix(${sources.join('|')})$suffix', caseSensitive: false);
-}
-
-const _notCharacterOrDash = r'(?=[^A-Za-z\d\-_]|$)';
-final _varNames = RegExp(r'[\w\-:]');
-final _keywords = _buildRegexp([
-  RegExp('begin|break|catch|continue|data|default|do|dynamicparam'),
-  RegExp('else|elseif|end|exit|filter|finally|for|foreach|from|function|if|in'),
-  RegExp('param|process|return|switch|throw|trap|try|until|where|while'),
-], suffix: _notCharacterOrDash);
-
-final _punctuation = RegExp(r'[\[\]{},;`\\\.]|@[({]');
-final _wordOperators = _buildRegexp([
+// Upstream builds its grammar with `buildRegexp`: case-insensitive
+// alternatives of these patterns, each then tried at the stream in turn.
+// Past the first character, a keyword or builtin must be followed by a
+// character outside `[A-Za-z\d\-_]` and a word operator by one outside
+// `\w`, so each matches exactly when the whole run of such characters at the
+// stream is one of its words. The port reads the words out of the patterns
+// once and looks the run up.
+const _keywordPatterns = [
+  'begin|break|catch|continue|data|default|do|dynamicparam',
+  'else|elseif|end|exit|filter|finally|for|foreach|from|function|if|in',
+  'param|process|return|switch|throw|trap|try|until|where|while',
+];
+const _wordOperatorPatterns = [
   'f',
-  RegExp('b?not'),
-  RegExp('[ic]?split'), 'join', //
-  RegExp('is(not)?'), 'as',
-  RegExp('[ic]?(eq|ne|[gl][te])'),
-  RegExp('[ic]?(not)?(like|match|contains)'),
-  RegExp('[ic]?replace'),
-  RegExp('b?(and|or|xor)'),
-], prefix: '-');
-final _symbolOperators = RegExp(
-  r'[+\-*\/%]=|\+\+|--|\.\.|[+\-*&^%:=!|\/]|<(?!#)|(?!#)>',
-);
-final _operators = _buildRegexp([_wordOperators, _symbolOperators], suffix: '');
+  'b?not',
+  '[ic]?split', 'join', //
+  'is(not)?', 'as',
+  '[ic]?(eq|ne|[gl][te])',
+  '[ic]?(not)?(like|match|contains)',
+  '[ic]?replace',
+  'b?(and|or|xor)',
+];
+
+const _namedBuiltinPatterns = [
+  'Add-(Computer|Content|History|Member|PSSnapin|Type)',
+  'Checkpoint-Computer',
+  'Clear-(Content|EventLog|History|Host|Item(Property)?|Variable)',
+  'Compare-Object',
+  'Complete-Transaction',
+  'Connect-PSSession',
+  'ConvertFrom-(Csv|Json|SecureString|StringData)',
+  'Convert-Path',
+  'ConvertTo-(Csv|Html|Json|SecureString|Xml)',
+  'Copy-Item(Property)?',
+  'Debug-Process',
+  'Disable-(ComputerRestore|PSBreakpoint|PSRemoting|'
+      'PSSessionConfiguration)',
+  'Disconnect-PSSession',
+  'Enable-(ComputerRestore|PSBreakpoint|PSRemoting|'
+      'PSSessionConfiguration)',
+  '(Enter|Exit)-PSSession',
+  'Export-(Alias|Clixml|Console|Counter|Csv|FormatData|ModuleMember|'
+      'PSSession)',
+  'ForEach-Object',
+  'Format-(Custom|List|Table|Wide)',
+  'Get-(Acl|Alias|AuthenticodeSignature|ChildItem|Command|'
+      'ComputerRestorePoint|Content|ControlPanelItem|Counter|Credential'
+      '|Culture|Date|Event|EventLog|EventSubscriber|ExecutionPolicy|'
+      'FormatData|Help|History|Host|HotFix|Item|ItemProperty|Job'
+      '|Location|Member|Module|PfxCertificate|Process|PSBreakpoint|'
+      'PSCallStack|PSDrive|PSProvider|PSSession|PSSessionConfiguration'
+      '|PSSnapin|Random|Service|TraceSource|Transaction|TypeData|UICulture|'
+      'Unique|Variable|Verb|WinEvent|WmiObject)',
+  'Group-Object',
+  'Import-(Alias|Clixml|Counter|Csv|LocalizedData|Module|PSSession)',
+  'ImportSystemModules',
+  'Invoke-(Command|Expression|History|Item|RestMethod|WebRequest|'
+      'WmiMethod)',
+  'Join-Path',
+  'Limit-EventLog',
+  'Measure-(Command|Object)',
+  'Move-Item(Property)?',
+  'New-(Alias|Event|EventLog|Item(Property)?|Module|ModuleManifest|'
+      'Object|PSDrive|PSSession|PSSessionConfigurationFile'
+      '|PSSessionOption|PSTransportOption|Service|TimeSpan|Variable|'
+      'WebServiceProxy|WinEvent)',
+  'Out-(Default|File|GridView|Host|Null|Printer|String)',
+  'Pause',
+  '(Pop|Push)-Location',
+  'Read-Host',
+  'Receive-(Job|PSSession)',
+  'Register-(EngineEvent|ObjectEvent|PSSessionConfiguration|WmiEvent)',
+  'Remove-(Computer|Event|EventLog|Item(Property)?|Job|Module|'
+      'PSBreakpoint|PSDrive|PSSession|PSSnapin|TypeData|Variable|'
+      'WmiObject)',
+  'Rename-(Computer|Item(Property)?)',
+  'Reset-ComputerMachinePassword',
+  'Resolve-Path',
+  'Restart-(Computer|Service)',
+  'Restore-Computer',
+  'Resume-(Job|Service)',
+  'Save-Help',
+  'Select-(Object|String|Xml)',
+  'Send-MailMessage',
+  'Set-(Acl|Alias|AuthenticodeSignature|Content|Date|ExecutionPolicy|'
+      'Item(Property)?|Location|PSBreakpoint|PSDebug'
+      '|PSSessionConfiguration|Service|StrictMode|TraceSource|Variable|'
+      'WmiInstance)',
+  'Show-(Command|ControlPanelItem|EventLog)',
+  'Sort-Object',
+  'Split-Path',
+  'Start-(Job|Process|Service|Sleep|Transaction|Transcript)',
+  'Stop-(Computer|Job|Process|Service|Transcript)',
+  'Suspend-(Job|Service)',
+  'TabExpansion2',
+  'Tee-Object',
+  'Test-(ComputerSecureChannel|Connection|ModuleManifest|Path|'
+      'PSSessionConfigurationFile)',
+  'Trace-Command',
+  'Unblock-File',
+  'Undo-Transaction',
+  'Unregister-(Event|PSSessionConfiguration)',
+  'Update-(FormatData|Help|List|TypeData)',
+  'Use-Transaction',
+  'Wait-(Event|Job|Process)',
+  'Where-Object',
+  'Write-(Debug|Error|EventLog|Host|Output|Progress|Verbose|Warning)',
+  'cd|help|mkdir|more|oss|prompt',
+  'ac|asnp|cat|cd|chdir|clc|clear|clhy|cli|clp|cls|clv|cnsn|compare|'
+      'copy|cp|cpi|cpp|cvpa|dbp|del|diff|dir|dnsn|ebp',
+  'echo|epal|epcsv|epsn|erase|etsn|exsn|fc|fl|foreach|ft|fw|gal|gbp|gc|'
+      'gci|gcm|gcs|gdr|ghy|gi|gjb|gl|gm|gmo|gp|gps',
+  'group|gsn|gsnp|gsv|gu|gv|gwmi|h|history|icm|iex|ihy|ii|ipal|ipcsv|'
+      'ipmo|ipsn|irm|ise|iwmi|iwr|kill|lp|ls|man|md',
+  'measure|mi|mount|move|mp|mv|nal|ndr|ni|nmo|npssc|nsn|nv|ogv|oh|popd|'
+      'ps|pushd|pwd|r|rbp|rcjb|rcsn|rd|rdr|ren|ri',
+  'rjb|rm|rmdir|rmo|rni|rnp|rp|rsn|rsnp|rujb|rv|rvpa|rwmi|sajb|sal|'
+      'saps|sasv|sbp|sc|select|set|shcm|si|sl|sleep|sls',
+  'sort|sp|spjb|spps|spsv|start|sujb|sv|swmi|tee|trcm|type|where|wjb|'
+      'write',
+];
+
+const _variableBuiltinPatterns = [
+  r'[$?^_]|Args|ConfirmPreference|ConsoleFileName|DebugPreference|Error|'
+      'ErrorActionPreference|ErrorView|ExecutionContext',
+  'FormatEnumerationLimit|Home|Host|Input|MaximumAliasCount|'
+      'MaximumDriveCount|MaximumErrorCount|MaximumFunctionCount',
+  'MaximumHistoryCount|MaximumVariableCount|MyInvocation|'
+      'NestedPromptLevel|OutputEncoding|Pid|Profile|ProgressPreference',
+  'PSBoundParameters|PSCommandPath|PSCulture|PSDefaultParameterValues|'
+      'PSEmailServer|PSHome|PSScriptRoot|PSSessionApplicationName',
+  'PSSessionConfigurationName|PSSessionOption|PSUICulture|'
+      'PSVersionTable|Pwd|ShellId|StackTrace|VerbosePreference',
+  'WarningPreference|WhatIfPreference',
+  'Event|EventArgs|EventSubscriber|Sender',
+  'Matches|Ofs|ForEach|LastExitCode|PSCmdlet|PSItem|PSSenderInfo|This',
+  'true|false|null',
+];
+
+final _keywords = _words(_keywordPatterns);
+final _wordOperators = _words(_wordOperatorPatterns, _isWordUnit);
+final _namedBuiltins = _words(_namedBuiltinPatterns);
+final _variableBuiltins = _words(_variableBuiltinPatterns);
 
 final _numbers = RegExp(
   r'((0x[\da-f]+)|((\d+\.\d+|\d\.|\.\d+|\d+)(e[\+\-]?\d+)?))[ld]?([kmgtp]b)?',
   caseSensitive: false,
 );
 
-final _identifiers = RegExp(r'[A-Za-z\_][A-Za-z\-\_\d]*\b');
+/// JavaScript's `\w` for one code unit, which the patterns' `i` flag leaves
+/// ASCII.
+bool _isWordUnit(int u) =>
+    (u >= 0x30 && u <= 0x39) ||
+    (u >= 0x41 && u <= 0x5a) ||
+    (u >= 0x61 && u <= 0x7a) ||
+    u == 0x5f;
 
-final _symbolBuiltins = RegExp(r'[A-Z]:|%|\?', caseSensitive: false);
-final _namedBuiltins = _buildRegexp([
-  RegExp('Add-(Computer|Content|History|Member|PSSnapin|Type)'),
-  RegExp('Checkpoint-Computer'),
-  RegExp('Clear-(Content|EventLog|History|Host|Item(Property)?|Variable)'),
-  RegExp('Compare-Object'),
-  RegExp('Complete-Transaction'),
-  RegExp('Connect-PSSession'),
-  RegExp('ConvertFrom-(Csv|Json|SecureString|StringData)'),
-  RegExp('Convert-Path'),
-  RegExp('ConvertTo-(Csv|Html|Json|SecureString|Xml)'),
-  RegExp('Copy-Item(Property)?'),
-  RegExp('Debug-Process'),
-  RegExp(
-    'Disable-(ComputerRestore|PSBreakpoint|PSRemoting|'
-    'PSSessionConfiguration)',
-  ),
-  RegExp('Disconnect-PSSession'),
-  RegExp(
-    'Enable-(ComputerRestore|PSBreakpoint|PSRemoting|'
-    'PSSessionConfiguration)',
-  ),
-  RegExp('(Enter|Exit)-PSSession'),
-  RegExp(
-    'Export-(Alias|Clixml|Console|Counter|Csv|FormatData|ModuleMember|'
-    'PSSession)',
-  ),
-  RegExp('ForEach-Object'),
-  RegExp('Format-(Custom|List|Table|Wide)'),
-  RegExp(
-    'Get-(Acl|Alias|AuthenticodeSignature|ChildItem|Command|'
-    'ComputerRestorePoint|Content|ControlPanelItem|Counter|Credential'
-    '|Culture|Date|Event|EventLog|EventSubscriber|ExecutionPolicy|'
-    'FormatData|Help|History|Host|HotFix|Item|ItemProperty|Job'
-    '|Location|Member|Module|PfxCertificate|Process|PSBreakpoint|'
-    'PSCallStack|PSDrive|PSProvider|PSSession|PSSessionConfiguration'
-    '|PSSnapin|Random|Service|TraceSource|Transaction|TypeData|UICulture|'
-    'Unique|Variable|Verb|WinEvent|WmiObject)',
-  ),
-  RegExp('Group-Object'),
-  RegExp('Import-(Alias|Clixml|Counter|Csv|LocalizedData|Module|PSSession)'),
-  RegExp('ImportSystemModules'),
-  RegExp(
-    'Invoke-(Command|Expression|History|Item|RestMethod|WebRequest|'
-    'WmiMethod)',
-  ),
-  RegExp('Join-Path'),
-  RegExp('Limit-EventLog'),
-  RegExp('Measure-(Command|Object)'),
-  RegExp('Move-Item(Property)?'),
-  RegExp(
-    'New-(Alias|Event|EventLog|Item(Property)?|Module|ModuleManifest|'
-    'Object|PSDrive|PSSession|PSSessionConfigurationFile'
-    '|PSSessionOption|PSTransportOption|Service|TimeSpan|Variable|'
-    'WebServiceProxy|WinEvent)',
-  ),
-  RegExp('Out-(Default|File|GridView|Host|Null|Printer|String)'),
-  RegExp('Pause'),
-  RegExp('(Pop|Push)-Location'),
-  RegExp('Read-Host'),
-  RegExp('Receive-(Job|PSSession)'),
-  RegExp('Register-(EngineEvent|ObjectEvent|PSSessionConfiguration|WmiEvent)'),
-  RegExp(
-    'Remove-(Computer|Event|EventLog|Item(Property)?|Job|Module|'
-    'PSBreakpoint|PSDrive|PSSession|PSSnapin|TypeData|Variable|'
-    'WmiObject)',
-  ),
-  RegExp('Rename-(Computer|Item(Property)?)'),
-  RegExp('Reset-ComputerMachinePassword'),
-  RegExp('Resolve-Path'),
-  RegExp('Restart-(Computer|Service)'),
-  RegExp('Restore-Computer'),
-  RegExp('Resume-(Job|Service)'),
-  RegExp('Save-Help'),
-  RegExp('Select-(Object|String|Xml)'),
-  RegExp('Send-MailMessage'),
-  RegExp(
-    'Set-(Acl|Alias|AuthenticodeSignature|Content|Date|ExecutionPolicy|'
-    'Item(Property)?|Location|PSBreakpoint|PSDebug'
-    '|PSSessionConfiguration|Service|StrictMode|TraceSource|Variable|'
-    'WmiInstance)',
-  ),
-  RegExp('Show-(Command|ControlPanelItem|EventLog)'),
-  RegExp('Sort-Object'),
-  RegExp('Split-Path'),
-  RegExp('Start-(Job|Process|Service|Sleep|Transaction|Transcript)'),
-  RegExp('Stop-(Computer|Job|Process|Service|Transcript)'),
-  RegExp('Suspend-(Job|Service)'),
-  RegExp('TabExpansion2'),
-  RegExp('Tee-Object'),
-  RegExp(
-    'Test-(ComputerSecureChannel|Connection|ModuleManifest|Path|'
-    'PSSessionConfigurationFile)',
-  ),
-  RegExp('Trace-Command'),
-  RegExp('Unblock-File'),
-  RegExp('Undo-Transaction'),
-  RegExp('Unregister-(Event|PSSessionConfiguration)'),
-  RegExp('Update-(FormatData|Help|List|TypeData)'),
-  RegExp('Use-Transaction'),
-  RegExp('Wait-(Event|Job|Process)'),
-  RegExp('Where-Object'),
-  RegExp('Write-(Debug|Error|EventLog|Host|Output|Progress|Verbose|Warning)'),
-  RegExp('cd|help|mkdir|more|oss|prompt'),
-  RegExp(
-    'ac|asnp|cat|cd|chdir|clc|clear|clhy|cli|clp|cls|clv|cnsn|compare|'
-    'copy|cp|cpi|cpp|cvpa|dbp|del|diff|dir|dnsn|ebp',
-  ),
-  RegExp(
-    'echo|epal|epcsv|epsn|erase|etsn|exsn|fc|fl|foreach|ft|fw|gal|gbp|gc|'
-    'gci|gcm|gcs|gdr|ghy|gi|gjb|gl|gm|gmo|gp|gps',
-  ),
-  RegExp(
-    'group|gsn|gsnp|gsv|gu|gv|gwmi|h|history|icm|iex|ihy|ii|ipal|ipcsv|'
-    'ipmo|ipsn|irm|ise|iwmi|iwr|kill|lp|ls|man|md',
-  ),
-  RegExp(
-    'measure|mi|mount|move|mp|mv|nal|ndr|ni|nmo|npssc|nsn|nv|ogv|oh|popd|'
-    'ps|pushd|pwd|r|rbp|rcjb|rcsn|rd|rdr|ren|ri',
-  ),
-  RegExp(
-    'rjb|rm|rmdir|rmo|rni|rnp|rp|rsn|rsnp|rujb|rv|rvpa|rwmi|sajb|sal|'
-    'saps|sasv|sbp|sc|select|set|shcm|si|sl|sleep|sls',
-  ),
-  RegExp(
-    'sort|sp|spjb|spps|spsv|start|sujb|sv|swmi|tee|trcm|type|where|wjb|'
-    'write',
-  ),
-], suffix: '');
-final _variableBuiltins = _buildRegexp(
-  [
-    RegExp(
-      r'[$?^_]|Args|ConfirmPreference|ConsoleFileName|DebugPreference|Error|'
-      'ErrorActionPreference|ErrorView|ExecutionContext',
-    ),
-    RegExp(
-      'FormatEnumerationLimit|Home|Host|Input|MaximumAliasCount|'
-      'MaximumDriveCount|MaximumErrorCount|MaximumFunctionCount',
-    ),
-    RegExp(
-      'MaximumHistoryCount|MaximumVariableCount|MyInvocation|'
-      'NestedPromptLevel|OutputEncoding|Pid|Profile|ProgressPreference',
-    ),
-    RegExp(
-      'PSBoundParameters|PSCommandPath|PSCulture|PSDefaultParameterValues|'
-      'PSEmailServer|PSHome|PSScriptRoot|PSSessionApplicationName',
-    ),
-    RegExp(
-      'PSSessionConfigurationName|PSSessionOption|PSUICulture|'
-      'PSVersionTable|Pwd|ShellId|StackTrace|VerbosePreference',
-    ),
-    RegExp('WarningPreference|WhatIfPreference'),
+/// Upstream's `[A-Za-z\d\-_]`, ignoring case: a keyword or builtin must not
+/// be followed by one.
+bool _isNameUnit(int u) => _isWordUnit(u) || u == 0x2d;
 
-    RegExp('Event|EventArgs|EventSubscriber|Sender'),
-    RegExp(
-      'Matches|Ofs|ForEach|LastExitCode|PSCmdlet|PSItem|PSSenderInfo|This',
-    ),
-    RegExp('true|false|null'),
-  ],
-  prefix: r'\$',
-  suffix: '',
-);
+bool _isLetter(int u) => (u >= 0x41 && u <= 0x5a) || (u >= 0x61 && u <= 0x7a);
 
-final _builtins = _buildRegexp([
-  _symbolBuiltins,
-  _namedBuiltins,
-  _variableBuiltins,
-], suffix: _notCharacterOrDash);
+/// Upstream's `varNames`, `[\w\-:]`.
+bool _isVarNameUnit(int u) => _isNameUnit(u) || u == 0x3a;
 
-final _grammar = [
-  ('keyword', _keywords),
-  ('number', _numbers),
-  ('operator', _operators),
-  ('builtin', _builtins),
-  ('punctuation', _punctuation),
-  ('variable', _identifiers),
-];
+/// The end of the run of [unit] units in [s] from [start].
+int _runEnd(String s, int start, bool Function(int) unit) {
+  var i = start;
+  while (i < s.length && unit(s.codeUnitAt(i))) {
+    i++;
+  }
+  return i;
+}
 
-final _quote = RegExp('["\']');
+/// Whether upstream's lookahead `(?=[^A-Za-z\d\-_]|$)` holds at [i].
+bool _endsName(String s, int i) =>
+    i >= s.length || !_isNameUnit(s.codeUnitAt(i));
+
+/// The words [patterns] match, lower-cased: each is a run of [unit] units,
+/// or one other character.
+Set<String> _words(
+  List<String> patterns, [
+  bool Function(int) unit = _isNameUnit,
+]) {
+  final words = <String>{};
+  for (final pattern in patterns) {
+    for (final word in _Expander(pattern).expand()) {
+      assert(
+        word.length == 1 || word.isNotEmpty && word.codeUnits.every(unit),
+        word,
+      );
+      words.add(word.toLowerCase());
+    }
+  }
+  return words;
+}
+
+/// The words a pattern of the tables above matches. Its syntax is literal
+/// characters, groups of alternatives, classes of single characters and `?`
+/// after any of them; the reader refuses anything else.
+final class _Expander {
+  _Expander(this.pattern);
+  final String pattern;
+  var _i = 0;
+
+  Set<String> expand() {
+    final words = _alternatives();
+    if (_i != pattern.length) throw FormatException('', pattern, _i);
+    return words;
+  }
+
+  Set<String> _alternatives() {
+    final words = _sequence();
+    while (_i < pattern.length && pattern[_i] == '|') {
+      _i++;
+      words.addAll(_sequence());
+    }
+    return words;
+  }
+
+  Set<String> _sequence() {
+    var words = {''};
+    while (_i < pattern.length && pattern[_i] != '|' && pattern[_i] != ')') {
+      final c = pattern[_i++];
+      Set<String> item;
+      if (c == '(') {
+        if (_i < pattern.length && pattern[_i] == '?') {
+          throw FormatException('', pattern, _i);
+        }
+        item = _alternatives();
+        if (_i >= pattern.length || pattern[_i] != ')') {
+          throw FormatException('', pattern, _i);
+        }
+        _i++;
+      } else if (c == '[') {
+        final close = pattern.indexOf(']', _i);
+        final members = pattern.substring(_i, close);
+        if (members.isEmpty ||
+            members.startsWith('^') ||
+            members.contains('-')) {
+          throw FormatException('', pattern, _i);
+        }
+        if (members.contains(r'\')) throw FormatException('', pattern, _i);
+        item = members.split('').toSet();
+        _i = close + 1;
+      } else if (r'\.*+{}^$'.contains(c)) {
+        throw FormatException('', pattern, _i - 1);
+      } else {
+        item = {c};
+      }
+      if (_i < pattern.length && pattern[_i] == '?') {
+        _i++;
+        item = {...item, ''};
+      }
+      words = {
+        for (final word in words)
+          for (final end in item) '$word$end',
+      };
+    }
+    return words;
+  }
+}
+
+/// Upstream's `operators`: `-` and a whole word operator (the `\b` after
+/// its letters), else `[+\-*\/%]=|\+\+|--|\.\.|[+\-*&^%:=!|\/]|<(?!#)|(?!#)>`.
+/// The length matched at [pos], or 0.
+int _operatorLength(String s, int pos) {
+  final c = s.codeUnitAt(pos);
+  final next = pos + 1 < s.length ? s.codeUnitAt(pos + 1) : -1;
+  if (c == 0x2d) {
+    final end = _runEnd(s, pos + 1, _isWordUnit);
+    if (end > pos + 1 &&
+        _wordOperators.contains(s.substring(pos + 1, end).toLowerCase())) {
+      return end - pos;
+    }
+  }
+  switch (c) {
+    // + - * / %
+    case 0x2b || 0x2d || 0x2a || 0x2f || 0x25 when next == 0x3d:
+      return 2;
+    // ++ -- ..
+    case 0x2b || 0x2d || 0x2e when next == c:
+      return 2;
+    // + - * & ^ % : = ! | /
+    case 0x2b || 0x2d || 0x2a || 0x26 || 0x5e || 0x25 || 0x3a || 0x3d:
+    case 0x21 || 0x7c || 0x2f:
+      return 1;
+    // < not before #
+    case 0x3c when next != 0x23:
+      return 1;
+    // >, whatever follows
+    case 0x3e:
+      return 1;
+  }
+  return 0;
+}
+
+/// Upstream's `builtins`: `[A-Z]:`, `%`, `\?`, a named builtin, or `\$` and a
+/// variable builtin, then its lookahead. [end] ends the run of name units at
+/// [pos], and [name] is that run lower-cased. The length matched, or 0.
+int _builtinLength(String s, int pos, int end, String name) {
+  final c = s.codeUnitAt(pos);
+  if (_isLetter(c) &&
+      pos + 1 < s.length &&
+      s.codeUnitAt(pos + 1) == 0x3a &&
+      _endsName(s, pos + 2)) {
+    return 2;
+  }
+  if ((c == 0x25 || c == 0x3f) && _endsName(s, pos + 1)) return 1;
+  if (_namedBuiltins.contains(name)) return end - pos;
+  if (c == 0x24 && pos + 1 < s.length) {
+    final d = s.codeUnitAt(pos + 1);
+    if (!_isNameUnit(d)) {
+      // A variable builtin of one other character: `$`, `?` or `^`.
+      return _variableBuiltins.contains(String.fromCharCode(d)) &&
+              _endsName(s, pos + 2)
+          ? 2
+          : 0;
+    }
+    final variableEnd = _runEnd(s, pos + 1, _isNameUnit);
+    if (_variableBuiltins.contains(
+      s.substring(pos + 1, variableEnd).toLowerCase(),
+    )) {
+      return variableEnd - pos;
+    }
+  }
+  return 0;
+}
+
+/// Upstream's `punctuation`, `[\[\]{},;`\\\.]|@[({]`: the length matched at
+/// [pos], or 0.
+int _punctuationLength(String s, int pos) {
+  switch (s.codeUnitAt(pos)) {
+    case 0x5b || 0x5d || 0x7b || 0x7d || 0x2c || 0x3b || 0x60 || 0x5c || 0x2e:
+      return 1;
+    case 0x40 when pos + 1 < s.length:
+      final next = s.codeUnitAt(pos + 1);
+      return next == 0x28 || next == 0x7b ? 2 : 0;
+  }
+  return 0;
+}
+
+/// Upstream's `identifiers`, `[A-Za-z\_][A-Za-z\-\_\d]*\b`: the run of name
+/// units at [pos], which ends at [end], back to its last word character,
+/// where `\b` holds. The length matched, or 0.
+int _identifierLength(String s, int pos, int end) {
+  final c = s.codeUnitAt(pos);
+  if (!_isLetter(c) && c != 0x5f) return 0;
+  while (s.codeUnitAt(end - 1) == 0x2d) {
+    end--;
+  }
+  return end - pos;
+}
 
 typedef _Tokenizer =
     String? Function(StringStream stream, PowerShellState state);
@@ -294,8 +419,39 @@ String? _tokenBase(StringStream stream, PowerShellState state) {
     return 'punctuation';
   }
 
-  for (final (key, pattern) in _grammar) {
-    if (stream.match(pattern) != null) return key;
+  // Upstream's grammar: keyword, number, operator, builtin, punctuation and
+  // variable patterns, tried in turn at the stream.
+  final s = stream.string, pos = stream.pos;
+  final c = s.codeUnitAt(pos);
+  final end = _runEnd(s, pos, _isNameUnit);
+  final name = end > pos ? s.substring(pos, end).toLowerCase() : '';
+  if (_keywords.contains(name)) {
+    stream.pos = end;
+    return 'keyword';
+  }
+  // A number starts with a digit or a point.
+  if ((c >= 0x30 && c <= 0x39 || c == 0x2e) && stream.match(_numbers) != null) {
+    return 'number';
+  }
+  final operator = _operatorLength(s, pos);
+  if (operator > 0) {
+    stream.pos += operator;
+    return 'operator';
+  }
+  final builtin = _builtinLength(s, pos, end, name);
+  if (builtin > 0) {
+    stream.pos += builtin;
+    return 'builtin';
+  }
+  final punctuation = _punctuationLength(s, pos);
+  if (punctuation > 0) {
+    stream.pos += punctuation;
+    return 'punctuation';
+  }
+  final identifier = _identifierLength(s, pos, end);
+  if (identifier > 0) {
+    stream.pos += identifier;
+    return 'variable';
   }
 
   final ch = stream.next();
@@ -319,7 +475,7 @@ String? _tokenBase(StringStream stream, PowerShellState state) {
   }
 
   if (ch == '@') {
-    final quoteMatch = stream.eat(_quote);
+    final quoteMatch = stream.eat('"') ?? stream.eat("'");
     if (quoteMatch != null && stream.eol()) {
       state._tokenize = _tokenMultiString;
       state._startQuote = quoteMatch;
@@ -328,7 +484,7 @@ String? _tokenBase(StringStream stream, PowerShellState state) {
       return 'error';
     } else if ('({'.contains(stream.peek()!)) {
       return 'punctuation';
-    } else if (_varNames.hasMatch(stream.peek()!)) {
+    } else if (_isVarNameUnit(stream.peek()!.codeUnitAt(0))) {
       // splatted variable
       return _tokenVariable(stream, state);
     }
@@ -424,8 +580,8 @@ String? _tokenVariable(StringStream stream, PowerShellState state) {
   if (stream.eat('{') != null) {
     state._tokenize = _tokenVariableWithBraces;
     return _tokenVariableWithBraces(stream, state);
-  } else if (ch != null && _varNames.hasMatch(ch)) {
-    stream.eatWhile(_varNames);
+  } else if (ch != null && _isVarNameUnit(ch.codeUnitAt(0))) {
+    stream.eatWhileCode(_isVarNameUnit);
     state._tokenize = _tokenBase;
     return 'variable';
   } else {
