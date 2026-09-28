@@ -77,10 +77,16 @@ extension _EditorToolbar on _EditorState {
     final info = row?.fenced == true
         ? editor.source.substring(row!.codeInfoStart, row.codeInfoEnd)
         : '';
-    final language = codeLanguageName(info);
+    final language = codeMirrorLanguageName(info);
+    final code = editor.codeEditing;
     final detected = row?.fenced == true && language.isEmpty
-        ? editor.codeEditing?.resolveLanguage(row!.text, info)
+        ? code?.resolveLanguage(row!.text, info)
         : null;
+    final labels = {
+      for (final choice
+          in code is FlarkCodeMirror ? code.languages : CodeMirrorLanguages.all)
+        choice.name: choice.label,
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 1),
       child: Wrap(
@@ -141,14 +147,15 @@ extension _EditorToolbar on _EditorState {
                 SelectOption(
                   value: '',
                   label:
-                      'Automatic${codeLanguages[detected] == null ? '' : ' · ${codeLanguages[detected]}'}',
+                      'Automatic${labels[detected] == null ? '' : ' · ${labels[detected]}'}',
                 ),
                 const SelectOption(value: 'text', label: 'Plain text'),
-                if (language.isNotEmpty && !codeLanguages.containsKey(language))
+                if (language.isNotEmpty &&
+                    language != 'text' &&
+                    !labels.containsKey(language))
                   SelectOption(value: language, label: language),
-                for (final entry in codeLanguages.entries)
-                  if (entry.key != 'text')
-                    SelectOption(value: entry.key, label: entry.value),
+                for (final MapEntry(key: name, value: label) in labels.entries)
+                  SelectOption(value: name, label: label),
               ],
               onChanged: (value) {
                 if (value != language) command(SetCodeLanguage(value));

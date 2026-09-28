@@ -8,8 +8,8 @@ import 'package:flark/resources.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury_widgets/fleury_widgets_web.dart'
     show Select, SelectOption;
-import 'package:flark_tree_sitter/flark_tree_sitter.dart'
-    show codeLanguages, codeLanguageName;
+import 'package:flark_codemirror/flark_codemirror.dart'
+    show CodeMirrorLanguages, FlarkCodeMirror, codeMirrorLanguageName;
 
 import 'cell_layout.dart';
 import 'image_previews.dart';

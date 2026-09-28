@@ -575,7 +575,7 @@ $_headingConfiguration
               ),
             ),
             Text(
-              ' ${editor.sourceMode ? 'SOURCE' : 'MARKDOWN'} · ${editor.source.length} characters · ${widget.controller.highlightError == null ? _message : 'Code colors unavailable'}',
+              ' ${editor.sourceMode ? 'SOURCE' : 'MARKDOWN'} · ${editor.source.length} characters · $_message',
               style: CellStyle(foreground: _secondary),
             ),
           ],

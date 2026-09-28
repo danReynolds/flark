@@ -134,11 +134,12 @@ final class _RowText {
     this.row, [
     this.prefix = '',
     this.continuation = '',
+    this.info = '',
     this.colors,
     this.lines,
   ]);
   final ProjectedRow row;
-  final String prefix, continuation;
+  final String prefix, continuation, info;
   final CodeHighlight? colors;
   final List<CellLine>? lines;
 }
@@ -272,7 +273,6 @@ final class CellDocumentLayout {
         }
       }
     }
-    colorRevision = controller.colorRevision;
     builds++;
   }
 
@@ -295,27 +295,35 @@ final class CellDocumentLayout {
     _RowText? cached,
   ) {
     final continuation = _continuation(prefix, row);
-    final colors = row.kind == RowKind.codeBlock
-        ? controller.colorsFor(row)
-        : null;
+    final info = controller.languageInfo(row);
+    final sameText = _sameText(cached, row);
+    // A fence's colors follow from its text and info string alone. An
+    // unchanged fence keeps them rather than asking the delegate again, whose
+    // cache need not hold every fence of a long document.
+    final colors = row.kind != RowKind.codeBlock
+        ? null
+        : sameText && cached!.info == info
+        ? cached.colors
+        : controller.colorsFor(row);
     final first = lines.length;
     final reusable = cached?.lines;
     if (reusable != null &&
         cached!.prefix == prefix &&
         cached.continuation == continuation &&
         identical(cached.colors, colors) &&
-        _sameText(cached, row)) {
+        sameText) {
       for (final line in reusable) {
         lines.add(line._rebind(row));
       }
     } else {
       rowLayouts++;
-      _addText(row, row.text, prefix);
+      _addText(row, row.text, prefix, colors: colors);
     }
     _rowText[index] = _RowText(
       row,
       prefix,
       continuation,
+      info,
       colors,
       lines.sublist(first),
     );
@@ -367,7 +375,6 @@ final class CellDocumentLayout {
   late final _imageResources = controller.editor.document.images.toList()
     ..sort((a, b) => a.contentStart.compareTo(b.contentStart));
   int _imageIndex = 0;
-  late final int colorRevision;
   static const _widths = DefaultWidthResolver();
 
   /// Whether this geometry still describes [controller] under these settings.
@@ -383,7 +390,6 @@ final class CellDocumentLayout {
       this.cols == cols &&
       this.theme == theme &&
       this.policy == policy &&
-      colorRevision == other.colorRevision &&
       source == other.editor.source &&
       (projection == null) == other.editor.sourceMode &&
       (sourceWindow == null ||
@@ -465,6 +471,7 @@ final class CellDocumentLayout {
     int sourceStart = 0,
     int? width,
     List<CellLine>? into,
+    CodeHighlight? colors,
   }) {
     final outerCols = width ?? this.cols;
     final code = row?.kind == RowKind.codeBlock;
@@ -503,7 +510,7 @@ final class CellDocumentLayout {
     lines.add(line);
     var offset = 0;
     var col = prefix.length;
-    final styleFor = _stylesFor(row);
+    final styleFor = _stylesFor(row, colors);
     var paintedEnd = text.length;
     if (row?.kind == RowKind.tableCell) {
       // Comrak's inline leaves exclude table delimiter padding. Projection
@@ -637,7 +644,7 @@ final class CellDocumentLayout {
     return continued.length == prefix.length ? continued : ' ' * prefix.length;
   }
 
-  CellStyle Function(int) _stylesFor(ProjectedRow? row) {
+  CellStyle Function(int) _stylesFor(ProjectedRow? row, CodeHighlight? colors) {
     var base = theme.body;
     if (row == null) return (_) => base;
     if (row.header) base = base.merge(theme.tableHeader);
@@ -651,9 +658,6 @@ final class CellDocumentLayout {
       base = base.merge(theme.quote);
     }
     if (row.kind == RowKind.codeBlock) base = base.merge(theme.code);
-    final colors = row.kind == RowKind.codeBlock
-        ? controller.colorsFor(row)
-        : null;
     var segmentIndex = 0, colorIndex = 0;
     // Glyphs, projection segments and code spans advance together; a long
     // highlighted row must not rescan every span for every character.

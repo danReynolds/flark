@@ -1,4 +1,5 @@
 import 'package:flark/flark.dart';
+import 'package:flark_codemirror/flark_codemirror.dart';
 import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
@@ -14,9 +15,15 @@ void main() {
     int width = 100,
     bool toolbar = true,
     bool readOnly = false,
+    FlarkCodeMirror? code,
   }) {
     tester = FleuryTester(viewportSize: CellSize(width, 30));
-    editor = FlarkEditor(createParseBackend(), text: source, caret: 0);
+    editor = FlarkEditor(
+      createParseBackend(),
+      text: source,
+      caret: 0,
+      codeEditing: code,
+    );
     controller = FlarkFleuryController(editor);
     focus = FocusNode();
     tester.pumpWidget(
@@ -154,6 +161,17 @@ void main() {
       editor.apply(const SetSelection.caret(4));
       tester.render();
       await press('Code language');
+      expect(
+        [
+          for (final item in tester.semantics().byRole(SemanticRole.menuItem))
+            item.label,
+        ],
+        [
+          'Automatic',
+          'Plain text',
+          for (final language in CodeMirrorLanguages.all) language.label,
+        ],
+      );
       await press('Ruby', role: SemanticRole.menuItem);
       expect(editor.source, '```ruby\ndef hello\nend\n```\n\nafter');
       expect(focus.hasFocus, isTrue);
@@ -172,6 +190,44 @@ void main() {
       tester.render();
       expect(tester.semantics().byLabel('Ruby'), isEmpty);
       expect(editor.source, '```\ndef hello\nend\n```\n\nafter');
+    },
+  );
+
+  test(
+    'language picker offers the delegate languages and names the detected one',
+    () async {
+      mount(
+        '```\ndef greet(name)\n  puts "Hello, #{name}"\nend\n```',
+        code: FlarkCodeMirror.only([
+          CodeMirrorLanguages.python,
+          CodeMirrorLanguages.ruby,
+        ]),
+      );
+      editor.apply(const SetSelection.caret(4));
+      tester.render();
+      Future<List<String?>> menu() async {
+        await press('Code language');
+        return [
+          for (final item in tester.semantics().byRole(SemanticRole.menuItem))
+            item.label,
+        ];
+      }
+
+      expect(await menu(), [
+        'Automatic · Ruby',
+        'Plain text',
+        'Python',
+        'Ruby',
+      ]);
+      await press('Plain text', role: SemanticRole.menuItem);
+      expect(editor.source, startsWith('```text\n'));
+      expect(await menu(), ['Automatic', 'Plain text', 'Python', 'Ruby']);
+      await press('Python', role: SemanticRole.menuItem);
+      expect(editor.source, startsWith('```python\n'));
+      // A language the delegate does not highlight keeps its written name.
+      expect(editor.apply(const SetCodeLanguage('go')), isTrue);
+      tester.render();
+      expect(await menu(), ['Automatic', 'Plain text', 'go', 'Python', 'Ruby']);
     },
   );
 

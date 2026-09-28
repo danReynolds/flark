@@ -13,8 +13,8 @@ dependencies:
   web: ^1.1.1
   flark:
     path: ../flark
-  flark_tree_sitter:
-    path: ../flark_tree_sitter
+  flark_codemirror:
+    path: ../flark_codemirror
   fleury: ^0.1.0
   fleury_widgets:
     git:

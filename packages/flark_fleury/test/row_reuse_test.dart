@@ -2,7 +2,9 @@
 /// scratch, while an edit lays out only the rows it changed.
 library;
 
+import 'package:flark/code.dart';
 import 'package:flark/flark.dart';
+import 'package:flark_codemirror/flark_codemirror.dart';
 import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_fleury/src/cell_layout.dart';
 import 'package:fleury/fleury_core.dart';
@@ -46,7 +48,12 @@ String _dump(CellDocumentLayout layout) {
 
 void main() {
   final backend = createParseBackend();
-  const theme = FlarkCellTheme();
+  const theme = FlarkCellTheme(
+    syntax: {
+      CodeSyntaxRole.keyword: CellStyle(foreground: Colors.magenta),
+      CodeSyntaxRole.number: CellStyle(foreground: Colors.yellow),
+    },
+  );
   const policy = CellWidthPolicy.spec;
 
   test('a reused layout equals a fresh one after every kind of edit', () {
@@ -63,7 +70,12 @@ void main() {
       '## Tail heading',
       'Last paragraph.',
     ].join('\n\n');
-    final editor = FlarkEditor(backend, text: source, caret: 0);
+    final editor = FlarkEditor(
+      backend,
+      text: source,
+      caret: 0,
+      codeEditing: FlarkCodeMirror(),
+    );
     final controller = FlarkFleuryController(editor);
     for (final cols in [12, 40, 100]) {
       var layout = CellDocumentLayout(controller, cols, theme, policy);
@@ -117,6 +129,9 @@ void main() {
       check('a code edit', () {
         editor.apply(SetSelection.caret(at('final x')));
         editor.apply(const InsertText('var '));
+      });
+      check('a fence language change', () {
+        expect(editor.apply(const SetCodeLanguage('python')), isTrue);
       });
       check('undo everything', () {
         while (editor.apply(const Undo())) {}
