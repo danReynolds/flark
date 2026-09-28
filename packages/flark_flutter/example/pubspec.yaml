@@ -17,8 +17,6 @@ dependencies:
   url_launcher: ^6.3.2
   flex_color_picker: ^3.8.0
 dev_dependencies:
-  flark_tree_sitter:
-    path: ../../flark_tree_sitter
   web: ^1.1.1
   shared_preferences_platform_interface: ^2.4.2
   flutter_test:

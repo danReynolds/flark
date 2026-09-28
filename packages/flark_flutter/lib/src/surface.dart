@@ -186,7 +186,6 @@ class RenderFlarkSurface extends RenderBox
     _images.configure(baseUri, imageProvider);
     _snapshot = controller.editor.snapshot;
     controller.addListener(_changed);
-    controller.codeColors?.addListener(_colorsChanged);
   }
 
   /// Rows shaped by surfaces in this isolate. Reuse regressions assert that an
@@ -215,7 +214,6 @@ class RenderFlarkSurface extends RenderBox
   // limits, and every reused row is checked against the current presentation.
   List<_RowLayout> _otherRows = [];
   bool _sourceLayout = false;
-  int _otherColorRevision = -1;
   // List marker painters from the last paint. Their style and text scale only
   // change through _clearRows, which disposes them.
   Map<String, TextPainter> _markers = {};
@@ -223,7 +221,6 @@ class RenderFlarkSurface extends RenderBox
   int _revision = 0;
   double? _layoutWidth;
   Object? _layoutContent;
-  int _colorRevision = -1;
   double get _visibleHeight =>
       viewportHeight > 0 ? viewportHeight : size.height;
 
@@ -269,12 +266,10 @@ class RenderFlarkSurface extends RenderBox
     }
     if (next != controller) {
       controller.removeListener(_changed);
-      controller.codeColors?.removeListener(_colorsChanged);
       _needsReveal = true;
       _images.clear();
       controller = next;
       controller.addListener(_changed);
-      controller.codeColors?.addListener(_colorsChanged);
       _clearRows();
       layout = semantics = true;
     }
@@ -323,29 +318,12 @@ class RenderFlarkSurface extends RenderBox
     if (offset == scrollOffset) return;
     scrollOffset = offset;
     markNeedsPaint();
-    _reportVisibleRows();
-  }
-
-  void _reportVisibleRows() {
-    final top = scrollOffset, bottom = scrollOffset + _visibleHeight;
-    controller.codeColors?.setVisibleRows([
-      for (final layout in _rows)
-        if (layout.row?.kind == RowKind.codeBlock &&
-            layout.rect.bottom > top &&
-            layout.rect.top < bottom)
-          layout.row!.index,
-    ]);
   }
 
   void _changed() {
     _needsReveal = true;
     markNeedsLayout();
     markNeedsSemanticsUpdate();
-  }
-
-  void _colorsChanged() {
-    // Colors cannot move the caret, scroll, or mutate semantics/history.
-    markNeedsLayout();
   }
 
   void _clearRows() {
@@ -359,7 +337,6 @@ class RenderFlarkSurface extends RenderBox
     _rows = [];
     _otherRows = [];
     _markers = {};
-    _otherColorRevision = -1;
   }
 
   @override
@@ -373,7 +350,6 @@ class RenderFlarkSurface extends RenderBox
   @override
   void dispose() {
     controller.removeListener(_changed);
-    controller.codeColors?.removeListener(_colorsChanged);
     _clearRows();
     _images.clear();
     super.dispose();
@@ -487,7 +463,6 @@ class RenderFlarkSurface extends RenderBox
       );
       _needsReveal = false;
     }
-    _reportVisibleRows();
   }
 
   // Input can arrive several times before Flutter lays out the next frame.
@@ -500,9 +475,6 @@ class RenderFlarkSurface extends RenderBox
       final previousRows = _rows;
       _rows = _otherRows;
       _otherRows = previousRows;
-      final previousColors = _colorRevision;
-      _colorRevision = _otherColorRevision;
-      _otherColorRevision = previousColors;
       _sourceLayout = sourceMode;
       _layoutContent = null;
     }
@@ -512,16 +484,12 @@ class RenderFlarkSurface extends RenderBox
     final content = _snapshot is FlarkLiveSnapshot
         ? (_snapshot as FlarkLiveSnapshot).projection
         : (_snapshot.source, window!.start, window.end);
-    final colorRevision = controller.codeColors?.revision ?? 0;
-    final colorsChanged = colorRevision != _colorRevision;
     if (content == _layoutContent &&
-        !colorsChanged &&
         constraints.maxWidth == _layoutWidth &&
         _rows.isNotEmpty) {
       return;
     }
     _layoutContent = content;
-    _colorRevision = colorRevision;
     _layoutWidth = constraints.maxWidth;
     final available = math.max(40.0, constraints.maxWidth - 2 * _padding);
     final old = _rows;
@@ -549,10 +517,10 @@ class RenderFlarkSurface extends RenderBox
     String codeInfoOf(ProjectedRow? row) => row?.fenced == true
         ? _snapshot.source.substring(row!.codeInfoStart, row.codeInfoEnd)
         : '';
+    // A code row's colors follow from its text and info string alone.
     bool reusable(int previous, int i) {
       final layout = old[previous], row = projected?[i];
-      return !(colorsChanged && row?.kind == RowKind.codeBlock) &&
-          layout.text == textAt(i) &&
+      return layout.text == textAt(i) &&
           layout.codeInfo == codeInfoOf(row) &&
           _samePresentation(layout.row, row);
     }
@@ -657,8 +625,7 @@ class RenderFlarkSurface extends RenderBox
           children: row?.kind == RowKind.codeBlock
               ? [
                   for (final token
-                      in (controller.codeColors?.highlight(text, codeInfo) ??
-                              controller.editor.codeEditing?.highlight(
+                      in (controller.editor.codeEditing?.highlight(
                                 text,
                                 codeInfo,
                               ) ??

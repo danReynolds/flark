@@ -10,7 +10,7 @@ import 'package:flark_dogfood/backend.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final code = await FlarkTreeSitter.load();
+  final code = FlarkCodeMirror();
   final editor = FlarkEditor(await loadBackend(), codeEditing: code);
   runApp(MaterialApp(home: _Comparison(editor)));
 }
@@ -23,10 +23,7 @@ class _Comparison extends StatefulWidget {
 }
 
 class _ComparisonState extends State<_Comparison> {
-  late final flark = FlarkController(
-    widget.editor,
-    codeColors: FlarkCodeColors(widget.editor),
-  );
+  late final flark = FlarkController(widget.editor);
   final standard = TextEditingController();
   @override
   void initState() {

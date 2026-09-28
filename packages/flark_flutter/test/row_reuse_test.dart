@@ -1,7 +1,6 @@
 import 'package:flark_flutter/code.dart';
 import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/src/surface.dart';
-import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -131,42 +130,51 @@ void main() {
     },
   );
 
-  testWidgets('scrolling reports newly visible fences without a rebuild', (
-    tester,
-  ) async {
-    final text = StringBuffer();
-    for (var i = 0; i < 60; i++) {
-      text.write('Paragraph $i\n\n```dart\nfinal fence$i = $i;\n```\n\n');
-    }
-    final editor = FlarkEditor(backend, text: text.toString(), caret: 0);
-    final requested = <String>{};
-    final colors = FlarkCodeColors.withWorker(editor, (
-      source, {
-      required CodeLanguage language,
-    }) async {
-      requested.add(source);
-      return null;
-    }, () {});
-    final c = FlarkController(editor, codeColors: colors);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            width: 800,
-            height: 600,
-            child: FlarkEditorWidget(controller: c, showToolbar: false),
+  testWidgets(
+    'a fence is shaped again only when its text or language changes',
+    (tester) async {
+      final text = StringBuffer();
+      for (var i = 0; i < 60; i++) {
+        text.write('Paragraph $i\n\n```dart\nfinal fence$i = $i;\n```\n\n');
+      }
+      final source = text.toString();
+      final editor = FlarkEditor(
+        backend,
+        codeEditing: FlarkCodeMirror(),
+        text: source,
+        caret: source.indexOf('fence0'),
+      );
+      final c = FlarkController(editor);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 800,
+              height: 600,
+              child: FlarkEditorWidget(
+                controller: c,
+                autofocus: true,
+                showToolbar: false,
+              ),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
-    expect(requested, isNot(contains('final fence59 = 59;')));
-    final scroll = tester.state<ScrollableState>(find.byType(Scrollable).last);
-    scroll.position.jumpTo(scroll.position.maxScrollExtent);
-    await tester.pump();
-    await tester.pump();
-    expect(requested, contains('final fence59 = 59;'));
-    await tester.pumpWidget(const SizedBox());
-    c.dispose();
-  });
+      );
+      await tester.pump();
+      Future<int> shaped(FlarkCommand command) async {
+        final before = RenderFlarkSurface.shapedRows;
+        expect(c.command(command), isTrue);
+        await tester.pump();
+        return RenderFlarkSurface.shapedRows - before;
+      }
+
+      // Colors follow from a fence's text and language alone, so the other 59
+      // fences keep their layouts.
+      expect(await shaped(const InsertText('x')), 1);
+      expect(await shaped(SetCodeLanguage('python')), 1);
+      expect(editor.source, contains('```python\nfinal xfence0 = 0;'));
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
 }

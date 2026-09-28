@@ -1,20 +1,17 @@
 /// Try `flark_codemirror`, CodeMirror's language modes ported to Dart, on
-/// fences in its 25 languages in the Flutter editor, with the current
-/// Tree-sitter engine one click away for comparison:
+/// fences in its 25 languages in the Flutter editor:
 ///
 /// ```sh
 /// flutter build web --wasm -t lib/codemirror_demo.dart
 /// python3 tool/serve_web.py
 /// ```
 ///
-/// CodeMirror colors each fence synchronously on the UI thread; Tree-sitter
-/// runs as the workbench does, with colors from a worker. The bar shows how
+/// Each fence is colored synchronously on the UI thread. The bar shows how
 /// long the last uncached fence highlight and the last Enter/typing proposal
-/// took on the UI thread.
+/// took.
 library;
 
 import 'package:flark/code.dart';
-import 'package:flark_codemirror/flark_codemirror.dart';
 import 'package:flark_flutter/code.dart';
 import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
@@ -27,8 +24,6 @@ Future<void> main() async {
   runApp(_Demo(await loadBackend()));
 }
 
-enum _Engine { codeMirror, treeSitter }
-
 class _Demo extends StatefulWidget {
   const _Demo(this.backend);
   final FlarkParseBackend backend;
@@ -39,36 +34,28 @@ class _Demo extends StatefulWidget {
 
 class _DemoState extends State<_Demo> {
   final _codeMirror = FlarkCodeMirror();
-  FlarkTreeSitter? _treeSitter;
-  var _engine = _Engine.codeMirror;
   late FlarkController _controller = _open(_sample, 0);
-  String _status = '';
   final _timing = ValueNotifier<String>('');
   double _highlightMs = 0, _editMs = 0;
   bool _reportPending = false;
 
   FlarkController _open(String text, int caret) {
-    final delegate = _Timed(
-      _engine == _Engine.codeMirror ? _codeMirror : _treeSitter!,
-      (kind, us) {
-        // Cache hits cost about a microsecond; report the work.
-        if (kind == 'highlight' && us < 20) return;
-        if (kind == 'highlight') _highlightMs = us / 1000;
-        if (kind == 'edit') _editMs = us / 1000;
-        // Highlighting runs during layout: update the bar after the frame.
-        if (_reportPending) return;
-        _reportPending = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _reportPending = false;
-          _timing.value = _engine == _Engine.codeMirror
-              ? 'fence highlight ${_highlightMs.toStringAsFixed(2)} ms · '
-                    'Enter/typing proposal ${_editMs.toStringAsFixed(2)} ms'
-              : 'colors on a worker · Enter/typing proposal '
-                    '${_editMs.toStringAsFixed(2)} ms';
-        });
-        WidgetsBinding.instance.scheduleFrame();
-      },
-    );
+    final delegate = _Timed(_codeMirror, (kind, us) {
+      // Cache hits cost about a microsecond; report the work.
+      if (kind == 'highlight' && us < 20) return;
+      if (kind == 'highlight') _highlightMs = us / 1000;
+      if (kind == 'edit') _editMs = us / 1000;
+      // Highlighting runs during layout: update the bar after the frame.
+      if (_reportPending) return;
+      _reportPending = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _reportPending = false;
+        _timing.value =
+            'fence highlight ${_highlightMs.toStringAsFixed(2)} ms · '
+            'Enter/typing proposal ${_editMs.toStringAsFixed(2)} ms';
+      });
+      WidgetsBinding.instance.scheduleFrame();
+    });
     final editor = FlarkEditor(
       widget.backend,
       codeEditing: delegate,
@@ -77,30 +64,14 @@ class _DemoState extends State<_Demo> {
       syncLimit: candidateLiveBytes,
       liveLimits: candidateLiveLimits,
     );
-    return FlarkController(
-      editor,
-      codeColors: _engine == _Engine.treeSitter
-          ? FlarkCodeColors(editor)
-          : null,
-    );
+    return FlarkController(editor);
   }
 
-  Future<void> _switch(_Engine engine) async {
-    if (engine == _engine) return;
-    if (engine == _Engine.treeSitter && _treeSitter == null) {
-      setState(() => _status = 'Loading Tree-sitter (13 MB of Wasm)…');
-      _treeSitter = await FlarkTreeSitter.load();
-    }
-    _replace(_controller.text, _controller.editor.selection.extent, engine);
-  }
-
-  void _replace(String text, int caret, [_Engine? engine]) {
+  void _replace(String text, int caret) {
     final old = _controller;
     setState(() {
-      _engine = engine ?? _engine;
       _highlightMs = _editMs = 0;
       _timing.value = '';
-      _status = '';
       _controller = _open(text, caret.clamp(0, text.length));
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
@@ -109,7 +80,6 @@ class _DemoState extends State<_Demo> {
   @override
   void dispose() {
     _controller.dispose();
-    _treeSitter?.dispose();
     _timing.dispose();
     super.dispose();
   }
@@ -134,21 +104,6 @@ class _DemoState extends State<_Demo> {
             onPressed: () => _replace(_large, 0),
             child: const Text('8K fence'),
           ),
-          const SizedBox(width: 8),
-          SegmentedButton<_Engine>(
-            segments: const [
-              ButtonSegment(
-                value: _Engine.codeMirror,
-                label: Text('CodeMirror'),
-              ),
-              ButtonSegment(
-                value: _Engine.treeSitter,
-                label: Text('Tree-sitter'),
-              ),
-            ],
-            selected: {_engine},
-            onSelectionChanged: (s) => _switch(s.single),
-          ),
           const SizedBox(width: 16),
         ],
       ),
@@ -161,10 +116,7 @@ class _DemoState extends State<_Demo> {
             child: ValueListenableBuilder(
               valueListenable: _timing,
               builder: (context, timing, _) => Text(
-                _status.isNotEmpty
-                    ? _status
-                    : '${_engine == _Engine.codeMirror ? 'CodeMirror' : 'Tree-sitter'}'
-                          '${timing.isEmpty ? '' : ' · $timing'}',
+                'CodeMirror${timing.isEmpty ? '' : ' · $timing'}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -288,7 +240,6 @@ Things to try:
 - `}` or `]` typed at the start of an indented line
 - Tab and Shift-Tab over selected lines
 - Delete a fence's language: an untagged fence takes the language it looks like
-- The switch at the top: the same document with Tree-sitter
 
 ```ts
 $_module

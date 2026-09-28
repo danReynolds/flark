@@ -78,8 +78,7 @@ void main() {
     'production workbench opening, boundaries and sustained use',
     (tester) async {
       final backend = _CountedBackend(await loadBackend());
-      final code = await FlarkTreeSitter.load();
-      addTearDown(code.dispose);
+      final code = FlarkCodeMirror();
       final sources = workbenchProfileSources(backend);
       SharedPreferences.setPrefix('flark.workbenchProfile.');
       final preferences = await SharedPreferences.getInstance();

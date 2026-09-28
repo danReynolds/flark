@@ -70,7 +70,7 @@ Future<void> main() async {
     runApp(
       DogfoodApp(
         backend: await loadBackend(),
-        code: await FlarkTreeSitter.load(),
+        code: FlarkCodeMirror(),
         preferences: await SharedPreferences.getInstance(),
       ),
     );
@@ -94,7 +94,7 @@ class DogfoodApp extends StatelessWidget {
     this.onPaint,
   });
   final FlarkParseBackend backend;
-  final FlarkTreeSitter? code;
+  final FlarkCodeMirror? code;
   final SharedPreferences preferences;
   final ValueChanged<FlarkPaintObservation>? onPaint;
   @override
@@ -128,7 +128,7 @@ class Workbench extends StatefulWidget {
     this.onPaint,
   });
   final FlarkParseBackend backend;
-  final FlarkTreeSitter? code;
+  final FlarkCodeMirror? code;
   final SharedPreferences preferences;
   final ValueChanged<FlarkPaintObservation>? onPaint;
   @override
@@ -175,10 +175,7 @@ class _WorkbenchState extends State<Workbench> {
       liveLimits: candidateLiveLimits,
       sourceLimit: candidateSourceBytes,
     );
-    c = FlarkController(
-      editor,
-      codeColors: widget.code == null ? null : FlarkCodeColors(editor),
-    );
+    c = FlarkController(editor);
     _lastQueuedSource = source;
     c.addListener(_changed);
   }

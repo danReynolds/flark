@@ -3,7 +3,7 @@ import 'package:flark_flutter/code.dart';
 import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../flark_tree_sitter/tool/edit_cases.dart';
+import '../../flark_codemirror/tool/edit_cases.dart';
 
 ({String source, FlarkSelection selection}) marked(String text) {
   final out = StringBuffer();
@@ -25,13 +25,7 @@ import '../../flark_tree_sitter/tool/edit_cases.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final backend = createParseBackend();
-  late FlarkTreeSitter code;
-  setUpAll(() async {
-    code = await FlarkTreeSitter.load();
-  });
-  tearDownAll(() {
-    code.dispose();
-  });
+  final code = FlarkCodeMirror();
 
   for (final info in ['ruby', 'rb', '']) {
     test('Ruby owner journey from empty fence: $info', () {
@@ -84,7 +78,9 @@ void main() {
       final char = String.fromCharCode(rune);
       e.apply(char == '\n' ? const Newline() : InsertText(char));
     }
-    expect(e.source, '```\nif true; then\n  echo "hello"\nfi\n```\n\nafter');
+    // CodeMirror's shell mode has no indentation rules, so a new line keeps
+    // the previous one's.
+    expect(e.source, '```\nif true; then\necho "hello"\nfi\n```\n\nafter');
     final before = e.source;
     e.history.breakCoalescing();
     e.apply(const InsertText('x'));
@@ -93,10 +89,10 @@ void main() {
     expect(e.source, before);
   });
 
-  for (final c in editCases) {
+  for (final c in cases) {
     // Host indentation policy is two spaces, four for Python, or an existing
     // tab. The component corpus separately qualifies arbitrary caller units.
-    if (codeIndentUnit(marked(c.before).source, c.language.name) != c.unit) {
+    if (codeIndentUnit(marked(c.before).source, c.language) != c.unit) {
       continue;
     }
     for (final (openerPrefix, prefix, newline) in [
@@ -106,7 +102,7 @@ void main() {
     ]) {
       test('${c.name} in $prefix ${newline.length == 2 ? 'CRLF' : 'LF'}', () {
         String wrap(String body) =>
-            '$openerPrefix```${c.language.name}$newline$prefix${body.replaceAll('\r\n', '\n').replaceAll('\n', '$newline$prefix')}$newline$prefix```$newline${newline}after';
+            '$openerPrefix```${c.language}$newline$prefix${body.replaceAll('\r\n', '\n').replaceAll('\n', '$newline$prefix')}$newline$prefix```$newline${newline}after';
         final before = marked(wrap(c.before)), after = marked(wrap(c.after));
         final e = FlarkEditor(
           backend,
@@ -115,12 +111,11 @@ void main() {
           codeEditing: code,
         );
         e.apply(SetSelection(before.selection.base, before.selection.extent));
-        final command = switch (c.action.name) {
-          'insert' => InsertText(c.text),
-          'newline' => const Newline(),
-          'indent' => const Indent(),
-          'outdent' => const Outdent(),
-          _ => throw StateError('unexpected command'),
+        final command = switch (c.action) {
+          CodeEditingAction.insert => InsertText(c.text),
+          CodeEditingAction.newline => const Newline(),
+          CodeEditingAction.indent => const Indent(),
+          CodeEditingAction.outdent => const Outdent(),
         };
         e.apply(command);
         expect((e.source, e.selection), (after.source, after.selection));

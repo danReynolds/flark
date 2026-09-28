@@ -6,13 +6,12 @@ import 'dart:ui_web' as ui_web;
 import 'package:flark/wasm.dart';
 import 'package:flark_flutter/code.dart';
 import 'package:flark_flutter/flark_flutter_legacy.dart';
-import 'package:flark_tree_sitter/flark_tree_sitter.dart';
-import 'package:flark_tree_sitter/wasm.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web/web.dart' as web;
 
-// This exercises real browser input and coloring workers over sustained edits.
+// This exercises real browser input and synchronous code colors over sustained
+// edits.
 // Debug-browser paint latency is diagnostic; it is not a release raster budget.
 void main() {
   ui_web.TestEnvironment.setUp(
@@ -25,24 +24,14 @@ void main() {
   );
   final binding = WidgetsFlutterBinding.ensureInitialized();
   late FlarkParseBackend backend;
-  late FlarkTreeSitter code;
+  final code = FlarkCodeMirror();
   setUpAll(() async {
     backend = await WasmParseBackend.load(
       candidates: [
         Uri.base.resolve('/packages/flark/assets/wasm/flark_parse.wasm'),
       ],
     );
-    code = FlarkTreeSitter.fromAnalyzer(
-      CodeAnalyzer(
-        backend: await WasmCodeBackend.load(
-          uri: Uri.base.resolve(
-            '/packages/flark_tree_sitter/assets/wasm/flark_tree_sitter.wasm',
-          ),
-        ),
-      ),
-    );
   });
-  tearDownAll(() => code.dispose());
 
   for (final (label, info, initialBody) in [
     (
@@ -65,16 +54,7 @@ void main() {
           caret: at,
           codeEditing: code,
         );
-        final colors = FlarkCodeColors(
-          editor,
-          workerUri: Uri.base.resolve(
-            '/packages/flark_tree_sitter/assets/highlight_worker.mjs',
-          ),
-          wasmUri: Uri.base.resolve(
-            '/packages/flark_tree_sitter/assets/wasm/flark_tree_sitter.wasm',
-          ),
-        );
-        final c = FlarkController(editor, codeColors: colors);
+        final c = FlarkController(editor);
         final focus = FocusNode();
         final paints = <FlarkPaintObservation>[];
         addTearDown(() async {
@@ -101,19 +81,9 @@ void main() {
         await binding.endOfFrame;
 
         Future<void> requireCurrentColors() async {
-          final stop = Stopwatch()..start();
           final row = editor.document.rowAt(editor.selection.extent);
-          while (!colors
-                  .highlight(row.text, info)
-                  .tokens
-                  .any((t) => t.kind != null) &&
-              colors.failure == null &&
-              stop.elapsedMilliseconds < 15000) {
-            await Future<void>.delayed(const Duration(milliseconds: 5));
-          }
-          expect(colors.failure, isNull);
           expect(
-            colors.highlight(row.text, info).tokens.any((t) => t.kind != null),
+            code.highlight(row.text, info).tokens.any((t) => t.kind != null),
             isTrue,
           );
           await binding.endOfFrame;
@@ -189,7 +159,6 @@ void main() {
             expect(paint.caretSource, caret);
             expect(paint.caret, isNotNull);
           }
-          expect(colors.failure, isNull);
           if ((tick + 1) % 250 == 0) {
             await requireCurrentColors();
             debugPrint('FLARK_BROWSER_SUSTAINED $label ${tick + 1}/1500');
@@ -223,7 +192,7 @@ void main() {
         }
 
         debugPrint(
-          'FLARK_BROWSER_SUSTAINED_RECEIPT ${jsonEncode({'label': label, 'inputs': 1500, 'inputContexts': contexts.length, 'elapsedUs': watch.elapsedMicroseconds - started, 'callbackP99Us': percentile(callbackUs, .99), 'firstPaintObservedP99Us': percentile(firstPaintUs, .99), 'colorRevisions': colors.revision, 'restoredExactSource': c.text == original, 'evidence': 'debug browser transport and actual paint; not release raster timing'})}',
+          'FLARK_BROWSER_SUSTAINED_RECEIPT ${jsonEncode({'label': label, 'inputs': 1500, 'inputContexts': contexts.length, 'elapsedUs': watch.elapsedMicroseconds - started, 'callbackP99Us': percentile(callbackUs, .99), 'firstPaintObservedP99Us': percentile(firstPaintUs, .99), 'restoredExactSource': c.text == original, 'evidence': 'debug browser transport and actual paint; not release raster timing'})}',
         );
       },
       timeout: const Timeout(Duration(minutes: 5)),
