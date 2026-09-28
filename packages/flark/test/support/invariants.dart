@@ -6,6 +6,13 @@ import 'package:flark/render_model.dart';
 import 'package:test/test.dart';
 
 void checkInvariants(String src, RenderModel m, Projection p, String label) {
+  // An editor projection reuses rows from the previous one. It must equal
+  // projecting the same model from scratch.
+  expectSameProjection(
+    p,
+    Projection.of(m, src, options: p.options),
+    '$label (reused rows against a fresh projection)',
+  );
   // Hidden intervals across the document: run delimiters and break markers.
   final hidden = <(int, int)>[];
   for (final r in m.runs) {
@@ -99,3 +106,41 @@ void checkInvariants(String src, RenderModel m, Projection p, String label) {
     );
   }
 }
+
+/// Every field of every row, and the line index, of two projections.
+void expectSameProjection(
+  Projection actual,
+  Projection expected,
+  String label,
+) {
+  expect(actual.rows.length, expected.rows.length, reason: '$label: rows');
+  for (var i = 0; i < actual.rows.length; i++) {
+    final a = actual.rows[i], e = expected.rows[i];
+    expect(describeRow(a), describeRow(e), reason: '$label: row $i');
+  }
+  for (var l = 0; l < expected.model.lineCount; l++) {
+    expect(
+      actual.rowsOnLine(l),
+      expected.rowsOnLine(l),
+      reason: '$label: rows on line $l',
+    );
+  }
+}
+
+/// A row as text: all of its fields, segments and shells.
+String describeRow(ProjectedRow r) => [
+  'index ${r.index} kind ${r.kind.name} block ${r.block}',
+  'lines ${r.firstLine}+${r.lineCount} source ${r.sourceStart}..${r.sourceEnd}',
+  'text ${r.text}',
+  'content ${r.contentStarts} ${r.contentEnds} prefixes ${r.prefixStarts}',
+  'heading ${r.headingLevel} fenced ${r.fenced} info ${r.codeInfoStart}..${r.codeInfoEnd}',
+  'table ${r.tableBlock} row ${r.tableRowBlock} column ${r.column} '
+      'header ${r.header} alignment ${r.alignment}',
+  for (final s in r.segments)
+    'segment ${s.displayStart}..${s.displayEnd} source ${s.sourceStart}..${s.sourceEnd} '
+        'styles ${s.styles} exact ${s.exact} run ${s.run} break ${s.lineBreak}',
+  for (final s in r.shells)
+    'shell ${s.kind.name} block ${s.block} ordered ${s.ordered} start ${s.start} '
+        'tight ${s.tight} task ${s.task} checked ${s.checked} '
+        'checkbox ${s.checkboxStart}..${s.checkboxEnd} item ${s.itemIndex}',
+].join('\n');

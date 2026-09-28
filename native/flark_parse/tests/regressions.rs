@@ -2,13 +2,16 @@
 mod common;
 use common::check_invariants;
 use flark_parse::model::Extractor;
-use flark_parse::schema::{self, block, block_kind, content, definition, header, run, run_kind};
+use flark_parse::records::{self, block, content, definition, expand, header, run};
+use flark_parse::schema::{block_kind, run_kind};
 
+/// A published model expanded into the internal layout, so assertions can
+/// name UTF-8 byte ranges of the source as well as UTF-16 offsets.
 struct M { w: Vec<u32>, devs: Vec<String> }
 impl M {
-    fn of(src: &str) -> M { let (w, d) = Extractor::extract_with_report(src); check_invariants(src, &w).unwrap_or_else(|e| panic!("{e} for {src:?}")); M { w, devs: d.iter().map(|x| format!("{} {}", x.rule, x.detail)).collect() } }
+    fn of(src: &str) -> M { let (w, d) = Extractor::extract_with_report(src); check_invariants(src, &w).unwrap_or_else(|e| panic!("{e} for {src:?}")); M { w: expand(src, &w).unwrap(), devs: d.iter().map(|x| format!("{} {}", x.rule, x.detail)).collect() } }
     fn n(&self, f: usize) -> usize { self.w[f] as usize }
-    fn blocks_off(&self) -> usize { schema::HEADER_WORDS + self.n(header::LINE_COUNT) * 2 }
+    fn blocks_off(&self) -> usize { records::HEADER_WORDS + self.n(header::LINE_COUNT) * 2 }
     fn content_off(&self) -> usize { self.blocks_off() + self.n(header::BLOCK_COUNT) * block::WORDS }
     fn runs_off(&self) -> usize { self.content_off() + self.n(header::CONTENT_COUNT) * content::WORDS }
     fn defs_off(&self) -> usize { self.runs_off() + self.n(header::RUN_COUNT) * run::WORDS }
@@ -227,7 +230,9 @@ fn task_items_start_content_after_the_checkbox() {
     assert_eq!(m.block(2, block::ATTR0), 2, "container offset is the list padding");
     let src = "- [ ] foo\n\n  > quote";
     let m = M::of(src); m.clean();
-    assert_eq!(m.contents(src), ["foo", "quote", ""]);
+    // Content is in block order: the item's own blank line precedes the
+    // records of the paragraph and quote inside it.
+    assert_eq!(m.contents(src), ["", "foo", "quote"]);
 }
 
 #[test]
@@ -393,5 +398,31 @@ fn a_row_short_of_the_header_columns_has_empty_cells_not_delimiters() {
             }
         }
       }
+    }
+}
+
+#[test]
+fn a_multiline_tag_or_code_span_ends_on_its_own_line() {
+    // comrak places the end of an inline literal that crosses lines with the
+    // prefix width of the paragraph line numbered by the lines it crosses,
+    // not of the line it ends on. They differ when the literal starts after
+    // the paragraph's first line and ends on a line with another prefix: a
+    // lazy line has none, and a partial tab leaves virtual spaces.
+    for ending in ["\n", "\r\n"] {
+        for (first, next, last) in [
+            ("> ", "> ", ""), ("- ", "  ", ""), ("> > ", "> > ", ""), ("1. ", "   ", ""),
+            ("> 1. ", ">    ", ">\t"), ("> ", "> ", "> "), ("", "", ""),
+        ] {
+            for (kind, open, close, after) in [(run_kind::HTML_INLINE, "<a", "b>", " q"), (run_kind::CODE, "`a", "b`", " `")] {
+                for middle in ["", "c"] {
+                    let middle = if middle.is_empty() { String::new() } else { format!("{next}{middle}{ending}") };
+                    let src = format!("{first}x{ending}{next}{open}{ending}{middle}{last}{close}{after}");
+                    let m = M::of(&src); m.clean();
+                    let r = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == kind as usize).unwrap_or_else(|| panic!("no run for {src:?}"));
+                    let (s, e) = (src.find(open).unwrap(), src.rfind(close).unwrap() + close.len());
+                    assert_eq!((m.run(r, run::START_BYTE), m.run(r, run::END_BYTE)), (s, e), "for {src:?}");
+                }
+            }
+        }
     }
 }

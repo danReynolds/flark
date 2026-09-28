@@ -2,11 +2,16 @@
 //! three-function C ABI shared by the native (FFI) and wasm32 transports.
 pub mod lines;
 pub mod model;
+pub mod records;
 pub mod reference_definitions;
 pub mod schema;
 mod text_pieces;
 
 use std::slice;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub const PARSE_OK: i32 = 0;
 pub const PARSE_INVALID_ARGUMENT: i32 = 1;

@@ -12,6 +12,9 @@ abstract interface class FlarkDocumentState {
   CodeEditingDelegate? get codeEditing;
 }
 
+/// [live] is the byte/line admission a caller already computed for [text].
+/// [previous], the live document being replaced, lends the new projection
+/// the rows the edit did not touch.
 FlarkEditorSnapshot _projectSnapshot(
   FlarkParseBackend backend,
   String text,
@@ -22,10 +25,13 @@ FlarkEditorSnapshot _projectSnapshot(
   bool forceSourceMode = false,
   bool rejectDeviation = false,
   RenderModel? parsed,
+  bool? live,
+  FlarkDocument? previous,
 }) {
   if (forceSourceMode ||
-      !_withinLiveByteLimit(text, syncLimit) ||
-      !liveLimits._admitsSource(text)) {
+      !(live ??
+          (_withinLiveByteLimit(text, syncLimit) &&
+              liveLimits._admitsSource(text)))) {
     return FlarkSourceSnapshot._(text, selected);
   }
   try {
@@ -34,7 +40,7 @@ FlarkEditorSnapshot _projectSnapshot(
       return FlarkSourceSnapshot._(text, selected);
     }
     return FlarkLiveSnapshot._(
-      projectFlarkDocument(text, model, selected, options),
+      projectFlarkDocument(text, model, selected, options, previous: previous),
     );
   } on FlarkParseException catch (error) {
     if (error.code != FlarkParseException.extractionDeviationCode ||
@@ -74,6 +80,7 @@ final class FlarkReadDocument implements FlarkDocumentState {
   bool update(String markdown) {
     if (_snapshot?.source == markdown) return false;
     validateFlarkSource(markdown);
+    final current = _snapshot;
     final next = _projectSnapshot(
       _backend,
       markdown,
@@ -81,6 +88,7 @@ final class FlarkReadDocument implements FlarkDocumentState {
       const ProjectionOptions(),
       const FlarkLiveLimits(),
       FlarkEditor.defaultSyncLimit,
+      previous: current is FlarkLiveSnapshot ? current.document : null,
     );
     _snapshot = next;
     _revision++;

@@ -24,7 +24,31 @@ final class CellGlyph {
 }
 
 final class CellLine {
-  CellLine(this.row, this.start, this.prefix, {this.sourceStart = 0});
+  CellLine(
+    this.row,
+    this.start,
+    this.prefix, {
+    this.sourceStart = 0,
+    List<CellGlyph>? glyphs,
+  }) : glyphs = glyphs ?? <CellGlyph>[];
+
+  /// The same text line for [row], an equal projection of the next document.
+  /// Glyph offsets are row-relative, so the glyphs are shared, not re-measured.
+  CellLine _rebind(ProjectedRow row) =>
+      CellLine(row, start, prefix, sourceStart: sourceStart, glyphs: glyphs)
+        ..left = left
+        ..right = right
+        ..cells = cells
+        ..rule = rule
+        ..blockLeft = blockLeft
+        ..codeEdgeTop = codeEdgeTop
+        ..headingRule = headingRule
+        ..headingLabelColumn = headingLabelColumn
+        ..caretLine = caretLine
+        ..image = image
+        ..imageLabel = imageLabel
+        ..end = end;
+
   final ProjectedRow? row;
   final int start, sourceStart;
   final String prefix;
@@ -65,7 +89,7 @@ final class CellLine {
   }
 
   int get taskWidth => 3;
-  final glyphs = <CellGlyph>[];
+  final List<CellGlyph> glyphs;
   late int end = start;
   int get endColumn => glyphs.isEmpty
       ? left + prefix.length
@@ -101,12 +125,37 @@ final class CellLine {
   }
 }
 
+/// One projected row's text lines and every input that shaped them, so the
+/// next layout of the same document can reuse rows an edit did not change.
+/// Table cells and standalone images always lay out again; their entries
+/// have no [lines] and only keep the rows after them aligned.
+final class _RowText {
+  const _RowText(
+    this.row, [
+    this.prefix = '',
+    this.continuation = '',
+    this.colors,
+    this.lines,
+  ]);
+  final ProjectedRow row;
+  final String prefix, continuation;
+  final CodeHighlight? colors;
+  final List<CellLine>? lines;
+}
+
 final class CellDocumentLayout {
-  CellDocumentLayout(this.controller, this.cols, this.theme, this.policy)
-    : source = controller.editor.source,
-      projection = controller.editor.sourceMode
-          ? null
-          : controller.editor.projection {
+  /// A [previous] layout of the same controller, width, theme and policy
+  /// lends its unchanged rows. Without one, every row is laid out afresh.
+  CellDocumentLayout(
+    this.controller,
+    this.cols,
+    this.theme,
+    this.policy, {
+    CellDocumentLayout? previous,
+  }) : source = controller.editor.source,
+       projection = controller.editor.sourceMode
+           ? null
+           : controller.editor.projection {
     final editor = controller.editor;
     if (editor.sourceMode) {
       // Keep raw-source geometry bounded even for the kernel's 1 MiB ceiling.
@@ -131,6 +180,43 @@ final class CellDocumentLayout {
     } else {
       final rows = editor.projection.rows;
       _measureMarkers(rows);
+      final before =
+          previous != null &&
+              identical(previous.controller, controller) &&
+              previous.cols == cols &&
+              previous.theme == theme &&
+              previous.policy == policy
+          ? previous._rowText
+          : const <_RowText?>[];
+      // An edit changes one contiguous run of rows; the rest only move. Match
+      // unchanged rows from both ends so an inserted or removed row does not
+      // misalign every row after it. Each candidate is still checked in full.
+      var head = 0, tail = 0;
+      while (head < rows.length &&
+          head < before.length &&
+          _sameText(before[head], rows[head])) {
+        head++;
+      }
+      while (tail < rows.length - head &&
+          tail < before.length - head &&
+          _sameText(
+            before[before.length - 1 - tail],
+            rows[rows.length - 1 - tail],
+          )) {
+        tail++;
+      }
+      _RowText? candidate(int i) {
+        final j = i < head
+            ? i
+            : i >= rows.length - tail
+            ? i - rows.length + before.length
+            : i < before.length - tail
+            ? i
+            : -1;
+        return j < 0 ? null : before[j];
+      }
+
+      _rowText = List<_RowText?>.filled(rows.length, null);
       for (var i = 0; i < rows.length;) {
         final row = rows[i];
         if (row.kind == RowKind.tableCell) {
@@ -139,7 +225,9 @@ final class CellDocumentLayout {
             end++;
           }
           _addTable(rows.sublist(i, end));
-          i = end;
+          for (; i < end; i++) {
+            _rowText[i] = _RowText(rows[i]);
+          }
         } else {
           final prefix = _prefix(row);
           final left = math.min(prefix.length, math.max(0, cols - 2));
@@ -150,7 +238,7 @@ final class CellDocumentLayout {
               image != null &&
               image.start == row.sourceStart &&
               image.end == row.sourceEnd;
-          if (!standalone) _addText(row, row.text, prefix);
+          if (!standalone) _addRowText(i, row, prefix, candidate(i));
           _addImages(
             row,
             lines,
@@ -159,6 +247,7 @@ final class CellDocumentLayout {
             prefix: _continuation(prefix.substring(0, left), row),
           );
           if (standalone) {
+            _rowText[i] = _RowText(row);
             final first = lines.length;
             _addText(row, row.text, prefix);
             for (final line in lines.skip(first)) {
@@ -191,6 +280,73 @@ final class CellDocumentLayout {
   /// have reused shows up here, which is what the reuse regression asserts.
   static int builds = 0;
 
+  /// Rows whose text was laid out rather than reused from a previous layout.
+  /// An edit should lay out only the rows it changed.
+  static int rowLayouts = 0;
+
+  List<_RowText?> _rowText = const [];
+
+  /// Reuse the previous layout's lines for [row] when every input of
+  /// [_addText] is unchanged; otherwise lay the row out and record it.
+  void _addRowText(
+    int index,
+    ProjectedRow row,
+    String prefix,
+    _RowText? cached,
+  ) {
+    final continuation = _continuation(prefix, row);
+    final colors = row.kind == RowKind.codeBlock
+        ? controller.colorsFor(row)
+        : null;
+    final first = lines.length;
+    final reusable = cached?.lines;
+    if (reusable != null &&
+        cached!.prefix == prefix &&
+        cached.continuation == continuation &&
+        identical(cached.colors, colors) &&
+        _sameText(cached, row)) {
+      for (final line in reusable) {
+        lines.add(line._rebind(row));
+      }
+    } else {
+      rowLayouts++;
+      _addText(row, row.text, prefix);
+    }
+    _rowText[index] = _RowText(
+      row,
+      prefix,
+      continuation,
+      colors,
+      lines.sublist(first),
+    );
+  }
+
+  static bool _quoted(ProjectedRow row) =>
+      row.shells.any((s) => s.kind == ShellKind.blockQuote);
+
+  /// Whether [cached] was laid out from the same text, segments and styles.
+  static bool _sameText(_RowText? cached, ProjectedRow row) {
+    if (cached == null) return false;
+    final before = cached.row;
+    if (before.text != row.text ||
+        before.kind != row.kind ||
+        before.headingLevel != row.headingLevel ||
+        before.header != row.header ||
+        _quoted(before) != _quoted(row) ||
+        before.segments.length != row.segments.length) {
+      return false;
+    }
+    for (var i = 0; i < row.segments.length; i++) {
+      final a = before.segments[i], b = row.segments[i];
+      if (a.displayStart != b.displayStart ||
+          a.displayEnd != b.displayEnd ||
+          a.styles != b.styles) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   final FlarkCellController controller;
   final String source;
   final Projection? projection;
@@ -206,11 +362,10 @@ final class CellDocumentLayout {
   (int, int)? sourceWindow;
   final _rowLines = <int, List<(int, CellLine)>>{};
   final images = <CellImageSlot>[];
-  late final _imageResources =
-      controller.editor.document.resources
-          .where((resource) => resource.isImage)
-          .toList()
-        ..sort((a, b) => a.contentStart.compareTo(b.contentStart));
+  // The image-only view: every edit builds a layout, and the full resource
+  // list also resolves the visible text of every link in the document.
+  late final _imageResources = controller.editor.document.images.toList()
+    ..sort((a, b) => a.contentStart.compareTo(b.contentStart));
   int _imageIndex = 0;
   late final int colorRevision;
   static const _widths = DefaultWidthResolver();
@@ -505,16 +660,14 @@ final class CellDocumentLayout {
     return (offset) {
       var style = base;
       if (colors != null) {
-        while (colorIndex < colors.spans.length &&
-            colors.spans[colorIndex].end <= offset) {
+        while (colorIndex < colors.tokens.length &&
+            colors.tokens[colorIndex].end <= offset) {
           colorIndex++;
         }
-        if (colorIndex < colors.spans.length) {
-          final span = colors.spans[colorIndex];
-          if (offset >= span.start) {
-            final role = codeSyntaxRole(
-              span.scopes.lastOrNull?.split('.').first,
-            );
+        if (colorIndex < colors.tokens.length) {
+          final token = colors.tokens[colorIndex];
+          if (offset >= token.start) {
+            final role = codeSyntaxRole(token.kind);
             style = style.merge(theme.syntax[role] ?? CellStyle.none);
           }
         }

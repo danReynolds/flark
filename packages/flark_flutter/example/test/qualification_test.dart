@@ -40,5 +40,28 @@ void main() {
         expect(e.source, source);
       }
     });
+    test('profile $shape start-site rounds apply and restore the source', () {
+      final source = boundedProfileSource(
+        backend,
+        shape,
+        candidateLiveBytes - profileStartHeadroom,
+      );
+      final e = FlarkEditor(
+        backend,
+        text: source,
+        syncLimit: candidateLiveBytes,
+        liveLimits: candidateLiveLimits,
+      );
+      final caret = profileCaret(e.projection, 'start', source);
+      e.apply(SetSelection.caret(caret));
+      for (var round = 0; round < 3; round++) {
+        for (final (name, command) in profileOperations('start')) {
+          expect(e.apply(command), isTrue, reason: '$shape $name');
+          expect(e.sourceMode, isFalse, reason: '$shape $name');
+        }
+        expect(e.source, source, reason: '$shape round $round');
+        expect(e.selection.extent, caret, reason: '$shape round $round');
+      }
+    });
   }
 }

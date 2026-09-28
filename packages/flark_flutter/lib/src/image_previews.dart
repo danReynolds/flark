@@ -26,11 +26,13 @@ class SurfaceImageCache {
   Uri? base;
   FlarkImageProvider? provider;
 
-  void configure(Uri? nextBase, FlarkImageProvider? nextProvider) {
-    if (base == nextBase && provider == nextProvider) return;
+  /// Returns whether the configuration changed, discarding loaded previews.
+  bool configure(Uri? nextBase, FlarkImageProvider? nextProvider) {
+    if (base == nextBase && provider == nextProvider) return false;
     clear();
     base = nextBase;
     provider = nextProvider;
+    return true;
   }
 
   PreviewImage? get(String destination) =>

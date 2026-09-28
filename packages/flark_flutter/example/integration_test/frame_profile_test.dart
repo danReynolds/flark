@@ -14,19 +14,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import '../test_driver/frame_gate.dart';
 import 'native_profile.dart';
 
-int p99(List<int> values) {
-  final sorted = [...values]..sort();
-  return sorted[(sorted.length * .99).ceil() - 1];
-}
+int p99(List<int> values) => nearestRankP99(values);
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
   setUpAll(() => waitForNativeProfile(binding));
   testWidgets(
-    'input to actual raster across admitted document shapes',
+    'edit work and next-frame presentation across admitted shapes',
     (tester) async {
       final backend = await loadBackend();
       final code = await FlarkTreeSitter.load();
@@ -121,7 +119,13 @@ void main() {
           text += ' ' * (bytes - 4 - utf8.encode(text).length);
           text +=
               '\n\nz'; // one byte remains available for each measured insertion.
-          if (bounded) text = boundedProfileSource(backend, shape, bytes);
+          if (bounded) {
+            text = boundedProfileSource(
+              backend,
+              shape,
+              site == 'start' ? bytes - profileStartHeadroom : bytes,
+            );
+          }
           var c = FlarkController(
             FlarkEditor(
               backend,
@@ -140,11 +144,7 @@ void main() {
             continue;
           }
           if (site != 'end') {
-            final rows = c.editor.projection.rows;
-            final row = site == 'start'
-                ? rows.firstWhere((r) => r.text.isNotEmpty)
-                : rows.reduce((a, b) => a.text.length > b.text.length ? a : b);
-            final caret = row.sourceForDisplay(row.text.length ~/ 2);
+            final caret = profileCaret(c.editor.projection, site, text);
             c.command(SetSelection(caret, caret));
           }
           final caret = c.editor.selection.extent;
@@ -201,10 +201,11 @@ void main() {
           requireForeground();
           // ignore: avoid_print
           print('FLARK_FRAME_PROGRESS foreground $shape / $site');
-          final samples = <(int, int, int)>[];
-          final commands = <int>[];
+          final samples = <(int, int, int, String)>[];
+          final operations = profileOperations(site);
           for (var i = 0; i < iterations; i++) {
-            for (final insert in [true, false]) {
+            for (final (operation, command) in operations) {
+              final insert = operation == 'insert';
               requireForeground();
               paints.clear();
               final start = Timeline.now;
@@ -225,11 +226,15 @@ void main() {
                   isTrue,
                 );
               } else {
-                expect(c.command(const DeleteBackward()), isTrue);
+                expect(c.command(command), isTrue, reason: operation);
               }
-              if (i >= 20) commands.add(Timeline.now - start);
+              final commandUs = Timeline.now - start;
               expect(c.editor.sourceMode, isFalse);
-              final revision = c.editor.revision;
+              if (insert) expect(c.text, insertedSource);
+              if (operation == 'delete' || operation.startsWith('undo')) {
+                expect(c.text, text, reason: operation);
+              }
+              final revision = c.editor.revision, expected = c.text;
               await tester.pump();
               requireForeground();
               expect(
@@ -245,10 +250,15 @@ void main() {
                   reason: 'the input frame must draw its caret',
                 );
                 expect(p.caretSource, c.editor.selection.extent);
-                expect(p.snapshot.source, insert ? insertedSource : text);
+                expect(p.snapshot.source, expected);
               }
               if (i >= 20) {
-                samples.add((start, paints.last.frameNumber, insert ? 1 : 0));
+                samples.add((
+                  start,
+                  paints.last.frameNumber,
+                  commandUs,
+                  operation,
+                ));
               }
               await Future<void>.delayed(const Duration(milliseconds: 20));
             }
@@ -263,7 +273,7 @@ void main() {
           }
           final insertUs = <int>[], deleteUs = <int>[];
           final buildUs = <int>[], rasterUs = <int>[], inputToBuildUs = <int>[];
-          final raw = <Map<String, int>>[];
+          final raw = <Map<String, Object>>[];
           for (final s in samples) {
             expect(
               frames,
@@ -274,16 +284,18 @@ void main() {
             final latency =
                 frame.timestampInMicroseconds(FramePhase.rasterFinish) - s.$1;
             expect(latency, greaterThan(0), reason: 'clock calibration');
-            (s.$3 == 1 ? insertUs : deleteUs).add(latency);
+            if (s.$4 == 'insert') insertUs.add(latency);
+            if (s.$4 == 'delete') deleteUs.add(latency);
             buildUs.add(frame.buildDuration.inMicroseconds);
             rasterUs.add(frame.rasterDuration.inMicroseconds);
             inputToBuildUs.add(
               frame.timestampInMicroseconds(FramePhase.buildStart) - s.$1,
             );
             raw.add({
+              'operation': s.$4,
               'startUs': s.$1,
               'frameNumber': s.$2,
-              'insert': s.$3,
+              'commandUs': s.$3,
               'latencyUs': latency,
               'buildUs': buildUs.last,
               'rasterUs': rasterUs.last,
@@ -299,6 +311,19 @@ void main() {
               ),
             });
           }
+          final displayHz =
+              PlatformDispatcher.instance.views.first.display.refreshRate;
+          final gates = {
+            for (final (operation, _) in operations)
+              operation: FrameGateResult(
+                [
+                  for (final sample in raw)
+                    if (sample['operation'] == operation) sample,
+                ],
+                displayHz,
+                budgetUs: frameBudgetUs,
+              ),
+          };
           final receipt = <String, Object>{
             'lifecycle': binding.lifecycleState!.name,
             'lifecycleTransitions': List<String>.of(lifecycleTransitions),
@@ -320,14 +345,18 @@ void main() {
             'projectionP99Us': p99(projectUs.skip(20).toList()),
             'bytes': utf8.encode(text).length,
             'samples': samples.length,
-            'commandP99Us': p99(commands),
+            'commandP99Us': p99([for (final s in samples) s.$3]),
+            // Input-to-raster latency: reported, not gated.
             'insertP99Us': p99(insertUs),
             'deleteP99Us': p99(deleteUs),
+            'gates': {
+              for (final MapEntry(:key, :value) in gates.entries)
+                key: value.toJson(),
+            },
             'buildP99Us': p99(buildUs),
             'rasterP99Us': p99(rasterUs),
             'inputToBuildP99Us': p99(inputToBuildUs),
-            'displayHz':
-                PlatformDispatcher.instance.views.first.display.refreshRate,
+            'displayHz': displayHz,
             'logicalViewport': {
               'width':
                   tester.view.physicalSize.width / tester.view.devicePixelRatio,
@@ -361,18 +390,26 @@ void main() {
         isNotEmpty,
         reason: 'filters must select real workloads',
       );
+      final gateFailures = <String>[];
       for (final r in receipts) {
-        expect(
-          r['insertP99Us'] as int,
-          lessThan(16667),
-          reason: '${r['shape']} insert frame',
-        );
-        expect(
-          r['deleteP99Us'] as int,
-          lessThan(16667),
-          reason: '${r['shape']} delete frame',
-        );
+        final raw = (r['raw'] as List).cast<Map>();
+        for (final operation in {for (final s in raw) s['operation']}) {
+          gateFailures.addAll(
+            FrameGateResult(
+              [
+                for (final s in raw)
+                  if (s['operation'] == operation) s,
+              ],
+              r['displayHz'] as num,
+              budgetUs: frameBudgetUs,
+            ).failures(
+              '${r['shape']} ${r['site']} $operation',
+              nextFrame: true,
+            ),
+          );
+        }
       }
+      expect(gateFailures, isEmpty);
     },
     semanticsEnabled: false,
     timeout: const Timeout(Duration(minutes: 12)),

@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
-import 'package:flark/render_model.dart';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/gestures.dart';
@@ -134,6 +134,7 @@ class _RowLayout {
     this.painter,
     this.width,
     this.codeInfo,
+    this.base,
   );
   ProjectedRow? row;
   int sourceStart;
@@ -142,6 +143,10 @@ class _RowLayout {
   final TextPainter painter;
   double width;
   final String codeInfo;
+
+  /// The row style the painter was shaped with. Reuse requires the same style
+  /// inputs, so a reused row does not merge its text styles again.
+  final TextStyle base;
   Rect rect = Rect.zero;
   Rect blockRect = Rect.zero;
   Offset origin = Offset.zero;
@@ -183,6 +188,11 @@ class RenderFlarkSurface extends RenderBox
     controller.addListener(_changed);
     controller.codeColors?.addListener(_colorsChanged);
   }
+
+  /// Rows shaped by surfaces in this isolate. Reuse regressions assert that an
+  /// edit shapes only the rows whose presentation changed.
+  static int shapedRows = 0;
+
   late final _images = SurfaceImageCache(markNeedsPaint);
   bool showImagePreviews;
   FlarkSurfaceController controller;
@@ -206,6 +216,9 @@ class RenderFlarkSurface extends RenderBox
   List<_RowLayout> _otherRows = [];
   bool _sourceLayout = false;
   int _otherColorRevision = -1;
+  // List marker painters from the last paint. Their style and text scale only
+  // change through _clearRows, which disposes them.
+  Map<String, TextPainter> _markers = {};
   late FlarkEditorSnapshot _snapshot;
   int _revision = 0;
   double? _layoutWidth;
@@ -234,13 +247,25 @@ class RenderFlarkSurface extends RenderBox
     FlarkImageProvider? imageProvider,
     bool showImagePreviews = true,
   }) {
-    this.onFocus = onFocus;
-    this.selectable = selectable;
-    this.onCopy = onCopy;
-    _images.configure(baseUri, imageProvider);
+    // The editor rebuilds for every edit, focus change and toolbar update.
+    // Edits already reach this object through its controller listener, so only
+    // mark the work that a changed argument requires. Invalidating layout and
+    // semantics unconditionally rebuilt the document's semantic text each time.
+    var layout = false, paint = false, semantics = false;
+    if (this.onFocus != onFocus) {
+      this.onFocus = onFocus;
+      semantics = true;
+    }
+    if (this.selectable != selectable || this.onCopy != onCopy) {
+      this.selectable = selectable;
+      this.onCopy = onCopy;
+      semantics = true;
+    }
+    if (_images.configure(baseUri, imageProvider)) paint = true;
     if (this.showImagePreviews != showImagePreviews) {
       this.showImagePreviews = showImagePreviews;
       _clearRows();
+      layout = true;
     }
     if (next != controller) {
       controller.removeListener(_changed);
@@ -251,6 +276,7 @@ class RenderFlarkSurface extends RenderBox
       controller.addListener(_changed);
       controller.codeColors?.addListener(_colorsChanged);
       _clearRows();
+      layout = semantics = true;
     }
     if (nextTheme != theme || nextScaler != textScaler) {
       final geometryChanged =
@@ -267,16 +293,48 @@ class RenderFlarkSurface extends RenderBox
       textScaler = nextScaler;
       _clearRows();
       if (geometryChanged) _needsReveal = true;
+      layout = true;
     }
     if ((!focused && focus) || viewportHeight != height) _needsReveal = true;
+    if (focused != focus || readOnly != readonly || viewportHeight != height) {
+      layout = semantics = true;
+    }
     focused = focus;
     readOnly = readonly;
     viewportHeight = height;
-    scrollOffset = scroll;
-    onPaint = observer;
+    if (onPaint != observer) {
+      onPaint = observer;
+      paint = true;
+    }
     revealDuringLayout = reveal;
-    markNeedsLayout();
-    markNeedsSemanticsUpdate();
+    if (layout) {
+      scrollOffset = scroll;
+      markNeedsLayout();
+    } else {
+      scrolled(scroll);
+      if (paint) markNeedsPaint();
+    }
+    if (semantics) markNeedsSemanticsUpdate();
+  }
+
+  /// The enclosing viewport moved. Only the painted rows and the fences that
+  /// deserve colors change; layout and semantics do not.
+  void scrolled(double offset) {
+    if (offset == scrollOffset) return;
+    scrollOffset = offset;
+    markNeedsPaint();
+    _reportVisibleRows();
+  }
+
+  void _reportVisibleRows() {
+    final top = scrollOffset, bottom = scrollOffset + _visibleHeight;
+    controller.codeColors?.setVisibleRows([
+      for (final layout in _rows)
+        if (layout.row?.kind == RowKind.codeBlock &&
+            layout.rect.bottom > top &&
+            layout.rect.top < bottom)
+          layout.row!.index,
+    ]);
   }
 
   void _changed() {
@@ -295,8 +353,12 @@ class RenderFlarkSurface extends RenderBox
     for (final row in [..._rows, ..._otherRows]) {
       row.painter.dispose();
     }
+    for (final painter in _markers.values) {
+      painter.dispose();
+    }
     _rows = [];
     _otherRows = [];
+    _markers = {};
     _otherColorRevision = -1;
   }
 
@@ -317,9 +379,12 @@ class RenderFlarkSurface extends RenderBox
     super.dispose();
   }
 
+  static bool _quoted(ProjectedRow row) =>
+      row.shells.any((s) => s.kind == ShellKind.blockQuote);
+
   TextStyle _rowStyle(ProjectedRow? row) {
     var s = style;
-    if (row?.shells.any((s) => s.kind == ShellKind.blockQuote) == true) {
+    if (row != null && _quoted(row)) {
       s = s.merge(theme.styles[FlarkTextRole.quote]);
     }
     if (row?.kind == RowKind.heading) {
@@ -383,9 +448,12 @@ class RenderFlarkSurface extends RenderBox
     null => null,
   };
 
+  /// Whether a layout shaped for [before] can paint [after]: the same text,
+  /// segment styles and every input of [_rowStyle].
   bool _samePresentation(ProjectedRow? before, ProjectedRow? after) {
     if (before == null || after == null) return before == after;
     if (before.kind != after.kind ||
+        _quoted(before) != _quoted(after) ||
         before.headingLevel != after.headingLevel ||
         before.header != after.header ||
         before.alignment != after.alignment ||
@@ -419,13 +487,7 @@ class RenderFlarkSurface extends RenderBox
       );
       _needsReveal = false;
     }
-    final visible = Rect.fromLTWH(0, scrollOffset, size.width, _visibleHeight);
-    controller.codeColors?.setVisibleRows([
-      for (final layout in _rows)
-        if (layout.row?.kind == RowKind.codeBlock &&
-            layout.rect.overlaps(visible))
-          layout.row!.index,
-    ]);
+    _reportVisibleRows();
   }
 
   // Input can arrive several times before Flutter lays out the next frame.
@@ -481,11 +543,38 @@ class RenderFlarkSurface extends RenderBox
         }
       }
     }
+    final count = projected?.length ?? sourceLines!.length;
+    String textAt(int i) =>
+        projected?[i].text ?? sourceLines![i].replaceAll('\r', '');
+    String codeInfoOf(ProjectedRow? row) => row?.fenced == true
+        ? _snapshot.source.substring(row!.codeInfoStart, row.codeInfoEnd)
+        : '';
+    bool reusable(int previous, int i) {
+      final layout = old[previous], row = projected?[i];
+      return !(colorsChanged && row?.kind == RowKind.codeBlock) &&
+          layout.text == textAt(i) &&
+          layout.codeInfo == codeInfoOf(row) &&
+          _samePresentation(layout.row, row);
+    }
+
+    // An edit replaces one contiguous run of rows; the rest only move. Match
+    // unchanged rows from both ends so a row inserted or removed near the top
+    // does not misalign, and reshape, every layout after it.
+    var head = 0, tail = 0;
+    while (head < count && head < old.length && reusable(head, head)) {
+      head++;
+    }
+    while (tail < count - head &&
+        tail < old.length - head &&
+        reusable(old.length - 1 - tail, count - 1 - tail)) {
+      tail++;
+    }
+    final kept = List<bool>.filled(old.length, false);
     var sourceOffset = window?.start ?? 0, y = _padding;
     var tableRow = -1, tableTop = 0.0, tableHeight = 0.0;
-    for (var i = 0; i < (projected?.length ?? sourceLines!.length); i++) {
+    for (var i = 0; i < count; i++) {
       final row = projected?[i];
-      final text = row?.text ?? sourceLines![i].replaceAll('\r', '');
+
       final shells =
           row?.shells
               .where(
@@ -521,7 +610,7 @@ class RenderFlarkSurface extends RenderBox
       var width = math.max(24.0, available - (contentLeft - _padding));
       if (row?.kind == RowKind.tableCell) {
         final model = (_snapshot as FlarkLiveSnapshot).document.model;
-        final columns = model.block(row!.tableBlock, BlockField.attr0);
+        final columns = model.blockAttr(row!.tableBlock);
         width = math.max(24, width / columns - 2 * tablePadding);
         x =
             contentLeft +
@@ -540,17 +629,17 @@ class RenderFlarkSurface extends RenderBox
       }
       x += codePadding;
       width = math.max(24.0, width - 2 * codePadding);
-      final base = _rowStyle(row);
-      final codeInfo = row?.fenced == true
-          ? _snapshot.source.substring(row!.codeInfoStart, row.codeInfoEnd)
-          : '';
+      final previous = i < head
+          ? i
+          : i >= count - tail
+          ? i - count + old.length
+          : i < old.length - tail && reusable(i, i)
+          ? i
+          : -1;
       _RowLayout layout;
-      if (i < old.length &&
-          !(colorsChanged && row?.kind == RowKind.codeBlock) &&
-          old[i].text == text &&
-          old[i].codeInfo == codeInfo &&
-          _samePresentation(old[i].row, row)) {
-        layout = old[i];
+      if (previous >= 0) {
+        kept[previous] = true;
+        layout = old[previous];
         layout.row = row;
         layout.sourceStart = row?.sourceStart ?? sourceOffset;
         if (layout.width != width) {
@@ -560,6 +649,8 @@ class RenderFlarkSurface extends RenderBox
           layout.width = width;
         }
       } else {
+        final text = textAt(i), codeInfo = codeInfoOf(row);
+        final base = _rowStyle(row);
         final bits = row?.segments.map((s) => s.styles).toList() ?? [0];
         final span = TextSpan(
           style: base,
@@ -593,6 +684,7 @@ class RenderFlarkSurface extends RenderBox
                     ),
                 ],
         );
+        shapedRows++;
         final painter = TextPainter(
           text: span,
           textDirection: TextDirection.ltr,
@@ -611,9 +703,10 @@ class RenderFlarkSurface extends RenderBox
           painter,
           width,
           codeInfo,
+          base,
         );
-        if (i < old.length) old[i].painter.dispose();
       }
+      final base = layout.base;
       final height = math.max(
         textScaler.scale(base.fontSize!) * (base.height ?? 1.4),
         layout.painter.height,
@@ -680,8 +773,8 @@ class RenderFlarkSurface extends RenderBox
       next.add(layout);
       sourceOffset += (sourceLines?[i].length ?? 0) + 1;
     }
-    for (var i = next.length; i < old.length; i++) {
-      old[i].painter.dispose();
+    for (var i = 0; i < old.length; i++) {
+      if (!kept[i]) old[i].painter.dispose();
     }
     // A table row shares one height across its independently wrapped cells.
     for (var start = 0; start < next.length;) {
@@ -798,7 +891,7 @@ class RenderFlarkSurface extends RenderBox
       final shell = container.shell;
       if (shell.kind == ShellKind.item) {
         if (shell.task &&
-            row.firstLine == model.block(shell.block, BlockField.firstLine) &&
+            row.firstLine == model.blockFirstLine(shell.block) &&
             Rect.fromLTWH(
               container.left,
               layout.origin.dy,
@@ -1018,11 +1111,15 @@ class RenderFlarkSurface extends RenderBox
         for (final image in layout.images)
           if (image.rect.overlaps(visible)) image.resource.destination,
     ]);
+    // Observations exist for tests and qualification probes. Without an
+    // observer, do not rebuild plain text and merged styles on every frame.
+    final observed = onPaint != null;
     final painted = <String>[],
         styles = <List<int>>[],
         selectionRects = <Rect>[];
     final resolvedStyles = <List<TextStyle>>[];
     final paintedImages = <FlarkImageObservation>[];
+    final markers = <String, TextPainter>{};
     for (var i = 0; i < _rows.length; i++) {
       final layout = _rows[i];
       if (!layout.rect.overlaps(visible)) continue;
@@ -1053,18 +1150,20 @@ class RenderFlarkSurface extends RenderBox
             ..style = PaintingStyle.stroke,
         );
         final entry = _images.get(image.resource.destination);
-        paintedImages.add(
-          FlarkImageObservation(
-            image.resource.start,
-            image.resource.destination,
-            image.rect,
-            entry?.info != null
-                ? 'loaded'
-                : entry == null || entry.failed
-                ? 'failed'
-                : 'loading',
-          ),
-        );
+        if (observed) {
+          paintedImages.add(
+            FlarkImageObservation(
+              image.resource.start,
+              image.resource.destination,
+              image.rect,
+              entry?.info != null
+                  ? 'loaded'
+                  : entry == null || entry.failed
+                  ? 'failed'
+                  : 'loading',
+            ),
+          );
+        }
         if (entry?.info != null) {
           paintImage(
             canvas: canvas,
@@ -1142,8 +1241,7 @@ class RenderFlarkSurface extends RenderBox
           }
           if (shell.kind == ShellKind.item) {
             final model = (_snapshot as FlarkLiveSnapshot).document.model;
-            if (row.firstLine ==
-                model.block(shell.block, BlockField.firstLine)) {
+            if (row.firstLine == model.blockFirstLine(shell.block)) {
               if (shell.task) {
                 // Task state is UI geometry, independent of symbol-font fallback.
                 final fontSize = textScaler.scale(style.fontSize!);
@@ -1195,14 +1293,20 @@ class RenderFlarkSurface extends RenderBox
                 final marker = shell.ordered
                     ? '${shell.start + shell.itemIndex}.'
                     : '•';
-                final painter = TextPainter(
-                  text: TextSpan(
-                    text: marker,
-                    style: style.merge(theme.styles[FlarkTextRole.listMarker]),
-                  ),
-                  textScaler: textScaler,
-                  textDirection: TextDirection.ltr,
-                )..layout();
+                // Markers visible in the previous paint keep their shaped
+                // painters; typing or scrolling reshaped every one per frame.
+                final painter = markers[marker] ??=
+                    _markers.remove(marker) ??
+                    (TextPainter(
+                      text: TextSpan(
+                        text: marker,
+                        style: style.merge(
+                          theme.styles[FlarkTextRole.listMarker],
+                        ),
+                      ),
+                      textScaler: textScaler,
+                      textDirection: TextDirection.ltr,
+                    )..layout());
                 final gutter = math.max(
                   0.0,
                   container.width - metric(FlarkMetric.listMarkerGap),
@@ -1221,7 +1325,6 @@ class RenderFlarkSurface extends RenderBox
                         layout.origin.dy,
                       ),
                 );
-                painter.dispose();
               }
             }
           }
@@ -1236,7 +1339,7 @@ class RenderFlarkSurface extends RenderBox
         );
         for (final box in boxes) {
           final rect = box.toRect().shift(layout.origin);
-          selectionRects.add(rect);
+          if (observed) selectionRects.add(rect);
           canvas.drawRect(
             rect.shift(offset),
             Paint()..color = color(FlarkColorRole.selection),
@@ -1244,6 +1347,7 @@ class RenderFlarkSurface extends RenderBox
         }
       }
       layout.painter.paint(canvas, offset + layout.origin);
+      if (!observed) continue;
       painted.add(layout.painter.text!.toPlainText());
       styles.add(List.unmodifiable(layout.styles));
       resolvedStyles.add(
@@ -1259,6 +1363,10 @@ class RenderFlarkSurface extends RenderBox
         ),
       );
     }
+    for (final painter in _markers.values) {
+      painter.dispose();
+    }
+    _markers = markers;
     final candidateCaret = focused && !readOnly && selected.isCollapsed
         ? caretRect
         : null;

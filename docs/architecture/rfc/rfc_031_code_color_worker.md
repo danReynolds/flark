@@ -12,8 +12,10 @@ Keep Markdown recognition, source edits, indentation, caret legality and history
 in the synchronous V5 transaction. Run optional Tree-sitter syntax coloring in
 an owned worker. A color result must match the complete current code-body source
 and selected language. While it is pending, render the current text with the
-plain code style. Colors may not affect font metrics, selection, layout, Markdown
-interpretation, indentation decisions or whether markers are hidden.
+previous colors shifted through the edit (amended 2026-09-22, below); a snippet
+with no previous colors renders plain. Colors may not affect font metrics,
+selection, layout, Markdown interpretation, indentation decisions or whether
+markers are hidden.
 
 This is a narrowly specified addition to RFC 030, whose appendix excludes an
 asynchronous live-rendered tier. It does not enable such a tier for Markdown or
@@ -77,5 +79,22 @@ queue is not a general multi-document background queue.
 The worker direction is rejected if its plain-to-colored transition is distracting
 or its lifecycle/scheduling burden grows into a second editor. At that point,
 compare a deliberately smaller synchronous highlighting contract against a
-supported upstream API change. Do not restore stale colors, fork private
-highlighter internals, or silently lower the 8,192-unit admission limit.
+supported upstream API change. Do not paint old token ranges unshifted, fork
+private highlighter internals, or silently lower the 8,192-unit admission limit.
+
+## Amendment 2026-09-22: shifted colors while a result is pending
+
+Painting plain until the exact result arrived made large snippets and browser
+workers flash plain, then colored, on every keystroke. The owner accepted
+mapped colors instead. When a fence's text changes, `FlarkCodeHighlighting`
+derives provisional colors from that fence's previous colors
+(`shiftCodeHighlight`): the unchanged prefix and suffix keep their tokens, the
+suffix shifts by the length change, a short single-line insertion continues
+the token it extends and a larger insertion stays plain. An edit that keeps no
+text borrows nothing. The exact analysis replaces the provisional colors as
+soon as it arrives.
+
+For a frame or two, colors next to the edit can be wrong, for example after
+typing a quote that opens a string. Geometry, source, selection and history
+are unaffected, because colors never change them. Both hosts consume the same
+`CodeHighlight` tokens, so Flutter and Fleury behave identically.

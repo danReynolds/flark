@@ -11,9 +11,11 @@ repository root is a non-publishable workspace.
 Active code:
 
 - `native/flark_parse`: Rust. Unmodified comrak plus a single-pass extraction
-  to a flat render model. The schema is `schema/render_model_v4.json`;
+  to a flat render model. The schema is `schema/render_model_v5.json`;
   `tool/gen_schema.py` derives `src/schema.rs`, `SCHEMA.md`, and the Dart
-  constants. Three-function C ABI on cdylib, staticlib, and wasm32.
+  constants. `src/records.rs` is the extractor's richer internal layout and
+  `records::expand` rebuilds it from a published model for tests and tools.
+  Three-function C ABI on cdylib, staticlib, and wasm32.
 - `packages/flark`: pure Dart, must not import Flutter. `src/parse` holds the
   render model views and the parse transports (FFI on the VM, Wasm through
   `dart:js_interop` on the web); `src/kernel` holds the projection (rows,
@@ -103,8 +105,16 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
   fixtures (minus the registered deviations), and the extraction is faithful
   to comrak (zero deviations, schema invariants). Do not report one as the
   other.
-- Coordinates are explicit everywhere: every range carries UTF-8 bytes and
-  UTF-16 code units, and hidden bytes of a run are source minus content.
+- Coordinates are explicit: the published model carries UTF-16 code units,
+  the host string's unit, and hidden units of a run are source minus content.
+  The extractor works in UTF-8 bytes and UTF-16 internally; tests expand a
+  model back to bytes to check it against the source.
+- `FlarkEditor` and `FlarkReadDocument` build each projection with
+  `previous:`, reusing the rows of leaf blocks outside the edit whose records
+  match. `checkInvariants` compares every editor projection with a fresh one,
+  and `test/incremental_projection_test.dart` is the differential test. A new
+  `ProjectedRow` field must be shifted by `ProjectedRow._reused` and printed
+  by `describeRow` in `test/support/invariants.dart`, or no test sees it.
 - The build hook resolves a bundled `prebuilt/<triple>/` library, then a
   consumer's `hooks: user_defines: flark: prebuilt_dir:`, then a cargo build.
   The hook runner sanitizes environment variables; they are not a channel.

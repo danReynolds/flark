@@ -31,7 +31,7 @@ class _ReadCellController implements FlarkCellController {
   @override
   String languageInfo(ProjectedRow row) => '';
   @override
-  CodeAnalysis? colorsFor(ProjectedRow row) => null;
+  CodeHighlight? colorsFor(ProjectedRow row) => null;
   @override
   void setVisibleRows(Iterable<int> rows) {}
 }

@@ -48,17 +48,18 @@ extension _InlineFormatting on FlarkEditor {
     final model = _doc.model;
     final owners = <Owner>[];
     for (
-      var r = model.firstRunOfBlock(row.block);
-      r < model.runCount && model.run(r, RunField.block) == row.block;
+      var r = model.firstRunOfBlock(row.block),
+          end = model.firstRunOfBlock(row.block + 1);
+      r < end;
       r++
     ) {
       final owner = Owner(
         r,
-        model.run(r, RunField.kind),
-        model.run(r, RunField.startUtf16),
-        model.run(r, RunField.endUtf16),
-        model.run(r, RunField.contentStartUtf16),
-        model.run(r, RunField.contentEndUtf16),
+        model.runKind(r),
+        model.runStart(r),
+        model.runEnd(r),
+        model.runContentStart(r),
+        model.runContentEnd(r),
       );
       if (owner.style == style) owners.add(owner);
     }

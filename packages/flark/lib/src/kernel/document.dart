@@ -162,7 +162,12 @@ final class FlarkDocument {
       newSource,
       const FlarkSelection.collapsed(0),
       model,
-      Projection.of(model, newSource, options: projection.options),
+      Projection.of(
+        model,
+        newSource,
+        options: projection.options,
+        previous: projection,
+      ),
       normalizedLineEndings,
     );
     return doc.withSelection(newSelection);
@@ -193,105 +198,180 @@ final class FlarkDocument {
 
   // ------------------------------------------------------------ positions
 
-  /// Hidden intervals of inline runs (delimiters, break markers) in UTF-16,
-  /// sorted by start.
-  /// One pass over the runs for both interval sets: hidden syntax, and the
+  // Interval sets below are flat `[start, end, start, end, ...]` lists sorted
+  // by start. They are rebuilt for every new source, so they avoid sorting
+  // and per-interval records: sorting the whole document's intervals was a
+  // fifth of a keystroke on a dense 32 KiB document.
+
+  /// Hidden intervals of inline runs (delimiters, break markers), and the
   /// escapes whose backslash and escaped character are one caret unit.
-  late final ({List<(int, int)> hidden, List<(int, int)> escapes})
-  _runIntervals = () {
-    final out = <(int, int)>[];
-    final escapes = <(int, int)>[];
-    var sorted = true, last = -1;
-    void add(int a, int b) {
-      if (a < last) sorted = false;
-      last = a;
-      out.add((a, b));
+  /// Runs arrive in document order and nest, so openings are already sorted
+  /// and each closing is emitted once the walk passes its start.
+  late final ({List<int> hidden, List<int> escapes}) _runPairs = () {
+    if (_positions != null) return _positions._runPairs;
+    final hidden = <int>[], escapes = <int>[], pending = <int>[];
+    var sorted = true;
+    void emit(int a, int b) {
+      if (hidden.isNotEmpty && a < hidden[hidden.length - 2]) sorted = false;
+      hidden
+        ..add(a)
+        ..add(b);
+    }
+
+    void flush(int position) {
+      while (pending.isNotEmpty && pending[pending.length - 2] <= position) {
+        final b = pending.removeLast(), a = pending.removeLast();
+        emit(a, b);
+      }
     }
 
     for (var r = 0; r < model.runCount; r++) {
-      final s = model.run(r, RunField.startUtf16),
-          e = model.run(r, RunField.endUtf16);
-      final cs = model.run(r, RunField.contentStartUtf16),
-          ce = model.run(r, RunField.contentEndUtf16);
-      if (cs > s) add(s, cs);
-      if (e > ce) add(ce, e);
-      if (model.run(r, RunField.kind) == RunKind.escape && ce > s) {
-        escapes.add((s, ce));
+      final s = model.runStart(r), e = model.runEnd(r);
+      final cs = model.runContentStart(r), ce = model.runContentEnd(r);
+      flush(s);
+      if (cs > s) emit(s, cs);
+      if (e > ce) {
+        pending
+          ..add(ce)
+          ..add(e);
+      }
+      if (model.runKind(r) == RunKind.escape && ce > s) {
+        escapes
+          ..add(s)
+          ..add(ce);
       }
     }
-    if (!sorted) out.sort((a, b) => a.$1 - b.$1);
-    return (hidden: List<(int, int)>.unmodifiable(out), escapes: escapes);
+    flush(source.length);
+    // Runs that overlap without nesting would break the order; sort then.
+    return (hidden: sorted ? hidden : _sortPairs(hidden), escapes: escapes);
   }();
 
+  /// Hidden intervals of inline runs (delimiters, break markers) in UTF-16,
+  /// sorted by start.
   late final List<(int, int)> hiddenIntervals =
-      _positions?.hiddenIntervals ?? _runIntervals.hidden;
+      _positions?.hiddenIntervals ??
+      List<(int, int)>.unmodifiable([
+        for (var i = 0; i < _runPairs.hidden.length; i += 2)
+          (_runPairs.hidden[i], _runPairs.hidden[i + 1]),
+      ]);
 
-  /// Source ranges represented by one non-exact display glyph (entities,
-  /// escapes, and normalized code spans) are atomic caret units.
-  late final List<(int, int)> _atomicIntervals = () {
-    if (_positions != null) return _positions._atomicIntervals;
-    // An escape displays one character behind a hidden backslash, so both of
-    // its ends are legal but the offset between them is a typing context that
-    // re-targets the escape: `a\*b` becomes `a\Z*b`, unhiding the backslash
-    // and arming the asterisk. The pair is one caret unit.
-    final intervals = <(int, int)>[..._runIntervals.escapes];
+  /// Source ranges represented by one non-exact display glyph (normalized
+  /// code spans, replacements, line breaks) and displayed graphemes joined
+  /// across segments are atomic caret units. Escapes are in [_runPairs].
+  late final List<int> _rowAtomicPairs = () {
+    if (_positions != null) return _positions._rowAtomicPairs;
+    final pairs = <int>[];
+    var sorted = true;
+    void add(int a, int b) {
+      final n = pairs.length;
+      if (n > 0 &&
+          (a < pairs[n - 2] || a == pairs[n - 2] && b < pairs[n - 1])) {
+        sorted = false;
+      }
+      pairs
+        ..add(a)
+        ..add(b);
+    }
+
     for (final row in projection.rows) {
       for (final segment in row.segments) {
         if (!segment.exact && segment.sourceEnd > segment.sourceStart) {
-          intervals.add((segment.sourceStart, segment.sourceEnd));
+          add(segment.sourceStart, segment.sourceEnd);
         }
       }
       // Hidden syntax can separate source graphemes that become one displayed
       // grapheme, such as *a* followed by a combining accent. Keep the whole
-      // displayed unit atomic, including any replacement it intersects.
-      var offset = 0, segmentIndex = 0;
-      for (final grapheme in row.text.characters) {
-        final end = offset + grapheme.length;
-        while (segmentIndex < row.segments.length &&
-            row.segments[segmentIndex].displayEnd <= offset) {
-          segmentIndex++;
+      // displayed unit atomic, including any replacement it intersects. Only
+      // a grapheme crossing a segment boundary can be joined that way, so
+      // inspect the boundaries rather than every grapheme of the document. No
+      // grapheme rule joins two code units below U+0300 except CR LF.
+      final text = row.text, segments = row.segments;
+      var handled = 0;
+      for (var i = 0; i < segments.length; i++) {
+        final boundary = segments[i].displayEnd;
+        if (boundary <= 0 || boundary >= text.length || boundary < handled) {
+          continue;
         }
-        if (segmentIndex < row.segments.length &&
-            row.segments[segmentIndex].displayEnd < end) {
-          final first = row.segments[segmentIndex];
-          var lastIndex = segmentIndex;
-          while (row.segments[lastIndex].displayEnd < end) {
-            lastIndex++;
-          }
-          final last = row.segments[lastIndex];
-          final startSource = first.exact
-              ? first.sourceStart + offset - first.displayStart
-              : first.sourceStart;
-          final endSource = last.exact
-              ? last.sourceStart + end - last.displayStart
-              : last.sourceEnd;
-          if (endSource > startSource) {
-            intervals.add((startSource, endSource));
-          }
+        final before = text.codeUnitAt(boundary - 1),
+            after = text.codeUnitAt(boundary);
+        if (before < 0x300 &&
+            after < 0x300 &&
+            (before != 0x0D || after != 0x0A)) {
+          continue;
         }
-        offset = end;
+        final range = CharacterRange.at(text, boundary);
+        if (range.isEmpty) continue;
+        final offset = range.stringBeforeLength;
+        final end = offset + range.current.length;
+        handled = end;
+        var firstIndex = i;
+        while (firstIndex > 0 && segments[firstIndex - 1].displayEnd > offset) {
+          firstIndex--;
+        }
+        var lastIndex = firstIndex;
+        while (segments[lastIndex].displayEnd < end) {
+          lastIndex++;
+        }
+        final first = segments[firstIndex], last = segments[lastIndex];
+        final startSource = first.exact
+            ? first.sourceStart + offset - first.displayStart
+            : first.sourceStart;
+        final endSource = last.exact
+            ? last.sourceStart + end - last.displayStart
+            : last.sourceEnd;
+        if (endSource > startSource) add(startSource, endSource);
       }
     }
-    return intervals..sort((a, b) => a.$1 - b.$1);
+    // Definition rows come before leaf rows and blank rows after them.
+    return sorted ? pairs : _sortPairs(pairs);
   }();
 
-  static List<(int, int)> _mergeIntervals(
-    List<(int, int)> intervals, {
+  /// [pairs] sorted by start, then end.
+  static List<int> _sortPairs(List<int> pairs) {
+    final records = [
+      for (var i = 0; i < pairs.length; i += 2) (pairs[i], pairs[i + 1]),
+    ]..sort((a, b) => a.$1 != b.$1 ? a.$1 - b.$1 : a.$2 - b.$2);
+    return [
+      for (final (a, b) in records) ...[a, b],
+    ];
+  }
+
+  /// Merge sorted pair lists into one sorted list, joining intervals that
+  /// overlap, or that also touch when [joinTouching].
+  static List<int> _mergePairs(
+    List<List<int>> sources, {
     required bool joinTouching,
   }) {
-    if (intervals.isEmpty) return const [];
-    intervals.sort((a, b) => a.$1 != b.$1 ? a.$1 - b.$1 : a.$2 - b.$2);
-    final merged = <(int, int)>[intervals.first];
-    for (final next in intervals.skip(1)) {
-      final last = merged.last;
-      final joins = joinTouching ? next.$1 <= last.$2 : next.$1 < last.$2;
-      if (joins) {
-        if (next.$2 > last.$2) merged[merged.length - 1] = (last.$1, next.$2);
+    final heads = List<int>.filled(sources.length, 0);
+    final merged = <int>[];
+    while (true) {
+      var pick = -1;
+      for (var k = 0; k < sources.length; k++) {
+        final i = heads[k], source = sources[k];
+        if (i >= source.length) continue;
+        if (pick < 0) {
+          pick = k;
+          continue;
+        }
+        final j = heads[pick], best = sources[pick];
+        if (source[i] < best[j] ||
+            source[i] == best[j] && source[i + 1] < best[j + 1]) {
+          pick = k;
+        }
+      }
+      if (pick < 0) return merged;
+      final source = sources[pick], i = heads[pick];
+      heads[pick] = i + 2;
+      final a = source[i], b = source[i + 1];
+      final n = merged.length;
+      if (n > 0 && (joinTouching ? a <= merged[n - 1] : a < merged[n - 1])) {
+        if (b > merged[n - 1]) merged[n - 1] = b;
       } else {
-        merged.add(next);
+        merged
+          ..add(a)
+          ..add(b);
       }
     }
-    return merged;
   }
 
   /// Legal source offsets, restricted to Unicode grapheme boundaries and to
@@ -300,31 +380,33 @@ final class FlarkDocument {
     if (_positions != null) return _positions._legalOffsets;
     // This is a linear merge over three ordered interval streams. Calling an
     // interval scan for every grapheme made dense 64 KiB documents quadratic.
-    final blocked = _blockedIntervals;
+    final blocked = _blockedPairs;
     final caretSpans = projection.hasCaretSpans
-        ? _mergeIntervals([
-            for (var line = 0; line < model.lineCount; line++)
-              ...projection.lineSpans(line),
+        ? _mergePairs([
+            _sortPairs([
+              for (var line = 0; line < model.lineCount; line++)
+                for (final (a, b) in projection.lineSpans(line)) ...[a, b],
+            ]),
           ], joinTouching: true)
-        : <(int, int)>[(source.length, source.length)];
+        : <int>[source.length, source.length];
     final legal = <int>[];
     var blockedIndex = 0, caretIndex = 0;
     void consider(int boundary) {
       while (blockedIndex < blocked.length &&
-          blocked[blockedIndex].$2 <= boundary) {
-        blockedIndex++;
+          blocked[blockedIndex + 1] <= boundary) {
+        blockedIndex += 2;
       }
       if (blockedIndex < blocked.length &&
-          blocked[blockedIndex].$1 < boundary &&
-          boundary < blocked[blockedIndex].$2) {
+          blocked[blockedIndex] < boundary &&
+          boundary < blocked[blockedIndex + 1]) {
         return;
       }
       while (caretIndex < caretSpans.length &&
-          caretSpans[caretIndex].$2 < boundary) {
-        caretIndex++;
+          caretSpans[caretIndex + 1] < boundary) {
+        caretIndex += 2;
       }
       if (caretIndex < caretSpans.length &&
-          caretSpans[caretIndex].$1 <= boundary) {
+          caretSpans[caretIndex] <= boundary) {
         legal.add(boundary);
       }
     }
@@ -338,27 +420,31 @@ final class FlarkDocument {
     return legal;
   }();
 
-  late final List<(int, int)> _blockedIntervals =
-      _positions?._blockedIntervals ??
-      _mergeIntervals([
-        ...hiddenIntervals,
-        ..._atomicIntervals,
+  /// Intervals no caret may be strictly inside: hidden syntax and atomic
+  /// display units, merged where they overlap. Touching intervals stay
+  /// apart, because the offset between them is legal.
+  late final List<int> _blockedPairs =
+      _positions?._blockedPairs ??
+      _mergePairs([
+        _runPairs.hidden,
+        _runPairs.escapes,
+        _rowAtomicPairs,
       ], joinTouching: false);
 
   /// Whether a source offset is a legal caret position.
   bool isLegal(int offset) {
     if (offset < 0 || offset > source.length) return false;
-    final blocked = _blockedIntervals;
-    var lo = 0, hi = blocked.length;
+    final blocked = _blockedPairs;
+    var lo = 0, hi = blocked.length >> 1;
     while (lo < hi) {
       final mid = (lo + hi) >> 1;
-      if (blocked[mid].$1 < offset) {
+      if (blocked[mid << 1] < offset) {
         lo = mid + 1;
       } else {
         hi = mid;
       }
     }
-    if (lo > 0 && offset < blocked[lo - 1].$2) return false;
+    if (lo > 0 && offset < blocked[(lo << 1) - 1]) return false;
     final spans = projection.lineSpans(model.lineOfUtf16(offset));
     if (!spans.any((s) => s.$1 <= offset && offset <= s.$2)) {
       if (projection.hasCaretSpans || offset != source.length) return false;
@@ -374,9 +460,10 @@ final class FlarkDocument {
   int legalize(int offset) {
     var o = offset.clamp(0, source.length);
     if (isLegal(o)) return o;
-    for (final h in hiddenIntervals) {
-      if (h.$1 >= o) break;
-      if (o < h.$2) o = h.$2;
+    final hidden = _runPairs.hidden;
+    for (var i = 0; i < hidden.length; i += 2) {
+      if (hidden[i] >= o) break;
+      if (o < hidden[i + 1]) o = hidden[i + 1];
     }
     if (isLegal(o)) return o;
     if (_legalOffsets.isEmpty) return source.length;
@@ -415,11 +502,14 @@ final class FlarkDocument {
     final pos = displayOf(o);
     final seen = <int>{o};
     final queue = [o];
+    final hidden = _runPairs.hidden;
     while (queue.isNotEmpty) {
       final x = queue.removeLast();
-      for (final h in hiddenIntervals) {
-        if (h.$2 == x && seen.add(h.$1)) queue.add(h.$1);
-        if (h.$1 == x && seen.add(h.$2)) queue.add(h.$2);
+      for (var i = 0; i < hidden.length; i += 2) {
+        if (hidden[i + 1] == x && seen.add(hidden[i])) queue.add(hidden[i]);
+        if (hidden[i] == x && seen.add(hidden[i + 1])) {
+          queue.add(hidden[i + 1]);
+        }
       }
     }
     final out = <int>[];
@@ -463,24 +553,21 @@ final class FlarkDocument {
 
   Owner _owner(int r) => Owner(
     r,
-    model.run(r, RunField.kind),
-    model.run(r, RunField.startUtf16),
-    model.run(r, RunField.endUtf16),
-    model.run(r, RunField.contentStartUtf16),
-    model.run(r, RunField.contentEndUtf16),
+    model.runKind(r),
+    model.runStart(r),
+    model.runEnd(r),
+    model.runContentStart(r),
+    model.runContentEnd(r),
   );
 
   /// The runs of the leaf block projected at [offset]: (first, end).
   (int, int) _runsNear(int offset) {
     final row = rowAt(offset);
     if (row.block < 0) return (0, 0);
-    final first = model.firstRunOfBlock(row.block);
-    var end = first;
-    while (end < model.runCount &&
-        model.run(end, RunField.block) == row.block) {
-      end++;
-    }
-    return (first, end);
+    return (
+      model.firstRunOfBlock(row.block),
+      model.firstRunOfBlock(row.block + 1),
+    );
   }
 
   /// Styled owners whose content contains [offset], outermost first. An
@@ -490,10 +577,10 @@ final class FlarkDocument {
     final (first, end) = _runsNear(offset);
     return [
       for (var r = first; r < end; r++)
-        if (_owns(model.run(r, RunField.kind)) &&
-            model.run(r, RunField.kind) != RunKind.escape &&
-            offset >= model.run(r, RunField.contentStartUtf16) &&
-            offset <= model.run(r, RunField.contentEndUtf16))
+        if (_owns(model.runKind(r)) &&
+            model.runKind(r) != RunKind.escape &&
+            offset >= model.runContentStart(r) &&
+            offset <= model.runContentEnd(r))
           _owner(r),
     ];
   }
@@ -503,9 +590,9 @@ final class FlarkDocument {
     final (first, last) = _runsNear(start);
     return [
       for (var r = first; r < last; r++)
-        if (_owns(model.run(r, RunField.kind)) &&
-            model.run(r, RunField.contentStartUtf16) == start &&
-            model.run(r, RunField.contentEndUtf16) == end)
+        if (_owns(model.runKind(r)) &&
+            model.runContentStart(r) == start &&
+            model.runContentEnd(r) == end)
           _owner(r),
     ];
   }
@@ -515,10 +602,9 @@ final class FlarkDocument {
     final (first, end) = _runsNear(offset);
     return [
       for (var r = first; r < end; r++)
-        if (_owns(model.run(r, RunField.kind)) &&
-            model.run(r, RunField.kind) != RunKind.escape &&
-            (model.run(r, RunField.startUtf16) == offset ||
-                model.run(r, RunField.endUtf16) == offset))
+        if (_owns(model.runKind(r)) &&
+            model.runKind(r) != RunKind.escape &&
+            (model.runStart(r) == offset || model.runEnd(r) == offset))
           _owner(r),
     ];
   }
@@ -544,25 +630,35 @@ final class FlarkDocument {
   int start,
   int end,
 ) {
-  for (final interval in document._blockedIntervals) {
-    if (interval.$1 >= end) break;
-    if (interval.$1 < start && start < interval.$2) start = interval.$1;
-    if (interval.$1 < end && end < interval.$2) end = interval.$2;
+  final blocked = document._blockedPairs;
+  for (var i = 0; i < blocked.length; i += 2) {
+    final a = blocked[i], b = blocked[i + 1];
+    if (a >= end) break;
+    if (a < start && start < b) start = a;
+    if (a < end && end < b) end = b;
   }
   return (start: start, end: end);
 }
 
 /// Package-internal construction after the editor has admitted a parsed model.
+/// [previous], the document being replaced, lends the projection the rows of
+/// blocks the edit did not touch.
 FlarkDocument projectFlarkDocument(
   String source,
   RenderModel model,
   FlarkSelection selection,
-  ProjectionOptions options,
-) => FlarkDocument._(
+  ProjectionOptions options, {
+  FlarkDocument? previous,
+}) => FlarkDocument._(
   source,
   const FlarkSelection.collapsed(0),
   model,
-  Projection.of(model, source, options: options),
+  Projection.of(
+    model,
+    source,
+    options: options,
+    previous: previous?.projection,
+  ),
   false,
 ).withSelection(selection);
 

@@ -1,12 +1,14 @@
-//! Print blocks, content records, and runs for one Markdown string (argv[1]).
+//! Print blocks, content records, and runs for one Markdown string (argv[1]),
+//! expanded from the published model into the internal layout.
 use flark_parse::model::Extractor;
-use flark_parse::schema::{self, block, content, definition, header, run};
+use flark_parse::records::{self, block, content, definition, header, run};
 fn main() {
     let arg = std::env::args().nth(1).expect("markdown or @file");
     let src = if let Some(path) = arg.strip_prefix('@') { std::fs::read_to_string(path).expect("read") } else { arg.replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t") };
-    let (w, devs) = Extractor::extract_with_report(&src);
+    let (published, devs) = Extractor::extract_with_report(&src);
+    let w = records::expand(&src, &published).expect("published model expands");
     let (nl, nb, nc, nr) = (w[header::LINE_COUNT] as usize, w[header::BLOCK_COUNT] as usize, w[header::CONTENT_COUNT] as usize, w[header::RUN_COUNT] as usize);
-    let bo = schema::HEADER_WORDS + nl * 2; let co = bo + nb * block::WORDS; let ro = co + nc * content::WORDS;
+    let bo = records::HEADER_WORDS + nl * 2; let co = bo + nb * block::WORDS; let ro = co + nc * content::WORDS;
     println!("src {:?}", src);
     for i in 0..nb { let b = &w[bo + i * block::WORDS..]; let (s, e) = (b[block::START_BYTE] as usize, b[block::END_BYTE] as usize); println!("block {i} kind {} parent {} {s}..{e} {:?} lines {}+{} content {}+{} attrs {} {} {} flags {}", b[block::KIND], b[block::PARENT] as i32, &src[s.min(src.len())..e.min(src.len())], b[block::FIRST_LINE], b[block::LINE_COUNT], b[block::CONTENT_OFFSET], b[block::CONTENT_COUNT], b[block::ATTR0], b[block::ATTR1], b[block::ATTR2], b[block::FLAGS]); }
     for i in 0..nc { let c = &w[co + i * content::WORDS..]; let (s, e) = (c[content::START_BYTE] as usize, c[content::END_BYTE] as usize); println!("  content {i} line {} {s}..{e} {:?} virt {} prefix {}", c[content::LINE], &src[s.min(src.len())..e.min(src.len())], c[content::VIRTUAL_LEADING_SPACES], c[content::PREFIX_START_BYTE]); }

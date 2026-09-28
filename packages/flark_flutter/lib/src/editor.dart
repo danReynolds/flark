@@ -129,9 +129,20 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     });
   }
 
+  // Resolved once per ambient theme or override change, not per edit: the
+  // editor rebuilds for every keystroke to refresh its toolbar.
+  FlarkThemeData? _theme;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _theme = null;
+  }
+
   @override
   void didUpdateWidget(FlarkEditorWidget old) {
     super.didUpdateWidget(old);
+    if (old.theme != widget.theme || old.style != widget.style) _theme = null;
     if (old.controller != c || old.readOnly != widget.readOnly) {
       _dismissLink();
       _resourceSession?.close();
@@ -160,10 +171,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   void _scrolled() {
     _dismissLink();
-    if (mounted) {
-      setState(() {});
-      _scheduleGeometry();
-    }
+    if (!mounted) return;
+    // Only the surface's viewport changed. Rebuilding this widget per scroll
+    // frame also rebuilt the toolbar and re-resolved the theme.
+    _surface?.scrolled(_scroll.hasClients ? _scroll.offset : 0);
+    _scheduleGeometry();
   }
 
   void _focusChanged() {
@@ -775,7 +787,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   @override
   Widget build(BuildContext context) {
     final e = c.editor;
-    final resolvedTheme = FlarkThemeData.resolve(
+    final resolvedTheme = _theme ??= FlarkThemeData.resolve(
       context,
       overrides: widget.theme,
       bodyStyle: widget.style,

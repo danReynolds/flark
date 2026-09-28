@@ -35,6 +35,9 @@ final class FlarkLiveLimits {
     return true;
   }
 
+  bool _admitsStats(_SourceStats stats) =>
+      stats.lines <= lines && stats.widestLine <= lineCodeUnits;
+
   bool _admitsSource(String source) {
     var lineCount = 1, width = 0;
     for (var i = 0; i < source.length; i++) {
@@ -47,6 +50,55 @@ final class FlarkLiveLimits {
     }
     return lineCount <= lines;
   }
+}
+
+/// Everything a commit checks before parsing, gathered in one pass over the
+/// candidate: the source contract (no bare CR, well-formed UTF-16), UTF-8
+/// size, line count and widest line in code units. Separate checks walked the
+/// whole document four times per keystroke.
+final class _SourceStats {
+  const _SourceStats._(this.valid, this.utf8Bytes, this.lines, this.widestLine);
+
+  static const _invalid = _SourceStats._(false, 0, 0, 0);
+
+  factory _SourceStats.of(String source) {
+    var bytes = 0, lines = 1, width = 0, widest = 0;
+    for (var i = 0; i < source.length; i++) {
+      final unit = source.codeUnitAt(i);
+      if (unit == 0x0A) {
+        bytes++;
+        lines++;
+        if (width > widest) widest = width;
+        width = 0;
+        continue;
+      }
+      width++;
+      if (unit <= 0x7F) {
+        if (unit == 0x0D &&
+            (i + 1 == source.length || source.codeUnitAt(i + 1) != 0x0A)) {
+          return _invalid;
+        }
+        bytes++;
+      } else if (unit <= 0x7FF) {
+        bytes += 2;
+      } else if (unit >= 0xD800 && unit <= 0xDBFF) {
+        if (i + 1 == source.length) return _invalid;
+        final low = source.codeUnitAt(i + 1);
+        if (low < 0xDC00 || low > 0xDFFF) return _invalid;
+        bytes += 4;
+        width++;
+        i++;
+      } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+        return _invalid;
+      } else {
+        bytes += 3;
+      }
+    }
+    return _SourceStats._(true, bytes, lines, width > widest ? width : widest);
+  }
+
+  final bool valid;
+  final int utf8Bytes, lines, widestLine;
 }
 
 enum FlarkRejection {

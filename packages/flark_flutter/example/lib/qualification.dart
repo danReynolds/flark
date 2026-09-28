@@ -30,6 +30,39 @@ const profileCycles = <String, String>{
       '```json\n{"ready": true, "count": 3}\n```\n\n',
 };
 
+/// Text the frame profile pastes at the document start.
+const profilePaste = 'Pasted line one\n\nPasted paragraph two';
+
+/// Bytes the start-site fixture leaves below the live limit, so Enter and the
+/// paste stay live. The other sites still type at the byte boundary itself.
+const profileStartHeadroom = 64;
+
+/// Edits the frame profile measures at [site], in order. Every site types and
+/// deletes a character. The start site also inserts rows before most of the
+/// document, with Enter and a multi-line paste, and removes each with Undo.
+/// A round restores the original source. The harness delivers `insert` as a
+/// platform text delta rather than as a command.
+List<(String, FlarkCommand)> profileOperations(String site) => [
+  ('insert', const InsertText('x')),
+  ('delete', const DeleteBackward()),
+  if (site == 'start') ...[
+    ('enter', const Newline(paragraph: true)),
+    ('undo enter', const Undo()),
+    ('paste', const Paste(profilePaste)),
+    ('undo paste', const Undo()),
+  ],
+];
+
+/// Where the frame profile places the caret for [site].
+int profileCaret(Projection projection, String site, String source) {
+  if (site == 'end') return source.length;
+  final rows = projection.rows;
+  final row = site == 'start'
+      ? rows.firstWhere((r) => r.text.isNotEmpty)
+      : rows.reduce((a, b) => a.text.length > b.text.length ? a : b);
+  return row.sourceForDisplay(row.text.length ~/ 2);
+}
+
 /// Reach the byte boundary while retaining the densest repetition admitted by
 /// the declared count budget. Remaining bytes are paragraphs of up to 4 KiB.
 /// The original unconstrained stress workloads remain separate diagnostics.
