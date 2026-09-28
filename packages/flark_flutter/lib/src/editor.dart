@@ -76,6 +76,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   int _epoch = 0;
   double? _goalX;
   bool _dragging = false;
+
+  /// A touch on the document that has not moved past the touch slop. Touch
+  /// presses when it lifts, so a scroll neither moves the caret nor raises
+  /// the keyboard.
+  ({int pointer, Offset position})? _touch;
   ({InlineResource image, Offset point, int revision})? _pressedImage;
   bool _scheduled = false;
   bool get _resourceDialogOpen => _resourceSession != null;
@@ -298,6 +303,59 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   bool _command(FlarkCommand command) {
     _goalX = null;
     return c.command(command);
+  }
+
+  /// A press at the global [position]. In the reader, or with the platform
+  /// modifier, a link opens; otherwise the editor takes focus and the press
+  /// toggles a task, places the caret, or arms an image or link for the
+  /// release. A [touch] also asks for the keyboard, which the platform can
+  /// hide (Android's back gesture) while the connection stays open.
+  void _press(
+    Offset position, {
+    bool primary = true,
+    bool drag = false,
+    bool touch = false,
+  }) {
+    final surface = _surface;
+    if (surface == null) return;
+    final point = surface.globalToLocal(position);
+    if (widget.readOnly ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isControlPressed) {
+      final link = surface.linkAt(point);
+      final uri = link == null
+          ? null
+          : flarkOpenableUri(link.destination, widget.baseUri);
+      if (uri != null && widget.onOpenLink != null) {
+        widget.onOpenLink!(uri);
+        return;
+      }
+    }
+    if (widget.readOnly) return;
+    _focus.requestFocus();
+    if (touch && _connection?.attached == true) _connection!.show();
+    _attach();
+    _goalX = null;
+    final image = surface.imageAt(point);
+    if (image != null) {
+      _dragging = false;
+      _pressedImage = (
+        image: image,
+        point: position,
+        revision: c.editor.revision,
+      );
+      return;
+    }
+    if (surface.toggleTaskAt(point)) {
+      _dragging = false;
+      return;
+    }
+    _dragging = drag;
+    surface.place(point, extend: HardwareKeyboard.instance.isShiftPressed);
+    final link = surface.linkAt(point);
+    if (link != null && !HardwareKeyboard.instance.isShiftPressed && primary) {
+      _pressedLink = (resource: link, point: position);
+    }
   }
 
   Future<void> _copy({bool cut = false}) async {
@@ -1076,6 +1134,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                         ? null
                         : (details) {
                             _dragging = false;
+                            // The second touch must not collapse the word
+                            // when it lifts.
+                            _touch = null;
                             final surface = _surface;
                             if (surface != null) {
                               surface.selectWordAt(
@@ -1087,67 +1148,23 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                       onPointerDown: (event) {
                         _dismissLink();
                         _pressedLink = null;
-                        final surface = _surface;
-                        if (surface == null) return;
-                        if (widget.readOnly ||
-                            HardwareKeyboard.instance.isMetaPressed ||
-                            HardwareKeyboard.instance.isControlPressed) {
-                          final link = surface.linkAt(
-                            surface.globalToLocal(event.position),
-                          );
-                          final uri = link == null
-                              ? null
-                              : flarkOpenableUri(
-                                  link.destination,
-                                  widget.baseUri,
-                                );
-                          if (uri != null && widget.onOpenLink != null) {
-                            widget.onOpenLink!(uri);
-                            return;
-                          }
-                        }
-                        if (widget.readOnly) return;
-                        _focus.requestFocus();
-                        _attach();
-                        _goalX = null;
-                        final image = surface.imageAt(
-                          surface.globalToLocal(event.position),
+                        if (_isTouch(event.kind)) return;
+                        _press(
+                          event.position,
+                          primary: event.buttons == kPrimaryButton,
+                          drag:
+                              event.kind == PointerDeviceKind.mouse &&
+                              event.buttons == kPrimaryButton,
                         );
-                        if (image != null) {
-                          _dragging = false;
-                          _pressedImage = (
-                            image: image,
-                            point: event.position,
-                            revision: c.editor.revision,
-                          );
-                          return;
-                        }
-                        if (surface.toggleTaskAt(
-                          surface.globalToLocal(event.position),
-                        )) {
-                          _dragging = false;
-                          return;
-                        }
-                        _dragging =
-                            event.kind == PointerDeviceKind.mouse &&
-                            event.buttons == kPrimaryButton;
-                        surface.place(
-                          surface.globalToLocal(event.position),
-                          extend: HardwareKeyboard.instance.isShiftPressed,
-                        );
-                        final link = surface.linkAt(
-                          surface.globalToLocal(event.position),
-                        );
-                        if (link != null &&
-                            !HardwareKeyboard.instance.isShiftPressed &&
-                            event.buttons == kPrimaryButton) {
-                          _pressedLink = (
-                            resource: link,
-                            point: event.position,
-                          );
-                        }
                       },
                       onPointerMove: (event) {
+                        final touch = _touch;
+                        if (touch != null &&
+                            touch.pointer == event.pointer &&
+                            (event.position - touch.position).distance >
+                                kTouchSlop) {
+                          _touch = null;
+                        }
                         if (_pressedLink != null &&
                             (event.position - _pressedLink!.point).distance >
                                 8) {
@@ -1168,7 +1185,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                           }
                         }
                       },
-                      onPointerUp: (_) {
+                      onPointerUp: (event) {
+                        final touch = _touch;
+                        _touch = null;
+                        if (touch != null && touch.pointer == event.pointer) {
+                          _press(touch.position, touch: true);
+                        }
                         _dragging = false;
                         final pressedLink = _pressedLink;
                         _pressedLink = null;
@@ -1189,6 +1211,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                         }
                       },
                       onPointerCancel: (_) {
+                        _touch = null;
                         _pressedLink = null;
                         _dragging = false;
                         _pressedImage = null;
@@ -1197,26 +1220,39 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                         controller: _scroll,
                         child: SingleChildScrollView(
                           controller: _scroll,
-                          child: OverlayPortal.overlayChildLayoutBuilder(
-                            controller: _popover,
-                            overlayChildBuilder: _buildLinkPopover,
-                            child: FlarkSurface(
-                              key: _surfaceKey,
-                              controller: c,
-                              theme: resolvedTheme,
-                              textScaler: MediaQuery.textScalerOf(context),
-                              focused: _focus.hasFocus,
-                              readOnly: widget.readOnly,
-                              viewportHeight: constraints.maxHeight,
-                              scrollOffset: _scroll.hasClients
-                                  ? _scroll.offset
-                                  : 0,
-                              baseUri: widget.baseUri,
-                              imageProvider: widget.imageProvider,
-                              showImagePreviews: widget.showImagePreviews,
-                              onPaint: widget.onPaint,
-                              onFocus: _focus.requestFocus,
-                              revealDuringLayout: _revealDuringLayout,
+                          // The scroll view ignores its content's pointers
+                          // while it moves, so a touch that stops a fling is
+                          // never recorded here.
+                          child: Listener(
+                            onPointerDown: (event) {
+                              if (_isTouch(event.kind)) {
+                                _touch = (
+                                  pointer: event.pointer,
+                                  position: event.position,
+                                );
+                              }
+                            },
+                            child: OverlayPortal.overlayChildLayoutBuilder(
+                              controller: _popover,
+                              overlayChildBuilder: _buildLinkPopover,
+                              child: FlarkSurface(
+                                key: _surfaceKey,
+                                controller: c,
+                                theme: resolvedTheme,
+                                textScaler: MediaQuery.textScalerOf(context),
+                                focused: _focus.hasFocus,
+                                readOnly: widget.readOnly,
+                                viewportHeight: constraints.maxHeight,
+                                scrollOffset: _scroll.hasClients
+                                    ? _scroll.offset
+                                    : 0,
+                                baseUri: widget.baseUri,
+                                imageProvider: widget.imageProvider,
+                                showImagePreviews: widget.showImagePreviews,
+                                onPaint: widget.onPaint,
+                                onFocus: _focus.requestFocus,
+                                revealDuringLayout: _revealDuringLayout,
+                              ),
                             ),
                           ),
                         ),
@@ -1245,6 +1281,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     );
   }
 }
+
+/// Touch and stylus scroll the document when they move, so they press only
+/// when they lift.
+bool _isTouch(PointerDeviceKind kind) =>
+    kind == PointerDeviceKind.touch ||
+    kind == PointerDeviceKind.stylus ||
+    kind == PointerDeviceKind.invertedStylus;
 
 /// Each connection has its own client. A callback captured before focus or
 /// document replacement cannot mutate the new editor through a stale closure.
