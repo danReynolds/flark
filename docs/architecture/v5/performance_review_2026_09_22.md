@@ -726,6 +726,12 @@ The macOS app loses Tree-sitter's 26.3 MB framework and its 13.1 MB Wasm,
 which Flutter also bundled as an asset. The web build loses that Wasm, and
 its app module grows 210 KB with all 25 languages.
 
+The parser's own Wasm module (538 KB) was also bundled into every native
+app, which parses through the FFI library instead. `flark`'s pubspec now
+declares it for web builds only (`platforms: [web]`). A release iOS app with
+`FlarkEditor` goes from 17,560 to 17,032 KB, 160 KB less when zipped; web
+builds still carry the module.
+
 ## Live limits
 
 A document over its live limits switches to source mode: raw, still
