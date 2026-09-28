@@ -450,7 +450,7 @@ void main() {
     expect(editor.source, '**wha** ');
     expect(lines().first, 'wha');
     tester.type('x');
-    expect(editor.source, '**wha** **x**');
+    expect(editor.source, '**wha x**');
     expect(lines().first, 'wha x');
     expect(tester.render().atColRow(4, 0).style.bold, isTrue);
   });

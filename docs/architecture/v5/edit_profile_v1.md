@@ -65,8 +65,13 @@ additional product principles or testing layers.
 - Typing whitespace at an existing emphasis/strong/strike content edge moves
   that whitespace outside the parser-owned delimiters before publication.
   Surviving text stays styled and the next word retains the typing context,
-  including after repeated spaces and Undo/Redo. Erasing the separating spaces
-  returns to the surviving owner. Source mode retains literal source editing.
+  including after repeated spaces and Undo/Redo. That word continues the span:
+  its closing syntax moves past the word, so a phrase typed word by word is
+  one span (`**one two**`, not `**one** **two**`). The parser must own that
+  syntax as the span ending where the spaces begin, and must see one span from
+  the same opener afterwards; otherwise the word takes its own delimiters.
+  Erasing the separating spaces returns to the surviving owner. Source mode
+  retains literal source editing.
 - Completing source-authored delimiters may atomically turn literal text into a
   rendered construct. The inserted delimiter itself must not flash as an
   unrelated intermediate state.

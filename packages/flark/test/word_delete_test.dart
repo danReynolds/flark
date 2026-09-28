@@ -25,9 +25,8 @@ void main() {
           expect(e.apply(const InsertText('y')), isTrue);
           expect(
             e.source,
-            backward
-                ? '${marker}two$marker ${marker}y$marker'
-                : ' ${marker}ytwo$marker',
+            // The word typed after the exposed space continues the span.
+            backward ? '${marker}two y$marker' : ' ${marker}ytwo$marker',
           );
           e.apply(const Undo());
           e.apply(const Undo());
@@ -62,7 +61,7 @@ void main() {
         expect(
           e.source,
           source == 'one **two three**' && !sourceMode
-              ? 'one **two** **x**'
+              ? 'one **two x**'
               : '${expected}x',
         );
         e.apply(const Undo());

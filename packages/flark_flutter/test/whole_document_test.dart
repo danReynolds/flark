@@ -107,8 +107,9 @@ void main() {
         }
         await insert(' ', 'say **wha** ', 'say wha ', 12);
         await insert(' ', 'say **wha**  ', 'say wha  ', 13);
-        await insert('x', 'say **wha**  **x**', 'say wha  x', 16);
-        await insert('y', 'say **wha**  **xy**', 'say wha  xy', 17);
+        // The next word continues the span across the spaces.
+        await insert('x', 'say **wha  x**', 'say wha  x', 12);
+        await insert('y', 'say **wha  xy**', 'say wha  xy', 13);
         await tester.pumpWidget(const SizedBox());
         c.dispose();
       },
@@ -184,7 +185,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(c.text, '**two** **y**');
+    expect(c.text, '**two y**');
     for (final paint in paints) {
       expect(paint.rows, ['two y']);
       expect(paint.styles.single, contains(Style.strong));

@@ -66,8 +66,8 @@ void main() {
         ('', 'say **wha**', 'say wha', 9),
         (' ', 'say **wha** ', 'say wha ', 12),
         (' ', 'say **wha**  ', 'say wha  ', 13),
-        ('x', 'say **wha**  **x**', 'say wha  x', 16),
-        ('y', 'say **wha**  **xy**', 'say wha  xy', 17),
+        ('x', 'say **wha  x**', 'say wha  x', 12),
+        ('y', 'say **wha  xy**', 'say wha  xy', 13),
       ]) {
         final input =
             web.document.querySelector('textarea.flt-text-editing')!
@@ -120,7 +120,7 @@ void main() {
       }
       expect(c.command(const Undo()), isTrue);
       expect(c.command(const Redo()), isTrue);
-      expect(c.text, 'say **wha**  **xy**');
+      expect(c.text, 'say **wha  xy**');
     },
   );
   for (final hasBody in [true, false]) {

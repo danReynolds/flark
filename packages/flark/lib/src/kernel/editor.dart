@@ -766,6 +766,10 @@ final class FlarkEditor implements FlarkDocumentState {
       final code = _pasteCode(text);
       if (code != null) return code;
     }
+    if (sel.isCollapsed) {
+      final continued = _continueSpan(range.start, text, typing: typing);
+      if (continued != null) return continued;
+    }
     var inserted = text;
     var caret = range.start + text.length;
     final p = _pending;
@@ -839,6 +843,69 @@ final class FlarkEditor implements FlarkDocumentState {
           ? text
           : null,
     );
+  }
+
+  /// A word typed after the spaces that left an emphasis, strong or
+  /// strikethrough span continues that span: its closing syntax moves past
+  /// the word, giving `**one two**` rather than `**one** **two**`. The parser
+  /// must own that syntax as a span ending where the spaces begin, and must
+  /// still see one span from the same opener afterwards; otherwise the word
+  /// takes its own pair as before. Null when this does not apply.
+  bool? _continueSpan(int at, String text, {required bool typing}) {
+    final p = _pending;
+    if (p == null ||
+        !p.continueAcrossSpaces ||
+        text.trim().isEmpty ||
+        text.contains('\n') ||
+        text.contains('\r')) {
+      return null;
+    }
+    var gap = at;
+    while (gap > 0 &&
+        (source.codeUnitAt(gap - 1) == 0x20 ||
+            source.codeUnitAt(gap - 1) == 0x09)) {
+      gap--;
+    }
+    final closeStart = gap - p.close.length;
+    if (gap == at ||
+        closeStart < 0 ||
+        source.substring(closeStart, gap) != p.close) {
+      return null;
+    }
+    final owner = _doc
+        .ownersTouching(gap)
+        .where(
+          (o) =>
+              o.end == gap &&
+              (o.kind == RunKind.emph ||
+                  o.kind == RunKind.strong ||
+                  o.kind == RunKind.strike),
+        )
+        .firstOrNull;
+    if (owner == null) return null;
+    var first = 0, last = text.length;
+    while (first < last && _isSpace(text, first)) {
+      first++;
+    }
+    while (last > first && _isSpace(text, last - 1)) {
+      last--;
+    }
+    final word = '${source.substring(gap, at)}${text.substring(0, last)}';
+    final end = closeStart + word.length + p.close.length;
+    final trailing = text.substring(last);
+    final continued = _commit(
+      source.replaceRange(closeStart, at, '$word${p.close}$trailing'),
+      FlarkSelection.collapsed(
+        trailing.isEmpty ? end - p.close.length : end + trailing.length,
+      ),
+      // Trailing spaces leave the span again and keep its intent.
+      pending: trailing.isEmpty ? null : p,
+      typing: typing && text.characters.length == 1,
+      accept: (document) => document
+          .ownersTouching(owner.start)
+          .any((o) => o.start == owner.start && o.end == end),
+    );
+    return continued ? true : null;
   }
 
   /// Typing `-` or `=` on the empty line under a paragraph makes that line a
