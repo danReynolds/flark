@@ -722,6 +722,54 @@ languages and three untagged fences.
 Not yet covered: the host swap (both hosts still depend on
 `flark_tree_sitter`), and languages beyond these 25.
 
+### Host swap (2026-09-28)
+
+Both hosts now depend on `flark_codemirror` instead of `flark_tree_sitter`
+(the package and its CI job remain; nothing depends on it). Colors,
+indentation, selection and undo publish on the edit's own frame, so RFC
+031's worker lane is removed from both hosts, and the RFC is marked
+superseded.
+
+- Flutter:
+  - `package:flark_flutter/code.dart` exports `FlarkCodeMirror`;
+    `FlarkCodeColors` and `FlarkController.codeColors` are gone, as are the
+    surface's color revisions and visible-fence reports.
+  - Row reuse already compares a code row's text and info string, which now
+    determine its colors.
+  - The toolbar's language menu lists the delegate's languages.
+- Fleury:
+  - `FlarkFleuryController` takes no worker; `colorsFor` asks the editor's
+    delegate.
+  - Its layout keeps a fence's colors while the fence's text and info
+    string are unchanged. The delegate caches only 32 highlights, and
+    Fleury lays out every row on each edit, so a document with more than 32
+    fences would otherwise highlight every fence on every keystroke.
+- Bash:
+  - CodeMirror's shell mode has no indentation, so Enter after
+    `if ready; then` would have kept the line's indentation where
+    Tree-sitter indented.
+  - `modes/blocks.dart` adds block indentation as Flark policy, and
+    Tree-sitter's twelve Bash editing cases hold.
+  - YAML and PowerShell also have no indentation upstream and keep the
+    previous line's; Tree-sitter had no editing cases for them.
+- Tests: the Flutter host's editing scenarios run the cases that hold under
+  CodeMirror (JavaScript, TypeScript, JSON and Bash) through quote and list
+  containers. Worker tests give way to synchronous ones. Counts: Flutter 325
+  and example 51, Fleury 117 and example 6, engine 1,914.
+
+Size of the Flutter example workbench, release builds on an M1 Pro, before
+(`95b529cb`) and after (`4ba42809`):
+
+| Build | Tree-sitter | CodeMirror |
+| --- | ---: | ---: |
+| macOS app | 87.9 MB | 48.9 MB |
+| Web, all files | 58.0 MB | 45.6 MB |
+| Web, `main.dart.wasm` | 2,570,447 B | 2,780,426 B |
+
+The macOS app loses Tree-sitter's 26.3 MB framework and its 13.1 MB Wasm,
+which Flutter also bundled as an asset. The web build loses that Wasm, and
+its app module grows 210 KB with all 25 languages.
+
 ## Live limits
 
 A document over its live limits switches to source mode: raw, still

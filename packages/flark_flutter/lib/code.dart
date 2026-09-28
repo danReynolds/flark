@@ -1,16 +1,13 @@
-/// Optional Tree-sitter code regions. Initialize before mounting an editor.
+/// Code regions: highlighting, indentation and language detection for fenced
+/// code, from `flark_codemirror`, CodeMirror's language modes ported to Dart.
+/// Pass a [FlarkCodeMirror] as an editor's `codeEditing`. It runs
+/// synchronously on the UI thread and needs no loading or disposal;
+/// [FlarkCodeMirror.only] keeps other languages out of the build.
 library;
 
-import 'package:flark_tree_sitter/flark.dart' as shared;
-import 'src/code_backend.dart';
-
-export 'src/code_colors.dart' show FlarkCodeColors;
-
-/// Flutter asset loading around the shared, pure Dart editing adapter.
-/// The application disposes it after its editors close.
-final class FlarkTreeSitter extends shared.FlarkTreeSitter {
-  FlarkTreeSitter.fromAnalyzer(super.analyzer) : super.fromAnalyzer();
-
-  static Future<FlarkTreeSitter> load() async =>
-      FlarkTreeSitter.fromAnalyzer(await loadCodeAnalyzer());
-}
+export 'package:flark_codemirror/flark_codemirror.dart'
+    show
+        FlarkCodeMirror,
+        CodeMirrorLanguage,
+        CodeMirrorLanguages,
+        codeMirrorLanguageName;

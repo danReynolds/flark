@@ -63,11 +63,6 @@ final class _Viewport {
     _editor = editor;
     _width = cols;
     _focused = focus.hasFocus;
-    controller.setVisibleRows({
-      for (final visual in layout.lines.skip(viewport.top).take(result.rows))
-        for (final line in visual.fragments)
-          if (line.row != null) line.row!.index,
-    });
     return result;
   }
 

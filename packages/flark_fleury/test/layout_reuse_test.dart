@@ -1,7 +1,7 @@
 /// Cell geometry is the expensive part of a frame: it allocates a glyph per
 /// grapheme of the whole document while only the viewport is painted. It must
 /// survive a repaint, a caret move and a scroll, and must not survive an edit,
-/// a resize, a theme change or a new colouring result.
+/// a resize or a theme change.
 library;
 
 import 'package:flark/flark.dart';

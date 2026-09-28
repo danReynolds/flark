@@ -27,8 +27,7 @@ void main() {
     'edit work and next-frame presentation across admitted shapes',
     (tester) async {
       final backend = await loadBackend();
-      final code = await FlarkTreeSitter.load();
-      addTearDown(code.dispose);
+      final code = FlarkCodeMirror();
       const appMode = bool.fromEnvironment('FLARK_PROFILE_APP');
       SharedPreferences? preferences;
       if (appMode) {
@@ -333,7 +332,7 @@ void main() {
             'productionWorkbench': appMode,
             'nativeSemantics': binding.platformDispatcher.semanticsEnabled,
             'treeSitterEditing': true,
-            'treeSitterColors': c.codeColors != null,
+            'codeEngine': 'flark_codemirror',
             'blocks': c.editor.document.model.blockCount,
             'runs': c.editor.document.model.runCount,
             'maxRowCodeUnits': c.editor.projection.rows

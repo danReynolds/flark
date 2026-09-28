@@ -111,48 +111,35 @@ The complete [branded popover and editing sheet](example/lib/custom_controls.dar
 demonstrate both hooks. Default controls use the ambient Material component
 themes. URL launching and image provision remain application callbacks.
 
-## Optional Tree-sitter code regions
+## Code regions
 
-The workbench uses `flark_tree_sitter` for all 14 code languages and Automatic
-language detection. There is one shared language integration. The
-[capability table](../flark_tree_sitter/SINGLE_ENGINE_REVIEW.md) lists exact
-indentation coverage and grammar versions. A manual choice is authoritative;
-unknown languages and plain text retain ordinary whitespace editing.
+Fenced code is highlighted, indented and detected by `flark_codemirror`,
+CodeMirror's language modes ported to Dart, for 25 languages. A fence without
+a language takes the one it looks like. A manual choice is authoritative;
+unknown languages and plain text keep ordinary whitespace editing, and a fence
+in an unknown language still indents by its brackets.
 
 ```dart
 // Advanced integration uses the explicit legacy entry point.
 import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flark_flutter/code.dart';
 
-// Load native assets or bundled Wasm and warm editing queries before mounting.
-final code = await FlarkTreeSitter.load();
-final editor = FlarkEditor(markdownBackend, text: markdown, codeEditing: code);
-final controller = FlarkController(
-  editor,
-  codeColors: FlarkCodeColors(editor),
+final editor = FlarkEditor(
+  markdownBackend,
+  text: markdown,
+  codeEditing: FlarkCodeMirror(),
 );
-
-// After removing the editor widgets:
-controller.dispose(); // terminates its coloring worker
-code.dispose();       // releases the caller-owned synchronous analyzer
+final controller = FlarkController(editor);
 ```
 
-One `FlarkTreeSitter` may serve sequential documents. Each controller owns its
-own coloring worker. Source, indentation, selection and undo publish
-synchronously. Colors arrive separately and may only describe the exact current
-snippet and language; pending text uses the plain code style. Code colors do not
-change font metrics. The active fence and visible fences take priority, with a
-32-entry / 65,536-code-unit cache. Unsupported or oversized snippets remain plain; worker failure leaves current text plain and is observable
-through `controller.codeColors?.failure`.
-
-For custom web asset routing, `FlarkTreeSitter.fromAnalyzer` accepts an already
-loaded `CodeAnalyzer`, and `FlarkCodeColors` accepts `workerUri` / `wasmUri`.
-Default assets are bundled by Flutter. CSP and physical-device qualification
-remain the embedding application's responsibility. The
-[host integration review](../flark_tree_sitter/HOST_INTEGRATION_REVIEW.md)
-records automated evidence; the
-[browser dogfood review](../flark_tree_sitter/BROWSER_DOGFOOD_REVIEW.md) records
-hands-on journeys and the remaining transition/performance/device gates.
+`FlarkCodeMirror` runs synchronously on the UI thread and needs no loading,
+assets, worker or disposal; one instance may serve any number of editors.
+Colors, indentation, selection and undo publish together, on the same frame
+as the edit. Highlighting is cached per snippet and language, so rows whose
+text and language are unchanged keep their layouts. Snippets over 8,192 code
+units stay plain. `FlarkCodeMirror.only([CodeMirrorLanguages.python, ...])`
+highlights only the languages an app names and keeps the others out of its
+build; the toolbar's language menu lists them.
 
 Use controller commands while a Flutter input connection is active so composing
 state, notices and kernel publication remain coherent. Caller-owned focus nodes

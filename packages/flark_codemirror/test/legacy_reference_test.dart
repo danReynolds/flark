@@ -5,17 +5,20 @@ import 'dart:io';
 
 import 'package:flark_codemirror/src/languages.dart';
 import 'package:flark_codemirror/src/mode.dart';
+import 'package:flark_codemirror/src/modes/shell.dart';
 import 'package:flark_codemirror/src/modes/xml.dart';
 import 'package:test/test.dart';
 
 import 'support/reference.dart';
 
-/// Languages whose catalog mode composes the recorded one with others: the
-/// catalog's html is mixed HTML, checked by mixed_reference_test.dart, and
-/// its fixture here records the xml mode's html export alone.
+/// Languages whose catalog mode adds to the recorded one: the catalog's html
+/// is mixed HTML, checked by mixed_reference_test.dart, whose fixture here
+/// records the xml mode's html export alone, and its bash adds indentation.
 final _recordedAlone = {
   'html': (String language, ModeConfig config) =>
       XmlMode(config, XmlOptions.html),
+  // The catalog's bash adds Flark's block indentation (modes/blocks.dart).
+  'bash': (String language, ModeConfig config) => ShellMode(config),
 };
 
 void main() {

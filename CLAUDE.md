@@ -26,28 +26,23 @@ Active code:
   constants are `package:flark/render_model.dart`.
 - `test/fixtures/commonmark`: the upstream CommonMark 0.31.2 and GFM corpora
   and the deviation register.
-- `packages/flark_tree_sitter`: separate snippet language package under development.
-  Pure Dart API, co-located `native/` Rust engine using official Tree-sitter,
-  FFI and Wasm transports. Fourteen-language highlighting and edit proposals now
-  cover Enter, typed outdent, branch alignment and selections. Automatic, aliases
-  and the language catalog live here too; there is no Dart highlighter/lexical
-  indenter fallback. See `SINGLE_ENGINE_REVIEW.md`. Combined typing
-  performance remains open in the package's `PLAN.md`. The Flutter workbench
-  now opts into synchronous snippet edits and controller-owned coloring workers.
-  `HOST_INTEGRATION_REVIEW.md` records source/container/history, first-frame,
-  real native-worker and browser-worker checks. `BROWSER_DOGFOOD_REVIEW.md` records
-  hands-on browser journeys and host fixes. RFC 031 remains conditional on
-  sustained color-transition/full-frame qualification; automated tests and
-  observed screenshots do not close those performance or physical-device gates.
-- `packages/flark_codemirror`: CodeMirror's language modes ported to pure
-  Dart, meant to replace `flark_tree_sitter` as the single snippet engine.
-  25 languages (CodeMirror 5's JavaScript, htmlmixed and PHP; the rest from
-  `@codemirror/legacy-modes` 6.5.4); hosts do not use it yet. The
-  `test/*reference_test.dart` suites check every token and indentation
-  against the upstream modes, recorded in Node by `tool/reference/`.
+- `packages/flark_codemirror`: the snippet engine both hosts use:
+  CodeMirror's language modes ported to pure Dart, synchronous, with no
+  native library, Wasm module or worker. 25 languages (CodeMirror 5's
+  JavaScript, htmlmixed and PHP; the rest from `@codemirror/legacy-modes`
+  6.5.4). The `test/*reference_test.dart` suites check every token and
+  indentation against the upstream modes, recorded in Node by
+  `tool/reference/`. Flark policy over CodeMirror lives in `edit.dart`,
+  `modes/brackets.dart` and `modes/blocks.dart` (Bash block indentation).
   Untagged fences are detected by per-language signs (`lib/src/signs.dart`),
   measured with `tool/detect_eval.dart`; `FlarkCodeMirror.only` limits the
   languages an app builds in.
+- `packages/flark_tree_sitter`: the previous snippet engine (official
+  Tree-sitter in a co-located Rust `native/` engine, FFI and Wasm
+  transports, coloring workers). No host depends on it since the switch to
+  `flark_codemirror`; its reviews (`SINGLE_ENGINE_REVIEW.md`,
+  `HOST_INTEGRATION_REVIEW.md`, `BROWSER_DOGFOOD_REVIEW.md`) and RFC 031's
+  worker path are historical.
 
 The new `packages/flark_flutter` host owns text input, focus, glyph geometry,
 painting and bounded source inspection. Its runnable local-draft workbench is

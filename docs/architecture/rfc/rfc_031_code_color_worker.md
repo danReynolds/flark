@@ -1,10 +1,15 @@
 # RFC 031 — Code colors outside the input callback
 
-Status: implemented in the Flutter workbench for qualification. Automated host
-checks and the first hands-on browser exploration pass. Sustained color-transition
-capture and the full frame/device gates remain open. See the
-[browser review](../../../packages/flark_tree_sitter/BROWSER_DOGFOOD_REVIEW.md).
-Named consumer: Flark V5 code-fence editing in Flutter native/web and Fleury.
+Status: superseded (2026-09-28). Both hosts now color code synchronously with
+`flark_codemirror`, whose highlighting of an 8K fence takes 0.3–2.0 ms (local
+AOT), so the worker lane described here was removed from Flutter and Fleury.
+See the host swap in the
+[2026-09-22 performance review](../v5/performance_review_2026_09_22.md). The
+record below is kept for its reasoning. It was implemented in the Flutter
+workbench for qualification, with the
+[browser review](../../../packages/flark_tree_sitter/BROWSER_DOGFOOD_REVIEW.md);
+its named consumer was Flark V5 code-fence editing in Flutter native/web and
+Fleury.
 
 ## Decision proposed
 

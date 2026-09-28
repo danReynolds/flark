@@ -1,5 +1,5 @@
 import 'package:flark/session.dart';
-import 'package:flark_tree_sitter/flark_tree_sitter.dart';
+import 'package:flark_codemirror/flark_codemirror.dart';
 import 'dart:async';
 import 'package:flark/flark.dart';
 import 'package:flutter/gestures.dart';
@@ -796,10 +796,20 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     final info = codeRow?.fenced == true
         ? e.source.substring(codeRow!.codeInfoStart, codeRow.codeInfoEnd)
         : '';
-    final codeLanguage = codeLanguageName(info);
+    final codeLanguage = codeMirrorLanguageName(info);
     final detected = codeRow?.fenced == true && codeLanguage.isEmpty
         ? e.codeEditing?.resolveLanguage(codeRow!.text, info)
         : null;
+    // The languages the editor's delegate highlights, or every ported one.
+    final delegate = e.codeEditing;
+    final codeLanguages = {
+      for (final language
+          in delegate is FlarkCodeMirror
+              ? delegate.languages
+              : CodeMirrorLanguages.all)
+        language.name: language.label,
+      'text': 'Plain text',
+    };
     final detectedLabel = codeLanguages[detected];
     final headingFormatting =
         codeRow != null &&

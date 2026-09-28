@@ -34,8 +34,9 @@ a save event; `replaceMarkdown` is undoable. The [usage guide](../../website/src
 covers readiness, state and the full shared API.
 
 The minimal native/web entry points are `example/bin/consumer.dart` and
-`example/web/consumer.dart`. The full theme playground retains optional code
-services through `flark_fleury_legacy.dart`.
+`example/web/consumer.dart`. The full theme playground uses
+`flark_fleury_legacy.dart` with `FlarkCodeMirror()` from `flark_codemirror` as
+its editor's code delegate.
 
 ## Develop and run
 
@@ -59,8 +60,9 @@ dart pub get
 dart run bin/main.dart
 ```
 
-To package the terminal example with its native libraries on Dart 3.12+, run
-`dart build cli --target bin/main.dart --output build/native` from `example`.
+To package the terminal example with its native parser library on Dart
+3.12+, run `dart build cli --target bin/main.dart --output build/native` from
+`example`.
 Run `build/native/bundle/bin/main` from that directory so the sample image's
 relative asset path resolves. Copy the whole bundle when distributing it;
 `dart compile exe` does not include native build-hook assets on this SDK.
@@ -75,10 +77,10 @@ For an AOT terminal build: `dart build cli`. On macOS ARM64, run
 For the browser: `bash tool/build_web.sh`, then
 `python3 -m http.server 8820 --bind 127.0.0.1 --directory build/web`.
 Open the `/revisions/<hash>/` path printed by the build script on that server.
-Each candidate has fresh paths for JavaScript, both Wasm modules and the worker;
+Each candidate has fresh paths for its JavaScript and the parser's Wasm module;
 reloading `/` can retain older subresources in an embedded browser cache.
-This executes Dart and both Wasm modules in the
-page; it does not stream a remote terminal or Flutter app.
+This executes Dart and the parser's Wasm module in the page; it does not
+stream a remote terminal or Flutter app.
 
 ## Current boundaries
 
@@ -91,6 +93,11 @@ for syntax support and remaining presentation gaps, including footnotes.
 - Cmd/Ctrl+A selects a fence body first, then the document. Cmd/Ctrl+B/I and
   Z/Shift+Z/Y format/undo/redo. Tab/Shift+Tab indent code/lists and otherwise
   leave traversal to Fleury. Escape leaves editing focus.
+- Fences are colored, detected and indented by the editor's code delegate,
+  `FlarkCodeMirror` in the playground, synchronously: layout colors a fence in
+  the first frame that shows it and keeps an unchanged fence's colors across
+  edits. The language picker offers a `FlarkCodeMirror` delegate's languages,
+  and `CodeMirrorLanguages.all` otherwise.
 - The theme playground has a bordered customization panel, spaced color
   swatches and copyable Dart configuration. Arrow keys preview colors, Enter
   applies the choice, and `#` opens hex entry. Focus leaves the panel layout stable.

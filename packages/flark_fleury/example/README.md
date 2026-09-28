@@ -7,6 +7,8 @@ On narrow screens, Customize theme opens the controls in place of the editor.
 
 Setup and commands: [package README](../README.md#develop-and-run).
 
-`bin/main.dart` loads native parser/snippet libraries. `web/main.dart` loads
-the same engines as Wasm and mounts a local Fleury DOM host. Neither entry point
-imports Flutter. Documents are session-only; this is not a persistent workbench.
+`bin/main.dart` loads the native parser library. `web/main.dart` loads the
+parser as Wasm and mounts a local Fleury DOM host. Both color and indent code
+fences with `flark_codemirror`, in Dart, with no snippet library or worker.
+Neither entry point imports Flutter. Documents are session-only; this is not a
+persistent workbench.

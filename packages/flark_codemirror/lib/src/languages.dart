@@ -1,4 +1,5 @@
 import 'mode.dart';
+import 'modes/blocks.dart';
 import 'modes/clike.dart';
 import 'modes/css.dart';
 import 'modes/go.dart';
@@ -110,7 +111,7 @@ abstract final class CodeMirrorLanguages {
   static final bash = CodeMirrorLanguage(
     'bash',
     'Bash',
-    ShellMode.new,
+    _bash,
     signs: bashSigns,
   );
   static final yaml = CodeMirrorLanguage(
@@ -232,6 +233,24 @@ abstract final class CodeMirrorLanguages {
     php,
   ];
 }
+
+/// CodeMirror's shell mode has no indentation; Flark indents its blocks.
+Mode<Object?> _bash(ModeConfig config) => BlockIndentMode(
+  ShellMode(config),
+  words: const {
+    'if': 'fi',
+    'for': 'done',
+    'while': 'done',
+    'until': 'done',
+    'select': 'done',
+    'case': 'esac',
+  },
+  brackets: const {'{': '}', '(': ')'},
+  continuations: const {'then', 'do', 'else', 'elif'},
+  electricInput: _bashElectric,
+);
+
+final _bashElectric = RegExp(r'^\s*(?:fi|done|esac|then|do|else|elif|\}|\))$');
 
 Mode<Object?> _typescript(ModeConfig config) =>
     JavaScriptMode(config, const JavaScriptOptions(typescript: true));

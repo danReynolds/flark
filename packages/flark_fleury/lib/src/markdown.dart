@@ -27,13 +27,9 @@ class _ReadCellController implements FlarkCellController {
   @override
   FlarkReadDocument get editor => reader.document!;
   @override
-  int get colorRevision => 0;
-  @override
   String languageInfo(ProjectedRow row) => '';
   @override
   CodeHighlight? colorsFor(ProjectedRow row) => null;
-  @override
-  void setVisibleRows(Iterable<int> rows) {}
 }
 
 class _MarkdownState extends State<FlarkMarkdown> {

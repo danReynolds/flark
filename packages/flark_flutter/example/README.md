@@ -47,10 +47,10 @@ flutter test .dart_tool/flark_theme_export_test.dart
 
 ## CodeMirror engine demo
 
-`lib/codemirror_demo.dart` tries `flark_codemirror`, the pure-Dart snippet
-engine meant to replace Tree-sitter: fences in ten of its 25 languages,
-three untagged fences it detects, and a switch to the same document with
-Tree-sitter. Build it with `flutter build web --wasm -t
+`lib/codemirror_demo.dart` shows `flark_codemirror`, the pure-Dart snippet
+engine the host uses: fences in ten of its 25 languages, three untagged
+fences it detects, an 8K fence, and how long the last highlight and edit
+proposal took. Build it with `flutter build web --wasm -t
 lib/codemirror_demo.dart` and serve it with `python3 tool/serve_web.py`.
 
 ## Editing workbench and qualification

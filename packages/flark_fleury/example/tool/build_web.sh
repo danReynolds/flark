@@ -6,12 +6,11 @@ mkdir -p build/web
 cp web/index.html build/web/
 cp assets/demo.png build/web/
 cp ../../flark/lib/assets/wasm/flark_parse.wasm build/web/
-cp ../../flark_tree_sitter/lib/assets/wasm/flark_tree_sitter.wasm build/web/
-cp ../../flark_tree_sitter/lib/assets/highlight_worker.mjs build/web/
-# Each candidate has a new asset base URL, including both Wasm modules/workers.
+# Each candidate has a new asset base URL, including the parser's Wasm module.
 # Reload alone can keep old subresources in the embedded browser's cache.
-build_id=$(shasum -a 256 build/web/index.html build/web/main.dart.js build/web/*.wasm build/web/*.mjs build/web/demo.png | shasum -a 256 | cut -c1-12)
+assets=(build/web/index.html build/web/main.dart.js build/web/flark_parse.wasm build/web/demo.png)
+build_id=$(shasum -a 256 "${assets[@]}" | shasum -a 256 | cut -c1-12)
 candidate="build/web/revisions/$build_id"
 mkdir -p "$candidate"
-cp build/web/index.html build/web/main.dart.js build/web/*.wasm build/web/*.mjs build/web/demo.png "$candidate/"
+cp "${assets[@]}" "$candidate/"
 echo "Candidate URL path: /revisions/$build_id/"

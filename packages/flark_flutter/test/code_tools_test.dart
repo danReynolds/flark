@@ -1,5 +1,4 @@
 import 'package:flark_flutter/code.dart';
-import 'package:flark_tree_sitter/flark_tree_sitter.dart';
 import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,8 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  final service = FlarkTreeSitter.fromAnalyzer(CodeAnalyzer());
-  tearDownAll(service.dispose);
+  final service = FlarkCodeMirror();
   for (final body in ['', 'x']) {
     testWidgets('undetected snippet ${body.length} shows a usable Auto label', (
       tester,

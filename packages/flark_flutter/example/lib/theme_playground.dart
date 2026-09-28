@@ -54,7 +54,7 @@ ImageProvider<Object>? demoImageProvider(Uri uri) =>
 class ThemePlayground extends StatefulWidget {
   const ThemePlayground({super.key, required this.backend, this.code});
   final FlarkParseBackend backend;
-  final FlarkTreeSitter? code;
+  final FlarkCodeMirror? code;
   @override
   State<ThemePlayground> createState() => _ThemePlaygroundState();
 }
@@ -75,10 +75,7 @@ class _ThemePlaygroundState extends State<ThemePlayground> {
       text: themeSample,
       codeEditing: widget.code,
     );
-    return FlarkController(
-      e,
-      codeColors: widget.code == null ? null : FlarkCodeColors(e),
-    );
+    return FlarkController(e);
   }
 
   @override

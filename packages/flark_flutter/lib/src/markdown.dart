@@ -6,7 +6,6 @@ import 'package:flark/resources.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'controller.dart';
-import 'code_colors.dart';
 import 'surface.dart';
 import 'theme.dart';
 import 'image_previews.dart';
@@ -41,8 +40,6 @@ class _ReadSurfaceController extends ChangeNotifier
   final FlarkReader reader;
   @override
   FlarkReadDocument get editor => reader.document!;
-  @override
-  FlarkCodeColors? get codeColors => null;
   @override
   String get text => editor.source;
   @override

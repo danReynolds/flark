@@ -18,7 +18,8 @@ stay out of its build:
 FlarkCodeMirror.only([CodeMirrorLanguages.python, CodeMirrorLanguages.bash]);
 ```
 
-The hosts still use `flark_tree_sitter`; this package is meant to replace it.
+Both hosts use it: `package:flark_flutter/code.dart` exports
+`FlarkCodeMirror`, and `flark_fleury` colors fences through it.
 
 ## Languages
 

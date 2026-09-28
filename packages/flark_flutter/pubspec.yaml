@@ -10,8 +10,8 @@ dependencies:
   web: ^1.1.1
   flark:
     path: ../flark
-  flark_tree_sitter:
-    path: ../flark_tree_sitter
+  flark_codemirror:
+    path: ../flark_codemirror
   flutter:
     sdk: flutter
 dev_dependencies:
