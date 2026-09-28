@@ -66,13 +66,15 @@ int profileCaret(Projection projection, String site, String source) {
 }
 
 /// Reach the byte boundary while retaining the densest repetition admitted by
-/// the declared count budget. Remaining bytes are paragraphs of up to 4 KiB.
-/// The original unconstrained stress workloads remain separate diagnostics.
+/// the declared count budget, [limits]. Remaining bytes are paragraphs of up
+/// to 4 KiB. The original unconstrained stress workloads remain separate
+/// diagnostics.
 String boundedProfileSource(
   FlarkParseBackend backend,
   String shape,
-  int bytes,
-) {
+  int bytes, [
+  FlarkLiveLimits limits = candidateLiveLimits,
+]) {
   final cycle = profileCycles[shape]!;
   var text = '';
   var index = 0;
@@ -81,9 +83,9 @@ String boundedProfileSource(
     if (utf8.encode(next).length >= bytes - 4) break;
     final model = backend.parse('$next\n\nz');
     final reserve = ((bytes - utf8.encode(next).length) / 4000).ceil() + 4;
-    if (model.blockCount + reserve > candidateLiveLimits.blocks ||
-        model.runCount + reserve > candidateLiveLimits.runs ||
-        model.lineCount + reserve * 2 > candidateLiveLimits.lines) {
+    if (model.blockCount + reserve > limits.blocks ||
+        model.runCount + reserve > limits.runs ||
+        model.lineCount + reserve * 2 > limits.lines) {
       break;
     }
     text = next;

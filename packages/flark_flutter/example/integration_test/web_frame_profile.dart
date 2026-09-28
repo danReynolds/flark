@@ -11,8 +11,11 @@
 /// Open the served page in a visible browser tab and leave it in front: a
 /// hidden tab throttles frames, and a visibility change rejects the run.
 /// Query parameters: `bytes` (32768), `shapes` and `sites` (comma lists, all
-/// by default), `iterations` (120, of which 20 warm up) and `observe` (1;
-/// 0 links frames without the paint observer and its checks). Each workload
+/// by default), `iterations` (120, of which 20 warm up), `caps` (1; a
+/// multiplier on the candidate's line, block and run counts, for sizes past
+/// them) and `observe` (1; 0 links frames without the paint observer and its
+/// checks). Each receipt also times opening: parse and projection, then the
+/// first frame that paints the mounted editor. Each workload
 /// prints `FLARK_WEB_FRAME_RECEIPT`; `flarkWebFrameReceipts` on the page's
 /// global object holds the linked samples. Edits skip DOM input handling,
 /// which `test/web_input_test.dart` covers.
@@ -144,6 +147,15 @@ class _WebFrameProfileState extends State<_WebFrameProfile> {
     final sites =
         params['sites']?.split(',') ?? const ['start', 'largest block', 'end'];
     _observe = params['observe'] != '0';
+    final caps = int.parse(params['caps'] ?? '1');
+    final limits = FlarkLiveLimits(
+      lines: candidateLiveLimits.lines * caps,
+      lineCodeUnits: candidateLiveLimits.lineCodeUnits,
+      blocks: candidateLiveLimits.blocks * caps,
+      runs: candidateLiveLimits.runs * caps,
+      blockCodeUnits: candidateLiveLimits.blockCodeUnits,
+      containerDepth: candidateLiveLimits.containerDepth,
+    );
     final backend = widget.backend;
     final view = PlatformDispatcher.instance.views.first;
     if (_hidden || view.physicalSize.isEmpty) {
@@ -161,7 +173,9 @@ class _WebFrameProfileState extends State<_WebFrameProfile> {
           backend,
           shape,
           site == 'start' ? bytes - profileStartHeadroom : bytes,
+          limits,
         );
+        final openStart = _nowUs();
         final c = FlarkController(
           FlarkEditor(
             backend,
@@ -169,9 +183,10 @@ class _WebFrameProfileState extends State<_WebFrameProfile> {
             text: text,
             caret: text.length,
             syncLimit: bytes,
-            liveLimits: candidateLiveLimits,
+            liveLimits: limits,
           ),
         );
+        final constructUs = _nowUs() - openStart;
         if (c.editor.sourceMode) {
           failures.add('$shape $site admission');
           c.dispose();
@@ -197,7 +212,9 @@ class _WebFrameProfileState extends State<_WebFrameProfile> {
           c.command(const DeleteBackward());
         }
         setState(() => _controller = c);
-        for (var i = 0; i < 6; i++) {
+        await _frame();
+        final openFrame = PlatformDispatcher.instance.frameData.frameNumber;
+        for (var i = 0; i < 5; i++) {
           await _frame();
         }
         final samples = <Map<String, Object>>[];
@@ -259,7 +276,15 @@ class _WebFrameProfileState extends State<_WebFrameProfile> {
             await Future<void>.delayed(const Duration(milliseconds: 20));
           }
         }
-        await _collect([for (final s in samples) s['frameNumber'] as int]);
+        await _collect([
+          openFrame,
+          for (final s in samples) s['frameNumber'] as int,
+        ]);
+        final opened = _frames[openFrame];
+        final firstFrameUs = opened == null
+            ? -1
+            : opened.timestampInMicroseconds(FramePhase.rasterFinish) -
+                  opened.timestampInMicroseconds(FramePhase.buildStart);
         final linked = <Map<String, Object>>[];
         for (final s in samples) {
           final frame = _frames[s['frameNumber']];
@@ -312,6 +337,9 @@ class _WebFrameProfileState extends State<_WebFrameProfile> {
           'runs': c.editor.document.model.runCount,
           'samples': linked.length,
           'observed': _observe,
+          'caps': caps,
+          'constructUs': constructUs,
+          'firstFrameUs': firstFrameUs,
           'parseP50Us': _p50(parseUs.skip(20).toList()),
           'projectionP50Us': _p50(projectUs.skip(20).toList()),
           'kernelOnlyP50Us': _p50(kernelUs.skip(20).toList()),
