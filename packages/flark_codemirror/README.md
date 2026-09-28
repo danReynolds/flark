@@ -134,19 +134,18 @@ get tabs, measured at four columns.
 `tool/bench.dart` times highlighting, Enter and a typed closer at the end of
 each corpus file repeated to 2K and 8K, and detection of the file as an
 untagged fence; `bench_core.dart` serves web builds with the same snippets
-embedded. Local AOT on an M1 Pro, machine loaded by other work, median of
-41 runs, commit `e75b9110`:
+embedded. Local AOT on an M1 Pro, machine heavily loaded by other work (load
+average 41–51), median of 41 runs, commit `4c0b6f5d`:
 
 | 8K snippet | Highlight | Enter |
 | --- | ---: | ---: |
-| XML | 0.3 ms | 0.3 ms |
-| JSON, Kotlin, Dart, Bash, SQL and its dialects | 0.5–0.6 ms | 0.4–0.5 ms |
-| JavaScript, TypeScript, CSS, SCSS, LESS, PHP | 0.7–0.8 ms | 0.6–0.7 ms |
-| Java, C#, Go, HTML, C, Ruby | 1.0–1.2 ms | 0.8–1.1 ms |
-| C++, YAML, Rust | 1.4–1.9 ms | 1.2–1.7 ms |
-| PowerShell, Python | 2.3–2.4 ms | 2.1–2.3 ms |
+| XML, PowerShell | 0.3–0.4 ms | 0.2–0.3 ms |
+| JSON, SQL and its dialects, Kotlin, Bash, Dart, CSS | 0.5–0.7 ms | 0.4–0.6 ms |
+| TypeScript, PHP, SCSS, LESS, JavaScript, C# | 0.7–1.0 ms | 0.6–0.9 ms |
+| HTML, Go, C, Java, Ruby | 1.1–1.3 ms | 0.9–1.1 ms |
+| YAML, Python, C++, Rust | 1.4–2.0 ms | 1.3–1.8 ms |
 
-Detection takes 0.2 to 0.9 ms. Highlighting results are cached per fence.
+Detection takes 0.2 to 1.0 ms. Highlighting results are cached per fence.
 
 Size, dart2js and dart2wasm at `-O4`, of a program that highlights and
 proposes through `FlarkCodeMirror`, over the same program with a stub

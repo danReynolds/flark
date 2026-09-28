@@ -654,6 +654,15 @@ Speed, local AOT, M1 Pro, machine loaded by other work, commit `e75b9110`
   - Simple-mode rules skip positions they cannot start at: Rust 8.1 to
     1.9 ms.
   - Python looks its keywords up in sets: 3.6 to 2.4 ms.
+- Later changes, also with identical tokens (2026-09-28):
+  - Python tries each token pattern only where the next character can
+    start it: 2.4 to 1.3 ms.
+  - PowerShell matches its grammar tables by lookup instead of regexes:
+    2.3 to 0.4 ms. Its tables were checked against upstream's patterns
+    enumerated independently, with a 456-case generated run against
+    upstream.
+  - At commit `4c0b6f5d` (load average 41–51), 8K highlights take
+    0.3–2.0 ms across the 25 languages, Rust the slowest.
 
 Size, `-O4`, over a program with a stub delegate:
 
