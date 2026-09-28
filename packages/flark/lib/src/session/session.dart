@@ -4,16 +4,23 @@ import '../kernel/commands.dart';
 import '../kernel/editor.dart';
 import '../parse/backend.dart';
 import 'backend_loader.dart';
+import 'platform_limits.dart';
 import 'state.dart';
 
 /// Host-independent ownership, readiness and publication. UI adapters own only
 /// their input/focus integration; this object owns its parser and editing state.
 final class FlarkSession {
+  /// [syncLimit] is the UTF-8 size rendered live, [flarkDefaultLiveBytes]
+  /// unless set; [liveLimits] bounds the document's shape. A document beyond
+  /// either opens and edits in source mode.
   FlarkSession({
     String markdown = '',
     Future<FlarkBackendLease> Function()? backendLoader,
+    int? syncLimit,
+    this.liveLimits = const FlarkLiveLimits(),
   }) : _markdown = markdown,
-       _loader = backendLoader ?? loadFlarkBackend {
+       _loader = backendLoader ?? loadFlarkBackend,
+       syncLimit = syncLimit ?? flarkDefaultLiveBytes {
     validateFlarkSourceText(markdown);
     if (utf8.encode(markdown).length > 1024 * 1024) {
       throw ArgumentError('document exceeds writable source limit');
@@ -22,6 +29,8 @@ final class FlarkSession {
     _start();
   }
   final Future<FlarkBackendLease> Function() _loader;
+  final int syncLimit;
+  final FlarkLiveLimits liveLimits;
   final _listeners = <void Function()>[];
   final _changes = StreamController<String>.broadcast(sync: true);
   FlarkBackendLease? _lease;
@@ -122,7 +131,12 @@ final class FlarkSession {
           lease.dispose();
           return;
         }
-        final editor = FlarkEditor(lease.backend, text: _markdown);
+        final editor = FlarkEditor(
+          lease.backend,
+          text: _markdown,
+          syncLimit: syncLimit,
+          liveLimits: liveLimits,
+        );
         _lease = lease;
         _editor = editor..addListener(_edited);
         _status = FlarkStatus.ready;

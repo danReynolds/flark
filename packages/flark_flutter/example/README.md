@@ -77,8 +77,9 @@ stays open and asks you to copy the Markdown. This prototype does not provide
 crash-proof document storage or a file-management workflow.
 
 The candidate settings are in `lib/qualification.dart`: 32 KiB UTF-8 live
-source, 1,024 physical lines, 512 blocks, 2,048 runs, and 4,096 UTF-16 units per
-line and leaf block, with at most eight nested quote/item containers. The writable source ceiling is 256 KiB. These values are
+source, 2,048 physical lines, 2,048 blocks, 8,192 runs, 4,096 UTF-16 units per
+line and 16,384 per leaf block, with at most eight nested quote/item containers.
+These are the kernel's count defaults. The writable source ceiling is 256 KiB. These values are
 **candidates**, not a sealed performance promise. Dense presets can exceed the
 shape budget and open in the disclosed source mode.
 
@@ -102,6 +103,17 @@ It enables engine platform messages (suppressed by Flutter's browser unit-test
 runner by default), then verifies DOM input, exact source, the next character
 and actual paint. The normal Wasm workbench still receives interactive browser
 canaries; the transport test alone is not D0-web.
+
+The browser frame profile measures edit work and its painted frame at the
+candidate limits, as the native frame profile does:
+
+```sh
+flutter build web --wasm -t integration_test/web_frame_profile.dart
+```
+
+Serve it as above and open it in a visible browser tab. It prints one
+`FLARK_WEB_FRAME_RECEIPT` per shape and site; query parameters select `bytes`,
+`shapes`, `sites` and `iterations`. Rebuild the workbench afterwards.
 
 The native profile correlates a required post-input paint with its engine raster
 frame, with no settling before the proving paint. The full workbench path also

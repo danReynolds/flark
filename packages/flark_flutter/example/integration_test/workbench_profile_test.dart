@@ -52,11 +52,13 @@ Map<String, String> workbenchProfileSources(FlarkParseBackend backend) => {
   for (final shape in profileCycles.keys)
     shape: boundedProfileSource(backend, shape, candidateLiveBytes),
   'source ceiling': '${'word\n' * (candidateSourceBytes ~/ 5)}zzz',
-  'long line': 'a' * 4097,
-  'line count': 'a\n' * 1025,
-  'block count': '- a\n' * 257,
+  // Each shape is just past one candidate cap. A `- a` item is an item and a
+  // paragraph block, inside one list and the document.
+  'long line': 'a' * (candidateLiveLimits.lineCodeUnits + 1),
+  'line count': 'a\n' * (candidateLiveLimits.lines + 1),
+  'block count': '- a\n' * (candidateLiveLimits.blocks ~/ 2),
   'run count': '${'${'*a* ' * 700}\n\n' * 4}z',
-  'container depth': '${'> ' * 9}a',
+  'container depth': '${'> ' * (candidateLiveLimits.containerDepth + 1)}a',
 };
 
 // Known first editable content in these literal fixture prefixes. Opening at

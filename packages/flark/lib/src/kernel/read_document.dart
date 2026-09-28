@@ -54,10 +54,19 @@ FlarkEditorSnapshot _projectSnapshot(
 /// Per-instance read-only projection. It owns no history, editing commands,
 /// composition state or code indentation service. The caller owns the backend.
 final class FlarkReadDocument implements FlarkDocumentState {
-  FlarkReadDocument(this._backend, String markdown) {
+  FlarkReadDocument(
+    this._backend,
+    String markdown, {
+    this.syncLimit = FlarkEditor.defaultSyncLimit,
+    this.liveLimits = const FlarkLiveLimits(),
+  }) {
     update(markdown);
   }
   final FlarkParseBackend _backend;
+
+  /// The UTF-8 size and shape rendered live; beyond either, source mode.
+  final int syncLimit;
+  final FlarkLiveLimits liveLimits;
   FlarkEditorSnapshot? _snapshot;
   int _revision = 0;
   @override
@@ -86,8 +95,8 @@ final class FlarkReadDocument implements FlarkDocumentState {
       markdown,
       const FlarkSelection.collapsed(0),
       const ProjectionOptions(),
-      const FlarkLiveLimits(),
-      FlarkEditor.defaultSyncLimit,
+      liveLimits,
+      syncLimit,
       previous: current is FlarkLiveSnapshot ? current.document : null,
     );
     _snapshot = next;

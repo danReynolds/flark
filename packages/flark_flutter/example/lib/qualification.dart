@@ -1,15 +1,17 @@
 import 'dart:convert';
 import 'package:flark/flark.dart';
 
-// Candidate values stay explicit until a matching profile is sealed.
+// Candidate values stay explicit until a matching profile is sealed. The
+// count caps are the kernel's defaults (2026-09-23); the live limits section
+// of docs/architecture/v5/performance_review_2026_09_22.md records why.
 const candidateLiveBytes = 32 * 1024;
 const candidateSourceBytes = 256 * 1024;
 const candidateLiveLimits = FlarkLiveLimits(
-  lines: 1024,
+  lines: 2048,
   lineCodeUnits: 4096,
-  blocks: 512,
-  runs: 2048,
-  blockCodeUnits: 4096,
+  blocks: 2048,
+  runs: 8192,
+  blockCodeUnits: 16384,
   containerDepth: 8,
 );
 

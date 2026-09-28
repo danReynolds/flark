@@ -4,6 +4,7 @@
 
 - Render-model schema V5: UTF-16 offsets only, packed line, block, content and run records, and an extras section behind a sorted run-extra index. Models are 2.0–4.7× smaller. `records::expand` rebuilds the extractor's byte-level layout for tests and the dump tool.
 - Faster keystrokes: linear projection, a caret index built already sorted, projection rows and host layouts reused across edits and read-only updates, mimalloc on native targets, and source text encoded straight into native and Wasm memory. Measurements are in `docs/architecture/v5/performance_review_2026_09_22.md`.
+- Live limits per platform: `flarkDefaultLiveBytes` renders 32 KiB live on desktop and in desktop browsers and 16 KiB on phones and tablets, and the workbench candidate uses the kernel's count caps. `FlarkController`, `FlarkSession` and `FlarkReader` accept `syncLimit` and `liveLimits`. A browser frame profile (`web_frame_profile.dart`) gates edits at 32 KiB against the frame budget.
 - While exact code colors are pending, a fence paints its previous colors mapped through the edit (RFC 031). The macOS frame profile gates UI work and raster at 16 ms p99 and requires each edit to reach the next frame.
 - Fixed a multiline inline HTML tag that ended on a lazy continuation line displaying the text after it twice. The parse crate's test invariants now reject overlapping sibling runs.
 - Added the V5 Flutter editor/viewer and a local-draft workbench for macOS and Flutter web/WASM, with selection, clipboard, source inspection, keyboard input, and first-paint regression coverage.
