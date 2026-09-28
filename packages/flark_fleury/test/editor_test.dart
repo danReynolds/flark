@@ -1,9 +1,7 @@
 import 'package:flark/flark.dart';
+import 'package:flark_codemirror/flark_codemirror.dart';
 import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:flark_fleury/src/cell_layout.dart';
-import 'package:flark_tree_sitter/flark.dart';
-import 'package:flark_tree_sitter/flark_tree_sitter.dart';
-import 'package:flark_tree_sitter/highlight_worker.dart';
 import 'package:fleury/fleury_core.dart';
 import 'package:fleury/fleury_test_support.dart';
 import 'package:test/test.dart';
@@ -30,8 +28,7 @@ void main() {
     String source, {
     int? caret,
     bool readOnly = false,
-    FlarkTreeSitter? code,
-    CodeHighlightWorker? worker,
+    FlarkCodeMirror? code,
     FlarkCellTheme? theme,
   }) {
     editor = FlarkEditor(
@@ -40,7 +37,7 @@ void main() {
       caret: caret ?? source.length,
       codeEditing: code,
     );
-    controller = FlarkFleuryController(editor, highlightWorker: worker);
+    controller = FlarkFleuryController(editor);
     tester.pumpWidget(
       Theme(
         data: const ThemeData(),
@@ -728,12 +725,10 @@ void main() {
   test(
     'fence scoped select all and Ruby indentation use the shared engine',
     () {
-      final code = FlarkTreeSitter.fromAnalyzer(CodeAnalyzer());
-      addTearDown(code.dispose);
       mount(
         'above\n\n```ruby\ndef hello\n\n```\n\nbelow',
         caret: 24,
-        code: code,
+        code: FlarkCodeMirror(),
       );
       editor.apply(SetSelection.caret(editor.source.indexOf('hello') + 5));
       lines();
@@ -762,10 +757,12 @@ void main() {
 
   for (final width in [20, 80]) {
     test('double Enter exits an auto-indented fence at width $width', () {
-      final code = FlarkTreeSitter.fromAnalyzer(CodeAnalyzer());
-      addTearDown(code.dispose);
       const source = '```ruby\ndef hello\n```\n\nafter';
-      mount(source, caret: source.indexOf('hello') + 5, code: code);
+      mount(
+        source,
+        caret: source.indexOf('hello') + 5,
+        code: FlarkCodeMirror(),
+      );
       tester.render(size: CellSize(width, 12));
       key(KeyCode.enter);
       expect(editor.document.caretRow.text, 'def hello\n  ');
@@ -854,50 +851,6 @@ void main() {
       expect(lines().first, 'word');
       tester.type('!');
       expect(editor.source, '**word!**');
-    },
-  );
-
-  test(
-    'real worker colors only exact current source, without holding edits',
-    () async {
-      final code = FlarkTreeSitter.fromAnalyzer(CodeAnalyzer());
-      addTearDown(code.dispose);
-      final worker = await CodeHighlightWorker.start();
-      mount(
-        '```ruby\ndef hello\nend\n```',
-        caret: 17,
-        code: code,
-        worker: worker,
-      );
-      for (
-        var i = 0;
-        i < 100 && controller.colorsFor(editor.projection.rows.first) == null;
-        i++
-      ) {
-        await tester.settle();
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      final row = editor.projection.rows.first;
-      final exact = controller.colorsFor(row)!;
-      expect(exact.language, 'ruby');
-      final defKind = exact.kindAt(row.text.indexOf('def'));
-      expect(defKind, isNotNull);
-      editor.apply(SetSelection.caret(editor.source.indexOf('hello') + 5));
-      tester.type('x');
-      expect(
-        editor.source,
-        contains(
-          'hello'
-          'x',
-        ),
-      );
-      expect(lines().first, '  def hellox');
-      // Until the edited text's analysis arrives, the fence keeps its colors
-      // shifted through the edit instead of flashing plain.
-      final edited = editor.projection.rows.first;
-      final shifted = controller.colorsFor(edited)!;
-      expect(shifted.tokens.last.end, edited.text.length);
-      expect(shifted.kindAt(edited.text.indexOf('def')), defKind);
     },
   );
 }
