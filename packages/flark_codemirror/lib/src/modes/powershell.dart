@@ -7,12 +7,12 @@ import '../mode.dart';
 import '../stream.dart';
 
 // Upstream builds its grammar with `buildRegexp`: case-insensitive
-// alternatives of these patterns, each then tried at the stream in turn.
-// Past the first character, a keyword or builtin must be followed by a
-// character outside `[A-Za-z\d\-_]` and a word operator by one outside
-// `\w`, so each matches exactly when the whole run of such characters at the
-// stream is one of its words. The port reads the words out of the patterns
-// once and looks the run up in place.
+// alternatives of these patterns, each then tried at the stream in turn. A
+// keyword or builtin must be followed by a character outside
+// `[A-Za-z\d\-_]`, and a word operator by one outside `\w` (its `\b`), so a
+// word made of those characters matches exactly when it is the whole run of
+// them at the stream. The port reads the words out of the patterns once and
+// looks the run up in place.
 const _keywordPatterns = [
   'begin|break|catch|continue|data|default|do|dynamicparam',
   'else|elseif|end|exit|filter|finally|for|foreach|from|function|if|in',
