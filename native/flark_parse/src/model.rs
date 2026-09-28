@@ -20,11 +20,23 @@ pub type ContentRec = [u32; content::WORDS];
 pub type RunRec = [u32; run::WORDS];
 
 /// A validation finding from report mode. `rule` is a stable identifier.
+/// `leaf` names the paragraph, heading or table cell whose inline runs were
+/// dropped because of it, so the leaf shows its source as plain text; a
+/// finding without one refuses the whole model.
 #[derive(Clone, Debug)]
-pub struct Deviation { pub rule: &'static str, pub detail: String }
+pub struct Deviation { pub rule: &'static str, pub detail: String, pub leaf: Option<u32> }
+
+/// Deviations confined to one leaf's inline runs. Dropping the leaf's runs
+/// leaves a model that is exactly right, only less rendered.
+/// Block flags bit 23 (SCHEMA.md, `any`): a leaf published without runs.
+pub const SOURCE_ONLY: u32 = 1 << 23;
+
+const INLINE_RULES: &[&str] = &["text-mismatch", "emph-delims", "strong-delims", "strike-delims", "code-delims", "code-literal", "image-delims", "html-inline-end", "html-inline-literal", "heading-content", "run-structure"];
 
 /// Extraction refused to publish a model because a derived range or value did
-/// not agree with comrak's source positions or literal output.
+/// not agree with comrak's source positions or literal output, or because the
+/// model broke the schema's structural invariants. A deviation confined to
+/// one leaf's inlines does not refuse: that leaf publishes without runs.
 #[derive(Debug)]
 pub struct ExtractionError { pub deviations: Vec<Deviation> }
 
@@ -148,6 +160,8 @@ pub struct Extractor<'a> {
     run_delta: isize,
     last_text_end: usize,
     pub deviations: Vec<Deviation>,
+    /// Scratch for [leaf_run_problem], reused across leaves.
+    sibling_end: Vec<usize>,
 }
 
 impl<'a> Extractor<'a> {
@@ -155,12 +169,16 @@ impl<'a> Extractor<'a> {
     /// packed into the tail and padded to a whole word.
     pub fn extract(src: &'a str) -> Result<Vec<u32>, ExtractionError> {
         let (model, deviations) = Self::run(src, true);
-        if deviations.is_empty() { Ok(model) } else { Err(ExtractionError { deviations }) }
+        if deviations.iter().all(|d| d.leaf.is_some()) { Ok(model) } else { Err(ExtractionError { deviations }) }
     }
     pub fn extract_with_report(src: &'a str) -> (Vec<u32>, Vec<Deviation>) { Self::run(src, true) }
 
+    fn new(src: &'a str, collect: bool) -> Self {
+        Extractor { src, li: LineIndex::new(src), blocks: Vec::new(), content: Vec::new(), runs: Vec::new(), definitions: Vec::new(), strings: Vec::new(), containers: Vec::new(), collect, run_delta: 0, last_text_end: 0, deviations: Vec::new(), sibling_end: Vec::new() }
+    }
+
     fn run(src: &'a str, collect: bool) -> (Vec<u32>, Vec<Deviation>) {
-        let mut ex = Extractor { src, li: LineIndex::new(src), blocks: Vec::new(), content: Vec::new(), runs: Vec::new(), definitions: Vec::new(), strings: Vec::new(), containers: Vec::new(), collect, run_delta: 0, last_text_end: 0, deviations: Vec::new() };
+        let mut ex = Extractor::new(src, collect);
         let arena = Arena::new();
         let root = parse_document(&arena, src, &options());
         let leaves = ex.walk_blocks(root);
@@ -170,11 +188,13 @@ impl<'a> Extractor<'a> {
         ex.definitions.sort_by_key(|d| d.start);
         ex.definitions.dedup_by_key(|d| d.start);
         ex.empty_container_lines();
+        ex.fit_overlapping_containers();
+        ex.check_structure();
         let buf = ex.encode();
         (buf, ex.deviations)
     }
 
-    fn dev(&mut self, rule: &'static str, detail: impl FnOnce() -> String) { if self.collect { let d = detail(); self.deviations.push(Deviation { rule, detail: d }); } }
+    fn dev(&mut self, rule: &'static str, detail: impl FnOnce() -> String) { if self.collect { let d = detail(); self.deviations.push(Deviation { rule, detail: d, leaf: None }); } }
 
     fn push_string(&mut self, s: &str) -> (u32, u32) { let off = self.strings.len() as u32; self.strings.extend_from_slice(s.as_bytes()); (off, s.len() as u32) }
 
@@ -317,18 +337,25 @@ impl<'a> Extractor<'a> {
         (idx, container, is_leaf)
     }
 
-    /// Content column of a task item relative to its enclosing container: the
-    /// column of the checkbox on the marker line.
+    /// Content column of a task item relative to its enclosing container's
+    /// content column, by cmark's padding rule: the marker plus the one to
+    /// four columns of space after it, or plus one when the rest of the line
+    /// is blank or five or more columns of space follow (indented code). A
+    /// partially consumed tab before the marker counts from where the
+    /// container's content begins, not from the tab stop.
     fn marker_content_offset(&self, line0: usize, containers: &[Container]) -> usize {
         let line = self.line_bytes(line0);
         let p = self.prefix_cursor(line0, line, containers);
-        let base = p.cur.col;
+        let base = p.cur.col - p.cur.virt;
         let mut cur = p.cur;
         cur.consume_columns(3);
         while matches!(cur.line.get(cur.pos), Some(b) if b.is_ascii_digit()) { cur.advance(1); }
         if matches!(cur.line.get(cur.pos), Some(b'-') | Some(b'+') | Some(b'*') | Some(b'.') | Some(b')')) { cur.advance(1); }
-        cur.consume_columns(usize::MAX.min(5));
-        cur.col.saturating_sub(base).max(2)
+        let marker_end = cur.col;
+        let spaces = cur.consume_columns(5);
+        let rest_blank = cur.line[cur.pos..].iter().all(|b| matches!(b, b' ' | b'\t'));
+        let padding = if rest_blank || spaces >= 5 || spaces == 0 { 1 } else { spaces };
+        (marker_end + padding).saturating_sub(base).max(2)
     }
 
     // ------------------------------------------------------------- per line
@@ -340,6 +367,10 @@ impl<'a> Extractor<'a> {
         let mut after_checkbox = false;
         let mut base = 0usize;
         let mut prefix_start = 0usize;
+        // A blank line short of an item's indentation keeps the prefix start a
+        // lazy line would have (where the indentation fell short) for editing,
+        // while its content follows cmark past the whitespace.
+        let mut prefix_frozen = false;
         for c in containers {
             let at = cur.pos;
             match c.kind {
@@ -354,7 +385,7 @@ impl<'a> Extractor<'a> {
                             _ => {}
                         }
                         base = cur.col - cur.virt;
-                        prefix_start = at;
+                        if !prefix_frozen { prefix_start = at; }
                     } else { cur = save; lazy = true; break; }
                 }
                 ContainerKind::Item => {
@@ -367,17 +398,46 @@ impl<'a> Extractor<'a> {
                         cur.consume_columns(need);
                     } else {
                         // cmark advances past the indentation only when all of
-                        // it is there; a lazy line keeps its partial spaces.
+                        // it is there; a lazy line keeps its partial spaces. A
+                        // blank line still continues an item that holds a
+                        // block, advanced to its first non-space: the lines of
+                        // a leaf after its first always have one.
                         let save = cur;
                         let need = target.saturating_sub(cur.col - cur.virt);
                         let got = cur.consume_columns(need);
-                        if got < need { cur = save; lazy = true; break; }
+                        if got < need {
+                            cur = save;
+                            if cur.line[cur.pos..].iter().all(|b| matches!(b, b' ' | b'\t')) {
+                                if !prefix_frozen { prefix_start = at; prefix_frozen = true; }
+                                cur.skip_whitespace();
+                            } else {
+                                // A lazy line still holds the checkbox when definitions
+                                // stripped before it left it leading the paragraph.
+                                if let Some((cb_start, cb_end)) = c.checkbox {
+                                    let mut probe = cur;
+                                    probe.skip_whitespace();
+                                    if self.li.line_start(line0) + probe.pos == cb_start {
+                                        cur = probe;
+                                        cur.advance(cb_end - cb_start);
+                                        if matches!(cur.line.get(cur.pos), Some(b' ') | Some(b'\t')) { cur.advance(1); }
+                                        after_checkbox = true;
+                                    }
+                                }
+                                lazy = true; break;
+                            }
+                        }
                     }
-                    prefix_start = at;
+                    if !prefix_frozen { prefix_start = at; }
                     // The task checkbox is skipped on whichever line comrak found it
                     // (the item's first paragraph line), plus one space or tab.
+                    // The checkbox leads the paragraph's first line, which cmark
+                    // strips of whitespace first: it can sit past extra spaces
+                    // or a partially consumed tab.
                     if let Some((cb_start, cb_end)) = c.checkbox {
-                        if self.li.line_start(line0) + cur.pos == cb_start {
+                        let mut probe = cur;
+                        probe.skip_whitespace();
+                        if self.li.line_start(line0) + probe.pos == cb_start {
+                            cur = probe;
                             cur.advance(cb_end - cb_start);
                             if matches!(cur.line.get(cur.pos), Some(b' ') | Some(b'\t')) { cur.advance(1); }
                             after_checkbox = true;
@@ -394,7 +454,7 @@ impl<'a> Extractor<'a> {
                             cur.skip_whitespace();
                         }
                         base = cur.col;
-                        prefix_start = at;
+                        if !prefix_frozen { prefix_start = at; }
                     } else {
                         let target = base + 4;
                         let save = cur;
@@ -402,7 +462,7 @@ impl<'a> Extractor<'a> {
                         let got = cur.consume_columns(need);
                         if got < need { cur = save; lazy = true; break; }
                         base = target;
-                        prefix_start = at;
+                        if !prefix_frozen { prefix_start = at; }
                     }
                 }
             }
@@ -473,7 +533,18 @@ impl<'a> Extractor<'a> {
                 if p.start == p.end { self.push_content(line, p.start, p.end, 0, p.prefix_start); }
             }
             self.blocks[block_index][block::CONTENT_COUNT] = self.content.len() as u32 - self.blocks[block_index][block::CONTENT_OFFSET];
+            // comrak can end a container short of its own empty lines: an
+            // empty footnote definition followed by a blank line inside an
+            // item ends at its label's first byte. The block covers them.
+            let first = self.blocks[block_index][block::CONTENT_OFFSET] as usize;
+            for c in first..self.content.len() {
+                let (cs, ce) = (self.content[c][content::START_BYTE], self.content[c][content::END_BYTE]);
+                let b = &mut self.blocks[block_index];
+                if cs < b[block::START_BYTE] { b[block::START_BYTE] = cs; b[block::START_UTF16] = self.li.u16(cs as usize); }
+                if ce > b[block::END_BYTE] { b[block::END_BYTE] = ce; b[block::END_UTF16] = self.li.u16(ce as usize); }
+            }
         }
+        self.widen_parents();
     }
 
     fn leaf(&mut self, leaf: &Leaf<'_>, chain: &[Container]) {
@@ -482,6 +553,7 @@ impl<'a> Extractor<'a> {
         let sp = data.sourcepos;
         let content_start = self.content.len() as u32;
         let first_run = self.runs.len();
+        let first_deviation = self.deviations.len();
         self.blocks[idx][block::CONTENT_OFFSET] = content_start;
         if sp.start.line == 0 { return; }
         let (l0, l1) = (sp.start.line - 1, sp.end.line - 1);
@@ -497,6 +569,13 @@ impl<'a> Extractor<'a> {
                     let le = self.li.line_end(line0, self.src.len());
                     if cs > be { break; }
                     self.push_content(line0, cs, le.min(be.max(cs)), p.cur.virt, ls + p.prefix_start);
+                }
+                // comrak's end column counts a partially consumed tab's virtual
+                // spaces, so it can run past the block's last line into the next
+                // block. The block ends with its last line.
+                if let Some(last) = self.content.get(content_start as usize..).and_then(|c| c.last()) {
+                    let le = self.li.line_end(last[content::LINE] as usize, self.src.len());
+                    if be > le { self.blocks[idx][block::END_BYTE] = le as u32; self.blocks[idx][block::END_UTF16] = self.li.u16(le); }
                 }
             }
             NodeValue::ThematicBreak => {
@@ -577,7 +656,11 @@ impl<'a> Extractor<'a> {
                 // comrak does not resolve definitions in a paragraph it split to
                 // make a table header (the remainder is re-created as a new node).
                 let split_by_table = kind == block_kind::PARAGRAPH && self.blocks.get(idx + 1).map_or(false, |b| b[block::KIND] == block_kind::TABLE && b[block::FIRST_LINE] as usize == l1 + 1);
-                let (shift, records) = self.strip_definitions(l0, last, chain, !split_by_table);
+                // comrak resolves definitions before it removes a task checkbox,
+                // and `[x] ` cannot begin one: a paragraph led by its item's
+                // checkbox strips no definitions.
+                let led_by_checkbox = self.prefix_cursor(l0, self.line_bytes(l0), chain).after_checkbox;
+                let (shift, records) = self.strip_definitions(l0, last, chain, !split_by_table && !led_by_checkbox);
                 for r in records {
                     // The parser buffer trims trailing whitespace, but an
                     // editing content span must retain it. Otherwise typing a
@@ -594,11 +677,160 @@ impl<'a> Extractor<'a> {
             }
             _ => { self.walk_inlines(leaf.node, idx as u32, None, None); }
         }
+        let inline_leaf = !matches!(data.value, NodeValue::CodeBlock(_) | NodeValue::HtmlBlock(_) | NodeValue::ThematicBreak);
         drop(data);
+        if inline_leaf { self.settle_inlines(idx, first_run, first_deviation); }
         self.blocks[idx][block::CONTENT_COUNT] = self.content.len() as u32 - content_start;
         self.fit_block_to_content(idx);
         self.trim_trailing_blank_lines(idx, chain);
         self.fit_block_to_runs(idx, first_run);
+    }
+
+    /// A leaf whose inline extraction deviated, or whose runs do not nest and
+    /// follow each other, publishes without runs: it shows its source as
+    /// plain text and stays editable, while the rest of the document renders.
+    /// Its deviations are scoped to it; any other deviation still refuses.
+    fn settle_inlines(&mut self, idx: usize, first_run: usize, first_deviation: usize) {
+        if let Some(problem) = self.leaf_run_problem(first_run) { self.dev("run-structure", || format!("block {idx}: {problem}")); }
+        let mut degrade = false;
+        for d in &mut self.deviations[first_deviation..] {
+            if INLINE_RULES.contains(&d.rule) { d.leaf = Some(idx as u32); degrade = true; }
+        }
+        if degrade {
+            self.runs.truncate(first_run);
+            self.blocks[idx][block::FLAGS] |= SOURCE_ONLY;
+        }
+    }
+
+    /// Why the runs from [first_run], one leaf's, cannot be painted: a run
+    /// whose content lies outside it, whose parent is not an earlier run of
+    /// the leaf or does not contain it, or which starts before its previous
+    /// sibling ends. The projection walks runs in order, so an overlap would
+    /// show the shared source twice.
+    fn leaf_run_problem(&mut self, first_run: usize) -> Option<String> {
+        let mut sibling_end = std::mem::take(&mut self.sibling_end);
+        let problem = self.run_problem_with(first_run, &mut sibling_end);
+        self.sibling_end = sibling_end;
+        problem
+    }
+
+    fn run_problem_with(&self, first_run: usize, sibling_end: &mut Vec<usize>) -> Option<String> {
+        let runs = &self.runs[first_run..];
+        // Slot zero is the leaf itself; slot i + 1 holds run i's children.
+        sibling_end.clear();
+        sibling_end.resize(runs.len() + 1, 0);
+        for (i, r) in runs.iter().enumerate() {
+            let at = first_run + i;
+            let (s, e, cs, ce) = (r[run::START_BYTE] as usize, r[run::END_BYTE] as usize, r[run::CONTENT_START_BYTE] as usize, r[run::CONTENT_END_BYTE] as usize);
+            if !(s <= cs && cs <= ce && ce <= e) { return Some(format!("run {at} order {s} {cs} {ce} {e}")); }
+            let p = r[run::PARENT];
+            let slot = if p == u32::MAX { 0 } else {
+                let p = p as usize;
+                if p < first_run || p >= at { return Some(format!("run {at} parent {p} outside the leaf")); }
+                let (ps, pe) = (self.runs[p][run::START_BYTE] as usize, self.runs[p][run::END_BYTE] as usize);
+                if s < ps || e > pe { return Some(format!("run {at} {s}..{e} outside its parent {p} {ps}..{pe}")); }
+                p - first_run + 1
+            };
+            if s < sibling_end[slot] { return Some(format!("run {at} {s}..{e} overlaps its previous sibling, which ends at {}", sibling_end[slot])); }
+            sibling_end[slot] = e;
+        }
+        None
+    }
+
+    /// A container that runs into the block after it ends with its own
+    /// children and empty lines. comrak can end one past them: a list or item
+    /// whose last child is an HTML block after a partial tab (a column too
+    /// far), or an item after a tab-indented continuation line (a line too
+    /// far). Only a container that overlaps its next sibling is refitted.
+    fn fit_overlapping_containers(&mut self) {
+        let n = self.blocks.len();
+        let mut next_start: Vec<Option<u32>> = vec![None; n];
+        let mut last_child: Vec<Option<usize>> = vec![None; n + 1];
+        for i in 1..n {
+            let p = self.blocks[i][block::PARENT];
+            if p == u32::MAX { continue; }
+            if let Some(previous) = last_child[p as usize] { next_start[previous] = Some(self.blocks[i][block::START_BYTE]); }
+            last_child[p as usize] = Some(i);
+        }
+        let container = |k: u32| matches!(k, block_kind::BLOCK_QUOTE | block_kind::LIST | block_kind::ITEM | block_kind::FOOTNOTE_DEFINITION);
+        // How far each block's own content and children reach, whatever
+        // comrak said a container's end was. Children follow their parent,
+        // so a reverse walk sees every child first.
+        let mut reach: Vec<u32> = vec![0; n];
+        for i in (0..n).rev() {
+            let (co, cn) = (self.blocks[i][block::CONTENT_OFFSET] as usize, self.blocks[i][block::CONTENT_COUNT] as usize);
+            for c in self.content.get(co..co + cn).unwrap_or(&[]) { reach[i] = reach[i].max(c[content::END_BYTE]); }
+            if !container(self.blocks[i][block::KIND]) { reach[i] = reach[i].max(self.blocks[i][block::END_BYTE]); }
+            let p = self.blocks[i][block::PARENT];
+            if p != u32::MAX { reach[p as usize] = reach[p as usize].max(reach[i]); }
+        }
+        // Parents first: a container overlapping its next sibling ends at its
+        // reach, and every container stays inside its parent.
+        for i in 1..n {
+            if !container(self.blocks[i][block::KIND]) { continue; }
+            let p = self.blocks[i][block::PARENT];
+            let parent_end = if p == u32::MAX { u32::MAX } else { self.blocks[p as usize][block::END_BYTE] };
+            let (start, end) = (self.blocks[i][block::START_BYTE], self.blocks[i][block::END_BYTE]);
+            if next_start[i].is_some_and(|ns| end > ns) || end > parent_end {
+                let e = reach[i].max(start).min(parent_end.max(start));
+                if e < end { self.blocks[i][block::END_BYTE] = e; self.blocks[i][block::END_UTF16] = self.li.u16(e as usize); }
+            }
+        }
+    }
+
+    /// The model's structural invariants, checked before publishing: blocks
+    /// in document order, each inside its parent and clear of its previous
+    /// sibling; content records on their own line and inside their block;
+    /// runs in block order and inside their block. A host trusts all of these
+    /// to map carets and paint, so a model that breaks one is refused.
+    fn check_structure(&mut self) {
+        let src_len = self.src.len();
+        let mut problem: Option<(&'static str, String)> = None;
+        // The previous sibling under each parent, as the test invariant compares neighbours.
+        let mut sibling = vec![(0usize, 0usize); self.blocks.len() + 1];
+        let mut previous_start = 0usize;
+        for (i, b) in self.blocks.iter().enumerate() {
+            let (s, e) = (b[block::START_BYTE] as usize, b[block::END_BYTE] as usize);
+            if s > e || e > src_len { problem = Some(("block-tree", format!("block {i} range {s}..{e}"))); break; }
+            if i == 0 { continue; }
+            let p = b[block::PARENT] as usize;
+            if p >= i { problem = Some(("block-tree", format!("block {i} parent {p}"))); break; }
+            let (ps, pe) = (self.blocks[p][block::START_BYTE] as usize, self.blocks[p][block::END_BYTE] as usize);
+            if s < ps || e > pe { problem = Some(("block-tree", format!("block {i} {s}..{e} outside its parent {p} {ps}..{pe}"))); break; }
+            if s < previous_start { problem = Some(("block-tree", format!("block {i} starts before the block before it"))); break; }
+            previous_start = s;
+            let (qs, qe) = sibling[p];
+            if s < qe && e > qs { problem = Some(("block-tree", format!("block {i} {s}..{e} overlaps its previous sibling {qs}..{qe}"))); break; }
+            sibling[p] = (s, e);
+        }
+        if problem.is_none() {
+            'blocks: for (i, b) in self.blocks.iter().enumerate() {
+                let (s, e) = (b[block::START_BYTE] as usize, b[block::END_BYTE] as usize);
+                let (co, cn) = (b[block::CONTENT_OFFSET] as usize, b[block::CONTENT_COUNT] as usize);
+                let mut last_line: Option<usize> = None;
+                for c in self.content.get(co..co + cn).unwrap_or(&[]) {
+                    let (cs, ce, line, ps) = (c[content::START_BYTE] as usize, c[content::END_BYTE] as usize, c[content::LINE] as usize, c[content::PREFIX_START_BYTE] as usize);
+                    let (ls, le) = (self.li.line_start(line), self.li.line_end_with_break(line, src_len));
+                    if cs > ce || cs < s || ce > e + 1 || cs < ls || ce > le || ps < ls || ps > cs || last_line.is_some_and(|l| line <= l) {
+                        problem = Some(("content-structure", format!("block {i} content {cs}..{ce} on line {line}")));
+                        break 'blocks;
+                    }
+                    last_line = Some(line);
+                }
+            }
+        }
+        if problem.is_none() {
+            let mut previous_block = 0u32;
+            for (i, r) in self.runs.iter().enumerate() {
+                let b = r[run::BLOCK];
+                if b < previous_block || b as usize >= self.blocks.len() { problem = Some(("run-block", format!("run {i} block {b}"))); break; }
+                previous_block = b;
+                let (s, e) = (r[run::START_BYTE] as usize, r[run::END_BYTE] as usize);
+                let (bs, be) = (self.blocks[b as usize][block::START_BYTE] as usize, self.blocks[b as usize][block::END_BYTE] as usize);
+                if s < bs || e > be + 1 { problem = Some(("run-block", format!("run {i} {s}..{e} outside block {b} {bs}..{be}"))); break; }
+            }
+        }
+        if let Some((rule, detail)) = problem { self.dev(rule, || detail); }
     }
 
     /// comrak's block end column can fall short of its last inline across CR
@@ -885,6 +1117,9 @@ impl<'a> Extractor<'a> {
 
     fn pipe_shift(&self, byte: usize, cell: Option<Cell>) -> usize {
         let Some(Cell { start: cell_start, .. }) = cell else { return byte; };
+        // comrak's columns restart on each line: in a paragraph split to make
+        // a table header, only the escapes earlier on the byte's own line move it.
+        let cell_start = cell_start.max(self.li.line_start(self.li.line_of(byte.min(self.src.len()))));
         let mut b = byte; let mut k0 = 0usize;
         loop {
             // A backslash at b-1 whose pipe sits at b was removed too: count through b+1.
@@ -931,6 +1166,89 @@ impl<'a> Extractor<'a> {
             }
         }
         if self.run_delta != 0 { self.refit_containers(first_run); }
+        self.check_delimiters(blk, first_run);
+    }
+
+    /// The literal of an inline node comrak placed at [s]..[e] where it does
+    /// not appear: found from the end of the previous text and sibling, close
+    /// to where comrak put it, or `None`.
+    fn find_literal(&self, literal: &str, s: usize, e: usize, sibling_end: usize, blk: u32) -> Option<usize> {
+        let src = self.src;
+        let block_end = self.blocks[blk as usize][block::END_BYTE] as usize;
+        let mut from = self.last_text_end.max(sibling_end).max(s.saturating_sub(4)).min(src.len());
+        while from > 0 && !src.is_char_boundary(from) { from -= 1; }
+        let mut to = block_end.max(from).min(src.len());
+        while to < src.len() && !src.is_char_boundary(to) { to += 1; }
+        match src[from..to].find(literal) {
+            Some(off) if off <= 8 + (e - s) => Some(from + off),
+            _ => None,
+        }
+    }
+
+    /// The nearest source window, from the end of the previous text and
+    /// sibling and close to where comrak put [s], whose pieces explain the
+    /// text literal [t] (entities decoded), or `None`. Only short literals are
+    /// searched: each candidate is checked piece by piece.
+    fn find_explained(&self, t: &str, s: usize, e: usize, sibling_end: usize, blk: u32) -> Option<(usize, usize)> {
+        if t.len() > 64 { return None; }
+        let src = self.src;
+        let block_end = self.blocks[blk as usize][block::END_BYTE] as usize;
+        let from = self.last_text_end.max(sibling_end).max(s.saturating_sub(4)).min(src.len());
+        let to = block_end.max(from).min(src.len());
+        let last_start = (from + 8 + (e - s)).min(to);
+        for q in from..=last_start {
+            if !src.is_char_boundary(q) { continue; }
+            let longest = (t.len() * 12 + 8).min(to - q);
+            for len in 1..=longest {
+                let r = q + len;
+                if src.is_char_boundary(r) && text_pieces::explains(&src[q..r], t) { return Some((q, r)); }
+            }
+        }
+        None
+    }
+
+    /// Whether [s]..[e] is bracketed by the delimiters of a run of [kind].
+    fn delimited(bytes: &[u8], kind: u32, s: usize, e: usize) -> bool {
+        if e > bytes.len() || s >= e { return false; }
+        match kind {
+            run_kind::EMPH => e > s + 1 && matches!(bytes[s], b'*' | b'_') && bytes[e - 1] == bytes[s],
+            run_kind::STRONG => e >= s + 4 && matches!(bytes[s], b'*' | b'_') && bytes[s + 1] == bytes[s] && bytes[e - 1] == bytes[s] && bytes[e - 2] == bytes[s],
+            run_kind::STRIKE => { let n = if e >= s + 4 && bytes[s] == b'~' && bytes[s + 1] == b'~' { 2 } else { 1 }; e >= s + 2 * n && bytes[s] == b'~' && bytes[e - 1] == b'~' }
+            _ => true,
+        }
+    }
+
+    /// Emphasis, strong and strikethrough runs must be bracketed by their own
+    /// delimiters. One that is not, because comrak's end drifted inside a
+    /// multiline link the container encloses, is re-derived around its
+    /// children; only one that still is not counts as a deviation.
+    fn check_delimiters(&mut self, blk: u32, first_run: usize) {
+        let bytes = self.src.as_bytes();
+        for i in first_run..self.runs.len() {
+            let kind = self.runs[i][run::KIND];
+            if !matches!(kind, run_kind::EMPH | run_kind::STRONG | run_kind::STRIKE) { continue; }
+            let (s, e) = (self.runs[i][run::START_BYTE] as usize, self.runs[i][run::END_BYTE] as usize);
+            if Self::delimited(bytes, kind, s, e) { continue; }
+            let (mut cs, mut ce) = (usize::MAX, 0usize);
+            for j in (i + 1)..self.runs.len() {
+                if self.runs[j][run::PARENT] == i as u32 { cs = cs.min(self.runs[j][run::START_BYTE] as usize); ce = ce.max(self.runs[j][run::END_BYTE] as usize); }
+            }
+            let n = match kind {
+                run_kind::EMPH => 1,
+                run_kind::STRONG => 2,
+                _ => if cs != usize::MAX && cs >= 2 && bytes[cs - 2] == b'~' && bytes.get(ce + 1) == Some(&b'~') { 2 } else { 1 },
+            };
+            if cs != usize::MAX && cs >= n && Self::delimited(bytes, kind, cs - n, ce + n) {
+                let (ns, ne) = (cs - n, ce + n);
+                let r = &mut self.runs[i];
+                r[run::START_BYTE] = ns as u32; r[run::END_BYTE] = ne as u32; r[run::CONTENT_START_BYTE] = cs as u32; r[run::CONTENT_END_BYTE] = ce as u32;
+                r[run::START_UTF16] = self.li.u16(ns); r[run::END_UTF16] = self.li.u16(ne); r[run::CONTENT_START_UTF16] = self.li.u16(cs); r[run::CONTENT_END_UTF16] = self.li.u16(ce);
+            } else {
+                let rule = match kind { run_kind::EMPH => "emph-delims", run_kind::STRONG => "strong-delims", _ => "strike-delims" };
+                let shown = self.src.get(s..e.min(self.src.len())).unwrap_or("").to_string();
+                self.dev(rule, || format!("block {blk} {:?}", shown));
+            }
+        }
     }
 
     /// After a repair shifted positions mid-leaf, containers recorded before
@@ -1001,8 +1319,13 @@ impl<'a> Extractor<'a> {
                 // Repair: comrak's inline line counter does not advance across a bare
                 // CR, so positions after one are short by the line-ending bytes.
                 // Find the literal forward of the last text run and carry the offset.
+                // A slice with an entity, tab or escaped pipe can differ from its
+                // literal legitimately, so it is searched for only when the piece
+                // walk cannot explain the literal from it: then comrak placed it
+                // (after a multiline link's syntax, say) where it is not.
                 let replacement_like = slice.contains('&') || slice.contains('\t') || slice.contains("\\|") || (t.len() > slice.len() && t.trim_start_matches(' ') == slice);
-                let (s, e, slice) = if (t != slice || s < sibling_end) && !t.is_empty() && t != "\n" && !replacement_like {
+                let drifted = !replacement_like || !text_pieces::explains(slice, t);
+                let (s, e, slice) = if (t != slice || s < sibling_end) && !t.is_empty() && t != "\n" && drifted {
                     let block_end = self.blocks[blk as usize][block::END_BYTE] as usize;
                     let mut from = self.last_text_end.max(sibling_end).max(s.saturating_sub(4)).min(src.len());
                     while from > 0 && !src.is_char_boundary(from) { from -= 1; }
@@ -1010,9 +1333,22 @@ impl<'a> Extractor<'a> {
                     while to < src.len() && !src.is_char_boundary(to) { to += 1; }
                     match src[from..to].find(t) {
                         Some(off) if off <= 8 + (e - s) => { let q = from + off; self.run_delta += q as isize - s as isize; (q, q + t.len(), &src[q..q + t.len()]) }
-                        _ => (s, e, slice),
+                        // A literal with a decoded entity is not in the source as
+                        // written: take the nearest window its pieces explain.
+                        _ => match (replacement_like || t.contains(|c: char| !c.is_ascii())).then(|| self.find_explained(t, s, e, sibling_end, blk)).flatten() {
+                            Some((q, r)) => { self.run_delta += q as isize - s as isize; (q, r, &src[q..r]) }
+                            None => (s, e, slice),
+                        },
                     }
                 } else { (s, e, slice) };
+                // A drifted range can cover just the first bytes of an entity that
+                // decode to the literal (`&` of `&amp;`): the text is the entity.
+                // An escaped ampersand (`\&amp;`) is not one.
+                let escaped = (s > 0 && bytes[s - 1] == b'\\') || (parent != u32::MAX && self.runs[parent as usize][run::KIND] == run_kind::ESCAPE);
+                let (s, e, slice) = match (t == slice && !escaped).then(|| text_pieces::entity_len(&src[s..])).flatten() {
+                    Some(l) if s + l > e && text_pieces::explains(&src[s..s + l], t) => (s, s + l, &src[s..s + l]),
+                    _ => (s, e, slice),
+                };
                 if t == slice { (run_kind::TEXT, s, e) } else {
                     // Known limit: after a bare CR, text that also carries an entity
                     // cannot be relocated by literal search (the literal is decoded),
@@ -1044,9 +1380,12 @@ impl<'a> Extractor<'a> {
                     }
                 }
             }
-            NodeValue::Emph => { let ok = e > s + 1 && matches!(bytes[s], b'*' | b'_') && bytes[e - 1] == bytes[s]; if !ok { let sl = slice.to_string(); self.dev("emph-delims", || format!("block {blk} {:?}", sl)); } (run_kind::EMPH, s + 1, e.saturating_sub(1).max(s + 1)) }
-            NodeValue::Strong => { let ok = e >= s + 4 && matches!(bytes[s], b'*' | b'_') && bytes[s + 1] == bytes[s] && bytes[e - 1] == bytes[s] && bytes[e - 2] == bytes[s]; if !ok { let sl = slice.to_string(); self.dev("strong-delims", || format!("block {blk} {:?}", sl)); } (run_kind::STRONG, s + 2, e.saturating_sub(2).max(s + 2)) }
-            NodeValue::Strikethrough => { let n = if e >= s + 4 && bytes[s] == b'~' && bytes[s + 1] == b'~' { 2 } else { 1 }; let ok = e >= s + 2 * n && bytes[s] == b'~' && bytes[e - 1] == b'~'; if !ok { let sl = slice.to_string(); self.dev("strike-delims", || format!("block {blk} {:?}", sl)); } (run_kind::STRIKE, s + n, e.saturating_sub(n).max(s + n)) }
+            // Delimiters are checked once the leaf's repairs are done
+            // (check_delimiters): comrak's end can drift inside a multiline
+            // link's syntax that the container encloses.
+            NodeValue::Emph => (run_kind::EMPH, s + 1, e.saturating_sub(1).max(s + 1)),
+            NodeValue::Strong => (run_kind::STRONG, s + 2, e.saturating_sub(2).max(s + 2)),
+            NodeValue::Strikethrough => { let n = if e >= s + 4 && bytes[s] == b'~' && bytes[s + 1] == b'~' { 2 } else { 1 }; (run_kind::STRIKE, s + n, e.saturating_sub(n).max(s + n)) }
             NodeValue::Code(c) => {
                 let n = c.num_backticks.max(1);
                 rec[run::AUX0] = n as u32;
@@ -1057,7 +1396,19 @@ impl<'a> Extractor<'a> {
                 // run of exactly n after the opener (CommonMark), validated below
                 // against the literal.
                 let crosses = sp.start.line != sp.end.line;
-                if s + n <= bytes.len() && bytes[s..s + n].iter().all(|b| *b == b'`') && (crosses || !(e >= s + 2 * n && bytes[e - n..e].iter().all(|b| *b == b'`') && bytes.get(e) != Some(&b'`'))) {
+                // Placed away from any opener (after a multiline link's syntax):
+                // the span starts at the nearest run of exactly n backticks.
+                let backticks = |a: usize| a + n <= bytes.len() && bytes[a..a + n].iter().all(|b| *b == b'`');
+                let opener = |a: usize| backticks(a) && (a == 0 || bytes[a - 1] != b'`') && bytes.get(a + n) != Some(&b'`');
+                if !backticks(s) {
+                    let from = self.last_text_end.max(sibling_end).max(s.saturating_sub(4));
+                    if let Some(q) = (from..(from + 8 + (e - s)).min(bytes.len())).find(|&a| opener(a)) {
+                        self.run_delta += q as isize - s as isize;
+                        e = (q + (e - s)).min(bytes.len()); s = q;
+                        while e < bytes.len() && !src.is_char_boundary(e) { e += 1; }
+                    }
+                }
+                if s + n <= bytes.len() && bytes[s..s + n].iter().all(|b| *b == b'`') && (crosses || !(e >= s + 2 * n && e <= bytes.len() && bytes[e - n..e].iter().all(|b| *b == b'`') && bytes.get(e) != Some(&b'`'))) {
                     let mut i = s + n;
                     while i < bytes.len() {
                         if bytes[i] == b'`' { let start = i; while i < bytes.len() && bytes[i] == b'`' { i += 1; } if i - start == n { e = i; break; } } else { i += 1; }
@@ -1086,7 +1437,9 @@ impl<'a> Extractor<'a> {
                         let norm = |t: &str| if multiline { t.split_whitespace().collect::<Vec<_>>().join(" ") } else { t.to_string() };
                         let raw = buffered.as_str();
                         let (nraw, nlit) = (norm(raw), norm(&c.literal));
-                        let stripped = if nraw.len() >= 2 && nraw.starts_with(' ') && nraw.ends_with(' ') && !nraw.trim().is_empty() { &nraw[1..nraw.len() - 1] } else { &nraw[..] };
+                        // CommonMark strips one space from each side unless the content is all
+                        // spaces; a tab is not a space there.
+                        let stripped = if nraw.len() >= 2 && nraw.starts_with(' ') && nraw.ends_with(' ') && !nraw.trim_matches(' ').is_empty() { &nraw[1..nraw.len() - 1] } else { &nraw[..] };
                         let unescaped_pipes = cell.is_some() && nraw.replace("\\|", "|") == nlit;
                         if stripped == nlit && nraw != nlit { cs += 1; ce -= 1; }
                         else if nraw == nlit {}
@@ -1139,8 +1492,15 @@ impl<'a> Extractor<'a> {
                         None => { let lit = literal.clone(); self.dev("html-inline-end", || format!("block {blk} {:?} at {s}", lit)); }
                     }
                 } else if cell.is_none() && slice != literal.as_str() {
-                    let (sl, lit) = (slice.to_string(), literal.clone());
-                    self.dev("html-inline-literal", || format!("block {blk} {:?} vs literal {:?}", sl, lit));
+                    // Placed where it is not, like text after a multiline link's
+                    // syntax: the tag is its own literal, so find it nearby.
+                    match self.find_literal(literal, s, e, sibling_end, blk) {
+                        Some(q) => { self.run_delta += q as isize - s as isize; s = q; e = q + literal.len(); }
+                        None => {
+                            let (sl, lit) = (slice.to_string(), literal.clone());
+                            self.dev("html-inline-literal", || format!("block {blk} {:?} vs literal {:?}", sl, lit));
+                        }
+                    }
                 }
                 (run_kind::HTML_INLINE, s, e)
             }
@@ -1384,4 +1744,69 @@ fn lines_text(src: &str, lines: &[LineSpan]) -> String {
     let mut buffer = String::new();
     for l in lines { buffer.push_str(&src[l.start..l.end]); buffer.push('\n'); }
     buffer
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_rec(s: usize, e: usize, parent: u32) -> RunRec {
+        let mut r = [0; run::WORDS];
+        r[run::START_BYTE] = s as u32; r[run::END_BYTE] = e as u32;
+        r[run::CONTENT_START_BYTE] = s as u32; r[run::CONTENT_END_BYTE] = e as u32;
+        r[run::PARENT] = parent;
+        r
+    }
+
+    fn block_rec(kind: u32, parent: u32, s: usize, e: usize) -> BlockRec {
+        let mut b = [0; block::WORDS];
+        b[block::KIND] = kind; b[block::PARENT] = parent;
+        b[block::START_BYTE] = s as u32; b[block::END_BYTE] = e as u32;
+        b
+    }
+
+    #[test]
+    fn a_leaf_whose_runs_overlap_publishes_only_its_source() {
+        let mut ex = Extractor::new("abc def ghi", true);
+        ex.blocks.push(block_rec(block_kind::PARAGRAPH, u32::MAX, 0, 11));
+        ex.runs.push(run_rec(0, 5, u32::MAX));
+        ex.runs.push(run_rec(3, 11, u32::MAX));
+        ex.settle_inlines(0, 0, 0);
+        assert!(ex.runs.is_empty());
+        assert_ne!(ex.blocks[0][block::FLAGS] & SOURCE_ONLY, 0);
+        assert_eq!((ex.deviations[0].rule, ex.deviations[0].leaf), ("run-structure", Some(0)));
+    }
+
+    #[test]
+    fn a_run_outside_its_parent_or_before_its_sibling_is_a_problem() {
+        let mut ex = Extractor::new("abc def ghi", true);
+        ex.runs = vec![run_rec(0, 4, u32::MAX), run_rec(2, 6, 0)];
+        assert!(ex.leaf_run_problem(0).unwrap().contains("outside its parent"));
+        ex.runs = vec![run_rec(0, 11, u32::MAX), run_rec(0, 4, 0), run_rec(3, 6, 0)];
+        assert!(ex.leaf_run_problem(0).unwrap().contains("overlaps its previous sibling"));
+        ex.runs = vec![run_rec(0, 11, u32::MAX), run_rec(0, 4, 0), run_rec(4, 6, 0), run_rec(6, 11, u32::MAX)];
+        assert!(ex.leaf_run_problem(0).is_some(), "a root run after a root run that covers it");
+        ex.runs = vec![run_rec(0, 4, u32::MAX), run_rec(0, 2, 0), run_rec(4, 11, u32::MAX)];
+        assert_eq!(ex.leaf_run_problem(0), None);
+    }
+
+    #[test]
+    fn inline_deviations_are_scoped_to_their_leaf_and_others_refuse() {
+        let mut ex = Extractor::new("abc", true);
+        ex.blocks.push(block_rec(block_kind::PARAGRAPH, u32::MAX, 0, 3));
+        ex.runs.push(run_rec(0, 3, u32::MAX));
+        ex.dev("text-mismatch", || "synthetic".into());
+        ex.dev("code-content", || "synthetic".into());
+        ex.settle_inlines(0, 0, 0);
+        assert!(ex.runs.is_empty());
+        assert_eq!(ex.deviations.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("text-mismatch", Some(0)), ("code-content", None)]);
+    }
+
+    #[test]
+    fn overlapping_sibling_blocks_refuse_the_model() {
+        let mut ex = Extractor::new("abc def ghi", true);
+        ex.blocks = vec![block_rec(block_kind::DOCUMENT, u32::MAX, 0, 11), block_rec(block_kind::PARAGRAPH, 0, 0, 6), block_rec(block_kind::PARAGRAPH, 0, 4, 11)];
+        ex.check_structure();
+        assert_eq!((ex.deviations[0].rule, ex.deviations[0].leaf), ("block-tree", None));
+    }
 }

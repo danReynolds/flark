@@ -451,6 +451,50 @@ Decision (2026-09-23): the extraction checks the model's structural
 invariants at runtime and refuses a model that fails them. Then each family
 is corrected, before the code highlighting work.
 
+## Parse-crate hardening (follow-up)
+
+Carried out after the decisions of 2026-09-23, on a branch stacked on the
+review.
+
+**A graded fallback instead of refusal.**
+- A deviation confined to one leaf's inline runs, or runs that do not nest
+  and follow each other, publishes that paragraph, heading or table cell
+  without runs, flagged source only (block flags bit 23,
+  `RenderModel.blockSourceOnly`). It displays and edits as its exact source
+  while the rest of the document stays live.
+- Before, any deviation refused the whole document, and an edit that
+  produced one was rejected.
+- Any other deviation, and any model breaking the structural invariants the
+  extraction now checks before publishing, is still refused. RFC 030 is
+  amended accordingly.
+- Report mode still lists every deviation, so the corpus, fuzz and
+  regression suites stay as strict.
+- Cost: about 1–2% of a dense 32 KiB parse (1.2 ms, within noise).
+
+**Families corrected** (register rows and regressions for each):
+- nodes after a link whose parentheses span lines, including text with
+  entities, tabs or escaped pipes, tags, code spans and enclosing emphasis;
+- blank lines short of an item's indentation;
+- an empty footnote definition inside an item;
+- task checkboxes after partial tabs, on second or lazy lines, and before or
+  after definitions;
+- HTML blocks after a partial tab, and the containers ending with them;
+- code spans of spaces around a tab;
+- consecutive escaped pipes, and escapes in a paragraph split to make a
+  table header.
+
+**Results** (local, random documents from the fuzz alphabet):
+- Failures fell from 20–36 to 2–6 per million documents.
+- None publishes silently: each is a source-only leaf or, at about one in
+  five million, a refusal. Most minimal forms that remain need a bare CR,
+  which the kernel normalizes away before parsing, or combine an entity or
+  escape with a link whose parentheses span lines.
+- A new fuzz gate checks that every published model keeps the invariants,
+  over 100,000 documents in about a second.
+- The equivalence dump over 6,654 inputs is byte-identical to the review's
+  head, so no corpus-derived document changes.
+- The Wasm grows from 538,062 to 553,748 bytes.
+
 ## Code highlighting size
 
 The Tree-sitter library is 14 MB natively and 13.1 MB as Wasm (1.8 MB

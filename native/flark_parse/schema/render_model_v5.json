@@ -191,6 +191,7 @@
       "extra": "label start and end"
     },
     "any": {
+      "flags": "bit23 source only: a paragraph, heading or table cell whose inline extraction could not be verified against comrak, published without runs so it displays its source as plain text",
       "extra": "offset of the block's record in the extras section, or 0xFFFFFFFF when it has none"
     }
   },

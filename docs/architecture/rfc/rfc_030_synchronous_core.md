@@ -76,6 +76,15 @@ mode, an existing source-mode document remains writable there, and an edit to
 an existing live snapshot is rejected atomically. No untrustworthy projection
 is published.
 
+Amended 2026-09-23: a deviation confined to one leaf's inline runs (a
+paragraph, heading or table cell) does not refuse. That leaf is published
+without runs and flagged source-only, so it displays and edits as its exact
+source text while the rest of the document stays live; open and edits
+succeed. Its projection is trustworthy because it hides nothing. Any other
+deviation, or a model that breaks the schema's structural invariants (block
+tree, content records, runs inside their blocks), which the extraction now
+checks at runtime, still fails closed as above.
+
 ## 4. Packages and dependency direction
 
 ```text

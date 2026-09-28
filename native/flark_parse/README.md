@@ -24,7 +24,12 @@ comrak does not expose per-line content ranges or reference definitions, and
 its inline positions are wrong in two known situations. Each derivation is
 checked against comrak's own output in production and report mode. Production
 fails closed with return code 4 instead of publishing a model with a known
-deviation, and the conformance test
+deviation or one that breaks the schema's structural invariants, which it
+checks before publishing. A deviation confined to one leaf's inline runs is the
+exception: that paragraph, heading or table cell is published without runs and
+with block flag bit 23 (source only), so it displays its source as plain text
+and the rest of the document stays live. Report mode lists every deviation,
+scoped or not, and the conformance test
 asserts zero deviations across the 652 CommonMark and 670 GFM upstream cases:
 
 | Derived | Validated against |

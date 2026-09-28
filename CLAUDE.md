@@ -100,7 +100,10 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
   whitespace, and uses the glyph half between adjacent non-whitespace glyphs.
 - The extraction derives what comrak does not expose and validates each
   derivation against comrak's own output; `native/flark_parse/REGISTER.md`
-  lists every known comrak quirk and its correction.
+  lists every known comrak quirk and its correction. A deviation confined to
+  one leaf's inlines publishes that leaf without runs and flagged source only
+  (it shows its source); any other deviation, or a model breaking the
+  structural invariants checked before publishing, refuses the document.
 - Two conformance claims are kept separate: comrak's HTML matches the spec
   fixtures (minus the registered deviations), and the extraction is faithful
   to comrak (zero deviations, schema invariants). Do not report one as the
