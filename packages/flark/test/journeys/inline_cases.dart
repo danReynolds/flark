@@ -263,6 +263,65 @@ void _inlineCases(FlarkParseBackend backend) {
       session.act(const InsertText('d'), source: 'ab**c**d', rows: ['abcd']);
     });
 
+    test('a phrase typed with strong on stays one span', () {
+      final session = _Session(backend, source: 'plain ', caret: 6);
+      session.act(const ToggleStyle(Style.strong), context: Style.strong);
+      for (final char in 'one'.split('')) {
+        session.act(InsertText(char));
+      }
+      // The space leaves the span, keeping its intent for the next word.
+      session.act(
+        const InsertText(' '),
+        source: 'plain **one** ',
+        rows: ['plain one '],
+        caret: const DisplayPosition(0, 10),
+        context: Style.strong,
+      );
+      // The next word continues the span instead of opening a second pair.
+      session.act(
+        const InsertText('t'),
+        source: 'plain **one t**',
+        rows: ['plain one t'],
+        caret: const DisplayPosition(0, 11),
+        context: Style.strong,
+      );
+      for (final char in 'wo three'.split('')) {
+        session.act(InsertText(char));
+      }
+      session.expectState(
+        source: 'plain **one two three**',
+        rows: ['plain one two three'],
+        caret: const DisplayPosition(0, 19),
+        context: Style.strong,
+      );
+      session.act(
+        const Undo(),
+        source: 'plain ',
+        caret: const DisplayPosition(0, 6),
+        context: Style.strong,
+      );
+      session.act(const Redo(), source: 'plain **one two three**');
+    });
+
+    test('composed words continue a styled span', () {
+      // Input methods compose each word, then commit it before the space.
+      final session = _Session(backend, source: 'plain ', caret: 6);
+      session.act(const ToggleStyle(Style.emphasis), context: Style.emphasis);
+      for (final word in ['one', 'two']) {
+        session.editor.beginComposition();
+        for (final char in word.split('')) {
+          session.act(InsertText(char));
+        }
+        session.editor.commitComposition();
+        session.act(const InsertText(' '));
+      }
+      session.expectState(
+        source: 'plain *one two* ',
+        rows: ['plain one two '],
+        context: Style.emphasis,
+      );
+    });
+
     test('a link projects its text and the caret never enters the url', () {
       final session = _Session(
         backend,

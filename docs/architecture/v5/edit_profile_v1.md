@@ -65,8 +65,13 @@ additional product principles or testing layers.
 - Typing whitespace at an existing emphasis/strong/strike content edge moves
   that whitespace outside the parser-owned delimiters before publication.
   Surviving text stays styled and the next word retains the typing context,
-  including after repeated spaces and Undo/Redo. Erasing the separating spaces
-  returns to the surviving owner. Source mode retains literal source editing.
+  including after repeated spaces and Undo/Redo. That word continues the span:
+  its closing syntax moves past the word, so a phrase typed word by word is
+  one span (`**one two**`, not `**one** **two**`). The parser must own that
+  syntax as the span ending where the spaces begin, and must see one span from
+  the same opener afterwards; otherwise the word takes its own delimiters.
+  Erasing the separating spaces returns to the surviving owner. Source mode
+  retains literal source editing.
 - Completing source-authored delimiters may atomically turn literal text into a
   rendered construct. The inserted delimiter itself must not flash as an
   unrelated intermediate state.
@@ -79,6 +84,14 @@ additional product principles or testing layers.
   from block kind, range and heading level, without recognizing Markdown in
   either host. Loaded bare prefixes use the same presentation; completed
   headings, lists, fences and thematic breaks retain their normal behavior.
+- Typed `-` or `=` on the empty line under a paragraph would be a setext
+  underline: the paragraph would become a heading and the underline would be
+  hidden markup with no caret position, sending the next character to the
+  heading's line. The kernel inserts a blank line (keeping container markers)
+  before the typed line instead, so it starts its own block: the bare marker
+  above, a paragraph, or a thematic break for `---`. The parser identifies the
+  underline and confirms the separation. Paste, IME preedit and source mode
+  keep Markdown's literal meaning.
 - A heading's opening separator belongs to its hidden prefix, including when
   it has no content yet. Its empty rendered row is exactly empty and its caret
   sits at the content origin; first-frame checks must not trim away a misplaced

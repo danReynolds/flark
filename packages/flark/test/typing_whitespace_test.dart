@@ -53,7 +53,7 @@ void main() {
             e.source,
             deletedSpaces == 2
                 ? '${marker}whatx$close'
-                : '$initial ${marker}x$close',
+                : '${marker}what x$close',
           );
           expect(
             e.projection.rows.single.text,
@@ -142,7 +142,8 @@ void main() {
               'wha  ',
               shortened.length + 2,
             );
-            final next = '$shortened  ${marker}x$close';
+            // The word continues the shortened span across the spaces.
+            final next = '$prefix${marker}wha  x$close';
             step(
               const InsertText('x'),
               next,
@@ -151,7 +152,7 @@ void main() {
             );
             step(
               const InsertText('y'),
-              '$shortened  ${marker}xy$close',
+              '$prefix${marker}wha  xy$close',
               'wha  xy',
               next.length + 1 - close.length,
             );
@@ -197,7 +198,7 @@ void main() {
         expect(e.apply(command), isTrue);
         expect(e.source, '**wha**  ');
         expect(e.apply(const InsertText('next ')), isTrue);
-        expect(e.source, '**wha**  **next** ');
+        expect(e.source, '**wha  next** ');
         expect(e.projection.rows.single.text, 'wha  next ');
         expect(e.typingContext, Style.strong);
         expect(e.apply(const InsertText('x')), isTrue);
