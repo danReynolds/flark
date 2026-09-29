@@ -22,6 +22,24 @@ void main() {
       () => FlarkEditor(backend, text: 'para\n', caret: 5, syncLimit: 6),
     ),
     (
+      'block limit',
+      () => FlarkEditor(
+        backend,
+        text: 'para\n',
+        caret: 5,
+        liveLimits: const FlarkLiveLimits(blocks: 2),
+      ),
+    ),
+    (
+      'container depth limit',
+      () => FlarkEditor(
+        backend,
+        text: 'para\n',
+        caret: 5,
+        liveLimits: const FlarkLiveLimits(containerDepth: 0),
+      ),
+    ),
+    (
       'line limit',
       () => FlarkEditor(
         backend,

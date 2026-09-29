@@ -946,8 +946,8 @@ final class FlarkEditor implements FlarkDocumentState {
         '${candidate.substring(lineStart, start).trimRight()}$newline';
     final separated = candidate.replaceRange(lineStart, lineStart, blank);
     final moved = caret + blank.length;
-    // The blank line must not cost the edit its admission: near a byte or
-    // line limit the typed characters are inserted as they are.
+    // The blank line must not cost the edit its admission: near a byte,
+    // line or shape limit the typed characters are inserted as they are.
     final stats = _SourceStats.of(separated);
     if (!stats.valid ||
         stats.utf8Bytes > sourceLimit ||
@@ -956,7 +956,10 @@ final class FlarkEditor implements FlarkDocumentState {
       return null;
     }
     final check = _backend.parse(separated);
-    if (underlines(check, check.lineOfUtf16(moved))) return null;
+    if (!liveLimits._admitsModel(check) ||
+        underlines(check, check.lineOfUtf16(moved))) {
+      return null;
+    }
     return (source: separated, caret: moved);
   }
 

@@ -79,10 +79,14 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   double? _goalX;
   bool _dragging = false;
 
-  /// A touch on the document that has not moved past the touch slop. Touch
-  /// presses when it lifts, so a scroll neither moves the caret nor raises
-  /// the keyboard.
-  ({int pointer, Offset position})? _touch;
+  /// A touch on the document that has not moved past the touch slop, and
+  /// how far the document has scrolled under it. Touch presses when it
+  /// lifts, so a scroll neither moves the caret nor raises the keyboard.
+  ({int pointer, Offset position, double scrolled})? _touch;
+
+  /// The platform's touch slop, which its scroll views also use.
+  double get _touchSlop =>
+      MediaQuery.maybeGestureSettingsOf(context)?.touchSlop ?? kTouchSlop;
   ({InlineResource image, Offset point, int revision})? _pressedImage;
   bool _scheduled = false;
   bool get _resourceDialogOpen => _resourceSession != null;
@@ -666,13 +670,20 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     );
   }
 
-  /// A touch that moved the document is a scroll, not a tap, even within the
-  /// touch slop: the reader's scroll view claims a touch at once. A scroll
-  /// hides the menu; it returns when a scroll ends with the selection in view.
+  /// A touch under which the document scrolled past the touch slop is a
+  /// scroll, not a tap, whatever the finger's own movement. A scroll hides the
+  /// menu; it returns when a scroll ends with the selection in view.
   bool _scrollNotification(ScrollNotification notification) {
-    if (notification is ScrollUpdateNotification &&
-        (notification.scrollDelta ?? 0) != 0) {
-      _touch = null;
+    final touch = _touch;
+    if (touch != null && notification is ScrollUpdateNotification) {
+      final scrolled = touch.scrolled + (notification.scrollDelta ?? 0).abs();
+      _touch = scrolled > _touchSlop
+          ? null
+          : (
+              pointer: touch.pointer,
+              position: touch.position,
+              scrolled: scrolled,
+            );
     }
     final surface = _surface, overlay = _touchSelection;
     if (notification is ScrollEndNotification &&
@@ -1478,6 +1489,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                     onLongPressCancel: widget.readOnly
                         ? null
                         : _longPressCancel,
+                    // With nothing else competing, the reader's scroll view
+                    // would claim a touch at once and scroll by a finger's
+                    // jitter, losing link taps. A tap recognizer makes it
+                    // wait for the touch slop, as the editor's gestures do.
+                    onTap: widget.readOnly ? () {} : null,
                     child: GestureDetector(
                       onDoubleTapDown: widget.readOnly
                           ? null
@@ -1514,10 +1530,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                           if (touch != null &&
                               touch.pointer == event.pointer &&
                               (event.position - touch.position).distance >
-                                  (MediaQuery.maybeGestureSettingsOf(
-                                        context,
-                                      )?.touchSlop ??
-                                      kTouchSlop)) {
+                                  _touchSlop) {
                             _touch = null;
                           }
                           if (_pressedLink != null &&
@@ -1586,6 +1599,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                                     _touch = (
                                       pointer: event.pointer,
                                       position: event.position,
+                                      scrolled: 0,
                                     );
                                   }
                                 },

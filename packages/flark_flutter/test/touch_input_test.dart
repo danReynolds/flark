@@ -230,32 +230,42 @@ void main() {
     await dispose(tester, c);
   });
 
-  testWidgets('the reader opens no link a short scroll started on', (
-    tester,
-  ) async {
-    final opened = <Uri>[];
-    final (c, surface, position) = await pumpEditor(
-      tester,
-      text: '[guide](https://example.com/guide)\n\n$paragraphs',
-      readOnly: true,
-      onOpenLink: opened.add,
-    );
-    // Alone in the arena, the reader's scroll view moves from the first
-    // pixel, well inside the touch slop.
-    final gesture = await tester.startGesture(
-      surface.localToGlobal(surface.caretRect.center + const Offset(12, 0)),
-    );
-    // A few pixels: the document moves, and the finger stays on the link.
-    for (var i = 0; i < 2; i++) {
-      await gesture.moveBy(const Offset(0, -3));
-      await tester.pump();
-    }
-    expect(position.pixels, greaterThan(0));
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(opened, isEmpty);
-    await dispose(tester, c);
-  });
+  for (final (label, moves, scrolls) in [
+    ('a tap with a little jitter opens the link', [1.0, -1.0], false),
+    (
+      'a drag past the slop scrolls and opens nothing',
+      [-4.0, -4.0, -4.0, -4.0],
+      true,
+    ),
+  ]) {
+    testWidgets('in the reader, $label', (tester) async {
+      final opened = <Uri>[];
+      // Android's slop, where the reader's scroll physics has no start
+      // distance: only the touch slop keeps a jittering tap a tap.
+      final (c, surface, position) = await pumpEditor(
+        tester,
+        text: '[guide](https://example.com/guide)\n\n$paragraphs',
+        readOnly: true,
+        onOpenLink: opened.add,
+        gestureSettings: const DeviceGestureSettings(touchSlop: 8),
+      );
+      final gesture = await tester.startGesture(
+        surface.localToGlobal(surface.caretRect.center + const Offset(12, 0)),
+      );
+      for (final dy in moves) {
+        await gesture.moveBy(Offset(0, dy));
+        await tester.pump();
+      }
+      expect(position.pixels, scrolls ? greaterThan(0) : 0);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(
+        opened,
+        scrolls ? isEmpty : [Uri.parse('https://example.com/guide')],
+      );
+      await dispose(tester, c);
+    });
+  }
 
   group('touch selection', () {
     const text = 'A simple word here.';
