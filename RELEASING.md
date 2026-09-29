@@ -9,10 +9,10 @@ step. pub.dev never deletes a version; it can only retract one.
 
 Two requirements for rk:
 
-- **A version with the graph-aware override check.** The workspace root pins
+- **A version whose override check asks Pub.** The workspace root pins
   Fleury by Git for `flark_fleury` alone. Earlier rk versions refuse every
-  package because of that pin. The check is on release-kit's
-  `danreynolds/flark-dogfood` branch until it ships in an rk release.
+  package because of that pin. The check is on rk's `main`
+  (danReynolds/release-kit#87) until it ships in an rk release.
 - **The Flutter SDK's `dart`.** Put Flutter's `bin` first on `PATH`. The
   workspace has Flutter packages, which only a Flutter SDK's pub resolves, so rk
   refuses a standalone Dart SDK.
@@ -97,5 +97,5 @@ terminal so that it can ask; `rk release <package>` releases one package.
 
 `rk status` reports what is published, what each package waits for, and
 problems such as a missing changelog entry. Pub's own validation and the
-override check run only when a package is staged. `rk release <package>
---stage` runs them without publishing.
+override check run only when a package is staged. `rk stage <package>` runs
+them without publishing.
