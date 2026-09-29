@@ -8,7 +8,7 @@ import 'image_previews.dart';
 import 'resource_controls.dart';
 
 /// One owned document, with the same callable API as the Flutter controller.
-class FlarkController extends ChangeNotifier with FlarkActions {
+class FlarkController extends Notifier with FlarkActions {
   /// [syncLimit] and [liveLimits] bound what renders live, by default
   /// [flarkDefaultLiveBytes] and [FlarkLiveLimits]; beyond them the document
   /// edits in source mode.
@@ -30,7 +30,7 @@ class FlarkController extends ChangeNotifier with FlarkActions {
   input.FlarkFleuryController get _bridge =>
       _input ??= input.FlarkFleuryController(session.engine!);
   void _changed() {
-    if (!_disposed) notifyListeners();
+    if (!_disposed) notify();
   }
 
   @override
@@ -88,7 +88,6 @@ class _FlarkEditorState extends State<FlarkEditor> {
         widget.controller ??
         FlarkController(markdown: widget.initialMarkdown ?? '');
     _controller.session.attach(this);
-    _controller.addListener(_changed);
     _subscription = _controller.changes.listen(
       (text) => widget.onChanged?.call(text),
     );
@@ -96,13 +95,8 @@ class _FlarkEditorState extends State<FlarkEditor> {
 
   void _detach() {
     unawaited(_subscription?.cancel());
-    _controller.removeListener(_changed);
     _controller.session.detach(this);
     if (_owned) _controller.dispose();
-  }
-
-  void _changed() {
-    if (mounted) setState(() {});
   }
 
   @override
@@ -128,7 +122,7 @@ class _FlarkEditorState extends State<FlarkEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final state = _controller.state;
+    final state = context.listen(_controller).state;
     if (state.status == FlarkStatus.loading) {
       return const Text('Loading editor…');
     }

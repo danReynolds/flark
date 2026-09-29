@@ -283,7 +283,6 @@ class _EditorState extends State<FlarkEditorView>
     super.initState();
     widget.session?.resourcePresenter = _presentResource;
     _attachFocus();
-    widget.controller.addListener(_changed);
   }
 
   void _attachFocus() {
@@ -310,8 +309,6 @@ class _EditorState extends State<FlarkEditorView>
       _resourceSession = null;
       _link = null;
       oldWidget.controller.editor.cancelComposition();
-      oldWidget.controller.removeListener(_changed);
-      widget.controller.addListener(_changed);
       _resetInput();
       _viewport.top = 0;
       // Geometry and caret reporting are bound to the editor they were built
@@ -674,6 +671,9 @@ class _EditorState extends State<FlarkEditorView>
 
   @override
   Widget build(BuildContext context) {
+    // Rebuilt whenever the controller publishes a change, and resubscribed
+    // when the widget is given another controller.
+    context.listen(widget.controller);
     final surface = Stack(
       children: [
         _buildEditor(context),
@@ -864,7 +864,6 @@ class _EditorState extends State<FlarkEditorView>
   @override
   void dispose() {
     _resourceSession?.close();
-    widget.controller.removeListener(_changed);
     if (!widget.readOnly) _editor.commitComposition();
     _detachFocus(widget.focusNode);
     _viewport.dispose();
