@@ -55,7 +55,11 @@ void main() {
         final editor = FlarkEditor(backend, text: source, caret: 0);
         final controller = FlarkFleuryController(editor);
         final layout = CellDocumentLayout(
-            controller, cols, const FlarkCellTheme(), CellWidthPolicy.spec);
+          controller,
+          cols,
+          const FlarkCellTheme(),
+          CellWidthPolicy.spec,
+        );
         for (var i = 0; i < layout.lines.length; i++) {
           final line = layout.lines[i];
           if (line.row == null) continue;
@@ -63,27 +67,35 @@ void main() {
             final (offset, leading) = line.hit(glyph.col);
             // Virtual spaces and replacements hold no caret; only assert on
             // display offsets an exact segment owns.
-            final exact = line.row!.segments.any((s) =>
-                s.exact && s.displayStart <= offset && offset < s.displayEnd);
+            final exact = line.row!.segments.any(
+              (s) =>
+                  s.exact && s.displayStart <= offset && offset < s.displayEnd,
+            );
             if (!exact) continue;
-            editor.apply(PlaceCaret(line.row!.index, offset,
-                leadingHalf: leading));
+            editor.apply(
+              PlaceCaret(line.row!.index, offset, leadingHalf: leading),
+            );
             final at = layout.positionFor(editor.selection.extent);
             if (at.row != i || at.col != glyph.col) {
               mismatches.add(
-                  '${jsonEncode(source)} cols $cols: cell ($i,${glyph.col}) '
-                  '${jsonEncode(glyph.text)} row ${line.row!.index} '
-                  'offset $offset -> caret ${editor.selection.extent} '
-                  'painted (${at.row},${at.col})');
+                '${jsonEncode(source)} cols $cols: cell ($i,${glyph.col}) '
+                '${jsonEncode(glyph.text)} row ${line.row!.index} '
+                'offset $offset -> caret ${editor.selection.extent} '
+                'painted (${at.row},${at.col})',
+              );
             }
           }
         }
         controller.dispose();
       }
     }
-    expect(mismatches, isEmpty,
-        reason: '${mismatches.length} click mismatches:\n'
-            '${mismatches.take(25).join('\n')}');
+    expect(
+      mismatches,
+      isEmpty,
+      reason:
+          '${mismatches.length} click mismatches:\n'
+          '${mismatches.take(25).join('\n')}',
+    );
   });
 
   test('clicking a scrolled viewport lands on the painted glyph', () {
@@ -92,11 +104,16 @@ void main() {
     final controller = FlarkFleuryController(editor);
     final focus = FocusNode();
     final tester = FleuryTester(viewportSize: const CellSize(24, 6));
-    tester.pumpWidget(Theme(
-      data: const ThemeData(),
-      child: FlarkEditorView(
-          controller: controller, autofocus: true, focusNode: focus),
-    ));
+    tester.pumpWidget(
+      Theme(
+        data: const ThemeData(),
+        child: FlarkEditorView(
+          controller: controller,
+          autofocus: true,
+          focusNode: focus,
+        ),
+      ),
+    );
     tester.render();
     // Scroll by moving the caret to the end, then click each visible cell.
     editor.apply(SetSelection.caret(source.length));
@@ -107,27 +124,37 @@ void main() {
         final buffer = tester.render();
         final glyph = buffer.atColRow(c, y).grapheme;
         if (glyph == null || glyph == ' ') continue;
-        tester.sendMouse(MouseEvent(
+        tester.sendMouse(
+          MouseEvent(
             button: MouseButton.left,
             kind: MouseEventKind.down,
             col: c,
-            row: y));
-        tester.sendMouse(MouseEvent(
-            button: MouseButton.left, kind: MouseEventKind.up, col: c, row: y));
+            row: y,
+          ),
+        );
+        tester.sendMouse(
+          MouseEvent(
+            button: MouseButton.left,
+            kind: MouseEventKind.up,
+            col: c,
+            row: y,
+          ),
+        );
         tester.render();
         final rect = focus.caretRect;
         if (rect == null) {
           mismatches.add('($y,$c) ${jsonEncode(glyph)}: no caret');
         } else if (rect.top != y || rect.left != c) {
-          mismatches.add('($y,$c) ${jsonEncode(glyph)}: caret '
-              '(${rect.top},${rect.left})');
+          mismatches.add(
+            '($y,$c) ${jsonEncode(glyph)}: caret '
+            '(${rect.top},${rect.left})',
+          );
         }
       }
     }
     tester.dispose();
     controller.dispose();
     focus.dispose();
-    expect(mismatches, isEmpty,
-        reason: mismatches.take(12).join('\n'));
+    expect(mismatches, isEmpty, reason: mismatches.take(12).join('\n'));
   });
 }

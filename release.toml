@@ -1,0 +1,25 @@
+schema = 2
+
+# Release units, published in dependency order: the kernel, its code engine,
+# then the two hosts. Before `rk release flark`, the parser libraries must be
+# public and pinned in packages/flark/hook/prebuilt.json (see RELEASING.md).
+
+[release.flark]
+tag = "flark-v{version}"
+path = "packages/flark"
+publish = ["git-tag", "pub.dev"]
+
+[release.flark_codemirror]
+tag = "flark_codemirror-v{version}"
+path = "packages/flark_codemirror"
+publish = ["git-tag", "pub.dev"]
+
+[release.flark_flutter]
+tag = "flark_flutter-v{version}"
+path = "packages/flark_flutter"
+publish = ["git-tag", "pub.dev"]
+
+[release.flark_fleury]
+tag = "flark_fleury-v{version}"
+path = "packages/flark_fleury"
+publish = ["git-tag", "pub.dev"]

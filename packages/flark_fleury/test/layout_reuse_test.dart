@@ -13,18 +13,25 @@ import 'package:test/test.dart';
 
 void main() {
   final backend = createParseBackend();
-  final source = [for (var i = 0; i < 60; i++) 'line $i with words'].join('\n\n');
+  final source = [
+    for (var i = 0; i < 60; i++) 'line $i with words',
+  ].join('\n\n');
 
   test('geometry survives what does not change it, and no more', () {
     final editor = FlarkEditor(backend, text: source, caret: 0);
     final controller = FlarkFleuryController(editor);
     final focus = FocusNode();
     final tester = FleuryTester(viewportSize: const CellSize(40, 10));
-    tester.pumpWidget(Theme(
-      data: const ThemeData(),
-      child: FlarkEditorView(
-          controller: controller, autofocus: true, focusNode: focus),
-    ));
+    tester.pumpWidget(
+      Theme(
+        data: const ThemeData(),
+        child: FlarkEditorView(
+          controller: controller,
+          autofocus: true,
+          focusNode: focus,
+        ),
+      ),
+    );
     tester.render();
 
     int rebuilds(void Function() action) {
@@ -35,12 +42,21 @@ void main() {
     }
 
     expect(rebuilds(() {}), 0, reason: 'a repaint with no change');
-    expect(rebuilds(() => tester.sendKey(const KeyEvent(KeyCode.arrowDown))), 0,
-        reason: 'a caret move');
-    expect(rebuilds(() => tester.sendKey(const KeyEvent(KeyCode.arrowRight))), 0,
-        reason: 'a caret move');
-    expect(rebuilds(() => editor.apply(const SelectAll())), 0,
-        reason: 'a selection change');
+    expect(
+      rebuilds(() => tester.sendKey(const KeyEvent(KeyCode.arrowDown))),
+      0,
+      reason: 'a caret move',
+    );
+    expect(
+      rebuilds(() => tester.sendKey(const KeyEvent(KeyCode.arrowRight))),
+      0,
+      reason: 'a caret move',
+    );
+    expect(
+      rebuilds(() => editor.apply(const SelectAll())),
+      0,
+      reason: 'a selection change',
+    );
     expect(rebuilds(() => tester.type('x')), 1, reason: 'an edit');
 
     tester.dispose();
@@ -53,34 +69,63 @@ void main() {
     final controller = FlarkFleuryController(editor);
     const theme = FlarkCellTheme();
     final layout = CellDocumentLayout(
-        controller, 40, theme, CellWidthPolicy.spec);
+      controller,
+      40,
+      theme,
+      CellWidthPolicy.spec,
+    );
 
-    expect(layout.describes(controller, 40, theme, CellWidthPolicy.spec), isTrue);
-    expect(layout.describes(controller, 41, theme, CellWidthPolicy.spec), isFalse,
-        reason: 'a resize');
     expect(
-        layout.describes(controller, 40,
-            const FlarkCellTheme(marker: CellStyle(dim: true)),
-            CellWidthPolicy.spec),
-        isFalse,
-        reason: 'a theme change');
-    expect(layout.describes(controller, 40, theme, CellWidthPolicy.cjk), isFalse,
-        reason: 'a width policy change');
+      layout.describes(controller, 40, theme, CellWidthPolicy.spec),
+      isTrue,
+    );
+    expect(
+      layout.describes(controller, 41, theme, CellWidthPolicy.spec),
+      isFalse,
+      reason: 'a resize',
+    );
+    expect(
+      layout.describes(
+        controller,
+        40,
+        const FlarkCellTheme(marker: CellStyle(dim: true)),
+        CellWidthPolicy.spec,
+      ),
+      isFalse,
+      reason: 'a theme change',
+    );
+    expect(
+      layout.describes(controller, 40, theme, CellWidthPolicy.cjk),
+      isFalse,
+      reason: 'a width policy change',
+    );
 
     // An equal theme is the same theme: the host builds a fresh one per frame.
     expect(
-        layout.describes(
-            controller, 40, const FlarkCellTheme(), CellWidthPolicy.spec),
-        isTrue);
+      layout.describes(
+        controller,
+        40,
+        const FlarkCellTheme(),
+        CellWidthPolicy.spec,
+      ),
+      isTrue,
+    );
 
     editor.apply(const InsertText('y'));
-    expect(layout.describes(controller, 40, theme, CellWidthPolicy.spec), isFalse,
-        reason: 'an edit');
+    expect(
+      layout.describes(controller, 40, theme, CellWidthPolicy.spec),
+      isFalse,
+      reason: 'an edit',
+    );
 
     final other = FlarkFleuryController(
-        FlarkEditor(backend, text: editor.source, caret: 0));
-    expect(layout.describes(other, 40, theme, CellWidthPolicy.spec), isFalse,
-        reason: 'a different controller with identical text');
+      FlarkEditor(backend, text: editor.source, caret: 0),
+    );
+    expect(
+      layout.describes(other, 40, theme, CellWidthPolicy.spec),
+      isFalse,
+      reason: 'a different controller with identical text',
+    );
     controller.dispose();
     other.dispose();
   });

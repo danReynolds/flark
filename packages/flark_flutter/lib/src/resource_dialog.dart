@@ -28,7 +28,8 @@ class _ResourceDialogState extends State<ResourceDialog> {
       Navigator.of(context).pop();
     } else {
       setState(
-        () => error = widget.session.failureFor(remove ? 'x' : destination.text),
+        () =>
+            error = widget.session.failureFor(remove ? 'x' : destination.text),
       );
     }
   }
@@ -52,9 +53,7 @@ class _ResourceDialogState extends State<ResourceDialog> {
           children: [
             TextField(
               controller: label,
-              decoration: InputDecoration(
-                labelText: widget.session.labelField,
-              ),
+              decoration: InputDecoration(labelText: widget.session.labelField),
             ),
             TextField(
               controller: destination,

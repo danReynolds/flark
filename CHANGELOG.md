@@ -1,6 +1,27 @@
 # Changelog
 
-## 0.5.0-dev.1 (unreleased)
+Each package now keeps its own changelog:
+[flark](packages/flark/CHANGELOG.md),
+[flark_codemirror](packages/flark_codemirror/CHANGELOG.md),
+[flark_flutter](packages/flark_flutter/CHANGELOG.md) and
+[flark_fleury](packages/flark_fleury/CHANGELOG.md). This file records the
+repository's history.
+
+## 0.5.0 (preview release preparation)
+
+- The packages, their examples and the homepage playground are one pub
+  workspace; packages depend on each other by version. `release.toml` releases
+  them with rk; `RELEASING.md` describes the sequence.
+- The published `flark` package downloads its native parser at build time and
+  checks it against pinned SHA-256s; Windows (x64 and arm64) is a supported
+  target. `native/flark_parse/tool/build_release_libraries.sh` builds the
+  release libraries and `write_prebuilt_manifest.py` pins them.
+- Removed `flark_tree_sitter`; `flark_codemirror` replaced it in both hosts.
+- Touch selection with handles and a context menu, tap placement that never
+  fires on a scroll, a dash typed under a paragraph starting a list, and styled
+  phrases kept in one span (PR #58).
+
+## 0.5.0-dev.1
 
 - Render-model schema V5: UTF-16 offsets only, packed line, block, content and run records, and an extras section behind a sorted run-extra index. Models are 2.0–4.7× smaller. `records::expand` rebuilds the extractor's byte-level layout for tests and the dump tool.
 - Faster keystrokes: linear projection, a caret index built already sorted, projection rows and host layouts reused across edits and read-only updates, mimalloc on native targets, and source text encoded straight into native and Wasm memory. Measurements are in `docs/architecture/v5/performance_review_2026_09_22.md`.

@@ -1,17 +1,24 @@
 name: flark_flutter
-description: Synchronous live Markdown editing and viewing for Flutter.
-version: 0.5.0-dev.1
-publish_to: none
+description: "Live Markdown editor and viewer for Flutter and Flutter web: type Markdown, see it rendered, and keep the source exactly as written."
+version: 0.5.0
+repository: https://github.com/danReynolds/flark/tree/main/packages/flark_flutter
+issue_tracker: https://github.com/danReynolds/flark/issues
+topics:
+  - markdown
+  - editor
+  - rich-text
+  - widget
+
+resolution: workspace
+
 environment:
   sdk: ^3.12.2
   flutter: '>=3.44.4'
 dependencies:
   characters: ^1.4.0
   web: ^1.1.1
-  flark:
-    path: ../flark
-  flark_codemirror:
-    path: ../flark_codemirror
+  flark: ^0.5.0
+  flark_codemirror: ^0.5.0
   flutter:
     sdk: flutter
 dev_dependencies:

@@ -48,93 +48,121 @@ void main() {
     '> quote\n> more\n\n    indented code\n',
   ];
 
-  test('random input keeps the caret legal, reported and on screen', () {
-    final master = Random(5);
-    for (var trial = 0; trial < 40; trial++) {
-      final seed = master.nextInt(1 << 30);
-      final r = Random(seed);
-      final source = sources[r.nextInt(sources.length)];
-      final editor = FlarkEditor(backend, text: source, caret: 0);
-      final controller = FlarkFleuryController(editor);
-      final focus = FocusNode();
-      final tester = FleuryTester(viewportSize: CellSize(r.nextInt(30) + 8, 10));
-      final log = <String>[];
-      try {
-        tester.pumpWidget(Theme(
-          data: const ThemeData(),
-          child: FlarkEditorView(
-              controller: controller, autofocus: true, focusNode: focus),
-        ));
-        tester.render();
-        for (var step = 0; step < 60; step++) {
-          if (r.nextInt(3) == 0) {
-            final t = text[r.nextInt(text.length)];
-            log.add('type ${jsonEncode(t)}');
-            tester.type(t);
-          } else if (r.nextInt(12) == 0) {
-            final cols = tester.viewportSize.cols, rows = tester.viewportSize.rows;
-            final c = r.nextInt(cols), y = r.nextInt(rows);
-            log.add('click $c,$y');
-            tester.sendMouse(MouseEvent(
-                button: MouseButton.left,
-                kind: MouseEventKind.down,
-                col: c,
-                row: y));
-            tester.sendMouse(MouseEvent(
-                button: MouseButton.left,
-                kind: MouseEventKind.up,
-                col: c,
-                row: y));
-          } else {
-            final (code, mods) = keys[r.nextInt(keys.length)];
-            log.add("key $code $mods");
-            tester.sendKey(KeyEvent(code, modifiers: mods));
-          }
+  test(
+    'random input keeps the caret legal, reported and on screen',
+    () {
+      final master = Random(5);
+      for (var trial = 0; trial < 40; trial++) {
+        final seed = master.nextInt(1 << 30);
+        final r = Random(seed);
+        final source = sources[r.nextInt(sources.length)];
+        final editor = FlarkEditor(backend, text: source, caret: 0);
+        final controller = FlarkFleuryController(editor);
+        final focus = FocusNode();
+        final tester = FleuryTester(
+          viewportSize: CellSize(r.nextInt(30) + 8, 10),
+        );
+        final log = <String>[];
+        try {
+          tester.pumpWidget(
+            Theme(
+              data: const ThemeData(),
+              child: FlarkEditorView(
+                controller: controller,
+                autofocus: true,
+                focusNode: focus,
+              ),
+            ),
+          );
           tester.render();
-          // The caret must stay legal and, when focused and collapsed, be
-          // reported to the host inside the viewport.
-          if (!editor.sourceMode) {
-            final whole = !editor.selection.isCollapsed &&
-                editor.selection.start == 0 &&
-                editor.selection.end == editor.source.length;
-            if (!whole && !editor.document.isLegal(editor.selection.extent)) {
-              fail_('illegal-caret', 'seed $seed step $step '
-                  '${jsonEncode(editor.source)} ${editor.selection}');
+          for (var step = 0; step < 60; step++) {
+            if (r.nextInt(3) == 0) {
+              final t = text[r.nextInt(text.length)];
+              log.add('type ${jsonEncode(t)}');
+              tester.type(t);
+            } else if (r.nextInt(12) == 0) {
+              final cols = tester.viewportSize.cols,
+                  rows = tester.viewportSize.rows;
+              final c = r.nextInt(cols), y = r.nextInt(rows);
+              log.add('click $c,$y');
+              tester.sendMouse(
+                MouseEvent(
+                  button: MouseButton.left,
+                  kind: MouseEventKind.down,
+                  col: c,
+                  row: y,
+                ),
+              );
+              tester.sendMouse(
+                MouseEvent(
+                  button: MouseButton.left,
+                  kind: MouseEventKind.up,
+                  col: c,
+                  row: y,
+                ),
+              );
+            } else {
+              final (code, mods) = keys[r.nextInt(keys.length)];
+              log.add("key $code $mods");
+              tester.sendKey(KeyEvent(code, modifiers: mods));
+            }
+            tester.render();
+            // The caret must stay legal and, when focused and collapsed, be
+            // reported to the host inside the viewport.
+            if (!editor.sourceMode) {
+              final whole =
+                  !editor.selection.isCollapsed &&
+                  editor.selection.start == 0 &&
+                  editor.selection.end == editor.source.length;
+              if (!whole && !editor.document.isLegal(editor.selection.extent)) {
+                fail_(
+                  'illegal-caret',
+                  'seed $seed step $step '
+                      '${jsonEncode(editor.source)} ${editor.selection}',
+                );
+              }
+            }
+            final rect = focus.caretRect;
+            if (rect != null &&
+                (rect.left < 0 ||
+                    rect.top < 0 ||
+                    rect.left >= tester.viewportSize.cols ||
+                    rect.top >= tester.viewportSize.rows)) {
+              fail_(
+                'caret-outside-viewport',
+                'seed $seed step $step $rect '
+                    'viewport ${tester.viewportSize}',
+              );
+            }
+            if (focus.hasFocus &&
+                editor.selection.isCollapsed &&
+                rect == null &&
+                !editor.sourceMode) {
+              fail_(
+                'caret-not-reported',
+                'seed $seed step $step '
+                    '${jsonEncode(editor.source)} ${editor.selection}',
+              );
             }
           }
-          final rect = focus.caretRect;
-          if (rect != null &&
-              (rect.left < 0 ||
-                  rect.top < 0 ||
-                  rect.left >= tester.viewportSize.cols ||
-                  rect.top >= tester.viewportSize.rows)) {
-            fail_('caret-outside-viewport', 'seed $seed step $step $rect '
-                'viewport ${tester.viewportSize}');
-          }
-          if (focus.hasFocus &&
-              editor.selection.isCollapsed &&
-              rect == null &&
-              !editor.sourceMode) {
-            fail_('caret-not-reported', 'seed $seed step $step '
-                '${jsonEncode(editor.source)} ${editor.selection}');
-          }
+        } catch (error) {
+          fail_('threw', 'seed $seed: $error\n  ${log.join('\n  ')}');
+        } finally {
+          tester.dispose();
+          controller.dispose();
+          focus.dispose();
         }
-      } catch (error) {
-        fail_('threw', 'seed $seed: $error\n  ${log.join('\n  ')}');
-      } finally {
-        tester.dispose();
-        controller.dispose();
-        focus.dispose();
       }
-    }
-    for (final e in failures.entries) {
-      // ignore: avoid_print
-      print('### ${e.key}');
-      for (final d in e.value) {
+      for (final e in failures.entries) {
         // ignore: avoid_print
-        print('    $d');
+        print('### ${e.key}');
+        for (final d in e.value) {
+          // ignore: avoid_print
+          print('    $d');
+        }
       }
-    }
-    expect(failures.keys, isEmpty);
-  }, timeout: const Timeout(Duration(minutes: 5)));
+      expect(failures.keys, isEmpty);
+    },
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
 }

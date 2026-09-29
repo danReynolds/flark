@@ -24,10 +24,16 @@ void checkStatic(String label, FlarkEditor e) {
   for (var i = 1; i < p.rows.length; i++) {
     final a = p.rows[i - 1], b = p.rows[i];
     if (a.firstLine > b.firstLine) {
-      fail_('rows-line-order', '$label: row $i line ${b.firstLine} after ${a.firstLine}');
+      fail_(
+        'rows-line-order',
+        '$label: row $i line ${b.firstLine} after ${a.firstLine}',
+      );
     }
     if (a.firstLine == b.firstLine && a.sourceStart > b.sourceStart) {
-      fail_('rows-source-order', '$label: row $i ${b.sourceStart} after ${a.sourceStart}');
+      fail_(
+        'rows-source-order',
+        '$label: row $i ${b.sourceStart} after ${a.sourceStart}',
+      );
     }
   }
   for (final row in p.rows) {
@@ -35,9 +41,12 @@ void checkStatic(String label, FlarkEditor e) {
     if (row.contentStarts.length != row.lineCount ||
         row.contentEnds.length != row.lineCount ||
         row.prefixStarts.length != row.lineCount) {
-      fail_('row-line-arrays', '$label: row ${row.index} kind ${row.kind} '
-          'lineCount ${row.lineCount} starts ${row.contentStarts.length} '
-          'ends ${row.contentEnds.length} prefixes ${row.prefixStarts.length}');
+      fail_(
+        'row-line-arrays',
+        '$label: row ${row.index} kind ${row.kind} '
+            'lineCount ${row.lineCount} starts ${row.contentStarts.length} '
+            'ends ${row.contentEnds.length} prefixes ${row.prefixStarts.length}',
+      );
     }
     for (var i = 0; i < row.contentStarts.length && i < row.lineCount; i++) {
       final line = row.firstLine + i;
@@ -48,33 +57,51 @@ void checkStatic(String label, FlarkEditor e) {
           : src.length;
       if (row.contentStarts[i] < 0) continue; // no caret on this line
       if (row.contentStarts[i] < ls || row.contentEnds[i] > le) {
-        fail_('row-line-bounds', '$label: row ${row.index} line $i '
-            '${row.contentStarts[i]}..${row.contentEnds[i]} outside $ls..$le');
+        fail_(
+          'row-line-bounds',
+          '$label: row ${row.index} line $i '
+              '${row.contentStarts[i]}..${row.contentEnds[i]} outside $ls..$le',
+        );
       }
       if (row.contentStarts[i] > row.contentEnds[i]) {
-        fail_('row-content-inverted', '$label: row ${row.index} line $i '
-            '${row.contentStarts[i]}..${row.contentEnds[i]}');
+        fail_(
+          'row-content-inverted',
+          '$label: row ${row.index} line $i '
+              '${row.contentStarts[i]}..${row.contentEnds[i]}',
+        );
       }
       if (row.prefixStarts[i] > row.contentStarts[i]) {
-        fail_('row-prefix-after-content', '$label: row ${row.index} line $i '
-            'prefix ${row.prefixStarts[i]} content ${row.contentStarts[i]}');
+        fail_(
+          'row-prefix-after-content',
+          '$label: row ${row.index} line $i '
+              'prefix ${row.prefixStarts[i]} content ${row.contentStarts[i]}',
+        );
       }
     }
     // 3. Segments stay inside the row and advance.
     var last = -1;
     for (final s in row.segments) {
       if (s.sourceStart < row.sourceStart || s.sourceEnd > row.sourceEnd) {
-        fail_('segment-outside-row', '$label: row ${row.index} segment '
-            '${s.sourceStart}..${s.sourceEnd} outside ${row.sourceStart}..${row.sourceEnd}');
+        fail_(
+          'segment-outside-row',
+          '$label: row ${row.index} segment '
+              '${s.sourceStart}..${s.sourceEnd} outside ${row.sourceStart}..${row.sourceEnd}',
+        );
       }
       if (s.sourceStart < last) {
-        fail_('segment-backwards', '$label: row ${row.index} segment '
-            '${s.sourceStart} after $last');
+        fail_(
+          'segment-backwards',
+          '$label: row ${row.index} segment '
+              '${s.sourceStart} after $last',
+        );
       }
       last = s.sourceEnd;
     }
     if (row.sourceStart > row.sourceEnd) {
-      fail_('row-inverted', '$label: row ${row.index} ${row.sourceStart}..${row.sourceEnd}');
+      fail_(
+        'row-inverted',
+        '$label: row ${row.index} ${row.sourceStart}..${row.sourceEnd}',
+      );
     }
   }
   // 4. Every legal offset round-trips through the display and its anchors.
@@ -90,18 +117,30 @@ void checkStatic(String label, FlarkEditor e) {
     final row = doc.rowAt(o);
     final pos = doc.displayOf(o);
     if (pos.row != row.index) {
-      fail_('rowAt-displayOf', '$label: $o rowAt ${row.index} displayOf ${pos.row}');
+      fail_(
+        'rowAt-displayOf',
+        '$label: $o rowAt ${row.index} displayOf ${pos.row}',
+      );
     }
     if (pos.offset < 0 || pos.offset > row.text.length) {
-      fail_('display-offset-range', '$label: $o offset ${pos.offset} of ${row.text.length}');
+      fail_(
+        'display-offset-range',
+        '$label: $o offset ${pos.offset} of ${row.text.length}',
+      );
     }
     final back = row.sourceForDisplay(pos.offset);
     if (!doc.anchorsAt(back).contains(o) && back != o) {
-      fail_('display-roundtrip', '$label: $o -> row ${row.index} display '
-          '${pos.offset} -> $back (anchors ${doc.anchorsAt(back)})');
+      fail_(
+        'display-roundtrip',
+        '$label: $o -> row ${row.index} display '
+            '${pos.offset} -> $back (anchors ${doc.anchorsAt(back)})',
+      );
     }
     if (doc.legalize(o) != o) {
-      fail_('legalize-fixed-point', '$label: legal $o legalizes to ${doc.legalize(o)}');
+      fail_(
+        'legalize-fixed-point',
+        '$label: legal $o legalizes to ${doc.legalize(o)}',
+      );
     }
   }
   // 5. legalize of any offset is legal.
@@ -124,9 +163,12 @@ void checkStatic(String label, FlarkEditor e) {
     final anchors = doc.anchorsAt(entry.value.first);
     for (final o in entry.value) {
       if (!anchors.contains(o)) {
-        fail_('display-shared-not-anchored', '$label: display ${entry.key} '
-            'held by ${entry.value} but anchors of ${entry.value.first} '
-            'are $anchors');
+        fail_(
+          'display-shared-not-anchored',
+          '$label: display ${entry.key} '
+              'held by ${entry.value} but anchors of ${entry.value.first} '
+              'are $anchors',
+        );
         break;
       }
     }
@@ -147,7 +189,11 @@ void checkTraversal(String label, FlarkEditor e) {
   //    terminates at the end; backward returns to the start.
   e.apply(SetSelection.caret(e.document.legalize(0)));
   final visited = <FlarkSelection>[e.selection];
-  for (var step = 0; step <= src.length + e.projection.rows.length + 4; step++) {
+  for (
+    var step = 0;
+    step <= src.length + e.projection.rows.length + 4;
+    step++
+  ) {
     if (!e.apply(const MoveCaret(MoveDirection.forward))) break;
     final at = e.selection;
     if (selectionOrder(at, visited.last) <= 0) {
@@ -157,10 +203,17 @@ void checkTraversal(String label, FlarkEditor e) {
     visited.add(at);
   }
   if (visited.last.extent != src.length && e.document.isLegal(src.length)) {
-    fail_('forward-stops-early', '$label: stopped at ${visited.last} of ${src.length}');
+    fail_(
+      'forward-stops-early',
+      '$label: stopped at ${visited.last} of ${src.length}',
+    );
   }
   final backward = <FlarkSelection>[e.selection];
-  for (var step = 0; step <= src.length + e.projection.rows.length + 4; step++) {
+  for (
+    var step = 0;
+    step <= src.length + e.projection.rows.length + 4;
+    step++
+  ) {
     if (!e.apply(const MoveCaret(MoveDirection.backward))) break;
     final at = e.selection;
     if (selectionOrder(at, backward.last) >= 0) {
@@ -170,7 +223,10 @@ void checkTraversal(String label, FlarkEditor e) {
     backward.add(at);
   }
   if (backward.last != visited.first) {
-    fail_('backward-stops-early', '$label: ${backward.last} vs ${visited.first}');
+    fail_(
+      'backward-stops-early',
+      '$label: ${backward.last} vs ${visited.first}',
+    );
   }
 }
 
@@ -185,19 +241,26 @@ void checkMovement(String label, FlarkEditor e) {
   final src = e.source;
   // 13. Word movement terminates and never moves backwards.
   for (final forward in [true, false]) {
-    e.apply(SetSelection.caret(
-        e.document.legalize(forward ? 0 : src.length)));
+    e.apply(SetSelection.caret(e.document.legalize(forward ? 0 : src.length)));
     var last = e.selection;
     for (var i = 0; i <= src.length + e.projection.rows.length + 4; i++) {
-      if (!e.apply(MoveCaret(
+      if (!e.apply(
+        MoveCaret(
           forward ? MoveDirection.forward : MoveDirection.backward,
-          unit: MoveUnit.word))) {
+          unit: MoveUnit.word,
+        ),
+      )) {
         break;
       }
       final at = e.selection;
-      if (forward ? selectionOrder(at, last) <= 0 : selectionOrder(at, last) >= 0) {
-        fail_('word-move-stalls', '$label ${forward ? "fwd" : "back"}: '
-            '$at after $last');
+      if (forward
+          ? selectionOrder(at, last) <= 0
+          : selectionOrder(at, last) >= 0) {
+        fail_(
+          'word-move-stalls',
+          '$label ${forward ? "fwd" : "back"}: '
+              '$at after $last',
+        );
         break;
       }
       last = at;
@@ -215,18 +278,27 @@ void checkMovement(String label, FlarkEditor e) {
     e.apply(const MoveCaret(MoveDirection.backward, unit: MoveUnit.line));
     final home = e.selection.extent;
     if (e.document.displayOf(home).row != row) {
-      fail_('home-leaves-row', '$label from $o row $row -> $home row '
-          '${e.document.displayOf(home).row}');
+      fail_(
+        'home-leaves-row',
+        '$label from $o row $row -> $home row '
+            '${e.document.displayOf(home).row}',
+      );
     }
     e.apply(const MoveCaret(MoveDirection.forward, unit: MoveUnit.line));
     final end = e.selection.extent;
     if (e.document.displayOf(end).row != row) {
-      fail_('end-leaves-row', '$label from $o row $row -> $end row '
-          '${e.document.displayOf(end).row}');
+      fail_(
+        'end-leaves-row',
+        '$label from $o row $row -> $end row '
+            '${e.document.displayOf(end).row}',
+      );
     }
     e.apply(const MoveCaret(MoveDirection.backward, unit: MoveUnit.line));
     if (e.selection.extent != home) {
-      fail_('home-not-stable', '$label from $o: $home then ${e.selection.extent}');
+      fail_(
+        'home-not-stable',
+        '$label from $o: $home then ${e.selection.extent}',
+      );
     }
   }
   // 15. Vertical movement visits every row once and reaches the last.
@@ -244,8 +316,11 @@ void checkMovement(String label, FlarkEditor e) {
     rows.add(row);
   }
   if (rows.last != e.projection.rows.length - 1) {
-    fail_('down-stops-early', '$label: reached row ${rows.last} of '
-        '${e.projection.rows.length - 1}');
+    fail_(
+      'down-stops-early',
+      '$label: reached row ${rows.last} of '
+          '${e.projection.rows.length - 1}',
+    );
   }
 }
 
@@ -255,8 +330,11 @@ void checkErasure(String label, FlarkEditor e) {
   // 17. Backspace from the end, and Delete from the start, each empty the
   //     document. A position that refuses forever strands the caret.
   for (final backward in [true, false]) {
-    final editor = FlarkEditor(createBackend(),
-        text: src, caret: backward ? src.length : 0);
+    final editor = FlarkEditor(
+      createBackend(),
+      text: src,
+      caret: backward ? src.length : 0,
+    );
     // Every counted step strictly shrinks the source, so the loop terminates
     // on its own; the bound only stops a future refusal from hanging the suite.
     var steps = 0;
@@ -265,7 +343,8 @@ void checkErasure(String label, FlarkEditor e) {
       // The user keeps pressing at the same end of the document.
       editor.apply(SetSelection.caret(backward ? editor.source.length : 0));
       if (!editor.apply(
-          backward ? const DeleteBackward() : const DeleteForward())) {
+        backward ? const DeleteBackward() : const DeleteForward(),
+      )) {
         // Forward delete legitimately stops when nothing follows the caret.
         // Forward delete legitimately stops at the last caret in the document.
         final last = [
@@ -275,10 +354,8 @@ void checkErasure(String label, FlarkEditor e) {
         final row = editor.document.rowAt(editor.selection.extent);
         // An unclosed fence's block range is only its opening line, so a first
         // row that is one has nothing a join can safely delete through.
-        final openFence = backward &&
-            row.index == 0 &&
-            row.fenced &&
-            row.text.isEmpty;
+        final openFence =
+            backward && row.index == 0 && row.fenced && row.text.isEmpty;
         // A first row whose whole content is hidden markup — `[](/url)`, a
         // link with no text — displays nothing and has no earlier row to join
         // onto. RemoveLink is the command for it.
@@ -290,28 +367,38 @@ void checkErasure(String label, FlarkEditor e) {
         final previous = row.index > 0
             ? editor.projection.rows[row.index - 1]
             : null;
-        final atEnd = (!backward &&
+        final atEnd =
+            (!backward &&
                 (editor.selection.extent == last || row.text.isEmpty)) ||
             (backward && previous?.kind == RowKind.tableCell) ||
             openFence ||
             hiddenLeaf;
         if (!atEnd) {
-          fail_('erase-refused', '$label ${backward ? "backspace" : "delete"}: '
-              'stuck at ${jsonEncode(editor.source)} '
-              'caret ${editor.selection.extent}');
+          fail_(
+            'erase-refused',
+            '$label ${backward ? "backspace" : "delete"}: '
+                'stuck at ${jsonEncode(editor.source)} '
+                'caret ${editor.selection.extent}',
+          );
         }
         break;
       }
       if (editor.source.length >= before.length) {
-        fail_('erase-grew', '$label ${backward ? "backspace" : "delete"}: '
-            '${jsonEncode(before)} -> ${jsonEncode(editor.source)}');
+        fail_(
+          'erase-grew',
+          '$label ${backward ? "backspace" : "delete"}: '
+              '${jsonEncode(before)} -> ${jsonEncode(editor.source)}',
+        );
         break;
       }
       steps++;
     }
     if (editor.source.isNotEmpty && steps > src.length + 2) {
-      fail_('erase-unbounded', '$label ${backward ? "backspace" : "delete"}: '
-          '${jsonEncode(editor.source)}');
+      fail_(
+        'erase-unbounded',
+        '$label ${backward ? "backspace" : "delete"}: '
+            '${jsonEncode(editor.source)}',
+      );
     }
   }
 }
@@ -323,7 +410,9 @@ void checkExtension(String label, FlarkEditor e) {
   for (var o = 0; o <= src.length; o++) {
     if (!e.document.isLegal(o)) continue;
     e.apply(SetSelection.caret(o));
-    if (!e.apply(const MoveCaret(MoveDirection.forward, extend: true))) continue;
+    if (!e.apply(const MoveCaret(MoveDirection.forward, extend: true))) {
+      continue;
+    }
     if (e.selection.base != o) {
       fail_('extend-moved-base', '$label from $o: ${e.selection}');
     }
@@ -334,8 +423,11 @@ void checkExtension(String label, FlarkEditor e) {
     final back = e.document.displayOf(e.selection.extent);
     final from = e.document.displayOf(o);
     if (back.row != from.row || back.offset != from.offset) {
-      fail_('extend-not-symmetric', '$label from $o (${from.row},'
-          '${from.offset}): ${e.selection} at (${back.row},${back.offset})');
+      fail_(
+        'extend-not-symmetric',
+        '$label from $o (${from.row},'
+            '${from.offset}): ${e.selection} at (${back.row},${back.offset})',
+      );
     }
   }
 }
@@ -351,8 +443,11 @@ void checkVisibleText(String label, FlarkEditor e) {
     if (!visible.contains(marker)) continue;
     // Only report when the marker cannot come from ordinary text elsewhere.
     if (src.split(marker).length == 2) {
-      fail_('visible-shows-hidden', '$label: ${jsonEncode(marker)} in '
-          '${jsonEncode(visible)}');
+      fail_(
+        'visible-shows-hidden',
+        '$label: ${jsonEncode(marker)} in '
+            '${jsonEncode(visible)}',
+      );
     }
   }
 }
@@ -367,7 +462,8 @@ void checkSourceMode(String label, FlarkEditor e) {
   }
   var boundary = 0;
   for (final grapheme in before.characters) {
-    if (!e.apply(SetSelection.caret(boundary)) && e.selection.extent != boundary) {
+    if (!e.apply(SetSelection.caret(boundary)) &&
+        e.selection.extent != boundary) {
       fail_('source-mode-illegal', '$label: $boundary refused');
       break;
     }
@@ -401,15 +497,24 @@ void checkCommands(String label, FlarkEditor e) {
       continue;
     }
     if (editor.source != before.$1) {
-      fail_('undo-source', '$label at $o: ${jsonEncode(editor.source)} '
-          'vs ${jsonEncode(before.$1)}');
+      fail_(
+        'undo-source',
+        '$label at $o: ${jsonEncode(editor.source)} '
+            'vs ${jsonEncode(before.$1)}',
+      );
     }
     if (editor.selection != before.$2) {
-      fail_('undo-selection', '$label at $o: ${editor.selection} vs ${before.$2}');
+      fail_(
+        'undo-selection',
+        '$label at $o: ${editor.selection} vs ${before.$2}',
+      );
     }
     if (!editor.apply(const Redo()) || editor.source != typed.$1) {
-      fail_('redo-source', '$label at $o: ${jsonEncode(editor.source)} '
-          'vs ${jsonEncode(typed.$1)}');
+      fail_(
+        'redo-source',
+        '$label at $o: ${jsonEncode(editor.source)} '
+            'vs ${jsonEncode(typed.$1)}',
+      );
     }
   }
   // 9. Typing at a collapsed caret must insert exactly one character, and the
@@ -420,8 +525,11 @@ void checkCommands(String label, FlarkEditor e) {
     if (!editor.apply(const InsertText('Z'))) continue;
     final grew = editor.source.length - src.length;
     if (grew < 1) {
-      fail_('typing-shrank', '$label at $at: ${jsonEncode(src)} -> '
-          '${jsonEncode(editor.source)}');
+      fail_(
+        'typing-shrank',
+        '$label at $at: ${jsonEncode(src)} -> '
+            '${jsonEncode(editor.source)}',
+      );
     }
     if (!editor.source.contains('Z')) {
       fail_('typing-lost', '$label at $at -> ${jsonEncode(editor.source)}');
@@ -440,8 +548,11 @@ void checkCommands(String label, FlarkEditor e) {
       const DeleteForward(),
     ].any((c) => FlarkEditor(createBackend(), text: src, caret: o).apply(c));
     if (!accepts) {
-      fail_('caret-accepts-nothing', '$label at $o: '
-          'row ${jsonEncode(editor.document.rowAt(o).text)}');
+      fail_(
+        'caret-accepts-nothing',
+        '$label at $o: '
+            'row ${jsonEncode(editor.document.rowAt(o).text)}',
+      );
     }
   }
   // 10. Select all then delete empties the document, unless Select All is
@@ -449,7 +560,8 @@ void checkCommands(String label, FlarkEditor e) {
   final all = FlarkEditor(createBackend(), text: src, caret: 0);
   all.apply(const SelectAll());
   final whole = all.selection.start == 0 && all.selection.end == src.length;
-  if (whole && src.isNotEmpty &&
+  if (whole &&
+      src.isNotEmpty &&
       (!all.apply(const DeleteBackward()) || all.source.isNotEmpty)) {
     fail_('select-all-delete', '$label -> ${jsonEncode(all.source)}');
   }
@@ -489,8 +601,11 @@ void checkCommands(String label, FlarkEditor e) {
       final applied = editor.apply(command);
       if (!applied) {
         if (editor.source != before || editor.selection != selection) {
-          fail_('refused-but-changed', '$label $command at $at: '
-              '${jsonEncode(editor.source)} ${editor.selection}');
+          fail_(
+            'refused-but-changed',
+            '$label $command at $at: '
+                '${jsonEncode(editor.source)} ${editor.selection}',
+          );
         }
         continue;
       }
@@ -499,11 +614,17 @@ void checkCommands(String label, FlarkEditor e) {
       if (!editor.apply(const Undo())) {
         fail_('undo-refused-command', '$label $command at $at');
       } else if (editor.source != before) {
-        fail_('undo-source-command', '$label $command at $at: '
-            '${jsonEncode(editor.source)} vs ${jsonEncode(before)}');
+        fail_(
+          'undo-source-command',
+          '$label $command at $at: '
+              '${jsonEncode(editor.source)} vs ${jsonEncode(before)}',
+        );
       } else if (editor.selection != selection) {
-        fail_('undo-selection-command', '$label $command at $at: '
-            '${editor.selection} vs $selection');
+        fail_(
+          'undo-selection-command',
+          '$label $command at $at: '
+              '${editor.selection} vs $selection',
+        );
       }
     }
   }
@@ -523,37 +644,50 @@ void main() {
     }
   }
 
-  test('deep static invariants across the corpora', () {
-    final variants = <String>[];
-    for (final raw in corpus) {
-      final lf = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-      if (lf.length > 400) continue;
-      variants.add(lf);
-      variants.add(lf.replaceAll('\n', '\r\n'));
-      variants.add(lf.split('\n').map((l) => '> $l').join('\n'));
-      variants.add(lf.split('\n').map((l) => '  $l').join('\n'));
-    }
-    for (final source in variants) {
-      final e = FlarkEditor(backend, text: source, caret: 0);
-      if (e.sourceMode) continue; // the live limits forced raw source
-      checkStatic(jsonEncode(source), e);
-      checkTraversal(jsonEncode(source), e);
-      checkCommands(jsonEncode(source), e);
-      checkMovement(jsonEncode(source), FlarkEditor(backend, text: source, caret: 0));
-      checkSourceMode(jsonEncode(source), FlarkEditor(backend, text: source, caret: 0));
-      checkErasure(jsonEncode(source), e);
-      checkExtension(jsonEncode(source), FlarkEditor(backend, text: source, caret: 0));
-      checkVisibleText(jsonEncode(source), e);
-    }
-    // ignore: avoid_print
-    for (final entry in failures.entries) {
-      // ignore: avoid_print
-      print('### ${entry.key} (${entry.value.length} shown)');
-      for (final d in entry.value) {
-        // ignore: avoid_print
-        print('    $d');
+  test(
+    'deep static invariants across the corpora',
+    () {
+      final variants = <String>[];
+      for (final raw in corpus) {
+        final lf = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+        if (lf.length > 400) continue;
+        variants.add(lf);
+        variants.add(lf.replaceAll('\n', '\r\n'));
+        variants.add(lf.split('\n').map((l) => '> $l').join('\n'));
+        variants.add(lf.split('\n').map((l) => '  $l').join('\n'));
       }
-    }
-    expect(failures.keys, isEmpty);
-  }, timeout: const Timeout(Duration(minutes: 10)));
+      for (final source in variants) {
+        final e = FlarkEditor(backend, text: source, caret: 0);
+        if (e.sourceMode) continue; // the live limits forced raw source
+        checkStatic(jsonEncode(source), e);
+        checkTraversal(jsonEncode(source), e);
+        checkCommands(jsonEncode(source), e);
+        checkMovement(
+          jsonEncode(source),
+          FlarkEditor(backend, text: source, caret: 0),
+        );
+        checkSourceMode(
+          jsonEncode(source),
+          FlarkEditor(backend, text: source, caret: 0),
+        );
+        checkErasure(jsonEncode(source), e);
+        checkExtension(
+          jsonEncode(source),
+          FlarkEditor(backend, text: source, caret: 0),
+        );
+        checkVisibleText(jsonEncode(source), e);
+      }
+      // ignore: avoid_print
+      for (final entry in failures.entries) {
+        // ignore: avoid_print
+        print('### ${entry.key} (${entry.value.length} shown)');
+        for (final d in entry.value) {
+          // ignore: avoid_print
+          print('    $d');
+        }
+      }
+      expect(failures.keys, isEmpty);
+    },
+    timeout: const Timeout(Duration(minutes: 10)),
+  );
 }

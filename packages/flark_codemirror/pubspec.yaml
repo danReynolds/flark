@@ -1,14 +1,21 @@
 name: flark_codemirror
-description: "Code snippet highlighting and indentation for Flark: CodeMirror 5's language modes ported to pure Dart."
-version: 0.1.0-dev.1
-publish_to: none
+description: "Syntax highlighting and indentation for 25 languages in Flark code blocks: CodeMirror's language modes ported to pure Dart."
+version: 0.5.0
+repository: https://github.com/danReynolds/flark/tree/main/packages/flark_codemirror
+issue_tracker: https://github.com/danReynolds/flark/issues
+topics:
+  - syntax-highlighting
+  - markdown
+  - code
+  - editor
+
+resolution: workspace
 
 environment:
   sdk: ^3.10.4
 
 dependencies:
-  flark:
-    path: ../flark
+  flark: ^0.5.0
 
 dev_dependencies:
   lints: ^6.0.0

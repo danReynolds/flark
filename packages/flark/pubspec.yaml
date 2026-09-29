@@ -1,9 +1,15 @@
 name: flark
-description: "Flark v5 kernel. Pure Dart: the render model, the parse transports (FFI and Wasm), and from M2 the projection and editor facade."
-version: 0.5.0-dev.1
-publish_to: none
-homepage: https://github.com/danReynolds/flark
-repository: https://github.com/danReynolds/flark
+description: "Live Markdown editing kernel: comrak's CommonMark and GFM parse through FFI or Wasm, with the projection, caret model and commands hosts render."
+version: 0.5.0
+repository: https://github.com/danReynolds/flark/tree/main/packages/flark
+issue_tracker: https://github.com/danReynolds/flark/issues
+topics:
+  - markdown
+  - editor
+  - parser
+  - commonmark
+
+resolution: workspace
 
 environment:
   sdk: ^3.10.4
@@ -11,11 +17,12 @@ environment:
 dependencies:
   # Grapheme boundaries for caret movement and deletion; pinned like v4 did.
   characters: ^1.4.0
-  code_assets: ^1.0.0
-  hooks: ^1.0.0
+  code_assets: '>=1.0.0 <3.0.0'
+  # The build hook checks downloaded parser libraries against pinned SHA-256s.
+  crypto: ^3.0.7
+  hooks: '>=1.0.0 <3.0.0'
 
 dev_dependencies:
-  crypto: ^3.0.7
   lints: ^6.0.0
   test: ^1.26.3
 
@@ -25,4 +32,5 @@ dev_dependencies:
 flutter:
   assets:
     - path: lib/assets/wasm/flark_parse.wasm
-      platforms: [web]
+      platforms:
+        - web

@@ -109,14 +109,17 @@ void main() {
     for (final outer in ['', '> ', '- ']) {
       final next = outer == '- ' ? '  ' : outer;
       test('a short table row projects empty cells: $outer$body', () {
-        final source =
-            '$outer| h | i |\n$next| - | - |\n$next$body\n';
+        final source = '$outer| h | i |\n$next| - | - |\n$next$body\n';
         final e = FlarkEditor(backend, text: source);
-        final projected = e.projection.rows
-            .where((r) => r.kind == RowKind.tableCell && r.firstLine == 2);
+        final projected = e.projection.rows.where(
+          (r) => r.kind == RowKind.tableCell && r.firstLine == 2,
+        );
         expect(projected.map((r) => r.text), cells);
         for (final row in projected) {
-          expect(row.sourceEnd, lessThanOrEqualTo(source.indexOf('\n', row.sourceStart)));
+          expect(
+            row.sourceEnd,
+            lessThanOrEqualTo(source.indexOf('\n', row.sourceStart)),
+          );
           expect(row.lineCount, 1);
         }
         checkInvariants(source, e.document.model, e.projection, source);
@@ -132,10 +135,16 @@ void main() {
         .toList();
     expect(body.map((r) => r.text), ['x ', '', '']);
     for (final row in body.skip(1)) {
-      expect(row.sourceStart, row.sourceEnd,
-          reason: 'a cell the row never wrote holds no source');
-      expect(source[row.sourceStart], '|',
-          reason: 'it sits at the delimiter it must not swallow');
+      expect(
+        row.sourceStart,
+        row.sourceEnd,
+        reason: 'a cell the row never wrote holds no source',
+      );
+      expect(
+        source[row.sourceStart],
+        '|',
+        reason: 'it sits at the delimiter it must not swallow',
+      );
     }
   });
 }

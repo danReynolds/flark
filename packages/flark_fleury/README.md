@@ -38,25 +38,31 @@ The minimal native/web entry points are `example/bin/consumer.dart` and
 `flark_fleury_legacy.dart` with `FlarkCodeMirror()` from `flark_codemirror` as
 its editor's code delegate.
 
+## Install
+
+```sh
+dart pub add flark_fleury
+```
+
+0.5 is a preview; it depends on fleury 0.1 from pub.dev.
+
 ## Develop and run
 
-The host and example pin Fleury's companion packages to reviewed Git revision
-`ffb6d22d488a1979658578f4fc5634bb17b37b7f` ([Fleury #262](https://github.com/danReynolds/fleury/pull/262)). A sibling checkout
-is no longer required. The committed `dependency_overrides.fleury` keeps the
-companions' hosted core constraint on that same revision until publication.
-An application consuming this unpublished host must copy that core override
-into its own root pubspec; the example demonstrates the complete setup.
+In this repository the packages form one pub workspace, resolved from the
+repository root with `flutter pub get`. Until fleury 0.1 is on pub.dev, the
+root pubspec resolves fleury and fleury_widgets to reviewed Git revision
+`ffb6d22d488a1979658578f4fc5634bb17b37b7f` ([Fleury #262](https://github.com/danReynolds/fleury/pull/262)).
 
 The pinned framework includes the image-composition and block-frame fixes.
 No local Fleury checkout or ignored dependency override is required. See the
 [implementation and validation notes](../../docs/architecture/v5/fleury_tables_images_2026_09_15.md).
 
 ```sh
-dart pub get
+flutter pub get          # once, from the repository root
+cd packages/flark_fleury
 dart analyze --fatal-infos
 dart test
 cd example
-dart pub get
 dart run bin/main.dart
 ```
 
@@ -68,8 +74,9 @@ relative asset path resolves. Copy the whole bundle when distributing it;
 `dart compile exe` does not include native build-hook assets on this SDK.
 
 For framework development only, `dart tool/use_local_fleury.dart /path/to/fleury`
-writes ignored local overrides. Remove the generated host/example
-`pubspec_overrides.yaml` files to return to the reviewed pins.
+points the repository's pub workspace at a local Fleury checkout through the
+ignored `pubspec_overrides.yaml` at the repository root. Delete that file to
+return to the reviewed revision.
 
 For an AOT terminal build: `dart build cli`. On macOS ARM64, run
 `build/cli/macos_arm64/bundle/bin/main`. Ctrl+Q quits the terminal example.
