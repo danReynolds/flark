@@ -12,7 +12,7 @@ abstract interface class FlarkCellController {
   CodeHighlight? colorsFor(ProjectedRow row);
 }
 
-final class FlarkFleuryController extends ChangeNotifier
+final class FlarkFleuryController extends Notifier
     implements FlarkCellController {
   FlarkFleuryController(this.editor) {
     editor.addListener(_changed);
@@ -42,7 +42,7 @@ final class FlarkFleuryController extends ChangeNotifier
       editor.codeEditing?.highlight(row.text, languageInfo(row));
 
   void _changed() {
-    if (!_closed) notifyListeners();
+    if (!_closed) notify();
   }
 
   @override

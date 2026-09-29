@@ -17,8 +17,8 @@ class _LinkAnchor extends SingleChildRenderObjectWidget {
     covariant _RenderLinkAnchor renderObject,
   ) {
     renderObject.viewport = viewport;
+    // A new viewport can move the anchored popover.
     renderObject.markNeedsLayout();
-    renderObject.markNeedsPaint();
   }
 }
 

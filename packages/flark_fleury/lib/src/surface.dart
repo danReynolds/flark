@@ -127,8 +127,8 @@ class _RenderSurface extends RenderObject implements CaretHost {
       if (!value.fullDocument) value.focus.attachCaretHost(this);
     }
     widget = value;
+    // The new widget can carry a different document, viewport or focus.
     markNeedsLayout();
-    markNeedsPaint();
   }
 
   @override

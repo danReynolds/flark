@@ -225,14 +225,6 @@ class _PlaygroundState extends State<Playground> {
         return '    ${entry.key}: FlarkHeadingStyle(style: CellStyle($fields), band: ${s.band}, divider: ${s.divider}, showLevel: ${s.showLevel}),';
       })
       .join('\n');
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_changed);
-  }
-
-  void _changed() => setState(() {});
-
   String get _configuration =>
       '''FlarkCellTheme(
   body: CellStyle(foreground: $_foreground, background: $_background),
@@ -258,6 +250,7 @@ $_headingConfiguration
 
   @override
   Widget build(BuildContext context) {
+    context.listen(widget.controller);
     final theme = FlarkCellTheme(
       body: CellStyle(foreground: _foreground, background: _background),
       heading: CellStyle(foreground: _heading, bold: true),
@@ -586,7 +579,6 @@ $_headingConfiguration
 
   @override
   void dispose() {
-    widget.controller.removeListener(_changed);
     _editorFocus.dispose();
     super.dispose();
   }
