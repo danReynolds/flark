@@ -17,10 +17,10 @@ environment:
 dependencies:
   # Grapheme boundaries for caret movement and deletion; pinned like v4 did.
   characters: ^1.4.0
-  code_assets: ^1.0.0
+  code_assets: '>=1.0.0 <3.0.0'
   # The build hook checks downloaded parser libraries against pinned SHA-256s.
   crypto: ^3.0.7
-  hooks: ^1.0.0
+  hooks: '>=1.0.0 <3.0.0'
 
 dev_dependencies:
   lints: ^6.0.0

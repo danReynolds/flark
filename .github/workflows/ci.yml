@@ -81,11 +81,26 @@ jobs:
           rustup default "$TOOLCHAIN"
       - name: Build the parser libraries
         run: |
+          # Symbols stripped, and the C runtime linked in, so the library also
+          # loads where the Visual C++ redistributable is not installed.
           for TARGET in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
-            CARGO_PROFILE_RELEASE_STRIP=symbols cargo build --release --locked --lib --manifest-path native/flark_parse/Cargo.toml --target "$TARGET"
+            CARGO_PROFILE_RELEASE_STRIP=symbols RUSTFLAGS="-C target-feature=+crt-static" \
+              cargo build --release --locked --lib --manifest-path native/flark_parse/Cargo.toml --target "$TARGET"
             mkdir -p "dist/$TARGET"
             cp "native/flark_parse/target/$TARGET/release/flark_parse.dll" "dist/$TARGET/"
           done
+      - name: Check the libraries need no Visual C++ runtime
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin not found' }
+          foreach ($dll in Get-ChildItem dist -Recurse -Filter flark_parse.dll) {
+            $dependents = & $dumpbin /nologo /dependents $dll.FullName
+            $dependents | Write-Output
+            if ($LASTEXITCODE -ne 0) { throw "dumpbin failed on $($dll.FullName)" }
+            if ($dependents -match 'VCRUNTIME|MSVCP|api-ms-win-crt') { throw "$($dll.FullName) needs the Visual C++ runtime" }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: flark_parse-windows
@@ -94,6 +109,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      # The kernel tests load the x64 library uploaded above, through the
+      # prebuilt_dir user-define, rather than building their own. (No arm64
+      # runner executes the arm64 library.)
+      - name: Point the build hook at the uploaded libraries
+        run: |
+          printf '\nhooks:\n  user_defines:\n    flark:\n      prebuilt_dir: dist\n' >> pubspec.yaml
       - name: Resolve the workspace
         run: flutter pub get
       - name: Test through the build hook

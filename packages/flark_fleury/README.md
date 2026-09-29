@@ -74,8 +74,9 @@ relative asset path resolves. Copy the whole bundle when distributing it;
 `dart compile exe` does not include native build-hook assets on this SDK.
 
 For framework development only, `dart tool/use_local_fleury.dart /path/to/fleury`
-writes ignored local overrides. Remove the generated host/example
-`pubspec_overrides.yaml` files to return to the reviewed pins.
+points the repository's pub workspace at a local Fleury checkout through the
+ignored `pubspec_overrides.yaml` at the repository root. Delete that file to
+return to the reviewed revision.
 
 For an AOT terminal build: `dart build cli`. On macOS ARM64, run
 `build/cli/macos_arm64/bundle/bin/main`. Ctrl+Q quits the terminal example.

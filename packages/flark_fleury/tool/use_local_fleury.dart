@@ -1,30 +1,55 @@
 import 'dart:convert';
 import 'dart:io';
 
-/// Development setup for unpublished sibling packages. Generates only ignored
-/// overrides; no local absolute paths belong in a package's pubspec.yaml.
+/// Development setup against a local Fleury checkout.
+///
+/// The packages resolve as one pub workspace, and pub reads dependency
+/// overrides only at the workspace root, so this writes the root's
+/// `pubspec_overrides.yaml`. That file is ignored by Git and replaces the root
+/// pubspec's own overrides while it exists; delete it to return to the pinned
+/// revision. No local absolute path belongs in a tracked pubspec.
 void main(List<String> args) {
   if (args.length != 1) {
     stderr.writeln('Usage: dart tool/use_local_fleury.dart /path/to/fleury');
     exitCode = 64;
     return;
   }
-  final root = Directory(args.single).absolute.path;
-  for (final name in ['fleury', 'fleury_web', 'fleury_widgets']) {
-    if (!File('$root/packages/$name/pubspec.yaml').existsSync()) {
-      throw ArgumentError('Missing $name under $root/packages');
+  final fleury = Directory(args.single).absolute.path;
+  const names = ['fleury', 'fleury_web', 'fleury_widgets'];
+  for (final name in names) {
+    if (!File('$fleury/packages/$name/pubspec.yaml').existsSync()) {
+      stderr.writeln('Missing $name under $fleury/packages');
+      exitCode = 66;
+      return;
     }
   }
-  final host = File.fromUri(Platform.script).parent.parent;
-  for (final (directory, names) in [
-    (host.path, ['fleury', 'fleury_widgets']),
-    ('${host.path}/example', ['fleury', 'fleury_web', 'fleury_widgets']),
-  ]) {
-    File('$directory/pubspec_overrides.yaml').writeAsStringSync(
-      'dependency_overrides:\n${names.map((name) => '  $name:\n    path: ${jsonEncode('$root/packages/$name')}\n').join()}',
-    );
+  final package = File.fromUri(Platform.script).parent.parent;
+  final root = package.parent.parent;
+  if (!File(
+    '${root.path}/pubspec.yaml',
+  ).readAsStringSync().contains('\nworkspace:')) {
+    stderr.writeln('${root.path} is not the Flark workspace root');
+    exitCode = 66;
+    return;
   }
+  for (final member in [package.path, '${package.path}/example']) {
+    if (File('$member/pubspec_overrides.yaml').existsSync()) {
+      stderr.writeln(
+        'Remove $member/pubspec_overrides.yaml first: pub refuses overrides '
+        'in a workspace member.',
+      );
+      exitCode = 65;
+      return;
+    }
+  }
+  final overrides = File('${root.path}/pubspec_overrides.yaml');
+  overrides.writeAsStringSync(
+    '# Written by packages/flark_fleury/tool/use_local_fleury.dart. Delete it\n'
+    '# to resolve the pinned Fleury revision again.\n'
+    'dependency_overrides:\n'
+    '${names.map((name) => '  $name:\n    path: ${jsonEncode('$fleury/packages/$name')}\n').join()}',
+  );
   stdout.writeln(
-    'Wrote local overrides. Run dart pub get in this package and example/.',
+    'Wrote ${overrides.path}. Run flutter pub get in ${root.path}.',
   );
 }

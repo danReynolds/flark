@@ -10,13 +10,13 @@ import 'package:test/test.dart';
 import 'support/invariants.dart';
 
 List<int> walk(FlarkEditor e, {required bool forward}) {
-  e.apply(SetSelection.caret(
-    e.document.legalize(forward ? 0 : e.source.length),
-  ));
+  e.apply(
+    SetSelection.caret(e.document.legalize(forward ? 0 : e.source.length)),
+  );
   final seen = <int>[e.selection.extent];
-  while (e.apply(MoveCaret(
-        forward ? MoveDirection.forward : MoveDirection.backward,
-      )) &&
+  while (e.apply(
+        MoveCaret(forward ? MoveDirection.forward : MoveDirection.backward),
+      ) &&
       seen.length < 400) {
     seen.add(e.selection.extent);
   }
@@ -33,15 +33,22 @@ void main() {
       '| a | b | c |\n| - | - | - |\n| x |\n\nafter\n',
     ]) {
       final e = FlarkEditor(backend, text: source, caret: 0);
-      expect(walk(e, forward: true).last, source.length,
-          reason: 'forward stopped inside $source');
-      expect(walk(e, forward: false).last, lessThanOrEqualTo(2),
-          reason: 'backward stopped inside $source');
+      expect(
+        walk(e, forward: true).last,
+        source.length,
+        reason: 'forward stopped inside $source',
+      );
+      expect(
+        walk(e, forward: false).last,
+        lessThanOrEqualTo(2),
+        reason: 'backward stopped inside $source',
+      );
       // Down must leave the row it starts on, every time.
       e.apply(SetSelection.caret(e.document.legalize(0)));
       var row = e.document.displayOf(e.selection.extent).row;
       while (e.apply(
-          const MoveCaret(MoveDirection.forward, unit: MoveUnit.row))) {
+        const MoveCaret(MoveDirection.forward, unit: MoveUnit.row),
+      )) {
         final next = e.document.displayOf(e.selection.extent).row;
         expect(next, greaterThan(row), reason: 'Down stalled in $source');
         row = next;
@@ -115,8 +122,11 @@ void main() {
       final row = e.projection.rows.single;
       expect(row.text, display);
       for (final s in row.segments) {
-        expect(s.displayEnd, greaterThan(s.displayStart),
-            reason: 'empty display for a segment of $source');
+        expect(
+          s.displayEnd,
+          greaterThan(s.displayStart),
+          reason: 'empty display for a segment of $source',
+        );
       }
     }
   });
@@ -127,8 +137,10 @@ void main() {
       final rule = e.projection.rows.first;
       expect(rule.kind, RowKind.thematicBreak);
       expect(rule.lineCount, 1);
-      expect(e.projection.rows.where((r) => r.kind == RowKind.blank).length,
-          greaterThan(1));
+      expect(
+        e.projection.rows.where((r) => r.kind == RowKind.blank).length,
+        greaterThan(1),
+      );
     }
   });
 
@@ -152,8 +164,11 @@ void main() {
       var steps = 0;
       while (e.source != erased && steps < 12) {
         e.apply(SetSelection.caret(e.source.length));
-        expect(e.apply(const DeleteBackward()), isTrue,
-            reason: 'stuck at ${e.source} from $source');
+        expect(
+          e.apply(const DeleteBackward()),
+          isTrue,
+          reason: 'stuck at ${e.source} from $source',
+        );
         steps++;
       }
       expect(e.source, erased);
@@ -186,11 +201,16 @@ void main() {
       ('> ***\nfoo', '> \nfoo'),
       ('- *\t*\t*\t\n- ', '- \t\n- '),
     ]) {
-      final rule = FlarkEditor(backend, text: source, caret: 0).projection.rows
-          .firstWhere((r) => r.kind == RowKind.thematicBreak);
-      expect(source.substring(rule.sourceStart, rule.sourceEnd).trim(),
-          isNot(isEmpty),
-          reason: 'the rule range must be the whole rule in $source');
+      final rule = FlarkEditor(
+        backend,
+        text: source,
+        caret: 0,
+      ).projection.rows.firstWhere((r) => r.kind == RowKind.thematicBreak);
+      expect(
+        source.substring(rule.sourceStart, rule.sourceEnd).trim(),
+        isNot(isEmpty),
+        reason: 'the rule range must be the whole rule in $source',
+      );
       final e = FlarkEditor(backend, text: source, caret: rule.sourceEnd);
       expect(e.apply(const DeleteBackward()), isTrue);
       expect(e.source, erased);

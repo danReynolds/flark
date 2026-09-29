@@ -1,8 +1,9 @@
 # Changelog
 
-## 0.5.0
+## Unreleased
 
-First public preview.
+First public preview, to be released as 0.5.0. This entry is named for the
+version in the commit that pins the parser libraries (see RELEASING.md).
 
 - Parses Markdown with unmodified [comrak](https://github.com/kivikakk/comrak)
   0.54 (CommonMark 0.31.2 and GitHub Flavored Markdown) into a flat render

@@ -40,7 +40,8 @@ Platform qualification is uneven:
 | macOS | Frame-time profiled (32 KiB documents within one frame on an M1 Pro) |
 | Web | Frame-time profiled in desktop Chrome at 32 KiB; other browsers untested |
 | Android | Tested by hand on a Pixel 6a; no frame-time profile yet |
-| iOS, Linux, Windows | Built; not yet qualified on devices |
+| Windows | Kernel tests pass on x64 in CI; no host qualified yet |
+| iOS, Linux | Parser libraries built for release; not yet run on devices |
 
 Screen-reader support (VoiceOver, TalkBack) has not been qualified.
 
@@ -49,8 +50,10 @@ Screen-reader support (VoiceOver, TalkBack) has not been qualified.
 On Android, iOS, macOS, Linux and Windows the parser is a native library. The
 package's build hook downloads the library for the target you build, from this
 repository's GitHub release, checks it against the SHA-256 pinned in
-`hook/prebuilt.json`, and caches it; later builds are offline. To build without
-network access, fetch the files once and point the hook at them:
+`hook/prebuilt.json`, and caches it in the project's `.dart_tool`, so rebuilds
+of that project reuse it. A fresh clone, a CI run or `flutter clean` downloads
+it again. To build without network access, fetch the files once and point the
+hook at them:
 
 ```yaml
 hooks:
@@ -60,8 +63,12 @@ hooks:
 ```
 
 The directory holds `<target triple>/<library>`, for example
-`aarch64-apple-darwin/libflark_parse.dylib`. In a checkout of this repository
-the hook builds the parser from `native/flark_parse` with Rust instead.
+`aarch64-apple-darwin/libflark_parse.dylib`. The release names its assets
+`<target triple>-<library>` (`aarch64-apple-darwin-libflark_parse.dylib`), so
+save each one under its triple's directory with the library's own name, and
+check it against the SHA-256 in `hook/prebuilt.json`. In a checkout of this
+repository the hook builds the parser from `native/flark_parse` with Rust
+instead.
 
 On the web the parser is the Wasm module bundled in the package; nothing is
 downloaded.

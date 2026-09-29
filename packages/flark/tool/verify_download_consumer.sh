@@ -5,7 +5,12 @@
 # built library from a local HTTP server and checks that a consumer with no
 # Rust toolchain on PATH parses through it, that a second build uses the cache,
 # and that a library whose hash does not match is refused.
+#
+# With --pinned it uses the committed manifest instead: a consumer downloads
+# this machine's library from the published release. Run it after pinning.
 set -uo pipefail
+PINNED=0
+[ "${1:-}" = "--pinned" ] && PINNED=1
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG="$(cd "$HERE/.." && pwd)"
 CRATE="$(cd "$PKG/../../native/flark_parse" && pwd)"
@@ -20,16 +25,18 @@ SERVER=""
 stop_server() { [ -n "$SERVER" ] && { kill "$SERVER" 2>/dev/null; wait "$SERVER" 2>/dev/null; }; SERVER=""; }
 trap 'stop_server; rm -rf "$WORK"' EXIT
 
-cargo build --release --locked --lib --manifest-path "$CRATE/Cargo.toml" || exit 1
-mkdir -p "$WORK/served"
-ASSET="$TRIPLE-$LIB"
-cp "$CRATE/target/release/$LIB" "$WORK/served/$ASSET"
-HASH="$(shasum -a 256 "$WORK/served/$ASSET" | cut -d' ' -f1)"
+if [ "$PINNED" = 0 ]; then
+  cargo build --release --locked --lib --manifest-path "$CRATE/Cargo.toml" || exit 1
+  mkdir -p "$WORK/served"
+  ASSET="$TRIPLE-$LIB"
+  cp "$CRATE/target/release/$LIB" "$WORK/served/$ASSET"
+  HASH="$(shasum -a 256 "$WORK/served/$ASSET" | cut -d' ' -f1)"
 
-PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$WORK/served" >/dev/null 2>&1 &
-SERVER=$!
-for _ in $(seq 50); do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.1; done
+  PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+  python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$WORK/served" >/dev/null 2>&1 &
+  SERVER=$!
+  for _ in $(seq 50); do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.1; done
+fi
 
 # The package as published: lib, hook and pubspec, no crate two levels up.
 COPY="$WORK/pub/flark"
@@ -77,21 +84,33 @@ cd "$APP" || exit 1
 hash -r
 if PATH="$CLEAN_PATH" command -v cargo >/dev/null 2>&1; then echo "cargo still on PATH"; exit 1; fi
 
-manifest "$HASH"
+[ "$PINNED" = 0 ] && manifest "$HASH"
 PATH="$CLEAN_PATH" dart pub get >/dev/null || { echo "pub get failed"; exit 1; }
 OUT="$(PATH="$CLEAN_PATH" dart run bin/main.dart 2>&1)"
 if ! echo "$OUT" | grep -q 'blocks=5 runs=7 emph=true'; then
-  echo "$OUT" | tail -12; echo "download consumer FAILED"; exit 1
+  echo "$OUT" | head -20; echo "download consumer FAILED"; exit 1
 fi
 echo "downloaded, verified and parsed (no Rust on PATH)"
+if [ "$PINNED" = 1 ]; then
+  echo "pinned download consumer OK ($(sed -n 's/.*"release": "\(.*\)".*/\1/p' "$COPY/hook/prebuilt.json"))"
+  exit 0
+fi
 
-# A second build is served from the hook's cache: stop the server first.
+# A second build is served from the hook's cache: stop the server, then
+# delete the hook's recorded output so the runner has to run it again.
 stop_server
-rm -rf .dart_tool/hooks_runner/flark/*/output  2>/dev/null
+shopt -s nullglob
+OUTPUTS=(.dart_tool/hooks_runner/flark/*/output.json)
+shopt -u nullglob
+if [ ${#OUTPUTS[@]} -eq 0 ]; then echo "no recorded hook output to invalidate"; exit 1; fi
+rm -f "${OUTPUTS[@]}"
 OUT="$(PATH="$CLEAN_PATH" dart run bin/main.dart 2>&1)"
 if ! echo "$OUT" | grep -q 'blocks=5 runs=7 emph=true'; then
   echo "$OUT" | tail -12; echo "cached build FAILED"; exit 1
 fi
+for output in "${OUTPUTS[@]}"; do
+  [ -f "$output" ] || { echo "the hook did not run again ($output)"; exit 1; }
+done
 echo "rebuilt from the cache with the server stopped"
 
 # A library that does not match the pinned hash is refused.

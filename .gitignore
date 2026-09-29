@@ -7,6 +7,10 @@ coverage/
 pubspec.lock
 pubspec_overrides.yaml
 
+# rk's private release stages, and the parser libraries built for a release.
+.rk/
+/dist/
+
 packages/flark/native/comrak_bridge/target/
 packages/flark/native/comrak_bridge/dist/
 

@@ -3,8 +3,8 @@
 
 The native library and the Wasm module link flark_parse's normal dependency
 closure: comrak and the crates it builds on, plus mimalloc and its C source on
-native targets. Build scripts and procedural macros run at compile time and are
-not linked, so they are left out. License texts come from the crates cargo has
+native targets, as `cargo tree` resolves it for each target. Build scripts,
+procedural macros and dev-dependencies are not linked, so they are left out. License texts come from the crates cargo has
 already fetched; run `cargo fetch` first on a fresh machine.
 
 Usage: python3 native/flark_parse/tool/third_party_notices.py
@@ -22,35 +22,33 @@ TARGETS = ['aarch64-apple-darwin', 'x86_64-pc-windows-msvc', 'wasm32-unknown-unk
 LICENSE_NAMES = ('license', 'licence', 'copying', 'notice')
 
 
-def metadata(target):
+def metadata():
     out = subprocess.run(
         ['cargo', 'metadata', '--format-version', '1', '--locked',
-         '--manifest-path', os.path.join(CRATE, 'Cargo.toml'),
-         '--filter-platform', target],
+         '--manifest-path', os.path.join(CRATE, 'Cargo.toml')],
         check=True, capture_output=True, text=True).stdout
     return json.loads(out)
 
 
-def linked(meta):
-    """The root's normal dependencies, transitively, without proc macros."""
-    nodes = {n['id']: n for n in meta['resolve']['nodes']}
-    packages = {p['id']: p for p in meta['packages']}
-    root = meta['resolve']['root']
-    seen, stack = set(), [root]
-    while stack:
-        node = stack.pop()
-        if node in seen:
+def linked(target):
+    """(name, version) of every crate linked into the library for [target].
+
+    `cargo tree` resolves features as the build does. `cargo metadata`'s
+    resolve graph unifies them with dev-dependencies, so it lists crates, such
+    as serde, that no build of the library links.
+    """
+    out = subprocess.run(
+        ['cargo', 'tree', '--locked', '--edges', 'normal,no-proc-macro',
+         '--target', target, '--prefix', 'none', '--format', '{p}',
+         '--manifest-path', os.path.join(CRATE, 'Cargo.toml')],
+        check=True, capture_output=True, text=True).stdout
+    crates = set()
+    for line in out.splitlines():
+        fields = line.split()
+        if len(fields) < 2 or fields[0] == 'flark_parse':
             continue
-        seen.add(node)
-        for dep in nodes[node]['deps']:
-            if not any(k['kind'] is None for k in dep['dep_kinds']):
-                continue
-            package = packages[dep['pkg']]
-            if any('proc-macro' in t['kind'] for t in package['targets']):
-                continue
-            stack.append(dep['pkg'])
-    seen.discard(root)
-    return [packages[i] for i in seen]
+        crates.add((fields[0], fields[1].lstrip('v')))
+    return crates
 
 
 def license_files(directory):
@@ -62,10 +60,11 @@ def license_files(directory):
 
 
 def main():
+    packages = {(p['name'], p['version']): p for p in metadata()['packages']}
     crates = {}
     for target in TARGETS:
-        for package in linked(metadata(target)):
-            crates[(package['name'], package['version'])] = package
+        for key in linked(target):
+            crates[key] = packages[key]
     sections = []
     for (name, version), package in sorted(crates.items()):
         directory = os.path.dirname(package['manifest_path'])
