@@ -3,8 +3,9 @@ import 'dart:io';
 
 /// Development setup against a local Fleury checkout.
 ///
-/// The packages resolve as one pub workspace, and pub reads dependency
-/// overrides only at the workspace root, so this writes the root's
+/// The packages resolve as one pub workspace. Pub applies any member's
+/// overrides to the whole workspace but lets each package be overridden only
+/// once, and the root already overrides Fleury, so this writes the root's
 /// `pubspec_overrides.yaml`. That file is ignored by Git and replaces the root
 /// pubspec's own overrides while it exists; delete it to return to the pinned
 /// revision. No local absolute path belongs in a tracked pubspec.
@@ -35,8 +36,8 @@ void main(List<String> args) {
   for (final member in [package.path, '${package.path}/example']) {
     if (File('$member/pubspec_overrides.yaml').existsSync()) {
       stderr.writeln(
-        'Remove $member/pubspec_overrides.yaml first: pub refuses overrides '
-        'in a workspace member.',
+        'Remove $member/pubspec_overrides.yaml first: pub refuses a package '
+        'overridden twice in one workspace.',
       );
       exitCode = 65;
       return;
