@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+# The repository is a pub workspace with Flutter members, so every Dart job
+# resolves it once, from the root, with the Flutter SDK's pub.
+
 jobs:
   parse-crate:
     name: flark_parse · spec conformance, extraction, fuzz, transports
@@ -33,7 +36,7 @@ jobs:
         run: native/flark_parse/tool/verify_transports.sh --rebuild
 
   dart-kernel:
-    name: flark · analyze, tests through the build hook, Rust-free consumer
+    name: flark · analyze, tests through the build hook, Rust-free consumers
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -42,12 +45,14 @@ jobs:
           TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
           rustup toolchain install "$TOOLCHAIN" --profile minimal
           rustup default "$TOOLCHAIN"
-      - uses: dart-lang/setup-dart@v1
+      - uses: subosito/flutter-action@v2
         with:
-          sdk: stable
+          channel: stable
+      - name: Resolve the workspace
+        run: flutter pub get
       - name: Analyze
         working-directory: packages/flark
-        run: dart pub get && dart analyze --fatal-infos
+        run: dart analyze --fatal-infos
       - name: Test
         working-directory: packages/flark
         run: dart test
@@ -55,25 +60,44 @@ jobs:
         run: python3 packages/flark/tool/embed_wasm.py --check
       - name: Consumer without Rust on PATH builds via a prebuilt
         run: packages/flark/tool/verify_prebuilt_consumer.sh
+      - name: Consumer without Rust on PATH downloads a verified library
+        run: packages/flark/tool/verify_download_consumer.sh
 
-  snippet-engine:
-    name: flark_tree_sitter · analyze, engine and adapter tests
-    runs-on: macos-latest
+  windows-kernel:
+    name: flark · Windows parser libraries and kernel tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
+      # Spec fixtures and source offsets depend on the committed line endings.
+      - name: Keep committed line endings
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain from rust-toolchain.toml
         run: |
           TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
-          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --target x86_64-pc-windows-msvc --target aarch64-pc-windows-msvc
           rustup default "$TOOLCHAIN"
-      - uses: dart-lang/setup-dart@v1
+      - name: Build the parser libraries
+        run: |
+          for TARGET in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
+            CARGO_PROFILE_RELEASE_STRIP=symbols cargo build --release --locked --lib --manifest-path native/flark_parse/Cargo.toml --target "$TARGET"
+            mkdir -p "dist/$TARGET"
+            cp "native/flark_parse/target/$TARGET/release/flark_parse.dll" "dist/$TARGET/"
+          done
+      - uses: actions/upload-artifact@v4
         with:
-          sdk: stable
-      - name: Analyze
-        working-directory: packages/flark_tree_sitter
-        run: dart pub get && dart analyze --fatal-infos
-      - name: Test
-        working-directory: packages/flark_tree_sitter
+          name: flark_parse-windows
+          path: dist/
+          if-no-files-found: error
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve the workspace
+        run: flutter pub get
+      - name: Test through the build hook
+        working-directory: packages/flark
         run: dart test
 
   codemirror-port:
@@ -88,18 +112,20 @@ jobs:
           TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
           rustup toolchain install "$TOOLCHAIN" --profile minimal
           rustup default "$TOOLCHAIN"
-      - uses: dart-lang/setup-dart@v1
+      - uses: subosito/flutter-action@v2
         with:
-          sdk: stable
+          channel: stable
+      - name: Resolve the workspace
+        run: flutter pub get
       - name: Analyze
         working-directory: packages/flark_codemirror
-        run: dart pub get && dart analyze --fatal-infos
+        run: dart analyze --fatal-infos
       - name: Test
         working-directory: packages/flark_codemirror
         run: dart test
 
   flutter-host:
-    name: flark_flutter · analyze and host tests
+    name: flark_flutter · analyze, host and example tests
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -111,12 +137,39 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - name: Resolve the workspace
+        run: flutter pub get
       - name: Analyze
         working-directory: packages/flark_flutter
-        run: flutter pub get && flutter analyze
+        run: flutter analyze
       - name: Test
         working-directory: packages/flark_flutter
         run: flutter test
+      - name: Example
+        working-directory: packages/flark_flutter/example
+        run: flutter analyze && flutter test
 
-  # Fleury host/example dependencies now resolve from exact Git pins. Their
-  # qualification remains local-only; a green CI does not cover that host.
+  fleury-host:
+    name: flark_fleury · analyze, host and example tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve the workspace
+        run: flutter pub get
+      - name: Analyze
+        working-directory: packages/flark_fleury
+        run: dart analyze --fatal-infos
+      - name: Test
+        working-directory: packages/flark_fleury
+        run: dart test
+      - name: Example
+        working-directory: packages/flark_fleury/example
+        run: dart analyze --fatal-infos && dart test

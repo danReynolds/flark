@@ -1,15 +1,14 @@
 name: flark_homepage
 description: The live Flark editor embedded in its homepage.
 publish_to: none
+resolution: workspace
 environment:
   sdk: ^3.12.2
 dependencies:
   flutter:
     sdk: flutter
-  flark_flutter:
-    path: ../../packages/flark_flutter
-  flark:
-    path: ../../packages/flark
+  flark_flutter: ^0.5.0
+  flark: ^0.5.0
   web: ^1.1.1
 dev_dependencies:
   flutter_test:

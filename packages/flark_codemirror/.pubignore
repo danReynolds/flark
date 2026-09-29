@@ -1,0 +1,3 @@
+# Real source files in many languages that the detection and speed tools
+# read as inputs. They are not part of the package.
+tool/corpus/

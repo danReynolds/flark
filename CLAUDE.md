@@ -37,12 +37,9 @@ Active code:
   Untagged fences are detected by per-language signs (`lib/src/signs.dart`),
   measured with `tool/detect_eval.dart`; `FlarkCodeMirror.only` limits the
   languages an app builds in.
-- `packages/flark_tree_sitter`: the previous snippet engine (official
-  Tree-sitter in a co-located Rust `native/` engine, FFI and Wasm
-  transports, coloring workers). No host depends on it since the switch to
-  `flark_codemirror`; its reviews (`SINGLE_ENGINE_REVIEW.md`,
-  `HOST_INTEGRATION_REVIEW.md`, `BROWSER_DOGFOOD_REVIEW.md`) and RFC 031's
-  worker path are historical.
+- `flark_tree_sitter`, the previous snippet engine (official Tree-sitter in
+  a Rust engine with coloring workers), was removed before 0.5.0; its reviews
+  and RFC 031's worker path remain in git history and `docs/architecture/`.
 
 The new `packages/flark_flutter` host owns text input, focus, glyph geometry,
 painting and bounded source inspection. Its runnable local-draft workbench is
@@ -62,6 +59,10 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
 
 ## Commands
 
+- Resolve once from the repository root: `flutter pub get`. The packages,
+  their examples and `website/playground` are one pub workspace; members
+  depend on each other by version (`flark: ^0.5.0`) and resolve to these
+  checkouts. It has Flutter members, so `dart pub get` cannot resolve it.
 - Rust gates: `cargo test --release --locked --manifest-path native/flark_parse/Cargo.toml`
   (spec HTML conformance, extraction with zero deviations plus schema
   invariants, fuzz, regressions).
@@ -80,7 +81,13 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
 - Keystroke diagnostic: `cd packages/flark && dart run tool/bench_editor.dart 16`
   (the current dense, 16 KiB-class structural fixture; add `--spike` only to
   compare with the historical M0 document).
-- Rust-free consumer: `packages/flark/tool/verify_prebuilt_consumer.sh`.
+- Rust-free consumers: `packages/flark/tool/verify_prebuilt_consumer.sh`
+  (the `prebuilt_dir` user-define) and `verify_download_consumer.sh` (a copy of
+  the package outside the repo downloads its parser from a local server and
+  checks the pinned SHA-256).
+- Releases: `RELEASING.md` (rk with `release.toml`; parser libraries from
+  `native/flark_parse/tool/build_release_libraries.sh`, pinned in
+  `packages/flark/hook/prebuilt.json`).
 - Wasm asset: `packages/flark/tool/build_wasm.sh` after any crate change,
   then commit `packages/flark/lib/assets/wasm/flark_parse.wasm`.
 - Schema: edit the JSON, run `python3 native/flark_parse/tool/gen_schema.py`,

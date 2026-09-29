@@ -5,9 +5,14 @@ Markdown; the kernel owns source, selection, editing intent, history and
 live/source admission. Flutter owns input connections, focus, glyph geometry,
 scrolling and painting.
 
-This is an unpublished V5 implementation. Native macOS dogfood qualification is
-still open; see the [implementation review](../../docs/architecture/v5/implementation_review_2026_09_04.md).
-The currently tested SDK is Flutter 3.44.4 / Dart 3.12.2.
+```sh
+flutter pub add flark_flutter
+```
+
+0.5 is a preview and needs Flutter 3.44.4 (Dart 3.12.2) or newer. Editing is
+frame-time profiled on macOS and in desktop Chrome and tested by hand on
+Android; iOS, Linux and Windows build but are not yet qualified on devices, and
+screen readers are untested. See [flark's status](https://pub.dev/packages/flark#status).
 
 Code and source views use bundled Roboto Mono, so code columns have the same
 width on native and web hosts without a remote font request. The package includes

@@ -1,19 +1,24 @@
 // Build hook for the flark_parse code asset.
 //
 // Resolution order, so a consumer without a Rust toolchain still builds. The
-// hook runner sanitizes the environment (PATH, HOME, and the Android NDK
+// hook runner sanitizes the environment (PATH, HOME, the Android NDK and proxy
 // variables pass through; nothing else does), so locations are files or
 // pubspec user-defines, never ad-hoc environment variables.
-//   1. prebuilt/<triple>/<library> bundled inside this package (release
-//      packaging fills it; absent in a source checkout).
+//   1. prebuilt/<triple>/<library> bundled inside this package (vendored
+//      copies; absent in a source checkout and in the published package).
 //   2. The consumer's pubspec user-define `hooks: user_defines: flark:
 //      prebuilt_dir: <dir>` holding <dir>/<triple>/<library>.
 //   3. The crate at native/flark_parse (repo checkouts) built with cargo on
 //      the toolchain named by the repository's rust-toolchain.toml, through
 //      rustup when present so cross targets resolve.
+//   4. The library published for this package version, named with its
+//      SHA-256 in hook/prebuilt.json: downloaded once, checked, and cached in
+//      the hook's shared output directory.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
 
 const _assetName = 'src/parse/native.dart';
@@ -43,7 +48,7 @@ void main(List<String> args) async {
       if (!source.existsSync()) throw BuildError(message: 'flark_parse: the prebuilt_dir user-define is set but ${source.path} is missing');
       output.dependencies.add(source.uri);
       artifact = source.uri;
-    } else if (Directory.fromUri(crateRoot).existsSync()) {
+    } else if (Directory.fromUri(crateRoot.resolve('src/')).existsSync()) {
       for (final f in Directory.fromUri(crateRoot.resolve('src/')).listSync(recursive: true).whereType<File>()) { output.dependencies.add(f.uri); }
       for (final name in ['Cargo.toml', 'Cargo.lock', '../../rust-toolchain.toml']) {
         final f = File.fromUri(crateRoot.resolve(name));
@@ -51,7 +56,9 @@ void main(List<String> args) async {
       }
       artifact = await _cargoBuild(plan, crateRoot, outputDir);
     } else {
-      throw BuildError(message: 'flark_parse: no bundled prebuilt, no `prebuilt_dir` user-define, and no crate at ${crateRoot.toFilePath()}. Add to your pubspec:\n  hooks:\n    user_defines:\n      flark:\n        prebuilt_dir: <directory holding ${plan.triple}/${plan.libraryFileName}>');
+      final manifest = File.fromUri(packageRoot.resolve('hook/prebuilt.json'));
+      output.dependencies.add(manifest.uri);
+      artifact = await _download(plan, manifest, input.outputDirectoryShared);
     }
 
     output.assets.code.add(CodeAsset(package: input.packageName, name: _assetName, file: artifact, linkMode: DynamicLoadingBundled()));
@@ -89,6 +96,54 @@ Future<Uri> _cargoBuild(_Plan plan, Uri crateRoot, Uri outputDir) async {
   return built.uri;
 }
 
+/// The published library for [plan], verified against the SHA-256 that the
+/// package's manifest pins and cached by that hash, so every build after the
+/// first is offline. A mismatch deletes the download and fails the build.
+Future<Uri> _download(_Plan plan, File manifest, Uri sharedDir) async {
+  String offline(String reason) =>
+      'flark_parse: $reason\nTo build without downloading, point the hook at '
+      'local libraries in your pubspec:\n  hooks:\n    user_defines:\n      '
+      'flark:\n        prebuilt_dir: <directory holding '
+      '${plan.triple}/${plan.libraryFileName}>';
+  if (!manifest.existsSync()) throw BuildError(message: offline('${manifest.path} is missing.'));
+  final files = (jsonDecode(manifest.readAsStringSync()) as Map<String, Object?>)['files'] as Map<String, Object?>;
+  final entry = files[plan.triple] as Map<String, Object?>?;
+  if (entry == null) throw BuildError(message: offline('this flark version publishes no parser library for ${plan.triple}.'));
+  final url = Uri.parse(entry['url']! as String);
+  final expected = (entry['sha256']! as String).toLowerCase();
+  final cached = File.fromUri(sharedDir.resolve('prebuilt/$expected/${plan.libraryFileName}'));
+  if (cached.existsSync() && sha256.convert(cached.readAsBytesSync()).toString() == expected) {
+    return cached.uri;
+  }
+  cached.parent.createSync(recursive: true);
+  final partial = File('${cached.path}.partial');
+  final client = HttpClient()
+    ..findProxy = HttpClient.findProxyFromEnvironment
+    ..connectionTimeout = const Duration(seconds: 30);
+  try {
+    final request = await client.getUrl(url);
+    final response = await request.close();
+    if (response.statusCode != HttpStatus.ok) {
+      await response.drain<void>();
+      throw BuildError(message: offline('downloading $url failed with HTTP ${response.statusCode}.'));
+    }
+    await response.pipe(partial.openWrite());
+  } on SocketException catch (error) {
+    throw BuildError(message: offline('downloading $url failed: ${error.message}.'));
+  } on HttpException catch (error) {
+    throw BuildError(message: offline('downloading $url failed: ${error.message}.'));
+  } finally {
+    client.close(force: true);
+  }
+  final actual = sha256.convert(partial.readAsBytesSync()).toString();
+  if (actual != expected) {
+    partial.deleteSync();
+    throw BuildError(message: 'flark_parse: $url has SHA-256 $actual, but this flark version pins $expected. Nothing was used.');
+  }
+  partial.renameSync(cached.path);
+  return cached.uri;
+}
+
 Future<String?> _which(String name) async {
   final r = await Process.run(Platform.isWindows ? 'where' : 'which', [name]);
   if (r.exitCode != 0) return null;
@@ -111,6 +166,10 @@ class _Plan {
         ..._appleEnvironment('macosx', t),
         'MACOSX_DEPLOYMENT_TARGET': '${code.macOS.targetVersion}.0',
       });
+    }
+    if (os == OS.windows) {
+      final t = switch (arch) { Architecture.x64 => 'x86_64-pc-windows-msvc', Architecture.arm64 => 'aarch64-pc-windows-msvc', _ => null };
+      return t == null ? null : _Plan(t, 'flark_parse.dll', () => const {});
     }
     if (os == OS.linux) {
       final t = switch (arch) { Architecture.arm64 => 'aarch64-unknown-linux-gnu', Architecture.x64 => 'x86_64-unknown-linux-gnu', _ => null };

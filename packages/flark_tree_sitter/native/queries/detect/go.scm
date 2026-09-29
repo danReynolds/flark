@@ -1,1 +1,0 @@
-["func" "package" ":="] @signal.strong
