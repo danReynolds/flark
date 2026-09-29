@@ -18,6 +18,7 @@ void main() {
     int caret = 0,
     bool readOnly = false,
     ValueChanged<Uri>? onOpenLink,
+    DeviceGestureSettings? gestureSettings,
   }) async {
     final c = FlarkController(
       FlarkEditor(backend, text: text ?? paragraphs, caret: caret),
@@ -27,11 +28,19 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             height: 400,
-            child: FlarkEditorWidget(
-              controller: c,
-              readOnly: readOnly,
-              showToolbar: false,
-              onOpenLink: onOpenLink,
+            child: Builder(
+              builder: (context) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  gestureSettings:
+                      gestureSettings ?? MediaQuery.of(context).gestureSettings,
+                ),
+                child: FlarkEditorWidget(
+                  controller: c,
+                  readOnly: readOnly,
+                  showToolbar: false,
+                  onOpenLink: onOpenLink,
+                ),
+              ),
             ),
           ),
         ),
@@ -194,6 +203,57 @@ void main() {
     await tester.pump();
     await tester.tapAt(link);
     expect(opened, [Uri.parse('https://example.com/guide')]);
+    await dispose(tester, c);
+  });
+
+  testWidgets('a drag past the platform slop scrolls and is not a tap', (
+    tester,
+  ) async {
+    // Android's scroll view starts at its own slop, below Flutter's default.
+    final (c, surface, position) = await pumpEditor(
+      tester,
+      gestureSettings: const DeviceGestureSettings(touchSlop: 8),
+    );
+    final before = c.editor.selection;
+    final gesture = await tester.startGesture(
+      surface.localToGlobal(const Offset(120, 200)),
+    );
+    for (var i = 0; i < 3; i++) {
+      await gesture.moveBy(const Offset(0, -5));
+      await tester.pump();
+    }
+    expect(position.pixels, greaterThan(0));
+    await gesture.up();
+    await tester.pump();
+    expect(c.editor.selection, before);
+    expect(tester.testTextInput.hasAnyClients, isFalse);
+    await dispose(tester, c);
+  });
+
+  testWidgets('the reader opens no link a short scroll started on', (
+    tester,
+  ) async {
+    final opened = <Uri>[];
+    final (c, surface, position) = await pumpEditor(
+      tester,
+      text: '[guide](https://example.com/guide)\n\n$paragraphs',
+      readOnly: true,
+      onOpenLink: opened.add,
+    );
+    // Alone in the arena, the reader's scroll view moves from the first
+    // pixel, well inside the touch slop.
+    final gesture = await tester.startGesture(
+      surface.localToGlobal(surface.caretRect.center + const Offset(12, 0)),
+    );
+    // A few pixels: the document moves, and the finger stays on the link.
+    for (var i = 0; i < 2; i++) {
+      await gesture.moveBy(const Offset(0, -3));
+      await tester.pump();
+    }
+    expect(position.pixels, greaterThan(0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(opened, isEmpty);
     await dispose(tester, c);
   });
 
@@ -405,6 +465,102 @@ void main() {
       for (final label in menu) {
         expect(find.text(label), findsOneWidget);
       }
+      await dispose(tester, c);
+    });
+    testWidgets('a long press on a blank line after a selection offers Paste', (
+      tester,
+    ) async {
+      mockPlatform(tester);
+      final (c, surface, _) = await pumpEditor(
+        tester,
+        text: 'First word\n\nSecond',
+      );
+      await tester.longPressAt(
+        surface.localToGlobal(surface.caretRectAt(8).center),
+      );
+      await tester.pump();
+      expect(c.editor.selection, const FlarkSelection(6, 10));
+      await tester.pump(kDoubleTapTimeout);
+      await tester.longPressAt(
+        surface.localToGlobal(surface.caretRectAt(11).center),
+      );
+      await tester.pump();
+      expect(c.editor.selection, const FlarkSelection.collapsed(11));
+      expect(find.text('Paste'), findsOneWidget);
+      expect(find.byType(TextMagnifier), findsNothing);
+      await dispose(tester, c);
+    });
+
+    testWidgets('a long press dragged away and back keeps its gesture', (
+      tester,
+    ) async {
+      mockPlatform(tester);
+      final (c, surface, _) = await pumpEditor(
+        tester,
+        text: 'First word\n\nSecond',
+      );
+      final blank = surface.localToGlobal(surface.caretRectAt(11).center);
+      final gesture = await tester.startGesture(blank);
+      await tester.pump(kLongPressTimeout + kPressTimeout);
+      await gesture.moveTo(
+        surface.localToGlobal(surface.caretRectAt(15).center),
+      );
+      await tester.pump();
+      expect(c.editor.selection, const FlarkSelection(11, 18));
+      await gesture.moveTo(blank);
+      await tester.pump();
+      expect(c.editor.selection, const FlarkSelection.collapsed(11));
+      await gesture.moveTo(
+        surface.localToGlobal(surface.caretRectAt(15).center),
+      );
+      await tester.pump();
+      expect(c.editor.selection, const FlarkSelection(11, 18));
+      await gesture.up();
+      await tester.pump();
+      expect(find.text('Copy'), findsOneWidget);
+      expect(find.byType(TextMagnifier), findsNothing);
+      await dispose(tester, c);
+    });
+
+    testWidgets(
+      'a cancelled long press keeps its selection, not the magnifier',
+      (tester) async {
+        mockPlatform(tester);
+        final (c, surface, _) = await pumpEditor(tester, text: text);
+        final gesture = await tester.startGesture(
+          surface.localToGlobal(surface.caretRectAt(5).center),
+        );
+        await tester.pump(kLongPressTimeout + kPressTimeout);
+        expect(find.byType(TextMagnifier), findsOneWidget);
+        await gesture.cancel();
+        await tester.pump();
+        expect(find.byType(TextMagnifier), findsNothing);
+        expect(c.editor.selection, const FlarkSelection(2, 8));
+        expect(surface.handles, isNotNull);
+        await dispose(tester, c);
+      },
+    );
+
+    testWidgets('the menu returns when a scroll brings its selection back', (
+      tester,
+    ) async {
+      mockPlatform(tester);
+      final (c, surface, position) = await pumpEditor(tester);
+      await tester.longPressAt(
+        surface.localToGlobal(surface.caretRectAt(3).center),
+      );
+      await tester.pump();
+      expect(find.text('Copy'), findsOneWidget);
+      await tester.dragFrom(
+        surface.localToGlobal(const Offset(120, 300)),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+      expect(position.pixels, greaterThan(100));
+      expect(find.text('Copy'), findsNothing);
+      position.jumpTo(0);
+      await tester.pump();
+      expect(find.text('Copy'), findsOneWidget);
       await dispose(tester, c);
     });
   });

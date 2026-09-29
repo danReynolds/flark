@@ -418,10 +418,15 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   /// Typing ends the touch selection, and so does a caret it was not shown
   /// at. An edit that keeps a selection (a style) keeps the handles without
-  /// the menu. Otherwise the handles and menu follow the selection.
+  /// the menu. Otherwise the handles and menu follow the selection; a long
+  /// press in progress owns it, including when it returns to a caret.
   void _syncTouchSelection() {
     final overlay = _touchSelection;
     if (overlay == null) return;
+    if (_longPressWord != null) {
+      _updateTouchSelection();
+      return;
+    }
     final selection = c.editor.selection;
     final edited = c.text != _touchSource;
     if (selection.isCollapsed && (edited || selection != _touchCaret)) {
@@ -512,8 +517,8 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     _attach();
     _goalX = null;
     final word = surface.wordAt(surface.globalToLocal(details.globalPosition));
+    _hideTouchSelection();
     _longPressWord = word;
-    _touchSelection?.hideToolbar();
     _command(SetSelection(word.$1, word.$2));
     unawaited(Feedback.forLongPress(context));
     _showTouchSelection(menu: false);
@@ -543,6 +548,14 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     _longPressWord = null;
     _touchSelection?.hideMagnifier();
     _showTouchSelection();
+  }
+
+  /// A long press the platform cancels after it began keeps its selection
+  /// and handles, without the magnifier or menu.
+  void _longPressCancel() {
+    if (_longPressWord == null) return;
+    _longPressWord = null;
+    _touchSelection?.hideMagnifier();
   }
 
   void _startHandleDrag(DragStartDetails details, bool start) {
@@ -653,14 +666,22 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     );
   }
 
-  /// A scroll hides the menu; it returns when the scroll ends with the
-  /// selection in view.
-  bool _scrollEnded(ScrollEndNotification notification) {
+  /// A touch that moved the document is a scroll, not a tap, even within the
+  /// touch slop: the reader's scroll view claims a touch at once. A scroll
+  /// hides the menu; it returns when a scroll ends with the selection in view.
+  bool _scrollNotification(ScrollNotification notification) {
+    if (notification is ScrollUpdateNotification &&
+        (notification.scrollDelta ?? 0) != 0) {
+      _touch = null;
+    }
     final surface = _surface, overlay = _touchSelection;
-    if (_menuAfterScroll && surface != null && overlay != null) {
-      _menuAfterScroll = false;
+    if (notification is ScrollEndNotification &&
+        _menuAfterScroll &&
+        surface != null &&
+        overlay != null) {
       final (start, end) = _touchEnds(surface);
       if (start.expandToInclude(end).overlaps(surface.visibleRect)) {
+        _menuAfterScroll = false;
         overlay.showToolbar(context: context, contextMenuBuilder: _touchMenu);
       }
     }
@@ -1454,6 +1475,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                         ? null
                         : _longPressMove,
                     onLongPressEnd: widget.readOnly ? null : _longPressEnd,
+                    onLongPressCancel: widget.readOnly
+                        ? null
+                        : _longPressCancel,
                     child: GestureDetector(
                       onDoubleTapDown: widget.readOnly
                           ? null
@@ -1490,7 +1514,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                           if (touch != null &&
                               touch.pointer == event.pointer &&
                               (event.position - touch.position).distance >
-                                  kTouchSlop) {
+                                  (MediaQuery.maybeGestureSettingsOf(
+                                        context,
+                                      )?.touchSlop ??
+                                      kTouchSlop)) {
                             _touch = null;
                           }
                           if (_pressedLink != null &&
@@ -1544,8 +1571,8 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                           _dragging = false;
                           _pressedImage = null;
                         },
-                        child: NotificationListener<ScrollEndNotification>(
-                          onNotification: _scrollEnded,
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: _scrollNotification,
                           child: Scrollbar(
                             controller: _scroll,
                             child: SingleChildScrollView(
