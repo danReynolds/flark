@@ -92,11 +92,17 @@ manifest and the changelog to `main`, through CI.
 
 ```sh
 rk status
-rk release
+rk release flark
+rk release flark_codemirror
+rk release flark_flutter
+rk release flark_fleury
 ```
 
-rk releases the unfinished packages in order: tag, then pub.dev. Run it from a
-terminal so that it can ask; `rk release <unit>` releases one.
+Each command tags its package, then publishes it to pub.dev. Run them from a
+terminal so that rk can ask. Name the packages rather than running a bare
+`rk release`. rk checks every released unit's tag against the current commit,
+and `parser`'s tag is on the commit before the pin, so a bare run stops at
+`parser`.
 
 `rk status` reports what is published, what each package waits for, and
 problems such as a missing changelog entry. Pub's own validation and the
