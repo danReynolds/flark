@@ -4,6 +4,10 @@
 #
 #   native/flark_parse/tool/build_release_libraries.sh <out>
 #
+# `rk release parser` runs it from a clean copy of the release commit, and
+# says which one in RK_SOURCE_COMMIT (and the repository in RK_REPOSITORY).
+# Run by hand, it builds the checked-out commit.
+#
 # Writes <out>/<triple>/<library> and, for upload, <out>/assets/<triple>-<library>
 # with <out>/assets/SHA256SUMS. Then write_prebuilt_manifest.py pins the uploaded
 # assets in packages/flark/hook/prebuilt.json.
@@ -14,9 +18,10 @@
 #   - Linux targets in Docker, on an older glibc so the library loads on
 #     current LTS distributions (LINUX_IMAGE overrides the image);
 #   - Windows libraries are not built here: they come from the CI job's
-#     `flark_parse-windows` artifact. WINDOWS_RUN names that CI run, which must
-#     be a successful run of this exact commit. (WINDOWS_DIR takes a local
-#     directory instead, for trying the script; it is not tied to a commit.)
+#     `flark_parse-windows` artifact, from a successful push or manual CI run
+#     of this exact commit. The script finds that run; WINDOWS_RUN names one.
+#     (WINDOWS_DIR takes a local directory instead, for trying the script; it
+#     is not tied to a commit.)
 # TARGETS limits the build to a space-separated subset.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,9 +30,12 @@ ROOT="$(cd "$CRATE/../.." && pwd)"
 OUT="${1:?usage: build_release_libraries.sh <out>}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
-HEAD="$(git -C "$ROOT" rev-parse HEAD)"
-# The libraries are built from the working tree and pinned against this commit.
-if ! git -C "$ROOT" diff --quiet HEAD -- native/flark_parse ':!native/flark_parse/tool' rust-toolchain.toml; then
+HEAD="${RK_SOURCE_COMMIT:-$(git -C "$ROOT" rev-parse HEAD)}"
+REPO="${RK_REPOSITORY:-}"
+# The libraries are pinned against this commit. rk's copy is the committed
+# source by construction; a working tree must match it.
+if [ -z "${RK_SOURCE_COMMIT:-}" ] &&
+  ! git -C "$ROOT" diff --quiet HEAD -- native/flark_parse ':!native/flark_parse/tool' rust-toolchain.toml; then
   echo "the parse crate or rust-toolchain.toml has uncommitted changes" >&2
   exit 1
 fi
@@ -75,7 +83,10 @@ apple() { # triple sdk
 
 android() { # triple clang-prefix
   local ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_LATEST_HOME:-}}}}"
-  if [ -z "$ndk" ]; then ndk="$(ls -d "${ANDROID_HOME:?set ANDROID_HOME or ANDROID_NDK_HOME}"/ndk/* | sort | tail -1)"; fi
+  # Android Studio's default SDK location on a Mac, when nothing names one.
+  local sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+  if [ -z "$ndk" ]; then ndk="$(ls -d "$sdk"/ndk/* 2>/dev/null | sort | tail -1)"; fi
+  if [ -z "$ndk" ]; then echo "no Android NDK: set ANDROID_HOME or ANDROID_NDK_HOME" >&2; return 1; fi
   local bin; bin="$(ls -d "$ndk"/toolchains/llvm/prebuilt/*/bin | head -1)"
   local upper snake
   upper="$(echo "$1" | tr 'a-z-' 'A-Z_')"; snake="$(echo "$1" | tr '-' '_')"
@@ -93,17 +104,30 @@ linux() { # triple docker-platform
 
 windows() { # triple
   local dir run
+  # A pull request's run builds the pull request merged into main, not this
+  # commit. A push to main or a manual run checks out the commit itself.
+  if [ -z "${WINDOWS_RUN:-}" ] && [ -z "${WINDOWS_DIR:-}" ]; then
+    WINDOWS_RUN="$(gh run list ${REPO:+--repo "$REPO"} --commit "$HEAD" --workflow ci.yml \
+      --status success --json databaseId,event \
+      --jq '[.[] | select(.event == "push" or .event == "workflow_dispatch")][0].databaseId // empty')" || return 1
+    if [ -z "$WINDOWS_RUN" ]; then
+      echo "no successful CI run of $HEAD yet: let CI finish on main, or run it on" \
+        "this commit (gh workflow run ci.yml --ref <branch>)" >&2
+      return 1
+    fi
+  fi
   if [ -n "${WINDOWS_RUN:-}" ]; then
-    run="$(gh run view "$WINDOWS_RUN" --json headSha,conclusion --jq '.headSha + " " + .conclusion')" || return 1
-    if [ "$run" != "$HEAD success" ]; then
-      echo "CI run $WINDOWS_RUN is \"$run\", not a successful run of $HEAD" >&2
+    run="$(gh run view "$WINDOWS_RUN" ${REPO:+--repo "$REPO"} --json headSha,conclusion,event \
+      --jq '.headSha + " " + .conclusion + " " + .event')" || return 1
+    if [ "$run" != "$HEAD success push" ] && [ "$run" != "$HEAD success workflow_dispatch" ]; then
+      echo "CI run $WINDOWS_RUN is \"$run\", not a successful push or manual run of $HEAD" >&2
       return 1
     fi
     # One directory per run, completed before it is used.
     dir="$OUT/.windows-$WINDOWS_RUN"
     if [ ! -d "$dir" ]; then
       rm -rf "$dir.partial"
-      gh run download "$WINDOWS_RUN" --name flark_parse-windows --dir "$dir.partial" || return 1
+      gh run download "$WINDOWS_RUN" ${REPO:+--repo "$REPO"} --name flark_parse-windows --dir "$dir.partial" || return 1
       mv "$dir.partial" "$dir"
     fi
   elif [ -n "${WINDOWS_DIR:-}" ]; then
@@ -111,7 +135,7 @@ windows() { # triple
     dir="$WINDOWS_DIR"
   fi
   if [ -z "${dir:-}" ] || [ ! -f "$dir/$1/flark_parse.dll" ]; then
-    echo "no Windows library for $1: set WINDOWS_RUN to the CI run of $HEAD" >&2
+    echo "no Windows library for $1 in CI run ${WINDOWS_RUN:-} of $HEAD" >&2
     return 1
   fi
   mkdir -p "$OUT/$1" && cp "$dir/$1/flark_parse.dll" "$OUT/$1/"
