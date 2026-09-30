@@ -5,17 +5,17 @@ from a clean checkout of `main`, on this machine. `release.toml` lists the
 units in release order: `parser`, the native parser libraries, then the four
 packages, `flark`, `flark_codemirror`, `flark_flutter` and `flark_fleury`. rk
 publishes tags, the libraries' GitHub release and pub.dev versions only after
-it has staged and checked everything private. It asks for one yes per unit
-before the first permanent step. pub.dev never deletes a version; it can only
-retract one.
+it has staged and checked everything private. A run of several units shows
+what each will publish and asks once, before any of them acts. pub.dev never
+deletes a version; it can only retract one.
 
 Two requirements for rk:
 
-- **A version that builds release assets and asks Pub about overrides.** The
-  `parser` unit publishes what its own build script writes, and the workspace
-  root pins Fleury by Git for `flark_fleury` alone, which earlier rk versions
-  refused for every package. Both are on rk's `main` until they ship in an rk
-  release.
+- **A version with what this release relies on.** The `parser` unit publishes
+  what its own build script writes. The workspace root pins Fleury by Git for
+  `flark_fleury` alone, which earlier rk versions refused for every package.
+  And one `rk release` has to pass over `parser`, released a commit before the
+  packages. All of this is on rk's `main` until it ships in an rk release.
 - **The Flutter SDK's `dart`.** Put Flutter's `bin` first on `PATH`. The
   workspace has Flutter packages, which only a Flutter SDK's pub resolves, so rk
   refuses a standalone Dart SDK.
@@ -103,17 +103,17 @@ cd packages/flark && dart test test/prebuilt_manifest_test.dart
 
 ```sh
 rk status
-rk release flark
-rk release flark_codemirror
-rk release flark_flutter
-rk release flark_fleury
+rk release
 ```
 
-Each command tags its package, then publishes it to pub.dev. Run them from a
-terminal so that rk can ask. Name the packages rather than running a bare
-`rk release`. rk checks every released unit's tag against the current commit,
-and `parser`'s tag is on the commit before the pin, so a bare run stops at
-`parser`.
+rk passes over `parser`: its tag is on the commit before the pin, and the
+crate has not changed since. It shows what the four packages will publish and
+asks once. Then it tags and publishes each package in order, checking each
+again before it acts. Run it from a terminal so that rk can ask. A package
+asks again, and says why, if those checks find something the question did
+not show, or if rk warns about it, as it does for Pub's validation warnings.
+If a package stops, the ones before it stay published. Fix the problem and
+run `rk release` again to carry on.
 
 `rk status` reports what is published, what each package waits for, and
 problems such as a missing changelog entry. Pub's own validation and the
