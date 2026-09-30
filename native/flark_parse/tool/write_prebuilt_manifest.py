@@ -2,6 +2,7 @@
 """Pins a published parser release in packages/flark/hook/prebuilt.json.
 
   native/flark_parse/tool/write_prebuilt_manifest.py <release-tag> [<assets-dir>]
+  native/flark_parse/tool/write_prebuilt_manifest.py --source-digest <commit>
 
 Pins the GitHub release <release-tag> as it is served, not as it was built:
 
@@ -11,6 +12,11 @@ Pins the GitHub release <release-tag> as it is served, not as it was built:
   pinned libraries were built from the source this package releases with;
 - with <assets-dir> (the `assets` directory build_release_libraries.sh wrote),
   every downloaded library must be byte-for-byte what was built.
+
+Besides each library's SHA-256, the manifest records the release commit and a
+digest of the source the libraries are built from. Recomputed at HEAD, the
+digest tells packages/flark/test/prebuilt_manifest_test.dart, even in a shallow
+checkout, whether the parser changed after it was pinned.
 
 Each SHA-256 is computed from the downloaded bytes. Needs `gh` and the tag in
 the local repository (`git fetch origin tag <release-tag>`).
@@ -46,7 +52,28 @@ def sha256(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+def source_digest(commit):
+    """The SHA-256 of what the libraries are built from at commit: Git's own
+    record, mode, object and path, of every file of the parse crate but its
+    release tooling, and of rust-toolchain.toml, as the bytes `git ls-tree -z`
+    prints them. prebuilt_manifest_test.dart computes the same at HEAD."""
+    nul, tab = bytes([0]), bytes([9])
+    listing = subprocess.run(
+        ['git', 'ls-tree', '-r', '-z', commit, '--', 'native/flark_parse', 'rust-toolchain.toml'],
+        check=True, capture_output=True, cwd=ROOT).stdout
+    kept = [record + nul for record in listing.split(nul)
+            if record and not record.split(tab, 1)[1].startswith(b'native/flark_parse/tool/')]
+    return hashlib.sha256(b''.join(kept)).hexdigest()
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '--source-digest':
+        try:
+            commit = run('git', 'rev-parse', '--verify', f'{sys.argv[2]}^{{commit}}').strip()
+        except subprocess.CalledProcessError:
+            sys.exit(f'{sys.argv[2]} is not a commit in this repository')
+        print(source_digest(commit))
+        return
     if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
     tag = sys.argv[1]
@@ -97,7 +124,8 @@ def main():
                 'sha256': digest,
             }
     with open(MANIFEST, 'w') as f:
-        json.dump({'release': tag, 'commit': commit, 'files': files}, f, indent=2)
+        json.dump({'release': tag, 'commit': commit, 'source': source_digest(commit),
+                   'files': files}, f, indent=2)
         f.write('\n')
     print(f'pinned {len(files)} libraries from {tag} ({commit[:12]}) in '
           f'{os.path.relpath(MANIFEST, ROOT)}')

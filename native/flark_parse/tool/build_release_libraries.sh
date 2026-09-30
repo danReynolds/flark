@@ -6,7 +6,8 @@
 #
 # `rk release parser` runs it from a clean copy of the release commit, and
 # says which one in RK_SOURCE_COMMIT (and the repository in RK_REPOSITORY).
-# Run by hand, it builds the checked-out commit.
+# Its compiler output goes to RK_CACHE, which outlives the stage. Run by hand,
+# it builds the checked-out commit and keeps everything under <out>.
 #
 # Writes <out>/<triple>/<library> and, for upload, <out>/assets/<triple>-<library>
 # with <out>/assets/SHA256SUMS. Then write_prebuilt_manifest.py pins the uploaded
@@ -30,6 +31,13 @@ ROOT="$(cd "$CRATE/../.." && pwd)"
 OUT="${1:?usage: build_release_libraries.sh <out>}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
+# Compiler output and downloads go where rk keeps them between stages, so the
+# next stage reuses the dependencies it built. The crate itself is always
+# rebuilt: cargo judges freshness by file times, which rk's copy of the source
+# keeps, so a cached build of other source could otherwise pass for this one.
+CACHE="${RK_CACHE:-$OUT}"
+mkdir -p "$CACHE/.cargo-registry"
+CACHE="$(cd "$CACHE" && pwd)"
 HEAD="${RK_SOURCE_COMMIT:-$(git -C "$ROOT" rev-parse HEAD)}"
 REPO="${RK_REPOSITORY:-}"
 # The libraries are pinned against this commit. rk's copy is the committed
@@ -61,12 +69,17 @@ library() {
 cargo_build() { # triple [env...]
   local triple="$1"; shift
   rustup target add --toolchain "$TOOLCHAIN" "$triple" >/dev/null
+  if [ -d "$CACHE/.target/$triple" ]; then
+    CARGO_TARGET_DIR="$CACHE/.target" RUSTC="$(rustup which rustc --toolchain "$TOOLCHAIN")" \
+      rustup run "$TOOLCHAIN" cargo clean --release --locked --quiet -p flark_parse \
+      --manifest-path "$CRATE/Cargo.toml" --target "$triple"
+  fi
   # A Homebrew rustc on PATH has no cross-target std; use the toolchain's.
-  env "$@" CARGO_TARGET_DIR="$OUT/.target" RUSTC="$(rustup which rustc --toolchain "$TOOLCHAIN")" \
+  env "$@" CARGO_TARGET_DIR="$CACHE/.target" RUSTC="$(rustup which rustc --toolchain "$TOOLCHAIN")" \
     rustup run "$TOOLCHAIN" cargo build \
     --release --locked --lib --manifest-path "$CRATE/Cargo.toml" --target "$triple"
   mkdir -p "$OUT/$triple"
-  cp "$OUT/.target/$triple/release/$(library "$triple")" "$OUT/$triple/"
+  cp "$CACHE/.target/$triple/release/$(library "$triple")" "$OUT/$triple/"
 }
 
 apple() { # triple sdk
@@ -95,11 +108,17 @@ android() { # triple clang-prefix
 }
 
 linux() { # triple docker-platform
-  docker run --rm --platform "$2" -v "$ROOT:/src:ro" -v "$OUT:/out" "$LINUX_IMAGE" bash -c "
+  # The crates.io index and sources, too, so each container does not fetch them.
+  docker run --rm --platform "$2" -v "$ROOT:/src:ro" -v "$OUT:/out" -v "$CACHE:/cache" \
+    -v "$CACHE/.cargo-registry:/usr/local/cargo/registry" "$LINUX_IMAGE" bash -c "
     set -e
-    CARGO_PROFILE_RELEASE_STRIP=symbols CARGO_TARGET_DIR=/out/.target-$1 cargo build --release --locked --lib \
+    if [ -d /cache/.target-$1/$1 ]; then
+      CARGO_TARGET_DIR=/cache/.target-$1 cargo clean --release --locked --quiet -p flark_parse \
+        --manifest-path /src/native/flark_parse/Cargo.toml --target $1
+    fi
+    CARGO_PROFILE_RELEASE_STRIP=symbols CARGO_TARGET_DIR=/cache/.target-$1 cargo build --release --locked --lib \
       --manifest-path /src/native/flark_parse/Cargo.toml --target $1
-    mkdir -p /out/$1 && cp /out/.target-$1/$1/release/libflark_parse.so /out/$1/"
+    mkdir -p /out/$1 && cp /cache/.target-$1/$1/release/libflark_parse.so /out/$1/"
 }
 
 windows() { # triple
@@ -124,7 +143,7 @@ windows() { # triple
       return 1
     fi
     # One directory per run, completed before it is used.
-    dir="$OUT/.windows-$WINDOWS_RUN"
+    dir="$CACHE/.windows-$WINDOWS_RUN"
     if [ ! -d "$dir" ]; then
       rm -rf "$dir.partial"
       gh run download "$WINDOWS_RUN" ${REPO:+--repo "$REPO"} --name flark_parse-windows --dir "$dir.partial" || return 1

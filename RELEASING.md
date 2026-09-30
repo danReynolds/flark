@@ -81,12 +81,23 @@ packages/flark/tool/verify_download_consumer.sh --pinned
 ```
 
 The manifest writer downloads what the release serves. It checks that the
-parse crate is unchanged since the tag, then writes `hook/prebuilt.json`. The
-consumer check builds an app with no Rust on `PATH`, which downloads this
-machine's library from the release.
+parse crate is unchanged since the tag, then writes `hook/prebuilt.json`. That
+file records each library's SHA-256, the tag's commit, and a digest of the
+crate and toolchain. The consumer check builds an app with no Rust on `PATH`,
+which downloads this machine's library from the release.
 
 Retitle `flark`'s "Unreleased" changelog entry to "0.5.0". Then commit the
-manifest and the changelog to `main`, through CI.
+manifest and the changelog to `main`, through CI. CI fails a commit whose
+changelog has an entry for the version when the parse crate or
+`rust-toolchain.toml` differs from what the pinned release was built from. A
+later `flark` release can reuse the pin only while the parser is unchanged.
+After a release, bump `flark`'s version when you reopen its "Unreleased"
+entry. rk does not look at CI, so on the release commit run the same check
+before step 4:
+
+```sh
+cd packages/flark && dart test test/prebuilt_manifest_test.dart
+```
 
 ## 4. Release the packages
 
