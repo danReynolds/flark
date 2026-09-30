@@ -88,11 +88,12 @@ which downloads this machine's library from the release.
 
 Retitle `flark`'s "Unreleased" changelog entry to "0.5.0". Then commit the
 manifest and the changelog to `main`, through CI. CI fails a commit whose
-newest changelog entry names the version when the parse crate or
+changelog has an entry for the version when the parse crate or
 `rust-toolchain.toml` differs from what the pinned release was built from. A
 later `flark` release can reuse the pin only while the parser is unchanged.
-rk does not look at CI, so on the release commit run the same check before
-step 4:
+After a release, bump `flark`'s version when you reopen its "Unreleased"
+entry. rk does not look at CI, so on the release commit run the same check
+before step 4:
 
 ```sh
 cd packages/flark && dart test test/prebuilt_manifest_test.dart

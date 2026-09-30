@@ -70,8 +70,9 @@ cargo_build() { # triple [env...]
   local triple="$1"; shift
   rustup target add --toolchain "$TOOLCHAIN" "$triple" >/dev/null
   if [ -d "$CACHE/.target/$triple" ]; then
-    CARGO_TARGET_DIR="$CACHE/.target" rustup run "$TOOLCHAIN" cargo clean --release --offline \
-      --quiet -p flark_parse --manifest-path "$CRATE/Cargo.toml" --target "$triple"
+    CARGO_TARGET_DIR="$CACHE/.target" RUSTC="$(rustup which rustc --toolchain "$TOOLCHAIN")" \
+      rustup run "$TOOLCHAIN" cargo clean --release --locked --quiet -p flark_parse \
+      --manifest-path "$CRATE/Cargo.toml" --target "$triple"
   fi
   # A Homebrew rustc on PATH has no cross-target std; use the toolchain's.
   env "$@" CARGO_TARGET_DIR="$CACHE/.target" RUSTC="$(rustup which rustc --toolchain "$TOOLCHAIN")" \
@@ -112,7 +113,7 @@ linux() { # triple docker-platform
     -v "$CACHE/.cargo-registry:/usr/local/cargo/registry" "$LINUX_IMAGE" bash -c "
     set -e
     if [ -d /cache/.target-$1/$1 ]; then
-      CARGO_TARGET_DIR=/cache/.target-$1 cargo clean --release --offline --quiet -p flark_parse \
+      CARGO_TARGET_DIR=/cache/.target-$1 cargo clean --release --locked --quiet -p flark_parse \
         --manifest-path /src/native/flark_parse/Cargo.toml --target $1
     fi
     CARGO_PROFILE_RELEASE_STRIP=symbols CARGO_TARGET_DIR=/cache/.target-$1 cargo build --release --locked --lib \

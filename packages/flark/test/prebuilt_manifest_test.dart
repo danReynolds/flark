@@ -13,8 +13,9 @@ import 'package:test/test.dart';
 /// changelog entry is "Unreleased". A changelog entry naming the version marks
 /// the release commit (rk refuses to release flark without one), and that
 /// commit must pin a published library for every target the hook downloads,
-/// built from the parser it releases with. After the release "Unreleased" goes
-/// back on top, and the pin stays until the next release needs a new one.
+/// built from the parser it releases with. After a release, reopening
+/// "Unreleased" bumps the pubspec to the next version; the pin stays until
+/// the next release needs a new one.
 void main() {
   final manifest =
       jsonDecode(File('hook/prebuilt.json').readAsStringSync())
@@ -35,10 +36,7 @@ void main() {
   final release = manifest['release'] as String?;
   final files = manifest['files'] as Map<String, Object?>;
   final changelog = File('CHANGELOG.md').readAsStringSync();
-  final named = RegExp(
-    '^#+\\s*\\[?v?${RegExp.escape(version)}(?![0-9A-Za-z.+-])',
-    multiLine: true,
-  ).hasMatch(changelog);
+  final named = _mentions(changelog, version);
 
   String library(String triple) => triple.contains('apple')
       ? 'libflark_parse.dylib'
@@ -91,23 +89,25 @@ void main() {
   });
 
   test('a release commit pins the parser it is built from', () {
-    if (!_releases(changelog, version)) return;
+    if (!named) return;
     final problem = _stalePin(manifest, _sourceDigest('../..'));
     expect(problem, isNull, reason: problem);
   });
 
-  test('the newest changelog entry marks a release commit', () {
-    expect(_releases('# Changelog\n\n## 0.5.0\n\n- A.\n', '0.5.0'), isTrue);
+  test('an entry rk would release marks a release commit', () {
+    expect(_mentions('# Changelog\n\n## 0.5.0\n\n- A.\n', '0.5.0'), isTrue);
     expect(
-      _releases('# Changelog\n\n## [0.5.0] - 2026-10-01\n', '0.5.0'),
+      _mentions('# Changelog\n\n## [0.5.0] - 2026-10-01\n', '0.5.0'),
       isTrue,
     );
     expect(
-      _releases('# Changelog\n\n## Unreleased\n\n## 0.5.0\n', '0.5.0'),
-      isFalse,
-      reason: 'after the release, "Unreleased" is back on top',
+      _mentions('# Changelog\n\n## Unreleased\n\n## 0.5.0\n', '0.5.0'),
+      isTrue,
+      reason: 'rk releases a version whose entry is anywhere in the file',
     );
-    expect(_releases('# Changelog\n\n## 0.5.0-dev.1\n', '0.5.0'), isFalse);
+    expect(_mentions('# Changelog\n\n  ## (0.5.0)\n', '0.5.0'), isTrue);
+    expect(_mentions('# Changelog\n\n## 0.5.0-dev.1\n', '0.5.0'), isFalse);
+    expect(_mentions('# Changelog\n\n## v0.5.0\n', '0.5.0'), isFalse);
   });
 
   test('a pin is stale when the parser has changed since it', () {
@@ -201,17 +201,32 @@ void main() {
   });
 }
 
-/// Whether [changelog]'s newest entry names [version], which makes this a
-/// release commit.
-bool _releases(String changelog, String version) {
-  final newest = RegExp(
-    r'^##\s+(.+)$',
-    multiLine: true,
-  ).firstMatch(changelog)?.group(1);
-  return newest != null &&
-      RegExp(
-        '^\\[?v?${RegExp.escape(version)}(?![0-9A-Za-z.+-])',
-      ).hasMatch(newest);
+/// Whether [changelog] has an entry for [version], which rk requires before
+/// it releases flark: a heading that, stripped of its `#`s and any leading
+/// brackets or quotes, begins with the version. The same reading as rk's own
+/// `Changelog.mentions`.
+bool _mentions(String changelog, String version) {
+  for (final line in changelog.split('\n')) {
+    final trimmed = line.trimLeft();
+    if (!trimmed.startsWith('#')) continue;
+    final heading = trimmed
+        .replaceFirst(RegExp(r'^#+'), '')
+        .trim()
+        .replaceFirst(
+          RegExp(
+            r'^[\[\("'
+            "'"
+            r']+',
+          ),
+          '',
+        );
+    if (!heading.startsWith(version)) continue;
+    if (heading.length == version.length ||
+        !RegExp(r'[0-9A-Za-z.\-+]').hasMatch(heading[version.length])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// Why [manifest]'s pin cannot ship with source whose digest is [source], or
@@ -220,9 +235,10 @@ String? _stalePin(Map<String, Object?> manifest, String source) {
   final release = manifest['release'];
   if (release == null || manifest['source'] == source) return null;
   return 'the parse crate or rust-toolchain.toml changed since $release was '
-      'pinned, so this release would download libraries built from other '
-      'source. Release the parser again and pin that release (RELEASING.md), '
-      'or keep the entry as "Unreleased".';
+      'pinned, and CHANGELOG.md has an entry for this version, which rk would '
+      'release with that pin. Release the parser again and pin that release '
+      '(RELEASING.md). If this version is already out, bump flark\'s version '
+      'for the next one.';
 }
 
 /// What write_prebuilt_manifest.py records as `source`: the SHA-256 of Git's
