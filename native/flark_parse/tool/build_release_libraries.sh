@@ -32,7 +32,9 @@ OUT="${1:?usage: build_release_libraries.sh <out>}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 # Compiler output and downloads go where rk keeps them between stages, so the
-# next stage rebuilds only what changed.
+# next stage reuses the dependencies it built. The crate itself is always
+# rebuilt: cargo judges freshness by file times, which rk's copy of the source
+# keeps, so a cached build of other source could otherwise pass for this one.
 CACHE="${RK_CACHE:-$OUT}"
 mkdir -p "$CACHE/.cargo-registry"
 CACHE="$(cd "$CACHE" && pwd)"
@@ -67,6 +69,10 @@ library() {
 cargo_build() { # triple [env...]
   local triple="$1"; shift
   rustup target add --toolchain "$TOOLCHAIN" "$triple" >/dev/null
+  if [ -d "$CACHE/.target/$triple" ]; then
+    CARGO_TARGET_DIR="$CACHE/.target" rustup run "$TOOLCHAIN" cargo clean --release --offline \
+      --quiet -p flark_parse --manifest-path "$CRATE/Cargo.toml" --target "$triple"
+  fi
   # A Homebrew rustc on PATH has no cross-target std; use the toolchain's.
   env "$@" CARGO_TARGET_DIR="$CACHE/.target" RUSTC="$(rustup which rustc --toolchain "$TOOLCHAIN")" \
     rustup run "$TOOLCHAIN" cargo build \
@@ -105,6 +111,10 @@ linux() { # triple docker-platform
   docker run --rm --platform "$2" -v "$ROOT:/src:ro" -v "$OUT:/out" -v "$CACHE:/cache" \
     -v "$CACHE/.cargo-registry:/usr/local/cargo/registry" "$LINUX_IMAGE" bash -c "
     set -e
+    if [ -d /cache/.target-$1/$1 ]; then
+      CARGO_TARGET_DIR=/cache/.target-$1 cargo clean --release --offline --quiet -p flark_parse \
+        --manifest-path /src/native/flark_parse/Cargo.toml --target $1
+    fi
     CARGO_PROFILE_RELEASE_STRIP=symbols CARGO_TARGET_DIR=/cache/.target-$1 cargo build --release --locked --lib \
       --manifest-path /src/native/flark_parse/Cargo.toml --target $1
     mkdir -p /out/$1 && cp /cache/.target-$1/$1/release/libflark_parse.so /out/$1/"

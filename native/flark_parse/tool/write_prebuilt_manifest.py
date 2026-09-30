@@ -53,26 +53,26 @@ def sha256(path):
 
 
 def source_digest(commit):
-    """The SHA-256 of what the libraries are built from at commit: every file
-    of the parse crate but its release tooling, and rust-toolchain.toml, as Git
-    records them. prebuilt_manifest_test.dart computes the same at HEAD."""
-    listing = run('git', 'ls-tree', '-r', '-z', commit, '--',
-                  'native/flark_parse', 'rust-toolchain.toml')
-    entries = []
-    for record in listing.split(chr(0)):
-        if not record:
-            continue
-        meta, path = record.split('\t', 1)
-        if path.startswith('native/flark_parse/tool/'):
-            continue
-        entries.append((path, meta.split()[2]))
-    return hashlib.sha256(
-        ''.join(f'{obj} {path}\n' for path, obj in sorted(entries)).encode()).hexdigest()
+    """The SHA-256 of what the libraries are built from at commit: Git's own
+    record, mode, object and path, of every file of the parse crate but its
+    release tooling, and of rust-toolchain.toml, as the bytes `git ls-tree -z`
+    prints them. prebuilt_manifest_test.dart computes the same at HEAD."""
+    nul, tab = bytes([0]), bytes([9])
+    listing = subprocess.run(
+        ['git', 'ls-tree', '-r', '-z', commit, '--', 'native/flark_parse', 'rust-toolchain.toml'],
+        check=True, capture_output=True, cwd=ROOT).stdout
+    kept = [record + nul for record in listing.split(nul)
+            if record and not record.split(tab, 1)[1].startswith(b'native/flark_parse/tool/')]
+    return hashlib.sha256(b''.join(kept)).hexdigest()
 
 
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--source-digest':
-        print(source_digest(run('git', 'rev-parse', f'{sys.argv[2]}^{{commit}}').strip()))
+        try:
+            commit = run('git', 'rev-parse', '--verify', f'{sys.argv[2]}^{{commit}}').strip()
+        except subprocess.CalledProcessError:
+            sys.exit(f'{sys.argv[2]} is not a commit in this repository')
+        print(source_digest(commit))
         return
     if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
