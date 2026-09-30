@@ -1,18 +1,21 @@
 # Releasing
 
-The four packages are released with [rk](https://github.com/danReynolds/release-kit)
-from a clean checkout of `main`. `release.toml` lists them in dependency
-order: `flark`, `flark_codemirror`, `flark_flutter`, `flark_fleury`. rk
-publishes git tags and pub.dev versions only after it has staged and checked
-everything private. It asks for one yes per package before the first permanent
-step. pub.dev never deletes a version; it can only retract one.
+Everything is released with [rk](https://github.com/danReynolds/release-kit)
+from a clean checkout of `main`, on this machine. `release.toml` lists the
+units in release order: `parser`, the native parser libraries, then the four
+packages, `flark`, `flark_codemirror`, `flark_flutter` and `flark_fleury`. rk
+publishes tags, the libraries' GitHub release and pub.dev versions only after
+it has staged and checked everything private. It asks for one yes per unit
+before the first permanent step. pub.dev never deletes a version; it can only
+retract one.
 
 Two requirements for rk:
 
-- **A version whose override check asks Pub.** The workspace root pins
-  Fleury by Git for `flark_fleury` alone. Earlier rk versions refuse every
-  package because of that pin. The check is on rk's `main`
-  (danReynolds/release-kit#87) until it ships in an rk release.
+- **A version that builds release assets and asks Pub about overrides.** The
+  `parser` unit publishes what its own build script writes, and the workspace
+  root pins Fleury by Git for `flark_fleury` alone, which earlier rk versions
+  refused for every package. Both are on rk's `main` until they ship in an rk
+  release.
 - **The Flutter SDK's `dart`.** Put Flutter's `bin` first on `PATH`. The
   workspace has Flutter packages, which only a Flutter SDK's pub resolves, so rk
   refuses a standalone Dart SDK.
@@ -36,51 +39,51 @@ Two requirements for rk:
   - runs the kernel tests against the x64 library;
   - uploads them as the `flark_parse-windows` artifact.
 
-## 2. Build and publish the parser libraries
+## 2. Release the parser libraries
 
 The published `flark` package downloads its native parser at build time from a
 GitHub release, and checks it against the SHA-256s pinned in
 `packages/flark/hook/prebuilt.json`.
 
-- Publish new libraries whenever the parse crate has changed since the last
-  pinned release.
+- Release new libraries whenever the parse crate has changed since the last
+  pinned release. The crate's version in `native/flark_parse/Cargo.toml` names
+  the release, so bump it and add an entry to `native/flark_parse/CHANGELOG.md`.
 - Never replace an asset of a published parser release: published `flark`
   versions pin its hashes. Turn on immutable releases for the repository so
   that GitHub enforces this.
 
-From a clean checkout of the release commit, on a Mac with Xcode, the Android
-NDK and Docker:
+On a Mac with Xcode, the Android NDK and Docker running:
 
 ```sh
-ANDROID_HOME=~/Library/Android/sdk WINDOWS_RUN=<CI run id for this commit> \
-  native/flark_parse/tool/build_release_libraries.sh dist/flark_parse
-gh release create flark_parse-v0.5.0 dist/flark_parse/assets/* \
-  --target "$(git rev-parse HEAD)" \
-  --title "flark_parse 0.5.0" --notes "Parser libraries for flark 0.5.0."
+rk release parser
 ```
 
-Where each library comes from:
+rk runs `native/flark_parse/tool/build_release_libraries.sh` from a clean copy
+of the release commit, and publishes the files it writes as the GitHub release
+`flark_parse-v<crate version>`, tagged at that commit:
 
-- Apple and Android libraries build locally.
+- Apple and Android libraries build locally. The script finds Android Studio's
+  SDK unless `ANDROID_HOME` names another.
 - Linux libraries build in Docker, on an older glibc.
-- Windows libraries come from the CI run. The script refuses a run that is not
-  a successful run of this commit.
+- Windows libraries come from the `windows-kernel` job of this commit's CI
+  run on `main`, which the script finds, so let CI finish first. It refuses a
+  pull request's run, which builds the pull request merged into `main` rather
+  than the commit itself.
 
-`--target` tags the commit the libraries were built from. `dist/` is ignored by
-Git.
+`rk stage parser` builds and checks the libraries without publishing them.
 
 ## 3. Pin them
 
 ```sh
-git fetch origin tag flark_parse-v0.5.0
-native/flark_parse/tool/write_prebuilt_manifest.py flark_parse-v0.5.0 dist/flark_parse/assets
+git fetch origin tag flark_parse-v0.1.0
+native/flark_parse/tool/write_prebuilt_manifest.py flark_parse-v0.1.0
 packages/flark/tool/verify_download_consumer.sh --pinned
 ```
 
-The manifest writer downloads what the release serves. It checks that those
-bytes are what was built, and that the parse crate is unchanged since the tag.
-Then it writes `hook/prebuilt.json`. The consumer check builds an app with no
-Rust on `PATH`, which downloads this machine's library from the release.
+The manifest writer downloads what the release serves. It checks that the
+parse crate is unchanged since the tag, then writes `hook/prebuilt.json`. The
+consumer check builds an app with no Rust on `PATH`, which downloads this
+machine's library from the release.
 
 Retitle `flark`'s "Unreleased" changelog entry to "0.5.0". Then commit the
 manifest and the changelog to `main`, through CI.
@@ -93,7 +96,7 @@ rk release
 ```
 
 rk releases the unfinished packages in order: tag, then pub.dev. Run it from a
-terminal so that it can ask; `rk release <package>` releases one package.
+terminal so that it can ask; `rk release <unit>` releases one.
 
 `rk status` reports what is published, what each package waits for, and
 problems such as a missing changelog entry. Pub's own validation and the

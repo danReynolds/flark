@@ -1,8 +1,31 @@
 schema = 2
 
-# Release units, published in dependency order: the kernel, its code engine,
-# then the two hosts. Before `rk release flark`, the parser libraries must be
-# public and pinned in packages/flark/hook/prebuilt.json (see RELEASING.md).
+# Release units, in order: the native parser libraries, then the kernel, its
+# code engine and the two hosts. Before `rk release flark`, the libraries'
+# release must be pinned in packages/flark/hook/prebuilt.json (RELEASING.md).
+
+# The parser libraries every flark build hook downloads, built by the crate's
+# own script and published as a GitHub release named by the crate's version.
+[release.parser]
+path = "native/flark_parse"
+tag = "flark_parse-v{version}"
+publish = ["git-tag", "github-release"]
+build = ["tool/build_release_libraries.sh", "{out}"]
+assets = [
+  "assets/aarch64-apple-darwin-libflark_parse.dylib",
+  "assets/x86_64-apple-darwin-libflark_parse.dylib",
+  "assets/aarch64-apple-ios-libflark_parse.dylib",
+  "assets/aarch64-apple-ios-sim-libflark_parse.dylib",
+  "assets/x86_64-apple-ios-libflark_parse.dylib",
+  "assets/aarch64-linux-android-libflark_parse.so",
+  "assets/armv7-linux-androideabi-libflark_parse.so",
+  "assets/x86_64-linux-android-libflark_parse.so",
+  "assets/x86_64-unknown-linux-gnu-libflark_parse.so",
+  "assets/aarch64-unknown-linux-gnu-libflark_parse.so",
+  "assets/x86_64-pc-windows-msvc-flark_parse.dll",
+  "assets/aarch64-pc-windows-msvc-flark_parse.dll",
+  "assets/SHA256SUMS",
+]
 
 [release.flark]
 tag = "flark-v{version}"
