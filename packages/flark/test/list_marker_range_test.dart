@@ -16,7 +16,9 @@ void main() {
     test('Enter uses source marker range: $source', () {
       final e = FlarkEditor(backend, text: source, caret: source.length);
       expect(e.apply(const Newline()), isTrue);
-      final expected = '$source\n$continuation';
+      // The new line ends the way the item's own line does.
+      final newline = source.contains('\r\n') ? '\r\n' : '\n';
+      final expected = '$source$newline$continuation';
       expect(e.source, expected);
       expect(e.selection, FlarkSelection.collapsed(expected.length));
       expect(e.apply(const InsertText('next')), isTrue);

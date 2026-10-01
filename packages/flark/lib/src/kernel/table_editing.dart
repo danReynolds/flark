@@ -1,5 +1,32 @@
 part of 'editor.dart';
 
+/// The displayed text of each cell of the table row [tableRowBlock], in
+/// column order, including the cells the parser supplies for a short row.
+List<String> _tableRowCells(Projection projection, int tableRowBlock) => [
+  for (final row in projection.rows)
+    if (row.kind == RowKind.tableCell && row.tableRowBlock == tableRowBlock)
+      row.text,
+];
+
+/// Whether [next] displays [cells] as the table row holding [offset], with
+/// [offset] in [column]. GFM drops a row's surplus cells, so comparing the
+/// cell count alone cannot notice a cell split by an edit.
+bool _showsTableRow(
+  FlarkDocument next,
+  int offset,
+  int column,
+  List<String> cells,
+) {
+  final row = next.rowAt(offset);
+  if (row.kind != RowKind.tableCell || row.column != column) return false;
+  final now = _tableRowCells(next.projection, row.tableRowBlock);
+  if (now.length != cells.length) return false;
+  for (var i = 0; i < now.length; i++) {
+    if (now[i] != cells[i]) return false;
+  }
+  return true;
+}
+
 extension _TableEditing on FlarkEditor {
   bool _moveTableCell(bool backward) {
     final row = _doc.caretRow;

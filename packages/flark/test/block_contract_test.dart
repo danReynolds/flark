@@ -50,6 +50,20 @@ void main() {
       expect(e.document.rowAt(e.selection.extent).text.trim(), 'c');
     },
   );
+  test('a pipe typed into a cell is escaped and stays in the cell', () {
+    final e = FlarkEditor(backend, text: table, caret: table.indexOf('c') + 1);
+    expect(e.apply(const InsertText('|')), isTrue);
+    expect(e.apply(const InsertText('x')), isTrue);
+    // Raw, the pipe would split the row: GFM drops the surplus cell, so `d`
+    // would vanish and the caret would stay before the new delimiter.
+    expect(e.source, '| a | b |\n| - | - |\n| c\\|x | **d** |');
+    final cells = e.projection.rows
+        .where((r) => r.kind == RowKind.tableCell && !r.header)
+        .map((r) => r.text.trim());
+    expect(cells, ['c|x', 'd']);
+    expect(e.apply(const Undo()), isTrue);
+    expect(e.source, table);
+  });
   test(
     'table cell boundary deletion rejects without lifting a pipe or delimiter row',
     () {

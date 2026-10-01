@@ -17,6 +17,17 @@ extension _ResourceEditing on FlarkEditor {
         (title != null && _resourceControl(title))) {
       return false;
     }
+    // Asking a link or image for the destination and title it already has
+    // changes nothing. Rewriting it anyway would respell parser-authenticated
+    // source: an inline destination gains angle brackets, and a reference or
+    // automatic link becomes inline, stranding its definition.
+    if (existing != null &&
+        label == null &&
+        existing.destination == destination &&
+        (title == null || title == existing.title)) {
+      _inert = true;
+      return false;
+    }
     final from = existing?.contentStart ?? start;
     final to = existing?.contentEnd ?? end;
     final content = label != null

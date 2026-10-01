@@ -170,26 +170,14 @@ extension _CodeEditing on FlarkEditor {
   ) {
     final model = _doc.model;
     final block = model.blockAt(row.block);
-    final lineStart = model.lineStartUtf16(block.firstLine);
-    var prefix = source.substring(lineStart, block.startUtf16);
-    // Use the same parser-owned item ranges as typed fence completion.
-    var child = block;
-    for (var parent = block.parent; parent != noParent;) {
-      final ancestor = model.blockAt(parent);
-      if (ancestor.kind == BlockKind.item &&
-          ancestor.firstLine == block.firstLine) {
-        final from = ancestor.startUtf16 - lineStart;
-        final to = child.startUtf16 - lineStart;
-        final padding = prefix
-            .substring(from, to)
-            .split('')
-            .map((char) => char == '\t' ? '\t' : ' ')
-            .join();
-        prefix = prefix.replaceRange(from, to, padding);
-      }
-      child = ancestor;
-      parent = ancestor.parent;
-    }
+    // Use the same parser-owned container ranges as typed fence completion.
+    var prefix = _continuationPrefix(
+      source,
+      model,
+      block.firstLine,
+      block.startUtf16,
+      block.index,
+    );
     final newline = source.contains('\r\n') ? '\r\n' : '\n';
     final closed = block.flags & 2 != 0;
     final at = closed
@@ -369,7 +357,11 @@ extension _CodeEditing on FlarkEditor {
     final replacement = language.isEmpty && end < info.length
         ? 'auto'
         : language;
-    if (info.substring(0, end) == replacement) return false;
+    if (info.substring(0, end) == replacement) {
+      // Choosing the language a fence already has is a successful no-op.
+      _inert = true;
+      return false;
+    }
     final (candidate, map) = _edited([
       (row.codeInfoStart, row.codeInfoStart + end, replacement),
     ]);
