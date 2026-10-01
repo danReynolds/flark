@@ -65,6 +65,22 @@ void main() {
     }
   });
 
+  test('a CRLF document reaches the platform with LF line breaks', () {
+    // Browsers keep a textarea's line breaks as LF only, so the platform is
+    // sent LF text, and its edits map back into the CRLF source.
+    const source = 'alpha\r\n\r\nbeta\r\n';
+    final input = InputContext.of(at(source, 13));
+    expect(input.value, at('alpha\n\nbeta\n', 11));
+    expect(input.expand(input.value), at(source, 13));
+    // Text typed at the end of a line goes before its CRLF.
+    expect(
+      input.expand(at('alpha\n\nbetaX\n', 12)),
+      at('alpha\r\n\r\nbetaX\r\n', 14),
+    );
+    // Deleting a line break deletes all of it.
+    expect(input.expand(at('alpha\nbeta\n', 6)), at('alpha\r\nbeta\r\n', 7));
+  });
+
   test('wide reverse selection and active composition are never clipped', () {
     final source = 'a' * 5000;
     final selected = TextEditingValue(
@@ -204,6 +220,20 @@ void main() {
       c.dispose();
     },
   );
+
+  testWidgets('typing in a CRLF document edits its source', (tester) async {
+    const source = 'alpha\r\n\r\nbeta\r\n';
+    final c = FlarkController(FlarkEditor(backend, text: source, caret: 13));
+    await mount(tester, c);
+    final before = remote(tester);
+    expect(before, at('alpha\n\nbeta\n', 11));
+    await delta(tester, client(tester), before, 'X');
+    expect(c.text, 'alpha\r\n\r\nbetaX\r\n');
+    expect(c.editor.selection.extent, 14);
+    expect(c.notice, isNull);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
 
   testWidgets(
     'windowed input resynchronizes a formatting correction before the next key',

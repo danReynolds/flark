@@ -53,11 +53,34 @@ class InputContext {
     return InputContext(source, start, end, rebased: previous != null);
   }
 
-  TextEditingValue get value => TextEditingValue(
-    text: source.text.substring(start, end),
-    selection: _selection(source.selection, -start),
-    composing: _range(source.composing, -start),
-  );
+  /// The window as the platform holds it, each CRLF as LF. Browsers keep a
+  /// textarea's value with LF line breaks only: sent a CRLF window, they
+  /// returned every edit without its CRs and the caret one place further on
+  /// for each line break before it, so no typing in a CRLF document was
+  /// accepted. No platform needs the CRs, and the kernel admits no bare CR.
+  TextEditingValue get value {
+    final window = source.text.substring(start, end);
+    final crs = _crlfs(window);
+    if (crs.isEmpty) {
+      return TextEditingValue(
+        text: window,
+        selection: _selection(source.selection, -start),
+        composing: _range(source.composing, -start),
+      );
+    }
+    int local(int offset) => _withoutCrs(crs, offset - start);
+    final composing = source.composing;
+    return TextEditingValue(
+      text: window.replaceAll('\r\n', '\n'),
+      selection: source.selection.copyWith(
+        baseOffset: local(source.selection.baseOffset),
+        extentOffset: local(source.selection.extentOffset),
+      ),
+      composing: composing.isValid
+          ? TextRange(start: local(composing.start), end: local(composing.end))
+          : TextRange.empty,
+    );
+  }
 
   /// Reconstruct the complete proposed source before the kernel validates it.
   /// Invalid local ranges never get translated into neighboring document text.
@@ -67,11 +90,85 @@ class InputContext {
         (local.composing.isValid && local.composing.end > local.text.length)) {
       return null;
     }
+    final window = source.text.substring(start, end);
+    final crs = _crlfs(window);
+    if (crs.isEmpty) {
+      return TextEditingValue(
+        text: source.text.replaceRange(start, end, local.text),
+        selection: _selection(local.selection, start),
+        composing: _range(local.composing, start),
+      );
+    }
+    // The platform edited the LF text it was sent. Replace the source of the
+    // one span it changed, so every other line keeps its CR.
+    final sent = window.replaceAll('\r\n', '\n'), next = local.text;
+    final shorter = math.min(sent.length, next.length);
+    var a = 0;
+    while (a < shorter && sent.codeUnitAt(a) == next.codeUnitAt(a)) {
+      a++;
+    }
+    var s = 0;
+    while (s < shorter - a &&
+        sent.codeUnitAt(sent.length - 1 - s) ==
+            next.codeUnitAt(next.length - 1 - s)) {
+      s++;
+    }
+    final from = _withCrs(crs, a), to = _withCrs(crs, sent.length - s);
+    final inserted = next.length - s - a;
+    int full(int offset) =>
+        start +
+        (offset <= a
+            ? _withCrs(crs, offset)
+            : offset <= a + inserted
+            ? from + offset - a
+            : from +
+                  inserted -
+                  to +
+                  _withCrs(crs, offset - a - inserted + sent.length - s));
+    final composing = local.composing;
     return TextEditingValue(
-      text: source.text.replaceRange(start, end, local.text),
-      selection: _selection(local.selection, start),
-      composing: _range(local.composing, start),
+      text: source.text.replaceRange(
+        start + from,
+        start + to,
+        next.substring(a, a + inserted),
+      ),
+      selection: local.selection.copyWith(
+        baseOffset: full(local.selection.baseOffset),
+        extentOffset: full(local.selection.extentOffset),
+      ),
+      composing: composing.isValid
+          ? TextRange(start: full(composing.start), end: full(composing.end))
+          : TextRange.empty,
     );
+  }
+
+  /// Where each CRLF of [window] begins.
+  static List<int> _crlfs(String window) => [
+    for (
+      var i = window.indexOf('\r\n');
+      i >= 0;
+      i = window.indexOf('\r\n', i + 2)
+    )
+      i,
+  ];
+
+  /// The LF text's offset for [offset] in the window: less the CRs before it.
+  static int _withoutCrs(List<int> crs, int offset) {
+    var n = 0;
+    while (n < crs.length && crs[n] < offset) {
+      n++;
+    }
+    return offset - n;
+  }
+
+  /// The window offset for [offset] in the LF text. An offset at a line
+  /// break stays before its CR.
+  static int _withCrs(List<int> crs, int offset) {
+    var n = 0;
+    while (n < crs.length && crs[n] - n < offset) {
+      n++;
+    }
+    return offset + n;
   }
 
   static TextSelection _selection(TextSelection s, int offset) => s.copyWith(
