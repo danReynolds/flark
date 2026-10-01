@@ -7,9 +7,11 @@ import 'package:fleury_widgets/fleury_widgets_web.dart' as widgets;
 import 'package:flark_fleury_example/playground.dart';
 
 Future<void> main(List<String> args) async {
+  // The editor uses the parser without owning it, so main disposes it.
+  final parser = createParseBackend();
   final controller = FlarkFleuryController(
     FlarkEditor(
-      createParseBackend(),
+      parser,
       text: args.contains('--headings') ? headingSample : sample,
       codeEditing: FlarkCodeMirror(),
     ),
@@ -43,5 +45,6 @@ Future<void> main(List<String> args) async {
     );
   } finally {
     controller.dispose();
+    parser.dispose();
   }
 }

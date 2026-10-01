@@ -70,6 +70,7 @@ final class WasmParseBackend implements FlarkParseBackend {
 
   bool _disposed = false;
 
+  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
@@ -160,8 +161,12 @@ final class WasmParseBackend implements FlarkParseBackend {
   }
 
   @override
-  int get schemaVersion =>
-      (_versionFn!.callAsFunction(null) as JSNumber).toDartInt;
+  int get schemaVersion {
+    // dispose() drops the instance's functions, so say why rather than fail
+    // a null check.
+    if (_disposed) throw StateError('WasmParseBackend used after dispose');
+    return (_versionFn!.callAsFunction(null) as JSNumber).toDartInt;
+  }
 
   @override
   RenderModel parse(String source) {

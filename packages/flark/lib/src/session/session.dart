@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import '../kernel/commands.dart';
+import '../kernel/document.dart' show validateFlarkSource;
 import '../kernel/editor.dart';
-import '../parse/backend.dart';
+import '../kernel/notify.dart';
 import 'backend_loader.dart';
 import 'platform_limits.dart';
 import 'state.dart';
@@ -12,7 +12,13 @@ import 'state.dart';
 final class FlarkSession {
   /// [syncLimit] is the UTF-8 size rendered live, [flarkDefaultLiveBytes]
   /// unless set; [liveLimits] bounds the document's shape. A document beyond
-  /// either opens and edits in source mode.
+  /// either opens and edits in source mode. Limits no editor can apply throw
+  /// an [ArgumentError].
+  ///
+  /// A [markdown] the editor cannot hold, with a bare CR or an unpaired
+  /// surrogate or over the 1 MiB writable limit, does not throw: the session
+  /// fails with the refusal as its error. [loadMarkdown] can then set other
+  /// content for [retryLoading] to open.
   FlarkSession({
     String markdown = '',
     Future<FlarkBackendLease> Function()? backendLoader,
@@ -21,13 +27,17 @@ final class FlarkSession {
   }) : _markdown = markdown,
        _loader = backendLoader ?? loadFlarkBackend,
        syncLimit = syncLimit ?? flarkDefaultLiveBytes {
-    validateFlarkSourceText(markdown);
-    if (utf8.encode(markdown).length > 1024 * 1024) {
-      throw ArgumentError('document exceeds writable source limit');
-    }
+    checkFlarkLimits(
+      syncLimit: this.syncLimit,
+      sourceLimit: _writableBytes,
+      liveLimits: liveLimits,
+    );
     _publish();
     _start();
   }
+
+  /// [FlarkEditor]'s default writable limit, which this session's editor has.
+  static const int _writableBytes = 1024 * 1024;
   final Future<FlarkBackendLease> Function() _loader;
   final int syncLimit;
   final FlarkLiveLimits liveLimits;
@@ -84,9 +94,7 @@ final class FlarkSession {
     );
     _publicationDepth++;
     try {
-      for (final listener in List.of(_listeners)) {
-        listener();
-      }
+      notifyEach(_listeners);
     } finally {
       _publicationDepth--;
       if (_publicationDepth == 0 && !_sendingChanges) {
@@ -120,6 +128,16 @@ final class FlarkSession {
     unawaited(
       attempt.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
     );
+    // A refused document fails the attempt before a parser loads, since the
+    // editor would only throw the same refusal once one had. Each retry
+    // checks again, so content that loadMarkdown() set in between can open.
+    if (_refusal(_markdown) case (_, final error)?) {
+      _status = FlarkStatus.failed;
+      _error = error;
+      _publish();
+      attempt.completeError(error);
+      return;
+    }
     _status = FlarkStatus.loading;
     _error = null;
     _publish();
@@ -158,6 +176,42 @@ final class FlarkSession {
   Future<void> retryLoading() {
     if (_status == FlarkStatus.failed) _start();
     return ready;
+  }
+
+  /// Why the editor would refuse [markdown] as its document, with the error
+  /// it would throw, or null when it admits it. The session holds content
+  /// before its editor exists, so it makes the same checks itself and reports
+  /// a refusal as a rejection or a failed state rather than throwing.
+  static (FlarkEditRejection, Object)? _refusal(String markdown) {
+    try {
+      validateFlarkSource(markdown);
+    } on FormatException catch (error) {
+      return (FlarkEditRejection.invalidSource, error);
+    }
+    if (!_fitsWritableLimit(markdown)) {
+      return (
+        FlarkEditRejection.sourceLimit,
+        ArgumentError('document exceeds writable source limit'),
+      );
+    }
+    return null;
+  }
+
+  /// Whether [markdown], already validated, fits the writable limit. It counts
+  /// UTF-8 bytes without encoding a copy of a document that may be far
+  /// larger; each half of a surrogate pair is two of the pair's four bytes.
+  static bool _fitsWritableLimit(String markdown) {
+    var bytes = 0;
+    for (var i = 0; i < markdown.length; i++) {
+      final unit = markdown.codeUnitAt(i);
+      bytes += unit < 0x80
+          ? 1
+          : (unit < 0x800 || (unit >= 0xD800 && unit <= 0xDFFF))
+          ? 2
+          : 3;
+      if (bytes > _writableBytes) return false;
+    }
+    return true;
   }
 
   FlarkEditResult? _guard(int? expectedRevision, {bool allowLoading = false}) {
@@ -226,13 +280,8 @@ final class FlarkSession {
   FlarkEditResult loadMarkdown(String markdown, {int? expectedRevision}) {
     final rejected = _guard(expectedRevision, allowLoading: true);
     if (rejected != null) return rejected;
-    try {
-      validateFlarkSourceText(markdown);
-    } on FormatException {
-      return const FlarkEditResult.rejected(FlarkEditRejection.invalidSource);
-    }
-    if (utf8.encode(markdown).length > 1024 * 1024) {
-      return const FlarkEditResult.rejected(FlarkEditRejection.sourceLimit);
+    if (_refusal(markdown) case (final reason, _)?) {
+      return FlarkEditResult.rejected(reason);
     }
     if (_status != FlarkStatus.ready) {
       _markdown = markdown;

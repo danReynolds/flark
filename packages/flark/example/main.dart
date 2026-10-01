@@ -15,8 +15,11 @@ Future<void> main() async {
   }
   print(session.state.markdown); // Plain **bold words**
 
-  // The parser's render model is available to hosts and tools.
-  final model = createParseBackend().parse(session.state.markdown);
+  // The parser's render model is available to hosts and tools. Whoever
+  // creates a parser disposes it; the session disposes the one it loaded.
+  final parser = createParseBackend();
+  final model = parser.parse(session.state.markdown);
   print('${model.blockCount} blocks, ${model.runCount} runs');
+  parser.dispose();
   session.dispose();
 }

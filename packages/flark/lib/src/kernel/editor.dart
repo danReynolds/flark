@@ -11,6 +11,7 @@ import '../parse/schema.g.dart';
 import 'commands.dart';
 import 'document.dart';
 import 'history.dart';
+import 'notify.dart';
 import 'projection.dart';
 import 'style_state.dart';
 
@@ -37,16 +38,11 @@ final class FlarkEditor implements FlarkDocumentState {
     Duration Function()? clock,
   }) : _options = options,
        _clock = clock ?? _stopwatch() {
-    if (syncLimit < 0 ||
-        sourceLimit < syncLimit ||
-        liveLimits.lines < 1 ||
-        liveLimits.lineCodeUnits < 1 ||
-        liveLimits.blocks < 1 ||
-        liveLimits.runs < 1 ||
-        liveLimits.blockCodeUnits < 1 ||
-        liveLimits.containerDepth < 0) {
-      throw ArgumentError('invalid Flark source or live limits');
-    }
+    checkFlarkLimits(
+      syncLimit: syncLimit,
+      sourceLimit: sourceLimit,
+      liveLimits: liveLimits,
+    );
     validateFlarkSource(text);
     if (!_withinLiveByteLimit(text, sourceLimit)) {
       throw ArgumentError('document exceeds writable source limit');
@@ -198,12 +194,16 @@ final class FlarkEditor implements FlarkDocumentState {
     }
 
     commitComposition();
+    final unpublished = _revision;
     try {
       final accepted = apply(command, expectedRevision: expectedRevision);
       if (!accepted) restore();
       return accepted;
     } catch (_) {
-      restore();
+      // Only a command that failed before it was published is withdrawn.
+      // Listeners that heard of an edit hold its source, so restoring the
+      // snapshot under them would split the document in two.
+      if (_revision == unpublished) restore();
       rethrow;
     }
   }
@@ -389,9 +389,7 @@ final class FlarkEditor implements FlarkDocumentState {
 
   void _notify() {
     _revision++;
-    for (final listener in List.of(_listeners)) {
-      listener();
-    }
+    notifyEach(_listeners);
   }
 
   /// Input methods may publish several preedit values as one logical action.

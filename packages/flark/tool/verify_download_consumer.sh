@@ -4,7 +4,9 @@
 # named in hook/prebuilt.json and checks its SHA-256. This serves a freshly
 # built library from a local HTTP server and checks that a consumer with no
 # Rust toolchain on PATH parses through it, that a second build uses the cache,
-# and that a library whose hash does not match is refused.
+# that a library whose hash does not match is refused, that an error response
+# fails the build at once even when its body stalls, and that failed downloads
+# leave nothing in the cache.
 #
 # With --pinned it uses the committed manifest instead: a consumer downloads
 # this machine's library from the published release. Run it after pinning.
@@ -123,4 +125,51 @@ if [ $STATUS -eq 0 ] || ! echo "$OUT" | grep -q 'Nothing was used'; then
   echo "$OUT" | tail -12; echo "hash mismatch was not refused"; exit 1
 fi
 echo "a mismatched hash is refused"
+# Nothing of the refused download is kept: no partial file, and no directory
+# for its hash.
+LEFT="$(find .dart_tool/hooks_runner/shared/flark \( -name '*.partial' -o -path '*/prebuilt/0000*' \) -print 2>/dev/null)"
+if [ -n "$LEFT" ]; then
+  echo "$LEFT"; echo "a refused download left files in the cache"; exit 1
+fi
+
+# An error response fails the build without waiting for its body, which here
+# never finishes. The run gets 50 seconds, room for compiling the hook but
+# less than the hook's 60-second stall bound, and a hook that read the body
+# would wait forever.
+stop_server
+python3 - "$PORT" >/dev/null 2>&1 <<'PY' &
+import http.server, sys, time
+class Stalling(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(503)
+        self.send_header('Content-Length', '100000')
+        self.end_headers()
+        self.wfile.write(b'unavailable')
+        self.wfile.flush()
+        time.sleep(600)
+    def log_message(self, *args):
+        pass
+http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Stalling).serve_forever()
+PY
+SERVER=$!
+# The server is up once a request times out on its body instead of failing
+# to connect.
+for _ in $(seq 50); do curl -s -m 1 -o /dev/null "http://127.0.0.1:$PORT/"; [ $? -eq 28 ] && break; sleep 0.1; done
+manifest "$HASH"
+# Without the cached library the hook has to download again.
+rm -rf .dart_tool/hooks_runner/shared/flark/build/prebuilt
+PATH="$CLEAN_PATH" dart run bin/main.dart > "$WORK/stalled.log" 2>&1 &
+RUN=$!
+for _ in $(seq 500); do kill -0 "$RUN" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$RUN" 2>/dev/null; then
+  kill "$RUN"; tail -12 "$WORK/stalled.log"; echo "an error response with a stalled body hung the build"; exit 1
+fi
+wait "$RUN"; STATUS=$?
+if [ $STATUS -eq 0 ] || ! grep -q 'failed with HTTP 503' "$WORK/stalled.log"; then
+  tail -12 "$WORK/stalled.log"; echo "an error response was not reported"; exit 1
+fi
+if [ -n "$(find .dart_tool/hooks_runner/shared/flark/build/prebuilt -type f 2>/dev/null)" ]; then
+  echo "a failed download left files in the cache"; exit 1
+fi
+echo "an error response fails the build at once and caches nothing"
 echo "download consumer OK"

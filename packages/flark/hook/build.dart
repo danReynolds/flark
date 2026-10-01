@@ -17,6 +17,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
@@ -192,7 +193,8 @@ Future<Uri> _cargoBuild(_Plan plan, Uri crateRoot, Uri outputDir) async {
 
 /// The published library for [plan], verified against the SHA-256 that the
 /// package's manifest pins and cached by that hash, so every build after the
-/// first is offline. A mismatch deletes the download and fails the build.
+/// first is offline. A download that fails or does not match fails the build
+/// and leaves nothing behind.
 Future<Uri> _download(_Plan plan, File manifest, Uri sharedDir) async {
   String offline(String reason) =>
       'flark_parse: $reason\nTo build without downloading, point the hook at '
@@ -222,8 +224,37 @@ Future<Uri> _download(_Plan plan, File manifest, Uri sharedDir) async {
       sha256.convert(cached.readAsBytesSync()).toString() == expected) {
     return cached.uri;
   }
-  cached.parent.createSync(recursive: true);
+  final library = await _fetch(url, offline);
+  final actual = sha256.convert(library).toString();
+  if (actual != expected) {
+    throw BuildError(
+      message:
+          'flark_parse: $url has SHA-256 $actual, but this flark version pins $expected. Nothing was used.',
+    );
+  }
+  // Only a verified library is written, and it is renamed into place, so an
+  // interrupted build cannot leave a truncated file under the cache's name.
   final partial = File('${cached.path}.partial');
+  try {
+    cached.parent.createSync(recursive: true);
+    partial.writeAsBytesSync(library, flush: true);
+    partial.renameSync(cached.path);
+  } on FileSystemException catch (error) {
+    if (partial.existsSync()) partial.deleteSync();
+    throw BuildError(
+      message: 'flark_parse: could not cache the parser library: $error',
+    );
+  }
+  return cached.uri;
+}
+
+/// Above any parser library's size, to bound the memory a misbehaving server
+/// can make a download hold.
+const _maxLibraryBytes = 64 * 1024 * 1024;
+
+/// The body of a successful GET of [url], held in memory: a parser library is
+/// a few megabytes, and a download that fails then writes nothing at all.
+Future<Uint8List> _fetch(Uri url, String Function(String) offline) async {
   // Hook runners put no deadline on a hook, so a stalled server must not hang
   // the build: each wait below, including the gap between response chunks,
   // is bounded.
@@ -235,14 +266,27 @@ Future<Uri> _download(_Plan plan, File manifest, Uri sharedDir) async {
     final request = await client.getUrl(url).timeout(stall);
     final response = await request.close().timeout(stall);
     if (response.statusCode != HttpStatus.ok) {
-      await response.drain<void>();
+      // The body is not read: an error page can stall like any other, and
+      // closing the client below abandons the connection.
       throw BuildError(
         message: offline(
           'downloading $url failed with HTTP ${response.statusCode}.',
         ),
       );
     }
-    await response.timeout(stall).pipe(partial.openWrite());
+    final body = BytesBuilder(copy: false);
+    await for (final chunk in response.timeout(stall)) {
+      body.add(chunk);
+      if (body.length > _maxLibraryBytes) {
+        throw BuildError(
+          message: offline(
+            '$url sent more than the $_maxLibraryBytes bytes a parser '
+            'library can be.',
+          ),
+        );
+      }
+    }
+    return body.takeBytes();
   } on TimeoutException {
     throw BuildError(
       message: offline(
@@ -255,16 +299,6 @@ Future<Uri> _download(_Plan plan, File manifest, Uri sharedDir) async {
   } finally {
     client.close(force: true);
   }
-  final actual = sha256.convert(partial.readAsBytesSync()).toString();
-  if (actual != expected) {
-    partial.deleteSync();
-    throw BuildError(
-      message:
-          'flark_parse: $url has SHA-256 $actual, but this flark version pins $expected. Nothing was used.',
-    );
-  }
-  partial.renameSync(cached.path);
-  return cached.uri;
 }
 
 Future<String?> _which(String name) async {

@@ -39,6 +39,6 @@ void main() {
       });
     }
   }
-  (backend as dynamic).dispose();
+  backend.dispose();
   print(const JsonEncoder.withIndent('  ').convert(samples));
 }

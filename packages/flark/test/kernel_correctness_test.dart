@@ -17,6 +17,9 @@ final class _FailAfterInitialParse implements FlarkParseBackend {
     if (calls++ > 0) throw StateError('synthetic parse failure');
     return delegate.parse(source);
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 final class _SwitchableFaultBackend implements FlarkParseBackend {
@@ -33,6 +36,9 @@ final class _SwitchableFaultBackend implements FlarkParseBackend {
     if (fail) throw StateError('synthetic parse failure');
     return delegate.parse(source);
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 void main() {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../kernel/document.dart';
 import '../kernel/editor.dart';
+import '../kernel/notify.dart';
 import 'backend_loader.dart';
 import 'platform_limits.dart';
 import 'state.dart';
@@ -23,52 +24,64 @@ final class FlarkReader {
   final FlarkLiveLimits liveLimits;
   String _markdown;
   FlarkBackendLease? _lease;
-  FlarkReadDocument? document;
-  FlarkStatus status = FlarkStatus.loading;
-  Object? error;
+  FlarkReadDocument? _document;
+  FlarkStatus _status = FlarkStatus.loading;
+  Object? _error;
   final _listeners = <void Function()>[];
-  late Future<void> ready;
+  late Future<void> _ready;
   Completer<void>? _attempt;
+
+  /// The current text's projection, once a parser has loaded. Text the
+  /// parser cannot take is still the document: it is in source mode.
+  FlarkReadDocument? get document => _document;
+
+  /// Whether a parser is loading, ready or failed to load. A document the
+  /// parser refuses does not fail the reader; only a parser that cannot
+  /// load, or stops working, does.
+  FlarkStatus get status => _status;
+
+  /// Why the reader failed, while [status] is [FlarkStatus.failed].
+  Object? get error => _error;
+
+  /// The current loading attempt; [retry] starts a new one.
+  Future<void> get ready => _ready;
+
   void addListener(void Function() listener) => _listeners.add(listener);
   void removeListener(void Function() listener) => _listeners.remove(listener);
-  void _notify() {
-    for (final listener in List.of(_listeners)) {
-      listener();
-    }
-  }
+  void _notify() => notifyEach(_listeners);
 
   void _start() {
-    status = FlarkStatus.loading;
-    error = null;
+    _status = FlarkStatus.loading;
+    _error = null;
     final done = _attempt = Completer<void>();
-    ready = done.future;
-    unawaited(ready.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+    _ready = done.future;
+    unawaited(_ready.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
     unawaited(() async {
       FlarkBackendLease? lease;
       try {
         lease = await _loader();
-        if (status == FlarkStatus.disposed) {
+        if (_status == FlarkStatus.disposed) {
           lease.dispose();
           if (!done.isCompleted) {
             done.completeError(StateError('Reader disposed'));
           }
           return;
         }
-        document = FlarkReadDocument(
+        _document = FlarkReadDocument(
           lease.backend,
           _markdown,
           syncLimit: syncLimit,
           liveLimits: liveLimits,
         );
         _lease = lease;
-        status = FlarkStatus.ready;
+        _status = FlarkStatus.ready;
         _notify();
         if (!done.isCompleted) done.complete();
       } catch (e, stack) {
         lease?.dispose();
-        if (status != FlarkStatus.disposed) {
-          error = e;
-          status = FlarkStatus.failed;
+        if (_status != FlarkStatus.disposed) {
+          _error = e;
+          _status = FlarkStatus.failed;
           _notify();
         }
         if (!done.isCompleted) done.completeError(e, stack);
@@ -77,42 +90,46 @@ final class FlarkReader {
   }
 
   void update(String markdown) {
-    if (status == FlarkStatus.disposed || markdown == _markdown) return;
+    if (_status == FlarkStatus.disposed || markdown == _markdown) return;
     _markdown = markdown;
-    if (status == FlarkStatus.ready) {
+    if (_status == FlarkStatus.ready) {
+      // Refused text becomes a source snapshot, so only a parser that stopped
+      // working throws here; retry() replaces it.
       try {
-        document!.update(markdown);
+        _document!.update(markdown);
       } catch (e) {
-        error = e;
-        status = FlarkStatus.failed;
+        _error = e;
+        _status = FlarkStatus.failed;
       }
     }
     _notify();
   }
 
   void select(FlarkSelection selection) {
-    if (status == FlarkStatus.ready && document!.select(selection)) _notify();
+    if (_status == FlarkStatus.ready && _document!.select(selection)) {
+      _notify();
+    }
   }
 
   Future<void> retry() {
-    if (status == FlarkStatus.failed) {
+    if (_status == FlarkStatus.failed) {
       _lease?.dispose();
       _lease = null;
-      document = null;
+      _document = null;
       _start();
       _notify();
     }
-    return ready;
+    return _ready;
   }
 
   void dispose() {
-    if (status == FlarkStatus.disposed) return;
-    status = FlarkStatus.disposed;
+    if (_status == FlarkStatus.disposed) return;
+    _status = FlarkStatus.disposed;
     if (_attempt?.isCompleted == false) {
       _attempt!.completeError(StateError('Reader disposed during loading'));
     }
     _listeners.clear();
-    document = null;
+    _document = null;
     _lease?.dispose();
     _lease = null;
   }

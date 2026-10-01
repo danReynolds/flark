@@ -2,14 +2,23 @@ import 'render_model.dart';
 
 /// Parses Markdown source into a [RenderModel]. Every implementation is
 /// synchronous once created; creation may be asynchronous on the web.
+///
+/// A backend holds native or Wasm memory for as long as it lives. Whoever
+/// creates one owns it and calls [dispose] once no document uses it; the
+/// built-in backends also free that memory when a dropped one is garbage
+/// collected.
 abstract interface class FlarkParseBackend {
   /// The render-model schema version the backend writes.
   int get schemaVersion;
 
   /// Parse [source] and return its render model. Invalid host text, a
   /// fail-closed extraction deviation, or a contained native fault surfaces as
-  /// a [FlarkParseException].
+  /// a [FlarkParseException]. A disposed backend throws a [StateError].
   RenderModel parse(String source);
+
+  /// Free the backend's memory now. Parsing afterwards throws a [StateError];
+  /// a second call does nothing.
+  void dispose();
 }
 
 class FlarkParseException implements Exception {

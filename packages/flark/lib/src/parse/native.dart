@@ -16,9 +16,6 @@ external int flarkParse(
   Pointer<Uint32> outLen,
 );
 
-@Native<Pointer<Uint8> Function(Uint32)>(symbol: 'flark_parse_alloc')
-external Pointer<Uint8> flarkParseAlloc(int len);
-
 @Native<Void Function(Pointer<Uint8>, Uint32)>(symbol: 'flark_parse_free')
 external void flarkParseFree(Pointer<Uint8> ptr, int len);
 

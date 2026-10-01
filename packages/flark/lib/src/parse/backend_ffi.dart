@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'backend.dart';
 import 'native.dart' as native;
+import 'parser_memory.dart';
 import 'render_model.dart';
 import 'schema.g.dart';
 
@@ -16,8 +17,6 @@ typedef _ParseC =
     );
 typedef _ParseD =
     int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Uint32>);
-typedef _AllocC = Pointer<Uint8> Function(Uint32);
-typedef _AllocD = Pointer<Uint8> Function(int);
 typedef _FreeC = Void Function(Pointer<Uint8>, Uint32);
 typedef _FreeD = void Function(Pointer<Uint8>, int);
 typedef _VersionC = Uint32 Function();
@@ -31,8 +30,14 @@ const int _initialInputCapacity = 4096;
 /// builds, `FLARK_PARSE_LIBRARY` may name a library to load instead, for
 /// tooling; release builds ignore it so an environment cannot redirect the
 /// parser.
-final class FfiParseBackend implements FlarkParseBackend {
-  FfiParseBackend._(this._parse, this._alloc, this._free, this._version) {
+///
+/// The parser owns native memory: [dispose] frees it, and a finalizer frees
+/// it for a parser that is dropped instead. Being [Finalizable] also keeps
+/// the parser in its isolate: a copy sent to another would share that memory
+/// without owning it, so the VM refuses the copy. Create a parser in each
+/// isolate that parses.
+final class FfiParseBackend implements FlarkParseBackend, Finalizable {
+  FfiParseBackend._(this._parse, this._free, this._version) {
     final version = _version();
     if (version != RenderModelSchema.version) {
       throw FlarkParseException(
@@ -40,11 +45,8 @@ final class FfiParseBackend implements FlarkParseBackend {
         'native flark_parse writes schema $version, this package reads ${RenderModelSchema.version}',
       );
     }
-    _outCell = _alloc(16);
-    _outPtr = _outCell.cast<Pointer<Uint8>>();
-    _outLen = (_outCell + 8).cast<Uint32>();
-    _input = _alloc(_initialInputCapacity);
-    _inputCapacity = _initialInputCapacity;
+    // Allocated after the schema check, so a mismatched library owns nothing.
+    _memory = ParserMemory(_initialInputCapacity);
   }
 
   factory FfiParseBackend() {
@@ -56,28 +58,21 @@ final class FfiParseBackend implements FlarkParseBackend {
       final lib = DynamicLibrary.open(override);
       return FfiParseBackend._(
         lib.lookupFunction<_ParseC, _ParseD>('flark_parse'),
-        lib.lookupFunction<_AllocC, _AllocD>('flark_parse_alloc'),
         lib.lookupFunction<_FreeC, _FreeD>('flark_parse_free'),
         lib.lookupFunction<_VersionC, _VersionD>('flark_parse_schema_version'),
       );
     }
     return FfiParseBackend._(
       native.flarkParse,
-      native.flarkParseAlloc,
       native.flarkParseFree,
       native.flarkParseSchemaVersion,
     );
   }
 
   final _ParseD _parse;
-  final _AllocD _alloc;
   final _FreeD _free;
   final _VersionD _version;
-  late final Pointer<Uint8> _outCell;
-  late final Pointer<Pointer<Uint8>> _outPtr;
-  late final Pointer<Uint32> _outLen;
-  late Pointer<Uint8> _input;
-  late int _inputCapacity;
+  late final ParserMemory _memory;
   bool _disposed = false;
 
   @override
@@ -86,18 +81,32 @@ final class FfiParseBackend implements FlarkParseBackend {
   @override
   RenderModel parse(String source) {
     if (_disposed) throw StateError('FfiParseBackend used after dispose');
-    // One UTF-16 code unit never needs more than three UTF-8 bytes. Keep
-    // headroom so typing does not reallocate on every keystroke.
-    if (source.length * 3 > _inputCapacity) {
-      _free(_input, _inputCapacity);
-      _inputCapacity = source.length * 6;
-      _input = _alloc(_inputCapacity);
+    final memory = _memory;
+    // One UTF-16 code unit never needs more than three UTF-8 bytes.
+    if (source.length * 3 > memory.inputCapacity) {
+      final capacity = ParserMemory.inputCapacityFor(source.length);
+      if (capacity == null) {
+        throw FlarkParseException(
+          FlarkParseException.invalidHostTextCode,
+          'a source of ${source.length} UTF-16 code units can exceed the '
+          'parser input limit of ${ParserMemory.maxInputBytes} bytes',
+        );
+      }
+      memory.grow(capacity);
     }
-    final length = _encodeUtf8(source, _input.asTypedList(_inputCapacity));
-    final rc = _parse(_input, length, _outPtr, _outLen);
+    final length = _encodeUtf8(
+      source,
+      memory.input.asTypedList(memory.inputCapacity),
+    );
+    final rc = _parse(
+      memory.input,
+      length,
+      memory.modelAddress,
+      memory.modelLength,
+    );
     if (rc != 0) throw FlarkParseException.fromCode(rc);
-    final len = _outLen.value;
-    final ptr = _outPtr.value;
+    final len = memory.modelLength.value;
+    final ptr = memory.modelAddress.value;
     // Copy out so the model outlives the native buffer: one memcpy of a few
     // hundred KB at most inside the tier, into a word-aligned Dart buffer.
     final copy = Uint8List.fromList(ptr.asTypedList(len));
@@ -105,12 +114,11 @@ final class FfiParseBackend implements FlarkParseBackend {
     return RenderModel(copy);
   }
 
-  /// Release the native input buffer and out-cell. Parsing after this throws.
+  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _free(_input, _inputCapacity);
-    _free(_outCell, 16);
+    _memory.release();
   }
 }
 
@@ -150,4 +158,6 @@ int _encodeUtf8(String source, Uint8List out) {
   return o;
 }
 
+/// A new FFI parser. The caller owns it and calls
+/// [FlarkParseBackend.dispose] when done.
 FlarkParseBackend createParseBackend() => FfiParseBackend();

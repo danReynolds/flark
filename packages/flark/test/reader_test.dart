@@ -16,6 +16,25 @@ class CountingBackend implements FlarkParseBackend {
     calls++;
     return inner.parse(source);
   }
+
+  @override
+  void dispose() => inner.dispose();
+}
+
+/// Faults on one source, as a contained native panic would.
+class FaultingBackend implements FlarkParseBackend {
+  FaultingBackend(this.inner, this.faultOn);
+  final FlarkParseBackend inner;
+  final String faultOn;
+  @override
+  int get schemaVersion => inner.schemaVersion;
+  @override
+  RenderModel parse(String source) => source == faultOn
+      ? throw FlarkParseException.fromCode(FlarkParseException.faultCode)
+      : inner.parse(source);
+
+  @override
+  void dispose() => inner.dispose();
 }
 
 void main() {
@@ -23,7 +42,7 @@ void main() {
     'reader parses once per source, selection reuses projection, bounded fallback',
     () {
       final native = createParseBackend();
-      addTearDown(() => (native as dynamic).dispose());
+      addTearDown(native.dispose);
       final backend = CountingBackend(native);
       final reader = FlarkReadDocument(backend, '# Title\n\n**body**');
       final projection = reader.projection;
@@ -43,7 +62,7 @@ void main() {
   );
   test('reader and editor share projection without sharing mutable state', () {
     final backend = createParseBackend();
-    addTearDown(() => (backend as dynamic).dispose());
+    addTearDown(backend.dispose);
     const source =
         '# Title\n\n- [x] task\n\n> quote\n\n| a | b |\n| - | - |\n| c | d |';
     final reader = FlarkReadDocument(backend, source);
@@ -70,7 +89,7 @@ void main() {
       gate.complete(
         FlarkBackendLease(backend, () {
           released++;
-          (backend as dynamic).dispose();
+          backend.dispose();
         }),
       );
       await Future<void>.delayed(Duration.zero);
@@ -78,4 +97,44 @@ void main() {
       expect(notified, 0);
     },
   );
+
+  test(
+    'refused text shows as source and the next valid text renders',
+    () async {
+      final reader = FlarkReader('# Title');
+      addTearDown(reader.dispose);
+      await reader.ready;
+      // A streamed or truncated preview can end inside a surrogate pair, and
+      // CommonMark allows bare-CR line endings that the editor does not.
+      for (final refused in ['# Title \uD83D', '# Title\rbody']) {
+        reader.update(refused);
+        expect(reader.status, FlarkStatus.ready);
+        expect(reader.document!.sourceMode, isTrue);
+        expect(reader.document!.source, refused);
+        expect(() => reader.document!.document, throwsStateError);
+        reader.update('# Title \u{1F600}');
+        expect(reader.status, FlarkStatus.ready);
+        expect(reader.document!.sourceMode, isFalse);
+        expect(reader.document!.source, '# Title \u{1F600}');
+      }
+    },
+  );
+
+  test('a document the parser refuses opens as source', () async {
+    final reader = FlarkReader('# Title\rbody');
+    addTearDown(reader.dispose);
+    await reader.ready;
+    expect(reader.status, FlarkStatus.ready);
+    expect(reader.document!.sourceMode, isTrue);
+
+    final backend = createParseBackend();
+    addTearDown(backend.dispose);
+    final document = FlarkReadDocument(
+      FaultingBackend(backend, 'boom'),
+      'boom',
+    );
+    expect(document.sourceMode, isTrue);
+    document.update('fine');
+    expect(document.sourceMode, isFalse);
+  });
 }

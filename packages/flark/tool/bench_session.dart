@@ -48,6 +48,6 @@ Future<void> main() async {
     }
     session.dispose();
   }
-  (backend as dynamic).dispose();
+  backend.dispose();
   print(const JsonEncoder.withIndent('  ').convert(results));
 }
