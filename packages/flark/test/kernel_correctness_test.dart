@@ -216,6 +216,29 @@ void main() {
       expect(editor.source, isEmpty);
     });
 
+    test('typing is grouped by the clock the editor was given', () {
+      var now = Duration.zero;
+      final editor = FlarkEditor(backend, clock: () => now);
+      editor.apply(const InsertText('a'));
+      now += const Duration(milliseconds: 500);
+      editor.apply(const InsertText('b'));
+      now += const Duration(seconds: 2);
+      editor.apply(const InsertText('c'));
+
+      expect(editor.apply(const Undo()), isTrue);
+      expect(
+        editor.source,
+        'ab',
+        reason: 'a pause longer than the window starts a group',
+      );
+      expect(editor.apply(const Undo()), isTrue);
+      expect(
+        editor.source,
+        isEmpty,
+        reason: 'keystrokes within the window are one group',
+      );
+    });
+
     test('an edit clears the preferred vertical column', () {
       final editor = FlarkEditor(
         backend,

@@ -34,7 +34,9 @@ final class FlarkEditor implements FlarkDocumentState {
     this.liveLimits = const FlarkLiveLimits(),
     this.sourceLimit = 1024 * 1024,
     ProjectionOptions options = const ProjectionOptions(),
-  }) : _options = options {
+    Duration Function()? clock,
+  }) : _options = options,
+       _clock = clock ?? _stopwatch() {
     if (syncLimit < 0 ||
         sourceLimit < syncLimit ||
         liveLimits.lines < 1 ||
@@ -53,6 +55,11 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   static const int defaultSyncLimit = 16 * 1024;
+
+  static Duration Function() _stopwatch() {
+    final watch = Stopwatch()..start();
+    return () => watch.elapsed;
+  }
 
   final FlarkParseBackend _backend;
 
@@ -86,7 +93,12 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Display column vertical movement aims for, kept across rows.
   int? _goalColumn;
-  final Stopwatch _clock = Stopwatch()..start();
+
+  /// The time history coalescing reads when a command brings none. A
+  /// stopwatch started with the editor unless the constructor was given a
+  /// clock: a test that types a long run as one undo step passes one, so a
+  /// slow machine cannot split the run into several.
+  final Duration Function() _clock;
   Duration _now = Duration.zero;
 
   @override
@@ -148,7 +160,7 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     if (composing && (command is Undo || command is Redo)) commitComposition();
     if (command is! SelectAll) _selectedCodeScope = false;
-    _now = at ?? _clock.elapsed;
+    _now = at ?? _clock();
     final applied = sourceMode
         ? _applySource(command)
         : _withMissingCell(command);
@@ -300,7 +312,7 @@ final class FlarkEditor implements FlarkDocumentState {
       selection,
       pending: _pending,
       typing: false,
-      at: _clock.elapsed,
+      at: _clock(),
     );
     _snapshot = next;
     _pending = null;
@@ -403,7 +415,7 @@ final class FlarkEditor implements FlarkDocumentState {
         before.selection,
         pending: before.pending,
         typing: false,
-        at: _clock.elapsed,
+        at: _clock(),
       );
     }
     _composition = null;

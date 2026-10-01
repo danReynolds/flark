@@ -268,7 +268,16 @@ void main() {
     'continued Unicode typing crosses input contexts without losing the next key',
     (tester) async {
       final source = '${'a' * 1500}\n\n${'b' * 1500}';
-      final c = FlarkController(FlarkEditor(backend, text: source, caret: 750));
+      // One undo step for the whole run, however long each keystroke takes
+      // on a loaded machine: history coalesces typing within a second.
+      final c = FlarkController(
+        FlarkEditor(
+          backend,
+          text: source,
+          caret: 750,
+          clock: () => Duration.zero,
+        ),
+      );
       final paints = <FlarkPaintObservation>[];
       await tester.pumpWidget(
         MaterialApp(
