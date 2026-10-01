@@ -57,6 +57,9 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
     return language;
   }
 
+  /// Both hosts call this while laying out a frame, so it never throws: a
+  /// mode that fails leaves the rest of its snippet plain
+  /// ([codeMirrorTokens]).
   @override
   CodeHighlight highlight(String source, String info) {
     final name = resolveLanguage(source, info), key = (source, name);
@@ -96,17 +99,23 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
         language == 'text') {
       return null;
     }
-    return proposeCodeEdit(
-      (columns) {
-        final config = ModeConfig(indentUnit: columns, tabSize: codeTabSize);
-        return _byName[language]?.mode(config) ?? BracketsMode(config);
-      },
-      source,
-      base: base,
-      extent: extent,
-      action: action,
-      text: text,
-      indentUnit: indentUnit,
-    );
+    try {
+      return proposeCodeEdit(
+        (columns) {
+          final config = ModeConfig(indentUnit: columns, tabSize: codeTabSize);
+          return _byName[language]?.mode(config) ?? BracketsMode(config);
+        },
+        source,
+        base: base,
+        extent: extent,
+        action: action,
+        text: text,
+        indentUnit: indentUnit,
+      );
+    } on Object {
+      // A mode that fails declines the edit: the kernel's own editing then
+      // applies, where an exception would lose the keystroke.
+      return null;
+    }
   }
 }

@@ -82,7 +82,8 @@ void main() {
     final before = e.source;
     e.history.breakCoalescing();
     e.apply(const InsertText('x'));
-    expect(e.source, before.replaceFirst('\nfi', '\nfix'));
+    // `fix` closes nothing: it is a command in the if's body.
+    expect(e.source, before.replaceFirst('\nfi', '\n  fix'));
     e.apply(const Undo());
     expect(e.source, before);
   });
@@ -126,8 +127,13 @@ void main() {
         // Break typing coalescing so next-key and command undo are distinct.
         e.history.breakCoalescing();
         expect(e.apply(const InsertText('z')), isTrue);
-        expect(e.source, after.source.replaceRange(at, end, 'z'));
-        expect(e.selection, FlarkSelection.collapsed(at + 1));
+        if (c.next case final next?) {
+          final typed = marked(wrap(next));
+          expect((e.source, e.selection), (typed.source, typed.selection));
+        } else {
+          expect(e.source, after.source.replaceRange(at, end, 'z'));
+          expect(e.selection, FlarkSelection.collapsed(at + 1));
+        }
         expect(e.apply(const Undo()), isTrue);
         expect((e.source, e.selection), (after.source, after.selection));
         if (after.source != before.source) {

@@ -74,13 +74,33 @@ _Context _popContext(ClikeState state) {
   return state._context = state._context.prev!;
 }
 
-final _typeEnd = RegExp(r'\S(?:[^- ]>|[*\]])\s*$|\*$');
+/// Upstream's `/\S(?:[^- ]>|[*\]])\s*$|\*$/` on the line before [pos],
+/// read backwards from [pos]. Upstream copies and searches that prefix for
+/// every name it sees; that is quadratic in a long line, and the pattern
+/// only ever reads the last few characters.
+bool _typeEnds(String line, int pos) {
+  if (pos > 0 && line.codeUnitAt(pos - 1) == 0x2a) return true;
+  var end = pos;
+  while (end > 0 && isJsSpace(line.codeUnitAt(end - 1))) {
+    end--;
+  }
+  if (end < 2) return false;
+  final last = line.codeUnitAt(end - 1), before = line.codeUnitAt(end - 2);
+  // `\S[*\]]`, then trailing white space.
+  if (last == 0x2a || last == 0x5d) return !isJsSpace(before);
+  // `\S[^- ]>`: any character but `-` and a space before the `>`.
+  return last == 0x3e &&
+      end >= 3 &&
+      before != 0x2d &&
+      before != 0x20 &&
+      !isJsSpace(line.codeUnitAt(end - 3));
+}
 
 bool _typeBefore(StringStream stream, ClikeState state, int pos) {
   if (state._prevToken == 'variable' || state._prevToken == 'type') {
     return true;
   }
-  if (_typeEnd.hasMatch(stream.string.substring(0, pos))) return true;
+  if (_typeEnds(stream.string, pos)) return true;
   if (state._typeAtEndOfLine && stream.column() == stream.indentation()) {
     return true;
   }
@@ -503,14 +523,23 @@ const _cppKeywords =
 final _basicCTypes = _words(
   'int long char short double float unsigned signed void bool',
 );
-final _posixType = RegExp(r'.+_t$');
+
+/// Upstream's `/.+_t$/`: a name ending in `_t` after a character `.` reads
+/// (anything but a line terminator). The regex tries every start of the
+/// name, so one long name took quadratic time.
+bool _posixType(String identifier) {
+  final n = identifier.length;
+  if (n < 3 || !identifier.endsWith('_t')) return false;
+  final unit = identifier.codeUnitAt(n - 3);
+  return unit != 0x0a && unit != 0x0d && unit != 0x2028 && unit != 0x2029;
+}
 
 // Returns true if identifier is a "C" type.
 // C type is defined as those that are reserved by the compiler (basicTypes),
 // and those that end in _t (Reserved by POSIX for types)
 // http://www.gnu.org/software/libc/manual/html_node/Reserved-Names.html
 bool _cTypes(String identifier) =>
-    _basicCTypes.contains(identifier) || _posixType.hasMatch(identifier);
+    _basicCTypes.contains(identifier) || _posixType(identifier);
 
 const _cBlockKeywords = 'case do else for if switch while struct enum union';
 const _cDefKeywords = 'struct enum union';

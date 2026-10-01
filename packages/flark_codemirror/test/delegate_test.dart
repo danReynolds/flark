@@ -1,7 +1,31 @@
 import 'package:flark/code.dart';
 import 'package:flark/flark.dart';
 import 'package:flark_codemirror/flark_codemirror.dart';
+import 'package:flark_codemirror/src/highlight.dart';
+import 'package:flark_codemirror/src/mode.dart';
+import 'package:flark_codemirror/src/stream.dart';
 import 'package:test/test.dart';
+
+/// Reads one character a token until [failAt], where it throws, or, without
+/// [failAt], never advances: the two ways a defective mode fails.
+final class _Defective extends Mode<Object?> {
+  _Defective({this.failAt});
+  final int? failAt;
+
+  @override
+  Object? startState([int baseColumn = 0]) => null;
+
+  @override
+  Object? copyState(Object? state) => state;
+
+  @override
+  String? token(StringStream stream, Object? state) {
+    if (failAt == null) return 'keyword';
+    if (stream.pos == failAt) throw StateError('defect');
+    stream.next();
+    return 'keyword';
+  }
+}
 
 void main() {
   final code = FlarkCodeMirror();
@@ -85,6 +109,88 @@ void main() {
       expect(kindOf(h, source, 'true'), 'constant');
       expect(kindOf(h, source, 'null'), 'constant');
       expect(code.highlight(source, 'json'), same(h));
+    });
+
+    test('a character a mode cannot read costs only that character', () {
+      // Rust's comment state reads only `.*`, and its string escapes
+      // `\\(?:.|$)`; `.` does not match U+2028. Upstream throws there, which
+      // would fail the frame that paints the fence.
+      final separator = String.fromCharCode(0x2028);
+      final source = '/* a${separator}b */\nfn main() {}';
+      final h = code.highlight(source, 'rust');
+      expect(
+        h.tokens.map((t) => source.substring(t.start, t.end)).join(),
+        source,
+      );
+      expect(kindOf(h, source, separator), 'comment');
+      expect(kindOf(h, source, 'b */'), 'comment');
+      expect(kindOf(h, source, 'fn'), 'keyword');
+      final escaped = 'let s = "a\\${separator}b"; let t = 1;';
+      final e = code.highlight(escaped, 'rust');
+      expect(kindOf(e, escaped, 'b"'), 'string');
+      expect(kindOf(e, escaped, 'let t'), 'keyword');
+    });
+
+    test('a mode that never advances steps one character at a time', () {
+      final steps = <String>[];
+      runMode(
+        _Defective(),
+        'a\u{1F600}b',
+        onToken: (line, start, end, style) => steps.add('$start-$end $style'),
+      );
+      // The surrogate pair is one step.
+      expect(steps, ['0-1 keyword', '1-3 keyword', '3-4 keyword']);
+    });
+
+    test('a mode that throws leaves the rest of its snippet plain', () {
+      final tokens = codeMirrorTokens(_Defective(failAt: 3), 'abcdef\nghi');
+      expect(
+        [for (final t in tokens) (t.start, t.end, t.kind)],
+        [(0, 3, 'keyword'), (3, 10, null)],
+      );
+    });
+
+    test('long lines highlight in linear time', () {
+      for (final (language, line) in [
+        // YAML's key pattern backtracked through every split of a run of
+        // spaces: 256 took 2.7 s, 512 took 42 s.
+        ('yaml', '${' ' * 256}x'),
+        // And retried it at every character of a line without a colon.
+        ('yaml', '- ${'the quick brown fox ' * 400}'),
+        // C-like modes copied and searched the line before every name.
+        ('java', 'String s = ${'a + b + ' * 1000}"";'),
+        ('c', 'a' * 8000),
+      ]) {
+        final watch = Stopwatch()..start();
+        code.highlight(line, language);
+        expect(
+          watch.elapsedMilliseconds,
+          lessThan(100),
+          reason: '$language, ${line.length} code units',
+        );
+      }
+    });
+
+    test('modes read long lines in linear time beyond the delegate cap', () {
+      // Each was quadratic in the line: a search for tabs that ran to its end
+      // at every column() call, a scan for type arguments at every name
+      // before a `<`, and PowerShell reading a whole run of name characters
+      // for every token it took from the run.
+      String repeat(String unit) =>
+          (unit * ((1 << 17) ~/ unit.length)).padRight(1 << 17, unit[0]);
+      for (final (language, line) in [
+        (CodeMirrorLanguages.javascript, repeat('abc ')),
+        (CodeMirrorLanguages.javascript, repeat('a<')),
+        (CodeMirrorLanguages.powershell, repeat('-')),
+      ]) {
+        final watch = Stopwatch()..start();
+        codeMirrorTokens(language.mode(const ModeConfig()), line);
+        expect(
+          watch.elapsedMilliseconds,
+          lessThan(500),
+          reason: '${language.name}: ${line.substring(0, 4)}…',
+        );
+      }
     });
 
     test('unported, plain and oversized snippets are one plain token', () {
@@ -426,6 +532,20 @@ void main() {
         expect((e.source, e.selection.extent), (source, caret));
       });
     }
+
+    test('Return works after a character the mode cannot read', () {
+      final separator = String.fromCharCode(0x2028);
+      final source = '```rust\n/* a${separator}b */\nfn main() {}\n```';
+      final caret = source.indexOf('{}') + 1;
+      final e = FlarkEditor(
+        backend,
+        codeEditing: code,
+        text: source,
+        caret: caret,
+      );
+      expect(e.apply(const Newline()), isTrue);
+      expect(e.source, source.replaceFirst('{}', '{\n  \n}'));
+    });
 
     test('a typed brace outdents, and Undo restores the indentation', () {
       const source = '```ts\nfunction f(): void {\n  \n```';

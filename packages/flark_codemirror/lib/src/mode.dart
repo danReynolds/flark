@@ -40,13 +40,27 @@ abstract class Mode<S> {
 
 /// The next token's style, read as CodeMirror's editors do: a mode may
 /// return without consuming anything, to change state, up to ten times.
+///
+/// A mode that still has not advanced throws upstream, which ends
+/// highlighting for the whole document. Here the stream steps over one
+/// character, a surrogate pair whole, with the style the mode last gave:
+/// Rust's comment state reads only `.*`, which cannot match U+2028, and that
+/// one character must not cost the snippet its colors or the host its
+/// frame. Wherever upstream advances, the tokens are the same.
 String? readToken<S>(Mode<S> mode, StringStream stream, S state) {
   stream.start = stream.pos;
+  String? style;
   for (var i = 0; i < 10; i++) {
-    final style = mode.token(stream, state);
+    style = mode.token(stream, state);
     if (stream.pos > stream.start) return style;
   }
-  throw StateError('The mode failed to advance the stream.');
+  final string = stream.string, at = stream.start;
+  final pair =
+      at + 1 < string.length &&
+      (string.codeUnitAt(at) & 0xfc00) == 0xd800 &&
+      (string.codeUnitAt(at + 1) & 0xfc00) == 0xdc00;
+  stream.pos = at + (pair ? 2 : 1);
+  return style;
 }
 
 /// A stream over [line] with [mode]'s tab size and indent unit.

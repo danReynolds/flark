@@ -70,4 +70,32 @@ void main() {
     expect(tester.renderToString(), contains('Changed'));
     tester.dispose();
   });
+  test('a selectable reader selects all and copies with Command', () async {
+    final tester = FleuryTester(viewportSize: const CellSize(80, 25));
+    tester.pumpWidget(
+      FleuryApp(
+        title: 'Reader',
+        home: const FlarkMarkdown(
+          markdown: '# Article\n\n**body**',
+          selectable: true,
+        ),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    tester.render();
+    for (final kind in [MouseEventKind.down, MouseEventKind.up]) {
+      tester.sendMouse(
+        MouseEvent(button: MouseButton.left, kind: kind, col: 1, row: 0),
+      );
+    }
+    // Command arrives as super under the Kitty keyboard protocol.
+    for (final code in [KeyCode.a, KeyCode.c]) {
+      tester.sendKey(KeyEvent(code, modifiers: const {KeyModifier.superKey}));
+    }
+    await tester.settle();
+    final copied = (tester.clipboard as InProcessClipboard).lastWritten;
+    expect(copied, contains('Article'));
+    expect(copied, contains('body'));
+    tester.dispose();
+  });
 }

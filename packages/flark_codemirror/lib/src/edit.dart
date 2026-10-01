@@ -20,9 +20,10 @@ final _closerLine = RegExp(r'^\s*[\)\]]$');
 /// opens an empty line and indents both, as CodeMirror's `closebrackets`
 /// addon does, unless the opener is inside a string or comment. Enter on an
 /// indented empty line keeps its exact whitespace. Typing re-indents the line
-/// when the mode's electric input matches it, or when a closing `)` or `]`
-/// starts it, which the modes indent like braces. Tab and Shift-Tab shift
-/// whole lines by [indentUnit], or insert it at a caret.
+/// when the mode's electric input matches it, when it continues a word that
+/// input matched (`do` into `docker`), or when a closing `)` or `]` starts
+/// it, which the modes indent like braces. Tab and Shift-Tab shift whole
+/// lines by [indentUnit], or insert it at a caret.
 CodeEditProposal? proposeCodeEdit(
   Mode<Object?> Function(int indentColumns) modeFor,
   String source, {
@@ -180,6 +181,34 @@ bool _literalAt(Mode<Object?> mode, String source, int offset) {
   return false;
 }
 
+/// Whether typing [text] at a caret continues a word that electric input
+/// matched, as `c` after Bash's `do` or `p` after Ruby's `end`. The match
+/// outdented the line for a word that closes a block; a longer word
+/// (`docker`, `endpoint`) closes nothing, so the line is indented again.
+/// CodeMirror never revisits the line, which leaves such a command at its
+/// block's opening column.
+bool _continuesElectricWord(
+  RegExp electric,
+  String source,
+  int line,
+  int start,
+  int end,
+  String text,
+) =>
+    start == end &&
+    start > line &&
+    text.isNotEmpty &&
+    _isWordUnit(text.codeUnitAt(0)) &&
+    _isWordUnit(source.codeUnitAt(start - 1)) &&
+    electric.hasMatch(source.substring(line, start));
+
+/// JavaScript's `\w` for one code unit.
+bool _isWordUnit(int u) =>
+    (u >= 0x30 && u <= 0x39) ||
+    (u >= 0x41 && u <= 0x5a) ||
+    (u >= 0x61 && u <= 0x7a) ||
+    u == 0x5f;
+
 CodeEditProposal? _insert(
   Mode<Object?> mode,
   String source,
@@ -197,10 +226,14 @@ CodeEditProposal? _insert(
   // CodeMirror skips electric input past column 100.
   if (caret - line > 100) return plain;
   final upToCaret = candidate.substring(line, caret);
+  bool electricMatches() =>
+      electric != null &&
+      (electric.hasMatch(upToCaret) ||
+          _continuesElectricWord(electric, source, line, start, end, text));
   final triggered =
       (chars != null
           ? text.split('').any(chars.contains)
-          : electric != null && electric.hasMatch(upToCaret)) ||
+          : electricMatches()) ||
       mode.hasIndent && _closerLine.hasMatch(upToCaret);
   if (!triggered) return plain;
   final lineText = candidate.substring(line, _lineEnd(candidate, caret));

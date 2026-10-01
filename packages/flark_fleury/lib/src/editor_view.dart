@@ -2,6 +2,7 @@ import 'package:flark/rendering.dart';
 import 'package:flark/session.dart';
 import 'package:flark/code.dart' show CodeHighlight;
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flark/flark.dart';
 import 'package:flark/resources.dart';
@@ -451,7 +452,7 @@ class _EditorState extends State<FlarkEditorView>
   void _vertical(int delta, bool extend) {
     final layout = _inputLayout;
     if (layout == null) return;
-    final caret = layout.caretPosition;
+    final caret = _viewport.caret;
     _goalColumn ??= caret.col;
     final index = (caret.row + delta).clamp(0, layout.lines.length - 1);
     final line = layout.lineAt(index, _goalColumn!, direction: delta);
@@ -464,6 +465,7 @@ class _EditorState extends State<FlarkEditorView>
     } else {
       _select(line.sourceAt(hit.$1), extend);
     }
+    if (hit.$1 == line.end) _viewport.placedCaretAtLineEnd(_editor);
   }
 
   void _point(int col, int row, {bool extend = false, bool toggle = false}) {
@@ -497,6 +499,8 @@ class _EditorState extends State<FlarkEditorView>
         ),
         mutation: false,
       );
+      // A click past a wrapped line's end keeps the caret on that line.
+      if (hit.$1 == line.end) _viewport.placedCaretAtLineEnd(_editor);
       final taskColumn = line.taskColumn;
       if (toggle &&
           !extend &&
@@ -514,6 +518,7 @@ class _EditorState extends State<FlarkEditorView>
         );
       } else {
         _select(line.sourceAt(hit.$1), extend);
+        if (hit.$1 == line.end) _viewport.placedCaretAtLineEnd(_editor);
       }
     }
   }
@@ -621,7 +626,7 @@ class _EditorState extends State<FlarkEditorView>
         case TextEditingKeyAction.moveLineEnd:
           final layout = _inputLayout;
           if (layout == null) return;
-          final caret = layout.caretPosition;
+          final caret = _viewport.caret;
           final line = layout.lineAt(caret.row, caret.col);
           final end = action == TextEditingKeyAction.moveLineEnd;
           if (_editor.selection.tableCell != null) {
@@ -637,6 +642,8 @@ class _EditorState extends State<FlarkEditorView>
             target = end ? anchors.last : anchors.first;
           }
           _select(target, event.hasShift);
+          // A wrapped line ends where the next starts: End stays on this one.
+          if (end) _viewport.placedCaretAtLineEnd(_editor);
           event.consume();
           return;
         case TextEditingKeyAction.moveDocumentStart:
@@ -834,25 +841,30 @@ class _EditorState extends State<FlarkEditorView>
                 Positioned(
                   key: ValueKey('image/$index/${slot.resource.destination}'),
                   left: slot.left,
-                  top: slot.top - _viewport.top,
+                  // A preview scrolled partly above the viewport starts at
+                  // its top, raised by the rows it has scrolled past.
+                  top: math.max(0, slot.top - _viewport.top),
                   width: slot.width,
-                  height: slot.height,
-                  child:
-                      widget.imagePreviewBuilder?.call(
-                        context,
-                        slot.resource,
-                        flarkOpenableUri(
-                          slot.resource.destination,
-                          widget.baseUri ?? Uri.base,
+                  height: slot.height - math.max(0, _viewport.top - slot.top),
+                  child: _RaisedPreview(
+                    rows: math.max(0, _viewport.top - slot.top),
+                    child:
+                        widget.imagePreviewBuilder?.call(
+                          context,
+                          slot.resource,
+                          flarkOpenableUri(
+                            slot.resource.destination,
+                            widget.baseUri ?? Uri.base,
+                          ),
+                        ) ??
+                        FlarkImagePreview(
+                          uri: flarkOpenableUri(
+                            slot.resource.destination,
+                            widget.baseUri ?? Uri.base,
+                          ),
+                          label: slot.resource.text,
                         ),
-                      ) ??
-                      FlarkImagePreview(
-                        uri: flarkOpenableUri(
-                          slot.resource.destination,
-                          widget.baseUri ?? Uri.base,
-                        ),
-                        label: slot.resource.text,
-                      ),
+                  ),
                 ),
             ],
           ),

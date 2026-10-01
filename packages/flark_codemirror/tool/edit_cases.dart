@@ -19,9 +19,14 @@ final class EditCase {
     this.after, {
     this.text = '',
     this.unit = '  ',
+    this.next,
   });
   final String name, language, before, after, text, unit;
   final CodeEditingAction action;
+
+  /// [after] once `z` is typed at its selection, where that also re-indents:
+  /// a closing word electric input outdented that `z` makes a longer word.
+  final String? next;
 }
 
 const cases = [
@@ -212,6 +217,8 @@ const cases = [
     type,
     'if ready; then\n  echo ok\nelse¦',
     text: 'e',
+    // `elsez` is a command in the then-branch, not the else that ends it.
+    next: 'if ready; then\n  echo ok\n  elsez¦',
   ),
   EditCase(
     'Bash elif body Enter',
@@ -227,6 +234,9 @@ const cases = [
     type,
     'if ready; then\n  echo ok\nelif other; then\n  echo other\nelse\n  echo no\nfi¦',
     text: 'i',
+    // Only `fi` closes the if; `fiz` is one more command in the else-branch.
+    next:
+        'if ready; then\n  echo ok\nelif other; then\n  echo other\nelse\n  echo no\n  fiz¦',
   ),
   EditCase(
     "bash Enter header",
@@ -242,6 +252,24 @@ const cases = [
     type,
     "if ready; then\nfi¦",
     text: "i",
+    // `fiz` closes nothing, so it returns to the body like any command.
+    next: "if ready; then\n  fiz¦",
+  ),
+  EditCase(
+    'Bash command that starts like do stays in its block',
+    'bash',
+    'for f in *; do\ndo¦',
+    type,
+    'for f in *; do\n  doc¦',
+    text: 'c',
+  ),
+  EditCase(
+    'Ruby name that starts like end stays in its method',
+    'ruby',
+    'def area\nend¦',
+    type,
+    'def area\n  endp¦',
+    text: 'p',
   ),
   EditCase(
     "bash complete literal",

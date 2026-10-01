@@ -404,6 +404,18 @@ final class CellDocumentLayout {
   late final String _bullet = _widths.widthOfText('●', policy) == 1
       ? '● '
       : '* ';
+  // What stands for a glyph wider than its line: U+FFFD unless it is two
+  // cells here too, as an East Asian Ambiguous character can be.
+  late final String _tooWide = _widths.widthOfText('�', policy) == 1
+      ? '�'
+      : '?';
+
+  /// Whether the eighth blocks that paint code padding rows take one cell.
+  /// They are East Asian Ambiguous: terminals that widen those make each
+  /// two cells, and whole cells of the code background stand in.
+  late final bool blockEdges = '▁▂▃▄▅▆▇█'.characters.every(
+    (glyph) => _widths.widthOfText(glyph, policy) == 1,
+  );
   String get tableRail => _widths.widthOfText('│', policy) == 1 ? '│' : '|';
   late final bool edgeTableFrame = [
     '🭼',
@@ -552,7 +564,7 @@ final class CellDocumentLayout {
       }
       final capacity = math.max(cols - prefix.length - 1, 1);
       if (width > capacity) {
-        safe = '�';
+        safe = _tooWide;
         width = 1;
       }
       if (col + width > cols - 1 && line.glyphs.isNotEmpty) {
@@ -715,12 +727,18 @@ final class CellDocumentLayout {
     return lines[next].cellAt(col);
   }
 
-  CellOffset get caretPosition => positionFor(
+  /// The caret's cell; [lineEnd] as for [positionFor].
+  CellOffset caretPosition({bool lineEnd = false}) => positionFor(
     controller.editor.selection.extent,
     tableCell: controller.editor.selection.tableCell,
+    lineEnd: lineEnd,
   );
 
-  CellOffset positionFor(int source, {int? tableCell}) {
+  /// The cell of [source]. An offset where a row wraps ends one visual line
+  /// and starts the next: it shows at the start of the next, where typing
+  /// puts the next character, unless [lineEnd] keeps it at the end of the
+  /// first, in that line's reserved caret cell.
+  CellOffset positionFor(int source, {int? tableCell, bool lineEnd = false}) {
     final position = projection?.displayForSource(source, tableCell: tableCell);
     final candidates = position == null
         ? [for (var i = 0; i < lines.length; i++) (i, lines[i])]
@@ -730,7 +748,7 @@ final class CellDocumentLayout {
       final offset = position?.offset ?? source - line.sourceStart;
       if (offset < line.start) break;
       result = CellOffset(line.columnAt(offset), y);
-      if (offset < line.end) break;
+      if (offset < line.end || lineEnd && offset == line.end) break;
     }
     return result;
   }
@@ -776,7 +794,7 @@ final class CellDocumentLayout {
         _addImages(
           row,
           lines,
-          math.min(prefix.length, cols - 1),
+          math.max(0, math.min(prefix.length, cols - 1)),
           math.max(1, available),
         );
       }

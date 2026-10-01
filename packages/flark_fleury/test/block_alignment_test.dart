@@ -60,6 +60,51 @@ void main() {
       expect(editor.source, source);
     },
   );
+  test('ambiguous-wide terminals paint code padding rows in whole cells', () {
+    // The eighth blocks are East Asian Ambiguous, two cells each where a
+    // terminal widens those: written one per column, each evicted the last.
+    const page = RgbColor(16, 20, 24), code = RgbColor(32, 36, 40);
+    for (final (rows, painted) in [(.25, page), (.5, code)]) {
+      final editor = FlarkEditor(
+        createParseBackend(),
+        text: '```\nab\n```',
+        caret: 0,
+      );
+      final controller = FlarkFleuryController(editor);
+      final tester = FleuryTester(
+        viewportSize: const CellSize(12, 5),
+        textPolicy: const TextPresentationPolicy(widths: CellWidthPolicy.cjk),
+      );
+      tester.pumpWidget(
+        Theme(
+          data: const ThemeData(),
+          child: FlarkEditorView(
+            controller: controller,
+            theme: FlarkCellTheme(
+              body: const CellStyle(background: page),
+              code: const CellStyle(background: code),
+              codePadding: 1,
+              codePaddingRows: rows,
+            ),
+          ),
+        ),
+      );
+      final frame = tester.render();
+      expect(frame.atColRow(1, 1).grapheme, 'a');
+      for (final y in [0, 2]) {
+        for (var x = 0; x < 12; x++) {
+          final cell = frame.atColRow(x, y);
+          expect(
+            (cell.grapheme, cell.style.background),
+            (' ', painted),
+            reason: 'padding $rows at $x, $y',
+          );
+        }
+      }
+      tester.dispose();
+      controller.dispose();
+    }
+  });
   final source = File(
     '../../test/fixtures/host_block_alignment.md',
   ).readAsStringSync();

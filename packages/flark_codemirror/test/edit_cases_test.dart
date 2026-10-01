@@ -68,9 +68,18 @@ void main() {
       );
       // The next typed character lands at the promised selection.
       final next = propose(c, source, edit.base, edit.extent, type, 'z');
+      final typed = source.replaceRange(next.start, next.end, next.text);
+      if (c.next case final expected?) {
+        final want = marked(expected);
+        expect(
+          show(typed, next.base, next.extent),
+          show(want.source, want.base, want.extent),
+        );
+        return;
+      }
       final lo = edit.base < edit.extent ? edit.base : edit.extent;
       expect(
-        source.replaceRange(next.start, next.end, next.text),
+        typed,
         source.replaceRange(
           lo,
           edit.base < edit.extent ? edit.extent : edit.base,

@@ -176,9 +176,16 @@ int countColumn(
     end = string.indexOf(_nonSpace);
     if (end == -1) end = string.length;
   }
+  // Tabs are looked for before [end] only. Upstream's `indexOf` searches the
+  // rest of the line, so each `column()` cost the whole line and a long line
+  // of tokens took quadratic time; V8's indexOf hides that, Dart's does not.
+  final stop = end < string.length ? end : string.length;
   for (var i = startIndex, n = startValue; ;) {
-    final nextTab = string.indexOf('\t', i);
-    if (nextTab < 0 || nextTab >= end) return n + (end - i);
+    var nextTab = i;
+    while (nextTab < stop && string.codeUnitAt(nextTab) != 9) {
+      nextTab++;
+    }
+    if (nextTab >= stop) return n + (end - i);
     n += nextTab - i;
     n += tabSize - (n % tabSize);
     i = nextTab + 1;

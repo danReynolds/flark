@@ -133,23 +133,24 @@ class _MarkdownState extends State<FlarkMarkdown> {
       onAction: (action) {
         if (action == SemanticAction.copy) _copy();
       },
-      child: Focus(
-        focusNode: _focus,
-        child: KeyDetector(
-          onKey: (event) {
-            if (!widget.selectable ||
-                !(event.modifiers.contains(KeyModifier.ctrl) ||
-                    event.modifiers.contains(KeyModifier.meta))) {
-              return;
-            }
-            if (event.code == KeyCode.a) {
-              _reader.select(FlarkSelection(0, widget.markdown.length));
-              event.consume();
-            } else if (event.code == KeyCode.c) {
-              _copy();
-              event.consume();
-            }
-          },
+      // A detector hears keys only while focus is inside it, so it wraps the
+      // reader's focus node: beneath it, Ctrl/Cmd+A and +C never arrived.
+      child: KeyDetector(
+        onKey: (event) {
+          // Command arrives as super, as the editor reads it.
+          if (!widget.selectable || !(event.hasCtrl || event.hasSuper)) {
+            return;
+          }
+          if (event.code == KeyCode.a) {
+            _reader.select(FlarkSelection(0, widget.markdown.length));
+            event.consume();
+          } else if (event.code == KeyCode.c) {
+            _copy();
+            event.consume();
+          }
+        },
+        child: Focus(
+          focusNode: _focus,
           child: GestureDetector(
             onTapDown: (event) => _select(event.globalPosition),
             onDragUpdate: (event) =>
