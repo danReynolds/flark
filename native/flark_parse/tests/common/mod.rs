@@ -104,6 +104,33 @@ pub fn check_invariants(src: &str, published: &[u32]) -> Result<(), String> {
             if s < pw(run::START_BYTE) || e > pw(run::END_BYTE) { return Err(format!("run {i} {s}..{e} outside its parent {p} {}..{}", pw(run::START_BYTE), pw(run::END_BYTE))); }
         }
     }
+    // Every content byte of an inline leaf that publishes runs lies inside a
+    // run, as content or as a hidden delimiter, or is editable whitespace
+    // (cell padding, spaces before a line break). A host shows uncovered
+    // bytes verbatim, so text a replacement run already displays would show
+    // twice, and an entity cut by a run's end would show undecoded.
+    let mut leaf_runs: Vec<Vec<(usize, usize)>> = vec![Vec::new(); nb];
+    for i in 0..nr {
+        let rw = |f: usize| w[runs_off + i * run::WORDS + f] as usize;
+        leaf_runs[rw(run::BLOCK)].push((rw(run::START_BYTE), rw(run::END_BYTE)));
+    }
+    for (b, spans) in leaf_runs.iter_mut().enumerate() {
+        let inline_leaf = matches!(blk(b, block::KIND), block_kind::PARAGRAPH | block_kind::HEADING | block_kind::TABLE_CELL);
+        if !inline_leaf || spans.is_empty() || blk(b, block::FLAGS) & (1 << 23) != 0 { continue; }
+        spans.sort_unstable();
+        let (co, cn) = (blk(b, block::CONTENT_OFFSET) as usize, blk(b, block::CONTENT_COUNT) as usize);
+        let mut k = 0;
+        let mut reach = 0usize;
+        for c in co..co + cn {
+            let (cs, ce) = (w[content_off + c * content::WORDS + content::START_BYTE] as usize, w[content_off + c * content::WORDS + content::END_BYTE] as usize);
+            for x in cs..ce {
+                while k < spans.len() && spans[k].0 <= x { reach = reach.max(spans[k].1); k += 1; }
+                if x >= reach && !matches!(src.as_bytes()[x], b' ' | b'\t') {
+                    return Err(format!("block {b} content byte {x} ({:?}) lies in no run", &src[x..].chars().next().unwrap_or(' ')));
+                }
+            }
+        }
+    }
     // A content record belongs to the line it names and stops at that line's
     // end: a projected row's caret spans and per-line ranges assume both.
     let mut line_start = vec![0usize; nl + 1];

@@ -112,6 +112,10 @@ pub(crate) fn scan_link_url(s: &[u8]) -> Option<(usize, usize, usize)> {
 /// escapes greedily instead loses `"a\\"`, whose only reading is a literal
 /// backslash followed by the closing quote — comrak accepts that as a
 /// definition title, so a paragraph the mirror keeps has no block at all.
+///
+/// The scanner's character classes exclude only the closing delimiter and
+/// 0xFF, its end-of-input sentinel (`[^"\xff]`), which UTF-8 never holds: a
+/// NUL is an ordinary title character, as comrak accepts it.
 pub(crate) fn scan_link_title(s: &[u8]) -> Option<usize> {
     let open = *s.first()?;
     let close = match open { b'"' => b'"', b'\'' => b'\'', b'(' => b')', _ => return None };
@@ -127,10 +131,8 @@ pub(crate) fn scan_link_title(s: &[u8]) -> Option<usize> {
         if here {
             let b = s[i];
             if b == close { best = Some(i + 1); }
-            if b != 0 {
-                if b == b'\\' && i + 1 < s.len() && ispunct(s[i + 1]) { after = true; }
-                if b != close && !(open == b'(' && b == b'(') { next = true; }
-            }
+            if b == b'\\' && i + 1 < s.len() && ispunct(s[i + 1]) { after = true; }
+            if b != close && !(open == b'(' && b == b'(') { next = true; }
         }
         here = next;
         next = after;
@@ -191,6 +193,12 @@ mod mirror_tests {
         // nothing to close it is still none.
         assert!(paragraph_definitions("[foo]: /url \"a\\\"b\n").is_empty());
         assert!(paragraph_definitions("[foo]: /url \"a\n").is_empty());
+    }
+
+    #[test]
+    fn a_title_may_hold_nul() {
+        assert_eq!(scan_link_title(b"\"x\0y\""), Some(5));
+        assert_eq!(paragraph_definitions("[a]: /u \"x\0y\"\n").len(), 1);
     }
 
     #[test]

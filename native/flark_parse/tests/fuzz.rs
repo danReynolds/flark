@@ -1,6 +1,8 @@
 //! Fault containment: arbitrary input never panics and always yields a model
 //! that satisfies the schema invariants and extracts without deviations.
-//! Set FLARK_FUZZ_ITERATIONS to run longer (default 2,000).
+//! Set FLARK_FUZZ_ITERATIONS to run longer (default 2,000), and
+//! FLARK_FUZZ_SEED to draw other documents: it is mixed into each test's
+//! fixed seed, so the default run stays the same.
 //!
 //! Bare CR line endings are outside the fidelity contract: comrak's inline
 //! line counter does not advance across them, so the kernel rejects them
@@ -12,12 +14,27 @@ use flark_parse::model::Extractor;
 struct XorShift(u64);
 impl XorShift { fn next(&mut self) -> u64 { let mut x = self.0; x ^= x << 13; x ^= x >> 7; x ^= x << 17; self.0 = x; x } }
 
-const ALPHABET: &[&str] = &["*", "_", "`", "~", "#", ">", "-", "+", "1.", "[", "]", "(", ")", "<", "!", "\\", "|", ":", "\n", "\n\n", "\r\n", " ", "  ", "\t", "a", "b", "foo", "bar", "http://x.y", "&amp;", "&#x41;", "```", "---", "===", "[x]", "[ ]", "é", "日本", "😀", "[^1]", "[^1]: n", "[a]: /u", "\"t\"", "> ", "- ", "1. ", "\\|", "<div>"];
+const ALPHABET: &[&str] = &["*", "_", "`", "~", "#", ">", "-", "+", "1.", "[", "]", "(", ")", "<", "!", "\\", "|", ":", "\n", "\n\n", "\r\n", " ", "  ", "\t", "a", "b", "foo", "bar", "http://x.y", "&amp;", "&#x41;", "```", "---", "===", "[x]", "[ ]", "é", "日本", "😀", "[^1]", "[^1]: n", "[a]: /u", "\"t\"", "> ", "- ", "1. ", "\\|", "<div>", "a@b.c", "x&#64;y.z", "\u{feff}", "\0"];
 
-fn random_doc(rng: &mut XorShift) -> String {
+/// Links whose parentheses span lines, after which comrak numbers the rest of
+/// the paragraph a line early. A leaf it cannot repair publishes as source,
+/// a deviation the zero-deviation tests do not allow, so only the invariant
+/// test draws these.
+const WRAPPED_LINKS: &[&str] = &["[a](/u \"t\n2\")", "[a](\n/u)", "![i](\n/j \"t\")", "[a](<\n>)"];
+
+fn seeded(fixed: u64) -> XorShift {
+    let mix = std::env::var("FLARK_FUZZ_SEED").ok().and_then(|v| v.parse::<u64>().ok()).map_or(0, |s| s.wrapping_mul(0x9E3779B97F4A7C15));
+    XorShift((fixed ^ mix) | 1)
+}
+
+fn random_doc(rng: &mut XorShift, extra: &[&str]) -> String {
     let n = (rng.next() % 40) as usize + 1;
+    let tokens = ALPHABET.len() + extra.len();
     let mut s = String::new();
-    for _ in 0..n { s.push_str(ALPHABET[(rng.next() % ALPHABET.len() as u64) as usize]); }
+    for _ in 0..n {
+        let k = (rng.next() % tokens as u64) as usize;
+        s.push_str(if k < ALPHABET.len() { ALPHABET[k] } else { extra[k - ALPHABET.len()] });
+    }
     s
 }
 
@@ -30,8 +47,8 @@ fn check(doc: &str, label: &str) {
 #[test]
 fn random_markdown_never_panics_and_keeps_invariants() {
     let iterations: usize = std::env::var("FLARK_FUZZ_ITERATIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(2000);
-    let mut rng = XorShift(0x9E3779B97F4A7C15);
-    for i in 0..iterations { let doc = random_doc(&mut rng); check(&doc, &format!("iteration {i}")); }
+    let mut rng = seeded(0x9E3779B97F4A7C15);
+    for i in 0..iterations { let doc = random_doc(&mut rng, &[]); check(&doc, &format!("iteration {i}")); }
 }
 
 /// Long random runs still hit rare comrak position quirks (a few per million
@@ -41,9 +58,9 @@ fn random_markdown_never_panics_and_keeps_invariants() {
 #[test]
 fn published_models_always_keep_the_invariants() {
     let iterations: usize = std::env::var("FLARK_FUZZ_ITERATIONS").ok().and_then(|v| v.parse().ok()).map_or(100_000, |n: usize| n * 50);
-    let mut rng = XorShift(0x5EED_F00D);
+    let mut rng = seeded(0x5EED_F00D);
     for i in 0..iterations {
-        let doc = random_doc(&mut rng);
+        let doc = random_doc(&mut rng, WRAPPED_LINKS);
         if let Ok(w) = Extractor::extract(&doc) {
             if let Err(e) = check_invariants(&doc, &w) { panic!("iteration {i}: published model breaks {e} for {:?}", doc); }
         }
@@ -52,7 +69,7 @@ fn published_models_always_keep_the_invariants() {
 
 #[test]
 fn corpus_mutations_never_panic() {
-    let mut rng = XorShift(7);
+    let mut rng = seeded(7);
     for (i, c) in corpus("gfm_tests.json").iter().enumerate() {
         let chars: Vec<char> = c.markdown.chars().collect();
         if chars.is_empty() { continue; }

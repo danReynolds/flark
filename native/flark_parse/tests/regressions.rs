@@ -23,6 +23,32 @@ impl M {
     fn run_contents<'a>(&self, src: &'a str) -> Vec<(usize, &'a str)> { (0..self.n(header::RUN_COUNT)).map(|i| (self.run(i, run::KIND), &src[self.run(i, run::CONTENT_START_BYTE)..self.run(i, run::CONTENT_END_BYTE)])).collect() }
     fn defs<'a>(&self, src: &'a str) -> Vec<&'a str> { (0..self.n(header::DEFINITION_COUNT)).map(|i| &src[self.def(i, definition::START_BYTE)..self.def(i, definition::END_BYTE)]).collect() }
     fn clean(&self) { assert!(self.devs.is_empty(), "deviations: {:?}", self.devs); }
+    fn string(&self, offset: usize, length: usize) -> String {
+        let words = &self.w[self.defs_off() + self.n(header::DEFINITION_COUNT) * definition::WORDS..];
+        let bytes: Vec<u8> = words.iter().flat_map(|x| x.to_le_bytes()).collect();
+        String::from_utf8(bytes[offset..offset + length].to_vec()).unwrap()
+    }
+    /// Block [b]'s text as a host shows it: the content, or the display text
+    /// of a replacement, of each run without children, and a line break for
+    /// each break run. The invariants put every other content byte in a run.
+    fn shown(&self, src: &str, b: usize) -> String {
+        let runs: Vec<usize> = (0..self.n(header::RUN_COUNT)).filter(|&r| self.run(r, run::BLOCK) == b).collect();
+        runs.iter().filter(|&&r| !runs.iter().any(|&c| self.run(c, run::PARENT) == r)).map(|&r| match self.run(r, run::KIND) as u32 {
+            run_kind::REPLACEMENT => self.string(self.run(r, run::AUX0), self.run(r, run::AUX1)),
+            run_kind::SOFT_BREAK | run_kind::HARD_BREAK => "\n".to_string(),
+            _ => src[self.run(r, run::CONTENT_START_BYTE)..self.run(r, run::CONTENT_END_BYTE)].to_string(),
+        }).collect()
+    }
+    fn blocks_of(&self, kind: u32) -> Vec<usize> { (0..self.n(header::BLOCK_COUNT)).filter(|&b| self.block(b, block::KIND) == kind as usize).collect() }
+}
+
+/// A model `extract` would publish (fail-safe degradations allowed), checked
+/// against the invariants.
+fn published(src: &str) -> Vec<String> {
+    let (w, devs) = Extractor::extract_with_report(src);
+    check_invariants(src, &w).unwrap_or_else(|e| panic!("{e} for {src:?}"));
+    assert!(devs.iter().all(|d| d.leaf.is_some()), "refused {src:?}: {:?}", devs.iter().map(|d| (d.rule, &d.detail)).collect::<Vec<_>>());
+    devs.iter().map(|d| d.rule.to_string()).collect()
 }
 
 #[test]
@@ -508,9 +534,10 @@ fn an_html_block_after_a_partial_tab_ends_on_its_own_line() {
 fn a_task_checkbox_and_a_definition_resolve_in_comraks_order() {
     // comrak strips leading definitions first, then takes a checkbox leading
     // what remains, even on a lazy line; `[x] ` cannot begin a definition, so
-    // a definition after the checkbox stays text.
+    // a definition after the checkbox stays text. A checkbox alone after the
+    // definitions leaves no paragraph: its line is the item's, not a gap.
     for (src, text) in [
-        ("1. [a]:u\n[ ]", None), ("- [a]: /u\n[x] done", Some("done")), ("- [a]::\n[ ]", None), ("1.\t[a]:`\n[ ]", None),
+        ("1. [a]:u\n[ ]", None), ("1. [a]:a\n[x]", None), ("- 1. [a]:a\n[x]", None), ("- [a]: /u\n[x] done", Some("done")), ("- [a]::\n[ ]", None), ("1.\t[a]:`\n[ ]", None),
         ("- [x] [a]:;\n.", Some("[a]:;")), ("- [x] [1]:n\n]", Some("[1]:n")), ("1. [ ]\t[a]:u\n[", Some("[a]:u")),
     ] {
         let m = M::of(src); m.clean();
@@ -533,4 +560,189 @@ fn escaped_pipes_shift_only_their_own_line_and_run_in_pairs() {
     for src in ["\\|\\|http://.\n:-", "]\n:-\n\\|\\|", "\\|\\|;\\>(\n-|", "&#1;\\|=bé\n|-", "\\|\n&\r\n<\n|-", "\\|\n\\| a\nb\n|-", "\\|\n*[*\n]\n-|", "a \\\\| b\n:-"] {
         let m = M::of(src); m.clean();
     }
+}
+
+#[test]
+fn a_leading_byte_order_mark_precedes_every_line_zero_derivation() {
+    // comrak skips a BOM that begins the first line without counting a
+    // column. It is neither content nor a liftable prefix: every first-line
+    // content record and prefix starts after it.
+    for (body, contents) in [
+        ("hello *world*\n", vec!["hello *world*"]),
+        ("# Title\n\ntext\n", vec!["Title", "text"]),
+        ("- item\n- two\n", vec!["item", "two"]),
+        ("> quote\n", vec!["quote"]),
+        ("[a]: /u\n\n[a]\n", vec!["[a]"]),
+        ("\n# h\n", vec!["h"]),
+        ("", vec![]),
+    ] {
+        let src = format!("\u{feff}{body}");
+        let m = M::of(&src); m.clean();
+        assert_eq!(m.contents(&src), contents, "for {src:?}");
+        for c in 0..m.n(header::CONTENT_COUNT) { assert!(m.content(c, content::PREFIX_START_BYTE) >= 3, "the mark lifted as a prefix in {src:?}"); }
+    }
+    let src = "\u{feff}```js\ncode\n```";
+    let m = M::of(src); m.clean();
+    let fence = m.blocks_of(block_kind::CODE_BLOCK)[0];
+    assert_eq!(&src[m.block(fence, block::ATTR1)..m.block(fence, block::ATTR2)], "js");
+    let src = "\u{feff}```\ncode\n```";
+    let m = M::of(src); m.clean();
+    let fence = m.blocks_of(block_kind::CODE_BLOCK)[0];
+    assert_eq!((m.block(fence, block::ATTR1), m.block(fence, block::ATTR2)), (6, 6), "a bare fence's empty info string sits after its fence");
+}
+
+#[test]
+fn table_body_rows_start_at_their_own_first_nonspace() {
+    // comrak starts a body row at the header's column, as it does the row's
+    // cells: under a header after a BOM or indented unlike the header, the
+    // row would start inside its first cell or before its own line.
+    for src in ["\u{feff}| a |\n|---|\n| b |", "  | a |\n|---|\n| b |\n", "| a |\n|---|\n  | b |\n", "> | a |\n> |---|\n>   | b |\n"] {
+        let m = M::of(src); m.clean();
+        let rows: Vec<&str> = m.blocks_of(block_kind::TABLE_ROW).into_iter().map(|b| &src[m.block(b, block::START_BYTE)..m.block(b, block::END_BYTE)]).collect();
+        assert_eq!(rows, ["| a |", "| b |"], "for {src:?}");
+    }
+}
+
+#[test]
+fn an_entity_piece_displays_exactly_its_decoding() {
+    // A reference followed by a cell's escaped pipe displays its decoding,
+    // and the pipe's backslash hides on its own. Accepting any display from
+    // a reference let `&amp;` show `&|` and left the source `\|` in no run,
+    // shown again by a host.
+    for (src, cell) in [
+        ("| a |\n|---|\n| &amp;\\| |\n", "&|"),
+        ("| a |\n|---|\n| &nbsp; \\| x |\n", "\u{a0} | x"),
+        ("| a | b |\n|---|---|\n| `a` &amp;\\| bitwise or | z |\n", "a &| bitwise or"),
+        ("a &amp;\\| b\n|---|\n", "a &| b"),
+    ] {
+        let m = M::of(src); m.clean();
+        let cells = m.blocks_of(block_kind::TABLE_CELL);
+        let shown: Vec<String> = cells.iter().map(|&b| m.shown(src, b)).collect();
+        assert!(shown.iter().any(|s| s == cell), "{shown:?} for {src:?}");
+    }
+    // Ten rows of thirty-two references before escaped pipes, inside every
+    // live limit, took seconds while the relocation search tried every window.
+    let src = format!("| a |\n|---|\n{}", format!("| {} |\n", "&amp;\\|".repeat(32)).repeat(10));
+    let m = M::of(&src); m.clean();
+    for b in m.blocks_of(block_kind::TABLE_CELL).into_iter().skip(1) { assert_eq!(m.shown(&src, b), "&|".repeat(32)); }
+}
+
+#[test]
+fn text_after_a_link_whose_parentheses_span_lines_is_shown_once() {
+    // The registered line-early repair relocates text by its literal. A
+    // literal ending in `&` must not match the first byte of `&amp;`, and a
+    // window too short for the literal must not be explained by an entity
+    // that displays the text after it.
+    for (src, last) in [
+        ("[a](/u \"t\nt\")\nsee &amp; ok\n", "see & ok"),
+        ("> See [the guide](/guide \"The\n> guide\") now.\n> Then read it.\n> A &amp; B\n", "A & B"),
+        ("a [of FAQ](/u \"to now it\n\")a to of\na &amp;\n", "a &"),
+        ("[](\n) \n~~&amp;\\*", "~~&*"),
+    ] {
+        let m = M::of(src); m.clean();
+        let p = m.blocks_of(block_kind::PARAGRAPH)[0];
+        assert_eq!(m.shown(src, p).lines().last(), Some(last), "for {src:?}");
+    }
+}
+
+#[test]
+fn a_slice_explains_a_literal_only_piece_by_piece() {
+    // Containing `&` or a tab, or sitting in a CRLF paragraph, explained any
+    // literal: a drifted run published as a replacement over source it does
+    // not hold, crossing the block's end (refusing the document) or showing
+    // its text twice. Such a leaf now shows its source.
+    for src in [
+        "1. a then then [FAQ FAQ](/u \"in and a\n   and the\") it\n   in\n   it and of &amp; FAQ\n",
+        "- [](/u \"read\n  read of\") read a\n  read to now\n  in and in &copy; FAQ\n",
+        "[](a \"\n\")aaaa\na\nxyzzy &copy;\n",
+        "[](a \"\n\")aaaa\na\nabcde\t\n",
+        "[](a \"\n\")a\u{672c}a\na\r\naaaaa",
+        "[](\n)aaaaa\na\naaa\r\n",
+        "[](\na)aaaa\na\naa\r\n-",
+    ] {
+        assert!(published(src).contains(&"text-mismatch".to_string()), "for {src:?}");
+    }
+}
+
+#[test]
+fn escapes_links_and_footnote_references_keep_their_own_delimiters() {
+    // After a line-early drift the child text of `\\` can match the
+    // escaping backslash, an empty link can land on `]()`, a reference link
+    // can end inside `[][a]`, and a one-character text can match inside
+    // `[^1]`. Each leaf shows its source rather than a run that leaves
+    // source in no run.
+    for (src, rule) in [
+        ("[](\n)\n\t\\\\", "escape-delims"),
+        ("[](\n)a\na\n[]()", "link-delims"),
+        ("[a]:a\n[](\n)\na[][a]", "link-delims"),
+        ("[^1]:[](\n)a\na\n\\>1[^1]", "footnote-ref-delims"),
+    ] {
+        assert!(published(src).contains(&rule.to_string()), "no {rule} for {src:?}");
+    }
+    // A link's text taken from comrak's child positions before the child's own
+    // repair follows the child's runs.
+    let src = "![fo [bar](/url\n)](/url2)\n";
+    let m = M::of(src); m.clean();
+    let image = (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == run_kind::IMAGE as usize).unwrap();
+    assert_eq!(&src[m.run(image, run::CONTENT_START_BYTE)..m.run(image, run::CONTENT_END_BYTE)], "fo [bar](/url\n)");
+}
+
+#[test]
+fn a_break_after_a_sibling_ending_inside_a_crlf_does_not_panic() {
+    // The break repair sliced from a drifted sibling's end to its line's
+    // content end; a sibling ending between the CR and LF made that range
+    // reversed and the slice panicked.
+    published("[](\naa)a\naa\n[a](\naa)\n\\\r\n\u{e9}");
+}
+
+#[test]
+fn a_definition_title_may_hold_nul() {
+    // comrak's title scanner ends only at 0xFF, which UTF-8 never holds.
+    let src = "[a]: /u \"x\0y\"\n\n[a]\n";
+    let m = M::of(src); m.clean();
+    assert_eq!(m.defs(src), ["[a]: /u \"x\0y\"\n"]);
+    let src = "[a]:a\n[a]:a \"\0\"";
+    let m = M::of(src); m.clean();
+    assert_eq!(m.defs(src).len(), 2);
+}
+
+#[test]
+fn definitions_a_setext_underline_resolved_stay_out_of_a_paragraph_a_table_splits() {
+    // The underline resolves the definitions and becomes paragraph text; the
+    // table that later splits the paragraph numbers the split paragraph and
+    // its own header from the definitions' stale start line.
+    for (src, contents, defs) in [
+        ("[r]: /ref\n---\n| a | b |\n|---|---|\n| c | d |\n", vec!["---", "a ", "b ", "c ", "d "], vec!["[r]: /ref\n"]),
+        ("[r]: /ref\n===\na|b\n-|-", vec!["===", "a", "b"], vec!["[r]: /ref\n"]),
+        ("> [r]: /ref\n> ===\n> x\n> | a |\n> |---|\n", vec!["===", "x", "a "], vec!["[r]: /ref\n"]),
+        ("- [r]: /ref\n  ---\n  | a |\n  |---|\n", vec!["---", "a "], vec!["[r]: /ref\n"]),
+        ("[a]: /a\n[b]:\n/b\n\"t\"\n---\nmore *x*\n| a \\| b |\n|---|\n", vec!["---", "more *x*", "a \\| b "], vec!["[a]: /a\n", "[b]:\n/b\n\"t\"\n"]),
+        ("[r]: /ref\r\n---\r\n| a |\r\n|---|\r\n", vec!["---", "a "], vec!["[r]: /ref\r\n"]),
+    ] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.contents(src), contents, "for {src:?}");
+        assert_eq!(m.defs(src), defs, "for {src:?}");
+    }
+    // Without the underline the split paragraph keeps the definition as text.
+    let src = "[r]: /ref\n| a |\n|---|\n";
+    let m = M::of(src); m.clean();
+    assert_eq!(m.contents(src), ["[r]: /ref", "a "]);
+}
+
+#[test]
+fn a_line_of_email_addresses_is_refused_before_it_can_overflow_the_stack() {
+    // comrak links the addresses of one text node recursively, about 330
+    // bytes of stack each, and a stack overflow aborts the process. 512
+    // addresses take about 170 KiB, under a 256 KiB thread's room for 802.
+    let line = |n: usize| "a@b.c ".repeat(n) + "\n";
+    let outcome = std::thread::Builder::new().stack_size(256 << 10).spawn(move || {
+        (Extractor::extract(&line(512)).is_ok(), Extractor::extract(&line(513)).is_err(), Extractor::extract(&line(16_000)).is_err())
+    }).unwrap().join().unwrap();
+    assert_eq!(outcome, (true, true, true));
+    // comrak links addresses in decoded text: a reference to `@` counts.
+    assert!(Extractor::extract(&"a&#64;b.c x&commat;y.z ".repeat(257)).is_err());
+    let src = "a@b.c ".repeat(513);
+    let (w, devs) = Extractor::extract_with_report(&src);
+    check_invariants(&src, &w).unwrap();
+    assert_eq!(devs.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("autolink-depth", None)]);
 }

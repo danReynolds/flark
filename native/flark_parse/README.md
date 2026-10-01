@@ -12,7 +12,7 @@ Three functions on both targets (`cdylib` for FFI, `wasm32-unknown-unknown`
 for the web), plus a schema version query:
 
 ```c
-int32_t  flark_parse(const uint8_t* src, uint32_t len, uint8_t** out, uint32_t* out_len); // 0 ok, 1 null, 2 utf8, 3 contained panic, 4 extraction deviation
+int32_t  flark_parse(const uint8_t* src, uint32_t len, uint8_t** out, uint32_t* out_len); // 0 ok, 1 null, 2 utf8, 3 contained panic, 4 refused
 uint8_t* flark_parse_alloc(uint32_t len);
 void     flark_parse_free(uint8_t* ptr, uint32_t len);
 uint32_t flark_parse_schema_version(void);
@@ -28,7 +28,11 @@ deviation or one that breaks the schema's structural invariants, which it
 checks before publishing. A deviation confined to one leaf's inline runs is the
 exception: that paragraph, heading or table cell is published without runs and
 with block flag bit 23 (source only), so it displays its source as plain text
-and the rest of the document stays live. Report mode lists every deviation,
+and the rest of the document stays live. Such a leaf includes one whose runs
+leave a content byte other than whitespace outside every run, since a host
+shows that byte verbatim. Code 4 also refuses a source comrak cannot parse
+safely: a line with more than 512 possible email addresses, which comrak
+links recursively (see REGISTER.md). Report mode lists every deviation,
 scoped or not, and the conformance test
 asserts zero deviations across the 652 CommonMark and 670 GFM upstream cases:
 
@@ -38,6 +42,7 @@ asserts zero deviations across the 652 CommonMark and 670 GFM upstream cases:
 | Reference definitions stripped from the start of a paragraph, mirroring comrak's `resolve_reference_link_definitions` | every Text literal equals its corrected source slice |
 | Definitions that left no paragraph behind (v2's textual scanner with block coverage) | no block covers them |
 | Escaped-pipe shift inside table cells | delimiter and literal checks |
+| Entity reference pieces of a text node | each displays exactly comrak's decoding of the reference, which comrak parses alone |
 | Block ranges widened to their content where comrak reports a one-byte range (indented code inside containers) | the content itself is validated |
 
 ## Commands

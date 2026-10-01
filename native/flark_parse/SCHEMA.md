@@ -199,6 +199,7 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 - Blocks are in document order; a block's parent index is smaller than its own index or 0xFFFFFFFF for the document.
 - Runs are in document order and contiguous per block: block b owns runs [first_run(b), first_run(b + 1)), where first_run is non-decreasing and first_run(block_count) is run_count. A run's parent is an earlier run of the same block.
 - content_start >= start and content_end <= end and content_start <= content_end for every run.
+- In a paragraph, heading or table cell that publishes runs, every content byte other than a space or tab lies inside a run, as content or as a hidden delimiter; a host may show an uncovered byte verbatim. A leaf that cannot meet this publishes without runs (source only).
 - Content records are in block order: block b owns records [content_offset(b), content_offset(b + 1)), where content_offset(block_count) is content_count. A block's records are in line order and lie inside its source range.
 - Every offset is at most src_utf16 and never falls between the two code units of a surrogate pair.
 - Definition records never overlap a block's content record.

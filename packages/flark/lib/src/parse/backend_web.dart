@@ -154,8 +154,11 @@ final class WasmParseBackend implements FlarkParseBackend {
     _input = _alloc(_inputCapacity);
   }
 
+  // A wasm i32 result reaches JS as a signed number; an address past 2 GiB
+  // would come back negative.
   int _alloc(int len) =>
-      (_allocFn!.callAsFunction(null, len.toJS) as JSNumber).toDartInt;
+      (_allocFn!.callAsFunction(null, len.toJS) as JSNumber).toDartInt &
+      0xFFFFFFFF;
   void _free(int ptr, int len) {
     _freeFn!.callAsFunction(null, ptr.toJS, len.toJS);
   }
@@ -175,9 +178,22 @@ final class WasmParseBackend implements FlarkParseBackend {
     // One UTF-16 code unit never needs more than three UTF-8 bytes. Keep
     // headroom so typing does not reallocate on every keystroke.
     if (source.length * 3 > _inputCapacity) {
-      _free(_input, _inputCapacity);
-      _inputCapacity = source.length * 6;
-      _input = _alloc(_inputCapacity);
+      final capacity = source.length * 6;
+      try {
+        // Allocate before freeing: a trap here (memory cannot grow) must not
+        // leave the old buffer freed while it is still the input, or record
+        // a capacity no allocation backs.
+        final input = _alloc(capacity);
+        _free(_input, _inputCapacity);
+        _input = input;
+        _inputCapacity = capacity;
+      } catch (e) {
+        _instantiate();
+        throw FlarkParseException(
+          FlarkParseException.faultCode,
+          'wasm trap allocating parser input: $e',
+        );
+      }
     }
     // Encode directly into Wasm memory, read only after any allocation above
     // grew it. utf8.encode plus a copy into the JS-backed heap took

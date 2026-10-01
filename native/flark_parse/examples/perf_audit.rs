@@ -6,14 +6,25 @@ use serde_json::json;
 use std::hint::black_box;
 use std::time::Instant;
 
+/// Shapes once super-linear: table cells with entities before escaped pipes
+/// (the relocation window search), quotes nested as deep as their lazy
+/// continuation is long (per-line container ownership), and one paragraph
+/// after a link whose parentheses span lines (container refits).
 fn source(shape: &str, bytes: usize) -> String {
+    match shape {
+        "lazy_quotes" => return ">".repeat(bytes / 3) + " a\n" + &"b\n".repeat(bytes / 3),
+        "wrapped_link_paragraph" => return "[](\n)\n".to_string() + &"x *a* ".repeat(bytes / 6),
+        _ => {}
+    }
     let mut out = String::new();
+    if shape == "entity_pipe_cells" { out.push_str("| a |\n|---|\n"); }
     let mut i = 0;
     while out.len() < bytes {
         match shape {
             "definitions" => out.push_str(&format!("[ref{i}]: /target/{i} \"title\"\n")),
             "inline" => out.push_str("**bold** *word* `code` [link](/url) "),
             "prose" => out.push_str("Ordinary prose with **bold** and a [link](/url).\n\n"),
+            "entity_pipe_cells" => out.push_str(&format!("| {} |\n", "&amp;\\|".repeat(32))),
             _ => unreachable!(),
         }
         i += 1;
@@ -34,7 +45,7 @@ fn timing(mut action: impl FnMut()) -> serde_json::Value {
 }
 
 fn main() {
-    for shape in ["definitions", "inline", "prose"] {
+    for shape in ["definitions", "inline", "prose", "entity_pipe_cells", "lazy_quotes", "wrapped_link_paragraph"] {
         for kib in [16, 32, 64, 128, 256] {
             let src = source(shape, kib * 1024);
             let expected = Extractor::extract(&src).expect("valid diagnostic input");

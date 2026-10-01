@@ -30,11 +30,16 @@ class FlarkParseException implements Exception {
         1 => 'null argument',
         2 => 'invalid UTF-8',
         faultCode => 'contained native fault',
-        extractionDeviationCode => 'render-model extraction deviation',
+        extractionDeviationCode =>
+          'render model refused: an extraction deviation, or a source the '
+              'parser cannot take safely',
         _ => 'unknown parse error $code',
       });
 
   static const int faultCode = 3;
+
+  /// The parser refused to publish: a derived range failed validation, or
+  /// the source holds a line comrak cannot parse without risking its stack.
   static const int extractionDeviationCode = 4;
   static const int loadFailedCode = -1;
   static const int schemaMismatchCode = -2;
