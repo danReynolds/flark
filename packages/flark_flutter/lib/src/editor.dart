@@ -407,6 +407,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
     _dragging = drag;
     surface.place(point, extend: HardwareKeyboard.instance.isShiftPressed);
+    // A hit past a wrapped line's end can leave the caret where it was and
+    // move only the line it is drawn on, which the input method follows.
+    _scheduleGeometry();
     final link = surface.linkAt(point);
     if (link != null && !HardwareKeyboard.instance.isShiftPressed && primary) {
       _pressedLink = (resource: link, point: position);
@@ -623,12 +626,16 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   void _updateHandleDrag(DragUpdateDetails details, bool start) {
     final surface = _surface, drag = _handleDrag;
     if (surface == null || drag == null) return;
-    final target = surface.sourceAt(
+    final hit = surface.hitAt(
       surface.globalToLocal(details.globalPosition + drag.grab),
     );
     // The ends keep their order and never meet.
-    if (start ? target < drag.fixed : target > drag.fixed) {
-      _command(SetSelection(drag.fixed, target));
+    if (start ? hit.source < drag.fixed : hit.source > drag.fixed) {
+      _command(SetSelection(drag.fixed, hit.source));
+      // An end dragged past a wrapped line stays drawn at that line's end. A
+      // start there begins the next line, as its selection does.
+      surface.extentPlaced(lineEnd: !start && hit.lineEnd);
+      _scheduleGeometry();
     }
     _touchSelection?.updateMagnifier(
       _magnifierAt(details.globalPosition, c.editor.selection.extent),
@@ -988,11 +995,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         : s.caretRect.left;
     s.vertical(down, extend: extend, goalX: x);
     _goal = (x: x, controller: c, revision: c.editor.revision);
+    _scheduleGeometry();
   }
 
   void _lineEdge(bool end, {required bool extend}) {
     _goal = null;
     _surface?.lineEdge(end, extend: extend);
+    _scheduleGeometry();
   }
 
   /// Command-Backspace on Apple platforms deletes from the caret to the start
@@ -1658,6 +1667,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                                 surface.globalToLocal(event.position),
                                 extend: true,
                               );
+                              _scheduleGeometry();
                             }
                           }
                         },

@@ -300,4 +300,51 @@ void main() {
       c.dispose();
     },
   );
+  testWidgets(
+    'the input method follows a caret redrawn at a wrapped line end',
+    (tester) async {
+      final source = 'ordinary words ' * 12;
+      final c = FlarkController(FlarkEditor(backend, text: source, caret: 0));
+      final paints = <FlarkPaintObservation>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 240,
+              child: FlarkEditorWidget(
+                controller: c,
+                autofocus: true,
+                onPaint: paints.add,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final first = paints.last.caret!;
+      const wrap = 'ordinary '.length;
+      c.command(const SetSelection.caret(wrap));
+      await tester.pump();
+      expect(paints.last.caret!.top, greaterThan(first.top));
+      tester.testTextInput.log.clear();
+      // A click past the first line's end keeps the offset and only moves
+      // the line the caret is drawn on. The input method must move with it.
+      final origin = tester.getTopLeft(find.byType(FlarkSurface));
+      await tester.tapAt(
+        origin + Offset(236, first.center.dy),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(kDoubleTapTimeout);
+      expect(c.editor.selection.extent, wrap);
+      expect(paints.last.caret!.top, first.top);
+      final rect =
+          tester.testTextInput.log
+                  .lastWhere((call) => call.method == 'TextInput.setCaretRect')
+                  .arguments
+              as Map;
+      expect(rect['y'], paints.last.caret!.top);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
 }

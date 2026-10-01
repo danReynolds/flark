@@ -383,6 +383,37 @@ void main() {
       await dispose(tester, c);
     });
 
+    testWidgets('the end handle stays at the end of a wrapped line', (
+      tester,
+    ) async {
+      mockPlatform(tester);
+      final (c, surface, _) = await pumpEditor(
+        tester,
+        text: 'ordinary words ' * 40,
+      );
+      final line = surface.caretRectAt(0).top;
+      var wrap = 1;
+      while (surface.caretRectAt(wrap).top == line) {
+        wrap++;
+      }
+      await tester.longPressAt(
+        surface.localToGlobal(surface.caretRectAt(4).center),
+      );
+      await tester.pump();
+      expect(c.editor.selection, const FlarkSelection(0, 8));
+      final end = surface.caretRectAt(8).bottomLeft;
+      await dragHandle(
+        tester,
+        surface.localToGlobal(end + const Offset(11, 11)),
+        [surface.localToGlobal(Offset(surface.size.width - 2, end.dy + 11))],
+      );
+      // Past the first line's end the selection ends where the next line
+      // begins, and the handle stays drawn on the line it was dragged along.
+      expect(c.editor.selection, FlarkSelection(0, wrap));
+      expect(surface.caretRectAt(wrap).top, line);
+      await dispose(tester, c);
+    });
+
     testWidgets('the start handle stops before the end', (tester) async {
       mockPlatform(tester);
       final (c, surface) = await longPressWord(tester);

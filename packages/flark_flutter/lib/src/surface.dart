@@ -881,20 +881,36 @@ class RenderFlarkSurface extends RenderBox
     );
   }
 
-  int sourceAt(Offset position) {
+  int sourceAt(Offset position) => hitAt(position).source;
+
+  /// The source offset a pointer at [position] selects, and whether it lies
+  /// past the end of a soft-wrapped line, where an extent placed at it stays
+  /// drawn ([extentPlaced]).
+  ({int source, bool lineEnd}) hitAt(Offset position) {
     _prepareRows();
     final row = _rowAt(position);
     final relative = position - row.origin;
     final p = row.painter.getPositionForOffset(relative);
-    if (row.row == null) return row.sourceStart + p.offset;
+    final lineEnd =
+        p.affinity == TextAffinity.upstream && _wrapsAt(row, p.offset);
+    if (row.row == null) {
+      return (source: row.sourceStart + p.offset, lineEnd: lineEnd);
+    }
     final doc = (_snapshot as FlarkLiveSnapshot).document;
     final caret = row.painter.getOffsetForCaret(p, _caretPrototype);
-    return doc.pointerAnchorAt(
-      row.row!.index,
-      p.offset,
-      leadingHalf: relative.dx > caret.dx,
+    return (
+      source: doc.pointerAnchorAt(
+        row.row!.index,
+        p.offset,
+        leadingHalf: relative.dx > caret.dx,
+      ),
+      lineEnd: lineEnd,
     );
   }
+
+  /// Records whether the extent the last command placed is drawn at the end
+  /// of a soft-wrapped line, as a [hitAt] past that end asked.
+  void extentPlaced({required bool lineEnd}) => _placed(upstream: lineEnd);
 
   _RowLayout _rowAt(Offset point) {
     for (final row in _rows) {
