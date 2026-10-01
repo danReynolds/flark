@@ -732,16 +732,20 @@ fn definitions_a_setext_underline_resolved_stay_out_of_a_paragraph_a_table_split
 #[test]
 fn a_line_of_email_addresses_is_refused_before_it_can_overflow_the_stack() {
     // comrak links the addresses of one text node recursively, about 330
-    // bytes of stack each, and a stack overflow aborts the process. 512
-    // addresses take about 170 KiB, under a 256 KiB thread's room for 802.
-    let line = |n: usize| "a@b.c ".repeat(n) + "\n";
-    let outcome = std::thread::Builder::new().stack_size(256 << 10).spawn(move || {
-        (Extractor::extract(&line(512)).is_ok(), Extractor::extract(&line(513)).is_err(), Extractor::extract(&line(16_000)).is_err())
+    // bytes of stack each, and a stack overflow aborts the process. Packed as
+    // tightly as comrak links them, five bytes each, the editor's widest
+    // default line links 819; 1,024 take about 330 KiB, under the room a
+    // 512 KiB thread has for 1,582.
+    let packed = |n: usize| format!("a@b.c{}\n", "+@d.e".repeat(n - 1));
+    let outcome = std::thread::Builder::new().stack_size(512 << 10).spawn(move || {
+        [819, 1024, 1025, 16_000].map(|n| Extractor::extract(&packed(n)).is_ok())
     }).unwrap().join().unwrap();
-    assert_eq!(outcome, (true, true, true));
+    assert_eq!(outcome, [true, true, false, false]);
+    // A line's bytes bound it too: 4,000 `@` signs leave room for 800.
+    assert!(Extractor::extract(&"@".repeat(4_000)).is_ok());
     // comrak links addresses in decoded text: a reference to `@` counts.
-    assert!(Extractor::extract(&"a&#64;b.c x&commat;y.z ".repeat(257)).is_err());
-    let src = "a@b.c ".repeat(513);
+    assert!(Extractor::extract(&"a&#64;b.c x&commat;y.z ".repeat(513)).is_err());
+    let src = packed(1025);
     let (w, devs) = Extractor::extract_with_report(&src);
     check_invariants(&src, &w).unwrap();
     assert_eq!(devs.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("autolink-depth", None)]);

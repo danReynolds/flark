@@ -65,11 +65,15 @@ void main() {
   test(
     'a line with more email addresses than comrak links safely is refused',
     () {
-      // comrak links the addresses of one text node recursively; past 512 on a
-      // line the crate refuses before parsing rather than risk the stack.
-      final line = '${'a@b.c ' * 513}\n';
+      // comrak links the addresses of one text node recursively, so a line
+      // that could link more than 1,024 is refused rather than risk the
+      // stack. Packed as tightly as comrak links them, five bytes each, the
+      // widest line the editor parses by default links 819 and stays live.
+      String packed(int n) => 'a@b.c${'+@d.e' * (n - 1)}\n';
+      expect(FlarkEditor(backend, text: packed(819)).sourceMode, isFalse);
+      expect(backend.parse(packed(1024)).runCount, greaterThan(1024));
       expect(
-        () => backend.parse(line),
+        () => backend.parse(packed(1025)),
         throwsA(
           isA<FlarkParseException>().having(
             (e) => e.code,
@@ -78,8 +82,8 @@ void main() {
           ),
         ),
       );
-      expect(FlarkEditor(backend, text: line).sourceMode, isTrue);
-      expect(backend.parse('${'a@b.c ' * 512}\n').runCount, greaterThan(512));
+      // A line of `@` signs as wide as the editor takes links nothing.
+      expect(FlarkEditor(backend, text: '${'@' * 4000}\n').sourceMode, isFalse);
     },
   );
 }

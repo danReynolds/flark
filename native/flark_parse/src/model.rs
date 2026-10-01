@@ -38,9 +38,12 @@ pub const SOURCE_ONLY: u32 = 1 << 23;
 /// contains it. Measured largest depths: 802 on a 256 KiB thread, 1,582 on
 /// 512 KiB, 3,143 on 1 MiB, 3,127 in a Dart VM isolate, 3,244 for wasm32 in
 /// V8 at its default stack and 1,874 at a 500 KB one. A text node never
-/// crosses a line, so a line holding more possible addresses than this is
-/// refused before comrak parses it; 512 levels take about 170 KiB.
-pub const MAX_EMAIL_AUTOLINKS_PER_LINE: usize = 512;
+/// crosses a line, so a line that could hold more addresses than this is
+/// refused before comrak parses it. 1,024 levels take about 330 KiB, and no
+/// line the editor parses by default comes near: an address takes at least
+/// five ASCII bytes, packed with no gap as `a@b.c+@d.e`, so the editor's
+/// widest line, 4,096 code units, holds at most 819.
+pub const MAX_EMAIL_AUTOLINKS_PER_LINE: usize = 1024;
 
 const INLINE_RULES: &[&str] = &["text-mismatch", "emph-delims", "strong-delims", "strike-delims", "escape-delims", "link-delims", "footnote-ref-delims", "code-delims", "code-literal", "image-delims", "html-inline-end", "html-inline-literal", "heading-content", "run-structure"];
 
@@ -78,26 +81,32 @@ pub fn sourcepos_range(sp: Sourcepos, li: &LineIndex, src_len: usize) -> Option<
     Some((start, end))
 }
 
-/// The first line holding more than [MAX_EMAIL_AUTOLINKS_PER_LINE] `@`,
-/// counting an entity reference that decodes to one (`&#64;`, `&#x40;`,
-/// `&commat;`), since comrak links addresses in decoded text. The count is an
-/// upper bound on the addresses one text node of that line can hold.
+/// The first line that could link more than [MAX_EMAIL_AUTOLINKS_PER_LINE]
+/// addresses. Each needs its own `@`, counting an entity reference that
+/// decodes to one (`&#64;`, `&#x40;`, `&commat;`) since comrak links
+/// addresses in decoded text, and at least five ASCII bytes, which decoding
+/// never adds. The smaller count bounds the addresses one text node of the
+/// line can link: a line of `@` signs alone holds a fifth of its bytes.
 fn email_autolink_overflow(src: &str) -> Option<usize> {
     let b = src.as_bytes();
-    let (mut line, mut count, mut i) = (0usize, 0usize, 0usize);
+    let (mut line, mut ats, mut ascii, mut i) = (0usize, 0usize, 0usize, 0usize);
     while i < b.len() {
         match b[i] {
-            b'\n' => { line += 1; count = 0; }
-            b'\r' => { if b.get(i + 1) != Some(&b'\n') { line += 1; count = 0; } }
-            b'@' => count += 1,
-            b'&' => if let Some(l) = text_pieces::entity_len(&src[i..]) {
-                let body = &src[i + 1..i + l - 1];
-                let value = match body.strip_prefix('#') { Some(n) => match n.strip_prefix(['x', 'X']) { Some(h) => u32::from_str_radix(h, 16).ok(), None => n.parse().ok() }, None => (body == "commat").then_some(64) };
-                if value == Some(64) { count += 1; }
-            },
-            _ => {}
+            b'\n' => { line += 1; ats = 0; ascii = 0; }
+            b'\r' => { if b.get(i + 1) != Some(&b'\n') { line += 1; ats = 0; ascii = 0; } }
+            b'@' => { ats += 1; ascii += 1; }
+            b'&' => {
+                ascii += 1;
+                if let Some(l) = text_pieces::entity_len(&src[i..]) {
+                    let body = &src[i + 1..i + l - 1];
+                    let value = match body.strip_prefix('#') { Some(n) => match n.strip_prefix(['x', 'X']) { Some(h) => u32::from_str_radix(h, 16).ok(), None => n.parse().ok() }, None => (body == "commat").then_some(64) };
+                    if value == Some(64) { ats += 1; }
+                }
+            }
+            c => if c < 0x80 { ascii += 1; },
         }
-        if count > MAX_EMAIL_AUTOLINKS_PER_LINE { return Some(line); }
+        // Both counts only grow along a line, so the first excess stands.
+        if ats.min(ascii / 5) > MAX_EMAIL_AUTOLINKS_PER_LINE { return Some(line); }
         i += 1;
     }
     None

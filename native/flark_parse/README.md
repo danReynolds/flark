@@ -31,8 +31,9 @@ with block flag bit 23 (source only), so it displays its source as plain text
 and the rest of the document stays live. Such a leaf includes one whose runs
 leave a content byte other than whitespace outside every run, since a host
 shows that byte verbatim. Code 4 also refuses a source comrak cannot parse
-safely: a line with more than 512 possible email addresses, which comrak
-links recursively (see REGISTER.md). Report mode lists every deviation,
+safely: a line that could link more than 1,024 email addresses, which comrak
+links recursively (see REGISTER.md). No line within the editor's default
+limits can. Report mode lists every deviation,
 scoped or not, and the conformance test
 asserts zero deviations across the 652 CommonMark and 670 GFM upstream cases:
 
