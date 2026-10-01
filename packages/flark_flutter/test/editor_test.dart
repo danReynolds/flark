@@ -438,4 +438,86 @@ void main() {
       c.dispose();
     },
   );
+
+  for (final (typed, committed) in [('milk', 'milk'), ('teh', 'the')]) {
+    for (final batched in [false, true]) {
+      test('Return after a composed word continues the list: '
+          '$typed->$committed batched=$batched', () {
+        const source = '- eggs\n- ';
+        final c = FlarkController(
+          FlarkEditor(backend, text: source, caret: source.length),
+        );
+        // Android input methods compose the word being typed.
+        for (var n = 1; n <= typed.length; n++) {
+          c.receive(
+            TextEditingValue(
+              text: '$source${typed.substring(0, n)}',
+              selection: TextSelection.collapsed(offset: source.length + n),
+              composing: TextRange(
+                start: source.length,
+                end: source.length + n,
+              ),
+            ),
+          );
+        }
+        expect(c.editor.composing, isTrue);
+        final word = '$source$committed';
+        if (!batched) {
+          c.receive(
+            TextEditingValue(
+              text: word,
+              selection: TextSelection.collapsed(offset: word.length),
+            ),
+          );
+        }
+        // LatinIME commits the (corrected) word and "\n" inside one batch
+        // edit, which the platform publishes as one value.
+        expect(
+          c.receive(
+            TextEditingValue(
+              text: '$word\n',
+              selection: TextSelection.collapsed(offset: word.length + 1),
+            ),
+          ),
+          isTrue,
+        );
+        expect(c.text, '$word\n- ');
+        expect(c.editor.composing, isFalse);
+        expect(c.value.composing, TextRange.empty);
+        // The word and Return undo as separate steps either way.
+        expect(c.command(const Undo()), isTrue);
+        expect(c.text, word);
+        expect(c.command(const Undo()), isTrue);
+        expect(c.text, source);
+        c.dispose();
+      });
+    }
+  }
+  test(
+    'a composition opened by a rejected platform value does not stay open',
+    () {
+      const source = '# Head\n\npara';
+      final c = FlarkController(FlarkEditor(backend, text: source, caret: 4));
+      c.command(const SetSelection(4, 11));
+      // An input method starts composing over a cross-block selection.
+      expect(
+        c.receive(
+          TextEditingValue(
+            text: source.replaceRange(4, 11, 'x'),
+            selection: const TextSelection.collapsed(offset: 5),
+            composing: const TextRange(start: 4, end: 5),
+          ),
+        ),
+        isFalse,
+      );
+      expect(c.text, source);
+      expect(c.notice, 'This edit needs source mode.');
+      // The platform is resynchronized without this composition. Left open,
+      // it would make the editor leave every editing key to the input method.
+      expect(c.editor.composing, isFalse);
+      expect(c.value.composing, TextRange.empty);
+      expect(c.editor.history.canUndo, isFalse);
+      c.dispose();
+    },
+  );
 }

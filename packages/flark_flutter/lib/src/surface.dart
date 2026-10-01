@@ -825,21 +825,53 @@ class RenderFlarkSurface extends RenderBox
     return Rect.fromLTRB(row.left, caret.top, row.right, caret.bottom);
   }
 
+  /// The snapshot whose selection extent is drawn upstream: at the end of a
+  /// soft-wrapped line, where End or a hit past that end put it, rather than
+  /// at the start of the next line, which has the same offset. The kernel
+  /// keeps no affinity, so every later snapshot is drawn downstream again.
+  FlarkEditorSnapshot? _upstream;
+
+  TextAffinity _affinityAt(int source) =>
+      identical(_upstream, _snapshot) && source == _snapshot.selection.extent
+      ? TextAffinity.upstream
+      : TextAffinity.downstream;
+
+  /// Records whether the selection a placement just produced ends upstream.
+  void _placed({required bool upstream}) {
+    final next = upstream ? controller.editor.snapshot : null;
+    if (identical(next, _upstream)) return;
+    _upstream = next;
+    // The extent may not have moved, only the line it is drawn on.
+    markNeedsPaint();
+  }
+
+  /// Whether [offset] in [row] ends one visual line and starts the next.
+  static bool _wrapsAt(_RowLayout row, int offset) {
+    if (offset <= 0 || offset >= row.text.length) return false;
+    final upstream = row.painter.getOffsetForCaret(
+      TextPosition(offset: offset, affinity: TextAffinity.upstream),
+      _caretPrototype,
+    );
+    final downstream = row.painter.getOffsetForCaret(
+      TextPosition(offset: offset),
+      _caretPrototype,
+    );
+    return upstream.dy != downstream.dy;
+  }
+
   Rect caretRectAt(int source, {int? tableCell}) {
     if (_layoutWidth == null) return Rect.zero;
     _prepareRows();
     final (index, offset) = _display(source, tableCell: tableCell);
     final row = _rows[index];
-    final p = row.painter.getOffsetForCaret(
-      TextPosition(offset: offset),
-      _caretPrototype,
+    final position = TextPosition(
+      offset: offset,
+      affinity: _affinityAt(source),
     );
+    final p = row.painter.getOffsetForCaret(position, _caretPrototype);
     final height = math.max(
       textScaler.scale(style.fontSize!) * 1.4,
-      row.painter.getFullHeightForCaret(
-        TextPosition(offset: offset),
-        _caretPrototype,
-      ),
+      row.painter.getFullHeightForCaret(position, _caretPrototype),
     );
     return Rect.fromLTWH(
       row.origin.dx + p.dx,
@@ -919,11 +951,12 @@ class RenderFlarkSurface extends RenderBox
   bool place(Offset point, {bool extend = false}) {
     _prepareRows();
     final layout = _rowAt(point), row = layout.row;
+    final relative = point - layout.origin;
+    final position = layout.painter.getPositionForOffset(relative);
+    final bool changed;
     if (row != null) {
-      final relative = point - layout.origin;
-      final position = layout.painter.getPositionForOffset(relative);
       final caret = layout.painter.getOffsetForCaret(position, _caretPrototype);
-      return controller.command(
+      changed = controller.command(
         PlaceCaret(
           row.index,
           position.offset,
@@ -931,11 +964,22 @@ class RenderFlarkSurface extends RenderBox
           extend: extend,
         ),
       );
+    } else {
+      final target = layout.sourceStart + position.offset;
+      changed = controller.command(
+        SetSelection(
+          extend ? controller.editor.selection.base : target,
+          target,
+        ),
+      );
     }
-    final target = sourceAt(point);
-    return controller.command(
-      SetSelection(extend ? controller.editor.selection.base : target, target),
+    // A hit past the end of a soft-wrapped line leaves the caret drawn there.
+    _placed(
+      upstream:
+          position.affinity == TextAffinity.upstream &&
+          _wrapsAt(layout, position.offset),
     );
+    return changed;
   }
 
   void selectWordAt(Offset point) {
@@ -1061,15 +1105,19 @@ class RenderFlarkSurface extends RenderBox
     return place(Offset(x, y), extend: extend);
   }
 
-  bool lineEdge(bool end, {bool extend = false}) {
-    if (_snapshot.selection.tableCell != null) return false;
+  /// The start or end of the visual line the selection's extent is drawn on:
+  /// its outermost source anchor, as row edges take, with the row and the
+  /// display offset. Null for a caret in a missing table cell, which has no
+  /// source of its own to move within.
+  ({int target, _RowLayout row, int at})? _lineEdge(bool end) {
     _prepareRows();
-    final (index, offset) = _display(
-      _snapshot.selection.extent,
-      tableCell: _snapshot.selection.tableCell,
-    );
+    final selection = _snapshot.selection;
+    if (selection.tableCell != null) return null;
+    final (index, offset) = _display(selection.extent);
     final row = _rows[index];
-    final line = row.painter.getLineBoundary(TextPosition(offset: offset));
+    final line = row.painter.getLineBoundary(
+      TextPosition(offset: offset, affinity: _affinityAt(selection.extent)),
+    );
     final at = end ? line.end : line.start;
     var target =
         row.row?.sourceForDisplay(
@@ -1083,9 +1131,25 @@ class RenderFlarkSurface extends RenderBox
       );
       target = end ? anchors.last : anchors.first;
     }
-    return controller.command(
-      SetSelection(extend ? controller.editor.selection.base : target, target),
+    return (target: target, row: row, at: at);
+  }
+
+  /// The source offset [lineEdge] moves the extent to, without moving it.
+  int? lineEdgeTarget(bool end) => _lineEdge(end)?.target;
+
+  bool lineEdge(bool end, {bool extend = false}) {
+    final edge = _lineEdge(end);
+    if (edge == null) return false;
+    final changed = controller.command(
+      SetSelection(
+        extend ? controller.editor.selection.base : edge.target,
+        edge.target,
+      ),
     );
+    // The end of a soft-wrapped line is also the start of the next one. The
+    // caret End reaches stays drawn on the line it was on.
+    _placed(upstream: end && _wrapsAt(edge.row, edge.at));
+    return changed;
   }
 
   @override
@@ -1442,7 +1506,8 @@ class RenderFlarkSurface extends RenderBox
     final texts =
         rows?.map((r) => r.text).toList() ??
         current.source.substring(window!.start, window.end).split('\n');
-    config.value = texts.join('\n');
+    final value = texts.join('\n');
+    config.value = value;
     int displayOffset(int source, {int? tableCell}) {
       if (current is! FlarkLiveSnapshot) {
         return (source - window!.start).clamp(0, window.end - window.start);
@@ -1463,6 +1528,24 @@ class RenderFlarkSurface extends RenderBox
       for (final row in rows) {
         if (remaining <= row.text.length) {
           return row.sourceForDisplay(remaining, anchor: anchor);
+        }
+        remaining -= row.text.length + 1;
+      }
+      return current.source.length;
+    }
+
+    // Text inserted at a visible offset takes the context a pointer placed
+    // there would: the word it touches beside whitespace, otherwise the text
+    // before it, as typing continues it.
+    int insertionAnchor(int display) {
+      var remaining = display;
+      for (final row in rows!) {
+        if (remaining <= row.text.length) {
+          return (current as FlarkLiveSnapshot).document.pointerAnchorAt(
+            row.index,
+            remaining,
+            leadingHalf: false,
+          );
         }
         remaining -= row.text.length + 1;
       }
@@ -1512,22 +1595,76 @@ class RenderFlarkSurface extends RenderBox
     }
     if (!readOnly) {
       config.onSetText = (text) {
-        // A pathological single grapheme may exceed a source page. Never let
-        // an accessibility page replacement expand into its neighboring page.
-        if (window != null &&
-            (CharacterRange.at(current.source, window.start).isNotEmpty ||
-                CharacterRange.at(current.source, window.end).isNotEmpty)) {
+        // The edited text is this snapshot's value. Applied after a later
+        // edit, it would quietly revert that edit.
+        if (!identical(controller.editor.snapshot, current)) return;
+        if (window != null) {
+          // A pathological single grapheme may exceed a source page. Never
+          // let a page replacement expand into its neighboring page.
+          if (CharacterRange.at(current.source, window.start).isNotEmpty ||
+              CharacterRange.at(current.source, window.end).isNotEmpty) {
+            return;
+          }
+          controller.command(ReplaceRange(window.start, window.end, text));
           return;
         }
-        controller.sourceMode(true);
-        controller.command(
-          ReplaceRange(
-            window?.start ?? 0,
-            window?.end ?? controller.text.length,
-            text,
-          ),
-        );
+        // Rendered text omits hidden Markdown, so it cannot replace the
+        // source. Android Voice Access sends the whole edited value for
+        // "replace X with Y" or dictation: apply only the visible range that
+        // changed. An edit the kernel cannot express is rejected with the
+        // controller's notice and leaves the document as it was.
+        final edit = _visibleEdit(value, text);
+        if (edit == null) return;
+        final int start, end;
+        if (edit.start == edit.end) {
+          start = end = insertionAnchor(edit.start);
+        } else {
+          start = sourceOffset(edit.start, anchor: Anchor.after);
+          end = sourceOffset(edit.end, anchor: Anchor.before);
+        }
+        controller.command(ReplaceRange(start, end, edit.text));
       };
     }
   }
+}
+
+/// The visible range of [before] that [after] replaces, and its replacement,
+/// or null when they are equal. The range is widened over the unchanged text
+/// on either side until both strings break graphemes at its edges, so a
+/// surrogate pair or combining sequence is never split.
+({int start, int end, String text})? _visibleEdit(String before, String after) {
+  if (before == after) return null;
+  var start = 0;
+  final shorter = math.min(before.length, after.length);
+  while (start < shorter &&
+      before.codeUnitAt(start) == after.codeUnitAt(start)) {
+    start++;
+  }
+  var end = before.length, afterEnd = after.length;
+  while (end > start &&
+      afterEnd > start &&
+      before.codeUnitAt(end - 1) == after.codeUnitAt(afterEnd - 1)) {
+    end--;
+    afterEnd--;
+  }
+  // Inside the unchanged prefix and suffix both strings break graphemes at
+  // the same places, so the outer of their nearest breaks is one in both.
+  int breakBefore(String text, int offset) {
+    final range = CharacterRange.at(text, offset);
+    return range.isEmpty ? offset : range.stringBeforeLength;
+  }
+
+  int breakAfter(String text, int offset) {
+    final range = CharacterRange.at(text, offset);
+    return range.isEmpty ? offset : text.length - range.stringAfterLength;
+  }
+
+  start = math.min(breakBefore(before, start), breakBefore(after, start));
+  final widened = math.max(
+    breakAfter(before, end),
+    end + breakAfter(after, afterEnd) - afterEnd,
+  );
+  afterEnd += widened - end;
+  end = widened;
+  return (start: start, end: end, text: after.substring(start, afterEnd));
 }

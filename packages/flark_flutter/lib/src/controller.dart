@@ -133,7 +133,8 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       return false;
     }
     final isComposing = next.composing.isValid && !next.composing.isCollapsed;
-    if (isComposing && !editor.composing) {
+    final opened = isComposing && !editor.composing;
+    if (opened) {
       _compositionSource = text;
       editor.beginComposition();
     }
@@ -145,7 +146,7 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       _lastReceivedRevision = editor.revision;
       return true;
     }
-    var changed = false;
+    var changed = false, committedWord = false;
     if (next.text == before.text) {
       changed = editor.apply(
         SetSelection(next.selection.baseOffset, next.selection.extentOffset),
@@ -206,9 +207,35 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
         nextEnd += widened - end;
         end = widened;
       }
-      final inserted = next.text.substring(start, nextEnd);
+      var inserted = next.text.substring(start, nextEnd);
+      // An input method may finish its word and type Return in one value:
+      // Android's LatinIME commits the composed word and "\n" inside one
+      // batch edit. That break is a typed Return, not composed text. Commit
+      // the word as the composition, then apply Return as when they arrive
+      // apart, so lists, quotes, fences and tables continue after it.
+      final typedReturn =
+          editor.composing &&
+          !isComposing &&
+          inserted.endsWith('\n') &&
+          sel.isCollapsed &&
+          end == sel.end &&
+          next.selection.isCollapsed &&
+          next.selection.extentOffset == nextEnd;
+      if (typedReturn) {
+        inserted = inserted.substring(0, inserted.length - 1);
+        if (start != end || inserted.isNotEmpty) {
+          committedWord = editor.apply(
+            start == end && inserted.isNotEmpty
+                ? InsertText(inserted)
+                : ReplaceRange(start, end, inserted),
+          );
+        }
+        _endComposition();
+      }
       final FlarkCommand command;
-      if (editor.composing) {
+      if (typedReturn) {
+        command = const Newline();
+      } else if (editor.composing) {
         command = start == sel.start && end == sel.end && inserted.isNotEmpty
             ? InsertText(inserted)
             : ReplaceRange(start, end, inserted);
@@ -231,6 +258,7 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
         // replace unrelated text from an older full-value input connection.
         final related = start <= sel.end && end >= sel.start;
         if (!related) {
+          if (opened) _abandonComposition();
           notice = 'Input was resynchronized.';
           _changed();
           return false;
@@ -250,19 +278,33 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       notice = null;
     } else {
       notice = _rejectionNotice ?? 'This edit needs source mode.';
+      if (opened) _abandonComposition();
     }
-    if (!isComposing && editor.composing) {
-      if (editor.source == _compositionSource) {
-        editor.cancelComposition();
-      } else {
-        editor.commitComposition();
-      }
-      _compositionSource = null;
-    }
+    if (!isComposing && editor.composing) _endComposition();
     _lastReceived = next;
     _lastReceivedRevision = editor.revision;
     _changed();
-    return changed;
+    return changed || committedWord;
+  }
+
+  /// The platform ended its composition. Keep what it composed as one history
+  /// step, or restore the exact prior state when it left the source as it was.
+  void _endComposition() {
+    if (editor.source == _compositionSource) {
+      editor.cancelComposition();
+    } else {
+      editor.commitComposition();
+    }
+    _compositionSource = null;
+  }
+
+  /// Ends a composition that a rejected platform value opened. The platform
+  /// is resynchronized without it, and while the kernel still composed, the
+  /// editor would leave every editing key to the input method. The value
+  /// changed nothing, so ending it records no history.
+  void _abandonComposition() {
+    editor.commitComposition();
+    _compositionSource = null;
   }
 
   void finishComposition({bool cancel = false}) =>
