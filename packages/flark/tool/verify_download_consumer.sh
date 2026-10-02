@@ -139,7 +139,9 @@ fi
 stop_server
 # A port of its own: the file server's port may not be free again yet.
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-python3 - "$PORT" > "$WORK/stalling.log" 2>&1 <<'PY' &
+# The program goes in a file: on CI's runner a backgrounded python3 that
+# read it from a here-document printed nothing at all.
+cat > "$WORK/stalling.py" <<'PY'
 import http.server, sys, time
 class Stalling(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -157,10 +159,16 @@ server = http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Stalli
 print('listening', flush=True)
 server.serve_forever()
 PY
+python3 "$WORK/stalling.py" "$PORT" > "$WORK/stalling.log" 2>&1 &
 SERVER=$!
-for _ in $(seq 100); do grep -q listening "$WORK/stalling.log" && break; sleep 0.1; done
+for _ in $(seq 300); do
+  grep -q listening "$WORK/stalling.log" && break
+  kill -0 "$SERVER" 2>/dev/null || break
+  sleep 0.1
+done
 if ! grep -q listening "$WORK/stalling.log"; then
-  cat "$WORK/stalling.log"; echo "the stalling server did not start"; exit 1
+  kill -0 "$SERVER" 2>/dev/null || { wait "$SERVER"; echo "the server exited with $?"; }
+  python3 --version; cat "$WORK/stalling.log"; echo "the stalling server did not start"; exit 1
 fi
 manifest "$HASH"
 # Without the cached library the hook has to download again.
