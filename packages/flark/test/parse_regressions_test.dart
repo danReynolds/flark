@@ -67,10 +67,12 @@ void main() {
     () {
       // comrak links the addresses of one text node recursively, so a line
       // that could link more than 1,024 is refused rather than risk the
-      // stack. Packed as tightly as comrak links them, five bytes each, the
-      // widest line the editor parses by default links 819 and stays live.
-      String packed(int n) => 'a@b.c${'+@d.e' * (n - 1)}\n';
-      expect(FlarkEditor(backend, text: packed(819)).sourceMode, isFalse);
+      // stack. Packed as tightly as comrak links them, four bytes each
+      // (`c@.r` is an address), the widest line the editor parses by
+      // default, 4,096 code units, links 1,024 and stays live.
+      String packed(int n) => 'a@.b${'+@.c' * (n - 1)}\n';
+      expect(packed(1024).length, 4096 + 1);
+      expect(FlarkEditor(backend, text: packed(1024)).sourceMode, isFalse);
       expect(backend.parse(packed(1024)).runCount, greaterThan(1024));
       expect(
         () => backend.parse(packed(1025)),
@@ -86,4 +88,61 @@ void main() {
       expect(FlarkEditor(backend, text: '${'@' * 4000}\n').sourceMode, isFalse);
     },
   );
+
+  test('a table after a blank line under definitions a setext line resolved '
+      'loads live and admits its delimiter row', () {
+    // Only a table that split the paragraph is numbered from the
+    // definitions' stale start. Moving one that came from a paragraph of its
+    // own left its header line in no block: the document opened in source
+    // mode, and the keystroke that made the delimiter row was refused.
+    const doc =
+        '[home]: https://example.com\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n';
+    final e = FlarkEditor(backend, text: doc);
+    expect(e.sourceMode, isFalse);
+    expect(
+      [
+        for (final r in e.projection.rows)
+          if (r.kind != RowKind.blank) (r.kind, r.text.trim()),
+      ],
+      [
+        (RowKind.definition, '[home]: https://example.com'),
+        (RowKind.paragraph, '---'),
+        (RowKind.tableCell, 'a'),
+        (RowKind.tableCell, 'b'),
+        (RowKind.tableCell, '1'),
+        (RowKind.tableCell, '2'),
+      ],
+    );
+    const typed = '[home]: https://example.com\n---\n\n| a |\n|';
+    final t = FlarkEditor(backend, text: typed, caret: typed.length);
+    expect(
+      t.apply(const InsertText('-')),
+      isTrue,
+      reason: '${t.lastRejection}',
+    );
+    expect(t.sourceMode, isFalse);
+    expect(cellText(t), 'a');
+  });
+
+  test('an escaped pipe before a pipe reference in a cell shows two pipes', () {
+    // A text opening with `\|&#124;` lost the backslash's own piece: alone
+    // the cell showed its source, inside emphasis the backslash showed.
+    for (final cell in ['\\|&#124;', '*\\|&#124;*', '[\\|&#124;](u)']) {
+      final e = FlarkEditor(backend, text: '| a |\n|---|\n| $cell |\n');
+      expect(cellText(e), '||', reason: cell);
+    }
+  });
+
+  test('text after a link whose parentheses span lines keeps an escaped '
+      'ampersand and a lone entity', () {
+    String lastLine(String doc) => FlarkEditor(backend, text: doc)
+        .projection
+        .rows
+        .firstWhere((r) => r.kind == RowKind.paragraph)
+        .text
+        .split('\n')
+        .last;
+    expect(lastLine('[r]: /ref\n---\n[a](/u "t\n2")\\&amp;\n'), 'a&amp;');
+    expect(lastLine('[](\n)\n&amp;\\&\n'), '&&');
+  });
 }

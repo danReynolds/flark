@@ -105,14 +105,23 @@ pub fn check_invariants(src: &str, published: &[u32]) -> Result<(), String> {
         }
     }
     // Every content byte of an inline leaf that publishes runs lies inside a
-    // run, as content or as a hidden delimiter, or is editable whitespace
-    // (cell padding, spaces before a line break). A host shows uncovered
-    // bytes verbatim, so text a replacement run already displays would show
-    // twice, and an entity cut by a run's end would show undecoded.
+    // run without children, or in the delimiters of a run with children (its
+    // source outside its content range), or is editable whitespace (cell
+    // padding, spaces before a line break). A host paints a container's
+    // children and shows any other byte verbatim, so text a replacement run
+    // already displays would show twice, and an entity cut by a run's end
+    // would show undecoded.
+    let mut has_children = vec![false; nr];
+    for i in 0..nr {
+        let p = w[runs_off + i * run::WORDS + run::PARENT];
+        if p != u32::MAX && (p as usize) < nr { has_children[p as usize] = true; }
+    }
     let mut leaf_runs: Vec<Vec<(usize, usize)>> = vec![Vec::new(); nb];
     for i in 0..nr {
         let rw = |f: usize| w[runs_off + i * run::WORDS + f] as usize;
-        leaf_runs[rw(run::BLOCK)].push((rw(run::START_BYTE), rw(run::END_BYTE)));
+        let spans = &mut leaf_runs[rw(run::BLOCK)];
+        if has_children[i] { spans.push((rw(run::START_BYTE), rw(run::CONTENT_START_BYTE))); spans.push((rw(run::CONTENT_END_BYTE), rw(run::END_BYTE))); }
+        else { spans.push((rw(run::START_BYTE), rw(run::END_BYTE))); }
     }
     for (b, spans) in leaf_runs.iter_mut().enumerate() {
         let inline_leaf = matches!(blk(b, block::KIND), block_kind::PARAGRAPH | block_kind::HEADING | block_kind::TABLE_CELL);
@@ -126,7 +135,7 @@ pub fn check_invariants(src: &str, published: &[u32]) -> Result<(), String> {
             for x in cs..ce {
                 while k < spans.len() && spans[k].0 <= x { reach = reach.max(spans[k].1); k += 1; }
                 if x >= reach && !matches!(src.as_bytes()[x], b' ' | b'\t') {
-                    return Err(format!("block {b} content byte {x} ({:?}) lies in no run", &src[x..].chars().next().unwrap_or(' ')));
+                    return Err(format!("block {b} content byte {x} ({:?}) lies in no childless run or delimiter", &src[x..].chars().next().unwrap_or(' ')));
                 }
             }
         }

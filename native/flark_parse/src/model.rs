@@ -39,10 +39,11 @@ pub const SOURCE_ONLY: u32 = 1 << 23;
 /// 512 KiB, 3,143 on 1 MiB, 3,127 in a Dart VM isolate, 3,244 for wasm32 in
 /// V8 at its default stack and 1,874 at a 500 KB one. A text node never
 /// crosses a line, so a line that could hold more addresses than this is
-/// refused before comrak parses it. 1,024 levels take about 330 KiB, and no
-/// line the editor parses by default comes near: an address takes at least
-/// five ASCII bytes, packed with no gap as `a@b.c+@d.e`, so the editor's
-/// widest line, 4,096 code units, holds at most 819.
+/// refused before comrak parses it. 1,024 levels take about 330 KiB. An
+/// address takes at least four ASCII bytes: comrak links `c@.r`, and packs
+/// them with no gap as `a@.b+@.c`. The editor's widest line, 4,096 code
+/// units, therefore holds at most 1,024, exactly this cap, so no line the
+/// editor parses by default is refused.
 pub const MAX_EMAIL_AUTOLINKS_PER_LINE: usize = 1024;
 
 const INLINE_RULES: &[&str] = &["text-mismatch", "emph-delims", "strong-delims", "strike-delims", "escape-delims", "link-delims", "footnote-ref-delims", "code-delims", "code-literal", "image-delims", "html-inline-end", "html-inline-literal", "heading-content", "run-structure"];
@@ -84,9 +85,11 @@ pub fn sourcepos_range(sp: Sourcepos, li: &LineIndex, src_len: usize) -> Option<
 /// The first line that could link more than [MAX_EMAIL_AUTOLINKS_PER_LINE]
 /// addresses. Each needs its own `@`, counting an entity reference that
 /// decodes to one (`&#64;`, `&#x40;`, `&commat;`) since comrak links
-/// addresses in decoded text, and at least five ASCII bytes, which decoding
-/// never adds. The smaller count bounds the addresses one text node of the
-/// line can link: a line of `@` signs alone holds a fifth of its bytes.
+/// addresses in decoded text, and at least four ASCII bytes, which decoding
+/// never adds: a character before the `@` and a domain of a dot and a letter
+/// (`c@.r`), and the next address starts after the last one's domain. The
+/// smaller count bounds the addresses one text node of the line can link: a
+/// line of `@` signs alone holds a quarter of its bytes.
 fn email_autolink_overflow(src: &str) -> Option<usize> {
     let b = src.as_bytes();
     let (mut line, mut ats, mut ascii, mut i) = (0usize, 0usize, 0usize, 0usize);
@@ -106,7 +109,7 @@ fn email_autolink_overflow(src: &str) -> Option<usize> {
             c => if c < 0x80 { ascii += 1; },
         }
         // Both counts only grow along a line, so the first excess stands.
-        if ats.min(ascii / 5) > MAX_EMAIL_AUTOLINKS_PER_LINE { return Some(line); }
+        if ats.min(ascii / 4) > MAX_EMAIL_AUTOLINKS_PER_LINE { return Some(line); }
         i += 1;
     }
     None
@@ -207,6 +210,8 @@ pub struct Extractor<'a> {
     /// discovered from the first mismatching Text literal and carried forward.
     run_delta: isize,
     last_text_end: usize,
+    /// Per-leaf memo for [Extractor::leaf_has_bare_cr].
+    bare_cr_leaf: Option<bool>,
     pub deviations: Vec<Deviation>,
     /// Scratch for [leaf_run_problem], reused across leaves.
     sibling_end: Vec<usize>,
@@ -224,7 +229,7 @@ impl<'a> Extractor<'a> {
     pub fn extract_with_report(src: &'a str) -> (Vec<u32>, Vec<Deviation>) { Self::run(src, true) }
 
     fn new(src: &'a str, collect: bool) -> Self {
-        Extractor { src, li: LineIndex::new(src), blocks: Vec::new(), content: Vec::new(), runs: Vec::new(), definitions: Vec::new(), strings: Vec::new(), containers: Vec::new(), collect, run_delta: 0, last_text_end: 0, deviations: Vec::new(), sibling_end: Vec::new(), entities: text_pieces::Entities::default() }
+        Extractor { src, li: LineIndex::new(src), blocks: Vec::new(), content: Vec::new(), runs: Vec::new(), definitions: Vec::new(), strings: Vec::new(), containers: Vec::new(), collect, run_delta: 0, last_text_end: 0, bare_cr_leaf: None, deviations: Vec::new(), sibling_end: Vec::new(), entities: text_pieces::Entities::default() }
     }
 
     fn run(src: &'a str, collect: bool) -> (Vec<u32>, Vec<Deviation>) {
@@ -307,11 +312,15 @@ impl<'a> Extractor<'a> {
     /// positions are moved where comrak parsed them before any is read;
     /// `leaf` strips the definitions as it does for an unsplit paragraph, and
     /// the paragraph's and the header cells' literals validate the result.
+    /// Only a table that split the paragraph is moved: the split numbers the
+    /// paragraph's end and the header on consecutive lines. A table after a
+    /// blank line came from a paragraph of its own and is numbered correctly;
+    /// moving it left its header line in no block.
     fn reattach_setext_definitions<'b>(&self, node: &'b AstNode<'b>, container_id: Option<usize>) -> bool {
         let Some(table) = node.next_sibling().filter(|t| matches!(t.data.borrow().value, NodeValue::Table(_))) else { return false };
         if !matches!(node.data.borrow().value, NodeValue::Paragraph) { return false; }
         let (psp, tsp) = (node.data.borrow().sourcepos, table.data.borrow().sourcepos);
-        if psp.start.line == 0 || tsp.start.line <= psp.start.line { return false; }
+        if psp.start.line == 0 || tsp.start.line <= psp.start.line || tsp.start.line != psp.end.line + 1 { return false; }
         let chain = self.chain(container_id);
         let l0 = psp.start.line - 1;
         if self.src.as_bytes().get(self.paragraph_line(l0, &chain).start) != Some(&b'[') { return false; }
@@ -825,13 +834,13 @@ impl<'a> Extractor<'a> {
     }
 
     /// A leaf whose inline extraction deviated, or whose runs do not nest and
-    /// follow each other or leave content outside every run, publishes
-    /// without runs: it shows its source as plain text and stays editable,
-    /// while the rest of the document renders. Its deviations are scoped to
-    /// it; any other deviation still refuses.
+    /// follow each other or leave content outside every childless run and
+    /// delimiter, publishes without runs: it shows its source as plain text
+    /// and stays editable, while the rest of the document renders. Its
+    /// deviations are scoped to it; any other deviation still refuses.
     fn settle_inlines(&mut self, idx: usize, first_run: usize, first_deviation: usize, content_from: usize) {
         if let Some(problem) = self.leaf_run_problem(first_run) { self.dev("run-structure", || format!("block {idx}: {problem}")); }
-        else if let Some(x) = self.uncovered_content(first_run, content_from) { self.dev("run-structure", || format!("block {idx}: content byte {x} lies in no run")); }
+        else if let Some(x) = self.uncovered_content(first_run, content_from) { self.dev("run-structure", || format!("block {idx}: content byte {x} lies in no childless run or delimiter")); }
         let mut degrade = false;
         for d in &mut self.deviations[first_deviation..] {
             if INLINE_RULES.contains(&d.rule) { d.leaf = Some(idx as u32); degrade = true; }
@@ -844,12 +853,25 @@ impl<'a> Extractor<'a> {
 
     /// The first content byte of a leaf with runs that none of them covers,
     /// other than editable whitespace (cell padding, spaces before a break).
-    /// A host shows such a byte verbatim, so text a replacement run already
-    /// displays would show twice, and an entity cut short would show
-    /// undecoded. Content records are in line order, so one sweep does.
+    /// A run without children covers its whole range; a run with children
+    /// covers only its delimiters, the source outside its content range,
+    /// since a host paints its children and shows any byte between them
+    /// verbatim. Such a byte would show text a replacement run already
+    /// displays twice, or an entity cut short undecoded. Content records are
+    /// in line order, so one sweep does.
     fn uncovered_content(&self, first_run: usize, content_from: usize) -> Option<usize> {
-        if first_run == self.runs.len() { return None; }
-        let mut spans: Vec<(usize, usize)> = self.runs[first_run..].iter().map(|r| (r[run::START_BYTE] as usize, r[run::END_BYTE] as usize)).collect();
+        let runs = &self.runs[first_run..];
+        if runs.is_empty() { return None; }
+        let mut has_children = vec![false; runs.len()];
+        for r in runs {
+            let p = r[run::PARENT] as usize;
+            if r[run::PARENT] != u32::MAX && (first_run..self.runs.len()).contains(&p) { has_children[p - first_run] = true; }
+        }
+        let mut spans: Vec<(usize, usize)> = Vec::with_capacity(runs.len() + 1);
+        for (r, &parent) in runs.iter().zip(&has_children) {
+            let (s, e) = (r[run::START_BYTE] as usize, r[run::END_BYTE] as usize);
+            if parent { spans.push((s, r[run::CONTENT_START_BYTE] as usize)); spans.push((r[run::CONTENT_END_BYTE] as usize, e)); } else { spans.push((s, e)); }
+        }
         spans.sort_unstable();
         let bytes = self.src.as_bytes();
         let (mut k, mut reach) = (0, 0);
@@ -1315,6 +1337,7 @@ impl<'a> Extractor<'a> {
     fn walk_inlines<'b>(&mut self, leaf: &'b AstNode<'b>, blk: u32, cell: Option<Cell>, shift: Option<&Shift>) {
         let content_from = self.blocks[blk as usize][block::CONTENT_OFFSET] as usize;
         self.run_delta = 0;
+        self.bare_cr_leaf = None;
         // Allow a small backward window: comrak can also place a run too far right.
         self.last_text_end = (self.blocks[blk as usize][block::START_BYTE] as usize).saturating_sub(8);
         let first_run = self.runs.len();
@@ -1335,6 +1358,16 @@ impl<'a> Extractor<'a> {
         }
         if self.run_delta != 0 { self.refit_containers(first_run); }
         self.check_delimiters(blk, first_run);
+    }
+
+    /// Whether leaf [blk] holds a bare CR, which excuses a text literal that
+    /// nothing else explains. Scanned at most once per leaf and only when
+    /// asked: scanning the leaf for every text whose literal differs from its
+    /// source, every text with an entity, made a paragraph of them quadratic.
+    fn leaf_has_bare_cr(&mut self, blk: u32) -> bool {
+        let (bs, be) = (self.blocks[blk as usize][block::START_BYTE] as usize, self.blocks[blk as usize][block::END_BYTE] as usize);
+        let src = self.src;
+        *self.bare_cr_leaf.get_or_insert_with(|| has_bare_cr(src.as_bytes(), bs..be))
     }
 
     /// The literal of an inline node comrak placed at [s]..[e] where it does
@@ -1576,12 +1609,17 @@ impl<'a> Extractor<'a> {
                     let block_end = self.blocks[blk as usize][block::END_BYTE] as usize;
                     let mut from = self.last_text_end.max(sibling_end).max(s.saturating_sub(4)).min(src.len());
                     while from > 0 && !src.is_char_boundary(from) { from -= 1; }
-                    let mut to = block_end.max(from).min(src.len());
+                    // Only a match starting within `8 + (e - s)` of `from` is taken,
+                    // so nothing past one that could is searched: scanning on to the
+                    // block's end cost a whole block per drifted text.
+                    let mut to = block_end.max(from).min(src.len()).min(from + 8 + (e - s) + t.len());
                     while to < src.len() && !src.is_char_boundary(to) { to += 1; }
                     // A literal ending in `&` also matches the first byte of `&amp;`;
                     // comrak never ends a text node inside a reference, so such a
-                    // match is the wrong text.
-                    match src[from..to].match_indices(t).map(|(off, _)| off).find(|&off| !text_pieces::cuts_entity(src, from + off, from + off + t.len())) {
+                    // match is the wrong text, unless the reference there decodes to
+                    // the literal: the entity span below then takes the reference.
+                    let matches_text = |q: usize| !text_pieces::cuts_entity(src, q, q + t.len()) || text_pieces::entity_len(&src[q..]).is_some_and(|l| self.entities.decode(&src[q..q + l]) == t);
+                    match src[from..to].match_indices(t).map(|(off, _)| off).find(|&off| matches_text(from + off)) {
                         Some(off) if off <= 8 + (e - s) => { let q = from + off; self.run_delta += q as isize - s as isize; (q, q + t.len(), &src[q..q + t.len()]) }
                         // A literal with a decoded entity, or a cell's escaped pipe,
                         // is not in the source as written: take the nearest window
@@ -1601,12 +1639,6 @@ impl<'a> Extractor<'a> {
                     _ => (s, e, slice),
                 };
                 if t == slice { (run_kind::TEXT, s, e) } else {
-                    // Known limit: after a bare CR, text that also carries an entity
-                    // cannot be relocated by literal search (the literal is decoded),
-                    // so it keeps comrak's shifted range with the literal as display.
-                    // A CRLF line ending is no reason: it exempted every multi-line
-                    // CRLF paragraph from this check.
-                    let cr_leaf = { let (bs, be) = (self.blocks[blk as usize][block::START_BYTE] as usize, self.blocks[blk as usize][block::END_BYTE] as usize); has_bare_cr(src.as_bytes(), bs..be) };
                     // Virtual spaces of a partially consumed tab exist in comrak's buffer
                     // but not in the source; the literal then carries up to three
                     // leading spaces the slice cannot, so it displays as a replacement.
@@ -1617,7 +1649,13 @@ impl<'a> Extractor<'a> {
                     // Containing an entity or a tab explains nothing by itself: a slice
                     // explains the literal only piece by piece, or a drifted range
                     // would publish a replacement over text it does not hold.
-                    let explained = text_pieces::explains(slice, t, &self.entities, pipes) || unescaped_pipes || cr_leaf || virtual_spaces;
+                    // Known limit: after a bare CR, text that also carries an entity
+                    // cannot be relocated by literal search (the literal is decoded),
+                    // so it keeps comrak's shifted range with the literal as display.
+                    // A CRLF line ending is no reason: it exempted every multi-line
+                    // CRLF paragraph from this check. The leaf is scanned for a bare
+                    // CR last, and once (see [Extractor::leaf_has_bare_cr]).
+                    let explained = text_pieces::explains(slice, t, &self.entities, pipes) || unescaped_pipes || virtual_spaces || self.leaf_has_bare_cr(blk);
                     if !explained { let (sl, lit) = (slice.to_string(), t.to_string()); self.dev("text-mismatch", || format!("block {blk} {:?} vs literal {:?}", sl, lit)); }
                     // Keep exact ranges around the bytes that differ (an entity, an
                     // escaped pipe, a CR, virtual spaces). The pieces are validated to
@@ -2080,6 +2118,30 @@ mod tests {
         ex.runs.push(run_rec(0, 3, u32::MAX));
         ex.settle_inlines(0, 0, 0, 0);
         assert_eq!(ex.runs.len(), 1, "trailing spaces are editable whitespace");
+    }
+
+    #[test]
+    fn a_container_covers_only_its_delimiters() {
+        // A host paints a container's children and shows any byte between
+        // them verbatim: `\` inside `*\|*` that no child holds is uncovered,
+        // although the emphasis's range spans it.
+        let emph = |content: (usize, usize)| { let mut r = run_rec(0, 5, u32::MAX); r[run::CONTENT_START_BYTE] = content.0 as u32; r[run::CONTENT_END_BYTE] = content.1 as u32; r };
+        let mut ex = Extractor::new("*\\|x*", true);
+        ex.blocks.push(block_rec(block_kind::PARAGRAPH, u32::MAX, 0, 5));
+        ex.content.push([0, 0, 0, 5, 5, 0, 0, 0]);
+        ex.runs.push(emph((1, 4)));
+        ex.runs.push(run_rec(2, 4, 0));
+        ex.settle_inlines(0, 0, 0, 0);
+        assert!(ex.runs.is_empty(), "`\\` lies between the delimiters and the child");
+        assert_eq!((ex.deviations[0].rule, ex.deviations[0].leaf), ("run-structure", Some(0)));
+        let mut ex = Extractor::new("*\\|x*", true);
+        ex.blocks.push(block_rec(block_kind::PARAGRAPH, u32::MAX, 0, 5));
+        ex.content.push([0, 0, 0, 5, 5, 0, 0, 0]);
+        ex.runs.push(emph((1, 4)));
+        ex.runs.push(run_rec(1, 2, 0));
+        ex.runs.push(run_rec(2, 4, 0));
+        ex.settle_inlines(0, 0, 0, 0);
+        assert_eq!(ex.runs.len(), 3, "the delimiters and the children cover the leaf");
     }
 
     #[test]

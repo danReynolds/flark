@@ -30,7 +30,8 @@ impl M {
     }
     /// Block [b]'s text as a host shows it: the content, or the display text
     /// of a replacement, of each run without children, and a line break for
-    /// each break run. The invariants put every other content byte in a run.
+    /// each break run. The invariants put every other content byte in a
+    /// container's delimiters or editable whitespace.
     fn shown(&self, src: &str, b: usize) -> String {
         let runs: Vec<usize> = (0..self.n(header::RUN_COUNT)).filter(|&r| self.run(r, run::BLOCK) == b).collect();
         runs.iter().filter(|&&r| !runs.iter().any(|&c| self.run(c, run::PARENT) == r)).map(|&r| match self.run(r, run::KIND) as u32 {
@@ -730,18 +731,42 @@ fn definitions_a_setext_underline_resolved_stay_out_of_a_paragraph_a_table_split
 }
 
 #[test]
+fn a_table_after_a_blank_line_is_not_moved_as_if_it_split_the_paragraph() {
+    // Only a table that split the paragraph is numbered from its stale start.
+    // One after a blank line came from a paragraph of its own; moving it down
+    // as well left its header line in no block and refused the document.
+    for (src, contents, defs) in [
+        ("[r]: /ref\n---\n\n| a |\n|---|\n", vec!["---", "a "], vec!["[r]: /ref\n"]),
+        ("[home]: https://example.com\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n", vec!["---", "a ", "b ", "1 ", "2 "], vec!["[home]: https://example.com\n"]),
+        ("[r]: /ref\n===\n\n\n| a |\n|---|\n", vec!["===", "a "], vec!["[r]: /ref\n"]),
+        ("> [r]: /ref\n> ---\n>\n> | a |\n> |---|\n", vec!["", "---", "a "], vec!["[r]: /ref\n"]),
+        ("[a]: /a\n[b]: /b\n---\n\n| a |\n|---|\n| b |\n", vec!["---", "a ", "b "], vec!["[a]: /a\n", "[b]: /b\n"]),
+        ("[r]: /ref\r\n---\r\n\r\n| a |\r\n|---|\r\n", vec!["---", "a "], vec!["[r]: /ref\r\n"]),
+    ] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.contents(src), contents, "for {src:?}");
+        assert_eq!(m.defs(src), defs, "for {src:?}");
+    }
+}
+
+#[test]
 fn a_line_of_email_addresses_is_refused_before_it_can_overflow_the_stack() {
     // comrak links the addresses of one text node recursively, about 330
     // bytes of stack each, and a stack overflow aborts the process. Packed as
-    // tightly as comrak links them, five bytes each, the editor's widest
-    // default line links 819; 1,024 take about 330 KiB, under the room a
-    // 512 KiB thread has for 1,582.
-    let packed = |n: usize| format!("a@b.c{}\n", "+@d.e".repeat(n - 1));
+    // tightly as comrak links them, four bytes each (`c@.r` is an address),
+    // the editor's widest default line, 4,096 code units, links 1,024: the
+    // cap, which still parses. 1,024 take about 330 KiB, under the room a
+    // 512 KiB thread has for 1,582. A five-byte bound let 1,281 through.
+    let packed = |n: usize| format!("a@.b{}\n", "+@.c".repeat(n - 1));
+    assert_eq!(packed(1024).len(), 4096 + 1);
     let outcome = std::thread::Builder::new().stack_size(512 << 10).spawn(move || {
-        [819, 1024, 1025, 16_000].map(|n| Extractor::extract(&packed(n)).is_ok())
+        [1024, 1025, 1281, 16_000].map(|n| Extractor::extract(&packed(n)).is_ok())
     }).unwrap().join().unwrap();
-    assert_eq!(outcome, [true, true, false, false]);
-    // A line's bytes bound it too: 4,000 `@` signs leave room for 800.
+    assert_eq!(outcome, [true, false, false, false]);
+    let src = packed(1024);
+    let m = M::of(&src); m.clean();
+    assert_eq!(m.run_contents(&src).iter().filter(|(k, _)| *k == run_kind::AUTOLINK as usize).count(), 1024, "comrak links every address");
+    // A line's bytes bound it too: 4,000 `@` signs leave room for 1,000.
     assert!(Extractor::extract(&"@".repeat(4_000)).is_ok());
     // comrak links addresses in decoded text: a reference to `@` counts.
     assert!(Extractor::extract(&"a&#64;b.c x&commat;y.z ".repeat(513)).is_err());
@@ -749,4 +774,69 @@ fn a_line_of_email_addresses_is_refused_before_it_can_overflow_the_stack() {
     let (w, devs) = Extractor::extract_with_report(&src);
     check_invariants(&src, &w).unwrap();
     assert_eq!(devs.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("autolink-depth", None)]);
+}
+
+#[test]
+fn an_escaped_pipe_before_a_pipe_reference_keeps_its_own_piece() {
+    // A cell's text opening with `\|&#124;` took a zero-length piece showing
+    // `|` for the escape and was moved past the backslash: alone the leaf
+    // showed its source, and inside emphasis or a link the backslash sat in
+    // no run but the container's, which a host shows verbatim (`\||`).
+    for (src, kind, shown) in [
+        ("| a |\n|---|\n| \\|&#124; |\n", block_kind::TABLE_CELL, "||"),
+        ("| a |\n|---|\n| \\|&verbar;x |\n", block_kind::TABLE_CELL, "||x"),
+        ("| a |\n|---|\n| *\\|&#124;* |\n", block_kind::TABLE_CELL, "||"),
+        ("| a |\n|---|\n| [\\|&#124;](u) |\n", block_kind::TABLE_CELL, "||"),
+        ("\\|&#124; x\n| a |\n|---|\n", block_kind::PARAGRAPH, "|| x"),
+    ] {
+        let m = M::of(src); m.clean();
+        let leaf = *m.blocks_of(kind).last().unwrap();
+        assert_eq!(m.shown(src, leaf), shown, "for {src:?}");
+    }
+}
+
+#[test]
+fn a_drifted_text_may_end_at_an_escaped_ampersand_or_be_a_whole_reference() {
+    // After the line-early drift, relocation skips a match that cuts a
+    // reference. An escape's text `&` ends inside `\&amp;`, whose `&` is
+    // escaped; and a text that is a reference's whole decoding (the `&` of
+    // `&amp;`) matches the reference's first byte, which the entity span then
+    // takes. Skipping either left the text on a later `&` or on none, and the
+    // leaf showed its source.
+    for (src, last) in [
+        ("[r]: /ref\n---\n[a](/u \"t\n2\")\\&amp;", "a&amp;"),
+        ("[](\n)\n&amp;\\&", "&&"),
+        ("[](\n)\n&amp;<b>&</b>", "&<b>&</b>"),
+        // Only the escape's own text may end inside an escaped run: `&a` is
+        // the reference's text, not the escaped `&` and the `a` after it.
+        ("[](\n)\n&amp;a\\&a;", "&a&a;"),
+    ] {
+        let m = M::of(src); m.clean();
+        let p = m.blocks_of(block_kind::PARAGRAPH)[0];
+        assert_eq!(m.shown(src, p).lines().last(), Some(last), "for {src:?}");
+    }
+}
+
+/// The best of five extraction times of [src].
+fn extract_time(src: &str) -> std::time::Duration {
+    (0..5).map(|_| { let t = std::time::Instant::now(); std::hint::black_box(Extractor::extract(src).is_ok()); t.elapsed() }).min().unwrap()
+}
+
+#[test]
+fn the_texts_of_one_long_paragraph_extract_in_linear_time() {
+    // Eight times the source should take about eight times as long; a path
+    // quadratic in the leaf takes about 64 times. Each text with an entity
+    // scanned its whole leaf for a bare CR, and each drifted text searched
+    // on for its literal to the leaf's end, though only a match near
+    // comrak's position is taken. The drifted leaf (after a line ending in a
+    // link's parentheses) shows its source, but is extracted on every
+    // keystroke all the same.
+    let shapes: [(&str, fn(usize) -> String); 2] = [
+        ("entity texts", |n| format!("{}\n", "&amp;*a*".repeat(500)).repeat(n)),
+        ("drifted texts", |n| format!("[](\n)\n{}", "zzzzz&amp;*a*\ny\n".repeat(250 * n))),
+    ];
+    for (name, shape) in shapes {
+        let (small, large) = (extract_time(&shape(2)), extract_time(&shape(16)));
+        assert!(large < small * 16, "{name}: {small:?} for {} bytes, {large:?} for {}", shape(2).len(), shape(16).len());
+    }
 }

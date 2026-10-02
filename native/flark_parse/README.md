@@ -29,12 +29,13 @@ checks before publishing. A deviation confined to one leaf's inline runs is the
 exception: that paragraph, heading or table cell is published without runs and
 with block flag bit 23 (source only), so it displays its source as plain text
 and the rest of the document stays live. Such a leaf includes one whose runs
-leave a content byte other than whitespace outside every run, since a host
-shows that byte verbatim. Code 4 also refuses a source comrak cannot parse
-safely: a line that could link more than 1,024 email addresses, which comrak
-links recursively (see REGISTER.md). No line within the editor's default
-limits can. Report mode lists every deviation,
-scoped or not, and the conformance test
+leave a content byte other than whitespace outside every run without children
+and every container's delimiters, since a host shows that byte verbatim. Code
+4 also refuses a source comrak cannot parse safely: a line that could link
+more than 1,024 email addresses, which comrak links recursively (see
+REGISTER.md). No line within the editor's default limits can: at four bytes an
+address, a 4,096-unit line holds at most 1,024. Report mode lists every
+deviation, scoped or not, and the conformance test
 asserts zero deviations across the 652 CommonMark and 670 GFM upstream cases:
 
 | Derived | Validated against |

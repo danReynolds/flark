@@ -130,15 +130,18 @@ pub(crate) fn split_pieces(slice: &str, literal: &str, entities: &Entities, pipe
             for l in 0..=cost.min(MAX_SOURCE) {
                 let k = cost - l;
                 // Only a leading piece may display text the source does not
-                // hold (a partially consumed tab's virtual spaces). Anywhere
-                // else a zero-length source piece would put display text at an
-                // offset no caret can reach.
+                // hold, and only spaces: a partially consumed tab's virtual
+                // spaces, all `explains` accepts. Anywhere else a zero-length
+                // source piece would put display text at an offset no caret
+                // can reach. A leading `|` won where a cell's text opens with
+                // `\|&#124;` (`agree` reads `\|` as `|`), so the backslash's
+                // own piece was never tried.
                 if l == 0 && i > 0 { continue; }
                 if k > MAX_DISPLAY_CHARS || i + l > sb.len() || !slice.is_char_boundary(i + l) { continue; }
                 let mut jj = j;
                 let mut ok = true;
                 for _ in 0..k { match literal[jj..].chars().next() { Some(c) => jj += c.len_utf8(), None => { ok = false; break; } } }
-                if !ok { continue; }
+                if !ok || (l == 0 && literal[j..jj].bytes().any(|c| c != b' ')) { continue; }
                 if agree(&slice[i + l..], &literal[jj..], pipes) { found = Some((l, jj)); break 'outer; }
             }
         }
@@ -179,15 +182,15 @@ pub(crate) fn entity_len(s: &str) -> Option<usize> {
 }
 
 /// Whether the source range [q, r) cuts through an entity reference. comrak
-/// decodes a whole reference into one text node, so a text run ends only
-/// after a reference, and begins inside one only when its `&` is escaped
-/// (`\&amp;` is an escape and the text `amp;`). A relocation candidate that
-/// cuts one matched the reference's first bytes, not the text.
+/// decodes a whole reference into one text node, so a text run neither ends
+/// nor begins inside one, unless its `&` is escaped: `\&amp;` is an escape
+/// whose text is the `&` alone, then the text `amp;`. A relocation candidate
+/// that cuts a reference matched the reference's first bytes, not the text.
 pub(crate) fn cuts_entity(src: &str, q: usize, r: usize) -> bool {
     let b = src.as_bytes();
     let reaches = |a: usize, past: usize| b[a] == b'&' && entity_len(&src[a..]).is_some_and(|l| a + l > past);
     let escaped = |a: usize| b[..a].iter().rev().take_while(|&&c| c == b'\\').count() % 2 == 1;
-    (r.saturating_sub(MAX_ENTITY_LEN).max(q)..r).any(|a| reaches(a, r))
+    (r.saturating_sub(MAX_ENTITY_LEN).max(q)..r).any(|a| reaches(a, r) && !(a == q && r == a + 1 && escaped(a)))
         || (q.saturating_sub(MAX_ENTITY_LEN)..q).any(|a| reaches(a, q) && !escaped(a))
 }
 
@@ -247,6 +250,17 @@ mod tests {
     }
 
     #[test]
+    fn an_escaped_pipe_opening_a_text_keeps_its_own_piece() {
+        // `agree` reads `\|` as `|`, so a zero-length leading piece showing
+        // `|` agreed before the backslash's own piece was tried, and
+        // `explains` rejects a leading piece that shows anything but spaces.
+        let pieces = vec![("\\".into(), Some("".into())), ("|".into(), None), ("&#124;".into(), Some("|".into()))];
+        assert_eq!(split("\\|&#124;", "||", true), pieces);
+        assert!(explains("\\|&#124;", "||", &Entities::default(), true));
+        assert!(explains("\\|&verbar;x", "||x", &Entities::default(), true));
+    }
+
+    #[test]
     fn only_a_leaf_whose_pipes_comrak_unescapes_hides_a_backslash() {
         assert!(explains("&amp;\\|", "&|", &Entities::default(), true));
         assert!(!explains("&amp;\\|", "&|", &Entities::default(), false));
@@ -292,7 +306,10 @@ mod tests {
         assert!(!cuts_entity(src, 0, 7));
         assert!(cuts_entity(src, 3, 9), "begins inside the reference");
         assert!(!cuts_entity("\\&amp; b", 2, 8), "an escaped `&` leaves the text `amp;`");
+        assert!(!cuts_entity("\\&amp; b", 1, 2), "an escaped `&` is the escape's whole text");
+        assert!(cuts_entity("\\&amp; b", 1, 3), "no text holds an escaped `&` and what follows it");
         assert!(cuts_entity("\\\\&amp; b", 3, 9), "an escaped backslash does not escape the `&`");
+        assert!(cuts_entity("\\\\&amp; b", 2, 3), "nor does it end a text at the `&`");
     }
 
     #[test]
