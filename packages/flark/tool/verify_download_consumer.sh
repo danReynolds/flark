@@ -151,14 +151,15 @@ class Stalling(http.server.BaseHTTPRequestHandler):
         time.sleep(600)
     def log_message(self, *args):
         pass
-http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Stalling).serve_forever()
+server = http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Stalling)
+# Listening from here on: the script waits for this line rather than holding
+# a probe connection open on a handler that never finishes.
+print('listening', flush=True)
+server.serve_forever()
 PY
 SERVER=$!
-# The server is up once a request times out on its body instead of failing
-# to connect.
-UP=0
-for _ in $(seq 50); do curl -s -m 1 -o /dev/null "http://127.0.0.1:$PORT/"; [ $? -eq 28 ] && { UP=1; break; }; sleep 0.1; done
-if [ $UP = 0 ]; then
+for _ in $(seq 100); do grep -q listening "$WORK/stalling.log" && break; sleep 0.1; done
+if ! grep -q listening "$WORK/stalling.log"; then
   cat "$WORK/stalling.log"; echo "the stalling server did not start"; exit 1
 fi
 manifest "$HASH"
@@ -172,8 +173,11 @@ if kill -0 "$RUN" 2>/dev/null; then
 fi
 wait "$RUN"; STATUS=$?
 if [ $STATUS -eq 0 ] || ! grep -q 'failed with HTTP 503' "$WORK/stalled.log"; then
-  # The hook's own message comes before its stack trace.
+  # The hook's own message comes before its stack trace. The server's side
+  # and a direct request show whether the server or the connection failed.
   grep -m 3 'flark_parse' "$WORK/stalled.log"; tail -12 "$WORK/stalled.log"
+  python3 --version; cat "$WORK/stalling.log"
+  curl -sv -m 3 -o /dev/null "http://127.0.0.1:$PORT/" 2>&1 | head -20
   echo "an error response was not reported"; exit 1
 fi
 if [ -n "$(find .dart_tool/hooks_runner/shared/flark/build/prebuilt -type f 2>/dev/null)" ]; then
