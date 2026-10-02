@@ -249,11 +249,6 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     _client = null;
   }
 
-  /// The platform closed the connection: iOS when its input view resigns
-  /// first responder (the iPad hide-keyboard key), the web engine on a blur
-  /// without a related target. Focus and the caret remain and the next press
-  /// reattaches, so release the connection and the mirror it held. Its
-  /// composition ended with it.
   /// Ends [controller]'s composition with the connection that held it. The
   /// controller then notifies its listeners, which may rebuild other widgets,
   /// and the framework refuses that while it builds or unmounts this one, so
@@ -270,6 +265,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
   }
 
+  /// The platform closed the connection: iOS when its input view resigns
+  /// first responder (the iPad hide-keyboard key), the web engine on a blur
+  /// without a related target. Focus and the caret remain and the next press
+  /// reattaches, so release the connection and the mirror it held. Its
+  /// composition ended with it.
   void _connectionClosed() {
     if (_connection?.attached == true) _connection!.connectionClosedReceived();
     _close();
@@ -631,10 +631,16 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     );
     // The ends keep their order and never meet.
     if (start ? hit.source < drag.fixed : hit.source > drag.fixed) {
+      // The fixed end stays on the line it is drawn on. An end dragged past
+      // a wrapped line stays drawn at that line's end; a start there begins
+      // the next line, as its selection does.
+      final fixedAtLineEnd = surface.drawnAtLineEnd(drag.fixed);
       _command(SetSelection(drag.fixed, hit.source));
-      // An end dragged past a wrapped line stays drawn at that line's end. A
-      // start there begins the next line, as its selection does.
-      surface.extentPlaced(lineEnd: !start && hit.lineEnd);
+      if (start) {
+        surface.placedAt(drag.fixed, lineEnd: fixedAtLineEnd);
+      } else {
+        surface.placedAt(hit.source, lineEnd: hit.lineEnd);
+      }
       _scheduleGeometry();
     }
     _touchSelection?.updateMagnifier(

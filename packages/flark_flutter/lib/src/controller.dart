@@ -4,6 +4,12 @@ import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+/// Whether [start]..[end] of [text] is the one grapheme a platform delete
+/// removes beside the caret: a character, a surrogate pair, or a CRLF, which
+/// the platform holds as one LF.
+bool _oneGrapheme(String text, int start, int end) =>
+    end > start && text.substring(start, end).characters.length == 1;
+
 /// One Flutter-facing publication of the kernel. Platform values are input
 /// messages; the editor's snapshot remains the sole document authority.
 abstract interface class FlarkSurfaceController implements Listenable {
@@ -244,12 +250,12 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       } else if (inserted.isEmpty &&
           sel.isCollapsed &&
           end == sel.extent &&
-          end - start == 1) {
+          _oneGrapheme(before.text, start, end)) {
         command = const DeleteBackward();
       } else if (inserted.isEmpty &&
           sel.isCollapsed &&
           start == sel.extent &&
-          end - start == 1) {
+          _oneGrapheme(before.text, start, end)) {
         command = const DeleteForward();
       } else if (start == sel.start && end == sel.end && inserted.isNotEmpty) {
         command = InsertText(inserted);

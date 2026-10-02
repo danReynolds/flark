@@ -221,6 +221,9 @@ void main() {
         // A surrogate pair or combining sequence is replaced whole.
         ('**\u{1F44D}** ok', '\u{1F44D}', '\u{1F44E}', '**\u{1F44E}** ok'),
         ('**e** x', 'e', 'e\u0301', '**e\u0301** x'),
+        // A replacement that reaches into formatting covers it whole.
+        ('**bold** and more', 'bold and', 'it', 'it more'),
+        ('see [link](u) now', 'link now', 'x', 'see x'),
       ]) {
         final c = FlarkController(FlarkEditor(backend, text: source));
         final node = await mountForSemantics(tester, c);
@@ -238,6 +241,38 @@ void main() {
       semantics.dispose();
     },
   );
+
+  testWidgets('accessibility insertions are typed at the caret', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    // A line break beside another: the caret tells which one is new, and the
+    // list continues as Return there continues it.
+    const list = '- one\n- two';
+    final expected = FlarkEditor(backend, text: list, caret: 5)
+      ..apply(const Newline());
+    final c = FlarkController(FlarkEditor(backend, text: list, caret: 5));
+    final node = await mountForSemantics(tester, c);
+    setText(tester, node, 'one\n\ntwo');
+    await tester.pump();
+    expect(c.text, expected.source);
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+    // A missing table cell takes text as typing into it does.
+    const table = '| a | b | c |\n| --- | --- | --- |\n| x |\n';
+    final t = FlarkController(FlarkEditor(backend, text: table));
+    final cells = await mountForSemantics(tester, t);
+    final value = cells.getSemanticsData().value;
+    // Cells keep their padding; the two missing cells and the blank line
+    // after the table follow.
+    expect(value, 'a \nb \nc \nx \n\n\n');
+    setText(tester, cells, value.replaceRange(12, 12, 'Z'));
+    await tester.pump();
+    expect(t.text, '| a | b | c |\n| --- | --- | --- |\n| x | Z|\n');
+    await tester.pumpWidget(const SizedBox());
+    t.dispose();
+    semantics.dispose();
+  });
 
   testWidgets(
     'accessibility text replacement the kernel rejects keeps the document',

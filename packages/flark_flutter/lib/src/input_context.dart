@@ -100,18 +100,32 @@ class InputContext {
       );
     }
     // The platform edited the LF text it was sent. Replace the source of the
-    // one span it changed, so every other line keeps its CR.
+    // one span it changed, so every other line keeps its CR. An edit at the
+    // selection it was sent is read there: matched from either end, a line
+    // break typed beside another reads as that one, past its CRLF.
     final sent = window.replaceAll('\r\n', '\n'), next = local.text;
-    final shorter = math.min(sent.length, next.length);
-    var a = 0;
-    while (a < shorter && sent.codeUnitAt(a) == next.codeUnitAt(a)) {
-      a++;
-    }
-    var s = 0;
-    while (s < shorter - a &&
-        sent.codeUnitAt(sent.length - 1 - s) ==
-            next.codeUnitAt(next.length - 1 - s)) {
-      s++;
+    final selection = source.selection;
+    final selectionStart = _withoutCrs(crs, selection.start - start);
+    final selectionEnd = _withoutCrs(crs, selection.end - start);
+    var a = 0, s = 0;
+    if (selection.isValid &&
+        selectionStart >= 0 &&
+        selectionEnd <= sent.length &&
+        selectionStart + sent.length - selectionEnd <= next.length &&
+        next.startsWith(sent.substring(0, selectionStart)) &&
+        next.endsWith(sent.substring(selectionEnd))) {
+      a = selectionStart;
+      s = sent.length - selectionEnd;
+    } else {
+      final shorter = math.min(sent.length, next.length);
+      while (a < shorter && sent.codeUnitAt(a) == next.codeUnitAt(a)) {
+        a++;
+      }
+      while (s < shorter - a &&
+          sent.codeUnitAt(sent.length - 1 - s) ==
+              next.codeUnitAt(next.length - 1 - s)) {
+        s++;
+      }
     }
     final from = _withCrs(crs, a), to = _withCrs(crs, sent.length - s);
     final inserted = next.length - s - a;

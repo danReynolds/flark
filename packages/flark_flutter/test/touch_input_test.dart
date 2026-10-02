@@ -397,11 +397,11 @@ void main() {
         wrap++;
       }
       await tester.longPressAt(
-        surface.localToGlobal(surface.caretRectAt(4).center),
+        surface.localToGlobal(surface.caretRectAt(11).center),
       );
       await tester.pump();
-      expect(c.editor.selection, const FlarkSelection(0, 8));
-      final end = surface.caretRectAt(8).bottomLeft;
+      expect(c.editor.selection, const FlarkSelection(9, 14));
+      final end = surface.caretRectAt(14).bottomLeft;
       await dragHandle(
         tester,
         surface.localToGlobal(end + const Offset(11, 11)),
@@ -409,7 +409,20 @@ void main() {
       );
       // Past the first line's end the selection ends where the next line
       // begins, and the handle stays drawn on the line it was dragged along.
-      expect(c.editor.selection, FlarkSelection(0, wrap));
+      expect(c.editor.selection, FlarkSelection(9, wrap));
+      expect(surface.caretRectAt(wrap).top, line);
+      // Moving the start handle leaves the end drawn where it was.
+      final start = surface.caretRectAt(9).bottomLeft;
+      await dragHandle(
+        tester,
+        surface.localToGlobal(start + const Offset(-11, 11)),
+        [
+          surface.localToGlobal(
+            Offset(surface.caretRectAt(2).left + 1, start.dy + 11),
+          ),
+        ],
+      );
+      expect(c.editor.selection, FlarkSelection(wrap, 2));
       expect(surface.caretRectAt(wrap).top, line);
       await dispose(tester, c);
     });

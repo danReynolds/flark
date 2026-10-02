@@ -825,25 +825,42 @@ class RenderFlarkSurface extends RenderBox
     return Rect.fromLTRB(row.left, caret.top, row.right, caret.bottom);
   }
 
-  /// The snapshot whose selection extent is drawn upstream: at the end of a
-  /// soft-wrapped line, where End or a hit past that end put it, rather than
-  /// at the start of the next line, which has the same offset. The kernel
-  /// keeps no affinity, so every later snapshot is drawn downstream again.
-  FlarkEditorSnapshot? _upstream;
+  /// The selection endpoint drawn upstream, and the snapshot it belongs to:
+  /// at the end of a soft-wrapped line, where End or a hit past that end put
+  /// it, rather than at the start of the next line, which has the same
+  /// offset. The kernel keeps no affinity, so every later snapshot is drawn
+  /// downstream again unless a placement records it anew.
+  ({FlarkEditorSnapshot snapshot, int offset})? _upstream;
 
-  TextAffinity _affinityAt(int source) =>
-      identical(_upstream, _snapshot) && source == _snapshot.selection.extent
-      ? TextAffinity.upstream
-      : TextAffinity.downstream;
+  TextAffinity _affinityAt(int source) {
+    final upstream = _upstream;
+    return upstream != null &&
+            identical(upstream.snapshot, _snapshot) &&
+            source == upstream.offset
+        ? TextAffinity.upstream
+        : TextAffinity.downstream;
+  }
 
-  /// Records whether the selection a placement just produced ends upstream.
-  void _placed({required bool upstream}) {
-    final next = upstream ? controller.editor.snapshot : null;
-    if (identical(next, _upstream)) return;
-    _upstream = next;
-    // The extent may not have moved, only the line it is drawn on.
+  /// Records whether [offset], a selection endpoint of the snapshot the last
+  /// command produced, is drawn upstream.
+  void _placedAt(int offset, {required bool upstream}) {
+    final snapshot = controller.editor.snapshot;
+    final current = _upstream;
+    if (upstream
+        ? current != null &&
+              identical(current.snapshot, snapshot) &&
+              current.offset == offset
+        : current == null) {
+      return;
+    }
+    _upstream = upstream ? (snapshot: snapshot, offset: offset) : null;
+    // The endpoint may not have moved, only the line it is drawn on.
     markNeedsPaint();
   }
+
+  /// Records whether the selection a placement just produced ends upstream.
+  void _placed({required bool upstream}) =>
+      _placedAt(controller.editor.selection.extent, upstream: upstream);
 
   /// Whether [offset] in [row] ends one visual line and starts the next.
   static bool _wrapsAt(_RowLayout row, int offset) {
@@ -908,9 +925,15 @@ class RenderFlarkSurface extends RenderBox
     );
   }
 
-  /// Records whether the extent the last command placed is drawn at the end
-  /// of a soft-wrapped line, as a [hitAt] past that end asked.
-  void extentPlaced({required bool lineEnd}) => _placed(upstream: lineEnd);
+  /// Whether [offset] is drawn at the end of a soft-wrapped line.
+  bool drawnAtLineEnd(int offset) =>
+      _affinityAt(offset) == TextAffinity.upstream;
+
+  /// Records whether [offset], a selection endpoint the last command placed,
+  /// is drawn at the end of a soft-wrapped line: where a [hitAt] past that
+  /// end put it, or where it was drawn before.
+  void placedAt(int offset, {required bool lineEnd}) =>
+      _placedAt(offset, upstream: lineEnd);
 
   _RowLayout _rowAt(Offset point) {
     for (final row in _rows) {
@@ -1550,33 +1573,26 @@ class RenderFlarkSurface extends RenderBox
       return current.source.length;
     }
 
-    // Text inserted at a visible offset takes the context a pointer placed
-    // there would: the word it touches beside whitespace, otherwise the text
-    // before it, as typing continues it.
-    int insertionAnchor(int display) {
+    // The row holding a visible offset, and the offset within it.
+    (ProjectedRow, int) rowAt(int display) {
       var remaining = display;
       for (final row in rows!) {
-        if (remaining <= row.text.length) {
-          return (current as FlarkLiveSnapshot).document.pointerAnchorAt(
-            row.index,
-            remaining,
-            leadingHalf: false,
-          );
-        }
+        if (remaining <= row.text.length) return (row, remaining);
         remaining -= row.text.length + 1;
       }
-      return current.source.length;
+      return (rows.last, rows.last.text.length);
     }
 
+    final caret = displayOffset(
+      current.selection.extent,
+      tableCell: current.selection.tableCell,
+    );
     config.textSelection = TextSelection(
       baseOffset: displayOffset(
         current.selection.base,
         tableCell: current.selection.tableCell,
       ),
-      extentOffset: displayOffset(
-        current.selection.extent,
-        tableCell: current.selection.tableCell,
-      ),
+      extentOffset: caret,
     );
     if (!readOnly || selectable) {
       if (onCopy != null) config.onCopy = onCopy!;
@@ -1629,27 +1645,67 @@ class RenderFlarkSurface extends RenderBox
         // "replace X with Y" or dictation: apply only the visible range that
         // changed. An edit the kernel cannot express is rejected with the
         // controller's notice and leaves the document as it was.
-        final edit = _visibleEdit(value, text);
+        final edit = _visibleEdit(value, text, caret: caret);
         if (edit == null) return;
-        final int start, end;
         if (edit.start == edit.end) {
-          start = end = insertionAnchor(edit.start);
-        } else {
-          start = sourceOffset(edit.start, anchor: Anchor.after);
-          end = sourceOffset(edit.end, anchor: Anchor.before);
+          // Inserted text goes where typing it at that visible offset would:
+          // a caret is placed there as a pointer places one, then the text is
+          // typed, so a list continues and a missing table cell fills.
+          final (row, offset) = rowAt(edit.start);
+          controller.command(PlaceCaret(row.index, offset, leadingHalf: false));
+          controller.command(
+            edit.text == '\n' ? const Newline() : InsertText(edit.text),
+          );
+          return;
         }
-        controller.command(ReplaceRange(start, end, edit.text));
+        // A replaced range takes the outermost source offsets at its edges, so
+        // formatting it reaches into is covered whole. The kernel narrows a
+        // range that lies within one span to that span's content.
+        final document = (current as FlarkLiveSnapshot).document;
+        controller.command(
+          ReplaceRange(
+            document
+                .anchorsAt(sourceOffset(edit.start, anchor: Anchor.before))
+                .first,
+            document
+                .anchorsAt(sourceOffset(edit.end, anchor: Anchor.after))
+                .last,
+            edit.text,
+          ),
+        );
       };
     }
   }
 }
 
 /// The visible range of [before] that [after] replaces, and its replacement,
-/// or null when they are equal. The range is widened over the unchanged text
-/// on either side until both strings break graphemes at its edges, so a
-/// surrogate pair or combining sequence is never split.
-({int start, int end, String text})? _visibleEdit(String before, String after) {
+/// or null when they are equal. An insertion at [caret] is read there when it
+/// explains the change: a diff alone cannot tell which of two equal
+/// neighbors, two line breaks say, is the new one. Otherwise the range is
+/// widened over the unchanged text on either side until both strings break
+/// graphemes at its edges, so a surrogate pair or combining sequence is never
+/// split.
+({int start, int end, String text})? _visibleEdit(
+  String before,
+  String after, {
+  int? caret,
+}) {
   if (before == after) return null;
+  final added = after.length - before.length;
+  if (caret != null &&
+      added > 0 &&
+      caret >= 0 &&
+      caret <= before.length &&
+      after.startsWith(before.substring(0, caret)) &&
+      after.endsWith(before.substring(caret)) &&
+      CharacterRange.at(after, caret).isEmpty &&
+      CharacterRange.at(after, caret + added).isEmpty) {
+    return (
+      start: caret,
+      end: caret,
+      text: after.substring(caret, caret + added),
+    );
+  }
   var start = 0;
   final shorter = math.min(before.length, after.length);
   while (start < shorter &&

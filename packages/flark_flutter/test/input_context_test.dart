@@ -81,6 +81,17 @@ void main() {
     expect(input.expand(at('alpha\nbeta\n', 6)), at('alpha\r\nbeta\r\n', 7));
   });
 
+  test('a line break typed at the caret of a CRLF window stays there', () {
+    // Matched from either end, a break typed beside another reads as that
+    // one. The edit is read at the selection the platform was sent.
+    const source = 'alpha\r\nbeta\r\n';
+    final input = InputContext.of(at(source, 5));
+    expect(
+      input.expand(at('alpha\n\nbeta\n', 6)),
+      at('alpha\n\r\nbeta\r\n', 6),
+    );
+  });
+
   test('wide reverse selection and active composition are never clipped', () {
     final source = 'a' * 5000;
     final selected = TextEditingValue(
@@ -233,6 +244,43 @@ void main() {
     expect(c.notice, isNull);
     await tester.pumpWidget(const SizedBox());
     c.dispose();
+  });
+
+  testWidgets('platform Return and Backspace edit a CRLF document as keys do', (
+    tester,
+  ) async {
+    // iOS delivers Return and Backspace as edits of the LF text it holds.
+    // Each must do what the kernel's own command does at the caret.
+    for (final (source, caret, FlarkCommand command) in [
+      ('alpha\r\nbeta\r\n', 5, const Newline()),
+      ('- one\r\n- two\r\n', 5, const Newline()),
+      ('one\r\n\r\ntwo', 7, const DeleteBackward()),
+    ]) {
+      final expected = FlarkEditor(backend, text: source, caret: caret)
+        ..apply(command);
+      final c = FlarkController(
+        FlarkEditor(backend, text: source, caret: caret),
+      );
+      await mount(tester, c);
+      final before = remote(tester);
+      final at = before.selection.extentOffset;
+      tester.testTextInput.updateEditingValue(
+        command is Newline
+            ? TextEditingValue(
+                text: before.text.replaceRange(at, at, '\n'),
+                selection: TextSelection.collapsed(offset: at + 1),
+              )
+            : TextEditingValue(
+                text: before.text.replaceRange(at - 1, at, ''),
+                selection: TextSelection.collapsed(offset: at - 1),
+              ),
+      );
+      expect(c.text, expected.source, reason: source);
+      expect(c.editor.selection, expected.selection, reason: source);
+      expect(c.notice, isNull);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    }
   });
 
   testWidgets(
