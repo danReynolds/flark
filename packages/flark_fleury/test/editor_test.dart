@@ -514,6 +514,20 @@ void main() {
     expect(focus.caretRect, CellRect.fromLTWH(1, 1, 1, 1));
   });
 
+  test('a click at the start of a wrapped line draws the caret there', () {
+    tester.viewportSize = const CellSize(10, 6);
+    mount('0123456789abcdefghij', caret: 0);
+    key(KeyCode.end);
+    expect(focus.caretRect, CellRect.fromLTWH(9, 0, 1, 1));
+    // The same offset starts the next line. A click there draws the caret
+    // there, and End goes on to that line's end.
+    click(0, 1);
+    expect(editor.selection.extent, 9);
+    expect(focus.caretRect, CellRect.fromLTWH(0, 1, 1, 1));
+    key(KeyCode.end);
+    expect(editor.selection.extent, 18);
+  });
+
   test('a glyph wider than its line stands in one cell under any policy', () {
     mount('中');
     for (final (policy, glyph) in [

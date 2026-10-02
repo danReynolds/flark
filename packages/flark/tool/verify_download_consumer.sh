@@ -137,7 +137,9 @@ fi
 # less than the hook's 60-second stall bound, and a hook that read the body
 # would wait forever.
 stop_server
-python3 - "$PORT" >/dev/null 2>&1 <<'PY' &
+# A port of its own: the file server's port may not be free again yet.
+PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+python3 - "$PORT" > "$WORK/stalling.log" 2>&1 <<'PY' &
 import http.server, sys, time
 class Stalling(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -154,7 +156,11 @@ PY
 SERVER=$!
 # The server is up once a request times out on its body instead of failing
 # to connect.
-for _ in $(seq 50); do curl -s -m 1 -o /dev/null "http://127.0.0.1:$PORT/"; [ $? -eq 28 ] && break; sleep 0.1; done
+UP=0
+for _ in $(seq 50); do curl -s -m 1 -o /dev/null "http://127.0.0.1:$PORT/"; [ $? -eq 28 ] && { UP=1; break; }; sleep 0.1; done
+if [ $UP = 0 ]; then
+  cat "$WORK/stalling.log"; echo "the stalling server did not start"; exit 1
+fi
 manifest "$HASH"
 # Without the cached library the hook has to download again.
 rm -rf .dart_tool/hooks_runner/shared/flark/build/prebuilt
@@ -166,7 +172,9 @@ if kill -0 "$RUN" 2>/dev/null; then
 fi
 wait "$RUN"; STATUS=$?
 if [ $STATUS -eq 0 ] || ! grep -q 'failed with HTTP 503' "$WORK/stalled.log"; then
-  tail -12 "$WORK/stalled.log"; echo "an error response was not reported"; exit 1
+  # The hook's own message comes before its stack trace.
+  grep -m 3 'flark_parse' "$WORK/stalled.log"; tail -12 "$WORK/stalled.log"
+  echo "an error response was not reported"; exit 1
 fi
 if [ -n "$(find .dart_tool/hooks_runner/shared/flark/build/prebuilt -type f 2>/dev/null)" ]; then
   echo "a failed download left files in the cache"; exit 1

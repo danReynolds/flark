@@ -16,9 +16,10 @@ version in the commit that pins the parser libraries (see RELEASING.md).
   written.
 - `syncLimit` and `FlarkLiveLimits` bound the synchronous path: 32 KiB on
   desktop and 16 KiB on phones and tablets by default; larger documents open in
-  source mode. Text the editor cannot hold (a bare CR, an unpaired surrogate,
-  or more than the 1 MiB writable limit) is a rejected load or a failed
-  session, never an exception, and `FlarkReader` shows it as source.
+  source mode. Through `FlarkSession`, text the editor cannot hold (a bare
+  CR, an unpaired surrogate, or more than the 1 MiB writable limit) is a
+  rejected load or a failed session rather than an exception, and
+  `FlarkReader` shows it as source.
 - `FlarkParseBackend.dispose()` frees a parser's native or Wasm memory. A
   native parser that is dropped instead is freed by a finalizer, and the VM
   refuses to copy one into another isolate.

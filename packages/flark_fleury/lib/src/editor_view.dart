@@ -465,7 +465,7 @@ class _EditorState extends State<FlarkEditorView>
     } else {
       _select(line.sourceAt(hit.$1), extend);
     }
-    if (hit.$1 == line.end) _viewport.placedCaretAtLineEnd(_editor);
+    _viewport.placedCaret(_editor, atLineEnd: hit.$1 == line.end);
   }
 
   void _point(int col, int row, {bool extend = false, bool toggle = false}) {
@@ -500,7 +500,7 @@ class _EditorState extends State<FlarkEditorView>
         mutation: false,
       );
       // A click past a wrapped line's end keeps the caret on that line.
-      if (hit.$1 == line.end) _viewport.placedCaretAtLineEnd(_editor);
+      _viewport.placedCaret(_editor, atLineEnd: hit.$1 == line.end);
       final taskColumn = line.taskColumn;
       if (toggle &&
           !extend &&
@@ -518,8 +518,8 @@ class _EditorState extends State<FlarkEditorView>
         );
       } else {
         _select(line.sourceAt(hit.$1), extend);
-        if (hit.$1 == line.end) _viewport.placedCaretAtLineEnd(_editor);
       }
+      _viewport.placedCaret(_editor, atLineEnd: hit.$1 == line.end);
     }
   }
 
@@ -643,7 +643,7 @@ class _EditorState extends State<FlarkEditorView>
           }
           _select(target, event.hasShift);
           // A wrapped line ends where the next starts: End stays on this one.
-          if (end) _viewport.placedCaretAtLineEnd(_editor);
+          _viewport.placedCaret(_editor, atLineEnd: end);
           event.consume();
           return;
         case TextEditingKeyAction.moveDocumentStart:

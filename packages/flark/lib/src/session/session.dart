@@ -135,7 +135,9 @@ final class FlarkSession {
       _status = FlarkStatus.failed;
       _error = error;
       _publish();
-      attempt.completeError(error);
+      // A listener told of the failure may already have disposed the session,
+      // which completes the attempt.
+      if (!attempt.isCompleted) attempt.completeError(error);
       return;
     }
     _status = FlarkStatus.loading;

@@ -5,8 +5,8 @@ import 'dart:async';
 ///
 /// A listener that throws does not stop the rest. The change it was told
 /// about is already published and cannot be withdrawn, so its error goes to
-/// the current zone, as a stream subscriber's would, and every other
-/// listener still hears of the change.
+/// the zone of the code that made the change, and every other listener
+/// still hears of it.
 void notifyEach(List<void Function()> listeners) {
   for (final listener in List.of(listeners)) {
     try {

@@ -272,6 +272,19 @@ void main() {
     }
   });
 
+  test('a listener may dispose a session whose retry is refused', () async {
+    final s = FlarkSession(markdown: 'classic\rmac');
+    await expectLater(s.ready, throwsFormatException);
+    s.addListener(() {
+      if (s.state.status == FlarkStatus.failed) s.dispose();
+    });
+    // Disposing completes the retry's attempt before the refusal does.
+    expect(
+      () => unawaited(s.retryLoading().catchError((Object _) {})),
+      returnsNormally,
+    );
+  });
+
   test('limits no editor can apply are refused at construction', () {
     for (final create in [
       () => FlarkSession(syncLimit: 1024 * 1024 + 1),

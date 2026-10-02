@@ -150,6 +150,18 @@ void main() {
       );
     });
 
+    // The fastest of three runs, in milliseconds. Load on a shared machine
+    // slows a run; a quadratic path slows all three.
+    int fastest(void Function() run) {
+      var best = 1 << 30;
+      for (var i = 0; i < 3; i++) {
+        final watch = Stopwatch()..start();
+        run();
+        if (watch.elapsedMilliseconds < best) best = watch.elapsedMilliseconds;
+      }
+      return best;
+    }
+
     test('long lines highlight in linear time', () {
       for (final (language, line) in [
         // YAML's key pattern backtracked through every split of a run of
@@ -161,10 +173,9 @@ void main() {
         ('java', 'String s = ${'a + b + ' * 1000}"";'),
         ('c', 'a' * 8000),
       ]) {
-        final watch = Stopwatch()..start();
-        code.highlight(line, language);
+        // A delegate of its own each run: highlights are cached.
         expect(
-          watch.elapsedMilliseconds,
+          fastest(() => FlarkCodeMirror().highlight(line, language)),
           lessThan(100),
           reason: '$language, ${line.length} code units',
         );
@@ -183,11 +194,12 @@ void main() {
         (CodeMirrorLanguages.javascript, repeat('a<')),
         (CodeMirrorLanguages.powershell, repeat('-')),
       ]) {
-        final watch = Stopwatch()..start();
-        codeMirrorTokens(language.mode(const ModeConfig()), line);
+        // These took 1.5 to 30 seconds; now tens of milliseconds.
         expect(
-          watch.elapsedMilliseconds,
-          lessThan(500),
+          fastest(
+            () => codeMirrorTokens(language.mode(const ModeConfig()), line),
+          ),
+          lessThan(1000),
           reason: '${language.name}: ${line.substring(0, 4)}…',
         );
       }

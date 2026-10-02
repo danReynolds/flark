@@ -28,8 +28,13 @@ final class _Viewport {
   /// returns the caret to the next line, where typing puts the character.
   ({FlarkDocumentState editor, int revision})? _caretAtLineEnd;
 
-  void placedCaretAtLineEnd(FlarkDocumentState editor) =>
-      _caretAtLineEnd = (editor: editor, revision: editor.revision);
+  /// Records whether a placement left the caret at the end of its visual
+  /// line. Every placement records it: one at the start of the next line
+  /// has the same offset, so it changes nothing else the editor knows.
+  void placedCaret(FlarkDocumentState editor, {required bool atLineEnd}) =>
+      _caretAtLineEnd = atLineEnd
+      ? (editor: editor, revision: editor.revision)
+      : null;
 
   /// The caret's cell in [layout].
   CellOffset get caret {
