@@ -382,8 +382,17 @@ void checkStructure(
     } else {
       continue;
     }
+    // A row that now starts where this one does is its counterpart, ahead of
+    // the row rowAt picks there: an empty last row starts where the row
+    // before it ends.
+    final kind =
+        next.projection.rows.any(
+          (now) => now.sourceStart == mapped && now.kind == row.kind,
+        )
+        ? row.kind
+        : next.rowAt(mapped).kind;
     expect(
-      next.rowAt(mapped).kind,
+      kind,
       row.kind,
       reason:
           '$label: row ${row.index} changed kind, '
