@@ -41,8 +41,10 @@ void main() {
     ('1. ', '   '),
     ('  - ', '    '),
     ('- - ', '    '),
-    // A footnote definition continues at four columns, not its label width.
+    // A footnote definition continues at four columns, not its label width,
+    // and counts them from the line's start, not from an indented label.
     ('[^1]: ', '    '),
+    ('  [^1]: ', '    '),
   ]) {
     test('create, Return, type, and empty Backspace in $prefix', () {
       final e = FlarkEditor(

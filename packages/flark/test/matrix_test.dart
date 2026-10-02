@@ -1,8 +1,9 @@
 /// The generated matrix: random command sequences over corpus documents, in
 /// LF and CRLF spelling, with the kernel invariants checked after every
 /// command. A refused command must leave no trace, a structural Backspace or
-/// Delete must not paint hidden markup or change the kind of rows it does
-/// not join, and each sequence's history must undo through states it reached
+/// Delete must not paint hidden markup, change the kind of rows it does not
+/// join or move the row after a removed empty line into or out of a
+/// container, and each sequence's history must undo through states it reached
 /// back to its first source, then redo exactly to its end. A failure prints
 /// the seed and command log so it can be minimized into a direct regression.
 library;
@@ -252,7 +253,8 @@ void checkHistory(
 /// A Backspace at a row's start or a Delete at its end lifts container
 /// markup or joins two rows. It removes line breaks and markup, so it must
 /// not paint a character the projection hid (a setext underline, a closing
-/// fence or sequence, a rule), and rows it did not act on keep their kind.
+/// fence or sequence, a rule), rows it did not act on keep their kind, and
+/// the row after a removed empty line or rule keeps its containers.
 /// The edit is located by the source both versions share at the start and
 /// at the end; since a deleted `- ` beside another can sit at either, both
 /// readings must agree. A painted character must also be new to the text
@@ -388,4 +390,40 @@ void checkStructure(
           '${jsonEncode(a)} -> ${jsonEncode(b)}',
     );
   }
+  // Removing an empty line or a rule brings the row after it up against the
+  // row before, and that row keeps the kinds of its containers: without the
+  // gap, a paragraph would read on lazily inside a quote or list item above
+  // it. A line with a container prefix is lifted instead, and lifting moves
+  // containers by design, so only a row the command removes counts.
+  final rows = old.projection.rows;
+  bool gap(int index) =>
+      index >= 0 &&
+      index < rows.length &&
+      (rows[index].kind == RowKind.blank ||
+          rows[index].kind == RowKind.thematicBreak);
+  final caretRow = rows[at.row];
+  final i = old.model.lineOfUtf16(old.selection.extent) - caretRow.firstLine;
+  final line = i.clamp(0, caretRow.contentStarts.length - 1);
+  final lifts =
+      caretRow.prefixStarts[line] >= 0 &&
+      caretRow.prefixStarts[line] < caretRow.contentStarts[line];
+  final removed = command is DeleteBackward
+      ? (lifts ? -1 : (gap(at.row) ? at.row : (gap(other) ? other : -1)))
+      : (gap(other) ? other : (gap(at.row) ? at.row : -1));
+  if (removed < 0 || removed + 1 >= rows.length) return;
+  final following = rows[removed + 1];
+  if (!alignments.every(
+    (alignment) => following.sourceStart >= a.length - alignment.$2,
+  )) {
+    return;
+  }
+  String shells(ProjectedRow row) =>
+      row.shells.map((shell) => shell.kind.name).join('/');
+  expect(
+    shells(next.rowAt(following.sourceStart + delta)),
+    shells(following),
+    reason:
+        '$label: removing row $removed moved row ${following.index} '
+        'between containers, ${jsonEncode(a)} -> ${jsonEncode(b)}',
+  );
 }

@@ -128,7 +128,9 @@ extension _CodeEditing on FlarkEditor {
         break;
       }
     }
-    final newline = source.contains('\r\n') ? '\r\n' : '\n';
+    // New lines end the way the edited line does, so a CRLF block stays
+    // CRLF, even in a document whose other lines end differently.
+    final newline = _lineBreakAt(start);
     String expand(String value) => value.replaceAll('\n', '$newline$prefix');
     final inserted = expand(edit.text);
     int position(int offset) {
@@ -178,7 +180,8 @@ extension _CodeEditing on FlarkEditor {
       block.startUtf16,
       block.index,
     );
-    final newline = source.contains('\r\n') ? '\r\n' : '\n';
+    // The body line ends the way the opening fence's line does.
+    final newline = _lineBreakAt(block.startUtf16);
     final closed = block.flags & 2 != 0;
     final at = closed
         ? model.lineStartUtf16(block.firstLine + block.lineCount - 1)
@@ -469,7 +472,7 @@ extension _CodeEditing on FlarkEditor {
     );
     final before = source.substring(contentStart, start);
     final indentation = codeLeadingWhitespace(before);
-    final newline = source.contains('\r\n') ? '\r\n' : '\n';
+    final newline = _lineBreakAt(start);
     final first = '$newline$prefix$indentation';
     var inserted = first, to = end;
     return _commit(

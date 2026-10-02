@@ -50,6 +50,35 @@ void main() {
       expect(e.document.rowAt(e.selection.extent).text.trim(), 'c');
     },
   );
+  test('Backspace removes an empty code block only where nothing reflows', () {
+    // Where nothing after it moves, the block goes whole: between
+    // paragraphs, and after a quote, which the blank line left behind ends.
+    for (final (source, caret, result) in [
+      ('a\n\n```\n\n```\n\nb\n', 7, 'a\n\n\n\nb\n'),
+      ('> a\n```\n\n```\nb\n', 8, '> a\n\nb\n'),
+    ]) {
+      final editor = FlarkEditor(backend, text: source, caret: caret);
+      expect(editor.apply(const DeleteBackward()), isTrue, reason: source);
+      expect(editor.source, result);
+    }
+    // A fence at the left margin ends the list item before it. Without it,
+    // the indented paragraph after it would continue that item, so the edit
+    // is refused and the document stays as it was.
+    for (final (source, caret) in [
+      ('- a\n```\n\n```\n  b\n', 8),
+      ('1. a\n```\n\n```\n   b\n', 9),
+      ('- a\r\n```\r\n\r\n```\r\n  b\r\n', 11),
+    ]) {
+      final editor = FlarkEditor(backend, text: source, caret: caret);
+      expect(
+        editor.projection.rows[editor.document.rowAt(caret).index].fenced,
+        isTrue,
+      );
+      expect(editor.apply(const DeleteBackward()), isFalse, reason: source);
+      expect(editor.source, source);
+    }
+  });
+
   test('a pipe typed into a cell is escaped and stays in the cell', () {
     final e = FlarkEditor(backend, text: table, caret: table.indexOf('c') + 1);
     expect(e.apply(const InsertText('|')), isTrue);

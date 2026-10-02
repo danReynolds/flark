@@ -71,6 +71,11 @@ void _historyCases(FlarkParseBackend backend) {
     test('an inert command publishes nothing and records no step', () {
       for (final (source, command) in <(String, FlarkCommand)>[
         ('# H', const SetHeadingLevel(1)),
+        // However the heading is spelled: rewriting it as plain ATX would
+        // respell its source for no visible change.
+        ('H\n===', const SetHeadingLevel(1)),
+        ('H\n---', const SetHeadingLevel(2)),
+        ('# H #', const SetHeadingLevel(1)),
         ('a', const SetHeadingLevel(0)),
         ('```dart\nx\n```', const SetCodeLanguage('dart')),
         ('[a](http://x)', const SetLink('http://x')),
