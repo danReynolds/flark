@@ -498,17 +498,18 @@ void _structureCases(FlarkParseBackend backend) {
 
     test('joining into an empty closed heading keeps its sequence hidden', () {
       // An empty heading's text starts where its closing sequence does: the
-      // space between them separates the opening marker. Joined text takes
-      // a space of its own before the sequence, as text in a heading has,
-      // rather than running into it and painting it.
+      // spaces between them separate the opening marker. Joined text goes
+      // where typed text would, before the last of several spaces, or after
+      // a single one with a space of its own before the sequence, as text in
+      // a heading has, rather than running into it and painting it.
       for (final (source, caret, backward, joined, text) in [
         ('# #\n## J ##', 2, false, '# J #', 'J'),
-        ('#  ###\r\n##### foo ##', 3, false, '#  foo ###', 'foo'),
-        ('#####  ##\n#boo', 10, true, '#####  #boo ##', '#boo'),
-        ('###  ###   \r\n#f', 13, true, '###  #f ###   ', '#f'),
+        ('#  ###\r\n##### foo ##', 3, false, '# foo ###', 'foo'),
+        ('#####  ##\n#boo', 10, true, '##### #boo ##', '#boo'),
+        ('###  ###   \r\n#f', 13, true, '### #f ###   ', '#f'),
         (' # ###\nbar', 3, false, ' # bar ###', 'bar'),
         ('##### #\r\n[foo](/url)', 6, false, '##### [foo](/url) #', 'foo'),
-        ('-  ##  #\n#o', 7, false, '-  ##  #o #', '#o'),
+        ('-  ##  #\n#o', 7, false, '-  ## #o #', '#o'),
       ]) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(
@@ -523,26 +524,28 @@ void _structureCases(FlarkParseBackend backend) {
 
     test('typing into an empty closed heading keeps its sequence hidden', () {
       // A cleared title is retyped against the closing sequence. The text
-      // takes a space of its own before it, as joined text does, and the
+      // goes before the last of the spaces that separate them, or after a
+      // single one with a space of its own, as joined text does, and the
       // caret stays after the text, so the title goes on from there.
       final session = _Session(backend, source: '# foo #', caret: 5);
       session.act(const DeleteBackward(), times: 3, source: '#  #', rows: ['']);
       session.act(
         const InsertText('b'),
-        source: '#  b #',
+        source: '# b #',
         rows: ['b'],
         caret: const DisplayPosition(0, 1),
       );
       session.act(
         const InsertText('a'),
-        source: '#  ba #',
+        source: '# ba #',
         rows: ['ba'],
         caret: const DisplayPosition(0, 2),
       );
       // Paste, a collapsed replacement and composed text land the same way.
-      // One host composes with InsertText, another replaces its preedit.
+      // One host composes with InsertText, another replaces its preedit
+      // where the kernel reports it landed, which can be before the caret.
       for (final (source, caret, placed) in [
-        ('#  ###', 3, '#  ab ###'),
+        ('#  ###', 3, '# ab ###'),
         ('- # #', 4, '- # ab #'),
       ]) {
         final pasted = _Session(backend, source: source, caret: caret);
@@ -561,7 +564,8 @@ void _structureCases(FlarkParseBackend backend) {
         final preedit = _Session(backend, source: source, caret: caret);
         preedit.editor.beginComposition();
         preedit.act(ReplaceRange(caret, caret, 'a'));
-        preedit.act(ReplaceRange(caret, caret + 1, 'ab'));
+        final landed = preedit.editor.selection.extent;
+        preedit.act(ReplaceRange(landed - 1, landed, 'ab'));
         preedit.editor.commitComposition();
         for (final composed in [typed, preedit]) {
           composed.expectState(
@@ -571,6 +575,67 @@ void _structureCases(FlarkParseBackend backend) {
           );
           composed.act(const Undo(), source: source);
         }
+      }
+    });
+
+    test('typing then erasing in an empty closed heading restores it', () {
+      // The last of the spaces before the sequence separates the typed text
+      // from it, so erasing the text gives back the same spaces instead of
+      // leaving one more hidden space each time.
+      for (final (source, caret, typed) in [
+        ('#  #', 3, '# b #'),
+        ('#   ###', 4, '#  b ###'),
+        ('- ##\t\t#', 6, '- ##\tb\t#'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        for (var i = 0; i < 3; i++) {
+          session.act(
+            const InsertText('b'),
+            source: typed,
+            rows: ['b'],
+            caret: const DisplayPosition(0, 1),
+          );
+          session.act(
+            const DeleteBackward(),
+            source: source,
+            rows: [''],
+            caret: const DisplayPosition(0, 0),
+          );
+        }
+      }
+      // After a single space the text takes one of its own; erased, it leaves
+      // two, which then stay as they are.
+      final single = _Session(backend, source: '# #', caret: 2);
+      for (var i = 0; i < 2; i++) {
+        single.act(const InsertText('b'), source: '# b #', rows: ['b']);
+        single.act(const DeleteBackward(), source: '#  #', rows: ['']);
+      }
+      // Text joined after several spaces is placed the same way.
+      final joined = _Session(backend, source: '#  #\nbar', caret: 3);
+      joined.act(
+        const DeleteForward(),
+        source: '# bar #',
+        rows: ['bar'],
+        caret: const DisplayPosition(0, 0),
+      );
+    });
+
+    test('setting a link in an empty closed heading hides its sequence', () {
+      // A new link or image goes where typed text would, so the closing
+      // sequence is not run into its markup and painted after it.
+      for (final (source, caret) in [('#  #', 3), ('# #', 2)]) {
+        final link = _Session(backend, source: source, caret: caret);
+        link.act(
+          const SetLink('u', text: 't'),
+          source: '# [t](<u>) #',
+          rows: ['t'],
+        );
+        final image = _Session(backend, source: source, caret: caret);
+        image.act(
+          const SetImage('u', alt: 'a'),
+          source: '# ![a](<u>) #',
+          rows: ['a'],
+        );
       }
     });
 
@@ -662,6 +727,50 @@ void _structureCases(FlarkParseBackend backend) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(const DeleteBackward(), applied: false, source: source);
       }
+    });
+
+    test('removing the first line keeps a byte order mark before it', () {
+      // comrak skips a leading byte order mark, so it belongs to the
+      // document rather than to the first line, and stays when that goes.
+      final bom = String.fromCharCode(0xfeff);
+      for (final (source, caret, command, removed, rows) in [
+        ('$bom-   ***\n  ## r', 8, const DeleteBackward(), '$bom  ## r', ['r']),
+        ('$bom***\nb', 5, const DeleteBackward(), '${bom}b', ['b']),
+        ('$bom***\nb', 4, const DeleteForward(), '${bom}b', ['b']),
+        ('$bom***\nb', 4, const DeleteBackward(), '$bom\nb', ['', 'b']),
+        ('$bom\nb', 2, const DeleteBackward(), '${bom}b', ['b']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          command,
+          source: removed,
+          rows: rows,
+          caret: const DisplayPosition(0, 0),
+        );
+      }
+    });
+
+    test('return after a leading byte order mark keeps the containers', () {
+      // Copied with the line's container prefix, the mark would be text in
+      // the middle of the document, and the quote or list marker after it
+      // would be painted as text too.
+      final bom = String.fromCharCode(0xfeff);
+      for (final (source, continued, rows) in [
+        ('$bom> a', '$bom> a\n> x', ['a\nx']),
+        ('$bom- a', '$bom- a\n- x', ['a', 'x']),
+      ]) {
+        final session = _Session(backend, source: source, caret: source.length);
+        session.act(const Newline());
+        session.act(const InsertText('x'), source: continued, rows: rows);
+      }
+      // So is a fence typed there, whose new lines continue the quote.
+      final fence = _Session(backend, source: '$bom> ``', caret: 5);
+      fence.act(
+        const InsertText('`'),
+        source: '$bom> ```\n> \n> ```\n> \n',
+        rows: ['', '', ''],
+      );
+      expect(fence.editor.document.caretRow.kind, RowKind.codeBlock);
     });
 
     test('removing an empty line keeps the next block out of a container', () {
@@ -759,24 +868,40 @@ void _structureCases(FlarkParseBackend backend) {
       );
     });
 
-    test('return over all of a setext heading\'s text drops its underline', () {
+    test('return over all of a setext heading\'s text leaves it empty', () {
       // A setext heading cannot be empty: left behind, `===` would be painted
-      // as text and `---` would be read as a rule.
-      for (final (source, end) in [
-        ('abc\n===', 3),
-        ('abc\n---', 3),
-        ('**abc**\n===', 7),
-        ('ab\ncd\n===', 5),
+      // as text and `---` would be read as a rule. The text goes as with a
+      // deletion, leaving an empty ATX heading of the same level, and the
+      // line break follows it, with the caret on the new line.
+      for (final (source, end, marker) in [
+        ('abc\n===', 3, '#'),
+        ('abc\n---', 3, '##'),
+        ('**abc**\n===', 7, '#'),
+        ('ab\ncd\n===', 5, '#'),
       ]) {
         final session = _Session(backend, source: source);
         session.act(SetSelection(0, end));
         session.act(
           const Newline(),
-          source: '\n',
+          source: '$marker \n',
           rows: ['', ''],
           caret: const DisplayPosition(1, 0),
         );
+        expect(session.editor.projection.rows.first.kind, RowKind.heading);
       }
+      // The heading keeps a list item's content where it was, so a block
+      // after it stays in the item.
+      final item = _Session(backend, source: '- abc\n  ===\n\n  para');
+      item.act(const SetSelection(2, 5));
+      item.act(
+        const Newline(),
+        source: '- # \n\n\n  para',
+        rows: ['', '', '', 'para'],
+      );
+      expect(item.editor.projection.rows.last.shells.map((s) => s.kind), [
+        ShellKind.list,
+        ShellKind.item,
+      ]);
       // With text before the split, the underline stays with that text; a
       // split from an earlier line that leaves text on the last one keeps
       // that text above the underline, as on an earlier line.
@@ -793,17 +918,19 @@ void _structureCases(FlarkParseBackend backend) {
       last.act(const Newline(), applied: false, source: 'ab\ncd\n===');
     });
 
-    test('deleting all of a setext heading\'s text drops its underline', () {
-      // As with Return over all of the text: left behind, `===` would be
-      // painted as text and `---` read as a rule.
+    test('deleting all of a setext heading\'s text leaves it empty', () {
+      // Left behind, `===` would be painted as text and `---` read as a rule.
+      // The heading is respelled as an empty ATX heading of the same level in
+      // the same containers, as a level change respells it, and the caret
+      // stays where typing goes on in it.
       for (final (source, start, end, deleted, rows) in [
-        ('abc\n===', 0, 3, '', ['']),
-        ('abc\n---\n\np', 0, 3, '\n\np', ['', '', 'p']),
-        ('abc\r\n---\r\n\r\np', 0, 3, '\r\n\r\np', ['', '', 'p']),
-        ('**abc**\n===', 2, 5, '', ['']),
-        ('ab\ncd\n===', 0, 5, '', ['']),
-        ('> abc\n> ===', 2, 5, '> ', ['']),
-        ('- abc\n  ---\n- b', 2, 5, '- \n- b', ['', 'b']),
+        ('abc\n===', 0, 3, '# ', ['']),
+        ('abc\n---\n\np', 0, 3, '## \n\np', ['', '', 'p']),
+        ('abc\r\n---\r\n\r\np', 0, 3, '## \r\n\r\np', ['', '', 'p']),
+        ('**abc**\n===', 2, 5, '# ', ['']),
+        ('ab\ncd\n===', 0, 5, '# ', ['']),
+        ('> abc\n> ===', 2, 5, '> # ', ['']),
+        ('- abc\n  ---\n- b', 2, 5, '- ## \n- b', ['', 'b']),
       ]) {
         for (final command in [
           const DeleteBackward(),
@@ -811,6 +938,7 @@ void _structureCases(FlarkParseBackend backend) {
           ReplaceRange(start, end, ''),
         ]) {
           final session = _Session(backend, source: source);
+          final level = session.editor.projection.rows.first.headingLevel;
           session.act(SetSelection(start, end));
           session.act(
             command,
@@ -818,6 +946,9 @@ void _structureCases(FlarkParseBackend backend) {
             rows: rows,
             caret: const DisplayPosition(0, 0),
           );
+          final heading = session.editor.projection.rows.first;
+          expect(heading.kind, RowKind.heading);
+          expect(heading.headingLevel, level);
           session.act(
             const Undo(),
             source: source,
@@ -826,14 +957,119 @@ void _structureCases(FlarkParseBackend backend) {
         }
       }
       // So does Backspace on its only character, and removing the image that
-      // is all of its text; an empty-alt image left behind keeps it.
+      // is all of its text; an empty-alt image left behind keeps it as it is.
       final single = _Session(backend, source: 'a\n===\n\np', caret: 1);
-      single.act(const DeleteBackward(), source: '\n\np', rows: ['', '', 'p']);
+      single.act(
+        const DeleteBackward(),
+        source: '# \n\np',
+        rows: ['', '', 'p'],
+      );
       final image = _Session(backend, source: '![a](u)\n---', caret: 3);
-      image.act(const RemoveImage(), source: '', rows: ['']);
+      image.act(const RemoveImage(), source: '## ', rows: ['']);
       final kept = _Session(backend, source: '![](u) b\n---', caret: 8);
       kept.act(const DeleteBackward(), source: '![](u) \n---', rows: [' ']);
       expect(kept.editor.projection.rows.single.kind, RowKind.heading);
+    });
+
+    test('emptying a setext heading keeps the blocks after it in place', () {
+      // Taken with the text, the underline would leave a list item empty,
+      // and an empty item's content starts one column past its marker:
+      // `para` would leave the item, or turn into indented code in it.
+      for (final (source, caret, emptied) in [
+        ('- abc\n  ===\n\n  para', 5, '- # \n\n  para'),
+        ('-   abc\n    ===\n\n    para', 7, '-   # \n\n    para'),
+        ('> - abc\n>   ===\n>\n>   para', 7, '> - # \n>\n>   para'),
+        ('-   abc\n    ===\n      para', 7, '-   # \n      para'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final last = session.editor.projection.rows.last;
+        session.act(
+          const DeleteBackward(),
+          times: 3,
+          source: emptied,
+          caret: const DisplayPosition(0, 0),
+        );
+        final now = session.editor.projection.rows.last;
+        expect(now.text, 'para', reason: source);
+        expect(now.kind, last.kind, reason: source);
+        expect(
+          now.shells.map((s) => s.kind),
+          last.shells.map((s) => s.kind),
+          reason: source,
+        );
+      }
+    });
+
+    test('backspace removes an empty heading whose marker cannot go', () {
+      // Without its marker, the emptied item's `- ` would underline the
+      // paragraph above, so the empty heading goes with its line, as Delete
+      // at the end of that paragraph takes it.
+      const source = '- foo\n  - bar\n    - ## ';
+      final session = _Session(backend, source: source, caret: 23);
+      session.act(
+        const DeleteBackward(),
+        source: '- foo\n  - bar',
+        rows: ['foo', 'bar'],
+        caret: const DisplayPosition(1, 3),
+      );
+      expect(session.editor.projection.rows.last.kind, RowKind.paragraph);
+      // So does the empty heading that emptying a setext heading there leaves.
+      final emptied = _Session(
+        backend,
+        source: '- foo\n  - bar\n    - baz\n      -',
+        caret: 23,
+      );
+      emptied.act(const DeleteBackward(), times: 3, source: source);
+      emptied.act(
+        const DeleteBackward(),
+        source: '- foo\n  - bar',
+        rows: ['foo', 'bar'],
+      );
+    });
+
+    test('clearing a setext heading then typing keeps a heading', () {
+      // However the text is cleared, the same empty heading is left, so the
+      // next text typed continues the heading rather than a paragraph.
+      final typed = _Session(backend, source: 'abc\n===', caret: 3);
+      typed.act(const DeleteBackward(), times: 3, source: '# ', rows: ['']);
+      typed.act(
+        const InsertText('x'),
+        source: '# x',
+        rows: ['x'],
+        caret: const DisplayPosition(0, 1),
+      );
+      for (final (clear, retyped) in [
+        (const DeleteBackward(), '## x\n\np'),
+        (const DeleteForward(), '## x\n\np'),
+        (const ReplaceRange(0, 3, ''), '## x\n\np'),
+        (const InsertText(' '), '##  x\n\np'),
+      ]) {
+        final session = _Session(backend, source: 'abc\n---\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(clear, rows: ['', '', 'p']);
+        session.act(
+          const InsertText('x'),
+          source: retyped,
+          rows: ['x', '', 'p'],
+          caret: const DisplayPosition(0, 1),
+        );
+        expect(session.editor.projection.rows.first.headingLevel, 2);
+      }
+      // So does a preedit that passes through empty on its way to new text.
+      final composed = _Session(backend, source: 'abc\n---\n\np');
+      composed.act(const SetSelection(0, 3));
+      composed.editor.beginComposition();
+      composed.act(const ReplaceRange(0, 3, 'x'), source: 'x\n---\n\np');
+      composed.act(const ReplaceRange(0, 1, ''), source: '## \n\np');
+      final caret = composed.editor.selection.extent;
+      composed.act(
+        ReplaceRange(caret, caret, 'z'),
+        source: '## z\n\np',
+        rows: ['z', '', 'p'],
+      );
+      composed.editor.commitComposition();
+      expect(composed.editor.projection.rows.first.kind, RowKind.heading);
+      composed.act(const Undo(), source: 'abc\n---\n\np');
     });
 
     test('typing over all of a setext heading\'s text keeps its underline', () {
@@ -853,19 +1089,23 @@ void _structureCases(FlarkParseBackend backend) {
         expect(session.editor.projection.rows.first.kind, RowKind.heading);
       }
       // Whitespace cannot be a heading's text, so typed over all of it the
-      // underline goes as with a deletion; a line break goes as with Return.
-      for (final (command, typed) in [
-        (const InsertText(' '), ' '),
-        (const ReplaceRange(0, 3, ' '), ' '),
-        (const Paste('\n'), '\n'),
+      // heading is left empty as with a deletion, the whitespace hidden after
+      // its marker; a line break follows the empty heading as with Return.
+      for (final (command, typed, caret) in [
+        (const InsertText(' '), '##  \n\np', const DisplayPosition(0, 0)),
+        (
+          const ReplaceRange(0, 3, ' '),
+          '##  \n\np',
+          const DisplayPosition(0, 0),
+        ),
+        (const Paste('\n'), '## \n\n\np', const DisplayPosition(1, 0)),
       ]) {
         final session = _Session(backend, source: 'abc\n---\n\np');
         session.act(const SetSelection(0, 3));
-        session.act(command, source: '$typed\n\np');
-        expect(
-          session.editor.projection.rows.map((row) => row.kind),
-          isNot(contains(RowKind.thematicBreak)),
-        );
+        session.act(command, source: typed, caret: caret);
+        final heading = session.editor.projection.rows.first;
+        expect(heading.kind, RowKind.heading);
+        expect(heading.text, isEmpty);
       }
     });
 

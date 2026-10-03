@@ -42,21 +42,35 @@ extension _ResourceEditing on FlarkEditor {
         : ' "${_resourceAttribute(resolvedTitle)}"';
     final replacement =
         '$open$content](<${_resourceAttribute(destination)}>$suffix)';
-    final candidate = source.replaceRange(start, end, replacement);
-    final contentEnd = start + open.length + content.length;
+    // A new resource at a caret goes where typed text would, so in an empty
+    // closed heading its closing sequence stays hidden.
+    final (at, gap) = start == end
+        ? _sequencePlace(_doc.rowAt(start), start, replacement)
+        : (start, '');
+    final candidate = source.replaceRange(
+      at,
+      at + end - start,
+      '$replacement$gap',
+    );
+    final contentEnd = at + open.length + content.length;
     return _commit(
       candidate,
       FlarkSelection.collapsed(contentEnd),
       typing: false,
-      accept: (doc) => doc.resources.any(
-        (r) =>
-            r.start == start &&
-            r.end == start + replacement.length &&
-            r.isImage == image &&
-            r.destination == destination &&
-            r.title == resolvedTitle &&
-            r.contentEnd == contentEnd,
-      ),
+      accept: (doc) =>
+          doc.resources.any(
+            (r) =>
+                r.start == at &&
+                r.end == at + replacement.length &&
+                r.isImage == image &&
+                r.destination == destination &&
+                r.title == resolvedTitle &&
+                r.contentEnd == contentEnd,
+          ) &&
+          (gap.isEmpty ||
+              _keepsStructure(doc, [
+                (at, at, replacement.length + gap.length),
+              ], const {})),
     );
   }
 
@@ -106,6 +120,14 @@ extension _ResourceEditing on FlarkEditor {
                   .join(),
               owners.fold(0, (style, o) => style | o.style),
             );
+      final heading = _emptySetext(
+        range.start,
+        range.end,
+        '',
+        typing: false,
+        pending: pending,
+      );
+      if (heading != null) return heading;
       final normalized = _normalizeInlineEdges(
         range.start,
         range.end,

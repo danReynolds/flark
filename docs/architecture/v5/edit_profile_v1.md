@@ -129,11 +129,15 @@ additional product principles or testing layers.
   styling, and block presentation.
 - Word deletion uses the same word boundaries as word navigation. It is one
   history action, followed by an independently undoable typed character.
-- A setext heading cannot be empty. Deleting all of its text removes its
-  underline with the text, as Return over all of it does, since left behind
-  `===` would be painted as text and `---` read as a rule; so does replacing
-  all of it with whitespace. Other text typed or pasted over all of it keeps
-  the heading and its underline.
+- A setext heading cannot be empty: left behind, `===` would be painted as
+  text and `---` read as a rule, and taken with the text, the underline could
+  leave a list item empty and move the blocks after it. Deleting all of its
+  text, replacing all of it with whitespace, or Return over all of it
+  respells it as an empty ATX heading of the same level in the same
+  containers, as a level change does, with the caret where typing continues
+  the heading (after Return, on the new line). The parser must keep the other
+  blocks where they were. Other text typed or pasted over all of it keeps the
+  heading and its underline.
 - If deletion exposes whitespace against emphasis/strong/strike delimiters,
   move that whitespace outside the owner so surviving words retain their
   style, and retain typing intent when deletion exits an owner's trailing
@@ -194,9 +198,9 @@ Return and Backspace operate on the visible block structure:
 - Return splits a paragraph or heading at the caret. A heading's setext
   underline or ATX closing sequence stays with the part before the caret, so
   Return at the end of its text opens a paragraph. A setext heading cannot be
-  empty: Return over all of its text removes the underline with the text, and
-  over the whole last line of a longer one refuses, since the underline would
-  have to move up to the lines before;
+  empty: Return over all of its text leaves the empty ATX heading deleting it
+  leaves, before the new line, and over the whole last line of a longer one
+  refuses, since the underline would have to move up to the lines before;
 - Return continues or exits supported list, quote and footnote structures. On
   an empty line each Return leaves one container: the empty item, then the
   quote, outer item or footnote its list ends. A continuation line repeats
@@ -220,7 +224,10 @@ Return and Backspace operate on the visible block structure:
   the next row); joining after a setext underline or ATX closing sequence
   moves that markup after the joined text; and removing the empty line after
   a heading or code leaves the caret at the end of its text, not past its
-  hidden underline or closing fence.
+  hidden underline or closing fence. Backspace at the start of a heading makes
+  it a paragraph; an empty heading whose marker cannot go without changing
+  the block before it (an emptied item's `- ` would underline a paragraph
+  above) goes with its line, as Delete at the end of that block takes it.
   No join crosses a fence line: Backspace at the start of code removes an
   empty line or rule above it and otherwise refuses, and nothing joins onto a
   closing fence. A join or lift whose result would change another block's kind
