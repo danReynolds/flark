@@ -1272,7 +1272,10 @@ final class FlarkEditor implements FlarkDocumentState {
     // other line ending joins two lines, an undo step of its own; in a fenced
     // body that join deletes literal code below too.
     final join = atomic?.lineBreak == true && atomic!.run < 0;
-    if (join && row.fenced && row.displayForSource(b).$1 != atomic.displayEnd) {
+    if (join &&
+        !word &&
+        row.fenced &&
+        row.displayForSource(b).$1 != atomic.displayEnd) {
       // A code line's break runs on through the next line's prefix, where a
       // tab can show columns of code after the break. Deleting the break
       // deletes that tab, and the columns it shows with it, which the key did
@@ -1834,6 +1837,13 @@ final class FlarkEditor implements FlarkDocumentState {
     required bool typing,
     PendingStyle? pending,
   }) {
+    // Only Markdown's own whitespace leaves the heading empty: another space
+    // (U+00A0, U+3000) is text the heading keeps.
+    if (text.codeUnits.any(
+      (u) => u != 0x20 && u != 0x09 && u != 0x0A && u != 0x0D,
+    )) {
+      return null;
+    }
     final row = _doc.rowAt(start), trail = _headingTrail(row);
     final first = _firstCaretStart(row), m = _doc.model;
     // The text left is read in the source, not in what is shown: only the

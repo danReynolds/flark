@@ -918,6 +918,22 @@ void _structureCases(FlarkParseBackend backend) {
       last.act(const Newline(), applied: false, source: 'ab\ncd\n===');
     });
 
+    test('a non-breaking space typed over a setext heading is its text', () {
+      // Markdown strips only spaces and tabs from a heading. Another space is
+      // text the heading keeps, with its underline, as other text typed over
+      // all of it is.
+      for (final space in ['\u00A0', '\u3000']) {
+        final session = _Session(backend, source: 'abc\n===\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(
+          InsertText(space),
+          source: '$space\n===\n\np',
+          rows: [space, '', 'p'],
+        );
+        expect(session.editor.projection.rows.first.kind, RowKind.heading);
+      }
+    });
+
     test('deleting all of a setext heading\'s text leaves it empty', () {
       // Left behind, `===` would be painted as text and `---` read as a rule.
       // The heading is respelled as an empty ATX heading of the same level in
@@ -1209,6 +1225,19 @@ void _structureCases(FlarkParseBackend backend) {
       ]) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(command, source: edited);
+      }
+    });
+
+    test('a word delete at the end of a code line joins the next word', () {
+      // Only a single-character join can take a tab's columns without
+      // reaching them; a word delete takes the word after the break with it.
+      for (final (source, caret, edited) in [
+        ('```\nfoo\nbar baz\n```', 7, '```\nfoo baz\n```'),
+        ('> ```\n> foo\n> bar baz\n> ```', 11, '> ```\n> foo baz\n> ```'),
+        ('```\r\nfoo\r\nbar baz\r\n```', 8, '```\r\nfoo baz\r\n```'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteForward(word: true), source: edited);
       }
     });
 
