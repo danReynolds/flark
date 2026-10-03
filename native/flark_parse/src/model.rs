@@ -161,7 +161,10 @@ impl<'a> ColCursor<'a> {
 
 /// Result of consuming the container prefixes on one line.
 struct Prefix<'a> { cur: ColCursor<'a>, lazy: bool, after_checkbox: bool, /// byte offset within the line where the innermost matched container's prefix begins
-    prefix_start: usize }
+    prefix_start: usize,
+    /// where the innermost prefix holding at least one byte begins: the one
+    /// before [prefix_start] when that container has no bytes on the line
+    held: usize }
 
 /// `setext_definitions` marks a paragraph whose leading definitions comrak
 /// resolved at a setext underline before a table split it (see
@@ -189,9 +192,10 @@ fn shift_columns(mut sp: Sourcepos, delta: isize) -> Sourcepos {
 
 /// One line of a paragraph-like leaf as comrak buffered it: `virt` is the
 /// number of virtual spaces a partially consumed tab contributed on a lazy
-/// line, which exist in comrak's buffer but not in the source.
+/// line, which exist in comrak's buffer but not in the source. `held` is
+/// [Prefix::held] in the source.
 #[derive(Clone, Copy)]
-struct LineSpan { line0: usize, start: usize, end: usize, virt: usize, prefix_start: usize }
+struct LineSpan { line0: usize, start: usize, end: usize, virt: usize, prefix_start: usize, held: usize }
 
 pub struct Extractor<'a> {
     src: &'a str,
@@ -517,8 +521,10 @@ impl<'a> Extractor<'a> {
         // lazy line would have (where the indentation fell short) for editing,
         // while its content follows cmark past the whitespace.
         let mut prefix_frozen = false;
+        let mut held = bom;
         for c in containers {
             let at = cur.pos;
+            let frozen = prefix_frozen;
             match c.kind {
                 ContainerKind::Quote => {
                     let save = cur;
@@ -612,9 +618,10 @@ impl<'a> Extractor<'a> {
                     }
                 }
             }
+            if !frozen && cur.pos > at { held = at; }
         }
-        if lazy { prefix_start = cur.pos; }
-        Prefix { cur, lazy, after_checkbox, prefix_start }
+        if lazy { prefix_start = cur.pos; held = cur.pos; }
+        Prefix { cur, lazy, after_checkbox, prefix_start, held }
     }
 
     fn line_bytes(&self, line0: usize) -> &'a [u8] { let ls = self.li.line_start(line0); let le = self.li.line_end(line0, self.src.len()); &self.src.as_bytes()[ls..le] }
@@ -635,8 +642,9 @@ impl<'a> Extractor<'a> {
     fn paragraph_line(&self, line0: usize, containers: &[Container]) -> LineSpan {
         let mut p = self.prefix_cursor(line0, self.line_bytes(line0), containers);
         if !p.lazy && !p.after_checkbox { p.cur.skip_whitespace(); }
-        let start = self.li.line_start(line0) + p.cur.pos;
-        LineSpan { line0, start, end: self.trimmed_end(line0, start), virt: if p.lazy { p.cur.virt } else { 0 }, prefix_start: self.li.line_start(line0) + p.prefix_start }
+        let ls = self.li.line_start(line0);
+        let start = ls + p.cur.pos;
+        LineSpan { line0, start, end: self.trimmed_end(line0, start), virt: if p.lazy { p.cur.virt } else { 0 }, prefix_start: ls + p.prefix_start, held: ls + p.held }
     }
 
     fn push_content(&mut self, line0: usize, cs: usize, ce: usize, virt: usize, prefix_start: usize) {
@@ -672,9 +680,19 @@ impl<'a> Extractor<'a> {
             let block_index = self.containers[i].block;
             let chain = self.chain(Some(i));
             self.blocks[block_index][block::CONTENT_OFFSET] = self.content.len() as u32;
+            // comrak continues a list item over its container's blank lines
+            // without the item's indentation (`parse_node_item_prefix`), so
+            // the item has no prefix there: the line's innermost prefix is the
+            // enclosing one. comrak matches every enclosing prefix before it
+            // continues the item, so that one is taken only on lines inside
+            // comrak's own line range for the container, which the extraction
+            // refits for leaves alone.
+            let (first, count) = (self.blocks[block_index][block::FIRST_LINE] as usize, self.blocks[block_index][block::LINE_COUNT] as usize);
             for line in owned {
                 let p = self.paragraph_line(line, &chain);
-                if p.start == p.end { self.push_content(line, p.start, p.end, 0, p.prefix_start); }
+                if p.start != p.end { continue; }
+                let prefix = if p.prefix_start == p.start && (first..first + count).contains(&line) { p.held } else { p.prefix_start };
+                self.push_content(line, p.start, p.end, 0, prefix);
             }
             self.blocks[block_index][block::CONTENT_COUNT] = self.content.len() as u32 - self.blocks[block_index][block::CONTENT_OFFSET];
             // comrak can end a container short of its own empty lines: an

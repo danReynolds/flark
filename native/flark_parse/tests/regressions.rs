@@ -272,6 +272,73 @@ fn empty_nested_quote_publishes_only_the_innermost_prefix() {
     assert_eq!(m.content(c, content::START_UTF16), 10);
 }
 
+/// The containers comrak puts [line0] in, by its own ranges or, with
+/// [text], around the paragraph that text starts; outermost first.
+fn comrak_containers(src: &str, line0: usize, text: Option<&str>) -> Vec<&'static str> {
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let root = comrak::parse_document(&arena, src, &flark_parse::model::options());
+    let kind = |n: &comrak::nodes::AstNode| match n.data.borrow().value { NodeValue::BlockQuote => Some("quote"), NodeValue::List(_) => Some("list"), NodeValue::Item(_) | NodeValue::TaskItem(_) => Some("item"), NodeValue::FootnoteDefinition(_) => Some("footnote"), _ => None };
+    match text {
+        Some(t) => {
+            let node = root.descendants().find(|n| matches!(&n.data.borrow().value, NodeValue::Text(s) if s.as_ref() == t)).expect("text parsed");
+            let mut out: Vec<_> = node.ancestors().filter_map(kind).collect();
+            out.reverse();
+            out
+        }
+        None => root.descendants().filter(|n| { let sp = n.data.borrow().sourcepos; sp.start.line <= line0 + 1 && line0 + 1 <= sp.end.line }).filter_map(kind).collect(),
+    }
+}
+
+#[test]
+fn a_blank_line_an_item_continues_without_its_indent_publishes_the_enclosing_prefix() {
+    // comrak continues a list item over the blank lines that end its quote,
+    // outer item or footnote (`parse_node_item_prefix`), though they hold none
+    // of the item's indentation, and its range keeps a nonempty such line.
+    // The empty line's record publishes the innermost prefix the line does
+    // carry. Text written in its place belongs to exactly the containers
+    // around that prefix's container.
+    for ending in ["\n", "\r\n"] {
+        for (lines, lifted, kept) in [
+            (&["> - a", "> ", "> "][..], "> ", &[][..]),
+            (&["> - a", ">", ">"], ">", &[]),
+            (&["> 1. a", "> ", "> "], "> ", &[]),
+            (&["> - [ ] a", "> ", "> "], "> ", &[]),
+            (&["> - a", ">\t", ">\t"], ">\t", &[]),
+            (&["> > - a", "> > ", "> > "], "> ", &["quote"]),
+            (&["> - - a", "> ", "> "], "> ", &[]),
+            (&["- - a", "  ", "  "], "  ", &[]),
+            (&["1. - a", "   ", "   "], "   ", &[]),
+            (&["- > - a", "  > ", "  > "], "> ", &["list", "item"]),
+            (&["[^1]: - a", "    ", "    "], "    ", &[]),
+        ] {
+            let src = lines.join(ending);
+            let line = lines.len() - 1;
+            assert_eq!(comrak_containers(&src, line, None).last(), Some(&"item"), "comrak's item range covers the last line of {src:?}");
+            let m = M::of(&src); m.clean();
+            let c = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::LINE) == line).unwrap();
+            let (prefix, start) = (m.content(c, content::PREFIX_START_BYTE), m.content(c, content::START_BYTE));
+            assert_eq!((&src[prefix..start], m.content(c, content::END_BYTE)), (lifted, start), "for {src:?}");
+            let written = format!("{}x{}", &src[..prefix], &src[start..]);
+            assert_eq!(comrak_containers(&written, line, Some("x")), kept, "writing over {lifted:?} in {src:?}");
+        }
+    }
+    // A blank line between items, or before more of the quote, carries the
+    // quote's prefix too.
+    for src in ["> - a\n> \n> - b", "> - a\n> \n> \n> b"] {
+        let m = M::of(src); m.clean();
+        let c = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::LINE) == 1).unwrap();
+        assert_eq!(&src[m.content(c, content::PREFIX_START_BYTE)..m.content(c, content::START_BYTE)], "> ", "for {src:?}");
+    }
+    // An item's own indentation, partial or whole, stays its prefix; a blank
+    // line with no prefix at all has nothing to lift.
+    for (src, line, lifted) in [("> - a\n>   \n> ", 1, "  "), ("> - a\n>  \n> ", 1, " "), ("- a\n\n  b", 1, ""), ("- - a\n\n  b", 1, "")] {
+        let m = M::of(src); m.clean();
+        let c = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::LINE) == line).unwrap();
+        assert_eq!(&src[m.content(c, content::PREFIX_START_BYTE)..m.content(c, content::START_BYTE)], lifted, "for {src:?}");
+    }
+}
+
 #[test]
 fn nested_markers_consume_their_padding() {
     for src in ["> -     code\n", "- -     code\n", "> 1.     code\n"] {

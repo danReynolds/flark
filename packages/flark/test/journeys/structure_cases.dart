@@ -80,6 +80,100 @@ void _structureCases(FlarkParseBackend backend) {
       );
     });
 
+    test('return leaves a quote, item or footnote that ends with a list', () {
+      // comrak continues the inner item over the blank lines that close it,
+      // without its indentation. Each Return leaves one container: the item,
+      // then the one around it, rather than opening another item forever.
+      for (final (source, item, exit, left, shells) in [
+        (
+          '> - a',
+          '> - a\n> - ',
+          '> - a\n> \n> ',
+          '> - a\n> \n\n',
+          <ShellKind>[],
+        ),
+        (
+          '> 1. a',
+          '> 1. a\n> 2. ',
+          '> 1. a\n> \n> ',
+          '> 1. a\n> \n\n',
+          <ShellKind>[],
+        ),
+        (
+          '> > - a',
+          '> > - a\n> > - ',
+          '> > - a\n> > \n> > ',
+          '> > - a\n> > \n> \n> ',
+          [ShellKind.blockQuote],
+        ),
+        (
+          '- - a',
+          '- - a\n  - ',
+          '- - a\n  \n  ',
+          '- - a\n  \n\n',
+          <ShellKind>[],
+        ),
+        (
+          '[^1]: - a',
+          '[^1]: - a\n    - ',
+          '[^1]: - a\n    \n    ',
+          '[^1]: - a\n    \n\n',
+          <ShellKind>[],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: source.length);
+        session.act(
+          const Newline(),
+          source: item,
+          rows: ['a', ''],
+          caret: const DisplayPosition(1, 0),
+        );
+        session.act(
+          const Newline(),
+          source: exit,
+          rows: ['a', '', ''],
+          caret: const DisplayPosition(2, 0),
+        );
+        session.act(
+          const Newline(),
+          source: left,
+          rows: ['a', '', '', ''],
+          caret: const DisplayPosition(3, 0),
+        );
+        expect(
+          session.editor.document.caretRow.shells.map((s) => s.kind),
+          shells,
+          reason: source,
+        );
+        session.act(
+          const InsertText('b'),
+          source: '${left}b',
+          rows: ['a', '', '', 'b'],
+          caret: const DisplayPosition(3, 1),
+        );
+        expect(
+          session.editor.document.caretRow.shells.map((s) => s.kind),
+          shells,
+          reason: source,
+        );
+      }
+      // Backspace on that line lifts the same prefix, as on any empty quote
+      // line, and then removes the line.
+      final back = _Session(backend, source: '> - a\n> \n> ', caret: 11);
+      back.act(
+        const DeleteBackward(),
+        source: '> - a\n> \n',
+        rows: ['a', '', ''],
+        caret: const DisplayPosition(2, 0),
+      );
+      back.act(
+        const DeleteBackward(),
+        source: '> - a\n> ',
+        rows: ['a', ''],
+        caret: const DisplayPosition(1, 0),
+      );
+    });
+
     test(
       'return splits a paragraph with a line break, or a paragraph break',
       () {

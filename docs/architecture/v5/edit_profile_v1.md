@@ -192,12 +192,13 @@ Return and Backspace operate on the visible block structure:
   empty: Return over all of its text removes the underline with the text, and
   over the whole last line of a longer one refuses, since the underline would
   have to move up to the lines before;
-- Return continues or exits supported list, quote and footnote structures. A
-  continuation line repeats quote markers; an item or footnote definition that
-  opens on the caret's line is continued at its indent (a footnote's four
-  columns, counted from the end of the containers around it rather than from
-  an indented label) rather than by repeating its marker, which would open
-  another;
+- Return continues or exits supported list, quote and footnote structures. On
+  an empty line each Return leaves one container: the empty item, then the
+  quote, outer item or footnote its list ends. A continuation line repeats
+  quote markers; an item or footnote definition that opens on the caret's line
+  is continued at its indent (a footnote's four columns, counted from the end
+  of the containers around it rather than from an indented label) rather than
+  by repeating its marker, which would open another;
 - Return, including in code, inserts the line ending of the caret's line, so a
   CRLF document stays CRLF;
 - terminal Return creates one writable following paragraph;
