@@ -129,6 +129,11 @@ additional product principles or testing layers.
   styling, and block presentation.
 - Word deletion uses the same word boundaries as word navigation. It is one
   history action, followed by an independently undoable typed character.
+- A setext heading cannot be empty. Deleting all of its text removes its
+  underline with the text, as Return over all of it does, since left behind
+  `===` would be painted as text and `---` read as a rule; so does replacing
+  all of it with whitespace. Other text typed or pasted over all of it keeps
+  the heading and its underline.
 - If deletion exposes whitespace against emphasis/strong/strike delimiters,
   move that whitespace outside the owner so surviving words retain their
   style, and retain typing intent when deletion exits an owner's trailing
@@ -255,6 +260,16 @@ code body. Opening-line padding and CRLF at the insertion site are retained.
 Code selection is painted above the block background. Pointer selection,
 replacement, copy/cut and history use the same projected text and source
 coordinates as other rows.
+
+Code is literal: edits the code delegate does not propose (typing it
+declines, deletion, replacement, paste and composition) change the projected
+body as given. Every code edit gives new lines the edited line's container
+prefix, and text put on an empty line that omits the indentation of its list
+item or footnote takes the prefix the fence's own lines continue with. When an
+edit leaves a body line the parser would read as the closing fence (a typed
+or pasted fence character, a run a deletion joins, an outdented run), the
+fences grow past the body's longest run of their character instead; while the
+parser still reads the block unchanged, they keep their length.
 
 Untagged fences receive automatic syntax coloring without changing Markdown.
 When the caret is inside a fence, the toolbar offers Automatic, Plain text and

@@ -335,11 +335,16 @@ void checkErasure(String label, FlarkEditor e) {
       text: src,
       caret: backward ? src.length : 0,
     );
-    // Every counted step strictly shrinks the source, so the loop terminates
-    // on its own; the bound only stops a future refusal from hanging the suite.
+    // Every counted step strictly shrinks the source, or deletes a character
+    // of code whose fences grow so that the body left stays code, which
+    // shrinks what is shown instead. The bound stops a refusal from hanging
+    // the suite.
+    int shown() => editor.sourceMode
+        ? editor.source.length
+        : editor.projection.rows.fold(0, (n, row) => n + row.text.length);
     var steps = 0;
     while (editor.source.isNotEmpty && steps <= src.length + 2) {
-      final before = editor.source;
+      final before = editor.source, wasShown = shown();
       // The user keeps pressing at the same end of the document.
       editor.apply(SetSelection.caret(backward ? editor.source.length : 0));
       if (!editor.apply(
@@ -383,7 +388,7 @@ void checkErasure(String label, FlarkEditor e) {
         }
         break;
       }
-      if (editor.source.length >= before.length) {
+      if (editor.source.length >= before.length && shown() >= wasShown) {
         fail_(
           'erase-grew',
           '$label ${backward ? "backspace" : "delete"}: '

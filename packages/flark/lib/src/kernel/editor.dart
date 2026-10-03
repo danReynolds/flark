@@ -805,13 +805,17 @@ final class FlarkEditor implements FlarkDocumentState {
       final code = _pasteCode(text);
       if (code != null) return code;
     }
-    if (typing && !composing) {
-      final code = _delegateCodeEdit(CodeEditingAction.insert, text: text);
-      if (code != null) return code;
-    } else if (!typing && !composing) {
-      final code = _pasteCode(text);
-      if (code != null) return code;
-    }
+    // Typed text goes to the code delegate first. What it does not propose,
+    // and pasted or composed text, is literal code.
+    final code =
+        (typing && !composing
+            ? _delegateCodeEdit(CodeEditingAction.insert, text: text)
+            : null) ??
+        _pasteCode(
+          text,
+          typing: typing && text != '\n' && text.characters.length == 1,
+        );
+    if (code != null) return code;
     if (sel.isCollapsed) {
       final continued = _continueSpan(range.start, text, typing: typing);
       if (continued != null) return continued;
@@ -1160,6 +1164,9 @@ final class FlarkEditor implements FlarkDocumentState {
     if (text.isEmpty) {
       return _deleteContent(s, e, typing: false);
     }
+    // A replacement in a fenced body is literal code, as a paste there is.
+    final code = _pasteCode(text, from: s, to: e);
+    if (code != null) return code;
     if (text.trim().isEmpty) {
       final expanded = _rangeForEmptying(s, e);
       s = expanded.start;
@@ -1228,8 +1235,9 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     if (b <= a) return false;
     // A line ending inside inline code is that code's text, painted as a
-    // space, so it deletes like any other character of the span below.
-    if (atomic?.lineBreak == true && atomic!.run < 0) {
+    // space, so it deletes like any other character of the span below, and
+    // one in a fenced body is literal code too.
+    if (atomic?.lineBreak == true && atomic!.run < 0 && !row.fenced) {
       var start = a;
       // Editable spaces before a hard break remain visible caret positions,
       // but deleting the break removes its entire parser-authenticated marker.
@@ -1250,6 +1258,9 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   bool _deleteContent(int start, int end, {required bool typing}) {
+    // A deletion in a fenced body is literal code, as typing there is.
+    final code = _pasteCode('', from: start, to: end, typing: typing);
+    if (code != null) return code;
     final expanded = _rangeForEmptying(start, end);
     var caret = expanded.start;
     var pending = expanded.pending;
@@ -1379,7 +1390,10 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// Expand a visible range through any inline owner that it empties, so its
-  /// hidden delimiters cannot be stranded in the source.
+  /// hidden delimiters cannot be stranded in the source. A setext heading
+  /// cannot be empty either: a range that leaves none of its text takes the
+  /// underline too, as Return over all of it does, since left behind `===`
+  /// would be painted as text and `---` read as a rule.
   ({int start, int end, PendingStyle? pending}) _rangeForEmptying(
     int start,
     int end,
@@ -1401,6 +1415,23 @@ final class FlarkEditor implements FlarkDocumentState {
         if (owner.kind == RunKind.escape) recreate = false;
         grew = true;
       }
+    }
+    final row = _doc.rowAt(start), trail = _headingTrail(row);
+    final first = _firstCaretStart(row);
+    // The heading is empty when the range leaves nothing of its content but
+    // the spaces or tabs Markdown strips from it. That is read in the source,
+    // not in what is shown: an empty-alt image shows nothing yet keeps the
+    // heading. An ATX closing sequence shares the text's line and may close
+    // an empty heading; only an underline sits on a line of its own.
+    if (trail != null &&
+        first <= s &&
+        e <= trail.$1 &&
+        _doc.model.lineOfUtf16(trail.$1) != _doc.model.lineOfUtf16(trail.$2) &&
+        '${source.substring(first, s)}${source.substring(e, trail.$1)}'
+            .codeUnits
+            .every((unit) => unit == 0x20 || unit == 0x09)) {
+      s = first;
+      e = trail.$2;
     }
     final intent = _doc
         .ownersAt(selection.extent)

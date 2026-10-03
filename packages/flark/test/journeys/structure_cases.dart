@@ -793,6 +793,82 @@ void _structureCases(FlarkParseBackend backend) {
       last.act(const Newline(), applied: false, source: 'ab\ncd\n===');
     });
 
+    test('deleting all of a setext heading\'s text drops its underline', () {
+      // As with Return over all of the text: left behind, `===` would be
+      // painted as text and `---` read as a rule.
+      for (final (source, start, end, deleted, rows) in [
+        ('abc\n===', 0, 3, '', ['']),
+        ('abc\n---\n\np', 0, 3, '\n\np', ['', '', 'p']),
+        ('abc\r\n---\r\n\r\np', 0, 3, '\r\n\r\np', ['', '', 'p']),
+        ('**abc**\n===', 2, 5, '', ['']),
+        ('ab\ncd\n===', 0, 5, '', ['']),
+        ('> abc\n> ===', 2, 5, '> ', ['']),
+        ('- abc\n  ---\n- b', 2, 5, '- \n- b', ['', 'b']),
+      ]) {
+        for (final command in [
+          const DeleteBackward(),
+          const DeleteForward(),
+          ReplaceRange(start, end, ''),
+        ]) {
+          final session = _Session(backend, source: source);
+          session.act(SetSelection(start, end));
+          session.act(
+            command,
+            source: deleted,
+            rows: rows,
+            caret: const DisplayPosition(0, 0),
+          );
+          session.act(
+            const Undo(),
+            source: source,
+            selection: FlarkSelection(start, end),
+          );
+        }
+      }
+      // So does Backspace on its only character, and removing the image that
+      // is all of its text; an empty-alt image left behind keeps it.
+      final single = _Session(backend, source: 'a\n===\n\np', caret: 1);
+      single.act(const DeleteBackward(), source: '\n\np', rows: ['', '', 'p']);
+      final image = _Session(backend, source: '![a](u)\n---', caret: 3);
+      image.act(const RemoveImage(), source: '', rows: ['']);
+      final kept = _Session(backend, source: '![](u) b\n---', caret: 8);
+      kept.act(const DeleteBackward(), source: '![](u) \n---', rows: [' ']);
+      expect(kept.editor.projection.rows.single.kind, RowKind.heading);
+    });
+
+    test('typing over all of a setext heading\'s text keeps its underline', () {
+      for (final command in [
+        const InsertText('x'),
+        const Paste('x'),
+        const ReplaceRange(0, 3, 'x'),
+      ]) {
+        final session = _Session(backend, source: 'abc\n---\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(
+          command,
+          source: 'x\n---\n\np',
+          rows: ['x', '', 'p'],
+          caret: const DisplayPosition(0, 1),
+        );
+        expect(session.editor.projection.rows.first.kind, RowKind.heading);
+      }
+      // Whitespace cannot be a heading's text, so typed over all of it the
+      // underline goes as with a deletion; a line break goes as with Return.
+      for (final (command, typed) in [
+        (const InsertText(' '), ' '),
+        (const ReplaceRange(0, 3, ' '), ' '),
+        (const Paste('\n'), '\n'),
+      ]) {
+        final session = _Session(backend, source: 'abc\n---\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(command, source: '$typed\n\np');
+        expect(
+          session.editor.projection.rows.map((row) => row.kind),
+          isNot(contains(RowKind.thematicBreak)),
+        );
+      }
+    });
+
     test('return in a quote opened on an item line stays in that item', () {
       for (final marker in ['- ', '1. ']) {
         final source = '$marker> a';
@@ -893,6 +969,92 @@ void _structureCases(FlarkParseBackend backend) {
       ]) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(command, source: edited);
+      }
+    });
+
+    test('fence characters typed, deleted or shifted in code stay code', () {
+      // Each edit leaves a body line the parser would read as the closing
+      // fence, which would turn the rest of the code into prose and the old
+      // closer into a new fence. The fences grow past it instead.
+      const run = '```\n``x`\ny\n```', grown = '````\n```\ny\n````';
+      const indented = '```\nx\n    ```\n```', body = '```\ny';
+      const crlf = '```\r\n``x`\r\ny\r\n```';
+      for (final (source, caret, command, edited, shown) in [
+        ('```\n``\ny\n```', 6, const InsertText('`'), grown, body),
+        (run, 7, const DeleteBackward(), grown, body),
+        (run, 6, const DeleteForward(), grown, body),
+        (run, 0, const ReplaceRange(6, 7, ''), grown, body),
+        (crlf, 8, const DeleteBackward(), '````\r\n```\r\ny\r\n````', body),
+        ('```\nx```\n```', 5, const Newline(), '````\nx\n```\n````', 'x\n```'),
+        (
+          indented,
+          7,
+          const DeleteBackward(),
+          '````\nx\n   ```\n````',
+          'x\n   ```',
+        ),
+        (indented, 10, const Outdent(), '````\nx\n  ```\n````', 'x\n  ```'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, source: edited, rows: [shown]);
+        session.act(const Undo(), source: source);
+      }
+      // A body may hold such a run already, indented or beside other text,
+      // so while the parser reads the block unchanged, the fences stay.
+      final kept = _Session(
+        backend,
+        source: '```\n    ```\nab\n```',
+        caret: 14,
+      );
+      kept.act(const Paste('x'), source: '```\n    ```\nabx\n```');
+      kept.act(const DeleteBackward(), source: '```\n    ```\nab\n```');
+    });
+
+    test('a line break in quoted code takes the quote\'s prefix', () {
+      for (final command in [
+        const InsertText('\n'),
+        const ReplaceRange(9, 9, '\n'),
+      ]) {
+        final session = _Session(
+          backend,
+          source: '> ```\n> ab\n> ```',
+          caret: 9,
+        );
+        session.act(
+          command,
+          source: '> ```\n> a\n> b\n> ```',
+          rows: ['a\nb'],
+          caret: const DisplayPosition(0, 2),
+        );
+      }
+    });
+
+    test('text put on an empty code line stays in its list item', () {
+      // The empty line needs none of the item's indentation, so the source
+      // omits it; text put there takes the indentation the code continues
+      // with instead of leaving the item and splitting the code in two.
+      const source = '- a\n\n  ```\n  x\n\n  y\n  ```\n';
+      for (final (caret, command, edited, body) in [
+        (
+          15,
+          const InsertText('z'),
+          '- a\n\n  ```\n  x\n  z\n  y\n  ```\n',
+          'x\nz\ny',
+        ),
+        (
+          15,
+          const Paste('z\nw'),
+          '- a\n\n  ```\n  x\n  z\n  w\n  y\n  ```\n',
+          'x\nz\nw\ny',
+        ),
+        (18, const DeleteBackward(), '- a\n\n  ```\n  x\n  y\n  ```\n', 'x\ny'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, source: edited, rows: ['a', '', body, '']);
+        expect(session.editor.document.caretRow.shells.map((s) => s.kind), [
+          ShellKind.list,
+          ShellKind.item,
+        ]);
       }
     });
   });
