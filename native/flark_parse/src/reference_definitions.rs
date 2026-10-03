@@ -47,7 +47,13 @@ pub fn paragraph_definitions(buffer: &str) -> Vec<BufferDefinition> {
 const MAX_LINK_LABEL_LENGTH: usize = 1000;
 
 fn ispunct(b: u8) -> bool { b.is_ascii_punctuation() }
-pub(crate) fn isspace(b: u8) -> bool { matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c) }
+/// comrak's `isspace`, its character table's space class: a vertical tab or
+/// form feed is not one, so a label of either alone is not empty (`[\f]: /u`
+/// is a definition, which the mirror refused when it trimmed them).
+fn isspace(b: u8) -> bool { matches!(b, b' ' | b'\t' | b'\n' | b'\r') }
+/// The scanners' `spacechar`, which comrak skips between an inline link's
+/// parts (`spacechars`): `isspace` with the vertical tab and form feed.
+pub(crate) fn spacechar(b: u8) -> bool { isspace(b) || matches!(b, 0x0b | 0x0c) }
 
 struct Sc { pos: usize }
 impl Sc {
