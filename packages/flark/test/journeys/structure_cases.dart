@@ -521,6 +521,59 @@ void _structureCases(FlarkParseBackend backend) {
       }
     });
 
+    test('typing into an empty closed heading keeps its sequence hidden', () {
+      // A cleared title is retyped against the closing sequence. The text
+      // takes a space of its own before it, as joined text does, and the
+      // caret stays after the text, so the title goes on from there.
+      final session = _Session(backend, source: '# foo #', caret: 5);
+      session.act(const DeleteBackward(), times: 3, source: '#  #', rows: ['']);
+      session.act(
+        const InsertText('b'),
+        source: '#  b #',
+        rows: ['b'],
+        caret: const DisplayPosition(0, 1),
+      );
+      session.act(
+        const InsertText('a'),
+        source: '#  ba #',
+        rows: ['ba'],
+        caret: const DisplayPosition(0, 2),
+      );
+      // Paste, a collapsed replacement and composed text land the same way.
+      // One host composes with InsertText, another replaces its preedit.
+      for (final (source, caret, placed) in [
+        ('#  ###', 3, '#  ab ###'),
+        ('- # #', 4, '- # ab #'),
+      ]) {
+        final pasted = _Session(backend, source: source, caret: caret);
+        pasted.act(const Paste('ab'), source: placed, rows: ['ab']);
+        final replaced = _Session(backend, source: source, caret: caret);
+        replaced.act(
+          ReplaceRange(caret, caret, 'ab'),
+          source: placed,
+          rows: ['ab'],
+        );
+        final typed = _Session(backend, source: source, caret: caret);
+        typed.editor.beginComposition();
+        typed.act(const InsertText('a'));
+        typed.act(const InsertText('b'));
+        typed.editor.commitComposition();
+        final preedit = _Session(backend, source: source, caret: caret);
+        preedit.editor.beginComposition();
+        preedit.act(ReplaceRange(caret, caret, 'a'));
+        preedit.act(ReplaceRange(caret, caret + 1, 'ab'));
+        preedit.editor.commitComposition();
+        for (final composed in [typed, preedit]) {
+          composed.expectState(
+            source: placed,
+            rows: ['ab'],
+            caret: const DisplayPosition(0, 2),
+          );
+          composed.act(const Undo(), source: source);
+        }
+      }
+    });
+
     test('backspace after a rule removes the rule', () {
       final session = _Session(backend, source: '***\nb', caret: 4);
       session.act(

@@ -859,10 +859,11 @@ final class FlarkEditor implements FlarkDocumentState {
       end = expanded.end;
       caret = start + inserted.length;
     }
+    final gap = sel.isCollapsed ? _sequenceGap(row, start, inserted) : '';
     final normalized = _normalizeInlineEdges(
       start,
       end,
-      inserted,
+      '$inserted$gap',
       caret,
       pending: pending,
     );
@@ -881,9 +882,14 @@ final class FlarkEditor implements FlarkDocumentState {
       FlarkSelection.collapsed(normalized.caret),
       pending: normalized.pending,
       typing: typing && typed != '\n' && typed.characters.length == 1,
-      accept: cells == null
+      accept: cells != null
+          ? (next) => _showsTableRow(next, normalized.caret, row.column, cells)
+          : gap.isEmpty
           ? null
-          : (next) => _showsTableRow(next, normalized.caret, row.column, cells),
+          : (next) => _keepsStructure(next, [
+              (start, end, inserted.length + gap.length),
+            ], const {}),
+      acceptSourceMode: gap.isNotEmpty,
       completeTypedFence:
           typing &&
           !composing &&
@@ -902,6 +908,28 @@ final class FlarkEditor implements FlarkDocumentState {
           ? text
           : null,
     );
+  }
+
+  /// The space to insert after [text] at [at] in [row] when a heading's
+  /// closing sequence starts there. An empty heading's text starts where its
+  /// sequence does, since the space between them separates the opening
+  /// marker; run into the text, the sequence would read as more of it. The
+  /// text takes a space of its own, as text in a heading has, unless it ends
+  /// in whitespace. Text with a line break gets none: a space would not keep
+  /// the sequence on the heading's line. A placement with the space commits
+  /// only when [_keepsStructure] holds, so a sequence it still paints is
+  /// refused.
+  String _sequenceGap(ProjectedRow row, int at, String text) {
+    final trail = _headingTrail(row);
+    return trail == null ||
+            trail.$1 != at ||
+            _isSpace(source, at) ||
+            text.isEmpty ||
+            _isSpace(text, text.length - 1) ||
+            text.contains('\n') ||
+            text.contains('\r')
+        ? ''
+        : ' ';
   }
 
   /// A word typed after the spaces that left an emphasis, strong or
@@ -1137,12 +1165,25 @@ final class FlarkEditor implements FlarkDocumentState {
       s = expanded.start;
       e = expanded.end;
     }
-    final normalized = _normalizeInlineEdges(s, e, text, s + text.length);
+    // A collapsed replacement places text as typing does.
+    final gap = s == e ? _sequenceGap(_doc.rowAt(s), s, text) : '';
+    final normalized = _normalizeInlineEdges(
+      s,
+      e,
+      '$text$gap',
+      s + text.length,
+    );
     return _commit(
       normalized.text,
       FlarkSelection.collapsed(normalized.caret),
       typing: false,
       pending: normalized.pending,
+      acceptSourceMode: true,
+      accept: gap.isEmpty
+          ? null
+          : (next) => _keepsStructure(next, [
+              (s, e, text.length + gap.length),
+            ], const {}),
     );
   }
 
