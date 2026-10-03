@@ -1098,6 +1098,83 @@ fn a_code_span_displays_its_unescaped_literal_within_one_line() {
     assert_eq!((&src[m.run(r, run::CONTENT_START_BYTE)..m.run(r, run::CONTENT_END_BYTE)], m.run(r, run::FLAGS) & 2), ("a\nb", 0));
 }
 
+#[test]
+fn a_paragraph_a_table_splits_ends_on_the_line_before_the_table_with_crlf() {
+    // comrak ends a paragraph a table header split at its last line's offset
+    // plus the bytes before that line's ending, and counts none before the
+    // `\r` of a CRLF: a lazy last line ends at column 0, and the list or
+    // footnote definition around it then moves the end to the paragraph's
+    // start. Read from there, the paragraph ended on its first line: its
+    // later lines were in no block and their text was hidden, and a first
+    // line shaped like a definition, which a split paragraph keeps as text,
+    // was taken for one and refused the model (`definition-inline`).
+    for ending in ["\n", "\r\n"] {
+        for (lines, contents, shown) in [
+            (&["- a", "b", "  | x |", "  |---|"][..], &["a", "b"][..], "a\nb"),
+            (&["1. Notes:", "see below", "   | Col | Val |", "   |-----|-----|", "   | a   | 1   |"], &["Notes:", "see below"], "Notes:\nsee below"),
+            (&["- a", "b", "c", "  | x |", "  |---|"], &["a", "b", "c"], "a\nb\nc"),
+            (&["[^1]: a", "b", "    | x |", "    |---|"], &["a", "b"], "a\nb"),
+            (&["- > a", "b", "  > | x |", "  > |---|"], &["a", "b"], "a\nb"),
+            (&["- [r]: /u", "lazy", "  | x |", "  |---|"], &["[r]: /u", "lazy"], "[r]: /u\nlazy"),
+            (&["- a", "b \\| c", "  | x |", "  |---|"], &["a", "b \\| c"], "a\nb | c"),
+            // A checkbox taken from the paragraph moves its start's column.
+            (&["- [ ] a", "b", "  | x |", "  |---|"], &["a", "b"], "a\nb"),
+        ] {
+            let src = lines.join(ending) + ending;
+            let arena = comrak::Arena::new();
+            let root = comrak::parse_document(&arena, &src, &flark_parse::model::options());
+            let paragraph = root.descendants().find(|n| matches!(n.data.borrow().value, comrak::nodes::NodeValue::Paragraph)).expect("a paragraph");
+            let sp = paragraph.data.borrow().sourcepos;
+            assert_eq!(sp.end.line, if ending == "\r\n" { sp.start.line } else { contents.len() }, "comrak's end line for {src:?}");
+            let m = M::of(&src); m.clean();
+            assert_eq!(m.n(header::DEFINITION_COUNT), 0, "for {src:?}");
+            let p = m.blocks_of(block_kind::PARAGRAPH)[0];
+            let records: Vec<&str> = (m.block(p, block::CONTENT_OFFSET)..m.block(p, block::CONTENT_OFFSET) + m.block(p, block::CONTENT_COUNT)).map(|c| &src[m.content(c, content::START_BYTE)..m.content(c, content::END_BYTE)]).collect();
+            assert_eq!(records, contents, "for {src:?}");
+            assert_eq!(m.block(p, block::LINE_COUNT), contents.len(), "for {src:?}");
+            assert_eq!(m.shown(&src, p), shown, "for {src:?}");
+        }
+    }
+}
+
+#[test]
+fn a_task_checkbox_followed_only_by_spaces_or_tabs_takes_no_whitespace() {
+    // comrak trims the spaces and tabs a text ends with before a line ending,
+    // and those ending a paragraph, before it scans for a checkbox: followed
+    // by nothing else on its line, the checkbox takes no whitespace. Taking
+    // one put the first space of a two-space hard break in the item's
+    // prefix, so the break's run began inside the checkbox and its row
+    // showed a lone space; with a reference for a bracket the document was
+    // refused before.
+    for ending in ["\n", "\r\n"] {
+        for (lines, contents) in [
+            (&["- [x]  ", "  e"][..], &["  ", "e"][..]),
+            (&["- &#91;x]  ", "  e"], &["  ", "e"]),
+            (&["- [x]   ", "  e"], &["   ", "e"]),
+            (&["- [x] ", "  e"], &[" ", "e"]),
+            (&["- [x]\t", "  e"], &["\t", "e"]),
+            (&["- [a]: /u", "  [x]  ", "  e"], &["  ", "e"]),
+            (&["> - [x]  ", "> e"], &["  ", "e"]),
+            (&["- [x]  "], &[""]),
+        ] {
+            let src = lines.join(ending);
+            let m = M::of(&src); m.clean();
+            assert_eq!(task_symbol(&m, &src).1, "x", "for {src:?}");
+            assert_eq!(m.contents(&src), contents, "for {src:?}");
+            // A space-based break lies in its line's content.
+            for r in (0..m.n(header::RUN_COUNT)).filter(|&r| m.run(r, run::KIND) == run_kind::HARD_BREAK as usize) {
+                let line = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::START_BYTE) <= m.run(r, run::START_BYTE) && m.run(r, run::START_BYTE) < m.content(c, content::END_BYTE));
+                assert!(line.is_some(), "break {}..{} outside content in {src:?}", m.run(r, run::START_BYTE), m.run(r, run::END_BYTE));
+            }
+        }
+    }
+    // Followed by text, the checkbox still takes the one whitespace character
+    // after it.
+    let src = "- [x]  a\n  b";
+    let m = M::of(src); m.clean();
+    assert_eq!(m.contents(src), [" a", "b"]);
+}
+
 /// The best of five extraction times of [src].
 fn extract_time(src: &str) -> std::time::Duration {
     (0..5).map(|_| { let t = std::time::Instant::now(); std::hint::black_box(Extractor::extract(src).is_ok()); t.elapsed() }).min().unwrap()

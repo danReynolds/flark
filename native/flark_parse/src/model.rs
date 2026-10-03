@@ -130,8 +130,8 @@ struct Container { kind: ContainerKind, offset: usize, first_line: usize, checkb
 /// space or tab (those are skipped before any checkbox is looked for): the
 /// opening bracket, or whitespace written another way. `end` follows the
 /// closing bracket and the one whitespace character after it, when there is
-/// one. `symbol` is the character between the brackets, which a reference
-/// may spell.
+/// one and more follows it on its line. `symbol` is the character between
+/// the brackets, which a reference may spell.
 #[derive(Clone, Copy)]
 struct Checkbox { start: usize, end: usize, symbol: (usize, usize) }
 
@@ -180,8 +180,11 @@ struct Prefix<'a> { cur: ColCursor<'a>, lazy: bool, after_checkbox: bool, /// by
 
 /// `setext_definitions` marks a paragraph whose leading definitions comrak
 /// resolved at a setext underline before a table split it (see
-/// [Extractor::reattach_setext_definitions]).
-struct Leaf<'b> { node: &'b AstNode<'b>, idx: usize, container: Option<usize>, setext_definitions: bool }
+/// [Extractor::reattach_setext_definitions]). `split_end` is the end line
+/// (1-based, in comrak's numbering) derived for a paragraph a table split
+/// that comrak reports ending on its first line (see
+/// [Extractor::reattach_split_paragraph_end]).
+struct Leaf<'b> { node: &'b AstNode<'b>, idx: usize, container: Option<usize>, setext_definitions: bool, split_end: Option<usize> }
 
 /// A container in the arena of containers: its data and the container above it.
 struct ContainerNode { c: Container, parent: Option<usize>, block: usize }
@@ -300,21 +303,55 @@ impl<'a> Extractor<'a> {
         // (node, parent block, innermost container above it)
         let mut stack: Vec<(&'b AstNode<'b>, u32, Option<usize>)> = vec![(root, u32::MAX, None)];
         while let Some((node, parent, container_id)) = stack.pop() {
+            // The split paragraph's end first: it restores the numbering the
+            // setext reattachment reads.
+            let split_end = self.reattach_split_paragraph_end(node, container_id);
             let setext_definitions = self.reattach_setext_definitions(node, container_id);
             let (idx, container, is_leaf) = self.block_record(node, parent, container_id);
             let inner = match container { Some(c) => { self.containers.push(ContainerNode { c, parent: container_id, block: idx }); Some(self.containers.len() - 1) } None => container_id };
             if is_leaf {
-                leaves.push(Leaf { node, idx, container: inner, setext_definitions });
+                leaves.push(Leaf { node, idx, container: inner, setext_definitions, split_end });
             } else {
                 let children: Vec<_> = node.children().collect();
                 for child in children.into_iter().rev() {
                     if child.data.borrow().value.block() { stack.push((child, idx as u32, inner)); }
-                    else { leaves.push(Leaf { node: child, idx, container: inner, setext_definitions: false }); }
+                    else { leaves.push(Leaf { node: child, idx, container: inner, setext_definitions: false, split_end: None }); }
                 }
             }
         }
         leaves.sort_by_key(|l| l.idx);
         leaves
+    }
+
+    /// comrak ends a paragraph a table header split
+    /// (`try_inserting_table_header_paragraph`) at its last line's offset
+    /// plus the bytes before that line's ending, and counts none before the
+    /// `\r` of a CRLF. A last line added at offset 0, a lazy one, so ends at
+    /// column 0, and a list or footnote definition finalized around it
+    /// (`fix_zero_end_columns`) moves that end to the paragraph's start: the
+    /// paragraph seems to end on its first line, short of the table that
+    /// split it, its later lines in no block and its leading definitions,
+    /// which a split paragraph keeps as text, taken for definitions. A
+    /// paragraph reported to end on its first line, followed by its table
+    /// with only its own continuation lines between, ends on the line before
+    /// the table, at that line's end, as comrak numbers it without a CRLF; it
+    /// is moved there before any position is read. Returns the derived end
+    /// line (1-based), which the paragraph's own inlines must reach
+    /// ([Extractor::check_split_paragraph_end]).
+    fn reattach_split_paragraph_end<'b>(&self, node: &'b AstNode<'b>, container_id: Option<usize>) -> Option<usize> {
+        if !matches!(node.data.borrow().value, NodeValue::Paragraph) { return None; }
+        let table = node.next_sibling().filter(|t| matches!(t.data.borrow().value, NodeValue::Table(_)))?;
+        let (psp, tsp) = (node.data.borrow().sourcepos, table.data.borrow().sourcepos);
+        // `fix_zero_end_columns` falls back to the start itself; a task
+        // checkbox taken afterwards moves the start's column, not the end.
+        if psp.start.line == 0 || psp.end.line != psp.start.line || tsp.start.line <= psp.start.line + 1 { return None; }
+        let last = tsp.start.line - 2;
+        let chain = self.chain(container_id);
+        if !(psp.start.line..=last).all(|l| l < self.li.line_count() && { let s = self.paragraph_line(l, &chain); s.start < s.end }) { return None; }
+        let mut d = node.data.borrow_mut();
+        d.sourcepos.end.line = last + 1;
+        d.sourcepos.end.column = self.li.line_end(last, self.src.len()) - self.li.line_start(last);
+        Some(last + 1)
     }
 
     /// comrak resolves a paragraph's leading definitions when a setext
@@ -599,7 +636,12 @@ impl<'a> Extractor<'a> {
         take('[')?;
         let symbol = take(symbol)?;
         take(']')?;
-        if let Some((_, next)) = self.decoded_char(i, line_end).filter(|&(c, _)| spacechar(c)) { i = next; }
+        // comrak trims the spaces and tabs a text ends with before a line
+        // ending, and those ending the paragraph: followed by nothing else on
+        // its line, the checkbox takes no whitespace.
+        if !bytes[i..line_end].iter().all(|b| matches!(b, b' ' | b'\t')) {
+            if let Some((_, next)) = self.decoded_char(i, line_end).filter(|&(c, _)| spacechar(c)) { i = next; }
+        }
         Some(Checkbox { start, end: i, symbol })
     }
 
@@ -959,6 +1001,7 @@ impl<'a> Extractor<'a> {
                 let pipes = if split_by_table { Some(Cell { start: self.blocks[idx][block::START_BYTE] as usize, column_delta: 0 }) } else { None };
                 self.walk_inlines(leaf.node, idx as u32, pipes, shift.as_ref());
                 self.check_stripped_definitions(idx, first_run, first_definition);
+                if let Some(end) = leaf.split_end { self.check_split_paragraph_end(idx, leaf.node, end); }
             }
             _ => { self.walk_inlines(leaf.node, idx as u32, None, None); }
         }
@@ -1275,6 +1318,17 @@ impl<'a> Extractor<'a> {
             let literal = c.literal.clone();
             self.dev("code-content", || format!("block {idx}: derived {:?} vs literal {:?}", derived, literal));
         }
+    }
+
+    /// The end derived for a paragraph a table split
+    /// ([Extractor::reattach_split_paragraph_end]) is where comrak's own
+    /// inlines end: comrak numbers them by the line endings they cross, which
+    /// the moved end does not touch. Its last inline ends on line [end]
+    /// (1-based), or the derivation is wrong and the model is refused. The
+    /// text literal checks then place each inline on those lines.
+    fn check_split_paragraph_end<'b>(&mut self, idx: usize, node: &'b AstNode<'b>, end: usize) {
+        let reach = node.descendants().skip(1).map(|n| n.data.borrow().sourcepos.end.line).max();
+        if reach != Some(end) { self.dev("split-paragraph-end", || format!("block {idx}: comrak's inlines end on line {reach:?}, the derived end is line {end}")); }
     }
 
     /// comrak removes a leaf's leading definitions before it parses inlines,
@@ -2403,6 +2457,21 @@ mod tests {
         ex.check_stripped_definitions(1, 0, 0);
         ex.check_stripped_definitions(1, 0, 1);
         assert!(ex.deviations.is_empty());
+    }
+
+    #[test]
+    fn a_split_paragraph_end_its_inlines_do_not_reach_refuses_the_model() {
+        // The end derived for a paragraph a table split must be the line its
+        // last inline ends on, by comrak's own numbering.
+        let src = "a\nb\n";
+        let arena = Arena::new();
+        let root = parse_document(&arena, src, &options());
+        let paragraph = root.first_child().expect("a paragraph");
+        let mut ex = Extractor::new(src, true);
+        ex.check_split_paragraph_end(1, paragraph, 2);
+        assert!(ex.deviations.is_empty());
+        for end in [1, 3] { ex.check_split_paragraph_end(1, paragraph, end); }
+        assert_eq!(ex.deviations.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("split-paragraph-end", None), ("split-paragraph-end", None)]);
     }
 
     #[test]
