@@ -338,6 +338,51 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
 
+  testWidgets(
+    'a field in the link popover keeps its input through keys and rebuilds',
+    (tester) async {
+      const source = '[hello](/old) tail';
+      final c = FlarkController(FlarkEditor(backend, text: source, caret: 3));
+      final field = TextEditingController();
+      Widget app() => MaterialApp(
+        home: Scaffold(
+          body: FlarkEditorWidget(
+            controller: c,
+            autofocus: true,
+            showToolbar: false,
+            linkPopoverBuilder: (_, actions) => Material(
+              child: SizedBox(width: 240, child: TextField(controller: field)),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(app());
+      await tester.pump();
+      // Shift+F10 opens the link's actions; the field takes focus and input.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f10);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      tester.testTextInput.enterText('x');
+      await tester.pump();
+      expect(field.text, 'x');
+      // A key the field leaves unhandled bubbles to the editor, and a host
+      // rebuild updates it. Neither may take the field's input connection.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+      await tester.pumpWidget(app());
+      tester.testTextInput.enterText('xh');
+      await tester.pump();
+      expect(field.text, 'xh');
+      expect(c.text, source);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      field.dispose();
+    },
+    variant: TargetPlatformVariant.all(),
+  );
+
   // Android composes the word being typed.
   void composeWord(WidgetTester tester) =>
       tester.testTextInput.updateEditingValue(

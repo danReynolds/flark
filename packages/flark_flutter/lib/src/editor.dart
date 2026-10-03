@@ -185,7 +185,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     if (widget.readOnly) {
       _endComposition(c);
       _close();
-    } else if (_focus.hasFocus) {
+    } else if (_focus.hasPrimaryFocus) {
+      // Only while the editor itself has focus: a field in the link popover
+      // holds the input connection while it is focused, and a host rebuild
+      // must not take it.
       _attach();
     }
   }
@@ -1039,6 +1042,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       );
     }
     if (event is KeyUpEvent || widget.readOnly) return KeyEventResult.ignored;
+    // Keys a focused descendant does not handle bubble here, such as those of
+    // a field or button in the link popover. They are that widget's: taken
+    // here, Enter would edit the document instead of pressing the button, Tab
+    // would not move focus, and a reattach would take the field's input.
+    if (!_focus.hasPrimaryFocus) return KeyEventResult.ignored;
     if (_connection?.attached != true) {
       // Keys still reach the focused editor after the platform closed its
       // connection, but typed characters cannot. A key means the user is

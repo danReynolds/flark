@@ -360,6 +360,41 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Tab and Enter in link actions move between and press their buttons',
+    (t) async {
+      const source = '[a long link label](/guide)\n\nfollowing';
+      final c = controller(source, 4);
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(
+              controller: c,
+              autofocus: true,
+              showToolbar: false,
+            ),
+          ),
+        ),
+      );
+      await t.pump();
+      await t.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await t.sendKeyEvent(LogicalKeyboardKey.f10);
+      await t.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await t.pump();
+      await t.pump();
+      expect(find.byType(FlarkLinkPopover), findsOneWidget);
+      // The actions open on Edit. Tab moves to Remove, and Enter presses it
+      // rather than reaching the document as a Return.
+      await t.sendKeyEvent(LogicalKeyboardKey.tab);
+      await t.pump();
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await t.pumpAndSettle();
+      expect(c.text, 'a long link label\n\nfollowing');
+      expect(find.byType(FlarkLinkPopover), findsNothing);
+      await close(t, [c]);
+    },
+  );
+
   testWidgets('built-in text palettes have contrast on their actual surfaces', (
     t,
   ) async {
