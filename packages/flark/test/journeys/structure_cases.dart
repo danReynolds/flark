@@ -496,6 +496,31 @@ void _structureCases(FlarkParseBackend backend) {
       }
     });
 
+    test('joining into an empty closed heading keeps its sequence hidden', () {
+      // An empty heading's text starts where its closing sequence does: the
+      // space between them separates the opening marker. Joined text takes
+      // a space of its own before the sequence, as text in a heading has,
+      // rather than running into it and painting it.
+      for (final (source, caret, backward, joined, text) in [
+        ('# #\n## J ##', 2, false, '# J #', 'J'),
+        ('#  ###\r\n##### foo ##', 3, false, '#  foo ###', 'foo'),
+        ('#####  ##\n#boo', 10, true, '#####  #boo ##', '#boo'),
+        ('###  ###   \r\n#f', 13, true, '###  #f ###   ', '#f'),
+        (' # ###\nbar', 3, false, ' # bar ###', 'bar'),
+        ('##### #\r\n[foo](/url)', 6, false, '##### [foo](/url) #', 'foo'),
+        ('-  ##  #\n#o', 7, false, '-  ##  #o #', '#o'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          backward ? const DeleteBackward() : const DeleteForward(),
+          source: joined,
+          rows: [text],
+          caret: const DisplayPosition(0, 0),
+        );
+        expect(session.editor.projection.rows.single.kind, RowKind.heading);
+      }
+    });
+
     test('backspace after a rule removes the rule', () {
       final session = _Session(backend, source: '***\nb', caret: 4);
       session.act(
@@ -539,6 +564,49 @@ void _structureCases(FlarkParseBackend backend) {
           source: source,
           caret: source.length - 1,
         );
+        session.act(const DeleteBackward(), applied: false, source: source);
+      }
+    });
+
+    test('backspace on a first-row rule keeps the next block in place', () {
+      // A rule that is all of an item leaves the item empty, and an empty
+      // item's content starts one column past its marker: the heading, too
+      // shallow for the rule's item, would move into it. The rule's line
+      // goes whole instead, as Delete on the rule takes it.
+      for (final newline in ['\n', '\r\n']) {
+        final session = _Session(
+          backend,
+          source: '-   ***$newline  ## r',
+          caret: 7,
+        );
+        session.act(
+          const DeleteBackward(),
+          source: '  ## r',
+          rows: ['r'],
+          caret: const DisplayPosition(0, 0),
+        );
+        expect(session.editor.projection.rows.single.shells, isEmpty);
+      }
+      // A block in the item stays there, behind the item's marker.
+      final inside = _Session(backend, source: '- ***\n  b', caret: 5);
+      inside.act(
+        const DeleteBackward(),
+        source: '- \n  b',
+        rows: ['', 'b'],
+        caret: const DisplayPosition(0, 0),
+      );
+      expect(inside.editor.projection.rows.last.shells.map((s) => s.kind), [
+        ShellKind.list,
+        ShellKind.item,
+      ]);
+      // Neither the rule nor its line can go without moving these blocks:
+      // an empty item ends at a blank line, leaving `b` outside it, and
+      // `code` would be indented code with or without the item's marker.
+      for (final (source, caret) in [
+        ('- ***\n\n  b', 5),
+        ('-   ***\n      code', 7),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
         session.act(const DeleteBackward(), applied: false, source: source);
       }
     });

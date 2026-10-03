@@ -1492,11 +1492,41 @@ final class FlarkEditor implements FlarkDocumentState {
       // exactly its line's content, so it can go on its own; anything else
       // would be deleting through a range comrak does not pin down.
       if (row.kind != RowKind.thematicBreak) return false;
-      return _commit(
-        source.replaceRange(row.sourceStart, row.sourceEnd, ''),
-        FlarkSelection.collapsed(row.sourceStart),
+      // The block after the rule stays in containers of the same kinds, and
+      // other rows keep their kinds. A blank line belongs to whichever
+      // container its neighbors give it, so the first row that is not one
+      // is the block that counts.
+      final following = projection.rows
+          .skip(1)
+          .where((r) => r.kind != RowKind.blank)
+          .firstOrNull;
+      final after = following == null ? -1 : _firstCaretStart(following);
+      final start = row.sourceStart, end = row.sourceEnd;
+      if (_commit(
+        source.replaceRange(start, end, ''),
+        FlarkSelection.collapsed(start),
         typing: false,
-      );
+        acceptSourceMode: true,
+        accept: (next) =>
+            (after < 0 ||
+                _keepsShells(next, following!, after - (end - start))) &&
+            _keepsStructure(
+              next,
+              [(start, end, 0)],
+              {row.index},
+              movesText: false,
+            ),
+      )) {
+        return true;
+      }
+      // A rule that was all of a list item leaves that item empty, and an
+      // empty item's content starts one column past its marker rather than
+      // where the rule did, so a block too shallow for the rule's item can
+      // move into it. The rule's whole line goes instead, marker and all, as
+      // Delete on the rule takes it.
+      return following?.index == 1 &&
+          _lastRejection == null &&
+          _removeLineAbove(row, following!);
     }
     final prev = projection.rows[row.index - 1];
     if (prev.kind == RowKind.tableCell) return false;
@@ -1693,16 +1723,38 @@ final class FlarkEditor implements FlarkDocumentState {
     final (a, b) = _joinedOwners(kept?.$1 ?? from, to);
     if (b > textEnd) return false;
     final markup = kept == null ? '' : source.substring(kept.$1, kept.$2);
-    final edits = [(a, b, 0), (textEnd, lineEnd, markup.length)];
+    // An empty heading's text starts where its closing sequence does: the
+    // space between them separates the opening marker. Text joined there
+    // takes a space of its own before the sequence, as text in a heading
+    // has; run into the text, the sequence would read as more of it.
+    final gap = markup.isEmpty || _isSpace(markup, 0) ? '' : ' ';
+    final edits = [(a, b, 0), (textEnd, lineEnd, gap.length + markup.length)];
+    // The text moves ahead of [left]'s markup, which sorted edits can only
+    // count as new text, and the check passes over new text. Mapped back to
+    // where it was, the markup is checked like the text: hidden source the
+    // join must not paint.
+    int old(int offset) {
+      final o = offset - a, text = textEnd - b;
+      if (o < 0) return offset;
+      if (o < text) return b + o;
+      final m = o - text - gap.length;
+      if (m < 0) return -1;
+      return m < markup.length ? kept!.$1 + m : lineEnd + m - markup.length;
+    }
+
     return _commit(
-      '${source.substring(0, a)}${source.substring(b, textEnd)}$markup'
+      '${source.substring(0, a)}${source.substring(b, textEnd)}$gap$markup'
       '${source.substring(lineEnd)}',
       FlarkSelection.collapsed(a),
       typing: false,
       acceptSourceMode: true,
       accept: (next) =>
           next.rowAt(a).kind == left.kind &&
-          _keepsStructure(next, edits, {left.index, right.index}),
+          _keepsStructure(next, edits, {
+            left.index,
+            right.index,
+          }, movesText: false) &&
+          !_revealsHiddenText(next, old),
     );
   }
 
