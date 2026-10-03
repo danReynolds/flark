@@ -421,6 +421,10 @@ void checkStructure(
       : (gap(other) ? other : (gap(at.row) ? at.row : -1));
   if (removed < 0 || removed + 1 >= rows.length) return;
   final following = rows[removed + 1];
+  // A row that shows no text joins as usual wherever that puts its source,
+  // as the edit profile says, so that Backspace can always erase a document
+  // (the corpus erase check): refusing would leave the user stuck.
+  if (following.text.isEmpty && !following.fenced) return;
   if (!alignments.every(
     (alignment) => following.sourceStart >= a.length - alignment.$2,
   )) {
