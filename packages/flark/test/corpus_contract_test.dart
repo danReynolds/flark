@@ -337,14 +337,17 @@ void checkErasure(String label, FlarkEditor e) {
     );
     // Every counted step strictly shrinks the source, or deletes code and
     // grows nothing but the fences around it, so that a body line left as a
-    // fence's run stays code. The bound stops a refusal from hanging the
-    // suite.
+    // fence's run stays code, or removes a row and keeps the source's length:
+    // text joined into an empty closed heading (`# #` and `bar`) takes a
+    // space of its own before the sequence. The bound stops a refusal from
+    // hanging the suite.
     var steps = 0;
     while (editor.source.isNotEmpty && steps <= src.length + 2) {
       final before = editor.source;
       // The user keeps pressing at the same end of the document.
       editor.apply(SetSelection.caret(backward ? editor.source.length : 0));
       final document = editor.sourceMode ? null : editor.document;
+      final rows = document?.projection.rows.length;
       if (!editor.apply(
         backward ? const DeleteBackward() : const DeleteForward(),
       )) {
@@ -386,7 +389,13 @@ void checkErasure(String label, FlarkEditor e) {
         }
         break;
       }
+      final joinedRows =
+          editor.source.length == before.length &&
+          rows != null &&
+          !editor.sourceMode &&
+          editor.projection.rows.length < rows;
       if (editor.source.length >= before.length &&
+          !joinedRows &&
           !_onlyDeletes(
             _withoutCaretFences(document),
             _withoutCaretFences(editor.sourceMode ? null : editor.document),
@@ -697,6 +706,28 @@ void main() {
       corpus.add((c as Map)['markdown'] as String);
     }
   }
+
+  test('empty closed headings erase from either end', () {
+    // No corpus document has an empty closed heading before more text,
+    // where a join keeps the source's length.
+    failures.clear();
+    for (final source in [
+      '# #\nbar',
+      '#  #\nbar',
+      '## ##\nbar baz',
+      '# foo #\n\nbar',
+      '# #\n**b**',
+      '# #\nb #',
+      '# #\r\nbar',
+      '> # #\n> bar',
+    ]) {
+      checkErasure(
+        jsonEncode(source),
+        FlarkEditor(backend, text: source, caret: 0),
+      );
+    }
+    expect(failures, isEmpty);
+  });
 
   test(
     'deep static invariants across the corpora',
