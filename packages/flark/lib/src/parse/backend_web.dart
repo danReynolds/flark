@@ -44,9 +44,11 @@ const int _initialInputCapacity = 4096;
 /// dart2wasm (Flutter web). Creation is asynchronous; parsing is synchronous.
 ///
 /// wasm32 aborts on panic, so a native fault traps out of the call instead of
-/// returning a code. The trap is reported as [FlarkParseException] with
-/// [FlarkParseException.faultCode], and the instance is discarded and
-/// re-created from the compiled module before the next parse.
+/// returning a code. Under dart2js the trap is reported as
+/// [FlarkParseException] with [FlarkParseException.faultCode]; dart2wasm
+/// cannot catch a trap at all, so it reaches the browser as an uncaught
+/// error. Either way the instance is discarded and re-created from the
+/// compiled module before the next parse.
 final class WasmParseBackend implements FlarkParseBackend {
   WasmParseBackend._(this._module) {
     _instantiate();
@@ -70,12 +72,22 @@ final class WasmParseBackend implements FlarkParseBackend {
 
   bool _disposed = false;
 
+  /// Set while [parse] calls into the instance. dart2js catches a trap where
+  /// it happens, but under dart2wasm a trap unwinds past every catch and
+  /// finally in [parse] to the browser and leaves this set, so that [parse]
+  /// rebuilds the instance before calling into it again.
+  bool _entered = false;
+
   @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _free(_input, _inputCapacity);
-    _free(_outCell, 16);
+    // A trapped instance's buffers go with its memory; freeing them would
+    // call into it again.
+    if (!_entered) {
+      _free(_input, _inputCapacity);
+      _free(_outCell, 16);
+    }
     // Drop the WebAssembly memory/export references as well as its buffers.
     _exports = JSObject();
     _memory = JSObject();
@@ -175,6 +187,17 @@ final class WasmParseBackend implements FlarkParseBackend {
   RenderModel parse(String source) {
     if (_disposed) throw StateError('WasmParseBackend used after dispose');
     validateFlarkSourceText(source);
+    // A trap that dart2wasm could not catch left the instance mid-call.
+    if (_entered) _instantiate();
+    _entered = true;
+    try {
+      return _parse(source);
+    } finally {
+      _entered = false;
+    }
+  }
+
+  RenderModel _parse(String source) {
     // One UTF-16 code unit never needs more than three UTF-8 bytes. Keep
     // headroom so typing does not reallocate on every keystroke.
     if (source.length * 3 > _inputCapacity) {

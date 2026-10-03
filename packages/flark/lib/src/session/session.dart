@@ -8,7 +8,8 @@ import 'platform_limits.dart';
 import 'state.dart';
 
 /// Host-independent ownership, readiness and publication. UI adapters own only
-/// their input/focus integration; this object owns its parser and editing state.
+/// their input/focus integration; this object owns its parser lease and
+/// editing state.
 final class FlarkSession {
   /// [syncLimit] is the UTF-8 size rendered live, [flarkDefaultLiveBytes]
   /// unless set; [liveLimits] bounds the document's shape. A document beyond
