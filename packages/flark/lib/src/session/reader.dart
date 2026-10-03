@@ -67,17 +67,21 @@ final class FlarkReader {
           }
           return;
         }
+        // Held before the first parse: under dart2wasm a trap there unwinds
+        // past the catch below, and dispose() must still release the lease
+        // so a shared parser is not held for the life of the page.
+        _lease = lease;
         _document = FlarkReadDocument(
           lease.backend,
           _markdown,
           syncLimit: syncLimit,
           liveLimits: liveLimits,
         );
-        _lease = lease;
         _status = FlarkStatus.ready;
         _notify();
         if (!done.isCompleted) done.complete();
       } catch (e, stack) {
+        if (identical(_lease, lease)) _lease = null;
         lease?.dispose();
         if (_status != FlarkStatus.disposed) {
           _error = e;

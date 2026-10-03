@@ -4,8 +4,11 @@
 /// Delete must not paint hidden markup, change the kind of rows it does not
 /// join or move the row after a removed empty line into or out of a
 /// container, and each sequence's history must undo through states it reached
-/// back to its first source, then redo exactly to its end. A failure prints
-/// the seed and command log so it can be minimized into a direct regression.
+/// back to its first source, then redo exactly to its end. Before that walk,
+/// host actions follow the commands: an IME composition that commits or
+/// cancels, a source-mode round trip, a programmatic select all and an exact
+/// source splice. A failure prints the seed and command log so it can be
+/// minimized into a direct regression.
 library;
 
 import 'dart:convert';
@@ -183,6 +186,13 @@ void main() {
             }
             reached.add(stateOf(editor));
           }
+          // Host actions draw from a stream of their own, so the commands a
+          // seed replays stay as they were.
+          final host = Random(s ^ 0x5eed);
+          for (var k = 0; k < 3; k++) {
+            hostAction(host, editor, log, 'seed $s host $k');
+            reached.add(stateOf(editor));
+          }
           checkHistory(editor, source, reached, 'seed $s');
         } catch (error) {
           // ignore: avoid_print
@@ -216,6 +226,70 @@ void checkStep(FlarkEditor editor, String label) {
     reason: '$label: extent ${doc.selection.extent} legal',
   );
   checkInvariants(doc.source, doc.model, doc.projection, label);
+}
+
+/// One host action and its oracle. A composition that cancels restores the
+/// state before it and leaves history as it was; one that commits is a single
+/// undo step, which [checkHistory] walks with the rest. A source-mode round
+/// trip keeps the source and the selection's offsets, a programmatic select
+/// all keeps the source, and a refused source splice leaves no trace.
+void hostAction(Random r, FlarkEditor editor, List<String> log, String label) {
+  final before = stateOf(editor), revision = editor.revision;
+  final undo = editor.history.undoTarget, redo = editor.history.redoTarget;
+  switch (r.nextInt(4)) {
+    case 0:
+      editor.beginComposition();
+      log.add('beginComposition()');
+      for (var i = r.nextInt(3); i >= 0; i--) {
+        final command = r.nextInt(3) == 0
+            ? const DeleteBackward()
+            : InsertText(_alphabet[r.nextInt(_alphabet.length)]);
+        log.add(describeCommand(command));
+        editor.apply(command);
+        checkStep(editor, '$label composing');
+      }
+      if (r.nextBool()) {
+        log.add('cancelComposition()');
+        editor.cancelComposition();
+        expect(stateOf(editor), before, reason: '$label: cancel');
+        expect(
+          identical(editor.history.undoTarget, undo) &&
+              identical(editor.history.redoTarget, redo),
+          isTrue,
+          reason: '$label: cancel kept history',
+        );
+      } else {
+        log.add('commitComposition()');
+        editor.commitComposition();
+      }
+    case 1:
+      log.add('setSourceMode(true), setSourceMode(false)');
+      editor
+        ..setSourceMode(true)
+        ..setSourceMode(false);
+      // Source mode has no table cells, so an unwritten cell's address does
+      // not survive the trip; its source offsets do.
+      expect(
+        (editor.source, editor.selection.base, editor.selection.extent),
+        (before.$1, before.$2.base, before.$2.extent),
+        reason: '$label: source mode',
+      );
+    case 2:
+      final codeBlock = r.nextBool();
+      log.add('selectAll(codeBlock: $codeBlock)');
+      editor.selectAll(codeBlock: codeBlock);
+      expect(editor.source, before.$1, reason: '$label: select all');
+    default:
+      final length = editor.source.length, start = r.nextInt(length + 1);
+      final end = min(length, start + r.nextInt(6));
+      final text = ['', 'q', '\n', '**', '\r\n', '😀'][r.nextInt(6)];
+      log.add('replaceSourceRange($start, $end, ${jsonEncode(text)})');
+      if (!editor.replaceSourceRange(start, end, text)) {
+        expect(stateOf(editor), before, reason: '$label: refused splice');
+        expect(editor.revision, revision, reason: '$label: refused splice');
+      }
+  }
+  checkStep(editor, label);
 }
 
 /// What history restores: the source, the selection and the typing intent.

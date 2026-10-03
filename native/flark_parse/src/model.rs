@@ -119,9 +119,21 @@ fn email_autolink_overflow(src: &str) -> Option<usize> {
 enum ContainerKind { Quote, Item, Footnote }
 
 /// One container in the chain above a line. `offset` is the content column
-/// relative to the enclosing container's content column.
+/// relative to the enclosing container's content column. `checkbox` is a
+/// task item's [Checkbox] `start..end`, all a prefix cursor needs: chains are
+/// copied per line, so the container stays as small as it was.
 #[derive(Clone, Copy)]
 struct Container { kind: ContainerKind, offset: usize, first_line: usize, checkbox: Option<(usize, usize)> }
+
+/// A task item's checkbox as comrak's tasklist scanner took it, in source
+/// bytes. `start` is the first byte the scanner read that is not a literal
+/// space or tab (those are skipped before any checkbox is looked for): the
+/// opening bracket, or whitespace written another way. `end` follows the
+/// closing bracket and the one whitespace character after it, when there is
+/// one and more follows it on its line. `symbol` is the character between
+/// the brackets, which a reference may spell.
+#[derive(Clone, Copy)]
+struct Checkbox { start: usize, end: usize, symbol: (usize, usize) }
 
 /// Column cursor over one physical line: spaces and tabs consumed by column,
 /// with the remainder of a partially consumed tab carried as virtual spaces.
@@ -161,12 +173,18 @@ impl<'a> ColCursor<'a> {
 
 /// Result of consuming the container prefixes on one line.
 struct Prefix<'a> { cur: ColCursor<'a>, lazy: bool, after_checkbox: bool, /// byte offset within the line where the innermost matched container's prefix begins
-    prefix_start: usize }
+    prefix_start: usize,
+    /// where the innermost prefix holding at least one byte begins: the one
+    /// before [prefix_start] when that container has no bytes on the line
+    held: usize }
 
 /// `setext_definitions` marks a paragraph whose leading definitions comrak
 /// resolved at a setext underline before a table split it (see
-/// [Extractor::reattach_setext_definitions]).
-struct Leaf<'b> { node: &'b AstNode<'b>, idx: usize, container: Option<usize>, setext_definitions: bool }
+/// [Extractor::reattach_setext_definitions]). `split_end` is the end line
+/// (1-based, in comrak's numbering) derived for a paragraph a table split
+/// that comrak reports ending on its first line (see
+/// [Extractor::reattach_split_paragraph_end]).
+struct Leaf<'b> { node: &'b AstNode<'b>, idx: usize, container: Option<usize>, setext_definitions: bool, split_end: Option<usize> }
 
 /// A container in the arena of containers: its data and the container above it.
 struct ContainerNode { c: Container, parent: Option<usize>, block: usize }
@@ -189,9 +207,10 @@ fn shift_columns(mut sp: Sourcepos, delta: isize) -> Sourcepos {
 
 /// One line of a paragraph-like leaf as comrak buffered it: `virt` is the
 /// number of virtual spaces a partially consumed tab contributed on a lazy
-/// line, which exist in comrak's buffer but not in the source.
+/// line, which exist in comrak's buffer but not in the source. `held` is
+/// [Prefix::held] in the source.
 #[derive(Clone, Copy)]
-struct LineSpan { line0: usize, start: usize, end: usize, virt: usize, prefix_start: usize }
+struct LineSpan { line0: usize, start: usize, end: usize, virt: usize, prefix_start: usize, held: usize }
 
 pub struct Extractor<'a> {
     src: &'a str,
@@ -284,21 +303,55 @@ impl<'a> Extractor<'a> {
         // (node, parent block, innermost container above it)
         let mut stack: Vec<(&'b AstNode<'b>, u32, Option<usize>)> = vec![(root, u32::MAX, None)];
         while let Some((node, parent, container_id)) = stack.pop() {
+            // The split paragraph's end first: it restores the numbering the
+            // setext reattachment reads.
+            let split_end = self.reattach_split_paragraph_end(node, container_id);
             let setext_definitions = self.reattach_setext_definitions(node, container_id);
             let (idx, container, is_leaf) = self.block_record(node, parent, container_id);
             let inner = match container { Some(c) => { self.containers.push(ContainerNode { c, parent: container_id, block: idx }); Some(self.containers.len() - 1) } None => container_id };
             if is_leaf {
-                leaves.push(Leaf { node, idx, container: inner, setext_definitions });
+                leaves.push(Leaf { node, idx, container: inner, setext_definitions, split_end });
             } else {
                 let children: Vec<_> = node.children().collect();
                 for child in children.into_iter().rev() {
                     if child.data.borrow().value.block() { stack.push((child, idx as u32, inner)); }
-                    else { leaves.push(Leaf { node: child, idx, container: inner, setext_definitions: false }); }
+                    else { leaves.push(Leaf { node: child, idx, container: inner, setext_definitions: false, split_end: None }); }
                 }
             }
         }
         leaves.sort_by_key(|l| l.idx);
         leaves
+    }
+
+    /// comrak ends a paragraph a table header split
+    /// (`try_inserting_table_header_paragraph`) at its last line's offset
+    /// plus the bytes before that line's ending, and counts none before the
+    /// `\r` of a CRLF. A last line added at offset 0, a lazy one, so ends at
+    /// column 0, and a list or footnote definition finalized around it
+    /// (`fix_zero_end_columns`) moves that end to the paragraph's start: the
+    /// paragraph seems to end on its first line, short of the table that
+    /// split it, its later lines in no block and its leading definitions,
+    /// which a split paragraph keeps as text, taken for definitions. A
+    /// paragraph reported to end on its first line, followed by its table
+    /// with only its own continuation lines between, ends on the line before
+    /// the table, at that line's end, as comrak numbers it without a CRLF; it
+    /// is moved there before any position is read. Returns the derived end
+    /// line (1-based), which the paragraph's own inlines must reach
+    /// ([Extractor::check_split_paragraph_end]).
+    fn reattach_split_paragraph_end<'b>(&self, node: &'b AstNode<'b>, container_id: Option<usize>) -> Option<usize> {
+        if !matches!(node.data.borrow().value, NodeValue::Paragraph) { return None; }
+        let table = node.next_sibling().filter(|t| matches!(t.data.borrow().value, NodeValue::Table(_)))?;
+        let (psp, tsp) = (node.data.borrow().sourcepos, table.data.borrow().sourcepos);
+        // `fix_zero_end_columns` falls back to the start itself; a task
+        // checkbox taken afterwards moves the start's column, not the end.
+        if psp.start.line == 0 || psp.end.line != psp.start.line || tsp.start.line <= psp.start.line + 1 { return None; }
+        let last = tsp.start.line - 2;
+        let chain = self.chain(container_id);
+        if !(psp.start.line..=last).all(|l| l < self.li.line_count() && { let s = self.paragraph_line(l, &chain); s.start < s.end }) { return None; }
+        let mut d = node.data.borrow_mut();
+        d.sourcepos.end.line = last + 1;
+        d.sourcepos.end.column = self.li.line_end(last, self.src.len()) - self.li.line_start(last);
+        Some(last + 1)
     }
 
     /// comrak resolves a paragraph's leading definitions when a setext
@@ -327,7 +380,7 @@ impl<'a> Extractor<'a> {
         // The definitions as resolved from the paragraph's first line. Lines
         // through the table's end, which comrak numbers correctly, hold them.
         let lines: Vec<LineSpan> = (l0..tsp.end.line.min(self.li.line_count())).map(|l| self.paragraph_line(l, &chain)).collect();
-        let buffer = lines_text(self.src, &lines);
+        let buffer = LineBuffer::new(self.src, &self.li, &lines).text;
         let Some(last) = reference_definitions::paragraph_definitions(&buffer).last().map(|d| d.end) else { return false };
         let k = buffer[..last].matches('\n').count();
         if k == 0 || !buffer[..last].ends_with('\n') || !self.setext_underline(l0 + k, &chain) { return false; }
@@ -413,22 +466,22 @@ impl<'a> Extractor<'a> {
             NodeValue::TaskItem(t) => {
                 rec[block::KIND] = block_kind::ITEM;
                 rec[block::FLAGS] = 1 | ((t.symbol.is_some() as u32) << 1);
-                // comrak's symbol position is subject to its stripped-definition
-                // drift; trust it only when the bytes there are the checkbox, else
-                // find the checkbox in the item's source.
-                let symbol = t.symbol.unwrap_or(' ');
-                let bytes = self.src.as_bytes();
-                let looks_like_checkbox = |a: usize| a >= 1 && a + 2 <= bytes.len() && bytes[a - 1] == b'[' && bytes[a + 1] == b']' && (bytes[a] as char == symbol || (symbol == ' ' && bytes[a] == b' '));
-                let claimed = sourcepos_range(t.symbol_sourcepos, &self.li, self.src.len()).map(|(ss, _)| ss).filter(|ss| looks_like_checkbox(*ss));
-                let found = claimed.or_else(|| (start..end.min(bytes.len())).find(|a| looks_like_checkbox(*a)));
-                let mut checkbox = None;
-                if let Some(ss) = found { rec[block::ATTR1] = ss as u32; rec[block::ATTR2] = (ss + 1) as u32; checkbox = Some((ss - 1, ss + 2)); }
                 // comrak reports no NodeList for task items: the content column
                 // is derived from the marker line.
                 let chain = self.chain(container_id);
                 let offset = self.marker_content_offset(first_line, &chain);
                 rec[block::ATTR0] = offset as u32;
-                container = Some(Container { kind: ContainerKind::Item, offset, first_line, checkbox });
+                let item = Container { kind: ContainerKind::Item, offset, first_line, checkbox: None };
+                let symbol = t.symbol.unwrap_or(' ');
+                let last_line = sp.end.line.saturating_sub(1).max(first_line);
+                let checkbox = match self.task_checkbox(node, symbol, t.symbol_sourcepos, item, &chain, last_line) {
+                    Ok(cb) => { rec[block::ATTR1] = cb.symbol.0 as u32; rec[block::ATTR2] = cb.symbol.1 as u32; Some(cb) }
+                    // A task item without its checkbox's range cannot be
+                    // toggled, nor its checkbox hidden: refuse rather than
+                    // publish it.
+                    Err(why) => { self.dev("task-checkbox", || format!("item at line {first_line}, symbol {symbol:?}: {why}")); None }
+                };
+                container = Some(Container { checkbox: checkbox.map(|cb| (cb.start, cb.end)), ..item });
             }
             NodeValue::ThematicBreak => rec[block::KIND] = block_kind::THEMATIC_BREAK,
             NodeValue::Table(t) => {
@@ -500,6 +553,113 @@ impl<'a> Extractor<'a> {
         (marker_end + padding).saturating_sub(base).max(2)
     }
 
+    /// The checkbox comrak's tasklist scanner took from task item [node]:
+    /// `spacechar* '[' symbol ']' (spacechar | end)` over the text of the
+    /// item's first paragraph once its leading definitions are resolved.
+    /// comrak resolves them first, from the lines as written, and scans only
+    /// after joining the text nodes entity references decode into. So the
+    /// checkbox can sit on a line after definitions, a vertical tab or form
+    /// feed is whitespace to it, and any of its characters can be a reference
+    /// (`[ ]&#9;x`, `&#91;x]`). comrak's own symbol position is the text's
+    /// reported start plus the symbol's offset in decoded text: stripped
+    /// definitions leave that start on the paragraph's first line, and a
+    /// reference before the symbol is longer than what it decodes to. The
+    /// item's first checkbox-shaped bytes were no better: they can be a
+    /// definition's destination (`1. [a]:[x]\n[x]`). Where neither applies,
+    /// comrak's position must be the derived one.
+    fn task_checkbox(&self, node: &AstNode<'_>, symbol: char, claimed: Sourcepos, item: Container, chain: &[Container], last_line: usize) -> Result<Checkbox, String> {
+        let mut chain = chain.to_vec();
+        chain.push(item);
+        // The scanned paragraph was the item's first child when comrak
+        // scanned: paragraphs of definitions alone were removed before. When
+        // taking the checkbox emptied it, comrak removed it too, so it lies
+        // before the item's first remaining child, after any such paragraphs
+        // and blank lines; otherwise it is that child.
+        let child = node.first_child().map(|c| { let d = c.data.borrow(); (matches!(d.value, NodeValue::Paragraph), d.sourcepos) });
+        let region_end = child.map_or(last_line + 1, |(_, sp)| sp.start.line.saturating_sub(1)).min(last_line + 1);
+        let mut l = item.first_line;
+        while l < region_end {
+            let lines: Vec<LineSpan> = (l..region_end).map(|k| self.paragraph_line(k, &chain)).take_while(|s| s.start < s.end).collect();
+            l += lines.len().max(1);
+            if let Some(found) = self.checkbox_after_definitions(&lines, symbol, claimed) { return found; }
+        }
+        match child {
+            Some((true, sp)) => {
+                let lines: Vec<LineSpan> = (sp.start.line.saturating_sub(1)..sp.end.line).map(|k| self.paragraph_line(k, &chain)).collect();
+                self.checkbox_after_definitions(&lines, symbol, claimed).unwrap_or_else(|| Err(format!("the paragraph at line {} holds only definitions", sp.start.line)))
+            }
+            _ => Err(format!("no paragraph before line {region_end}")),
+        }
+    }
+
+    /// The checkbox opening what is left of paragraph [lines] once its
+    /// definitions are resolved, or `None` when nothing is left: comrak
+    /// removed such a paragraph before it scanned for checkboxes.
+    fn checkbox_after_definitions(&self, lines: &[LineSpan], symbol: char, claimed: Sourcepos) -> Option<Result<Checkbox, String>> {
+        let buffer = LineBuffer::new(self.src, &self.li, lines);
+        let defs = reference_definitions::paragraph_definitions(&buffer.text);
+        // The definitions end with a line, so the text begins at one.
+        let after = defs.last().map_or(0, |d| d.end);
+        if after >= buffer.text.len() { return None; }
+        let line = &lines[buffer.starts.iter().position(|&s| s == after)?];
+        let line_end = self.li.line_end(line.line0, self.src.len());
+        let Some(checkbox) = self.scan_checkbox(line.start, line_end, symbol) else {
+            return Some(Err(format!("no checkbox at {:?}", &self.src[line.start..line_end])));
+        };
+        // Without definitions and references before the symbol, comrak's
+        // position is exact, and the derivation must agree with it.
+        if defs.is_empty() && !self.src[checkbox.start..checkbox.symbol.0].contains('&') {
+            let at = sourcepos_range(claimed, &self.li, self.src.len()).map(|(s, _)| s);
+            if at != Some(checkbox.symbol.0) { return Some(Err(format!("symbol derived at {} where comrak reports {at:?}", checkbox.symbol.0))); }
+        }
+        Some(Ok(checkbox))
+    }
+
+    /// comrak's tasklist pattern matched from [from] over the text comrak
+    /// decodes the source to, each character written as itself or as an
+    /// entity reference comrak decodes to it. The literal spaces and tabs
+    /// leading it are not the checkbox's: a prefix cursor skips them first.
+    fn scan_checkbox(&self, from: usize, line_end: usize, symbol: char) -> Option<Checkbox> {
+        // The scanner's `spacechar`, the bytes 0x09 to 0x0D and the space.
+        let spacechar = |c: char| matches!(c, '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ');
+        let bytes = self.src.as_bytes();
+        let mut i = from;
+        while i < line_end && matches!(bytes[i], b' ' | b'\t') { i += 1; }
+        let start = i;
+        while let Some((_, next)) = self.decoded_char(i, line_end).filter(|&(c, _)| spacechar(c)) { i = next; }
+        let mut take = |c: char| {
+            let (_, next) = self.decoded_char(i, line_end).filter(|&(d, _)| d == c)?;
+            let range = (i, next);
+            i = next;
+            Some(range)
+        };
+        take('[')?;
+        let symbol = take(symbol)?;
+        take(']')?;
+        // comrak trims the spaces and tabs a text ends with before a line
+        // ending, and those ending the paragraph: followed by nothing else on
+        // its line, the checkbox takes no whitespace.
+        if !bytes[i..line_end].iter().all(|b| matches!(b, b' ' | b'\t')) {
+            if let Some((_, next)) = self.decoded_char(i, line_end).filter(|&(c, _)| spacechar(c)) { i = next; }
+        }
+        Some(Checkbox { start, end: i, symbol })
+    }
+
+    /// The character comrak's text holds for the source at [i], and where
+    /// the source after it begins. An entity reference comrak decodes stands
+    /// for its decoding, and for no single character when that is longer.
+    fn decoded_char(&self, i: usize, end: usize) -> Option<(char, usize)> {
+        let rest = self.src.get(i..end)?;
+        if let Some(l) = text_pieces::entity_len(rest) {
+            let shown = self.entities.decode(&rest[..l]);
+            if shown != rest[..l] {
+                let mut chars = shown.chars();
+                return match (chars.next(), chars.next()) { (Some(c), None) => Some((c, i + l)), _ => None };
+            }
+        }
+        rest.chars().next().map(|c| (c, i + c.len_utf8()))
+    }
+
     // ------------------------------------------------------------- per line
 
     /// Consume container prefixes on one physical line.
@@ -517,8 +677,10 @@ impl<'a> Extractor<'a> {
         // lazy line would have (where the indentation fell short) for editing,
         // while its content follows cmark past the whitespace.
         let mut prefix_frozen = false;
+        let mut held = bom;
         for c in containers {
             let at = cur.pos;
+            let frozen = prefix_frozen;
             match c.kind {
                 ContainerKind::Quote => {
                     let save = cur;
@@ -556,36 +718,21 @@ impl<'a> Extractor<'a> {
                             if cur.line[cur.pos..].iter().all(|b| matches!(b, b' ' | b'\t')) {
                                 if !prefix_frozen { prefix_start = at; prefix_frozen = true; }
                                 cur.skip_whitespace();
-                            } else {
-                                // A lazy line still holds the checkbox when definitions
-                                // stripped before it left it leading the paragraph.
-                                if let Some((cb_start, cb_end)) = c.checkbox {
-                                    let mut probe = cur;
-                                    probe.skip_whitespace();
-                                    if self.li.line_start(line0) + probe.pos == cb_start {
-                                        cur = probe;
-                                        cur.advance(cb_end - cb_start);
-                                        if matches!(cur.line.get(cur.pos), Some(b' ') | Some(b'\t')) { cur.advance(1); }
-                                        after_checkbox = true;
-                                    }
-                                }
-                                lazy = true; break;
-                            }
+                            } else { lazy = true; break; }
                         }
                     }
                     if !prefix_frozen { prefix_start = at; }
                     // The task checkbox is skipped on whichever line comrak found it
-                    // (the item's first paragraph line), plus one space or tab.
-                    // The checkbox leads the paragraph's first line, which cmark
-                    // strips of whitespace first: it can sit past extra spaces
-                    // or a partially consumed tab.
-                    if let Some((cb_start, cb_end)) = c.checkbox {
+                    // (the item's first paragraph line), with the whitespace
+                    // character after it. The checkbox leads the paragraph's
+                    // first line, which cmark strips of whitespace first: it
+                    // can sit past extra spaces or a partially consumed tab.
+                    if let Some((start, end)) = c.checkbox {
                         let mut probe = cur;
                         probe.skip_whitespace();
-                        if self.li.line_start(line0) + probe.pos == cb_start {
+                        if self.li.line_start(line0) + probe.pos == start {
                             cur = probe;
-                            cur.advance(cb_end - cb_start);
-                            if matches!(cur.line.get(cur.pos), Some(b' ') | Some(b'\t')) { cur.advance(1); }
+                            cur.advance(end - start);
                             after_checkbox = true;
                         }
                     }
@@ -612,9 +759,29 @@ impl<'a> Extractor<'a> {
                     }
                 }
             }
+            if !frozen && cur.pos > at { held = at; }
         }
-        if lazy { prefix_start = cur.pos; }
-        Prefix { cur, lazy, after_checkbox, prefix_start }
+        if lazy {
+            // A lazy line still holds a task item's checkbox when definitions
+            // stripped before it left it leading the paragraph, whichever
+            // container the line falls short of: the item's own indentation,
+            // or a quote or list item it is nested in. The checkbox's
+            // paragraph is its item's first child, so only the innermost
+            // container can own it; looking further cost every lazy line the
+            // chain's depth.
+            if let Some((start, end)) = containers.last().and_then(|c| c.checkbox) {
+                let mut probe = cur;
+                probe.skip_whitespace();
+                if self.li.line_start(line0) + probe.pos == start {
+                    cur = probe;
+                    cur.advance(end - start);
+                    after_checkbox = true;
+                }
+            }
+            prefix_start = cur.pos;
+            held = cur.pos;
+        }
+        Prefix { cur, lazy, after_checkbox, prefix_start, held }
     }
 
     fn line_bytes(&self, line0: usize) -> &'a [u8] { let ls = self.li.line_start(line0); let le = self.li.line_end(line0, self.src.len()); &self.src.as_bytes()[ls..le] }
@@ -635,8 +802,9 @@ impl<'a> Extractor<'a> {
     fn paragraph_line(&self, line0: usize, containers: &[Container]) -> LineSpan {
         let mut p = self.prefix_cursor(line0, self.line_bytes(line0), containers);
         if !p.lazy && !p.after_checkbox { p.cur.skip_whitespace(); }
-        let start = self.li.line_start(line0) + p.cur.pos;
-        LineSpan { line0, start, end: self.trimmed_end(line0, start), virt: if p.lazy { p.cur.virt } else { 0 }, prefix_start: self.li.line_start(line0) + p.prefix_start }
+        let ls = self.li.line_start(line0);
+        let start = ls + p.cur.pos;
+        LineSpan { line0, start, end: self.trimmed_end(line0, start), virt: if p.lazy { p.cur.virt } else { 0 }, prefix_start: ls + p.prefix_start, held: ls + p.held }
     }
 
     fn push_content(&mut self, line0: usize, cs: usize, ce: usize, virt: usize, prefix_start: usize) {
@@ -672,9 +840,19 @@ impl<'a> Extractor<'a> {
             let block_index = self.containers[i].block;
             let chain = self.chain(Some(i));
             self.blocks[block_index][block::CONTENT_OFFSET] = self.content.len() as u32;
+            // comrak continues a list item over its container's blank lines
+            // without the item's indentation (`parse_node_item_prefix`), so
+            // the item has no prefix there: the line's innermost prefix is the
+            // enclosing one. comrak matches every enclosing prefix before it
+            // continues the item, so that one is taken only on lines inside
+            // comrak's own line range for the container, which the extraction
+            // refits for leaves alone.
+            let (first, count) = (self.blocks[block_index][block::FIRST_LINE] as usize, self.blocks[block_index][block::LINE_COUNT] as usize);
             for line in owned {
                 let p = self.paragraph_line(line, &chain);
-                if p.start == p.end { self.push_content(line, p.start, p.end, 0, p.prefix_start); }
+                if p.start != p.end { continue; }
+                let prefix = if p.prefix_start == p.start && (first..first + count).contains(&line) { p.held } else { p.prefix_start };
+                self.push_content(line, p.start, p.end, 0, prefix);
             }
             self.blocks[block_index][block::CONTENT_COUNT] = self.content.len() as u32 - self.blocks[block_index][block::CONTENT_OFFSET];
             // comrak can end a container short of its own empty lines: an
@@ -807,6 +985,7 @@ impl<'a> Extractor<'a> {
                 // A split paragraph keeps its definitions as text, unless a setext
                 // underline had resolved them first: then they left the paragraph
                 // and only their lines remain in it.
+                let first_definition = self.definitions.len();
                 let (shift, records) = self.strip_definitions(l0, last, chain, (!split_by_table || leaf.setext_definitions) && !led_by_checkbox);
                 for r in records {
                     // The parser buffer trims trailing whitespace, but an
@@ -821,6 +1000,8 @@ impl<'a> Extractor<'a> {
                 // positions carry the same shift as a table cell's.
                 let pipes = if split_by_table { Some(Cell { start: self.blocks[idx][block::START_BYTE] as usize, column_delta: 0 }) } else { None };
                 self.walk_inlines(leaf.node, idx as u32, pipes, shift.as_ref());
+                self.check_stripped_definitions(idx, first_run, first_definition);
+                if let Some(end) = leaf.split_end { self.check_split_paragraph_end(idx, leaf.node, end); }
             }
             _ => { self.walk_inlines(leaf.node, idx as u32, None, None); }
         }
@@ -1139,17 +1320,57 @@ impl<'a> Extractor<'a> {
         }
     }
 
+    /// The end derived for a paragraph a table split
+    /// ([Extractor::reattach_split_paragraph_end]) is where comrak's own
+    /// inlines end: comrak numbers them by the line endings they cross, which
+    /// the moved end does not touch. Its last inline ends on line [end]
+    /// (1-based), or the derivation is wrong and the model is refused. The
+    /// text literal checks then place each inline on those lines.
+    fn check_split_paragraph_end<'b>(&mut self, idx: usize, node: &'b AstNode<'b>, end: usize) {
+        let reach = node.descendants().skip(1).map(|n| n.data.borrow().sourcepos.end.line).max();
+        if reach != Some(end) { self.dev("split-paragraph-end", || format!("block {idx}: comrak's inlines end on line {reach:?}, the derived end is line {end}")); }
+    }
+
+    /// comrak removes a leaf's leading definitions before it parses inlines,
+    /// so none of the leaf's inlines, the runs from [first_run], lies among
+    /// the definitions recorded for it from [first_definition]. One that
+    /// does marks text comrak kept and the mirror took for a definition: the
+    /// leaf has no content there and a host would show a definition's row
+    /// over it. Checked before an inline deviation can drop the runs, and
+    /// refused. The definitions open the leaf, so their span from the first
+    /// one's start to the last one's end is all a run must stay out of.
+    fn check_stripped_definitions(&mut self, idx: usize, first_run: usize, first_definition: usize) {
+        let (Some(first), Some(last)) = (self.definitions.get(first_definition), self.definitions.last()) else { return };
+        let (from, to) = (first.start, last.end);
+        let Some(r) = self.runs[first_run..].iter().find(|r| (r[run::START_BYTE] as usize) < to && r[run::END_BYTE] as usize > from) else { return };
+        let (s, e) = (r[run::START_BYTE], r[run::END_BYTE]);
+        self.dev("definition-inline", || format!("block {idx}: an inline at {s}..{e} lies among its definitions {from}..{to}"));
+    }
+
     /// Per-line content for a paragraph-like leaf over lines l0..=l1, with the
     /// definitions comrak consumed from its start removed (mirroring
     /// `resolve_reference_link_definitions`).
     fn strip_definitions(&mut self, l0: usize, l1: usize, containers: &[Container], allow: bool) -> (Option<Shift>, Vec<LineSpan>) {
         let lines: Vec<LineSpan> = (l0..=l1).map(|line0| self.paragraph_line(line0, containers)).collect();
-        let first_byte = lines.first().and_then(|l| self.src.as_bytes().get(l.start)).copied();
-        let defs = if allow && first_byte == Some(b'[') { reference_definitions::paragraph_definitions(&lines_text(self.src, &lines)) } else { Vec::new() };
-        let def_lines = if defs.is_empty() { 0 } else { self.record_buffer_definitions(&lines, &defs, false, None) };
+        // comrak resolves definitions, and places inlines, in the lines as
+        // written: a task checkbox leaves the text only afterwards. Read
+        // without it, the line after a definition let the definition run on
+        // (`- [a]: /u\n  [x] "t"` took `"t"` for its title), and every inline
+        // after the checkbox was placed its width too far right.
+        let written: Vec<LineSpan> = if containers.iter().any(|c| c.checkbox.is_some()) {
+            let as_written: Vec<Container> = containers.iter().map(|c| Container { checkbox: None, ..*c }).collect();
+            (l0..=l1).map(|line0| self.paragraph_line(line0, &as_written)).collect()
+        } else { lines.clone() };
+        let first_byte = written.first().and_then(|l| self.src.as_bytes().get(l.start)).copied();
+        let mut def_lines = 0;
+        if allow && first_byte == Some(b'[') {
+            let buffer = LineBuffer::new(self.src, &self.li, &written);
+            let defs = reference_definitions::paragraph_definitions(&buffer.text);
+            if !defs.is_empty() { def_lines = self.record_buffer_definitions(&written, &buffer, &defs, false, None); }
+        }
         let records = lines[def_lines..].to_vec();
-        let needs_geometry = def_lines > 0 || lines.iter().any(|l| l.virt > 0);
-        (if needs_geometry { Some(Shift { lines, def_lines }) } else { None }, records)
+        let needs_geometry = def_lines > 0 || written.iter().any(|l| l.virt > 0);
+        (if needs_geometry { Some(Shift { lines: written, def_lines }) } else { None }, records)
     }
 
     /// Map definitions found in a line buffer back to source and record them.
@@ -1158,23 +1379,16 @@ impl<'a> Extractor<'a> {
     /// checkbox of the task item they belong to, which comrak takes from what
     /// the definitions left (a checkbox alone on the line after them leaves no
     /// paragraph at all).
-    fn record_buffer_definitions(&mut self, lines: &[LineSpan], defs: &[reference_definitions::BufferDefinition], exact: bool, checkbox: Option<(usize, usize)>) -> usize {
-        // Definitions have several independently addressed endpoints. Index the
-        // reconstructed line buffer once; rescanning it for every endpoint made
+    fn record_buffer_definitions(&mut self, lines: &[LineSpan], buffer: &LineBuffer, defs: &[reference_definitions::BufferDefinition], exact: bool, checkbox: Option<(usize, usize)>) -> usize {
+        // Definitions have several independently addressed endpoints. The
+        // buffer indexes its lines once; rescanning it for every endpoint made
         // a paragraph of definitions quadratic in its line count.
-        let mut starts = Vec::with_capacity(lines.len() + 1);
-        starts.push(0usize);
-        for l in lines { starts.push(starts.last().unwrap() + l.end - l.start + 1); }
-        let to_byte = |off: usize| -> usize {
-            let i = starts.partition_point(|&start| start <= off).saturating_sub(1).min(lines.len() - 1);
-            lines[i].start + (off - starts[i]).min(lines[i].end - lines[i].start)
-        };
-        let buffer_len = *starts.last().unwrap();
+        let to_byte = |off: usize| buffer.byte(lines, off);
         let mut consumed_lines = 0usize;
         for d in defs {
             // A definition ends at a line end; its source range runs through
             // that line's terminator, never into the next line's prefix.
-            let last_line = starts.partition_point(|&start| start < d.end).saturating_sub(1).min(lines.len() - 1);
+            let last_line = buffer.starts.partition_point(|&start| start < d.end).saturating_sub(1).min(lines.len() - 1);
             let start = to_byte(d.start);
             let end = self.li.line_end_with_break(lines[last_line].line0, self.src.len());
             self.definitions.push(Definition { start, end, label: (to_byte(d.label.0), to_byte(d.label.1)), dest: (to_byte(d.dest.0), to_byte(d.dest.1)) });
@@ -1182,10 +1396,17 @@ impl<'a> Extractor<'a> {
         }
         if exact {
             let tail = defs.last().map(|d| d.end).unwrap_or(0);
-            let rest = &lines_text(self.src, lines)[tail.min(buffer_len)..];
-            let lead = rest.len() - rest.trim_start_matches([' ', '\t', '\n']).len();
-            let left = rest.trim_matches([' ', '\t', '\n']);
-            let is_checkbox = checkbox.is_some_and(|(cs, ce)| to_byte(tail + lead) == cs && left.len() == ce - cs);
+            let rest = &buffer.text[tail.min(buffer.text.len())..];
+            let blank = [' ', '\t', '\r', '\n'];
+            let lead = rest.len() - rest.trim_start_matches(blank).len();
+            let left = rest.trim_matches(blank);
+            // The checkbox ends past the space or tab it takes, which the
+            // remainder leaves out at the end of its line.
+            let src = self.src;
+            let is_checkbox = !left.contains('\n') && checkbox.is_some_and(|(start, end)| {
+                let (at, to) = (to_byte(tail + lead), to_byte(tail + lead) + left.len());
+                at == start && to <= end && src.as_bytes()[to..end].iter().all(|b| matches!(b, b' ' | b'\t'))
+            });
             if !left.is_empty() && !is_checkbox {
                 let shown = rest.to_string();
                 self.dev("definition-gap", || format!("lines without a block only partly parse as definitions; remainder {:?}", shown));
@@ -1234,13 +1455,13 @@ impl<'a> Extractor<'a> {
                 if sp.start >= sp.end { break; }
                 lines.push(sp); l += 1;
             }
-            let buffer = lines_text(self.src, &lines);
-            let defs = reference_definitions::paragraph_definitions(&buffer);
+            let buffer = LineBuffer::new(self.src, &self.li, &lines);
+            let defs = reference_definitions::paragraph_definitions(&buffer.text);
             if defs.is_empty() {
-                self.dev("uncovered-lines", || format!("lines {line0}..{l} belong to no block and are not definitions: {:?}", buffer));
+                self.dev("uncovered-lines", || format!("lines {line0}..{l} belong to no block and are not definitions: {:?}", buffer.text));
             } else {
                 let checkbox = scope.and_then(|i| self.containers[i].c.checkbox);
-                self.record_buffer_definitions(&lines, &defs, true, checkbox);
+                self.record_buffer_definitions(&lines, &buffer, &defs, true, checkbox);
             }
             line0 = l;
         }
@@ -1731,14 +1952,33 @@ impl<'a> Extractor<'a> {
                         let norm = |t: &str| if multiline { t.split_whitespace().collect::<Vec<_>>().join(" ") } else { t.to_string() };
                         let raw = buffered.as_str();
                         let (nraw, nlit) = (norm(raw), norm(&c.literal));
-                        // CommonMark strips one space from each side unless the content is all
-                        // spaces; a tab is not a space there.
-                        let stripped = if nraw.len() >= 2 && nraw.starts_with(' ') && nraw.ends_with(' ') && !nraw.trim_matches(' ').is_empty() { &nraw[1..nraw.len() - 1] } else { &nraw[..] };
-                        let unescaped_pipes = cell.is_some() && nraw.replace("\\|", "|") == nlit;
-                        if stripped == nlit && nraw != nlit { cs += 1; ce -= 1; }
-                        else if nraw == nlit {}
-                        else if unescaped_pipes { let (off, len) = self.push_string(&c.literal); rec[run::AUX2] = off; rec[run::AUX3] = len; rec[run::FLAGS] |= 2; }
-                        else { let (r, l) = (raw.to_string(), c.literal.clone()); self.dev("code-literal", || format!("block {blk} {:?} vs {:?}", r, l)); }
+                        // comrak unescapes the pipes of a cell, and of a paragraph split
+                        // to make a table header, before it parses the span. CommonMark
+                        // then strips one space from each side unless the content is all
+                        // spaces; a tab is not a space there. Stripped from the escaped
+                        // text instead, `` ` \| ` `` in a cell matched neither.
+                        let unescaped = if cell.is_some() { text_pieces::unescape_pipes(&nraw) } else { nraw.clone() };
+                        let strip = usize::from(unescaped.len() >= 2 && unescaped.starts_with(' ') && unescaped.ends_with(' ') && !unescaped.trim_matches(' ').is_empty());
+                        if unescaped[strip..unescaped.len() - strip] != nlit {
+                            let (r, l) = (raw.to_string(), c.literal.clone());
+                            self.dev("code-literal", || format!("block {blk} {:?} vs {:?}", r, l));
+                        } else {
+                            if strip == 1 { cs += 1; ce -= 1; }
+                            if unescaped != nraw {
+                                // The literal lost an escaped pipe's backslash, so the span
+                                // displays its literal. A host places display text within
+                                // one line, as in a cell: a span that crosses lines, in a
+                                // paragraph split to make a table header, showed its
+                                // backslash, and its leaf shows its source instead.
+                                if multiline {
+                                    let (r, l) = (raw.to_string(), c.literal.clone());
+                                    self.dev("code-literal", || format!("block {blk} {:?} displays {:?} across lines", r, l));
+                                } else {
+                                    let (off, len) = self.push_string(&c.literal);
+                                    rec[run::AUX2] = off; rec[run::AUX3] = len; rec[run::FLAGS] |= 2;
+                                }
+                            }
+                        }
                     }
                     (run_kind::CODE, cs, ce)
                 }
@@ -1855,17 +2095,17 @@ impl<'a> Extractor<'a> {
             bytes.push(b'\n'); source_offsets.push(end);
         }
         let mut p = 2;
-        while bytes.get(p).is_some_and(|b| reference_definitions::isspace(*b)) { p += 1; }
+        while bytes.get(p).is_some_and(|b| reference_definitions::spacechar(*b)) { p += 1; }
         let (ds, de, consumed) = reference_definitions::scan_link_url(bytes.get(p..)?)?;
         let destination = (*source_offsets.get(p + ds)?, *source_offsets.get(p + de)?);
         p += consumed;
-        while bytes.get(p).is_some_and(|b| reference_definitions::isspace(*b)) { p += 1; }
+        while bytes.get(p).is_some_and(|b| reference_definitions::spacechar(*b)) { p += 1; }
         let mut title = None;
         if bytes.get(p) != Some(&b')') {
             let n = reference_definitions::scan_link_title(bytes.get(p..)?)?;
             title = Some((*source_offsets.get(p + 1)?, *source_offsets.get(p + n - 1)?));
             p += n;
-            while bytes.get(p).is_some_and(|b| reference_definitions::isspace(*b)) { p += 1; }
+            while bytes.get(p).is_some_and(|b| reference_definitions::spacechar(*b)) { p += 1; }
         }
         if bytes.get(p) != Some(&b')') { return None; }
         rec[run::AUX0] = destination.0 as u32; rec[run::AUX1] = destination.1 as u32;
@@ -1889,12 +2129,12 @@ impl<'a> Extractor<'a> {
         if p < e && bytes[p] == b']' { p += 1; }
         if p < e && bytes[p] == b'(' {
             p += 1;
-            while p < e && reference_definitions::isspace(bytes[p]) { p += 1; }
+            while p < e && reference_definitions::spacechar(bytes[p]) { p += 1; }
             if let Some((ds, de, consumed)) = reference_definitions::scan_link_url(&bytes[p..e]) {
                 rec[run::AUX0] = (p + ds) as u32; rec[run::AUX1] = (p + de) as u32;
                 p += consumed;
             }
-            while p < e && reference_definitions::isspace(bytes[p]) { p += 1; }
+            while p < e && reference_definitions::spacechar(bytes[p]) { p += 1; }
             if p < e { if let Some(n) = reference_definitions::scan_link_title(&bytes[p..e]) { if n >= 2 { rec[run::AUX2] = (p + 1) as u32; rec[run::AUX3] = (p + n - 1) as u32; rec[run::FLAGS] |= 2; } } }
         } else {
             rec[run::FLAGS] |= 1;
@@ -2063,12 +2303,42 @@ fn innermost_per_line(lines: usize, taken: &[bool], spans: &[(usize, usize)]) ->
     owner
 }
 
-/// The content buffer comrak sees for these lines: prefix-stripped lines
-/// joined by '\n' and terminated by '\n' (cmark always ends a line).
-fn lines_text(src: &str, lines: &[LineSpan]) -> String {
-    let mut buffer = String::new();
-    for l in lines { buffer.push_str(&src[l.start..l.end]); buffer.push('\n'); }
-    buffer
+/// The content buffer comrak builds from some lines of a paragraph, and
+/// where each of them begins in it (one more entry: the buffer's length).
+struct LineBuffer { text: String, starts: Vec<usize> }
+
+impl LineBuffer {
+    /// comrak adds a paragraph line from its content start through its own
+    /// ending (`add_line`), after the virtual spaces of a partially consumed
+    /// tab on a lazy line. So a line keeps its trailing whitespace and a
+    /// CRLF, and a document's last line without an ending enters
+    /// unterminated. The definition rule reads all of that: inside angle
+    /// brackets a backslash takes whatever byte follows it, so after `<b\` a
+    /// trailing space or the CR of a CRLF leaves the line ending to end the
+    /// destination, and a destination reaching the end of the input is none
+    /// (`manual_scan_link_url`). Trimmed and joined by '\n', the lines gave
+    /// definitions comrak refuses (`[a]: <b>` ending a document).
+    fn new(src: &str, li: &LineIndex, lines: &[LineSpan]) -> Self {
+        let (mut text, mut starts) = (String::new(), Vec::with_capacity(lines.len() + 1));
+        for l in lines {
+            starts.push(text.len());
+            for _ in 0..l.virt { text.push(' '); }
+            text.push_str(&src[l.start..li.line_end_with_break(l.line0, src.len())]);
+        }
+        starts.push(text.len());
+        LineBuffer { text, starts }
+    }
+
+    /// The line holding buffer offset [off]; the buffer's end is its last
+    /// line's.
+    fn line_at(&self, off: usize) -> usize { self.starts.partition_point(|&s| s <= off).saturating_sub(1).min(self.starts.len().saturating_sub(2)) }
+
+    /// The source byte at buffer offset [off] of [lines]. Virtual spaces
+    /// hold no source byte: they map to their line's first.
+    fn byte(&self, lines: &[LineSpan], off: usize) -> usize {
+        let i = self.line_at(off);
+        lines[i].start + (off - self.starts[i]).saturating_sub(lines[i].virt)
+    }
 }
 
 #[cfg(test)]
@@ -2167,6 +2437,41 @@ mod tests {
         ex.settle_inlines(0, 0, 0, 0);
         assert!(ex.runs.is_empty());
         assert_eq!(ex.deviations.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("text-mismatch", Some(0)), ("code-content", None)]);
+    }
+
+    #[test]
+    fn an_inline_among_a_leafs_definitions_refuses_the_model() {
+        // comrak parses a leaf's inlines only after removing its definitions:
+        // a run inside them is text the mirror took for a definition.
+        let definition = Definition { start: 0, end: 9, label: (1, 2), dest: (6, 7) };
+        let mut ex = Extractor::new("[a]: <b>\nc", true);
+        ex.definitions.push(definition);
+        ex.runs.extend([run_rec(5, 8, u32::MAX), run_rec(9, 10, u32::MAX)]);
+        ex.check_stripped_definitions(1, 0, 0);
+        assert_eq!(ex.deviations.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("definition-inline", None)]);
+        // Runs from the definitions' end on, a break at it included, are the
+        // leaf's text; a leaf without definitions is not checked.
+        let mut ex = Extractor::new("[a]: <b>\nc", true);
+        ex.definitions.push(definition);
+        ex.runs.extend([run_rec(9, 9, u32::MAX), run_rec(9, 10, u32::MAX)]);
+        ex.check_stripped_definitions(1, 0, 0);
+        ex.check_stripped_definitions(1, 0, 1);
+        assert!(ex.deviations.is_empty());
+    }
+
+    #[test]
+    fn a_split_paragraph_end_its_inlines_do_not_reach_refuses_the_model() {
+        // The end derived for a paragraph a table split must be the line its
+        // last inline ends on, by comrak's own numbering.
+        let src = "a\nb\n";
+        let arena = Arena::new();
+        let root = parse_document(&arena, src, &options());
+        let paragraph = root.first_child().expect("a paragraph");
+        let mut ex = Extractor::new(src, true);
+        ex.check_split_paragraph_end(1, paragraph, 2);
+        assert!(ex.deviations.is_empty());
+        for end in [1, 3] { ex.check_split_paragraph_end(1, paragraph, end); }
+        assert_eq!(ex.deviations.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("split-paragraph-end", None), ("split-paragraph-end", None)]);
     }
 
     #[test]

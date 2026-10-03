@@ -129,6 +129,15 @@ additional product principles or testing layers.
   styling, and block presentation.
 - Word deletion uses the same word boundaries as word navigation. It is one
   history action, followed by an independently undoable typed character.
+- A setext heading cannot be empty: left behind, `===` would be painted as
+  text and `---` read as a rule, and taken with the text, the underline could
+  leave a list item empty and move the blocks after it. Deleting all of its
+  text, replacing all of it with whitespace, or Return over all of it
+  respells it as an empty ATX heading of the same level in the same
+  containers, as a level change does, with the caret where typing continues
+  the heading (after Return, on the new line). The parser must keep the other
+  blocks where they were. Other text typed or pasted over all of it keeps the
+  heading and its underline.
 - If deletion exposes whitespace against emphasis/strong/strike delimiters,
   move that whitespace outside the owner so surviving words retain their
   style, and retain typing intent when deletion exits an owner's trailing
@@ -189,15 +198,16 @@ Return and Backspace operate on the visible block structure:
 - Return splits a paragraph or heading at the caret. A heading's setext
   underline or ATX closing sequence stays with the part before the caret, so
   Return at the end of its text opens a paragraph. A setext heading cannot be
-  empty: Return over all of its text removes the underline with the text, and
-  over the whole last line of a longer one refuses, since the underline would
-  have to move up to the lines before;
-- Return continues or exits supported list, quote and footnote structures. A
-  continuation line repeats quote markers; an item or footnote definition that
-  opens on the caret's line is continued at its indent (a footnote's four
-  columns, counted from the end of the containers around it rather than from
-  an indented label) rather than by repeating its marker, which would open
-  another;
+  empty: Return over all of its text leaves the empty ATX heading deleting it
+  leaves, before the new line, and over the whole last line of a longer one
+  refuses, since the underline would have to move up to the lines before;
+- Return continues or exits supported list, quote and footnote structures. On
+  an empty line each Return leaves one container: the empty item, then the
+  quote, outer item or footnote its list ends. A continuation line repeats
+  quote markers; an item or footnote definition that opens on the caret's line
+  is continued at its indent (a footnote's four columns, counted from the end
+  of the containers around it rather than from an indented label) rather than
+  by repeating its marker, which would open another;
 - Return, including in code, inserts the line ending of the caret's line, so a
   CRLF document stays CRLF;
 - terminal Return creates one writable following paragraph;
@@ -214,7 +224,10 @@ Return and Backspace operate on the visible block structure:
   the next row); joining after a setext underline or ATX closing sequence
   moves that markup after the joined text; and removing the empty line after
   a heading or code leaves the caret at the end of its text, not past its
-  hidden underline or closing fence.
+  hidden underline or closing fence. Backspace at the start of a heading makes
+  it a paragraph; an empty heading whose marker cannot go without changing
+  the block before it (an emptied item's `- ` would underline a paragraph
+  above) goes with its line, as Delete at the end of that block takes it.
   No join crosses a fence line: Backspace at the start of code removes an
   empty line or rule above it and otherwise refuses, and nothing joins onto a
   closing fence. A join or lift whose result would change another block's kind
@@ -255,6 +268,16 @@ Code selection is painted above the block background. Pointer selection,
 replacement, copy/cut and history use the same projected text and source
 coordinates as other rows.
 
+Code is literal: edits the code delegate does not propose (typing it
+declines, deletion, replacement, paste and composition) change the projected
+body as given. Every code edit gives new lines the edited line's container
+prefix, and text put on an empty line that omits the indentation of its list
+item or footnote takes the prefix the fence's own lines continue with. When an
+edit leaves a body line the parser would read as the closing fence (a typed
+or pasted fence character, a run a deletion joins, an outdented run), the
+fences grow past the body's longest run of their character instead; while the
+parser still reads the block unchanged, they keep their length.
+
 Untagged fences receive automatic syntax coloring without changing Markdown.
 When the caret is inside a fence, the toolbar offers Automatic, Plain text and
 a language override. A manual choice edits only the first info-string token,
@@ -278,7 +301,8 @@ between a matching pair puts the closer on its own line. Python's trailing
 colon also increases indentation. Recognized comments, strings and regex literals do not
 trigger those rules. The step is two spaces, four for Python, or an existing
 tab. Tab/Shift-Tab indent/outdent selected code lines without touching their
-container prefixes; a collapsed Tab inserts a step at the caret. Commands
+container prefixes, and without the code delegate Tab leaves blank lines as
+they are; a collapsed Tab inserts a step at the caret. Commands
 crossing a code-block boundary reject atomically.
 
 Typing `}`, `]` or `)` on an indented, otherwise blank code line aligns it with

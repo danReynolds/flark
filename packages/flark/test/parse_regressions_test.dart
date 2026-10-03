@@ -5,6 +5,8 @@
 import 'package:flark/flark.dart';
 import 'package:test/test.dart';
 
+import 'support/invariants.dart';
+
 void main() {
   final backend = createParseBackend();
 
@@ -144,5 +146,119 @@ void main() {
         .last;
     expect(lastLine('[r]: /ref\n---\n[a](/u "t\n2")\\&amp;\n'), 'a&amp;');
     expect(lastLine('[](\n)\n&amp;\\&\n'), '&&');
+  });
+
+  test('a task checkbox after its item\'s definitions is the one toggled', () {
+    // comrak resolves an item's definitions before it looks for a checkbox,
+    // so the first `[x]` of these items is a definition's destination. Taken
+    // for the checkbox, it refused the first document, and in the second a
+    // toggle rewrote the definition.
+    for (final (text, toggled) in [
+      ('1. [a]:[x]\n[x]', '1. [a]:[x]\n[ ]'),
+      ('1. [a]:[x]\n[x] b', '1. [a]:[x]\n[ ] b'),
+    ]) {
+      final e = FlarkEditor(backend, text: text, caret: text.length);
+      expect(e.sourceMode, isFalse, reason: text);
+      checkInvariants(e.source, e.document.model, e.projection, text);
+      expect(e.apply(const ToggleTask()), isTrue, reason: text);
+      expect(e.source, toggled);
+    }
+  });
+
+  test('a task checkbox followed by a reference to whitespace loads live', () {
+    // comrak scans for the checkbox in decoded text, so the reference is the
+    // whitespace after it and the text begins after the reference. The
+    // content began at the reference, outside comrak's paragraph, and the
+    // document opened in source mode.
+    for (final text in ['- [ ]&#9;x', '- [ ]&#10;x']) {
+      final e = FlarkEditor(backend, text: text, caret: text.length);
+      expect(e.sourceMode, isFalse, reason: text);
+      checkInvariants(e.source, e.document.model, e.projection, text);
+      final row = e.projection.rows.single;
+      expect((row.kind, row.text), (RowKind.paragraph, 'x'), reason: text);
+      expect(row.shells.last.task, isTrue, reason: text);
+      expect(e.apply(const InsertText('y')), isTrue, reason: text);
+      expect(e.source, '${text}y');
+      expect(e.apply(const ToggleTask()), isTrue, reason: text);
+      expect(e.source, '${text.replaceFirst('[ ]', '[x]')}y');
+    }
+  });
+
+  test('an angle destination closed at the end of the document stays '
+      'paragraph text', () {
+    // Matrix seed 5023. comrak takes no angle-bracketed destination that
+    // reaches the end of an unterminated last line: typing the `>` leaves a
+    // paragraph. The crate also recorded a definition over it, and the
+    // editor showed that definition's row over bytes the paragraph hid.
+    const text =
+        "[Foo*bar\\]]:my_(url) 'title (with ~😀bbarens)'\n\n[Foo*bar\\]]:<";
+    final e = FlarkEditor(backend, text: text, caret: 61);
+    expect(
+      e.apply(const InsertText('>')),
+      isTrue,
+      reason: '${e.lastRejection}',
+    );
+    checkInvariants(e.source, e.document.model, e.projection, 'typed >');
+    expect(
+      [
+        for (final r in e.projection.rows)
+          if (r.kind != RowKind.blank) (r.kind, r.text),
+      ],
+      [
+        (RowKind.definition, "[Foo*bar\\]]:my_(url) 'title (with ~😀bbarens)'"),
+        (RowKind.paragraph, 'Foo*bar]:<>'),
+      ],
+    );
+    // A line ending after it makes it a definition, as comrak reads it.
+    expect(e.apply(const Newline()), isTrue, reason: '${e.lastRejection}');
+    checkInvariants(e.source, e.document.model, e.projection, 'newline');
+    expect(e.document.model.definitionCount, 2);
+  });
+
+  test('a space after a backslash ending an angle destination\'s line '
+      'leaves paragraph text', () {
+    // Matrix seed 7287. comrak reads definitions from lines that keep their
+    // trailing spaces, and in angle brackets a backslash takes the byte after
+    // it: here the typed space, so the line ending ends the destination. The
+    // crate trimmed the space and let the backslash take the line ending, and
+    // the editor showed a definition's row over the paragraph's hidden text.
+    const text = "[Foo bar]:\n<my [\\\nurl>\n'title'\n\n[Fo1 bar]\n]";
+    final e = FlarkEditor(backend, text: text, caret: 17);
+    expect(e.document.model.definitionCount, 1);
+    expect(
+      e.apply(const InsertText(' ')),
+      isTrue,
+      reason: '${e.lastRejection}',
+    );
+    checkInvariants(e.source, e.document.model, e.projection, 'typed space');
+    expect(e.document.model.definitionCount, 0);
+    expect(
+      [
+        for (final r in e.projection.rows)
+          if (r.kind != RowKind.blank) r.kind,
+      ],
+      [RowKind.paragraph, RowKind.paragraph],
+    );
+  });
+
+  test('a code span shows its unescaped pipe in a cell and its source '
+      'across a split paragraph\'s lines', () {
+    // comrak strips a cell's code span after unescaping its pipes; the crate
+    // stripped first, matched no literal and showed the cell's source.
+    final cell = FlarkEditor(backend, text: '| a |\n|---|\n| ` \\| ` |\n');
+    expect(cellText(cell), '|');
+    // Matrix seed 7308. A span crossing lines of a paragraph split to make a
+    // table header drops an escaped pipe's backslash, which display text
+    // cannot show across a line: the paragraph now shows its source.
+    const text =
+        '`\n\n### b``r> q*{> qé``\n``aé\n|{)\\|p**oo!``\n| a |\n| - |\n'
+        '| b **p**|';
+    final e = FlarkEditor(backend, text: text);
+    expect(e.sourceMode, isFalse);
+    checkInvariants(e.source, e.document.model, e.projection, 'split code');
+    final row = e.projection.rows.firstWhere(
+      (r) => r.kind == RowKind.paragraph && r.text.startsWith('``'),
+    );
+    expect(row.text, '``aé\n|{)\\|p**oo!``');
   });
 }

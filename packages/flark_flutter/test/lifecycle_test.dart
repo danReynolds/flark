@@ -174,6 +174,215 @@ void main() {
     },
   );
 
+  // The engine reports the app's lifecycle on this channel. On the web a
+  // window that loses focus makes the app inactive, a hidden tab hides it,
+  // and either returning resumes it.
+  Future<void> setLifecycle(WidgetTester tester, AppLifecycleState state) =>
+      tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        SystemChannels.lifecycle.name,
+        SystemChannels.lifecycle.codec.encodeMessage(state.toString()),
+        (_) {},
+      );
+
+  Widget focusedEditor(FlarkController c, FocusNode focus) => MaterialApp(
+    home: Scaffold(
+      body: FlarkEditorWidget(controller: c, focusNode: focus, autofocus: true),
+    ),
+  );
+
+  Iterable<String> methodsSince(WidgetTester tester, int start) =>
+      tester.testTextInput.log.skip(start).map((call) => call.method);
+
+  // Types at the end of the value the platform was last sent, as an input
+  // method holding it would.
+  void typeAtEnd(WidgetTester tester, String text) {
+    final platform = TextEditingValue.fromJSON(
+      tester.testTextInput.editingState!,
+    );
+    final typed = platform.text + text;
+    tester.testTextInput.updateEditingValue(
+      platform.copyWith(
+        text: typed,
+        selection: TextSelection.collapsed(offset: typed.length),
+      ),
+    );
+  }
+
+  testWidgets(
+    'a key reopens input the platform closed while the editor kept focus',
+    (tester) async {
+      const source = 'keep this text';
+      final c = FlarkController(
+        FlarkEditor(backend, text: source, caret: source.length),
+      );
+      final focus = FocusNode();
+      await tester.pumpWidget(focusedEditor(c, focus));
+      await tester.pump();
+      // The iPad hide-keyboard key, or the web engine on a blur without a
+      // related target, closes the connection. The editor keeps focus and
+      // its caret, and keys still reach it, but typed characters are lost.
+      tester.testTextInput.closeConnection();
+      await tester.pump();
+      expect(focus.hasFocus, isTrue);
+      typeAtEnd(tester, '?');
+      expect(c.text, source);
+      final logStart = tester.testTextInput.log.length;
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+      await tester.pump();
+      // The new client is sent the document, then where the editor is.
+      expect(
+        methodsSince(tester, logStart),
+        containsAllInOrder([
+          'TextInput.setClient',
+          'TextInput.setEditingState',
+          'TextInput.show',
+          'TextInput.setEditableSizeAndTransform',
+        ]),
+      );
+      expect(
+        TextEditingValue.fromJSON(tester.testTextInput.editingState!).text,
+        source,
+      );
+      typeAtEnd(tester, '!');
+      expect(c.text, '$source!');
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      focus.dispose();
+    },
+    variant: TargetPlatformVariant.all(),
+  );
+
+  // On the web and desktop Flutter parks focus while the app is away and
+  // restores it on return, so a window or tab that lost focus reattaches
+  // input through the focus change and needs no lifecycle handler.
+  for (final (place, away) in [
+    ('window', AppLifecycleState.inactive),
+    ('tab', AppLifecycleState.hidden),
+  ]) {
+    testWidgets(
+      'a $place that lost focus reattaches input when it returns',
+      (tester) async {
+        const source = 'keep this text';
+        final c = FlarkController(
+          FlarkEditor(backend, text: source, caret: source.length),
+        );
+        final focus = FocusNode();
+        await setLifecycle(tester, AppLifecycleState.resumed);
+        await tester.pumpWidget(focusedEditor(c, focus));
+        await tester.pump();
+        // Leaving blurs the web engine's input element with no related
+        // target, which closes the connection, and then the window.
+        tester.testTextInput.closeConnection();
+        await setLifecycle(tester, away);
+        await tester.pump();
+        expect(focus.hasFocus, isFalse);
+        final logStart = tester.testTextInput.log.length;
+        await setLifecycle(tester, AppLifecycleState.resumed);
+        await tester.pump();
+        expect(focus.hasFocus, isTrue);
+        expect(
+          methodsSince(tester, logStart),
+          containsAllInOrder([
+            'TextInput.setClient',
+            'TextInput.setEditingState',
+            'TextInput.show',
+          ]),
+        );
+        typeAtEnd(tester, '!');
+        expect(c.text, '$source!');
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+        focus.dispose();
+      },
+      variant: TargetPlatformVariant.desktop(),
+    );
+  }
+
+  testWidgets(
+    'resuming iOS leaves a keyboard its user hid down until a press',
+    (tester) async {
+      const source = 'keep this text';
+      final c = FlarkController(
+        FlarkEditor(backend, text: source, caret: source.length),
+      );
+      final focus = FocusNode();
+      await setLifecycle(tester, AppLifecycleState.resumed);
+      await tester.pumpWidget(focusedEditor(c, focus));
+      await tester.pump();
+      // The hide-keyboard key resigns the input view, which closes the
+      // connection. Leaving the app and returning must not raise it again.
+      tester.testTextInput.closeConnection();
+      await tester.pump();
+      final logStart = tester.testTextInput.log.length;
+      await setLifecycle(tester, AppLifecycleState.paused);
+      await setLifecycle(tester, AppLifecycleState.resumed);
+      await tester.pump();
+      expect(focus.hasFocus, isTrue);
+      expect(methodsSince(tester, logStart), isNot(contains('TextInput.show')));
+      expect(
+        methodsSince(tester, logStart),
+        isNot(contains('TextInput.setClient')),
+      );
+      typeAtEnd(tester, '!');
+      expect(c.text, source);
+      await tester.tapAt(tester.getCenter(find.byType(FlarkEditorWidget)));
+      await tester.pump(kDoubleTapTimeout);
+      expect(
+        methodsSince(tester, logStart),
+        containsAllInOrder(['TextInput.setClient', 'TextInput.show']),
+      );
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      focus.dispose();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'a field in the link popover keeps its input through keys and rebuilds',
+    (tester) async {
+      const source = '[hello](/old) tail';
+      final c = FlarkController(FlarkEditor(backend, text: source, caret: 3));
+      final field = TextEditingController();
+      Widget app() => MaterialApp(
+        home: Scaffold(
+          body: FlarkEditorWidget(
+            controller: c,
+            autofocus: true,
+            showToolbar: false,
+            linkPopoverBuilder: (_, actions) => Material(
+              child: SizedBox(width: 240, child: TextField(controller: field)),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(app());
+      await tester.pump();
+      // Shift+F10 opens the link's actions; the field takes focus and input.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.f10);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      tester.testTextInput.enterText('x');
+      await tester.pump();
+      expect(field.text, 'x');
+      // A key the field leaves unhandled bubbles to the editor, and a host
+      // rebuild updates it. Neither may take the field's input connection.
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+      await tester.pumpWidget(app());
+      tester.testTextInput.enterText('xh');
+      await tester.pump();
+      expect(field.text, 'xh');
+      expect(c.text, source);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      field.dispose();
+    },
+    variant: TargetPlatformVariant.all(),
+  );
+
   // Android composes the word being typed.
   void composeWord(WidgetTester tester) =>
       tester.testTextInput.updateEditingValue(

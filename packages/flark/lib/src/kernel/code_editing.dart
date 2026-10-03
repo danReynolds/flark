@@ -29,19 +29,26 @@ extension _CodeEditing on FlarkEditor {
 
   /// Clipboard text is literal code. Its line breaks still need the enclosing
   /// Markdown prefixes, which are source syntax rather than snippet content.
-  bool? _pasteCode(String text) {
-    final row = _doc.rowAt(selection.extent);
-    if (!row.fenced || _doc.rowAt(selection.base).index != row.index) {
-      return null;
-    }
-    final start = row.displayForSource(selection.start).$1;
-    final end = row.displayForSource(selection.end).$1;
+  /// So is any other edit of a fenced body that the delegate does not
+  /// propose: [text] replaces [from]..[to] (the selection by default) through
+  /// [_applyCodeEdit], which keeps the block whole. Spliced into the source
+  /// as it is, a typed, deleted or replaced backtick could close the block
+  /// early and turn the rest of the code into prose. [typing] coalesces the
+  /// edit with others like it, as ordinary typing and deletion do.
+  bool? _pasteCode(String text, {int? from, int? to, bool typing = false}) {
+    from ??= selection.start;
+    to ??= selection.end;
+    final row = _doc.rowAt(to);
+    if (!row.fenced || _doc.rowAt(from).index != row.index) return null;
+    final start = row.displayForSource(from).$1;
+    final end = row.displayForSource(to).$1;
     final normalized = text.replaceAll('\r\n', '\n');
     final caret = start + normalized.length;
     return _applyCodeEdit(
       row,
       CodeEditProposal(start, end, normalized, caret, caret),
       CodeEditingAction.insert,
+      typing: typing,
     );
   }
 
@@ -50,13 +57,23 @@ extension _CodeEditing on FlarkEditor {
     CodeEditProposal edit,
     CodeEditingAction action, {
     String text = '',
+    bool? typing,
   }) {
     if (edit.start < 0 || edit.end < edit.start || edit.end > row.text.length) {
       throw StateError('Invalid code edit range');
     }
     final body = row.text.replaceRange(edit.start, edit.end, edit.text);
+    // Only the lines the edit touches need checking. The rest of the body is
+    // the row's own valid text, and a line break neither ends a surrogate
+    // pair nor leaves a carriage return before it bare.
+    final first = edit.start == 0
+        ? 0
+        : body.lastIndexOf('\n', edit.start - 1) + 1;
+    final last = body.indexOf('\n', edit.start + edit.text.length);
     try {
-      validateFlarkSource(body);
+      validateFlarkSource(
+        body.substring(first, last < 0 ? body.length : last + 1),
+      );
     } on FormatException {
       _lastRejection = FlarkRejection.invalidSource;
       return false;
@@ -67,7 +84,25 @@ extension _CodeEditing on FlarkEditor {
         edit.extent > body.length) {
       throw StateError('Invalid code edit selection');
     }
-    if (body == row.text) return false;
+    if (body == row.text) {
+      // A line shift that moves nothing is refused, as one with no line to
+      // move is. Any other edit that leaves the code as it is, such as text
+      // typed over the same text or Return over a selected line break, has
+      // nothing to commit or undo: as with an edit that leaves the source as
+      // it is, the selection goes where the edit puts it, or it is inert.
+      if (action == CodeEditingAction.indent ||
+          action == CodeEditingAction.outdent) {
+        return false;
+      }
+      return _commit(
+        source,
+        FlarkSelection(
+          row.sourceForDisplay(edit.base),
+          row.sourceForDisplay(edit.extent),
+        ),
+        typing: false,
+      );
+    }
     if (row.contentStarts.every((start) => start < 0)) {
       return _createEmptyCodeBody(row, body, edit.base, edit.extent);
     }
@@ -113,8 +148,9 @@ extension _CodeEditing on FlarkEditor {
     final start = row.sourceForDisplay(edit.start);
     final end = row.sourceForDisplay(edit.end);
     final line = _doc.model.lineOfUtf16(start);
+    final lineStart = _doc.model.lineStartUtf16(line);
     var prefix = source.substring(
-      _doc.model.lineStartUtf16(line),
+      lineStart,
       row.contentStarts[line - row.firstLine],
     );
     for (final segment in row.segments) {
@@ -128,25 +164,72 @@ extension _CodeEditing on FlarkEditor {
         break;
       }
     }
+    // An empty line in a list item or footnote needs none of its container's
+    // indentation, so its source can lack the prefix that keeps text inside
+    // the block. Text an edit puts on such a line, and lines it starts there,
+    // take the prefix the fence's own lines continue with, as a new body does.
+    var from = start, lead = '';
+    if ((edit.start == 0 || row.text.codeUnitAt(edit.start - 1) == 10) &&
+        (edit.start == row.text.length ||
+            row.text.codeUnitAt(edit.start) == 10)) {
+      final block = _doc.model.blockAt(row.block);
+      final continued = _continuationPrefix(
+        source,
+        _doc.model,
+        block.firstLine,
+        block.startUtf16,
+        block.index,
+      );
+      // A tab's columns depend on where it lands; leave those prefixes be.
+      if (!continued.contains('\t')) {
+        prefix = continued;
+        if (edit.start < body.length && body.codeUnitAt(edit.start) != 10) {
+          (from, lead) = (lineStart, continued);
+        }
+      }
+    }
     // New lines end the way the edited line does, so a CRLF block stays
     // CRLF, even in a document whose other lines end differently.
     final newline = _lineBreakAt(start);
     String expand(String value) => value.replaceAll('\n', '$newline$prefix');
-    final inserted = expand(edit.text);
+    final inserted = '$lead${expand(edit.text)}';
     int position(int offset) {
       if (offset < edit.start) return row.sourceForDisplay(offset);
       if (offset <= edit.start + edit.text.length) {
-        return start +
+        return from +
+            lead.length +
             expand(edit.text.substring(0, offset - edit.start)).length;
       }
       return row.sourceForDisplay(
             offset - edit.text.length + edit.end - edit.start,
           ) +
           inserted.length -
-          (end - start);
+          (end - from);
     }
 
-    final ordinaryTyping =
+    var candidate = source.replaceRange(from, end, inserted);
+    var selected = FlarkSelection(position(edit.base), position(edit.extent));
+    final began = _composition?.source;
+    if (began != null &&
+        edit.text.isEmpty &&
+        (edit.start == 0 || body.codeUnitAt(edit.start - 1) == 10) &&
+        (edit.start == body.length || body.codeUnitAt(edit.start) == 10)) {
+      // Text composed on an empty line takes the prefix the fence's lines
+      // continue with, as above. Erased again before the composition ends,
+      // the line gets back the prefix it began with, which lacks at most
+      // some trailing whitespace, so ending the composition changes nothing.
+      final cut = candidate.length - began.length;
+      if (cut > 0 &&
+          cut <= from - lineStart &&
+          candidate.substring(from - cut, from).trim().isEmpty &&
+          candidate.replaceRange(from - cut, from, '') == began) {
+        candidate = began;
+        selected = FlarkSelection.collapsed(from - cut);
+      }
+    }
+    // Whether a delegate's edit is ordinary typing is worked out only when
+    // the caller has not said, as it maps the selection through the row.
+    bool ordinaryTyping() =>
         action == CodeEditingAction.insert &&
         edit.start == row.displayForSource(selection.start).$1 &&
         edit.end == row.displayForSource(selection.end).$1 &&
@@ -156,9 +239,9 @@ extension _CodeEditing on FlarkEditor {
     return _commitCodeEdit(
       row,
       body,
-      source.replaceRange(start, end, inserted),
-      FlarkSelection(position(edit.base), position(edit.extent)),
-      typing: ordinaryTyping,
+      candidate,
+      selected,
+      typing: typing ?? ordinaryTyping(),
     );
   }
 
@@ -264,8 +347,8 @@ extension _CodeEditing on FlarkEditor {
     // a delimiter longer than any same-character body run needs no Markdown
     // recognition, including when a paste joins two existing marker fragments.
     var run = 0, length = block.attr;
-    for (final unit in body.codeUnits) {
-      run = unit == marker ? run + 1 : 0;
+    for (var i = 0; i < body.length; i++) {
+      run = body.codeUnitAt(i) == marker ? run + 1 : 0;
       if (run >= length) length = run + 1;
     }
     if (length == block.attr &&
@@ -273,6 +356,43 @@ extension _CodeEditing on FlarkEditor {
         !row.segments.any((s) => !s.exact && !s.lineBreak)) {
       return _commit(candidate, selected, typing: typing);
     }
+    // The block keeps its start, fences, containers and the literal body.
+    bool keeps(FlarkDocument next, int caret) {
+      final nextRow = next.rowAt(caret);
+      if (!nextRow.fenced ||
+          nextRow.block != row.block ||
+          nextRow.text != body ||
+          nextRow.shells.length != row.shells.length) {
+        return false;
+      }
+      final nextBlock = next.model.blockAt(nextRow.block);
+      if (nextBlock.startUtf16 != block.startUtf16 ||
+          nextBlock.flags & 3 != block.flags & 3) {
+        return false;
+      }
+      for (var i = 0; i < row.shells.length; i++) {
+        if (nextRow.shells[i].block != row.shells[i].block ||
+            nextRow.shells[i].kind != row.shells[i].kind) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // A run as long as the fence closes the block only alone on its line, so
+    // a body can already hold one, indented or beside other text. Where the
+    // parser still reads the block as it was, its fences stay as they are:
+    // an edit elsewhere in that body must not respell them.
+    if (length > block.attr &&
+        _commit(
+          candidate,
+          selected,
+          typing: typing,
+          accept: (next) => keeps(next, selected.extent),
+        )) {
+      return true;
+    }
+    if (_lastRejection != null) return false;
     final openingGrowth = length - block.attr;
     final fenceCharacter = String.fromCharCode(marker);
     if (block.flags & 2 != 0) {
@@ -316,27 +436,7 @@ extension _CodeEditing on FlarkEditor {
       nextSelection,
       typing: typing,
       acceptSourceMode: true,
-      accept: (next) {
-        final nextRow = next.rowAt(nextSelection.extent);
-        if (!nextRow.fenced ||
-            nextRow.block != row.block ||
-            nextRow.text != body ||
-            nextRow.shells.length != row.shells.length) {
-          return false;
-        }
-        final nextBlock = next.model.blockAt(nextRow.block);
-        if (nextBlock.startUtf16 != block.startUtf16 ||
-            nextBlock.flags & 3 != block.flags & 3) {
-          return false;
-        }
-        for (var i = 0; i < row.shells.length; i++) {
-          if (nextRow.shells[i].block != row.shells[i].block ||
-              nextRow.shells[i].kind != row.shells[i].kind) {
-            return false;
-          }
-        }
-        return true;
-      },
+      accept: (next) => keeps(next, nextSelection.extent),
     );
   }
 
@@ -466,6 +566,18 @@ extension _CodeEditing on FlarkEditor {
     final line = _doc.model.lineOfUtf16(start), i = line - row.firstLine;
     final contentStart = row.contentStarts[i];
     if (contentStart < 0) return false;
+    if (row.fenced) {
+      // The new line keeps the indentation shown before the caret, and the
+      // literal code path gives it the line's container prefix.
+      final at = row.displayForSource(start).$1;
+      final shown = at == 0 ? 0 : row.text.lastIndexOf('\n', at - 1) + 1;
+      return _pasteCode(
+            '\n${codeLeadingWhitespace(row.text.substring(shown, at))}',
+            from: start,
+            to: end,
+          ) ??
+          false;
+    }
     final prefix = source.substring(
       _doc.model.lineStartUtf16(line),
       contentStart,
@@ -520,7 +632,10 @@ extension _CodeEditing on FlarkEditor {
       final at = row.contentStarts[i];
       if (at < 0) return false;
       if (!outdent) {
-        edits.add((at, at, unit));
+        // A blank line takes no indentation. In a quote or list item its
+        // source can lack part of the container's prefix, which would absorb
+        // some or all of the step, and there is no code on it to move.
+        if (at != row.contentEnds[i]) edits.add((at, at, unit));
         continue;
       }
       final leading = codeLeadingWhitespace(
@@ -532,12 +647,24 @@ extension _CodeEditing on FlarkEditor {
           : leading.length.clamp(0, unit.length);
       edits.add((at, at + length, ''));
     }
-    if (edits.isEmpty) return false;
+    if (edits.isEmpty) {
+      // Indenting only blank lines changes nothing, which is not a refusal.
+      _inert = !outdent;
+      return false;
+    }
     final (candidate, map) = _edited(edits);
-    return _commit(
-      candidate,
-      FlarkSelection(map(selection.base), map(selection.extent)),
-      typing: false,
-    );
+    final shifted = FlarkSelection(map(selection.base), map(selection.extent));
+    if (!row.fenced) return _commit(candidate, shifted, typing: false);
+    // Outdented to three spaces, a body line of fence characters would close
+    // the block, so the shifted body is committed as literal code.
+    var body = row.text;
+    for (final (a, b, text) in edits.reversed) {
+      body = body.replaceRange(
+        row.displayForSource(a).$1,
+        row.displayForSource(b).$1,
+        text,
+      );
+    }
+    return _commitCodeEdit(row, body, candidate, shifted, typing: false);
   }
 }

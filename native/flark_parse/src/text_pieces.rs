@@ -75,7 +75,7 @@ pub(crate) fn explains(slice: &str, literal: &str, entities: &Entities, pipes: b
 
 /// [slice] with each escaped pipe's backslash removed, by comrak's toggle
 /// rule: a backslash escapes the byte after it, so `\\\\|` keeps its pipe.
-fn unescape_pipes(slice: &str) -> String {
+pub(crate) fn unescape_pipes(slice: &str) -> String {
     let mut out = String::with_capacity(slice.len());
     let mut chars = slice.chars().peekable();
     while let Some(c) = chars.next() {

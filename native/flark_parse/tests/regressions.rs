@@ -239,7 +239,9 @@ fn definitions_inside_containers_and_across_lines_are_recorded() {
         ("[a\\]b]: /url\n\n[a\\]b]", vec!["[a\\]b]: /url\n"]),
         ("> [foo]: /url\n> bar", vec!["[foo]: /url\n"]),
         ("[\nfoo]: /url\nbar", vec!["[\nfoo]: /url\n"]),
-        ("[foo]: <bar>", vec!["[foo]: <bar>"]),
+        // Without the line ending comrak takes no angle-bracketed destination
+        // here; an_angle_destination_ending_the_document_is_paragraph_text.
+        ("[foo]: <bar>\n", vec!["[foo]: <bar>\n"]),
     ] {
         let m = M::of(src); m.clean();
         assert_eq!(m.defs(src), expected, "for {src:?}");
@@ -270,6 +272,73 @@ fn empty_nested_quote_publishes_only_the_innermost_prefix() {
     assert_eq!(m.block(2, block::CONTENT_COUNT), 1);
     assert_eq!(m.content(c, content::PREFIX_START_UTF16), 8);
     assert_eq!(m.content(c, content::START_UTF16), 10);
+}
+
+/// The containers comrak puts [line0] in, by its own ranges or, with
+/// [text], around the paragraph that text starts; outermost first.
+fn comrak_containers(src: &str, line0: usize, text: Option<&str>) -> Vec<&'static str> {
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let root = comrak::parse_document(&arena, src, &flark_parse::model::options());
+    let kind = |n: &comrak::nodes::AstNode| match n.data.borrow().value { NodeValue::BlockQuote => Some("quote"), NodeValue::List(_) => Some("list"), NodeValue::Item(_) | NodeValue::TaskItem(_) => Some("item"), NodeValue::FootnoteDefinition(_) => Some("footnote"), _ => None };
+    match text {
+        Some(t) => {
+            let node = root.descendants().find(|n| matches!(&n.data.borrow().value, NodeValue::Text(s) if s.as_ref() == t)).expect("text parsed");
+            let mut out: Vec<_> = node.ancestors().filter_map(kind).collect();
+            out.reverse();
+            out
+        }
+        None => root.descendants().filter(|n| { let sp = n.data.borrow().sourcepos; sp.start.line <= line0 + 1 && line0 + 1 <= sp.end.line }).filter_map(kind).collect(),
+    }
+}
+
+#[test]
+fn a_blank_line_an_item_continues_without_its_indent_publishes_the_enclosing_prefix() {
+    // comrak continues a list item over the blank lines that end its quote,
+    // outer item or footnote (`parse_node_item_prefix`), though they hold none
+    // of the item's indentation, and its range keeps a nonempty such line.
+    // The empty line's record publishes the innermost prefix the line does
+    // carry. Text written in its place belongs to exactly the containers
+    // around that prefix's container.
+    for ending in ["\n", "\r\n"] {
+        for (lines, lifted, kept) in [
+            (&["> - a", "> ", "> "][..], "> ", &[][..]),
+            (&["> - a", ">", ">"], ">", &[]),
+            (&["> 1. a", "> ", "> "], "> ", &[]),
+            (&["> - [ ] a", "> ", "> "], "> ", &[]),
+            (&["> - a", ">\t", ">\t"], ">\t", &[]),
+            (&["> > - a", "> > ", "> > "], "> ", &["quote"]),
+            (&["> - - a", "> ", "> "], "> ", &[]),
+            (&["- - a", "  ", "  "], "  ", &[]),
+            (&["1. - a", "   ", "   "], "   ", &[]),
+            (&["- > - a", "  > ", "  > "], "> ", &["list", "item"]),
+            (&["[^1]: - a", "    ", "    "], "    ", &[]),
+        ] {
+            let src = lines.join(ending);
+            let line = lines.len() - 1;
+            assert_eq!(comrak_containers(&src, line, None).last(), Some(&"item"), "comrak's item range covers the last line of {src:?}");
+            let m = M::of(&src); m.clean();
+            let c = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::LINE) == line).unwrap();
+            let (prefix, start) = (m.content(c, content::PREFIX_START_BYTE), m.content(c, content::START_BYTE));
+            assert_eq!((&src[prefix..start], m.content(c, content::END_BYTE)), (lifted, start), "for {src:?}");
+            let written = format!("{}x{}", &src[..prefix], &src[start..]);
+            assert_eq!(comrak_containers(&written, line, Some("x")), kept, "writing over {lifted:?} in {src:?}");
+        }
+    }
+    // A blank line between items, or before more of the quote, carries the
+    // quote's prefix too.
+    for src in ["> - a\n> \n> - b", "> - a\n> \n> \n> b"] {
+        let m = M::of(src); m.clean();
+        let c = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::LINE) == 1).unwrap();
+        assert_eq!(&src[m.content(c, content::PREFIX_START_BYTE)..m.content(c, content::START_BYTE)], "> ", "for {src:?}");
+    }
+    // An item's own indentation, partial or whole, stays its prefix; a blank
+    // line with no prefix at all has nothing to lift.
+    for (src, line, lifted) in [("> - a\n>   \n> ", 1, "  "), ("> - a\n>  \n> ", 1, " "), ("- a\n\n  b", 1, ""), ("- - a\n\n  b", 1, "")] {
+        let m = M::of(src); m.clean();
+        let c = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::LINE) == line).unwrap();
+        assert_eq!(&src[m.content(c, content::PREFIX_START_BYTE)..m.content(c, content::START_BYTE)], lifted, "for {src:?}");
+    }
 }
 
 #[test]
@@ -815,6 +884,295 @@ fn a_drifted_text_may_end_at_an_escaped_ampersand_or_be_a_whole_reference() {
         let p = m.blocks_of(block_kind::PARAGRAPH)[0];
         assert_eq!(m.shown(src, p).lines().last(), Some(last), "for {src:?}");
     }
+}
+
+/// The task item of [m], its symbol's source and the source of its checkbox
+/// with the brackets the kernel takes to be one byte each.
+fn task_symbol<'a>(m: &M, src: &'a str) -> (usize, &'a str) {
+    let item = m.blocks_of(block_kind::ITEM).into_iter().find(|&b| m.block(b, block::FLAGS) & 1 == 1).expect("a task item");
+    (m.block(item, block::ATTR1), &src[m.block(item, block::ATTR1)..m.block(item, block::ATTR2)])
+}
+
+#[test]
+fn a_task_checkbox_is_taken_after_the_definitions_comrak_resolves_first() {
+    // comrak resolves an item's definitions from its lines as written, then
+    // scans what is left of the first paragraph for a checkbox. The item's
+    // first checkbox-shaped bytes can be a definition's destination, and the
+    // definitions can end on a later line, or form a paragraph of their own
+    // that comrak removed: the checkbox opens what they leave. Found in the
+    // destination, it refused the document (a gap the definitions did not
+    // fill), and with text after the real one it published a checkbox whose
+    // toggle rewrote the definition.
+    for (src, defs, text) in [
+        ("1. [a]:[x]\n[x]", vec!["[a]:[x]\n"], None),
+        ("1. [a]:[x]\n[x] b", vec!["[a]:[x]\n"], Some("b")),
+        ("1. [a]:\n[x]\n[x]", vec!["[a]:\n[x]\n"], None),
+        ("- 1. [a]:[x]\n[x]", vec!["[a]:[x]\n"], None),
+        ("> 1. [a]:[x]\n[x] b", vec!["[a]:[x]\n"], Some("b")),
+        ("- [a]: /u\n\n  [x] b", vec!["[a]: /u\n"], Some("b")),
+        ("- [a]: &#x20;\n\n   &#11;[x] y", vec!["[a]: &#x20;\n"], Some("y")),
+        // FLARK_FUZZ_SEED=505.
+        ("`[a]: /u \u{0}1.`\u{feff}1.  [ ]&amp;*-\t!~:*#|foo:<\n\n- 1. [a]: /ubar1.[x]\n[x]", vec!["[a]: /ubar1.[x]\n"], None),
+        // The checkbox's line is read as written, so a definition cannot run
+        // on into it, and an inline after the checkbox is placed in it: one
+        // after a lazy line under a quote or an outer item is skipped too.
+        ("- [a]: /u\n  [x] \"t\"", vec!["[a]: /u\n"], Some("\"t\"")),
+        ("- [a]: /u\n  [x] b *c*\n  more", vec!["[a]: /u\n"], Some("b ")),
+        ("> - [a]: /u\n[x] b", vec!["[a]: /u\n"], Some("b")),
+    ] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.defs(src), defs, "for {src:?}");
+        let checkbox = src.rfind("[x]").unwrap();
+        assert_eq!(task_symbol(&m, src), (checkbox + 1, "x"), "for {src:?}");
+        for c in 0..m.n(header::CONTENT_COUNT) {
+            let (s, e) = (m.content(c, content::START_BYTE), m.content(c, content::END_BYTE));
+            assert!(e <= checkbox || s >= checkbox + 3, "checkbox inside content {s}..{e} in {src:?}");
+        }
+        match text {
+            Some(text) => assert!(m.run_contents(src).iter().any(|(k, t)| *k == run_kind::TEXT as usize && *t == text), "no text run {text:?} in {src:?}: {:?}", m.run_contents(src)),
+            // Taking the checkbox emptied the paragraph, which comrak removed.
+            None => assert!(m.blocks_of(block_kind::PARAGRAPH).iter().all(|&p| m.block(p, block::END_BYTE) <= checkbox), "a paragraph holds the checkbox in {src:?}"),
+        }
+    }
+    let src = "- [a]: /u\n  [x] b *c*\n  more";
+    let m = M::of(src);
+    assert!(m.run_contents(src).contains(&(run_kind::EMPH as usize, "c")), "{:?}", m.run_contents(src));
+}
+
+#[test]
+fn a_task_checkbox_is_scanned_over_the_text_references_decode_to() {
+    // comrak scans for a checkbox after joining the text nodes entity
+    // references decode into, so whitespace before the checkbox, either
+    // bracket, the symbol and the one whitespace character after it may each
+    // be a reference, and its whitespace includes a vertical tab and a form
+    // feed. They are all the item's prefix, and the text begins after them.
+    // The content began at the reference after the checkbox, outside
+    // comrak's paragraph: the document was refused, and with nothing after
+    // the checkbox its line was in no block.
+    for (src, symbol, contents, shown) in [
+        ("- [ ]&#9;x", " ", vec!["x"], "x"),
+        ("- [ ]&#10;x", " ", vec!["x"], "x"),
+        ("- [x]&#32;x", "x", vec!["x"], "x"),
+        ("- [x]&Tab;x", "x", vec!["x"], "x"),
+        ("- [x]&NewLine;x", "x", vec!["x"], "x"),
+        ("- [ ]&#11;x", " ", vec!["x"], "x"),
+        ("- [ ]&#13;x", " ", vec!["x"], "x"),
+        ("- [x]\u{b}x", "x", vec!["x"], "x"),
+        ("- [x]\u{c}x", "x", vec!["x"], "x"),
+        // One whitespace character only: the next reference is text.
+        ("- [ ]&#x9;&#9;x", " ", vec!["&#9;x"], "\tx"),
+        ("- [x] &#32;y", "x", vec!["&#32;y"], " y"),
+        ("- &#32;[ ] x", " ", vec!["x"], "x"),
+        ("- \u{b}[x] x", "x", vec!["x"], "x"),
+        ("- &#9;&#10;[x] y", "x", vec!["y"], "y"),
+        ("- [&#120;] x", "&#120;", vec!["x"], "x"),
+        ("- [&#32;] x", "&#32;", vec!["x"], "x"),
+        ("- &#91;x&#93; y", "x", vec!["y"], "y"),
+        ("1. [a]: /u\n[ ]&#9;b", " ", vec!["b"], "b"),
+        ("- [ ]&#9;x\n  y", " ", vec!["x", "y"], "x\ny"),
+    ] {
+        let m = M::of(src); m.clean();
+        assert_eq!(task_symbol(&m, src).1, symbol, "for {src:?}");
+        assert_eq!(m.contents(src), contents, "for {src:?}");
+        let p = m.blocks_of(block_kind::PARAGRAPH)[0];
+        assert_eq!(m.shown(src, p), shown, "for {src:?}");
+    }
+    // Alone, the checkbox and the reference after it leave no paragraph: the
+    // item's empty line follows them.
+    for src in ["- [ ]&#9;", "- [x]&#32;", "- [x]&#10;", "- &#32;[x]"] {
+        let m = M::of(src); m.clean();
+        assert!(m.blocks_of(block_kind::PARAGRAPH).is_empty(), "for {src:?}");
+        assert_eq!(m.contents(src), [""], "for {src:?}");
+        assert_eq!(m.content(0, content::START_BYTE), src.len(), "for {src:?}");
+    }
+}
+
+#[test]
+fn an_angle_destination_ending_the_document_is_paragraph_text() {
+    // comrak adds a line to its paragraph with the line's own ending, so a
+    // document's last line enters unterminated when it has none, and its
+    // destination scanner refuses an angle-bracketed destination that
+    // reaches the end of its input. The extraction recorded a definition
+    // over that paragraph's text anyway: the paragraph kept its runs but had
+    // no content, and the editor showed a definition's row over text whose
+    // bytes it then hid (matrix seed 5023 typed the closing `>`).
+    for (src, defs, contents) in [
+        ("[foo]: <bar>", vec![], vec!["[foo]: <bar>"]),
+        ("[foo]: <>", vec![], vec!["[foo]: <>"]),
+        ("> [a]: <b>", vec![], vec!["[a]: <b>"]),
+        ("[a]:\n<b>", vec![], vec!["[a]:", "<b>"]),
+        ("- [a]: /u\n  [b]: <c>", vec!["[a]: /u\n"], vec!["[b]: <c>"]),
+        ("[b]: /u\n\n[a]: <>", vec!["[b]: /u\n"], vec!["[a]: <>"]),
+        ("[Foo*bar\\]]:my_(url) 'title (with ~😀bbarens)'\n\n[Foo*bar\\]]:<>", vec!["[Foo*bar\\]]:my_(url) 'title (with ~😀bbarens)'\n"], vec!["[Foo*bar\\]]:<>"]),
+        // A line ending, a title or spaces comrak keeps after the bracket
+        // leave the destination short of the end: a definition.
+        ("[foo]: <bar>\n", vec!["[foo]: <bar>\n"], vec![]),
+        ("[foo]: <bar>\r\n", vec!["[foo]: <bar>\r\n"], vec![]),
+        ("[foo]: <bar>  ", vec!["[foo]: <bar>  "], vec![]),
+        ("[a]: <b> \"t\"", vec!["[a]: <b> \"t\""], vec![]),
+        ("[a]: /u", vec!["[a]: /u"], vec![]),
+    ] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.defs(src), defs, "for {src:?}");
+        assert_eq!(m.contents(src), contents, "for {src:?}");
+    }
+}
+
+#[test]
+fn a_definition_reads_each_line_as_comrak_adds_it() {
+    // comrak adds a paragraph line through its own ending, trailing
+    // whitespace included, after a lazy line's virtual spaces. Inside angle
+    // brackets a backslash takes whatever byte follows it: after `<b\` a
+    // space, a tab or the CR of a CRLF leaves the line ending to end the
+    // destination, and only a bare line feed continues it. Read trimmed and
+    // joined by line feeds, these lines gave definitions over paragraph text,
+    // which kept its runs but lost its content (matrix seed 7287 typed the
+    // space after the backslash).
+    for (src, defs, contents) in [
+        ("[Foo bar]:\n<my [\\ \nurl>\n'title'\n\n[Fo1 bar]\n]", vec![], vec!["[Foo bar]:", "<my [\\ ", "url>", "'title'", "[Fo1 bar]", "]"]),
+        ("[Foo bar]:\n<my [\\\nurl>\n'title'\n\n[Fo1 bar]\n]", vec!["[Foo bar]:\n<my [\\\nurl>\n'title'\n"], vec!["[Fo1 bar]", "]"]),
+        ("[a]: <b\\\r\nc>\r\n", vec![], vec!["[a]: <b\\", "c>"]),
+        ("[a]: <b\\ \nc>\n", vec![], vec!["[a]: <b\\ ", "c>"]),
+        ("[a]: <b\\\t\nc>\n", vec![], vec!["[a]: <b\\\t", "c>"]),
+        ("[a]: <b\\\nc>\n", vec!["[a]: <b\\\nc>\n"], vec![]),
+        // A lazy line's partially consumed tab enters as spaces, and no
+        // definition begins with a space.
+        ("- > [a]: /u\n \t[b]: /v\n", vec!["[a]: /u\n"], vec!["[b]: /v"]),
+        ("1. > [a]: /u\n \t[b]: /v\n", vec!["[a]: /u\n"], vec!["[b]: /v"]),
+    ] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.defs(src), defs, "for {src:?}");
+        assert_eq!(m.contents(src), contents, "for {src:?}");
+    }
+}
+
+#[test]
+fn a_label_of_a_vertical_tab_or_form_feed_is_not_empty() {
+    // comrak's space class holds no vertical tab or form feed, so a label of
+    // one is not empty. Trimmed as space, it refused the definition and left
+    // the line in a paragraph comrak had removed it from.
+    for (src, defs, contents) in [
+        ("[\u{c}]: /u\n\n[\u{c}]\n", vec!["[\u{c}]: /u\n"], vec!["[\u{c}]"]),
+        ("[ \u{b} ]: /u\n", vec!["[ \u{b} ]: /u\n"], vec![]),
+        ("[\u{c}]:[X][^1]\n](t)\r\n&amp;\t", vec!["[\u{c}]:[X][^1]\n"], vec!["](t)", "&amp;\t"]),
+    ] {
+        let m = M::of(src); m.clean();
+        assert_eq!(m.defs(src), defs, "for {src:?}");
+        assert_eq!(m.contents(src), contents, "for {src:?}");
+    }
+}
+
+#[test]
+fn a_code_span_displays_its_unescaped_literal_within_one_line() {
+    // comrak unescapes the pipes of a cell, and of a paragraph split to make
+    // a table header, before it parses a code span, and then strips one space
+    // from each side. Stripped before unescaping, `` ` \| ` `` matched no
+    // literal and its cell showed its source.
+    let code = |m: &M| (0..m.n(header::RUN_COUNT)).find(|&r| m.run(r, run::KIND) == run_kind::CODE as usize).unwrap();
+    for (src, content, display) in [
+        ("| a |\n|---|\n| ` \\| ` |\n", "\\|", "|"),
+        ("| a |\n|---|\n| `\\|` |\n", "\\|", "|"),
+        ("| a |\n|---|\n| ` a\\|b ` |\n", "a\\|b", "a|b"),
+        ("`a\\|b`\n| a |\n| - |\n", "a\\|b", "a|b"),
+    ] {
+        let m = M::of(src); m.clean();
+        let r = code(&m);
+        assert_eq!(&src[m.run(r, run::CONTENT_START_BYTE)..m.run(r, run::CONTENT_END_BYTE)], content, "for {src:?}");
+        assert_eq!(m.run(r, run::FLAGS) & 2, 2, "for {src:?}");
+        assert_eq!(m.string(m.run(r, run::AUX2), m.run(r, run::AUX3)), display, "for {src:?}");
+    }
+    // A host places display text within one line, so a span that crosses
+    // lines in a split paragraph showed the backslash comrak drops, and the
+    // editor its whole literal against one line's space (matrix seed 7308).
+    // Its leaf shows its source instead.
+    for src in ["``a\n\\|b``\n| a |\n| - |\n", "`a\nb\\|`\n| a |\n| - |\n", "`\n\n### b``r> q*{> qé``\n``aé\n|{)\\|p**oo!``\n| a |\n| - |\n| b **p**|"] {
+        assert_eq!(published(src), ["code-literal"], "for {src:?}");
+        let m = M::of(src);
+        let p = *m.blocks_of(block_kind::PARAGRAPH).last().unwrap();
+        assert_ne!(m.block(p, block::FLAGS) & (1 << 23), 0, "source only for {src:?}");
+    }
+    // Without an escaped pipe the span keeps its runs across lines.
+    let src = "`a\nb`\n| a |\n| - |\n";
+    let m = M::of(src); m.clean();
+    let r = code(&m);
+    assert_eq!((&src[m.run(r, run::CONTENT_START_BYTE)..m.run(r, run::CONTENT_END_BYTE)], m.run(r, run::FLAGS) & 2), ("a\nb", 0));
+}
+
+#[test]
+fn a_paragraph_a_table_splits_ends_on_the_line_before_the_table_with_crlf() {
+    // comrak ends a paragraph a table header split at its last line's offset
+    // plus the bytes before that line's ending, and counts none before the
+    // `\r` of a CRLF: a lazy last line ends at column 0, and the list or
+    // footnote definition around it then moves the end to the paragraph's
+    // start. Read from there, the paragraph ended on its first line: its
+    // later lines were in no block and their text was hidden, and a first
+    // line shaped like a definition, which a split paragraph keeps as text,
+    // was taken for one and refused the model (`definition-inline`).
+    for ending in ["\n", "\r\n"] {
+        for (lines, contents, shown) in [
+            (&["- a", "b", "  | x |", "  |---|"][..], &["a", "b"][..], "a\nb"),
+            (&["1. Notes:", "see below", "   | Col | Val |", "   |-----|-----|", "   | a   | 1   |"], &["Notes:", "see below"], "Notes:\nsee below"),
+            (&["- a", "b", "c", "  | x |", "  |---|"], &["a", "b", "c"], "a\nb\nc"),
+            (&["[^1]: a", "b", "    | x |", "    |---|"], &["a", "b"], "a\nb"),
+            (&["- > a", "b", "  > | x |", "  > |---|"], &["a", "b"], "a\nb"),
+            (&["- [r]: /u", "lazy", "  | x |", "  |---|"], &["[r]: /u", "lazy"], "[r]: /u\nlazy"),
+            (&["- a", "b \\| c", "  | x |", "  |---|"], &["a", "b \\| c"], "a\nb | c"),
+            // A checkbox taken from the paragraph moves its start's column.
+            (&["- [ ] a", "b", "  | x |", "  |---|"], &["a", "b"], "a\nb"),
+        ] {
+            let src = lines.join(ending) + ending;
+            let arena = comrak::Arena::new();
+            let root = comrak::parse_document(&arena, &src, &flark_parse::model::options());
+            let paragraph = root.descendants().find(|n| matches!(n.data.borrow().value, comrak::nodes::NodeValue::Paragraph)).expect("a paragraph");
+            let sp = paragraph.data.borrow().sourcepos;
+            assert_eq!(sp.end.line, if ending == "\r\n" { sp.start.line } else { contents.len() }, "comrak's end line for {src:?}");
+            let m = M::of(&src); m.clean();
+            assert_eq!(m.n(header::DEFINITION_COUNT), 0, "for {src:?}");
+            let p = m.blocks_of(block_kind::PARAGRAPH)[0];
+            let records: Vec<&str> = (m.block(p, block::CONTENT_OFFSET)..m.block(p, block::CONTENT_OFFSET) + m.block(p, block::CONTENT_COUNT)).map(|c| &src[m.content(c, content::START_BYTE)..m.content(c, content::END_BYTE)]).collect();
+            assert_eq!(records, contents, "for {src:?}");
+            assert_eq!(m.block(p, block::LINE_COUNT), contents.len(), "for {src:?}");
+            assert_eq!(m.shown(&src, p), shown, "for {src:?}");
+        }
+    }
+}
+
+#[test]
+fn a_task_checkbox_followed_only_by_spaces_or_tabs_takes_no_whitespace() {
+    // comrak trims the spaces and tabs a text ends with before a line ending,
+    // and those ending a paragraph, before it scans for a checkbox: followed
+    // by nothing else on its line, the checkbox takes no whitespace. Taking
+    // one put the first space of a two-space hard break in the item's
+    // prefix, so the break's run began inside the checkbox and its row
+    // showed a lone space; with a reference for a bracket the document was
+    // refused before.
+    for ending in ["\n", "\r\n"] {
+        for (lines, contents) in [
+            (&["- [x]  ", "  e"][..], &["  ", "e"][..]),
+            (&["- &#91;x]  ", "  e"], &["  ", "e"]),
+            (&["- [x]   ", "  e"], &["   ", "e"]),
+            (&["- [x] ", "  e"], &[" ", "e"]),
+            (&["- [x]\t", "  e"], &["\t", "e"]),
+            (&["- [a]: /u", "  [x]  ", "  e"], &["  ", "e"]),
+            (&["> - [x]  ", "> e"], &["  ", "e"]),
+            (&["- [x]  "], &[""]),
+        ] {
+            let src = lines.join(ending);
+            let m = M::of(&src); m.clean();
+            assert_eq!(task_symbol(&m, &src).1, "x", "for {src:?}");
+            assert_eq!(m.contents(&src), contents, "for {src:?}");
+            // A space-based break lies in its line's content.
+            for r in (0..m.n(header::RUN_COUNT)).filter(|&r| m.run(r, run::KIND) == run_kind::HARD_BREAK as usize) {
+                let line = (0..m.n(header::CONTENT_COUNT)).find(|&c| m.content(c, content::START_BYTE) <= m.run(r, run::START_BYTE) && m.run(r, run::START_BYTE) < m.content(c, content::END_BYTE));
+                assert!(line.is_some(), "break {}..{} outside content in {src:?}", m.run(r, run::START_BYTE), m.run(r, run::END_BYTE));
+            }
+        }
+    }
+    // Followed by text, the checkbox still takes the one whitespace character
+    // after it.
+    let src = "- [x]  a\n  b";
+    let m = M::of(src); m.clean();
+    assert_eq!(m.contents(src), [" a", "b"]);
 }
 
 /// The best of five extraction times of [src].

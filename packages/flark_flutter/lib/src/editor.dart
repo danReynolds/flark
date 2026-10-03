@@ -185,7 +185,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     if (widget.readOnly) {
       _endComposition(c);
       _close();
-    } else if (_focus.hasFocus) {
+    } else if (_focus.hasPrimaryFocus) {
+      // Only while the editor itself has focus: a field in the link popover
+      // holds the input connection while it is focused, and a host rebuild
+      // must not take it.
       _attach();
     }
   }
@@ -267,9 +270,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   /// The platform closed the connection: iOS when its input view resigns
   /// first responder (the iPad hide-keyboard key), the web engine on a blur
-  /// without a related target. Focus and the caret remain and the next press
-  /// reattaches, so release the connection and the mirror it held. Its
-  /// composition ended with it.
+  /// without a related target. Focus and the caret remain, so release the
+  /// connection and the mirror it held. Its composition ended with it. The
+  /// next press or key reattaches. A window or tab that loses focus takes the
+  /// editor's focus too until it returns, and regaining focus reattaches in
+  /// _focusChanged, so the app resuming needs no handler of its own.
   void _connectionClosed() {
     if (_connection?.attached == true) _connection!.connectionClosedReceived();
     _close();
@@ -1037,6 +1042,22 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       );
     }
     if (event is KeyUpEvent || widget.readOnly) return KeyEventResult.ignored;
+    // Keys a focused descendant does not handle bubble here, such as those of
+    // a field or button in the link popover. They are that widget's: taken
+    // here, Enter would edit the document instead of pressing the button, Tab
+    // would not move focus, and a reattach would take the field's input.
+    if (!_focus.hasPrimaryFocus) return KeyEventResult.ignored;
+    if (_connection?.attached != true) {
+      // Keys still reach the focused editor after the platform closed its
+      // connection, but typed characters cannot. A key means the user is
+      // typing here, so it reopens input rather than drop every character
+      // until a press. Chrome still delivers this key's character to the new
+      // input element; elsewhere that one may be lost. The new connection is
+      // sent the editor's geometry after a frame, which nothing else may
+      // schedule.
+      _attach();
+      SchedulerBinding.instance.ensureVisualUpdate();
+    }
     final keyboard = HardwareKeyboard.instance;
     final shift = keyboard.isShiftPressed,
         primary = keyboard.isMetaPressed || keyboard.isControlPressed;

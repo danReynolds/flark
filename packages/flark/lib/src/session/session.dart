@@ -8,7 +8,8 @@ import 'platform_limits.dart';
 import 'state.dart';
 
 /// Host-independent ownership, readiness and publication. UI adapters own only
-/// their input/focus integration; this object owns its parser and editing state.
+/// their input/focus integration; this object owns its parser lease and
+/// editing state.
 final class FlarkSession {
   /// [syncLimit] is the UTF-8 size rendered live, [flarkDefaultLiveBytes]
   /// unless set; [liveLimits] bounds the document's shape. A document beyond
@@ -151,18 +152,22 @@ final class FlarkSession {
           lease.dispose();
           return;
         }
+        // Held before the first parse: under dart2wasm a trap there unwinds
+        // past the catch below, and dispose() must still release the lease
+        // so a shared parser is not held for the life of the page.
+        _lease = lease;
         final editor = FlarkEditor(
           lease.backend,
           text: _markdown,
           syncLimit: syncLimit,
           liveLimits: liveLimits,
         );
-        _lease = lease;
         _editor = editor..addListener(_edited);
         _status = FlarkStatus.ready;
         _publish();
         if (!attempt.isCompleted) attempt.complete();
       } catch (error, stack) {
+        if (identical(_lease, lease)) _lease = null;
         lease?.dispose();
         if (_status == FlarkStatus.disposed || !identical(_attempt, attempt)) {
           return;

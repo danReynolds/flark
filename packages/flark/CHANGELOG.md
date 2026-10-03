@@ -7,7 +7,8 @@ version in the commit that pins the parser libraries (see RELEASING.md).
 
 - Parses Markdown with unmodified [comrak](https://github.com/kivikakk/comrak)
   0.54 (CommonMark 0.31.2 and GitHub Flavored Markdown) into a flat render
-  model, through FFI on native platforms and a bundled Wasm module on the web.
+  model, through FFI on native platforms and a bundled Wasm module on the web,
+  one instance of which every reader and session on a page shares.
 - `FlarkSession`, `FlarkReader` and the `FlarkEditor` kernel: every edit
   re-parses the whole document, the projection hides syntax outside the caret's
   context, carets land only on legal source offsets, and a closed command set

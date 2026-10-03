@@ -80,6 +80,100 @@ void _structureCases(FlarkParseBackend backend) {
       );
     });
 
+    test('return leaves a quote, item or footnote that ends with a list', () {
+      // comrak continues the inner item over the blank lines that close it,
+      // without its indentation. Each Return leaves one container: the item,
+      // then the one around it, rather than opening another item forever.
+      for (final (source, item, exit, left, shells) in [
+        (
+          '> - a',
+          '> - a\n> - ',
+          '> - a\n> \n> ',
+          '> - a\n> \n\n',
+          <ShellKind>[],
+        ),
+        (
+          '> 1. a',
+          '> 1. a\n> 2. ',
+          '> 1. a\n> \n> ',
+          '> 1. a\n> \n\n',
+          <ShellKind>[],
+        ),
+        (
+          '> > - a',
+          '> > - a\n> > - ',
+          '> > - a\n> > \n> > ',
+          '> > - a\n> > \n> \n> ',
+          [ShellKind.blockQuote],
+        ),
+        (
+          '- - a',
+          '- - a\n  - ',
+          '- - a\n  \n  ',
+          '- - a\n  \n\n',
+          <ShellKind>[],
+        ),
+        (
+          '[^1]: - a',
+          '[^1]: - a\n    - ',
+          '[^1]: - a\n    \n    ',
+          '[^1]: - a\n    \n\n',
+          <ShellKind>[],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: source.length);
+        session.act(
+          const Newline(),
+          source: item,
+          rows: ['a', ''],
+          caret: const DisplayPosition(1, 0),
+        );
+        session.act(
+          const Newline(),
+          source: exit,
+          rows: ['a', '', ''],
+          caret: const DisplayPosition(2, 0),
+        );
+        session.act(
+          const Newline(),
+          source: left,
+          rows: ['a', '', '', ''],
+          caret: const DisplayPosition(3, 0),
+        );
+        expect(
+          session.editor.document.caretRow.shells.map((s) => s.kind),
+          shells,
+          reason: source,
+        );
+        session.act(
+          const InsertText('b'),
+          source: '${left}b',
+          rows: ['a', '', '', 'b'],
+          caret: const DisplayPosition(3, 1),
+        );
+        expect(
+          session.editor.document.caretRow.shells.map((s) => s.kind),
+          shells,
+          reason: source,
+        );
+      }
+      // Backspace on that line lifts the same prefix, as on any empty quote
+      // line, and then removes the line.
+      final back = _Session(backend, source: '> - a\n> \n> ', caret: 11);
+      back.act(
+        const DeleteBackward(),
+        source: '> - a\n> \n',
+        rows: ['a', '', ''],
+        caret: const DisplayPosition(2, 0),
+      );
+      back.act(
+        const DeleteBackward(),
+        source: '> - a\n> ',
+        rows: ['a', ''],
+        caret: const DisplayPosition(1, 0),
+      );
+    });
+
     test(
       'return splits a paragraph with a line break, or a paragraph break',
       () {
@@ -402,6 +496,149 @@ void _structureCases(FlarkParseBackend backend) {
       }
     });
 
+    test('joining into an empty closed heading keeps its sequence hidden', () {
+      // An empty heading's text starts where its closing sequence does: the
+      // spaces between them separate the opening marker. Joined text goes
+      // where typed text would, before the last of several spaces, or after
+      // a single one with a space of its own before the sequence, as text in
+      // a heading has, rather than running into it and painting it.
+      for (final (source, caret, backward, joined, text) in [
+        ('# #\n## J ##', 2, false, '# J #', 'J'),
+        ('#  ###\r\n##### foo ##', 3, false, '# foo ###', 'foo'),
+        ('#####  ##\n#boo', 10, true, '##### #boo ##', '#boo'),
+        ('###  ###   \r\n#f', 13, true, '### #f ###   ', '#f'),
+        (' # ###\nbar', 3, false, ' # bar ###', 'bar'),
+        ('##### #\r\n[foo](/url)', 6, false, '##### [foo](/url) #', 'foo'),
+        ('-  ##  #\n#o', 7, false, '-  ## #o #', '#o'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          backward ? const DeleteBackward() : const DeleteForward(),
+          source: joined,
+          rows: [text],
+          caret: const DisplayPosition(0, 0),
+        );
+        expect(session.editor.projection.rows.single.kind, RowKind.heading);
+      }
+    });
+
+    test('typing into an empty closed heading keeps its sequence hidden', () {
+      // A cleared title is retyped against the closing sequence. The text
+      // goes before the last of the spaces that separate them, or after a
+      // single one with a space of its own, as joined text does, and the
+      // caret stays after the text, so the title goes on from there.
+      final session = _Session(backend, source: '# foo #', caret: 5);
+      session.act(const DeleteBackward(), times: 3, source: '#  #', rows: ['']);
+      session.act(
+        const InsertText('b'),
+        source: '# b #',
+        rows: ['b'],
+        caret: const DisplayPosition(0, 1),
+      );
+      session.act(
+        const InsertText('a'),
+        source: '# ba #',
+        rows: ['ba'],
+        caret: const DisplayPosition(0, 2),
+      );
+      // Paste, a collapsed replacement and composed text land the same way.
+      // One host composes with InsertText, another replaces its preedit
+      // where the kernel reports it landed, which can be before the caret.
+      for (final (source, caret, placed) in [
+        ('#  ###', 3, '# ab ###'),
+        ('- # #', 4, '- # ab #'),
+      ]) {
+        final pasted = _Session(backend, source: source, caret: caret);
+        pasted.act(const Paste('ab'), source: placed, rows: ['ab']);
+        final replaced = _Session(backend, source: source, caret: caret);
+        replaced.act(
+          ReplaceRange(caret, caret, 'ab'),
+          source: placed,
+          rows: ['ab'],
+        );
+        final typed = _Session(backend, source: source, caret: caret);
+        typed.editor.beginComposition();
+        typed.act(const InsertText('a'));
+        typed.act(const InsertText('b'));
+        typed.editor.commitComposition();
+        final preedit = _Session(backend, source: source, caret: caret);
+        preedit.editor.beginComposition();
+        preedit.act(ReplaceRange(caret, caret, 'a'));
+        final landed = preedit.editor.selection.extent;
+        preedit.act(ReplaceRange(landed - 1, landed, 'ab'));
+        preedit.editor.commitComposition();
+        for (final composed in [typed, preedit]) {
+          composed.expectState(
+            source: placed,
+            rows: ['ab'],
+            caret: const DisplayPosition(0, 2),
+          );
+          composed.act(const Undo(), source: source);
+        }
+      }
+    });
+
+    test('typing then erasing in an empty closed heading restores it', () {
+      // The last of the spaces before the sequence separates the typed text
+      // from it, so erasing the text gives back the same spaces instead of
+      // leaving one more hidden space each time.
+      for (final (source, caret, typed) in [
+        ('#  #', 3, '# b #'),
+        ('#   ###', 4, '#  b ###'),
+        ('- ##\t\t#', 6, '- ##\tb\t#'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        for (var i = 0; i < 3; i++) {
+          session.act(
+            const InsertText('b'),
+            source: typed,
+            rows: ['b'],
+            caret: const DisplayPosition(0, 1),
+          );
+          session.act(
+            const DeleteBackward(),
+            source: source,
+            rows: [''],
+            caret: const DisplayPosition(0, 0),
+          );
+        }
+      }
+      // After a single space the text takes one of its own; erased, it leaves
+      // two, which then stay as they are.
+      final single = _Session(backend, source: '# #', caret: 2);
+      for (var i = 0; i < 2; i++) {
+        single.act(const InsertText('b'), source: '# b #', rows: ['b']);
+        single.act(const DeleteBackward(), source: '#  #', rows: ['']);
+      }
+      // Text joined after several spaces is placed the same way.
+      final joined = _Session(backend, source: '#  #\nbar', caret: 3);
+      joined.act(
+        const DeleteForward(),
+        source: '# bar #',
+        rows: ['bar'],
+        caret: const DisplayPosition(0, 0),
+      );
+    });
+
+    test('setting a link in an empty closed heading hides its sequence', () {
+      // A new link or image goes where typed text would, so the closing
+      // sequence is not run into its markup and painted after it.
+      for (final (source, caret) in [('#  #', 3), ('# #', 2)]) {
+        final link = _Session(backend, source: source, caret: caret);
+        link.act(
+          const SetLink('u', text: 't'),
+          source: '# [t](<u>) #',
+          rows: ['t'],
+        );
+        final image = _Session(backend, source: source, caret: caret);
+        image.act(
+          const SetImage('u', alt: 'a'),
+          source: '# ![a](<u>) #',
+          rows: ['a'],
+        );
+      }
+    });
+
     test('backspace after a rule removes the rule', () {
       final session = _Session(backend, source: '***\nb', caret: 4);
       session.act(
@@ -447,6 +684,93 @@ void _structureCases(FlarkParseBackend backend) {
         );
         session.act(const DeleteBackward(), applied: false, source: source);
       }
+    });
+
+    test('backspace on a first-row rule keeps the next block in place', () {
+      // A rule that is all of an item leaves the item empty, and an empty
+      // item's content starts one column past its marker: the heading, too
+      // shallow for the rule's item, would move into it. The rule's line
+      // goes whole instead, as Delete on the rule takes it.
+      for (final newline in ['\n', '\r\n']) {
+        final session = _Session(
+          backend,
+          source: '-   ***$newline  ## r',
+          caret: 7,
+        );
+        session.act(
+          const DeleteBackward(),
+          source: '  ## r',
+          rows: ['r'],
+          caret: const DisplayPosition(0, 0),
+        );
+        expect(session.editor.projection.rows.single.shells, isEmpty);
+      }
+      // A block in the item stays there, behind the item's marker.
+      final inside = _Session(backend, source: '- ***\n  b', caret: 5);
+      inside.act(
+        const DeleteBackward(),
+        source: '- \n  b',
+        rows: ['', 'b'],
+        caret: const DisplayPosition(0, 0),
+      );
+      expect(inside.editor.projection.rows.last.shells.map((s) => s.kind), [
+        ShellKind.list,
+        ShellKind.item,
+      ]);
+      // Neither the rule nor its line can go without moving these blocks:
+      // an empty item ends at a blank line, leaving `b` outside it, and
+      // `code` would be indented code with or without the item's marker.
+      for (final (source, caret) in [
+        ('- ***\n\n  b', 5),
+        ('-   ***\n      code', 7),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteBackward(), applied: false, source: source);
+      }
+    });
+
+    test('removing the first line keeps a byte order mark before it', () {
+      // comrak skips a leading byte order mark, so it belongs to the
+      // document rather than to the first line, and stays when that goes.
+      final bom = String.fromCharCode(0xfeff);
+      for (final (source, caret, command, removed, rows) in [
+        ('$bom-   ***\n  ## r', 8, const DeleteBackward(), '$bom  ## r', ['r']),
+        ('$bom***\nb', 5, const DeleteBackward(), '${bom}b', ['b']),
+        ('$bom***\nb', 4, const DeleteForward(), '${bom}b', ['b']),
+        ('$bom***\nb', 4, const DeleteBackward(), '$bom\nb', ['', 'b']),
+        ('$bom\nb', 2, const DeleteBackward(), '${bom}b', ['b']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          command,
+          source: removed,
+          rows: rows,
+          caret: const DisplayPosition(0, 0),
+        );
+      }
+    });
+
+    test('return after a leading byte order mark keeps the containers', () {
+      // Copied with the line's container prefix, the mark would be text in
+      // the middle of the document, and the quote or list marker after it
+      // would be painted as text too.
+      final bom = String.fromCharCode(0xfeff);
+      for (final (source, continued, rows) in [
+        ('$bom> a', '$bom> a\n> x', ['a\nx']),
+        ('$bom- a', '$bom- a\n- x', ['a', 'x']),
+      ]) {
+        final session = _Session(backend, source: source, caret: source.length);
+        session.act(const Newline());
+        session.act(const InsertText('x'), source: continued, rows: rows);
+      }
+      // So is a fence typed there, whose new lines continue the quote.
+      final fence = _Session(backend, source: '$bom> ``', caret: 5);
+      fence.act(
+        const InsertText('`'),
+        source: '$bom> ```\n> \n> ```\n> \n',
+        rows: ['', '', ''],
+      );
+      expect(fence.editor.document.caretRow.kind, RowKind.codeBlock);
     });
 
     test('removing an empty line keeps the next block out of a container', () {
@@ -544,24 +868,40 @@ void _structureCases(FlarkParseBackend backend) {
       );
     });
 
-    test('return over all of a setext heading\'s text drops its underline', () {
+    test('return over all of a setext heading\'s text leaves it empty', () {
       // A setext heading cannot be empty: left behind, `===` would be painted
-      // as text and `---` would be read as a rule.
-      for (final (source, end) in [
-        ('abc\n===', 3),
-        ('abc\n---', 3),
-        ('**abc**\n===', 7),
-        ('ab\ncd\n===', 5),
+      // as text and `---` would be read as a rule. The text goes as with a
+      // deletion, leaving an empty ATX heading of the same level, and the
+      // line break follows it, with the caret on the new line.
+      for (final (source, end, marker) in [
+        ('abc\n===', 3, '#'),
+        ('abc\n---', 3, '##'),
+        ('**abc**\n===', 7, '#'),
+        ('ab\ncd\n===', 5, '#'),
       ]) {
         final session = _Session(backend, source: source);
         session.act(SetSelection(0, end));
         session.act(
           const Newline(),
-          source: '\n',
+          source: '$marker \n',
           rows: ['', ''],
           caret: const DisplayPosition(1, 0),
         );
+        expect(session.editor.projection.rows.first.kind, RowKind.heading);
       }
+      // The heading keeps a list item's content where it was, so a block
+      // after it stays in the item.
+      final item = _Session(backend, source: '- abc\n  ===\n\n  para');
+      item.act(const SetSelection(2, 5));
+      item.act(
+        const Newline(),
+        source: '- # \n\n\n  para',
+        rows: ['', '', '', 'para'],
+      );
+      expect(item.editor.projection.rows.last.shells.map((s) => s.kind), [
+        ShellKind.list,
+        ShellKind.item,
+      ]);
       // With text before the split, the underline stays with that text; a
       // split from an earlier line that leaves text on the last one keeps
       // that text above the underline, as on an earlier line.
@@ -576,6 +916,213 @@ void _structureCases(FlarkParseBackend backend) {
       final last = _Session(backend, source: 'ab\ncd\n===');
       last.act(const SetSelection(3, 5));
       last.act(const Newline(), applied: false, source: 'ab\ncd\n===');
+    });
+
+    test('a non-breaking space typed over a setext heading is its text', () {
+      // Markdown strips only spaces and tabs from a heading. Another space is
+      // text the heading keeps, with its underline, as other text typed over
+      // all of it is.
+      for (final space in ['\u00A0', '\u3000']) {
+        final session = _Session(backend, source: 'abc\n===\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(
+          InsertText(space),
+          source: '$space\n===\n\np',
+          rows: [space, '', 'p'],
+        );
+        expect(session.editor.projection.rows.first.kind, RowKind.heading);
+      }
+    });
+
+    test('deleting all of a setext heading\'s text leaves it empty', () {
+      // Left behind, `===` would be painted as text and `---` read as a rule.
+      // The heading is respelled as an empty ATX heading of the same level in
+      // the same containers, as a level change respells it, and the caret
+      // stays where typing goes on in it.
+      for (final (source, start, end, deleted, rows) in [
+        ('abc\n===', 0, 3, '# ', ['']),
+        ('abc\n---\n\np', 0, 3, '## \n\np', ['', '', 'p']),
+        ('abc\r\n---\r\n\r\np', 0, 3, '## \r\n\r\np', ['', '', 'p']),
+        ('**abc**\n===', 2, 5, '# ', ['']),
+        ('ab\ncd\n===', 0, 5, '# ', ['']),
+        ('> abc\n> ===', 2, 5, '> # ', ['']),
+        ('- abc\n  ---\n- b', 2, 5, '- ## \n- b', ['', 'b']),
+      ]) {
+        for (final command in [
+          const DeleteBackward(),
+          const DeleteForward(),
+          ReplaceRange(start, end, ''),
+        ]) {
+          final session = _Session(backend, source: source);
+          final level = session.editor.projection.rows.first.headingLevel;
+          session.act(SetSelection(start, end));
+          session.act(
+            command,
+            source: deleted,
+            rows: rows,
+            caret: const DisplayPosition(0, 0),
+          );
+          final heading = session.editor.projection.rows.first;
+          expect(heading.kind, RowKind.heading);
+          expect(heading.headingLevel, level);
+          session.act(
+            const Undo(),
+            source: source,
+            selection: FlarkSelection(start, end),
+          );
+        }
+      }
+      // So does Backspace on its only character, and removing the image that
+      // is all of its text; an empty-alt image left behind keeps it as it is.
+      final single = _Session(backend, source: 'a\n===\n\np', caret: 1);
+      single.act(
+        const DeleteBackward(),
+        source: '# \n\np',
+        rows: ['', '', 'p'],
+      );
+      final image = _Session(backend, source: '![a](u)\n---', caret: 3);
+      image.act(const RemoveImage(), source: '## ', rows: ['']);
+      final kept = _Session(backend, source: '![](u) b\n---', caret: 8);
+      kept.act(const DeleteBackward(), source: '![](u) \n---', rows: [' ']);
+      expect(kept.editor.projection.rows.single.kind, RowKind.heading);
+    });
+
+    test('emptying a setext heading keeps the blocks after it in place', () {
+      // Taken with the text, the underline would leave a list item empty,
+      // and an empty item's content starts one column past its marker:
+      // `para` would leave the item, or turn into indented code in it.
+      for (final (source, caret, emptied) in [
+        ('- abc\n  ===\n\n  para', 5, '- # \n\n  para'),
+        ('-   abc\n    ===\n\n    para', 7, '-   # \n\n    para'),
+        ('> - abc\n>   ===\n>\n>   para', 7, '> - # \n>\n>   para'),
+        ('-   abc\n    ===\n      para', 7, '-   # \n      para'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final last = session.editor.projection.rows.last;
+        session.act(
+          const DeleteBackward(),
+          times: 3,
+          source: emptied,
+          caret: const DisplayPosition(0, 0),
+        );
+        final now = session.editor.projection.rows.last;
+        expect(now.text, 'para', reason: source);
+        expect(now.kind, last.kind, reason: source);
+        expect(
+          now.shells.map((s) => s.kind),
+          last.shells.map((s) => s.kind),
+          reason: source,
+        );
+      }
+    });
+
+    test('backspace removes an empty heading whose marker cannot go', () {
+      // Without its marker, the emptied item's `- ` would underline the
+      // paragraph above, so the empty heading goes with its line, as Delete
+      // at the end of that paragraph takes it.
+      const source = '- foo\n  - bar\n    - ## ';
+      final session = _Session(backend, source: source, caret: 23);
+      session.act(
+        const DeleteBackward(),
+        source: '- foo\n  - bar',
+        rows: ['foo', 'bar'],
+        caret: const DisplayPosition(1, 3),
+      );
+      expect(session.editor.projection.rows.last.kind, RowKind.paragraph);
+      // So does the empty heading that emptying a setext heading there leaves.
+      final emptied = _Session(
+        backend,
+        source: '- foo\n  - bar\n    - baz\n      -',
+        caret: 23,
+      );
+      emptied.act(const DeleteBackward(), times: 3, source: source);
+      emptied.act(
+        const DeleteBackward(),
+        source: '- foo\n  - bar',
+        rows: ['foo', 'bar'],
+      );
+    });
+
+    test('clearing a setext heading then typing keeps a heading', () {
+      // However the text is cleared, the same empty heading is left, so the
+      // next text typed continues the heading rather than a paragraph.
+      final typed = _Session(backend, source: 'abc\n===', caret: 3);
+      typed.act(const DeleteBackward(), times: 3, source: '# ', rows: ['']);
+      typed.act(
+        const InsertText('x'),
+        source: '# x',
+        rows: ['x'],
+        caret: const DisplayPosition(0, 1),
+      );
+      for (final (clear, retyped) in [
+        (const DeleteBackward(), '## x\n\np'),
+        (const DeleteForward(), '## x\n\np'),
+        (const ReplaceRange(0, 3, ''), '## x\n\np'),
+        (const InsertText(' '), '##  x\n\np'),
+      ]) {
+        final session = _Session(backend, source: 'abc\n---\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(clear, rows: ['', '', 'p']);
+        session.act(
+          const InsertText('x'),
+          source: retyped,
+          rows: ['x', '', 'p'],
+          caret: const DisplayPosition(0, 1),
+        );
+        expect(session.editor.projection.rows.first.headingLevel, 2);
+      }
+      // So does a preedit that passes through empty on its way to new text.
+      final composed = _Session(backend, source: 'abc\n---\n\np');
+      composed.act(const SetSelection(0, 3));
+      composed.editor.beginComposition();
+      composed.act(const ReplaceRange(0, 3, 'x'), source: 'x\n---\n\np');
+      composed.act(const ReplaceRange(0, 1, ''), source: '## \n\np');
+      final caret = composed.editor.selection.extent;
+      composed.act(
+        ReplaceRange(caret, caret, 'z'),
+        source: '## z\n\np',
+        rows: ['z', '', 'p'],
+      );
+      composed.editor.commitComposition();
+      expect(composed.editor.projection.rows.first.kind, RowKind.heading);
+      composed.act(const Undo(), source: 'abc\n---\n\np');
+    });
+
+    test('typing over all of a setext heading\'s text keeps its underline', () {
+      for (final command in [
+        const InsertText('x'),
+        const Paste('x'),
+        const ReplaceRange(0, 3, 'x'),
+      ]) {
+        final session = _Session(backend, source: 'abc\n---\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(
+          command,
+          source: 'x\n---\n\np',
+          rows: ['x', '', 'p'],
+          caret: const DisplayPosition(0, 1),
+        );
+        expect(session.editor.projection.rows.first.kind, RowKind.heading);
+      }
+      // Whitespace cannot be a heading's text, so typed over all of it the
+      // heading is left empty as with a deletion, the whitespace hidden after
+      // its marker; a line break follows the empty heading as with Return.
+      for (final (command, typed, caret) in [
+        (const InsertText(' '), '##  \n\np', const DisplayPosition(0, 0)),
+        (
+          const ReplaceRange(0, 3, ' '),
+          '##  \n\np',
+          const DisplayPosition(0, 0),
+        ),
+        (const Paste('\n'), '## \n\n\np', const DisplayPosition(1, 0)),
+      ]) {
+        final session = _Session(backend, source: 'abc\n---\n\np');
+        session.act(const SetSelection(0, 3));
+        session.act(command, source: typed, caret: caret);
+        final heading = session.editor.projection.rows.first;
+        expect(heading.kind, RowKind.heading);
+        expect(heading.text, isEmpty);
+      }
     });
 
     test('return in a quote opened on an item line stays in that item', () {
@@ -678,6 +1225,253 @@ void _structureCases(FlarkParseBackend backend) {
       ]) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(command, source: edited);
+      }
+    });
+
+    test('a word delete at the end of a code line joins the next word', () {
+      // Only a single-character join can take a tab's columns without
+      // reaching them; a word delete takes the word after the break with it.
+      for (final (source, caret, edited) in [
+        ('```\nfoo\nbar baz\n```', 7, '```\nfoo baz\n```'),
+        ('> ```\n> foo\n> bar baz\n> ```', 11, '> ```\n> foo baz\n> ```'),
+        ('```\r\nfoo\r\nbar baz\r\n```', 8, '```\r\nfoo baz\r\n```'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteForward(word: true), source: edited);
+      }
+    });
+
+    test('fence characters typed, deleted or shifted in code stay code', () {
+      // Each edit leaves a body line the parser would read as the closing
+      // fence, which would turn the rest of the code into prose and the old
+      // closer into a new fence. The fences grow past it instead.
+      const run = '```\n``x`\ny\n```', grown = '````\n```\ny\n````';
+      const indented = '```\nx\n    ```\n```', body = '```\ny';
+      const crlf = '```\r\n``x`\r\ny\r\n```';
+      for (final (source, caret, command, edited, shown) in [
+        ('```\n``\ny\n```', 6, const InsertText('`'), grown, body),
+        (run, 7, const DeleteBackward(), grown, body),
+        (run, 6, const DeleteForward(), grown, body),
+        (run, 0, const ReplaceRange(6, 7, ''), grown, body),
+        (crlf, 8, const DeleteBackward(), '````\r\n```\r\ny\r\n````', body),
+        ('```\nx```\n```', 5, const Newline(), '````\nx\n```\n````', 'x\n```'),
+        (
+          indented,
+          7,
+          const DeleteBackward(),
+          '````\nx\n   ```\n````',
+          'x\n   ```',
+        ),
+        (indented, 10, const Outdent(), '````\nx\n  ```\n````', 'x\n  ```'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, source: edited, rows: [shown]);
+        session.act(const Undo(), source: source);
+      }
+      // A body may hold such a run already, indented or beside other text,
+      // so while the parser reads the block unchanged, the fences stay.
+      final kept = _Session(
+        backend,
+        source: '```\n    ```\nab\n```',
+        caret: 14,
+      );
+      kept.act(const Paste('x'), source: '```\n    ```\nabx\n```');
+      kept.act(const DeleteBackward(), source: '```\n    ```\nab\n```');
+    });
+
+    test('a line break in quoted code takes the quote\'s prefix', () {
+      for (final command in [
+        const InsertText('\n'),
+        const ReplaceRange(9, 9, '\n'),
+      ]) {
+        final session = _Session(
+          backend,
+          source: '> ```\n> ab\n> ```',
+          caret: 9,
+        );
+        session.act(
+          command,
+          source: '> ```\n> a\n> b\n> ```',
+          rows: ['a\nb'],
+          caret: const DisplayPosition(0, 2),
+        );
+      }
+    });
+
+    test('text put on an empty code line stays in its list item', () {
+      // The empty line needs none of the item's indentation, so the source
+      // omits it; text put there takes the indentation the code continues
+      // with instead of leaving the item and splitting the code in two.
+      const source = '- a\n\n  ```\n  x\n\n  y\n  ```\n';
+      for (final (caret, command, edited, body) in [
+        (
+          15,
+          const InsertText('z'),
+          '- a\n\n  ```\n  x\n  z\n  y\n  ```\n',
+          'x\nz\ny',
+        ),
+        (
+          15,
+          const Paste('z\nw'),
+          '- a\n\n  ```\n  x\n  z\n  w\n  y\n  ```\n',
+          'x\nz\nw\ny',
+        ),
+        (18, const DeleteBackward(), '- a\n\n  ```\n  x\n  y\n  ```\n', 'x\ny'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, source: edited, rows: ['a', '', body, '']);
+        expect(session.editor.document.caretRow.shells.map((s) => s.kind), [
+          ShellKind.list,
+          ShellKind.item,
+        ]);
+      }
+    });
+
+    test('an edit that leaves code as it is only moves the caret', () {
+      // As in a paragraph, there is nothing to commit or undo, and nothing
+      // that needs source mode: the caret goes where the edit puts it.
+      for (final (source, start, end, command, caret) in [
+        ('```\nabc\ndef\n```\n', 7, 8, const Newline() as FlarkCommand, 8),
+        ('> ```\n> abc\n> def\n> ```\n', 11, 14, const Newline(), 14),
+        ('```\nabc\n```\n', 5, 6, const InsertText('b'), 6),
+        ('```\nabc\n```\n', 5, 6, const Paste('b'), 6),
+        ('```\nabc\n```\n', 4, 4, const ReplaceRange(4, 7, 'abc'), 7),
+        ('```\n``` x\nab\n```\n', 10, 11, const InsertText('a'), 11),
+      ]) {
+        final session = _Session(backend, source: source, caret: start);
+        if (end != start) session.act(SetSelection(start, end));
+        session.act(
+          command,
+          source: source,
+          selection: FlarkSelection.collapsed(caret),
+        );
+        expect(session.editor.history.canUndo, isFalse, reason: source);
+      }
+      // With the caret already there, the edit is inert.
+      final inert = _Session(backend, source: '```\nabc\n```\n', caret: 7);
+      inert.act(
+        const ReplaceRange(4, 7, 'abc'),
+        applied: false,
+        source: '```\nabc\n```\n',
+        anchor: 7,
+      );
+      expect(inert.editor.lastRejection, isNull);
+    });
+
+    test('indenting lines of code leaves their blank lines as they are', () {
+      // A blank line in a quote or list item can lack part of the
+      // container's prefix, which would absorb the indentation, so no blank
+      // line takes any.
+      for (final (source, start, end, indented, body, selection) in [
+        (
+          '> ```\n> abc\n>\n> ``` x\n> ```\n',
+          8,
+          21,
+          '> ```\n>   abc\n>\n>   ``` x\n> ```\n',
+          '  abc\n\n  ``` x',
+          const FlarkSelection(10, 25),
+        ),
+        (
+          '- ```\n  abc\n\n  x ```\n  ```\n',
+          8,
+          20,
+          '- ```\n    abc\n\n    x ```\n  ```\n',
+          '  abc\n\n  x ```',
+          const FlarkSelection(10, 24),
+        ),
+        (
+          '- ```\n\tabc\n\n\tdef\n\t```\n',
+          7,
+          15,
+          '- ```\n\t  abc\n\n\t  def\n\t```\n',
+          '    abc\n\n    def',
+          const FlarkSelection(9, 19),
+        ),
+        (
+          '```\nabc\n\ndef\n```\n',
+          4,
+          12,
+          '```\n  abc\n\n  def\n```\n',
+          '  abc\n\n  def',
+          const FlarkSelection(6, 16),
+        ),
+      ]) {
+        final session = _Session(backend, source: source);
+        session.act(SetSelection(start, end));
+        session.act(
+          const Indent(),
+          source: indented,
+          rows: [body, ''],
+          selection: selection,
+        );
+        session.act(
+          const Undo(),
+          source: source,
+          selection: FlarkSelection(start, end),
+        );
+      }
+      // Indenting only blank lines changes nothing, which is not a refusal.
+      const blank = '```\nabc\n\n\n\ndef\n```\n';
+      final session = _Session(backend, source: blank);
+      session.act(const SetSelection(8, 10));
+      session.act(const Indent(), applied: false, source: blank);
+      expect(session.editor.lastRejection, isNull);
+    });
+
+    test(
+      'a join of code lines that would take a tab\'s columns is refused',
+      () {
+        // The tab before `def` shows two columns of code past the item's
+        // indentation. Deleting the line break before it deletes the tab too,
+        // and with it those columns, which Delete did not reach.
+        for (final (source, caret) in [
+          ('- ```\n\tabc\n\n\tdef\n\t```\n', 11),
+          ('- ```\n\tabc\n\tdef\n\t```\n', 10),
+        ]) {
+          final session = _Session(backend, source: source, caret: caret);
+          session.act(const DeleteForward(), applied: false, source: source);
+          expect(session.editor.lastRejection, FlarkRejection.unsupportedEdit);
+        }
+        // A selection that ends there shows those columns, so deleting it
+        // takes them; a tab that shows none joins as any line does.
+        final selected = _Session(
+          backend,
+          source: '- ```\n\tabc\n\n\tdef\n\t```\n',
+        );
+        selected.act(const SetSelection(11, 13));
+        selected.act(
+          const DeleteForward(),
+          source: '- ```\n\tabc\n  def\n\t```\n',
+          rows: ['  abc\ndef', ''],
+        );
+        final whole = _Session(
+          backend,
+          source: '-\t```\n\tx\n\ty\n\t```\n',
+          caret: 8,
+        );
+        whole.act(
+          const DeleteForward(),
+          source: '-\t```\n\txy\n\t```\n',
+          rows: ['xy', ''],
+        );
+      },
+    );
+
+    test('a composition erased on an empty code line leaves it as it was', () {
+      // Text composed there takes the prefix the fence's lines continue
+      // with; erased before the composition ends, it takes that prefix away
+      // again, so the composition changes nothing and records no step.
+      for (final (source, caret) in [
+        ('- ```\n  a\n\n  b\n  ```\n', 10),
+        ('> ```\n> a\n>\n> b\n> ```\n', 11),
+        ('> ```\n> a\n> \n> b\n> ```\n', 12),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.editor.beginComposition();
+        session.act(const InsertText('k'), rows: ['a\nk\nb', '']);
+        session.act(const DeleteBackward(), source: source, anchor: caret);
+        session.editor.commitComposition();
+        expect(session.editor.history.canUndo, isFalse, reason: source);
       }
     });
   });
