@@ -47,9 +47,7 @@ void main() {
       c.loadMarkdown('fetched');
       final revision = c.state.revision;
       final backend = createParseBackend();
-      gate.complete(
-        FlarkBackendLease(backend, () => (backend as dynamic).dispose()),
-      );
+      gate.complete(FlarkBackendLease(backend, backend.dispose));
       await c.ready;
       expect(c.markdown, 'fetched');
       expect(c.state.revision, revision);
@@ -91,7 +89,7 @@ void main() {
       gate.complete(
         FlarkBackendLease(backend, () {
           released++;
-          (backend as dynamic).dispose();
+          backend.dispose();
         }),
       );
       await Future<void>.delayed(Duration.zero);
@@ -213,6 +211,123 @@ void main() {
     c.undo();
     expect(c.markdown, 'abc');
   });
+
+  test('loadMarkdown rejects text the editor cannot hold', () async {
+    final c = Controller(markdown: 'kept');
+    addTearDown(c.session.dispose);
+    await c.ready;
+    final revision = c.state.revision;
+    for (final (text, reason) in [
+      ('half an emoji \uD83D', FlarkEditRejection.invalidSource),
+      ('classic\rmac', FlarkEditRejection.invalidSource),
+      ('x' * (1024 * 1024 + 1), FlarkEditRejection.sourceLimit),
+    ]) {
+      expect(c.loadMarkdown(text).reason, reason);
+    }
+    expect(c.markdown, 'kept');
+    expect(c.state.revision, revision);
+  });
+
+  test('a load refused while loading leaves the seed to open', () async {
+    final gate = Completer<FlarkBackendLease>();
+    final c = Controller(markdown: 'seed', loader: () => gate.future);
+    addTearDown(c.session.dispose);
+    expect(
+      c.loadMarkdown('classic\rmac').reason,
+      FlarkEditRejection.invalidSource,
+    );
+    final backend = createParseBackend();
+    gate.complete(FlarkBackendLease(backend, backend.dispose));
+    await c.ready;
+    expect(c.state.status, FlarkStatus.ready);
+    expect(c.markdown, 'seed');
+  });
+
+  test('a refused seed fails the session, and other content opens', () async {
+    for (final (seed, error) in [
+      ('classic\rmac', isFormatException),
+      ('draft \uD83D', isFormatException),
+      ('x' * (1024 * 1024 + 1), isArgumentError),
+    ]) {
+      var loads = 0;
+      final c = Controller(
+        markdown: seed,
+        loader: () {
+          loads++;
+          return loadFlarkBackend();
+        },
+      );
+      addTearDown(c.session.dispose);
+      await expectLater(c.ready, throwsA(error));
+      expect(c.state.status, FlarkStatus.failed);
+      expect(c.state.error, error);
+      // Retrying the same content fails the same way, without a parser.
+      await expectLater(c.retryLoading(), throwsA(error));
+      expect(loads, 0);
+      expect(c.loadMarkdown('# Fixed').changed, isTrue);
+      await c.retryLoading();
+      expect(c.state.status, FlarkStatus.ready);
+      expect(c.markdown, '# Fixed');
+      expect(loads, 1);
+    }
+  });
+
+  test('a listener may dispose a session whose retry is refused', () async {
+    final s = FlarkSession(markdown: 'classic\rmac');
+    await expectLater(s.ready, throwsFormatException);
+    s.addListener(() {
+      if (s.state.status == FlarkStatus.failed) s.dispose();
+    });
+    // Disposing completes the retry's attempt before the refusal does.
+    expect(
+      () => unawaited(s.retryLoading().catchError((Object _) {})),
+      returnsNormally,
+    );
+  });
+
+  test('limits no editor can apply are refused at construction', () {
+    for (final create in [
+      () => FlarkSession(syncLimit: 1024 * 1024 + 1),
+      () => FlarkSession(syncLimit: -1),
+      () => FlarkSession(liveLimits: const FlarkLiveLimits(lines: 0)),
+      () => FlarkSession(liveLimits: const FlarkLiveLimits(containerDepth: -1)),
+    ]) {
+      expect(create, throwsArgumentError);
+    }
+    // The writable limit itself is the widest live limit.
+    FlarkSession(syncLimit: 1024 * 1024).dispose();
+  });
+
+  test(
+    'a throwing listener neither forks the document nor silences others',
+    () async {
+      final c = Controller(markdown: 'abc');
+      addTearDown(c.session.dispose);
+      await c.ready;
+      final saved = <String>[];
+      c.changes.listen(saved.add);
+      // An open composition is where a failed command restores its snapshot.
+      final engine = c.session.engine!;
+      engine.beginComposition();
+      engine.apply(const InsertText('x'));
+      var heard = 0;
+      void failing() => throw StateError('listener bug');
+      c.session.addListener(failing);
+      c.session.addListener(() => heard++);
+      final errors = <Object>[];
+      late FlarkEditResult result;
+      runZonedGuarded(() {
+        result = c.insertText('y');
+      }, (error, _) => errors.add(error));
+      c.session.removeListener(failing);
+      expect(result.changed, isTrue);
+      expect(errors.single, isStateError);
+      expect(heard, 1);
+      expect(engine.source, 'xyabc');
+      expect(c.markdown, engine.source);
+      expect(saved.last, engine.source);
+    },
+  );
 
   test('save callbacks can edit without recursive stream failure', () async {
     final c = Controller();

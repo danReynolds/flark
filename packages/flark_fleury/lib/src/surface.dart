@@ -20,6 +20,34 @@ final class _Viewport {
   FlarkDocumentState? _editor;
   bool _focused = false;
 
+  /// The editor and revision at which the caret was placed at the end of a
+  /// visual line: by End, a click past the line's last character or a
+  /// vertical move. Where a row wraps, that offset also starts the next
+  /// visual line, so the caret would show there and the next End or Down
+  /// would start from the wrong line. Any later change of the editor
+  /// returns the caret to the next line, where typing puts the character.
+  ({FlarkDocumentState editor, int revision})? _caretAtLineEnd;
+
+  /// Records whether a placement left the caret at the end of its visual
+  /// line. Every placement records it: one at the start of the next line
+  /// has the same offset, so it changes nothing else the editor knows.
+  void placedCaret(FlarkDocumentState editor, {required bool atLineEnd}) =>
+      _caretAtLineEnd = atLineEnd
+      ? (editor: editor, revision: editor.revision)
+      : null;
+
+  /// The caret's cell in [layout].
+  CellOffset get caret {
+    final layout = this.layout!, editor = layout.controller.editor;
+    final placed = _caretAtLineEnd;
+    return layout.caretPosition(
+      lineEnd:
+          placed != null &&
+          identical(placed.editor, editor) &&
+          placed.revision == editor.revision,
+    );
+  }
+
   CellSize prepare(
     CellConstraints constraints,
     FlarkCellController controller,
@@ -51,7 +79,7 @@ final class _Viewport {
             cached?.theme != theme ||
             !identical(_editor, editor) ||
             (!_focused && focus.hasFocus))) {
-      final caret = layout.caretPosition;
+      final caret = viewport.caret;
       if (caret.row < viewport.top) viewport.top = caret.row;
       if (caret.row >= viewport.top + result.rows) {
         viewport.top = caret.row - result.rows + 1;
@@ -141,7 +169,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
         !selection.isCollapsed) {
       return null;
     }
-    final caret = layout.caretPosition;
+    final caret = widget.viewport.caret;
     final row = caret.row - widget.viewport.top;
     if (row < 0 || row >= size.rows || caret.col >= size.cols) return null;
     return CellRect.fromLTWH(caret.col, row, 1, 1);
@@ -167,7 +195,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
     viewport.origin = geometry?.bounds.offset ?? offset;
     final selection = widget.controller.editor.selection;
     final selectionByRow = <ProjectedRow, (int, int)>{};
-    final caret = layout.caretPosition;
+    final caret = viewport.caret;
     void write(
       int col,
       int row,
@@ -278,6 +306,16 @@ class _RenderSurface extends RenderObject implements CaretHost {
         }
         if (eighths > 0 && codeColor != null) {
           final full = eighths == 8 || theme.body.background == null;
+          if (!layout.blockEdges) {
+            // Two-cell blocks would evict each other: a whole cell of code
+            // background stands in for an edge at least half painted.
+            if (full || eighths >= 4) {
+              for (var x = visual.blockLeft; x < size.cols; x++) {
+                write(x, y, ' ', CellStyle(background: codeColor));
+              }
+            }
+            continue;
+          }
           final count = top || full ? eighths : 8 - eighths;
           final glyph = full ? '█' : '▁▂▃▄▅▆▇█'[count - 1];
           final style = CellStyle(
@@ -384,6 +422,73 @@ class _RenderSurface extends RenderObject implements CaretHost {
       }
     }
   }
+}
+
+/// Lays its child out [rows] taller than itself and paints it that far up,
+/// for an image preview whose top has scrolled above the viewport: the
+/// preview keeps the fit of its whole slot and [_ClipViewport] cuts what is
+/// above. A [Positioned] child cannot itself start above its stack.
+class _RaisedPreview extends SingleChildRenderObjectWidget {
+  const _RaisedPreview({required this.rows, required super.child});
+  final int rows;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderRaisedPreview(rows);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderRaisedPreview renderObject,
+  ) => renderObject.rows = rows;
+}
+
+class _RenderRaisedPreview extends RenderObject
+    implements RenderObjectWithSingleChild {
+  _RenderRaisedPreview(this._rows);
+
+  int _rows;
+  set rows(int value) {
+    if (_rows == value) return;
+    _rows = value;
+    markNeedsLayout();
+  }
+
+  RenderObject? _child;
+  @override
+  RenderObject? get child => _child;
+  @override
+  set child(RenderObject? value) {
+    if (identical(_child, value)) return;
+    if (_child != null) dropChild(_child!);
+    _child = value;
+    if (value != null) adoptChild(value);
+  }
+
+  @override
+  CellSize performLayout(CellConstraints constraints) {
+    final size = constraints.constrain(
+      CellSize(
+        constraints.maxCols ?? constraints.minCols,
+        constraints.maxRows ?? constraints.minRows,
+      ),
+    );
+    _child?.layout(
+      CellConstraints.tight(CellSize(size.cols, size.rows + _rows)),
+    );
+    return size;
+  }
+
+  @override
+  CellOffset childOffsetOf(RenderObject child) => CellOffset(0, -_rows);
+
+  @override
+  CellRect childClipOf(RenderObject child) =>
+      CellRect(offset: CellOffset.zero, size: size);
+
+  @override
+  void performPaint(CellBuffer buffer, CellOffset offset) =>
+      _child?.paint(buffer, offset + CellOffset(0, -_rows));
 }
 
 /// Clips glyphs and pixel placements to the same viewport. Partly scrolled

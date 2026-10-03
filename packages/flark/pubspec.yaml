@@ -20,6 +20,8 @@ dependencies:
   code_assets: '>=1.0.0 <3.0.0'
   # The build hook checks downloaded parser libraries against pinned SHA-256s.
   crypto: ^3.0.7
+  # The C allocator and its native free, which a parser's finalizer calls.
+  ffi: ^2.1.0
   hooks: '>=1.0.0 <3.0.0'
 
 dev_dependencies:

@@ -52,6 +52,38 @@ final class FlarkLiveLimits {
   }
 }
 
+/// Throw an [ArgumentError] for the limits [FlarkEditor]'s constructor
+/// refuses: a [syncLimit] below zero or above [sourceLimit], or a
+/// [FlarkLiveLimits] bound below one ([FlarkLiveLimits.containerDepth] below
+/// zero). An owner that creates its editor only after loading a parser checks
+/// when it is constructed, so that the mistake surfaces where the app
+/// configures it instead of as a failed load that no retry can fix.
+void checkFlarkLimits({
+  required int syncLimit,
+  required int sourceLimit,
+  required FlarkLiveLimits liveLimits,
+}) {
+  if (syncLimit < 0 || syncLimit > sourceLimit) {
+    throw ArgumentError.value(
+      syncLimit,
+      'syncLimit',
+      'must be from 0 to the $sourceLimit-byte writable limit',
+    );
+  }
+  if (liveLimits.lines < 1 ||
+      liveLimits.lineCodeUnits < 1 ||
+      liveLimits.blocks < 1 ||
+      liveLimits.runs < 1 ||
+      liveLimits.blockCodeUnits < 1 ||
+      liveLimits.containerDepth < 0) {
+    throw ArgumentError(
+      'every FlarkLiveLimits bound must be at least 1, and containerDepth at '
+          'least 0',
+      'liveLimits',
+    );
+  }
+}
+
 /// Everything a commit checks before parsing, gathered in one pass over the
 /// candidate: the source contract (no bare CR, well-formed UTF-16), UTF-8
 /// size, line count and widest line in code units. Separate checks walked the

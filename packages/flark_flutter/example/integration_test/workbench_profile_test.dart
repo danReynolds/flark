@@ -31,6 +31,9 @@ class _CountedBackend implements FlarkParseBackend {
     calls++;
     return backend.parse(source);
   }
+
+  @override
+  void dispose() => backend.dispose();
 }
 
 void recordFrameTiming(Map<String, Object> sample, FrameTiming frame) {

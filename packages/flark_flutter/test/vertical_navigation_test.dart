@@ -114,4 +114,39 @@ void main() {
       c.dispose();
     });
   }
+
+  testWidgets(
+    'vertical movement starts from a caret moved by typing or a line edge',
+    (tester) async {
+      const source = '- abcdefghij\n- abcdefghij\n- abcdefghij';
+      final c = FlarkController(FlarkEditor(backend, text: source, caret: 2));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      expect(c.editor.selection.extent, 15);
+      // Typing through the platform moves the caret three columns right.
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: source.replaceRange(15, 15, 'xyz'),
+          selection: const TextSelection.collapsed(offset: 18),
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      expect(c.editor.selection.extent, 31 + 3);
+      // End moves to the line's last column; Up keeps that column.
+      await tester.sendKeyEvent(LogicalKeyboardKey.end);
+      expect(c.editor.selection.extent, 41);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      expect(c.editor.selection.extent, 15 + 10);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
 }

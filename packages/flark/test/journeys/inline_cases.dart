@@ -346,5 +346,53 @@ void _inlineCases(FlarkParseBackend backend) {
         context: 0,
       );
     });
+
+    test('retyping the first word of a styled phrase keeps it styled', () {
+      for (final (source, caret, open) in [
+        ('x **one two**', 7, '**'),
+        ('x *one two* y', 6, '*'),
+        ('x ~~one two~~', 7, '~~'),
+        ('x ***one two***', 8, '***'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final style = session.editor.typingContext;
+        // The caret stays where the word was, before the space that now
+        // leads the span, and keeps the span's intent.
+        session.act(
+          const DeleteBackward(),
+          times: 3,
+          rows: [source.endsWith(' y') ? 'x  two y' : 'x  two'],
+          caret: const DisplayPosition(0, 2),
+          context: style,
+        );
+        for (final char in 'new'.split('')) {
+          session.act(InsertText(char), context: style);
+        }
+        // The word rejoins the span rather than fusing with the next one.
+        session.expectState(
+          source: source.replaceFirst('${open}one', '${open}new'),
+          rows: [source.endsWith(' y') ? 'x new two y' : 'x new two'],
+          caret: const DisplayPosition(0, 5),
+        );
+      }
+    });
+
+    test('word backspace over a styled first word keeps the gap', () {
+      final session = _Session(backend, source: 'x **one two**', caret: 7);
+      session.act(
+        const DeleteBackward(word: true),
+        source: 'x  **two**',
+        caret: const DisplayPosition(0, 2),
+        context: Style.strong,
+      );
+      // Erasing the space that led the span returns into it.
+      session.act(
+        const DeleteForward(),
+        source: 'x **two**',
+        caret: const DisplayPosition(0, 2),
+        context: Style.strong,
+      );
+      session.act(const InsertText('n'), source: 'x **ntwo**');
+    });
   });
 }

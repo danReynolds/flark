@@ -67,5 +67,29 @@ void _historyCases(FlarkParseBackend backend) {
         caret: const DisplayPosition(0, 1),
       );
     });
+
+    test('an inert command publishes nothing and records no step', () {
+      for (final (source, command) in <(String, FlarkCommand)>[
+        ('# H', const SetHeadingLevel(1)),
+        // However the heading is spelled: rewriting it as plain ATX would
+        // respell its source for no visible change.
+        ('H\n===', const SetHeadingLevel(1)),
+        ('H\n---', const SetHeadingLevel(2)),
+        ('# H #', const SetHeadingLevel(1)),
+        ('a', const SetHeadingLevel(0)),
+        ('```dart\nx\n```', const SetCodeLanguage('dart')),
+        ('[a](http://x)', const SetLink('http://x')),
+        ('[a][r]\n\n[r]: http://x', const SetLink('http://x')),
+        ('<http://x>', const SetLink('http://x')),
+      ]) {
+        final session = _Session(backend, source: source, caret: 2);
+        final revision = session.editor.revision;
+        // Like a repeated SetStyle: false, but not a refusal.
+        session.act(command, applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+        expect(session.editor.revision, revision, reason: source);
+        expect(session.editor.history.canUndo, isFalse, reason: source);
+      }
+    });
   });
 }

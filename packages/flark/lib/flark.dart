@@ -1,8 +1,12 @@
-/// Flark v5 kernel. M1 exposes the render model and the parse transports.
+/// The Flark editing kernel without a UI: the parse transports, the
+/// [FlarkEditor] facade with its closed command set and grouped history, and
+/// the projection that hosts paint. Most apps use a host package, or
+/// `package:flark/session.dart`, which loads and owns the parser itself.
 ///
-/// On the Dart VM, [createParseBackend] returns the FFI transport. On the web
-/// it throws; create a `WasmParseBackend` with `load()` or `fromBytes()`
-/// instead. Both classes are exported for the platform they exist on.
+/// On the Dart VM, [createParseBackend] returns a native parser. On the web it
+/// throws; load the bundled module with `WasmParseBackend.bundled()` from
+/// `package:flark/wasm.dart` instead. Whoever creates a parser owns it and
+/// calls [FlarkParseBackend.dispose] when done.
 library;
 
 // The render model and its schema constants are the parse crate's contract,

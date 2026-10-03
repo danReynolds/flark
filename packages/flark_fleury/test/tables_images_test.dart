@@ -310,6 +310,32 @@ void main() {
       expect(mounted, contains('two.png'));
     },
   );
+  test('a preview scrolled partly above the viewport keeps its fit', () {
+    mount(
+      'intro\n\n![one](one.png)\n\n${'gap\n\n' * 12}last',
+      images: (_, _, _) =>
+          Text([for (var i = 1; i <= 8; i++) 'row$i'].join('\n')),
+    );
+    expect(layout().images.single.top, 2);
+    // One notch scrolls three rows: the slot's first row is above the view.
+    tester.sendMouse(
+      const MouseEvent(
+        button: MouseButton.none,
+        kind: MouseEventKind.scrollDown,
+        col: 2,
+        row: 2,
+      ),
+    );
+    final frame = tester.render();
+    String row(int y) => [
+      for (var x = 0; x < 4; x++) frame.atColRow(x, y).grapheme ?? ' ',
+    ].join();
+    expect(
+      [for (var y = 0; y < 7; y++) row(y)],
+      [for (var i = 2; i <= 8; i++) 'row$i'],
+    );
+  });
+
   test('selection spans cells and links inside cells keep their actions', () {
     mount('| A | B |\n| - | - |\n| **bold** | [link](https://dart.dev) |');
     final start = editor.source.indexOf('bold');

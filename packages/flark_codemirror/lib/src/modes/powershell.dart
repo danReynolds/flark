@@ -149,6 +149,9 @@ final _keywords = _words(_keywordPatterns);
 final _wordOperators = _words(_wordOperatorPatterns, _isWordUnit);
 final _namedBuiltins = _words(_namedBuiltinPatterns);
 final _variableBuiltins = _words(_variableBuiltinPatterns);
+final _longestName = _keywords.longest > _namedBuiltins.longest
+    ? _keywords.longest
+    : _namedBuiltins.longest;
 
 final _numbers = RegExp(
   r'((0x[\da-f]+)|((\d+\.\d+|\d\.|\.\d+|\d+)(e[\+\-]?\d+)?))[ld]?([kmgtp]b)?',
@@ -174,10 +177,12 @@ bool _isDigit(int u) => u >= 0x30 && u <= 0x39;
 /// Upstream's `varNames`, `[\w\-:]`.
 bool _isVarNameUnit(int u) => _isNameUnit(u) || u == 0x3a;
 
-/// The end of the run of [unit] units in [s] from [start].
-int _runEnd(String s, int start, bool Function(int) unit) {
+/// The end of the run of [unit] units in [s] from [start], read no further
+/// than [limit].
+int _runEnd(String s, int start, bool Function(int) unit, [int? limit]) {
+  final stop = limit == null || limit > s.length ? s.length : limit;
   var i = start;
-  while (i < s.length && unit(s.codeUnitAt(i))) {
+  while (i < stop && unit(s.codeUnitAt(i))) {
     i++;
   }
   return i;
@@ -217,13 +222,17 @@ int _hash(String s, int start, int end) {
 /// Lower-cased words, found by a span of text without copying it.
 final class _Words {
   _Words(Set<String> words)
-    : _slots = List.filled(_sizeFor(words.length), null) {
+    : _slots = List.filled(_sizeFor(words.length), null),
+      longest = words.fold(0, (n, word) => word.length > n ? word.length : n) {
     for (final word in words) {
       (_slots[_hash(word, 0, word.length) & (_slots.length - 1)] ??= []).add(
         word,
       );
     }
   }
+
+  /// The length of the longest word: a longer span is none of them.
+  final int longest;
 
   static int _sizeFor(int count) {
     var size = 16;
@@ -237,6 +246,7 @@ final class _Words {
 
   /// Whether [s] from [start] to [end], lower-cased, is one of the words.
   bool contains(String s, int start, int end) {
+    if (end - start > longest) return false;
     final slot = _slots[_hash(s, start, end) & (_slots.length - 1)];
     if (slot == null) return false;
     search:
@@ -401,6 +411,8 @@ int _punctuationLength(String s, int pos) {
 int _identifierLength(String s, int pos, int end) {
   final c = s.codeUnitAt(pos);
   if (!_isLetter(c) && c != 0x5f) return 0;
+  // [end] may stop short of the run (`_tokenBase`); an identifier takes it all.
+  end = _runEnd(s, end, _isNameUnit);
   while (s.codeUnitAt(end - 1) == 0x2d) {
     end--;
   }
@@ -471,7 +483,10 @@ String? _tokenBase(StringStream stream, PowerShellState state) {
 
   // Upstream's grammar: keyword, number, operator, builtin, punctuation and
   // variable patterns, tried in turn at the stream.
-  final end = _runEnd(s, pos, _isNameUnit);
+  // Keywords and builtins are short, so the run is read only that far: a long
+  // run of name characters that tokens take a few at a time, such as a line
+  // of dashes, would otherwise be read to its end again at every token.
+  final end = _runEnd(s, pos, _isNameUnit, pos + _longestName + 1);
   if (end > pos && _keywords.contains(s, pos, end)) {
     stream.pos = end;
     return 'keyword';

@@ -76,6 +76,31 @@ void main() {
     });
   }
 
+  test('image slots start inside a viewport with no columns', () {
+    // A table too narrow for its columns stacks them, and a preview's slot
+    // starts after the stack's prefix: at zero columns that was column -1,
+    // which Fleury's Positioned rejects.
+    final editor = FlarkEditor(
+      backend,
+      text: '| a | ![i](b.png) |\n| - | - |\n| c | d |\n\n![j](c.png)',
+      caret: 0,
+    );
+    final controller = FlarkFleuryController(editor);
+    for (final cols in [0, 1, 2]) {
+      final layout = CellDocumentLayout(
+        controller,
+        cols,
+        const FlarkCellTheme(),
+        CellWidthPolicy.spec,
+      );
+      expect(layout.images, hasLength(2));
+      for (final slot in layout.images) {
+        expect(slot.left, greaterThanOrEqualTo(0), reason: '$cols columns');
+      }
+    }
+    controller.dispose();
+  });
+
   test('a wrapped row keeps its rails and never repeats its marker', () {
     for (final (source, first, rest) in [
       ('> - a very long line of text here\n', '▎  ●  ', '▎     '),

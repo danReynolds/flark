@@ -178,4 +178,68 @@ void main() {
     expect(find.byType(FlarkSurface), findsNothing);
     await t.pumpWidget(const SizedBox());
   });
+
+  testWidgets('Markdown the parser cannot take shows as source until it can', (
+    t,
+  ) async {
+    // A chat-style reveal: substring(0, n) can end between the two code units
+    // of an emoji for one frame.
+    const full = 'Thanks \u{1F600} **done**';
+    Widget view(String text) => MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(child: FlarkMarkdown(markdown: text)),
+      ),
+    );
+    await t.pumpWidget(view(full.substring(0, 7)));
+    await t.pump();
+    expect(find.byType(FlarkSurface), findsOneWidget);
+    await t.pumpWidget(view(full.substring(0, 8)));
+    expect(
+      find.text('Rendered preview unavailable for this document.'),
+      findsOneWidget,
+    );
+    await t.pumpWidget(view(full));
+    expect(find.byType(FlarkSurface), findsOneWidget);
+    expect(find.textContaining('Unable to render'), findsNothing);
+    await t.pumpWidget(const SizedBox());
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('the source fallback never splits a surrogate pair', (t) async {
+    // One 21,000-unit line is past the live shape limit, and its emoji
+    // straddles the preview's 1,024-unit cut.
+    final markdown = '${'x' * 1023}\u{1F600}${'x' * 20000}';
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(child: FlarkMarkdown(markdown: markdown)),
+        ),
+      ),
+    );
+    await t.pump();
+    expect(find.text('Copy complete Markdown'), findsOneWidget);
+    expect(find.textContaining('\u{1F600}'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('an editor seeded with text it cannot hold shows its failure', (
+    t,
+  ) async {
+    for (final seed in [
+      'x\n' * (512 * 1024 + 1),
+      'draft \u{1F600}'.substring(0, 7),
+    ]) {
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditor(key: ValueKey(seed), initialMarkdown: seed),
+          ),
+        ),
+      );
+      expect(find.text('Unable to load editor'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    }
+    await t.pumpWidget(const SizedBox());
+  });
 }

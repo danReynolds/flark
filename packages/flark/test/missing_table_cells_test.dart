@@ -17,6 +17,9 @@ final class _PreparationFaultBackend implements FlarkParseBackend {
     if (fail && source.endsWith('| x | | |\n')) throw error;
     return delegate.parse(source);
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 void main() {

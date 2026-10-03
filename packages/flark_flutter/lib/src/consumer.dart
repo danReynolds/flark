@@ -12,7 +12,10 @@ import 'resource_controls.dart';
 class FlarkController extends ChangeNotifier with FlarkActions {
   /// [syncLimit] and [liveLimits] bound what renders live, by default
   /// [flarkDefaultLiveBytes] and [FlarkLiveLimits]; beyond them the document
-  /// edits in source mode.
+  /// edits in source mode. Limits no editor can apply throw an
+  /// [ArgumentError]. A [markdown] the editor cannot hold (a bare CR, an
+  /// unpaired surrogate, or over the 1 MiB writable limit) fails the
+  /// controller instead, with the refusal as `state.error`.
   FlarkController({
     String markdown = '',
     int? syncLimit,

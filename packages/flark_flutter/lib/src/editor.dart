@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/semantics.dart';
 import 'controller.dart';
 import 'clipboard_binding_stub.dart'
@@ -76,7 +77,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   TextEditingValue? _sentValue;
   InputContext? _inputContext;
   int _epoch = 0;
-  double? _goalX;
+
+  /// The x that a run of Up and Down keys aims for, and the controller and
+  /// revision the last of them produced. Typing through the platform, line
+  /// edges and other edits change the revision, so the next vertical move
+  /// starts from wherever the caret then is.
+  ({double x, FlarkController controller, int revision})? _goal;
   bool _dragging = false;
 
   /// A touch on the document that has not moved past the touch slop, and
@@ -162,19 +168,22 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
     if (old.controller != c) {
       old.controller.removeListener(_changed);
-      old.controller.finishComposition();
+      _endComposition(old.controller);
       c.addListener(_changed);
       _close();
     }
     if (old.focusNode != widget.focusNode) {
       _focus.removeListener(_focusChanged);
+      // Closing the connection ends the platform's composition, so the
+      // kernel's must end with it, as it does when focus is lost.
+      _endComposition(c);
       _close();
       if (old.focusNode == null) _focus.dispose();
       _focus = widget.focusNode ?? FocusNode(debugLabel: 'Flark editor');
       _focus.addListener(_focusChanged);
     }
     if (widget.readOnly) {
-      c.finishComposition();
+      _endComposition(c);
       _close();
     } else if (_focus.hasFocus) {
       _attach();
@@ -208,6 +217,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
 
   void _attach() {
     if (_connection?.attached == true || widget.readOnly) return;
+    // A new platform client starts with an empty buffer. Forget what an
+    // earlier connection was sent: otherwise an unchanged document is never
+    // sent to this one, and its first input would describe an empty field.
+    _sentValue = null;
     _client = _InputClient(this, ++_epoch);
     _connection = TextInput.attach(
       _client!,
@@ -234,6 +247,33 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     _connection?.close();
     _connection = null;
     _client = null;
+  }
+
+  /// Ends [controller]'s composition with the connection that held it. The
+  /// controller then notifies its listeners, which may rebuild other widgets,
+  /// and the framework refuses that while it builds or unmounts this one, so
+  /// during a frame the composition ends as soon as the frame completes.
+  static void _endComposition(FlarkController controller) {
+    final scheduler = SchedulerBinding.instance;
+    if (scheduler.schedulerPhase != SchedulerPhase.persistentCallbacks) {
+      controller.finishComposition();
+    } else if (controller.editor.composing) {
+      scheduler.addPostFrameCallback(
+        (_) => controller.finishComposition(),
+        debugLabel: 'FlarkEditorWidget.endComposition',
+      );
+    }
+  }
+
+  /// The platform closed the connection: iOS when its input view resigns
+  /// first responder (the iPad hide-keyboard key), the web engine on a blur
+  /// without a related target. Focus and the caret remain and the next press
+  /// reattaches, so release the connection and the mirror it held. Its
+  /// composition ended with it.
+  void _connectionClosed() {
+    if (_connection?.attached == true) _connection!.connectionClosedReceived();
+    _close();
+    c.finishComposition();
   }
 
   void _sync() {
@@ -315,7 +355,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   }
 
   bool _command(FlarkCommand command) {
-    _goalX = null;
+    _goal = null;
     return c.command(command);
   }
 
@@ -350,7 +390,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     _focus.requestFocus();
     if (touch && _connection?.attached == true) _connection!.show();
     _attach();
-    _goalX = null;
+    _goal = null;
     final image = surface.imageAt(point);
     if (image != null) {
       _dragging = false;
@@ -367,6 +407,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
     _dragging = drag;
     surface.place(point, extend: HardwareKeyboard.instance.isShiftPressed);
+    // A hit past a wrapped line's end can leave the caret where it was and
+    // move only the line it is drawn on, which the input method follows.
+    _scheduleGeometry();
     final link = surface.linkAt(point);
     if (link != null && !HardwareKeyboard.instance.isShiftPressed && primary) {
       _pressedLink = (resource: link, point: position);
@@ -519,7 +562,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     _focus.requestFocus();
     if (_connection?.attached == true) _connection!.show();
     _attach();
-    _goalX = null;
+    _goal = null;
     final word = surface.wordAt(surface.globalToLocal(details.globalPosition));
     _hideTouchSelection();
     _longPressWord = word;
@@ -583,12 +626,22 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   void _updateHandleDrag(DragUpdateDetails details, bool start) {
     final surface = _surface, drag = _handleDrag;
     if (surface == null || drag == null) return;
-    final target = surface.sourceAt(
+    final hit = surface.hitAt(
       surface.globalToLocal(details.globalPosition + drag.grab),
     );
     // The ends keep their order and never meet.
-    if (start ? target < drag.fixed : target > drag.fixed) {
-      _command(SetSelection(drag.fixed, target));
+    if (start ? hit.source < drag.fixed : hit.source > drag.fixed) {
+      // The fixed end stays on the line it is drawn on. An end dragged past
+      // a wrapped line stays drawn at that line's end; a start there begins
+      // the next line, as its selection does.
+      final fixedAtLineEnd = surface.drawnAtLineEnd(drag.fixed);
+      _command(SetSelection(drag.fixed, hit.source));
+      if (start) {
+        surface.placedAt(drag.fixed, lineEnd: fixedAtLineEnd);
+      } else {
+        surface.placedAt(hit.source, lineEnd: hit.lineEnd);
+      }
+      _scheduleGeometry();
     }
     _touchSelection?.updateMagnifier(
       _magnifierAt(details.globalPosition, c.editor.selection.extent),
@@ -939,8 +992,42 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   void _vertical(bool down, bool extend) {
     final s = _surface;
     if (s == null) return;
-    _goalX ??= s.caretRect.left;
-    s.vertical(down, extend: extend, goalX: _goalX);
+    final goal = _goal;
+    final x =
+        goal != null &&
+            identical(goal.controller, c) &&
+            goal.revision == c.editor.revision
+        ? goal.x
+        : s.caretRect.left;
+    s.vertical(down, extend: extend, goalX: x);
+    _goal = (x: x, controller: c, revision: c.editor.revision);
+    _scheduleGeometry();
+  }
+
+  void _lineEdge(bool end, {required bool extend}) {
+    _goal = null;
+    _surface?.lineEdge(end, extend: extend);
+    _scheduleGeometry();
+  }
+
+  /// Command-Backspace on Apple platforms deletes from the caret to the start
+  /// of its visual line, and Command-Delete to its end, as one edit that Undo
+  /// restores; Cocoa sends deleteToBeginningOfLine: and deleteToEndOfLine:
+  /// for the same keys. A selection is deleted as it is, and a caret already
+  /// at that edge deletes one grapheme, as in Cocoa.
+  void _deleteToLineEdge({required bool forward}) {
+    final selection = c.editor.selection;
+    final caret = selection.extent;
+    final edge = selection.isCollapsed
+        ? _surface?.lineEdgeTarget(forward)
+        : null;
+    if (edge != null && (forward ? edge > caret : edge < caret)) {
+      _command(
+        forward ? ReplaceRange(caret, edge, '') : ReplaceRange(edge, caret, ''),
+      );
+    } else {
+      _command(forward ? const DeleteForward() : const DeleteBackward());
+    }
   }
 
   KeyEventResult _key(FocusNode node, KeyEvent event) {
@@ -953,7 +1040,18 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     final keyboard = HardwareKeyboard.instance;
     final shift = keyboard.isShiftPressed,
         primary = keyboard.isMetaPressed || keyboard.isControlPressed;
+    // Apple platforms reach line edges with Command and move by word with
+    // Option. Windows and Linux move by word with Control and reach line
+    // edges with Home and End. On the web this follows the browser's
+    // operating system.
+    final apple = switch (defaultTargetPlatform) {
+      TargetPlatform.iOS || TargetPlatform.macOS => true,
+      _ => false,
+    };
     final key = event.logicalKey;
+    final horizontal =
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight;
     if (key == LogicalKeyboardKey.escape && _popover.isShowing) {
       _dismissLink();
       return KeyEventResult.handled;
@@ -977,6 +1075,25 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         key == LogicalKeyboardKey.backspace
             ? const DeleteBackward(word: true)
             : const DeleteForward(word: true),
+      );
+      return KeyEventResult.handled;
+    }
+    if (apple &&
+        keyboard.isMetaPressed &&
+        (key == LogicalKeyboardKey.backspace ||
+            key == LogicalKeyboardKey.delete)) {
+      _deleteToLineEdge(forward: key == LogicalKeyboardKey.delete);
+      return KeyEventResult.handled;
+    }
+    if (!apple && keyboard.isControlPressed && horizontal) {
+      _command(
+        MoveCaret(
+          key == LogicalKeyboardKey.arrowRight
+              ? MoveDirection.forward
+              : MoveDirection.backward,
+          unit: MoveUnit.word,
+          extend: shift,
+        ),
       );
       return KeyEventResult.handled;
     }
@@ -1017,9 +1134,8 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         _command(const ToggleStyle(Style.emphasis));
       } else if (key == LogicalKeyboardKey.keyK) {
         unawaited(_editResource(false));
-      } else if (key == LogicalKeyboardKey.arrowLeft ||
-          key == LogicalKeyboardKey.arrowRight) {
-        _surface?.lineEdge(key == LogicalKeyboardKey.arrowRight, extend: shift);
+      } else if (horizontal) {
+        _lineEdge(key == LogicalKeyboardKey.arrowRight, extend: shift);
       } else {
         return KeyEventResult.ignored;
       }
@@ -1032,8 +1148,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       _command(const DeleteBackward());
     } else if (key == LogicalKeyboardKey.delete) {
       _command(const DeleteForward());
-    } else if (key == LogicalKeyboardKey.arrowLeft ||
-        key == LogicalKeyboardKey.arrowRight) {
+    } else if (horizontal) {
       _command(
         MoveCaret(
           key == LogicalKeyboardKey.arrowRight
@@ -1048,7 +1163,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       _vertical(key == LogicalKeyboardKey.arrowDown, shift);
     } else if (key == LogicalKeyboardKey.home ||
         key == LogicalKeyboardKey.end) {
-      _surface?.lineEdge(key == LogicalKeyboardKey.end, extend: shift);
+      _lineEdge(key == LogicalKeyboardKey.end, extend: shift);
     } else if (key == LogicalKeyboardKey.tab) {
       _tab(shift);
     } else {
@@ -1068,6 +1183,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         _command(const DeleteBackward());
       case 'deleteForward:':
         _command(const DeleteForward());
+      case 'deleteToBeginningOfLine:':
+        _deleteToLineEdge(forward: false);
+      case 'deleteToEndOfLine:':
+        _deleteToLineEdge(forward: true);
       case 'moveLeft:':
         _command(const MoveCaret(MoveDirection.backward));
       case 'moveRight:':
@@ -1106,6 +1225,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     _popoverFocus.dispose();
     _clipboardBinding.dispose();
     c.removeListener(_changed);
+    // The controller can outlive this view. Its composition belonged to the
+    // connection closed here, and left open it would make a later view
+    // resend a stale composing range and ignore editing keys.
+    _endComposition(c);
     _focus.removeListener(_focusChanged);
     _close();
     if (widget.focusNode == null) _focus.dispose();
@@ -1550,6 +1673,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                                 surface.globalToLocal(event.position),
                                 extend: true,
                               );
+                              _scheduleGeometry();
                             }
                           }
                         },
@@ -1727,11 +1851,7 @@ class _InputClient with TextInputClient, DeltaTextInputClient {
 
   @override
   void connectionClosed() {
-    if (active) {
-      state.c.finishComposition();
-      state._connection = null;
-      state._epoch++;
-    }
+    if (active) state._connectionClosed();
   }
 
   @override

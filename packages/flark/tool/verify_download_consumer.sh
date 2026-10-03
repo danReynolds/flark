@@ -4,7 +4,9 @@
 # named in hook/prebuilt.json and checks its SHA-256. This serves a freshly
 # built library from a local HTTP server and checks that a consumer with no
 # Rust toolchain on PATH parses through it, that a second build uses the cache,
-# and that a library whose hash does not match is refused.
+# that a library whose hash does not match is refused, that an error response
+# fails the build at once even when its body stalls, and that failed downloads
+# leave nothing in the cache.
 #
 # With --pinned it uses the committed manifest instead: a consumer downloads
 # this machine's library from the published release. Run it after pinning.
@@ -123,4 +125,71 @@ if [ $STATUS -eq 0 ] || ! echo "$OUT" | grep -q 'Nothing was used'; then
   echo "$OUT" | tail -12; echo "hash mismatch was not refused"; exit 1
 fi
 echo "a mismatched hash is refused"
+# Nothing of the refused download is kept: no partial file, and no directory
+# for its hash.
+LEFT="$(find .dart_tool/hooks_runner/shared/flark \( -name '*.partial' -o -path '*/prebuilt/0000*' \) -print 2>/dev/null)"
+if [ -n "$LEFT" ]; then
+  echo "$LEFT"; echo "a refused download left files in the cache"; exit 1
+fi
+
+# An error response fails the build without waiting for its body, which here
+# never finishes. The run gets 50 seconds, room for compiling the hook but
+# less than the hook's 60-second stall bound, and a hook that read the body
+# would wait forever.
+stop_server
+# A port of its own: the file server's port may not be free again yet.
+PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+# The program goes in a file: on CI's runner a backgrounded python3 that
+# read it from a here-document printed nothing at all.
+cat > "$WORK/stalling.py" <<'PY'
+import http.server, sys, time
+class Stalling(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(503)
+        self.send_header('Content-Length', '100000')
+        self.end_headers()
+        self.wfile.write(b'unavailable')
+        self.wfile.flush()
+        time.sleep(600)
+    def log_message(self, *args):
+        pass
+server = http.server.ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), Stalling)
+# Listening from here on: the script waits for this line rather than holding
+# a probe connection open on a handler that never finishes.
+print('listening', flush=True)
+server.serve_forever()
+PY
+python3 "$WORK/stalling.py" "$PORT" > "$WORK/stalling.log" 2>&1 &
+SERVER=$!
+for _ in $(seq 300); do
+  grep -q listening "$WORK/stalling.log" && break
+  kill -0 "$SERVER" 2>/dev/null || break
+  sleep 0.1
+done
+if ! grep -q listening "$WORK/stalling.log"; then
+  kill -0 "$SERVER" 2>/dev/null || { wait "$SERVER"; echo "the server exited with $?"; }
+  python3 --version; cat "$WORK/stalling.log"; echo "the stalling server did not start"; exit 1
+fi
+manifest "$HASH"
+# Without the cached library the hook has to download again.
+rm -rf .dart_tool/hooks_runner/shared/flark/build/prebuilt
+PATH="$CLEAN_PATH" dart run bin/main.dart > "$WORK/stalled.log" 2>&1 &
+RUN=$!
+for _ in $(seq 500); do kill -0 "$RUN" 2>/dev/null || break; sleep 0.1; done
+if kill -0 "$RUN" 2>/dev/null; then
+  kill "$RUN"; tail -12 "$WORK/stalled.log"; echo "an error response with a stalled body hung the build"; exit 1
+fi
+wait "$RUN"; STATUS=$?
+if [ $STATUS -eq 0 ] || ! grep -q 'failed with HTTP 503' "$WORK/stalled.log"; then
+  # The hook's own message comes before its stack trace. The server's side
+  # and a direct request show whether the server or the connection failed.
+  grep -m 3 'flark_parse' "$WORK/stalled.log"; tail -12 "$WORK/stalled.log"
+  python3 --version; cat "$WORK/stalling.log"
+  curl -sv -m 3 -o /dev/null "http://127.0.0.1:$PORT/" 2>&1 | head -20
+  echo "an error response was not reported"; exit 1
+fi
+if [ -n "$(find .dart_tool/hooks_runner/shared/flark/build/prebuilt -type f 2>/dev/null)" ]; then
+  echo "a failed download left files in the cache"; exit 1
+fi
+echo "an error response fails the build at once and caches nothing"
 echo "download consumer OK"

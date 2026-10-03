@@ -1,4 +1,6 @@
 import 'package:flark_flutter/flark_flutter_legacy.dart';
+import 'package:flark_flutter/src/surface.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -230,4 +232,119 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     c.dispose();
   });
+
+  testWidgets(
+    'End and a hit past a soft-wrapped line keep the caret on that line',
+    (tester) async {
+      final source = 'ordinary words ' * 12;
+      final c = FlarkController(FlarkEditor(backend, text: source, caret: 0));
+      final paints = <FlarkPaintObservation>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 240,
+              child: FlarkEditorWidget(
+                controller: c,
+                autofocus: true,
+                onPaint: paints.add,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final first = paints.last.caret!;
+      // The first visual line ends where the second begins.
+      const wrap = 'ordinary '.length;
+      c.command(const SetSelection.caret(wrap));
+      await tester.pump();
+      final second = paints.last.caret!;
+      expect(second.top, greaterThan(first.top));
+      c.command(const SetSelection.caret(0));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.end);
+      await tester.pump();
+      expect(c.editor.selection.extent, wrap);
+      expect(paints.last.caret!.top, first.top);
+      expect(paints.last.caret!.left, greaterThan(second.left));
+      // End again stays, Home returns to the start of the same line.
+      await tester.sendKeyEvent(LogicalKeyboardKey.end);
+      expect(c.editor.selection.extent, wrap);
+      await tester.sendKeyEvent(LogicalKeyboardKey.home);
+      expect(c.editor.selection.extent, 0);
+      // Down from the first line's end reaches the second line's end.
+      await tester.sendKeyEvent(LogicalKeyboardKey.end);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(c.editor.selection.extent, 'ordinary words '.length);
+      expect(paints.last.caret!.top, second.top);
+      // A click past the first line's end puts the caret there as well.
+      final origin = tester.getTopLeft(find.byType(FlarkSurface));
+      await tester.tapAt(
+        origin + Offset(236, first.center.dy),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(kDoubleTapTimeout);
+      expect(c.editor.selection.extent, wrap);
+      expect(paints.last.caret!.top, first.top);
+      // Affinity changes only where the caret is drawn, not where text goes.
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: source.replaceRange(wrap, wrap, 'x'),
+          selection: const TextSelection.collapsed(offset: wrap + 1),
+        ),
+      );
+      expect(c.text, source.replaceRange(wrap, wrap, 'x'));
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
+  testWidgets(
+    'the input method follows a caret redrawn at a wrapped line end',
+    (tester) async {
+      final source = 'ordinary words ' * 12;
+      final c = FlarkController(FlarkEditor(backend, text: source, caret: 0));
+      final paints = <FlarkPaintObservation>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 240,
+              child: FlarkEditorWidget(
+                controller: c,
+                autofocus: true,
+                onPaint: paints.add,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final first = paints.last.caret!;
+      const wrap = 'ordinary '.length;
+      c.command(const SetSelection.caret(wrap));
+      await tester.pump();
+      expect(paints.last.caret!.top, greaterThan(first.top));
+      tester.testTextInput.log.clear();
+      // A click past the first line's end keeps the offset and only moves
+      // the line the caret is drawn on. The input method must move with it.
+      final origin = tester.getTopLeft(find.byType(FlarkSurface));
+      await tester.tapAt(
+        origin + Offset(236, first.center.dy),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(kDoubleTapTimeout);
+      expect(c.editor.selection.extent, wrap);
+      expect(paints.last.caret!.top, first.top);
+      final rect =
+          tester.testTextInput.log
+                  .lastWhere((call) => call.method == 'TextInput.setCaretRect')
+                  .arguments
+              as Map;
+      expect(rect['y'], paints.last.caret!.top);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
 }

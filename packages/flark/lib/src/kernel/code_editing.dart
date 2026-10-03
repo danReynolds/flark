@@ -128,7 +128,9 @@ extension _CodeEditing on FlarkEditor {
         break;
       }
     }
-    final newline = source.contains('\r\n') ? '\r\n' : '\n';
+    // New lines end the way the edited line does, so a CRLF block stays
+    // CRLF, even in a document whose other lines end differently.
+    final newline = _lineBreakAt(start);
     String expand(String value) => value.replaceAll('\n', '$newline$prefix');
     final inserted = expand(edit.text);
     int position(int offset) {
@@ -170,27 +172,16 @@ extension _CodeEditing on FlarkEditor {
   ) {
     final model = _doc.model;
     final block = model.blockAt(row.block);
-    final lineStart = model.lineStartUtf16(block.firstLine);
-    var prefix = source.substring(lineStart, block.startUtf16);
-    // Use the same parser-owned item ranges as typed fence completion.
-    var child = block;
-    for (var parent = block.parent; parent != noParent;) {
-      final ancestor = model.blockAt(parent);
-      if (ancestor.kind == BlockKind.item &&
-          ancestor.firstLine == block.firstLine) {
-        final from = ancestor.startUtf16 - lineStart;
-        final to = child.startUtf16 - lineStart;
-        final padding = prefix
-            .substring(from, to)
-            .split('')
-            .map((char) => char == '\t' ? '\t' : ' ')
-            .join();
-        prefix = prefix.replaceRange(from, to, padding);
-      }
-      child = ancestor;
-      parent = ancestor.parent;
-    }
-    final newline = source.contains('\r\n') ? '\r\n' : '\n';
+    // Use the same parser-owned container ranges as typed fence completion.
+    var prefix = _continuationPrefix(
+      source,
+      model,
+      block.firstLine,
+      block.startUtf16,
+      block.index,
+    );
+    // The body line ends the way the opening fence's line does.
+    final newline = _lineBreakAt(block.startUtf16);
     final closed = block.flags & 2 != 0;
     final at = closed
         ? model.lineStartUtf16(block.firstLine + block.lineCount - 1)
@@ -369,7 +360,11 @@ extension _CodeEditing on FlarkEditor {
     final replacement = language.isEmpty && end < info.length
         ? 'auto'
         : language;
-    if (info.substring(0, end) == replacement) return false;
+    if (info.substring(0, end) == replacement) {
+      // Choosing the language a fence already has is a successful no-op.
+      _inert = true;
+      return false;
+    }
     final (candidate, map) = _edited([
       (row.codeInfoStart, row.codeInfoStart + end, replacement),
     ]);
@@ -477,7 +472,7 @@ extension _CodeEditing on FlarkEditor {
     );
     final before = source.substring(contentStart, start);
     final indentation = codeLeadingWhitespace(before);
-    final newline = source.contains('\r\n') ? '\r\n' : '\n';
+    final newline = _lineBreakAt(start);
     final first = '$newline$prefix$indentation';
     var inserted = first, to = end;
     return _commit(

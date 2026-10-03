@@ -17,6 +17,9 @@ final class _FailAfterInitialParse implements FlarkParseBackend {
     if (calls++ > 0) throw StateError('synthetic parse failure');
     return delegate.parse(source);
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 final class _SwitchableFaultBackend implements FlarkParseBackend {
@@ -33,6 +36,9 @@ final class _SwitchableFaultBackend implements FlarkParseBackend {
     if (fail) throw StateError('synthetic parse failure');
     return delegate.parse(source);
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 void main() {
@@ -214,6 +220,29 @@ void main() {
       expect(editor.source, 'a');
       expect(editor.apply(const Undo()), isTrue);
       expect(editor.source, isEmpty);
+    });
+
+    test('typing is grouped by the clock the editor was given', () {
+      var now = Duration.zero;
+      final editor = FlarkEditor(backend, clock: () => now);
+      editor.apply(const InsertText('a'));
+      now += const Duration(milliseconds: 500);
+      editor.apply(const InsertText('b'));
+      now += const Duration(seconds: 2);
+      editor.apply(const InsertText('c'));
+
+      expect(editor.apply(const Undo()), isTrue);
+      expect(
+        editor.source,
+        'ab',
+        reason: 'a pause longer than the window starts a group',
+      );
+      expect(editor.apply(const Undo()), isTrue);
+      expect(
+        editor.source,
+        isEmpty,
+        reason: 'keystrokes within the window are one group',
+      );
     });
 
     test('an edit clears the preferred vertical column', () {

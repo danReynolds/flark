@@ -80,25 +80,43 @@ final class FlarkReadDocument implements FlarkDocumentState {
   @override
   bool get sourceMode => snapshot is FlarkSourceSnapshot;
   @override
-  FlarkDocument get document => (snapshot as FlarkLiveSnapshot).document;
+  FlarkDocument get document => switch (snapshot) {
+    FlarkLiveSnapshot(:final document) => document,
+    FlarkSourceSnapshot() => throw StateError(
+      'FlarkReadDocument has no parsed document in source mode',
+    ),
+  };
   @override
   Projection get projection => document.projection;
   @override
   CodeEditingDelegate? get codeEditing => null;
 
+  /// Show [markdown]. Text outside the editing contract (a bare CR or an
+  /// unpaired surrogate) and content the parser refuses are still this
+  /// document, so they show as source rather than fail: a read-only view
+  /// has no edit to reject, and the next text the parser takes renders live
+  /// again. The editor refuses such text instead, because it must keep a
+  /// parsable source.
   bool update(String markdown) {
     if (_snapshot?.source == markdown) return false;
-    validateFlarkSource(markdown);
     final current = _snapshot;
-    final next = _projectSnapshot(
-      _backend,
-      markdown,
-      const FlarkSelection.collapsed(0),
-      const ProjectionOptions(),
-      liveLimits,
-      syncLimit,
-      previous: current is FlarkLiveSnapshot ? current.document : null,
-    );
+    FlarkEditorSnapshot next;
+    try {
+      validateFlarkSource(markdown);
+      next = _projectSnapshot(
+        _backend,
+        markdown,
+        const FlarkSelection.collapsed(0),
+        const ProjectionOptions(),
+        liveLimits,
+        syncLimit,
+        previous: current is FlarkLiveSnapshot ? current.document : null,
+      );
+    } on FormatException {
+      next = FlarkSourceSnapshot._(markdown, const FlarkSelection.collapsed(0));
+    } on FlarkParseException {
+      next = FlarkSourceSnapshot._(markdown, const FlarkSelection.collapsed(0));
+    }
     _snapshot = next;
     _revision++;
     return true;

@@ -488,6 +488,64 @@ void main() {
     expect(lines().first, 'abcZk');
   });
 
+  test('End and clicks past a wrapped line end keep the caret there', () {
+    // At ten cells a row wraps every nine characters; the tenth cell is the
+    // caret's. The offset that ends a visual line also starts the next one.
+    tester.viewportSize = const CellSize(10, 6);
+    mount('0123456789abcdefghij', caret: 0);
+    expect(lines().take(3), ['012345678', '9abcdefgh', 'ij']);
+    key(KeyCode.end);
+    expect(editor.selection.extent, 9);
+    expect(focus.caretRect, CellRect.fromLTWH(9, 0, 1, 1));
+    key(KeyCode.end);
+    expect(editor.selection.extent, 9, reason: 'End stays on its line');
+    key(KeyCode.arrowDown);
+    expect(editor.selection.extent, 18);
+    expect(focus.caretRect, CellRect.fromLTWH(9, 1, 1, 1));
+    key(KeyCode.home);
+    expect(editor.selection.extent, 9);
+    expect(focus.caretRect, CellRect.fromLTWH(0, 1, 1, 1));
+    click(9, 0);
+    expect(editor.selection.extent, 9);
+    expect(focus.caretRect, CellRect.fromLTWH(9, 0, 1, 1));
+    // Typing puts the character where it fits, on the next line.
+    tester.type('X');
+    expect(editor.source, '012345678X9abcdefghij');
+    expect(focus.caretRect, CellRect.fromLTWH(1, 1, 1, 1));
+  });
+
+  test('a click at the start of a wrapped line draws the caret there', () {
+    tester.viewportSize = const CellSize(10, 6);
+    mount('0123456789abcdefghij', caret: 0);
+    key(KeyCode.end);
+    expect(focus.caretRect, CellRect.fromLTWH(9, 0, 1, 1));
+    // The same offset starts the next line. A click there draws the caret
+    // there, and End goes on to that line's end.
+    click(0, 1);
+    expect(editor.selection.extent, 9);
+    expect(focus.caretRect, CellRect.fromLTWH(0, 1, 1, 1));
+    key(KeyCode.end);
+    expect(editor.selection.extent, 18);
+  });
+
+  test('a glyph wider than its line stands in one cell under any policy', () {
+    mount('中');
+    for (final (policy, glyph) in [
+      (CellWidthPolicy.spec, '\u{FFFD}'),
+      // U+FFFD is East Asian Ambiguous: two cells where those are widened.
+      (CellWidthPolicy.cjk, '?'),
+    ]) {
+      final layout = CellDocumentLayout(
+        controller,
+        2,
+        const FlarkCellTheme(),
+        policy,
+      );
+      final only = layout.lines.single.glyphs.single;
+      expect((only.text, only.width), (glyph, 1));
+    }
+  });
+
   test('typing then moving before a paint uses the current source geometry', () {
     tester.viewportSize = const CellSize(8, 8);
     mount('abc', caret: 3);

@@ -131,8 +131,13 @@ additional product principles or testing layers.
   history action, followed by an independently undoable typed character.
 - If deletion exposes whitespace against emphasis/strong/strike delimiters,
   move that whitespace outside the owner so surviving words retain their
-  style. Keep a legal caret in surviving leading content, and retain typing
-  intent when deletion exits an owner's trailing whitespace.
+  style, and retain typing intent when deletion exits an owner's trailing
+  whitespace. Deleting an owner's first word leaves the caret at the visible
+  deletion point, before the whitespace that now leads the owner, with the
+  owner's typing intent: a word typed there joins the owner (`**new two**`,
+  not `**new** **two**`), and erasing that whitespace returns into it. At a
+  line start, where Markdown displays no leading whitespace, the caret stays
+  in the surviving content.
 
 ### EP1-DELETE-TO-EMPTY-001
 
@@ -181,13 +186,43 @@ the smallest mounted regression case.
 
 Return and Backspace operate on the visible block structure:
 
-- Return splits a paragraph or heading at the caret;
-- Return continues or exits supported list and quote structures;
+- Return splits a paragraph or heading at the caret. A heading's setext
+  underline or ATX closing sequence stays with the part before the caret, so
+  Return at the end of its text opens a paragraph. A setext heading cannot be
+  empty: Return over all of its text removes the underline with the text, and
+  over the whole last line of a longer one refuses, since the underline would
+  have to move up to the lines before;
+- Return continues or exits supported list, quote and footnote structures. A
+  continuation line repeats quote markers; an item or footnote definition that
+  opens on the caret's line is continued at its indent (a footnote's four
+  columns, counted from the end of the containers around it rather than from
+  an indented label) rather than by repeating its marker, which would open
+  another;
+- Return, including in code, inserts the line ending of the caret's line, so a
+  CRLF document stays CRLF;
 - terminal Return creates one writable following paragraph;
 - table Return moves to the next row in the same column, then exits the table;
-  cell-boundary deletion rejects atomically, and table restructuring uses source mode;
+  a typed `|` is escaped as cell text; cell-boundary deletion rejects
+  atomically, and table restructuring uses source mode;
 - Backspace at a supported block start merges, lifts, or removes the structural
-  boundary users see; and
+  boundary users see. A lifted line stays in its outer containers, and when
+  the block after it would read on as part of it (a list numbered past 1,
+  indented code, a rule that would underline it) a blank line keeps that block
+  apart. An empty line or rule before a row goes as a whole line, so the row
+  keeps its markup and containers: Backspace after a rule, or Delete on it,
+  removes the rule (one that opens a list item leaves the item's marker to
+  the next row); joining after a setext underline or ATX closing sequence
+  moves that markup after the joined text; and removing the empty line after
+  a heading or code leaves the caret at the end of its text, not past its
+  hidden underline or closing fence.
+  No join crosses a fence line: Backspace at the start of code removes an
+  empty line or rule above it and otherwise refuses, and nothing joins onto a
+  closing fence. A join or lift whose result would change another block's kind
+  or paint markup the projection hid (removing the blank line between a
+  paragraph and `---` would make a setext heading) refuses, as does removing an
+  empty line or rule that would move the block after it into or out of a quote
+  or list item (`b` after `> a` and an empty line would read on lazily inside
+  the quote); and
 - repeated Return or Backspace followed immediately by typing must leave one
   live caret and accept the next input.
 
@@ -270,7 +305,11 @@ Decoration failures cannot alter or reject source input.
 
 - Undo restores the exact prior source, selection, and semantic typing intent.
 - Redo reapplies the logical result using fresh current-revision authority.
-- One logical user action creates at most one history entry.
+- One logical user action creates at most one history entry. A command that
+  leaves the source, selection and typing intent as they are (the current
+  heading level in any spelling, the current code language, a link's own
+  destination) is an inert, successful no-op, like a repeated SetStyle: it
+  publishes nothing, records no history and is not reported as refused.
 - Equivalent full-value, delta, key, paste, and composition delivery routes
   produce the same accepted logical command.
 - Duplicate platform callbacks must not duplicate source mutations.

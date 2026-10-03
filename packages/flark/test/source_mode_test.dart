@@ -16,6 +16,9 @@ final class _CountingBackend implements FlarkParseBackend {
     calls++;
     return delegate.parse(source);
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 final class _SelectiveDeviationBackend implements FlarkParseBackend {
@@ -38,6 +41,9 @@ final class _SelectiveDeviationBackend implements FlarkParseBackend {
     }
     return delegate.parse(source);
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 final class _FailsOnParseBackend implements FlarkParseBackend {
@@ -54,6 +60,9 @@ final class _FailsOnParseBackend implements FlarkParseBackend {
     calls++;
     throw StateError('synthetic native fault');
   }
+
+  @override
+  void dispose() => delegate.dispose();
 }
 
 void main() {
