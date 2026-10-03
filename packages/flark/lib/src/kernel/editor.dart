@@ -1235,9 +1235,18 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     if (b <= a) return false;
     // A line ending inside inline code is that code's text, painted as a
-    // space, so it deletes like any other character of the span below, and
-    // one in a fenced body is literal code too.
-    if (atomic?.lineBreak == true && atomic!.run < 0 && !row.fenced) {
+    // space, so it deletes like any other character of the span below. Any
+    // other line ending joins two lines, an undo step of its own; in a fenced
+    // body that join deletes literal code below too.
+    final join = atomic?.lineBreak == true && atomic!.run < 0;
+    if (join && row.fenced && row.displayForSource(b).$1 != atomic.displayEnd) {
+      // A code line's break runs on through the next line's prefix, where a
+      // tab can show columns of code after the break. Deleting the break
+      // deletes that tab, and the columns it shows with it, which the key did
+      // not reach, so this join is refused.
+      return false;
+    }
+    if (join && !row.fenced) {
       var start = a;
       // Editable spaces before a hard break remain visible caret positions,
       // but deleting the break removes its entire parser-authenticated marker.
@@ -1254,7 +1263,7 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     // EP1-DELETE-TO-EMPTY: an owner this deletion empties goes with it, and
     // its delimiters wait for the next ordinary character.
-    return _deleteContent(a, b, typing: !word);
+    return _deleteContent(a, b, typing: !word && !join);
   }
 
   bool _deleteContent(int start, int end, {required bool typing}) {

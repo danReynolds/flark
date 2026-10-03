@@ -56,6 +56,28 @@ void _historyCases(FlarkParseBackend backend) {
       session.act(const Redo(), times: 2, source: '*x*');
     });
 
+    test('joining two lines of code is an undo step of its own', () {
+      // As in a paragraph, the typing and deleting around a join undo apart
+      // from it, Backspace or Delete alike.
+      const source = '```\nabc\ndef\n```\n';
+      final backward = _Session(backend, source: source, caret: 8);
+      backward.act(const DeleteBackward(), source: '```\nabcdef\n```\n');
+      backward.act(
+        const DeleteBackward(),
+        times: 2,
+        source: '```\nadef\n```\n',
+      );
+      backward.act(const Undo(), source: '```\nabcdef\n```\n', anchor: 7);
+      backward.act(const Undo(), source: source, anchor: 8);
+      final forward = _Session(backend, source: source, caret: 7);
+      forward.act(const InsertText('x'), source: '```\nabcx\ndef\n```\n');
+      forward.act(const DeleteForward(), source: '```\nabcxdef\n```\n');
+      forward.act(const DeleteForward(), source: '```\nabcxef\n```\n');
+      forward.act(const Undo(), source: '```\nabcxdef\n```\n', anchor: 8);
+      forward.act(const Undo(), source: '```\nabcx\ndef\n```\n', anchor: 8);
+      forward.act(const Undo(), source: source, anchor: 7);
+    });
+
     test('structural commands are their own entries', () {
       final session = _Session(backend, source: '- a', caret: 3);
       session.act(const Newline(), source: '- a\n- ');

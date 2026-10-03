@@ -294,7 +294,8 @@ between a matching pair puts the closer on its own line. Python's trailing
 colon also increases indentation. Recognized comments, strings and regex literals do not
 trigger those rules. The step is two spaces, four for Python, or an existing
 tab. Tab/Shift-Tab indent/outdent selected code lines without touching their
-container prefixes; a collapsed Tab inserts a step at the caret. Commands
+container prefixes, and without the code delegate Tab leaves blank lines as
+they are; a collapsed Tab inserts a step at the caret. Commands
 crossing a code-block boundary reject atomically.
 
 Typing `}`, `]` or `)` on an indented, otherwise blank code line aligns it with

@@ -335,18 +335,16 @@ void checkErasure(String label, FlarkEditor e) {
       text: src,
       caret: backward ? src.length : 0,
     );
-    // Every counted step strictly shrinks the source, or deletes a character
-    // of code whose fences grow so that the body left stays code, which
-    // shrinks what is shown instead. The bound stops a refusal from hanging
-    // the suite.
-    int shown() => editor.sourceMode
-        ? editor.source.length
-        : editor.projection.rows.fold(0, (n, row) => n + row.text.length);
+    // Every counted step strictly shrinks the source, or deletes code and
+    // grows nothing but the fences around it, so that a body line left as a
+    // fence's run stays code. The bound stops a refusal from hanging the
+    // suite.
     var steps = 0;
     while (editor.source.isNotEmpty && steps <= src.length + 2) {
-      final before = editor.source, wasShown = shown();
+      final before = editor.source;
       // The user keeps pressing at the same end of the document.
       editor.apply(SetSelection.caret(backward ? editor.source.length : 0));
+      final document = editor.sourceMode ? null : editor.document;
       if (!editor.apply(
         backward ? const DeleteBackward() : const DeleteForward(),
       )) {
@@ -388,7 +386,11 @@ void checkErasure(String label, FlarkEditor e) {
         }
         break;
       }
-      if (editor.source.length >= before.length && shown() >= wasShown) {
+      if (editor.source.length >= before.length &&
+          !_onlyDeletes(
+            _withoutCaretFences(document),
+            _withoutCaretFences(editor.sourceMode ? null : editor.document),
+          )) {
         fail_(
           'erase-grew',
           '$label ${backward ? "backspace" : "delete"}: '
@@ -406,6 +408,53 @@ void checkErasure(String label, FlarkEditor e) {
       );
     }
   }
+}
+
+/// [doc]'s source without the opening and closing runs of the fence whose
+/// body holds the caret, or null in source mode or outside fenced code.
+String? _withoutCaretFences(FlarkDocument? doc) {
+  if (doc == null || !doc.caretRow.fenced) return null;
+  final row = doc.caretRow;
+  final model = doc.model, block = model.blockAt(row.block);
+  final marker = doc.source.codeUnitAt(block.startUtf16);
+  var source = doc.source;
+  if (block.flags & 2 != 0) {
+    // The closing run ends before any trailing spaces or tabs on its line.
+    final lineStart = model.lineStartUtf16(
+      block.firstLine + block.lineCount - 1,
+    );
+    var end = block.endUtf16;
+    while (end > lineStart &&
+        (source.codeUnitAt(end - 1) == 0x20 ||
+            source.codeUnitAt(end - 1) == 0x09)) {
+      end--;
+    }
+    var start = end;
+    while (start > lineStart && source.codeUnitAt(start - 1) == marker) {
+      start--;
+    }
+    source = source.replaceRange(start, end, '');
+  }
+  return source.replaceRange(
+    block.startUtf16,
+    block.startUtf16 + block.attr,
+    '',
+  );
+}
+
+/// Whether [after] is [before] with one nonempty range deleted. Both are
+/// sources without their fences' runs, so a step that also grew the fences
+/// passes only when that growth is the whole of what it added.
+bool _onlyDeletes(String? before, String? after) {
+  if (before == null || after == null || after.length >= before.length) {
+    return false;
+  }
+  var common = 0;
+  while (common < after.length &&
+      before.codeUnitAt(common) == after.codeUnitAt(common)) {
+    common++;
+  }
+  return before.endsWith(after.substring(common));
 }
 
 void checkExtension(String label, FlarkEditor e) {

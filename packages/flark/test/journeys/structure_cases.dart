@@ -1057,5 +1057,153 @@ void _structureCases(FlarkParseBackend backend) {
         ]);
       }
     });
+
+    test('an edit that leaves code as it is only moves the caret', () {
+      // As in a paragraph, there is nothing to commit or undo, and nothing
+      // that needs source mode: the caret goes where the edit puts it.
+      for (final (source, start, end, command, caret) in [
+        ('```\nabc\ndef\n```\n', 7, 8, const Newline() as FlarkCommand, 8),
+        ('> ```\n> abc\n> def\n> ```\n', 11, 14, const Newline(), 14),
+        ('```\nabc\n```\n', 5, 6, const InsertText('b'), 6),
+        ('```\nabc\n```\n', 5, 6, const Paste('b'), 6),
+        ('```\nabc\n```\n', 4, 4, const ReplaceRange(4, 7, 'abc'), 7),
+        ('```\n``` x\nab\n```\n', 10, 11, const InsertText('a'), 11),
+      ]) {
+        final session = _Session(backend, source: source, caret: start);
+        if (end != start) session.act(SetSelection(start, end));
+        session.act(
+          command,
+          source: source,
+          selection: FlarkSelection.collapsed(caret),
+        );
+        expect(session.editor.history.canUndo, isFalse, reason: source);
+      }
+      // With the caret already there, the edit is inert.
+      final inert = _Session(backend, source: '```\nabc\n```\n', caret: 7);
+      inert.act(
+        const ReplaceRange(4, 7, 'abc'),
+        applied: false,
+        source: '```\nabc\n```\n',
+        anchor: 7,
+      );
+      expect(inert.editor.lastRejection, isNull);
+    });
+
+    test('indenting lines of code leaves their blank lines as they are', () {
+      // A blank line in a quote or list item can lack part of the
+      // container's prefix, which would absorb the indentation, so no blank
+      // line takes any.
+      for (final (source, start, end, indented, body, selection) in [
+        (
+          '> ```\n> abc\n>\n> ``` x\n> ```\n',
+          8,
+          21,
+          '> ```\n>   abc\n>\n>   ``` x\n> ```\n',
+          '  abc\n\n  ``` x',
+          const FlarkSelection(10, 25),
+        ),
+        (
+          '- ```\n  abc\n\n  x ```\n  ```\n',
+          8,
+          20,
+          '- ```\n    abc\n\n    x ```\n  ```\n',
+          '  abc\n\n  x ```',
+          const FlarkSelection(10, 24),
+        ),
+        (
+          '- ```\n\tabc\n\n\tdef\n\t```\n',
+          7,
+          15,
+          '- ```\n\t  abc\n\n\t  def\n\t```\n',
+          '    abc\n\n    def',
+          const FlarkSelection(9, 19),
+        ),
+        (
+          '```\nabc\n\ndef\n```\n',
+          4,
+          12,
+          '```\n  abc\n\n  def\n```\n',
+          '  abc\n\n  def',
+          const FlarkSelection(6, 16),
+        ),
+      ]) {
+        final session = _Session(backend, source: source);
+        session.act(SetSelection(start, end));
+        session.act(
+          const Indent(),
+          source: indented,
+          rows: [body, ''],
+          selection: selection,
+        );
+        session.act(
+          const Undo(),
+          source: source,
+          selection: FlarkSelection(start, end),
+        );
+      }
+      // Indenting only blank lines changes nothing, which is not a refusal.
+      const blank = '```\nabc\n\n\n\ndef\n```\n';
+      final session = _Session(backend, source: blank);
+      session.act(const SetSelection(8, 10));
+      session.act(const Indent(), applied: false, source: blank);
+      expect(session.editor.lastRejection, isNull);
+    });
+
+    test(
+      'a join of code lines that would take a tab\'s columns is refused',
+      () {
+        // The tab before `def` shows two columns of code past the item's
+        // indentation. Deleting the line break before it deletes the tab too,
+        // and with it those columns, which Delete did not reach.
+        for (final (source, caret) in [
+          ('- ```\n\tabc\n\n\tdef\n\t```\n', 11),
+          ('- ```\n\tabc\n\tdef\n\t```\n', 10),
+        ]) {
+          final session = _Session(backend, source: source, caret: caret);
+          session.act(const DeleteForward(), applied: false, source: source);
+          expect(session.editor.lastRejection, FlarkRejection.unsupportedEdit);
+        }
+        // A selection that ends there shows those columns, so deleting it
+        // takes them; a tab that shows none joins as any line does.
+        final selected = _Session(
+          backend,
+          source: '- ```\n\tabc\n\n\tdef\n\t```\n',
+        );
+        selected.act(const SetSelection(11, 13));
+        selected.act(
+          const DeleteForward(),
+          source: '- ```\n\tabc\n  def\n\t```\n',
+          rows: ['  abc\ndef', ''],
+        );
+        final whole = _Session(
+          backend,
+          source: '-\t```\n\tx\n\ty\n\t```\n',
+          caret: 8,
+        );
+        whole.act(
+          const DeleteForward(),
+          source: '-\t```\n\txy\n\t```\n',
+          rows: ['xy', ''],
+        );
+      },
+    );
+
+    test('a composition erased on an empty code line leaves it as it was', () {
+      // Text composed there takes the prefix the fence's lines continue
+      // with; erased before the composition ends, it takes that prefix away
+      // again, so the composition changes nothing and records no step.
+      for (final (source, caret) in [
+        ('- ```\n  a\n\n  b\n  ```\n', 10),
+        ('> ```\n> a\n>\n> b\n> ```\n', 11),
+        ('> ```\n> a\n> \n> b\n> ```\n', 12),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.editor.beginComposition();
+        session.act(const InsertText('k'), rows: ['a\nk\nb', '']);
+        session.act(const DeleteBackward(), source: source, anchor: caret);
+        session.editor.commitComposition();
+        expect(session.editor.history.canUndo, isFalse, reason: source);
+      }
+    });
   });
 }
