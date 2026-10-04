@@ -12,12 +12,12 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flark/flark.dart';
 import 'package:test/test.dart';
 
+import 'support/host.dart';
 import 'support/invariants.dart';
 
 const _alphabet = [
@@ -131,24 +131,26 @@ String describeCommand(FlarkCommand command) => switch (command) {
   RemoveImage() => 'RemoveImage()',
 };
 
+/// The documents sequences start from: the upstream CommonMark and GFM cases
+/// when the repository's fixtures are present, and two of the matrix's own.
+List<String> matrixCorpus() => [
+  for (final name in ['common_mark_tests.json', 'gfm_tests.json'])
+    if (readHostFile('../../test/fixtures/commonmark/upstream/$name')
+        case final json?)
+      for (final c in jsonDecode(json) as List)
+        (c as Map)['markdown'] as String,
+  '# Title\n\nSome **bold** and *em* with `code` and [a link](http://x.y).\n\n- one\n- [x] two\n  > quoted\n\n1. first\n2. second\n\n```\ncode\n```\n\n| a | b |\n| - | - |\n| c | d |\n',
+  '',
+];
+
 void main() {
-  final backend = createParseBackend();
+  // The FFI parser on the Dart VM, the bundled Wasm parser under node.
+  late final FlarkParseBackend backend;
+  setUpAll(() async => backend = await loadTestBackend());
   final iterations =
-      int.tryParse(Platform.environment['FLARK_MATRIX_ITERATIONS'] ?? '') ?? 60;
-  final seed =
-      int.tryParse(Platform.environment['FLARK_MATRIX_SEED'] ?? '') ?? 2026;
-  final corpus = <String>[];
-  for (final name in ['common_mark_tests.json', 'gfm_tests.json']) {
-    final f = File('../../test/fixtures/commonmark/upstream/$name');
-    if (!f.existsSync()) continue;
-    for (final c in (jsonDecode(f.readAsStringSync()) as List)) {
-      corpus.add((c as Map)['markdown'] as String);
-    }
-  }
-  corpus.addAll([
-    '# Title\n\nSome **bold** and *em* with `code` and [a link](http://x.y).\n\n- one\n- [x] two\n  > quoted\n\n1. first\n2. second\n\n```\ncode\n```\n\n| a | b |\n| - | - |\n| c | d |\n',
-    '',
-  ]);
+      int.tryParse(hostEnvironment('FLARK_MATRIX_ITERATIONS') ?? '') ?? 60;
+  final seed = int.tryParse(hostEnvironment('FLARK_MATRIX_SEED') ?? '') ?? 2026;
+  final corpus = matrixCorpus();
 
   test(
     'random command sequences keep every invariant (seed $seed, $iterations sequences)',

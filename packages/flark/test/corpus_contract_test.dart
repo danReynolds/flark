@@ -8,11 +8,12 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:characters/characters.dart';
 import 'package:flark/flark.dart';
 import 'package:test/test.dart';
+
+import 'support/host.dart';
 
 final failures = <String, List<String>>{};
 void fail_(String rule, String detail) =>
@@ -696,16 +697,19 @@ void checkCommands(String label, FlarkEditor e) {
 late FlarkParseBackend Function() createBackend;
 
 void main() {
-  final backend = createParseBackend();
-  createBackend = () => backend;
-  final corpus = <String>[];
-  for (final name in ['common_mark_tests.json', 'gfm_tests.json']) {
-    final f = File('../../test/fixtures/commonmark/upstream/$name');
-    if (!f.existsSync()) continue;
-    for (final c in (jsonDecode(f.readAsStringSync()) as List)) {
-      corpus.add((c as Map)['markdown'] as String);
-    }
-  }
+  // The FFI parser on the Dart VM, the bundled Wasm parser under node.
+  late final FlarkParseBackend backend;
+  setUpAll(() async {
+    backend = await loadTestBackend();
+    createBackend = () => backend;
+  });
+  final corpus = [
+    for (final name in ['common_mark_tests.json', 'gfm_tests.json'])
+      if (readHostFile('../../test/fixtures/commonmark/upstream/$name')
+          case final json?)
+        for (final c in jsonDecode(json) as List)
+          (c as Map)['markdown'] as String,
+  ];
 
   test('empty closed headings erase from either end', () {
     // No corpus document has an empty closed heading before more text,
