@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show AppExitResponse;
 import 'package:flark_flutter/flark_flutter_legacy.dart';
+import 'package:flark/recorder.dart';
 import 'package:flark_flutter/code.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -175,6 +176,9 @@ class _WorkbenchState extends State<Workbench> {
       liveLimits: candidateLiveLimits,
       sourceLimit: candidateSourceBytes,
     );
+    // The workbench is for dogfooding: every document records its session,
+    // so that Copy repro can turn a surprise into a test.
+    editor.recorder = FlarkEditRecorder();
     c = FlarkController(editor);
     _lastQueuedSource = source;
     c.addListener(_changed);
@@ -290,11 +294,19 @@ class _WorkbenchState extends State<Workbench> {
                   onPressed: () => setState(() => inspect = !inspect),
                   icon: Icon(inspect ? Icons.code_off : Icons.code),
                 ),
-                IconButton(
-                  tooltip: 'Copy Markdown',
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: c.text)),
+                // One menu keeps the header within a phone's width.
+                PopupMenuButton<bool>(
+                  tooltip: 'Copy',
                   icon: const Icon(Icons.copy_outlined, size: 20),
+                  onSelected: (repro) => Clipboard.setData(
+                    ClipboardData(
+                      text: repro ? c.editor.recorder?.repro ?? '' : c.text,
+                    ),
+                  ),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: false, child: Text('Copy Markdown')),
+                    PopupMenuItem(value: true, child: Text('Copy repro')),
+                  ],
                 ),
               ],
             ),

@@ -537,12 +537,17 @@ final class FlarkEditor implements FlarkDocumentState {
   /// Input methods may publish several preedit values as one logical action.
   /// Cancellation restores source, selection and typing intent without using
   /// or clearing the user's undo/redo stacks.
-  void beginComposition() => _record(
-    _beginComposition,
-    () => 'editor.beginComposition()',
-    () =>
-        (editor) => editor.beginComposition(),
-  );
+  void beginComposition() {
+    // Composition calls that change nothing (a hand that commits or begins
+    // on every focus change) are not worth a line of a repro.
+    if (composing) return;
+    _record(
+      _beginComposition,
+      () => 'editor.beginComposition()',
+      () =>
+          (editor) => editor.beginComposition(),
+    );
+  }
 
   void _beginComposition() {
     _composition ??= HistoryEntry(
@@ -553,12 +558,15 @@ final class FlarkEditor implements FlarkDocumentState {
     );
   }
 
-  void commitComposition() => _record(
-    _commitComposition,
-    () => 'editor.commitComposition()',
-    () =>
-        (editor) => editor.commitComposition(),
-  );
+  void commitComposition() {
+    if (!composing) return;
+    _record(
+      _commitComposition,
+      () => 'editor.commitComposition()',
+      () =>
+          (editor) => editor.commitComposition(),
+    );
+  }
 
   void _commitComposition() {
     final before = _composition;
@@ -576,12 +584,15 @@ final class FlarkEditor implements FlarkDocumentState {
     history.breakCoalescing();
   }
 
-  void cancelComposition() => _record(
-    _cancelComposition,
-    () => 'editor.cancelComposition()',
-    () =>
-        (editor) => editor.cancelComposition(),
-  );
+  void cancelComposition() {
+    if (!composing) return;
+    _record(
+      _cancelComposition,
+      () => 'editor.cancelComposition()',
+      () =>
+          (editor) => editor.cancelComposition(),
+    );
+  }
 
   void _cancelComposition() {
     final before = _composition;
