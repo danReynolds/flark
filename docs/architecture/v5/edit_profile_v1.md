@@ -138,15 +138,39 @@ additional product principles or testing layers.
   the heading (after Return, on the new line). The parser must keep the other
   blocks where they were. Other text typed or pasted over all of it keeps the
   heading and its underline.
+- A deletion inside a row changes that row only: every other row keeps its
+  kind and containers, the row's remaining text its kind and containers, a
+  table row its cells, and an emptied line shows none of its prefix. Where
+  Markdown would read the result otherwise, the deletion respells what it
+  emptied, and the parser must confirm the respelling: text deleted at a
+  line's start takes the spaces after it, so an item's content column and the
+  blocks nested at it stay put (`- The plan` less `The` is `- plan`); an
+  emptied line of a longer row goes with its line break (deleting `b` from a
+  setext heading `a`, `b` keeps `a` above its underline; an emptied lazy line
+  goes); an item's emptied first line takes the blank lines after it, as an
+  item can start with at most one, so its later blocks stay in it; an emptied
+  item under a paragraph's line, which can neither interrupt the paragraph
+  nor be its underline, takes a blank line in the outer containers before
+  it, as does a line a deletion leaves as a setext underline (`-` under `a`);
+  and an emptied cell of a table row written without its leading or trailing
+  pipe keeps one (`| | Value`, `D||`, a body row `||`), the caret in it. When
+  no spelling keeps the structure, a deletion that empties its line or a cell
+  and would change another row, show its line's prefix or change its table
+  row refuses (`#` between `- b` and `  [` stays: `[` would join the item);
+  any other goes ahead as Markdown reads it, literal HTML and definitions
+  included, so Backspace from the end and Delete from the start still empty a
+  document.
 - If deletion exposes whitespace against emphasis/strong/strike delimiters,
   move that whitespace outside the owner so surviving words retain their
   style, and retain typing intent when deletion exits an owner's trailing
-  whitespace. Deleting an owner's first word leaves the caret at the visible
-  deletion point, before the whitespace that now leads the owner, with the
-  owner's typing intent: a word typed there joins the owner (`**new two**`,
-  not `**new** **two**`), and erasing that whitespace returns into it. At a
-  line start, where Markdown displays no leading whitespace, the caret stays
-  in the surviving content.
+  whitespace. Past a line break the opening syntax moves after the next
+  line's container prefix, which would otherwise follow it as text. Deleting
+  an owner's first word leaves the caret at the visible deletion point,
+  before the whitespace that now leads the owner, with the owner's typing
+  intent: a word typed there joins the owner (`**new two**`, not
+  `**new** **two**`), and erasing that whitespace returns into it. At a line
+  start, where Markdown displays no leading whitespace, the caret stays in the
+  surviving content.
 
 ### EP1-DELETE-TO-EMPTY-001
 
@@ -225,7 +249,8 @@ Return and Backspace operate on the visible block structure:
 - terminal Return creates one writable following paragraph;
 - table Return moves to the next row in the same column, then exits the table;
   a typed `|` is escaped as cell text; cell-boundary deletion rejects
-  atomically, and table restructuring uses source mode;
+  atomically, emptying a cell keeps its row's cells (a pipe spells the empty
+  cell), and table restructuring uses source mode;
 - Backspace at a supported block start merges, lifts, or removes the structural
   boundary users see. A lifted line stays in its outer containers, and when
   the block after it would read on as part of it (a list numbered past 1,
@@ -237,17 +262,23 @@ Return and Backspace operate on the visible block structure:
   moves that markup after the joined text; and removing the empty line after
   a heading or code leaves the caret at the end of its text, not past its
   hidden underline or closing fence. Backspace at the start of a heading makes
-  it a paragraph; an empty heading whose marker cannot go without changing
-  the block before it (an emptied item's `- ` would underline a paragraph
-  above) goes with its line, as Delete at the end of that block takes it.
-  No join crosses a fence line: Backspace at the start of code removes an
-  empty line or rule above it and otherwise refuses, and nothing joins onto a
-  closing fence. A join or lift whose result would change another block's kind
-  or paint markup the projection hid (removing the blank line between a
-  paragraph and `---` would make a setext heading) refuses, as does removing an
-  empty line or rule that would move the block after it into or out of a quote
-  or list item (`b` after `> a` and an empty line would read on lazily inside
-  the quote); and
+  it a paragraph in the same containers (a blank line keeps the line after
+  it from reading on into a quote's new paragraph; `# >` keeps its heading,
+  as its text would open a quote); an empty heading whose marker cannot go
+  without changing the block before it (an emptied item's `- ` would
+  underline a paragraph above) goes with its line, as Delete at the end of
+  that block takes it. Indented code lifted becomes the paragraph its text
+  reads as, in no new container (`>a` would be a quote, `- a` an item, so
+  those refuse). No join crosses a fence line: Backspace at the start of code
+  removes an empty line or rule above it and otherwise refuses, and nothing
+  joins onto a closing fence. A join or lift whose result would change
+  another block's kind or paint markup the projection hid (removing the blank
+  line between a paragraph and `---` would make a setext heading) refuses, as
+  does one that would move any other block, however far after it, into or out
+  of a quote or list item (`b` after `> a` and an empty line would read on
+  lazily inside the quote; `c` after `- # a`, `b` and an empty line would
+  join the item once `b` joins `a`), except the blocks of a container whose
+  marker the lift removes, which leave it with that marker; and
 - repeated Return or Backspace followed immediately by typing must leave one
   live caret and accept the next input.
 

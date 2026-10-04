@@ -1525,13 +1525,139 @@ final class FlarkEditor implements FlarkDocumentState {
       caret,
       pending: pending,
     );
-    return _commit(
-      normalized.text,
-      FlarkSelection.collapsed(normalized.caret),
-      typing: typing,
-      pending: normalized.pending,
-    );
+    return _deleteKept(expanded.start, expanded.end, normalized, typing);
   }
+
+  /// A deletion inside a row changes that row only: other rows keep their
+  /// kinds and containers, the row its kind, a table row its cells, and an
+  /// emptied line shows none of its prefix. Otherwise it respells what it
+  /// emptied, checked by the parser: spaces after text deleted at a line's
+  /// start go too, keeping an item's content column; an emptied line goes
+  /// with its line break, or takes the blank lines after it (an item's first
+  /// line) or a blank line before it (an item under a paragraph's line); an
+  /// emptied cell of a row without its outer pipe keeps one. With none, a
+  /// deletion that empties its line or a cell and changes another row, its
+  /// table row or what its line shows refuses; another goes ahead as Markdown
+  /// reads it (literal HTML and definitions too), so erasing never sticks.
+  bool _deleteKept(
+    int start,
+    int end,
+    ({String text, int caret, PendingStyle? pending}) plain,
+    bool typing,
+  ) {
+    final row = _doc.rowAt(start), m = _doc.model, rows = projection.rows;
+    int lineOf(int offset) =>
+        (m.lineOfUtf16(offset) - row.firstLine).clamp(0, row.lineCount - 1);
+    final top = lineOf(start), bottom = lineOf(end);
+    final at = _lineStart(source, m, row.firstLine + top);
+    final cs = row.contentStarts[top], ce = row.contentEnds[bottom];
+    final a = row.displayForSource(start).$1, b = row.displayForSource(end).$1;
+    final ls = row.displayForSource(cs).$1, le = row.displayForSource(ce).$1;
+    bool blank(int x, int y) =>
+        x >= y || _spaces.hasMatch(row.text.substring(x, y));
+    final emptied = cs >= 0 && blank(ls, a) && blank(b, le);
+    final below = row.contentStarts.elementAtOrNull(bottom + 1) ?? -1;
+    final cells = row.kind == RowKind.tableCell
+        ? _tableRowCells(projection, row.tableRowBlock)
+        : null;
+    // A table row is checked whole, its cells' text by [_showsTableRow].
+    final cell0 = row.index - (cells == null ? 0 : row.column);
+    final edited = {for (var c = 0; c < (cells?.length ?? 1); c++) cell0 + c};
+    (bool, bool) check(FlarkDocument next, List<(int, int, String)> edits) {
+      final map = _edited(edits).$2, caret = next.selection.extent;
+      final shown = cells == null
+          ? !emptied || !_paints(next.rowAt(caret), map(at), map(cs))
+          : _showsTableRow(next, caret, row.column, cells, edited: true);
+      final e = [for (final (x, y, text) in edits) (x, y, text.length)];
+      // The row's remaining text, before the deletion, after it or on the
+      // next line, keeps its containers, and its kind unless it moved up.
+      final onward = a == 0 && emptied,
+          left = a > 0
+              ? map(row.sourceStart)
+              : onward
+              ? (below < 0 ? -1 : map(below))
+              : caret;
+      return (
+        shown &&
+            _keepsStructure(next, e, edited, movesText: false, shells: true),
+        (!emptied || _keepsShells(next, row, caret)) &&
+            (left < 0 ||
+                _keepsShells(next, row, left) &&
+                    (onward || next.rowAt(left).kind == row.kind)),
+      );
+    }
+
+    bool commit(String text, int caret, [bool Function(FlarkDocument)? ok]) =>
+        _commit(
+          text,
+          FlarkSelection.collapsed(caret),
+          typing: typing,
+          pending: plain.pending,
+          acceptSourceMode: true,
+          accept: ok,
+        );
+    var damage = false;
+    if (commit(plain.text, plain.caret, (next) {
+      final (kept, own) = check(next, [(start, end, '')]);
+      damage = !kept;
+      return kept && own;
+    })) {
+      return true;
+    }
+    if (_lastRejection != null) return false;
+    var spaced = end, k = row.index + 1;
+    while (spaced < ce && _isSpace(source, spaced)) {
+      spaced++;
+    }
+    while (k < rows.length && rows[k].kind == RowKind.blank) {
+      k++;
+    }
+    int startOf(ProjectedRow row) => _lineStart(source, m, row.firstLine);
+    final gap = emptied && k > row.index + 1 && k < rows.length
+        ? (startOf(rows[row.index + 1]), startOf(rows[k]), '')
+        : null;
+    final item = row.shells
+        .where((s) => s.kind == ShellKind.item && m.blockStart(s.block) >= at)
+        .lastOrNull;
+    final prefix = source
+        .substring(
+          at,
+          item == null ? (cs < at ? at : cs) : m.blockStart(item.block),
+        )
+        .trimRight();
+    final apart = (at, at, '$prefix${_lineBreakAt(at)}'),
+        cut = (start, end, '');
+    final above = top > 0 ? row.contentEnds[top - 1] : -1;
+    for (final edits in [
+      if (cells != null) ...[
+        [(start, end, '|')],
+        [(start, end, '||')],
+      ] else ...[
+        if (spaced > end && !emptied && ls == a) [(start, spaced, '')],
+        if (gap != null) [cut, gap],
+        if (emptied && below >= 0) [(start, below, '')],
+        if (emptied && below < 0 && above >= 0) [(above, end, '')],
+        if (row.firstLine + top > 0 && cs >= 0) [apart, cut],
+        if (gap != null && row.firstLine + top > 0) [apart, cut, gap],
+      ],
+    ]) {
+      final (text, map) = _edited(edits);
+      if (commit(text, map(start), (n) => check(n, edits) == (true, true))) {
+        return true;
+      }
+    }
+    _lastRejection = null;
+    final literal = row.kind == RowKind.htmlBlock || row.block < 0;
+    return !(damage && (emptied || cells != null) && !literal) &&
+        commit(plain.text, plain.caret);
+  }
+
+  /// Whether [row] paints source between [start] and [end].
+  static bool _paints(ProjectedRow row, int start, int end) =>
+      start < end &&
+      row.segments.any(
+        (s) => !s.lineBreak && s.sourceStart < end && s.sourceEnd > start,
+      );
 
   /// Both inserting and deleting can expose whitespace at a formatting edge.
   /// Move it outside parser-owned emphasis delimiters before the next parse.
@@ -1562,7 +1688,13 @@ final class FlarkEditor implements FlarkDocumentState {
       final cs = o.contentStart, ce = o.contentEnd - removed;
       var first = cs, last = ce;
       while (first < last && _isSpace(text, first)) {
-        first++;
+        // Past a line break the opening syntax goes after the next line's
+        // container prefix, which would otherwise follow it as text.
+        if (text.codeUnitAt(first++) != 0x0A) continue;
+        final row = _doc.rowAt(o.start);
+        final l = _doc.model.lineOfUtf16(first + removed) - row.firstLine;
+        final resume = l < row.lineCount ? row.contentStarts[l] - removed : -1;
+        if (resume > first && resume <= last) first = resume;
       }
       while (last > first && _isSpace(text, last - 1)) {
         last--;
@@ -1698,13 +1830,6 @@ final class FlarkEditor implements FlarkDocumentState {
       // closing delimiter behind as a new unclosed block.
       if (block.flags & 2 != 0) {
         final start = block.startUtf16, end = block.endUtf16;
-        // The first row after the block that shows anything: a blank line
-        // belongs to whichever container its neighbors give it.
-        final following = projection.rows
-            .skip(row.index + 1)
-            .where((r) => r.kind != RowKind.blank)
-            .firstOrNull;
-        final after = following == null ? -1 : _firstCaretStart(following);
         return _commit(
           source.replaceRange(start, end, ''),
           FlarkSelection.collapsed(start),
@@ -1713,10 +1838,12 @@ final class FlarkEditor implements FlarkDocumentState {
           // The blocks around it must stay as they were. A fence at a column
           // outside a list or quote ends that container, and once it is gone
           // what follows can run on into the container instead.
-          accept: (next) =>
-              (after < start ||
-                  _keepsShells(next, following!, after - (end - start))) &&
-              _keepsStructure(next, [(start, end, 0)], {row.index}),
+          accept: (next) => _keepsStructure(
+            next,
+            [(start, end, 0)],
+            {row.index},
+            shells: true,
+          ),
         );
       }
     }
@@ -1765,13 +1892,16 @@ final class FlarkEditor implements FlarkDocumentState {
         prefixStart,
         // The lifted line keeps its kind: lifting `> ` from `> foo` above
         // `---` would make it a setext heading that swallows the rule. Only
-        // indented code becomes the paragraph its text reads as, and a line
-        // that displays nothing has no kind to keep.
+        // indented code becomes the paragraph its text reads as, in no new
+        // container (`>a` would open a quote), and a line that displays
+        // nothing has no kind to keep.
         (next) {
-          final kind = next.rowAt(caret).kind;
+          final now = next.rowAt(caret);
           return row.text.isEmpty ||
-              kind == row.kind ||
-              row.kind == RowKind.codeBlock && kind == RowKind.paragraph;
+              now.kind == row.kind ||
+              row.kind == RowKind.codeBlock &&
+                  now.kind == RowKind.paragraph &&
+                  now.shells.length <= row.shells.length;
         },
       );
     }
@@ -1781,33 +1911,30 @@ final class FlarkEditor implements FlarkDocumentState {
       // exactly its line's content, so it can go on its own; anything else
       // would be deleting through a range comrak does not pin down.
       if (row.kind != RowKind.thematicBreak) return false;
-      // The block after the rule stays in containers of the same kinds, and
-      // other rows keep their kinds. A blank line belongs to whichever
-      // container its neighbors give it, so the first row that is not one
-      // is the block that counts.
-      final following = projection.rows
-          .skip(1)
-          .where((r) => r.kind != RowKind.blank)
-          .firstOrNull;
-      final after = following == null ? -1 : _firstCaretStart(following);
+      // The blocks after the rule stay in containers of the same kinds, and
+      // keep their kinds.
       final start = row.sourceStart, end = row.sourceEnd;
       if (_commit(
         source.replaceRange(start, end, ''),
         FlarkSelection.collapsed(start),
         typing: false,
         acceptSourceMode: true,
-        accept: (next) =>
-            (after < 0 ||
-                _keepsShells(next, following!, after - (end - start))) &&
-            _keepsStructure(
-              next,
-              [(start, end, 0)],
-              {row.index},
-              movesText: false,
-            ),
+        accept: (next) => _keepsStructure(
+          next,
+          [(start, end, 0)],
+          {row.index},
+          movesText: false,
+          shells: true,
+        ),
       )) {
         return true;
       }
+      // A blank line belongs to whichever container its neighbors give it,
+      // so the first row that is not one is the block that counts.
+      final following = projection.rows
+          .skip(1)
+          .where((r) => r.kind != RowKind.blank)
+          .firstOrNull;
       // A rule that was all of a list item leaves that item empty, and an
       // empty item's content starts one column past its marker rather than
       // where the rule did, so a block too shallow for the rule's item can
@@ -1874,13 +2001,9 @@ final class FlarkEditor implements FlarkDocumentState {
       // the next row joins the rule's line instead, staying in that item.
       return left.kind == RowKind.thematicBreak &&
           _lastRejection == null &&
-          _joinContent(
-            left.sourceStart,
-            to,
-            _checkedKind(right.kind),
-            rows,
-            following: right,
-          );
+          _joinContent(left.sourceStart, to, _checkedKind(right.kind), {
+            left.index,
+          });
     }
     final from = _lastCaretEnd(left);
     if (from < 0 || to <= from) return false;
@@ -1905,18 +2028,11 @@ final class FlarkEditor implements FlarkDocumentState {
       // Removing a row that displays nothing moves no text, so what the
       // parser makes of the lines left is the document asked for: an empty
       // last item stops being one without its line break. Refusing would
-      // strand Backspace at the end of the document.
+      // strand Backspace at the end of the document. It does bring the row
+      // after it up against [left], where [_joinContent] keeps it in its own
+      // containers: without the gap, a paragraph after a quote or list item
+      // would read on lazily inside it.
       movesText: !empty(right) || right.fenced,
-      // It does bring the row after it up against [left], and that row must
-      // stay in its own containers: without the gap, a paragraph after a
-      // quote or list item would read on lazily inside it, the result
-      // [_removeLineAbove] refuses when Backspace starts at that paragraph.
-      following:
-          right.text.isEmpty &&
-              !right.fenced &&
-              right.index + 1 < projection.rows.length
-          ? projection.rows[right.index + 1]
-          : null,
       shown: bodyless
           ? (right.sourceStart, projection.lineContentEnd(right.firstLine))
           : null,
@@ -1963,6 +2079,7 @@ final class FlarkEditor implements FlarkDocumentState {
           [(start, end, 0)],
           {above.index, row.index},
           movesText: row.text.isNotEmpty,
+          shells: true,
         );
       },
     );
@@ -2037,15 +2154,6 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     final marker = '${'#' * row.headingLevel} ', replaced = '$marker$text';
     final origin = first + marker.length;
-    // The first row after the heading that shows anything: a blank line
-    // belongs to whichever container its neighbors give it.
-    final following = projection.rows
-        .skip(row.index + 1)
-        .where((r) => r.kind != RowKind.blank)
-        .firstOrNull;
-    final after = following == null
-        ? -1
-        : _firstCaretStart(following) + replaced.length - (trail.$2 - first);
     return _commit(
       source.replaceRange(first, trail.$2, replaced),
       FlarkSelection.collapsed(origin + text.length),
@@ -2058,12 +2166,12 @@ final class FlarkEditor implements FlarkDocumentState {
             now.headingLevel == row.headingLevel &&
             now.text.isEmpty &&
             _keepsShells(next, row, origin) &&
-            (following == null || _keepsShells(next, following, after)) &&
             _keepsStructure(
               next,
               [(first, trail.$2, replaced.length)],
               {row.index},
               movesText: false,
+              shells: true,
             );
       },
     );
@@ -2121,10 +2229,13 @@ final class FlarkEditor implements FlarkDocumentState {
       acceptSourceMode: true,
       accept: (next) =>
           next.rowAt(a).kind == left.kind &&
-          _keepsStructure(next, edits, {
-            left.index,
-            right.index,
-          }, movesText: false) &&
+          _keepsStructure(
+            next,
+            edits,
+            {left.index, right.index},
+            movesText: false,
+            shells: true,
+          ) &&
           !_revealsHiddenText(next, old),
     );
   }
@@ -2132,8 +2243,8 @@ final class FlarkEditor implements FlarkDocumentState {
   /// Delete [from]..[to], the line break and prefixes a join of [rows]
   /// removes, with the caret at [at] when that precedes the join and at
   /// [from] otherwise. The result is kept only when the caret's row is still
-  /// of [kind] (when given), when [following], a row after the join, stays
-  /// in containers of the same kinds, and when [_keepsStructure] holds.
+  /// of [kind] (when given) and [_keepsStructure] holds, every other row in
+  /// containers of the same kinds, however far from the join.
   bool _joinContent(
     int from,
     int to,
@@ -2141,12 +2252,10 @@ final class FlarkEditor implements FlarkDocumentState {
     Set<int> rows, {
     int? at,
     bool movesText = true,
-    ProjectedRow? following,
     (int, int)? shown,
   }) {
     (from, to) = _joinedOwners(from, to);
     final caret = at != null && at >= 0 && at < from ? at : from;
-    final after = following == null ? -1 : _firstCaretStart(following);
     return _commit(
       source.replaceRange(from, to, ''),
       FlarkSelection.collapsed(caret),
@@ -2154,13 +2263,13 @@ final class FlarkEditor implements FlarkDocumentState {
       acceptSourceMode: true,
       accept: (next) =>
           (kind == null || next.rowAt(caret).kind == kind) &&
-          (after < 0 || _keepsShells(next, following!, after - (to - from))) &&
           _keepsStructure(
             next,
             [(from, to, 0)],
             rows,
             movesText: movesText,
             shown: shown,
+            shells: true,
           ),
     );
   }
@@ -2207,6 +2316,22 @@ final class FlarkEditor implements FlarkDocumentState {
       return offset - shift;
     }
 
+    // Rows inside a container whose marker the edit removed, from its line
+    // (a lift) or before text the line keeps (an item joined up), leave it;
+    // others can be carried from a join, even past an empty row it removed.
+    bool lifted(ProjectedRow row) => row.shells.any((shell) {
+      final at = _doc.model.blockStart(shell.block);
+      final line = _doc.model.lineOfUtf16(at);
+      return shell.kind != ShellKind.list &&
+          edits.any(
+            (e) =>
+                e.$1 <= at &&
+                at < e.$2 &&
+                (e.$1 >= _doc.model.lineStartUtf16(line) ||
+                    e.$2 < projection.lineContentEnd(line)),
+          );
+    });
+
     // Both projections list rows in source order, so one walk pairs each row
     // with the row that now holds its start. A start past a row's end lies in
     // the markup before the next row, which then holds it.
@@ -2223,7 +2348,7 @@ final class FlarkEditor implements FlarkDocumentState {
           ? now[j + 1]
           : now[j];
       if (holder.kind != row.kind || shells && !_sameShells(holder, row)) {
-        return false;
+        if (holder.kind != row.kind || !lifted(row)) return false;
       }
     }
     return !movesText || !_revealsHiddenText(next, back, shown: shown);
@@ -3007,9 +3132,11 @@ final class FlarkEditor implements FlarkDocumentState {
       ],
       FlarkSelection(move(selection.base), move(selection.extent)),
       blockStart,
+      // The row stays in its containers: `# >` made a paragraph is a quote.
       (next) =>
           (next.rowAt(move(selection.extent)).kind == RowKind.heading) ==
-          (level > 0),
+              (level > 0) &&
+          _keepsShells(next, row, move(selection.extent)),
     );
   }
 
@@ -3101,9 +3228,13 @@ final class FlarkEditor implements FlarkDocumentState {
   ) {
     bool keeps(FlarkDocument next, List<(int, int, int)> edits) =>
         accept(next) &&
-        _keepsStructure(next, edits, {
-          row.index,
-        }, movesText: row.text.isNotEmpty);
+        _keepsStructure(
+          next,
+          edits,
+          {row.index},
+          movesText: row.text.isNotEmpty,
+          shells: true,
+        );
     if (_commit(
       candidate,
       selected,
@@ -3471,6 +3602,9 @@ final _breakSpace = RegExp(r'[ \t]*\n[ \t]*');
 /// at a position, and the last of the last word before an end.
 final _firstEscapable = RegExp(r'[ \t]*[^\s!-/:-@\[-`{-~]*[!-/:-@\[-`{-~]');
 final _lastEscapable = RegExp(r'[!-/:-@\[-`{-~][^\s!-/:-@\[-`{-~]*[ \t]*$');
+
+/// Markdown's spaces and tabs, which show nothing at a line's edges.
+final _spaces = RegExp(r'^[ \t]+$');
 
 /// Any character of an item marker but a tab, which keeps its own width.
 final _notTab = RegExp(r'[^\t]');

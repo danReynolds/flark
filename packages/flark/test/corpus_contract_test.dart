@@ -340,8 +340,11 @@ void checkErasure(String label, FlarkEditor e) {
     // grows nothing but the fences around it, so that a body line left as a
     // fence's run stays code, or removes a row and keeps the source's length:
     // text joined into an empty closed heading (`# #` and `bar`) takes a
-    // space of its own before the sequence. The bound stops a refusal from
-    // hanging the suite.
+    // space of its own before the sequence, or shows less: a deletion that
+    // keeps what it empties (an item or an underline under a paragraph, a
+    // cell of a row without its outer pipe) adds a blank line or a pipe, and
+    // the source can keep its length or grow by that line break. The bound
+    // stops a refusal from hanging the suite.
     var steps = 0;
     while (editor.source.isNotEmpty && steps <= src.length + 2) {
       final before = editor.source;
@@ -349,6 +352,10 @@ void checkErasure(String label, FlarkEditor e) {
       editor.apply(SetSelection.caret(backward ? editor.source.length : 0));
       final document = editor.sourceMode ? null : editor.document;
       final rows = document?.projection.rows.length;
+      final shown = document?.projection.rows.fold(
+        0,
+        (length, row) => length + row.text.length,
+      );
       if (!editor.apply(
         backward ? const DeleteBackward() : const DeleteForward(),
       )) {
@@ -395,8 +402,14 @@ void checkErasure(String label, FlarkEditor e) {
           rows != null &&
           !editor.sourceMode &&
           editor.projection.rows.length < rows;
+      final showsLess =
+          shown != null &&
+          !editor.sourceMode &&
+          editor.projection.rows.fold(0, (n, row) => n + row.text.length) <
+              shown;
       if (editor.source.length >= before.length &&
           !joinedRows &&
+          !showsLess &&
           !_onlyDeletes(
             _withoutCaretFences(document),
             _withoutCaretFences(editor.sourceMode ? null : editor.document),

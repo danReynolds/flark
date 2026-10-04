@@ -10,19 +10,21 @@ List<String> _tableRowCells(Projection projection, int tableRowBlock) => [
 
 /// Whether [next] displays [cells] as the table row holding [offset], with
 /// [offset] in [column]. GFM drops a row's surplus cells, so comparing the
-/// cell count alone cannot notice a cell split by an edit.
+/// cell count alone cannot notice a cell split by an edit. An [edited] cell
+/// in [column] may show any text.
 bool _showsTableRow(
   FlarkDocument next,
   int offset,
   int column,
-  List<String> cells,
-) {
+  List<String> cells, {
+  bool edited = false,
+}) {
   final row = next.rowAt(offset);
   if (row.kind != RowKind.tableCell || row.column != column) return false;
   final now = _tableRowCells(next.projection, row.tableRowBlock);
   if (now.length != cells.length) return false;
   for (var i = 0; i < now.length; i++) {
-    if (now[i] != cells[i]) return false;
+    if ((!edited || i != column) && now[i] != cells[i]) return false;
   }
   return true;
 }

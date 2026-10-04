@@ -9,6 +9,7 @@ import 'package:test/test.dart';
 
 import 'support/invariants.dart';
 
+part 'journeys/deletion_cases.dart';
 part 'journeys/history_cases.dart';
 part 'journeys/inline_cases.dart';
 part 'journeys/navigation_cases.dart';
@@ -120,6 +121,7 @@ final class _Session {
 
 void main() {
   final backend = createParseBackend();
+  _deletionCases(backend);
   _historyCases(backend);
   _inlineCases(backend);
   _navigationCases(backend);
