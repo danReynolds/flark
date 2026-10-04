@@ -13,6 +13,8 @@ import 'package:flutter/semantics.dart';
 import 'controller.dart';
 import 'clipboard_binding_stub.dart'
     if (dart.library.js_interop) 'clipboard_binding_web.dart';
+import 'composition_reset_stub.dart'
+    if (dart.library.js_interop) 'composition_reset_web.dart';
 import 'input_context.dart';
 import 'surface.dart';
 import 'source_window.dart';
@@ -299,10 +301,28 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
     _inputContext = context;
     if (_sentValue != context.value) {
+      final held = _sentValue;
       _sentValue = context.value;
       _connection!.setEditingState(_sentValue!);
+      _resynchronized = true;
+      // A browser drops a composition whose text the page replaces (the
+      // kernel refused or reshaped what it composed, or ended it).
+      if (kIsWeb &&
+          held != null &&
+          held.composing.isValid &&
+          !held.composing.isCollapsed &&
+          held.text != _sentValue!.text) {
+        endDroppedComposition();
+      }
     }
   }
+
+  /// Whether the platform was sent a value since its last input, which its
+  /// next input then edits. A browser's input element takes the value as it
+  /// is sent, and reports only changes to it: its next value is a new edit,
+  /// even one that repeats a value the kernel reshaped. Other platforms can
+  /// call twice with one value, which is then a duplicate.
+  bool _resynchronized = false;
 
   /// [authenticated] input was a delta batch whose old text matched the
   /// value the platform was sent.
@@ -310,8 +330,16 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     final context = _inputContext;
     if (context == null) return;
     _sentValue = value;
+    final resynchronized = kIsWeb && _resynchronized;
+    _resynchronized = false;
     final full = context.expand(value);
-    if (full != null) c.receive(full, authenticated: authenticated);
+    if (full != null) {
+      c.receive(
+        full,
+        authenticated: authenticated,
+        resynchronized: resynchronized,
+      );
+    }
     _sync();
   }
 
@@ -1111,7 +1139,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       return KeyEventResult.handled;
     }
     if (c.editor.composing) {
-      if (key == LogicalKeyboardKey.escape) {
+      // In a browser the input method cancels its own composition on Escape,
+      // after the page has seen the key, and the page hears it end. Ending it
+      // here first rewrote the input element under the browser's composition,
+      // which then ended without a compositionend: the engine kept reporting
+      // the cancelled text's range as composing, and every editing key went
+      // to the input element instead of the editor until the next one.
+      if (key == LogicalKeyboardKey.escape && !kIsWeb) {
         c.finishComposition(cancel: true);
         return KeyEventResult.handled;
       }
@@ -1835,6 +1869,11 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         groupId: this,
         onTapOutside: (_) => _dismissLink(),
         child: Semantics(
+          // The toolbar's paragraph style menu has no node of its own, and
+          // merged into this one its tap and label covered the whole editor:
+          // with accessibility on, a browser's press anywhere in the document
+          // opened the menu, and a screen reader read the editor as a button.
+          explicitChildNodes: true,
           customSemanticsActions: {
             if (!widget.readOnly)
               const CustomSemanticsAction(label: 'Link actions'): () {

@@ -4,7 +4,7 @@ import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
 
 import 'package:flutter/rendering.dart';
-import 'package:flutter/foundation.dart' show mapEquals;
+import 'package:flutter/foundation.dart' show kIsWeb, mapEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -285,6 +285,7 @@ class RenderFlarkSurface extends RenderBox
     }
     if (next != controller) {
       controller.removeListener(_changed);
+      _described = null;
       _needsReveal = true;
       _images.clear();
       controller = next;
@@ -343,6 +344,20 @@ class RenderFlarkSurface extends RenderBox
     _needsReveal = true;
     markNeedsLayout();
     markNeedsSemanticsUpdate();
+  }
+
+  /// The snapshot the semantics last described. Flutter's web engine moves
+  /// DOM focus to a focused text field's semantics element whenever that
+  /// node changes, and a browser ends its composition when the input element
+  /// loses focus. With accessibility on, every composed update was committed
+  /// and the next one appended ("nににほ日本" for 日本). While the platform
+  /// composes on the web, the semantics keep describing the document as it
+  /// was before, so that the node does not change until the composition ends.
+  FlarkEditorSnapshot? _described;
+
+  bool get _composingOnWeb {
+    final c = controller;
+    return kIsWeb && c is FlarkController && c.editor.composing;
   }
 
   void _clearRows() {
@@ -1537,7 +1552,10 @@ class RenderFlarkSurface extends RenderBox
     }
     config.isMultiline = true;
     config.textDirection = TextDirection.ltr;
-    final current = controller.editor.snapshot;
+    final current = _composingOnWeb
+        ? _described ?? controller.editor.snapshot
+        : controller.editor.snapshot;
+    _described = current;
     final rows = current is FlarkLiveSnapshot ? current.projection.rows : null;
     final window = current is FlarkSourceSnapshot
         ? SourceWindow.at(current.source, current.selection.extent)

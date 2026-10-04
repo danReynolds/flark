@@ -202,7 +202,7 @@ jobs:
         run: flutter analyze && flutter test
       - name: Example input through a browser's text field
         working-directory: packages/flark_flutter/example
-        run: flutter test --platform chrome test/web_input_test.dart
+        run: flutter test --platform chrome test/web_input_test.dart test/semantics_composition_web_test.dart
 
   fleury-host:
     name: flark_fleury · analyze, host and example tests

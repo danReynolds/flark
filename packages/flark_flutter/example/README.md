@@ -112,6 +112,46 @@ runner by default), then verifies DOM input, exact source, the next character
 and actual paint. The normal Wasm workbench still receives interactive browser
 canaries; the transport test alone is not D0-web.
 
+### Browser fuzzing
+
+`tool/browser_fuzz.mjs` drives the built workbench in headless Chrome over the
+DevTools protocol and checks every step against the kernel:
+
+```sh
+flutter build web --wasm        # or `flutter build web --output <dir>` for JS
+node tool/browser_fuzz.mjs --sequences 100 --seed 1
+node tool/browser_fuzz.mjs --sequences 100 --seed 1 --semantics
+```
+
+It needs node 22, Chrome and `dart` on the PATH. It serves the build itself
+(cross-origin isolated, any free port) and starts its own headless Chrome with
+a throwaway profile. Each sequence loads a document (a workbench preset, or
+one with lists, tasks, quotes, fences, tables, emoji or CRLF line breaks),
+seeds the clipboard, then sends real input: key events with their text and
+the macOS editing commands Chrome attaches, Shift/Option/Command shortcuts,
+clipboard keys, inserted text, IME compositions (committed, cancelled, Escape,
+Return), clicks, double clicks, drags, wheel scrolls, window resizes, reloads,
+tab switches and, with `--semantics` (accessibility turned on after loading,
+as a screen reader does), toolbar presses and accessibility focus. After every
+event it reads the saved draft and the input element's text and selection.
+`tool/browser_fuzz_oracle.dart` replays the same logical edits (`InsertText`
+per key, `Newline`, deletes, `MoveCaret`, `Paste`, a composition's committed
+text) on a `FlarkEditor` on the Dart VM and compares; events placed by glyph
+geometry (pointer, Up/Down, line edges) take the page's caret. Where the page
+cannot be predicted (a press in a long line of one repeated word, or a
+composition the kernel rewrites, a known issue), the rest of the sequence is
+checked only for errors, and the summary counts it as checked in part. A
+failure is minimized by replaying subsets in the browser. `--out
+failures.jsonl` keeps failures, `--replay file.json` runs one `{doc,
+clipboard, events}` sequence, `--only seed:index` one generated sequence, and
+`--verbose` traces each event.
+
+Headless Chrome on macOS echoes a synthesized key the page leaves unhandled
+back to the page endlessly; the driver consumes the echo. Its emulated input
+method does not end a composition on a mouse press as Chrome does for a real
+one, so the generator never presses during a composition. A pass is evidence
+for headless Chrome's input paths, not for other browsers or physical IMEs.
+
 The browser frame profile measures edit work and its painted frame at the
 candidate limits, as the native frame profile does:
 

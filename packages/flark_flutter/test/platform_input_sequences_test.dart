@@ -848,16 +848,9 @@ class _Sequence {
     if (ref.sourceMode || ref.document.ownersOfContent(from, to).isNotEmpty) {
       return;
     }
-    // A full value carries no record of the text it edited: the host may
-    // refuse a replacement its minimal difference places away from the
-    // selection, as it would a stale value, and resynchronize the platform.
-    if (web &&
-        c.notice == 'Input was resynchronized.' &&
-        c.text == ref.source &&
-        c.editor.selection == ref.selection) {
-      _count('autocorrect refused as a full value');
-      return;
-    }
+    // A full value carries no record of the text it edited, and its minimal
+    // difference ends before a space the platform already delivered. The
+    // host reads that as the caret's correction, as a delta would say.
     ref.apply(ReplaceRange(from, to, replacement));
     if (mode == 1) ref.apply(const InsertText(' '));
     if (mode == 2) ref.apply(SetSelection.caret(ref.selection.extent + 1));

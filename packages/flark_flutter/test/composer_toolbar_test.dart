@@ -1,5 +1,7 @@
+import 'dart:ui' show SemanticsAction;
 import 'package:flark_flutter/flark_flutter_legacy.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -177,6 +179,47 @@ void main() {
       focus.dispose();
     });
   }
+
+  testWidgets('the paragraph style menu is its own semantics node', (t) async {
+    // It has no node of its own. Merged into the editor's (which carries the
+    // Link actions custom action), its tap and label covered the whole
+    // editor: with accessibility on, a browser's press anywhere in the
+    // document opened the menu, and a screen reader read the editor as it.
+    final c = FlarkController(FlarkEditor(backend, text: 'abc'));
+    final semantics = t.ensureSemantics();
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: FlarkEditorWidget(controller: c, autofocus: true)),
+      ),
+    );
+    await t.pump();
+    // The editor's own node is the one with its Link actions.
+    SemanticsNode? editor;
+    bool visit(SemanticsNode node) {
+      if (node.getSemanticsData().customSemanticsActionIds?.isNotEmpty ??
+          false) {
+        editor = node;
+        return false;
+      }
+      node.visitChildren(visit);
+      return true;
+    }
+
+    visit(
+      t.binding.renderViews.first.owner!.semanticsOwner!.rootSemanticsNode!,
+    );
+    final menu = t.getSemantics(find.byTooltip('Paragraph style'));
+    expect(editor, isNotNull);
+    expect(menu, isNot(same(editor)));
+    expect(menu.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+    expect(menu.rect.height, lessThan(100));
+    final data = editor!.getSemanticsData();
+    expect(data.hasAction(SemanticsAction.tap), isFalse);
+    expect(data.label, isNot(contains('Paragraph')));
+    semantics.dispose();
+    await t.pumpWidget(const SizedBox());
+    c.dispose();
+  });
 
   testWidgets('start a blank document with a heading through the toolbar', (
     t,

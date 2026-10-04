@@ -567,6 +567,302 @@ void main() {
       },
     );
   }
+  test(
+    'browser Escape leaves a composition to the input method, then keys edit',
+    () async {
+      // The input method cancels its composition on Escape after the page has
+      // seen the key. The editor cancelled it first and rewrote the input
+      // element, and a browser drops a composition whose text the page
+      // replaced without a compositionend. The engine then reported the
+      // cancelled text's range as composing on every change, the editor
+      // composed again, and left Backspace, Return and the arrows to the input
+      // element. Found by tool/browser_fuzz.mjs in headless Chrome.
+      final c = FlarkController(
+        FlarkEditor(backend, text: 'one\ntwo', caret: 4),
+      );
+      final focus = FocusNode();
+      addTearDown(() async {
+        runApp(const SizedBox());
+        await binding.endOfFrame;
+        c.dispose();
+        focus.dispose();
+      });
+      runApp(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(
+              controller: c,
+              focusNode: focus,
+              autofocus: true,
+            ),
+          ),
+        ),
+      );
+      await binding.endOfFrame;
+      await Future<void>.delayed(Duration.zero);
+      focus.requestFocus();
+      await binding.endOfFrame;
+      final input =
+          web.document.querySelector('textarea.flt-text-editing')!
+              as web.HTMLTextAreaElement;
+      composition(input, 'compositionstart', '');
+      compose(input, 's', 'one\nstwo', 5);
+      await Future<void>.delayed(Duration.zero);
+      expect(c.text, 'one\nstwo');
+      expect(c.editor.composing, isTrue);
+      web.KeyboardEvent escape(String type) => web.KeyboardEvent(
+        type,
+        web.KeyboardEventInit(
+          key: 'Escape',
+          code: 'Escape',
+          keyCode: 229,
+          which: 229,
+          isComposing: true,
+          bubbles: true,
+          cancelable: true,
+        ),
+      );
+      input.dispatchEvent(escape('keydown'));
+      input.dispatchEvent(escape('keyup'));
+      await Future<void>.delayed(Duration.zero);
+      if (input.value == 'one\nstwo') {
+        // The input method removes its text and ends the composition.
+        compose(input, '', 'one\ntwo', 4);
+        composition(input, 'compositionend', '');
+      }
+      web.document.dispatchEvent(web.Event('selectionchange'));
+      await Future<void>.delayed(Duration.zero);
+      await binding.endOfFrame;
+      expect(
+        (c.text, c.editor.selection, c.editor.composing),
+        ('one\ntwo', const FlarkSelection.collapsed(4), false),
+      );
+      expect(c.editor.history.canUndo, isFalse);
+      // Option-Backspace is the editor's word deletion.
+      final expected = FlarkEditor(backend, text: 'one\ntwo', caret: 4)
+        ..apply(const DeleteBackward(word: true));
+      expect(
+        await pressKey(input, 'Backspace', 'Backspace', alt: true),
+        isTrue,
+      );
+      expect(
+        (c.text, c.editor.selection),
+        (expected.source, expected.selection),
+      );
+    },
+  );
+  test(
+    'browser keys still edit after the editor refuses what a browser composed',
+    () async {
+      // The kernel refuses to replace this selection, so the editor puts the
+      // text back while the browser composes. A browser drops a composition
+      // whose text the page replaces, without a compositionend, and the
+      // engine went on reporting its range as composing: the editor composed
+      // again, and Return went to the input element instead of the editor.
+      final c = FlarkController(FlarkEditor(backend, text: '> a\n\nb'));
+      final focus = FocusNode();
+      addTearDown(() async {
+        runApp(const SizedBox());
+        await binding.endOfFrame;
+        c.dispose();
+        focus.dispose();
+      });
+      runApp(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(
+              controller: c,
+              focusNode: focus,
+              autofocus: true,
+            ),
+          ),
+        ),
+      );
+      await binding.endOfFrame;
+      await Future<void>.delayed(Duration.zero);
+      focus.requestFocus();
+      c.command(const SetSelection(2, 6));
+      await binding.endOfFrame;
+      final input =
+          web.document.querySelector('textarea.flt-text-editing')!
+              as web.HTMLTextAreaElement;
+      expect(
+        (input.value, input.selectionStart, input.selectionEnd),
+        ('> a\n\nb', 2, 6),
+      );
+      composition(input, 'compositionstart', '');
+      compose(input, 'n', '> n', 3);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        (c.text, c.editor.selection, c.editor.composing),
+        ('> a\n\nb', const FlarkSelection(2, 6), false),
+      );
+      expect(
+        (input.value, input.selectionStart, input.selectionEnd),
+        ('> a\n\nb', 2, 6),
+      );
+      // The browser's composition ended with its text. The caret moves.
+      input.setSelectionRange(3, 3);
+      web.document.dispatchEvent(web.Event('selectionchange'));
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        (c.editor.selection, c.editor.composing),
+        (const FlarkSelection.collapsed(3), false),
+      );
+      final expected = FlarkEditor(backend, text: '> a\n\nb', caret: 3)
+        ..apply(const Newline());
+      expect(await pressKey(input, 'Enter', 'Enter'), isTrue);
+      expect(
+        (c.text, c.editor.selection),
+        (expected.source, expected.selection),
+      );
+    },
+  );
+  test(
+    'browser value repeating one the kernel reshaped is a new edit',
+    () async {
+      // A browser that deletes in its own input element (Android's Chrome)
+      // reports "-" for Backspace after "-\t", which the kernel reads as
+      // removing the list item, and the input element is resynchronized.
+      // Typing "-" then reported the same value at the same revision, and it
+      // was dropped as a duplicate of the first.
+      final expected = FlarkEditor(backend, text: '-\t', caret: 2)
+        ..apply(const DeleteBackward());
+      final reshaped = expected.source;
+      expected.apply(const InsertText('-'));
+      expect(reshaped, isNot('-'));
+      final c = FlarkController(FlarkEditor(backend, text: '-\t', caret: 2));
+      final focus = FocusNode();
+      addTearDown(() async {
+        runApp(const SizedBox());
+        await binding.endOfFrame;
+        c.dispose();
+        focus.dispose();
+      });
+      runApp(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(
+              controller: c,
+              focusNode: focus,
+              autofocus: true,
+            ),
+          ),
+        ),
+      );
+      await binding.endOfFrame;
+      await Future<void>.delayed(Duration.zero);
+      focus.requestFocus();
+      await binding.endOfFrame;
+      for (final (type, data) in [
+        ('deleteContentBackward', null),
+        ('insertText', '-'),
+      ]) {
+        final input =
+            web.document.querySelector('textarea.flt-text-editing')!
+                as web.HTMLTextAreaElement;
+        input.value = '-';
+        input.setSelectionRange(1, 1);
+        input.dispatchEvent(
+          web.InputEvent(
+            'input',
+            web.InputEventInit(bubbles: true, inputType: type, data: data),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await binding.endOfFrame;
+        expect(c.text, type == 'insertText' ? expected.source : reshaped);
+      }
+      expect(c.editor.selection, expected.selection);
+    },
+  );
+  test(
+    'browser double-space period and autocorrect before the caret apply',
+    () async {
+      // macOS and iOS turn two typed spaces into ". ", and autocorrect fixes
+      // the word before a space already typed. A browser reports its
+      // textarea's whole value, whose difference ends before the caret; it
+      // was refused as a stale value and the textarea was resynchronized.
+      for (final (source, caret, next, nextCaret) in [
+        ('word ', 5, 'word. ', 6),
+        ('- teh ', 6, '- the ', 6),
+      ]) {
+        final c = FlarkController(
+          FlarkEditor(backend, text: source, caret: caret),
+        );
+        final focus = FocusNode();
+        runApp(
+          MaterialApp(
+            home: Scaffold(
+              body: FlarkEditorWidget(
+                controller: c,
+                focusNode: focus,
+                autofocus: true,
+              ),
+            ),
+          ),
+        );
+        await binding.endOfFrame;
+        await Future<void>.delayed(Duration.zero);
+        focus.requestFocus();
+        await binding.endOfFrame;
+        final input =
+            web.document.querySelector('textarea.flt-text-editing')!
+                as web.HTMLTextAreaElement;
+        expect((input.value, input.selectionStart), (source, caret));
+        input.value = next;
+        input.setSelectionRange(nextCaret, nextCaret);
+        input.dispatchEvent(
+          web.InputEvent(
+            'input',
+            web.InputEventInit(
+              bubbles: true,
+              inputType: 'insertReplacementText',
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await binding.endOfFrame;
+        expect(
+          (c.text, c.editor.selection, c.notice),
+          (next, FlarkSelection.collapsed(nextCaret), null),
+        );
+        expect((input.value, input.selectionStart), (next, nextCaret));
+        runApp(const SizedBox());
+        await binding.endOfFrame;
+        c.dispose();
+        focus.dispose();
+      }
+    },
+  );
+}
+
+/// Presses [key] on [input] with Option held, as a keyboard sends it.
+Future<bool> pressKey(
+  web.Element input,
+  String code,
+  String key, {
+  bool alt = false,
+}) async {
+  web.KeyboardEvent event(String type, String code, String key, bool held) =>
+      web.KeyboardEvent(
+        type,
+        web.KeyboardEventInit(
+          code: code,
+          key: key,
+          altKey: held,
+          location: code == 'AltLeft' ? 1 : 0,
+          bubbles: true,
+          cancelable: true,
+        ),
+      );
+  if (alt) input.dispatchEvent(event('keydown', 'AltLeft', 'Alt', true));
+  final down = event('keydown', code, key, alt);
+  input.dispatchEvent(down);
+  input.dispatchEvent(event('keyup', code, key, alt));
+  if (alt) input.dispatchEvent(event('keyup', 'AltLeft', 'Alt', false));
+  await Future<void>.delayed(Duration.zero);
+  return down.defaultPrevented;
 }
 
 // Send actual DOM key events through the engine and focused editor. Clipboard
@@ -596,4 +892,32 @@ Future<bool> pressPrimaryKey(
   input.dispatchEvent(key('keyup', '${modifier}Left', modifier, false));
   await Future<void>.delayed(Duration.zero);
   return shortcut.defaultPrevented;
+}
+
+void composition(web.Element input, String type, String data) =>
+    input.dispatchEvent(
+      web.CompositionEvent(type, web.CompositionEventInit(data: data)),
+    );
+
+/// An input method's composition update: its event, the text it puts in
+/// place of the composed range, and the input event that reports it.
+void compose(
+  web.HTMLTextAreaElement input,
+  String data,
+  String value,
+  int caret,
+) {
+  composition(input, 'compositionupdate', data);
+  input.value = value;
+  input.setSelectionRange(caret, caret);
+  input.dispatchEvent(
+    web.InputEvent(
+      'input',
+      web.InputEventInit(
+        bubbles: true,
+        inputType: 'insertCompositionText',
+        data: data,
+      ),
+    ),
+  );
 }

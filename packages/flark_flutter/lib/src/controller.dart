@@ -50,6 +50,9 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   /// Whether the open composition began by inserting its text at a caret,
   /// so that its composing range holds only what it composed.
   bool _compositionInserted = false;
+
+  /// The selection the open composition replaced, if it began over one.
+  (int, int)? _compositionReplaced;
   TextEditingValue? _lastReceived;
   int _lastReceivedRevision = -1;
   String? notice;
@@ -107,6 +110,11 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   bool command(FlarkCommand command, {int? expectedRevision}) =>
       _batch(() => _command(command, expectedRevision: expectedRevision));
   bool _command(FlarkCommand command, {int? expectedRevision}) {
+    // Undo with nothing to undo (Command-Z on a fresh document) is no edit
+    // refused: it said "This edit needs source mode."
+    final nothing =
+        (command is Undo && !editor.history.canUndo) ||
+        (command is Redo && !editor.history.canRedo);
     final changed = editor.applyAfterComposition(
       command,
       expectedRevision: expectedRevision,
@@ -115,7 +123,11 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       _composing = TextRange.empty;
       _compositionSource = null;
     }
-    notice = changed ? null : _rejectionNotice;
+    notice = changed
+        ? null
+        : nothing
+        ? notice
+        : _rejectionNotice;
     _changed();
     return changed;
   }
@@ -150,30 +162,38 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   /// text this controller last gave the platform, as a delta batch whose old
   /// text matched does: a replacement away from the selection is then the
   /// platform's own correction, not a stale value from an older connection.
+  /// A [resynchronized] platform was given this controller's value since its
+  /// last input, so a value repeating that input is a new edit, not a copy.
   bool receive(
     TextEditingValue next, {
     int? expectedRevision,
     bool authenticated = false,
+    bool resynchronized = false,
   }) => _batch(
     () => _receive(
       next,
       expectedRevision: expectedRevision,
       authenticated: authenticated,
+      resynchronized: resynchronized,
     ),
   );
   bool _receive(
     TextEditingValue next, {
     int? expectedRevision,
     required bool authenticated,
+    required bool resynchronized,
   }) {
     if (expectedRevision != null && expectedRevision != editor.revision) {
       return false;
     }
     // A full value received again before anything changed is a duplicate.
-    // An authenticated value edits the value the platform holds now: after
-    // the kernel reshaped an edit and the platform was resynchronized, a new
-    // edit can produce the earlier value again (Return, Backspace, Return).
+    // An authenticated value edits the value the platform holds now, and so
+    // does a full value from a platform given this controller's value since:
+    // after the kernel reshaped an edit and the platform was resynchronized,
+    // a new edit can produce the earlier value again (Return, Backspace,
+    // Return; or Android's Chrome deleting a list item's tab, then "-").
     if (!authenticated &&
+        !resynchronized &&
         _lastReceived == next &&
         _lastReceivedRevision == editor.revision) {
       return false;
@@ -192,6 +212,9 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
           next.composing.start == editor.selection.start &&
           next.text.length - before.text.length ==
               next.composing.end - next.composing.start;
+      _compositionReplaced = editor.selection.isCollapsed
+          ? null
+          : (editor.selection.start, editor.selection.end);
       editor.beginComposition();
     }
     // An input method that cancels removes the text it composed. Typing it
@@ -219,6 +242,25 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
           SetSelection(next.selection.baseOffset, next.selection.extentOffset),
         );
       }
+      _lastReceived = next;
+      _lastReceivedRevision = editor.revision;
+      return true;
+    }
+    // A composition over a selection replaced it, and cancelling leaves the
+    // selected text deleted, as a platform text field does. Read it so:
+    // removing the composed text by range can be refused for what it made
+    // (a backtick composed after another closes a code span, whose closer is
+    // hidden), which kept the cancelled text.
+    final replaced = _compositionReplaced, source = _compositionSource;
+    if (editor.composing &&
+        !isComposing &&
+        replaced != null &&
+        source != null &&
+        next.text == source.replaceRange(replaced.$1, replaced.$2, '')) {
+      _composing = TextRange.empty;
+      _compositionSource = null;
+      editor.cancelComposition();
+      editor.apply(const DeleteBackward());
       _lastReceived = next;
       _lastReceivedRevision = editor.revision;
       return true;
@@ -345,7 +387,17 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
         // replace unrelated text from an older full-value input connection.
         // An authenticated delta edits the text the platform was sent.
         final related = start <= sel.end && end >= sel.start;
-        if (!related && !authenticated) {
+        // A full value's difference leaves out the unchanged text between a
+        // correction and the caret: the space typed after a word autocorrect
+        // replaces, or the one the double-space period turns into ". ". The
+        // platform keeps its caret past that text, on the caret's line.
+        final beforeCaret =
+            sel.isCollapsed &&
+            next.selection.isCollapsed &&
+            end <= sel.start &&
+            next.selection.extentOffset - nextEnd == sel.start - end &&
+            !before.text.substring(end, sel.start).contains('\n');
+        if (!related && !beforeCaret && !authenticated) {
           if (opened) _abandonComposition();
           notice = 'Input was resynchronized.';
           _changed();
@@ -375,7 +427,10 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
               end: (next.composing.end + shift).clamp(0, text.length),
             )
           : TextRange.empty;
-      notice = null;
+      // A notice stays while the platform composes: taking it away moves
+      // the document, and a browser with accessibility on ends its
+      // composition when the editor's semantics move.
+      if (!isComposing) notice = null;
     } else {
       notice = _rejectionNotice ?? 'This edit needs source mode.';
       if (opened) _abandonComposition();

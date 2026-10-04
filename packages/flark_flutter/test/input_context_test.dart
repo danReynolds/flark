@@ -179,6 +179,132 @@ void main() {
     }
   });
 
+  test('a full-value correction before the caret applies there', () {
+    // A full value's minimal difference leaves out the unchanged text
+    // between a correction and the caret: macOS and iOS turn two typed
+    // spaces into ". ", and autocorrect replaces the word before a space
+    // already typed. Read as stale replacements away from the selection,
+    // both were refused and the platform resynchronized.
+    final backend = createParseBackend();
+    for (final (source, caret, next, nextCaret) in [
+      ('word ', 5, 'word. ', 6),
+      ('teh ', 4, 'the ', 4),
+      ('teh, ', 5, 'the, ', 5),
+      ('say **teh** ', 12, 'say **the** ', 12),
+      ('- one two ', 10, '- one two. ', 11),
+    ]) {
+      final c = FlarkController(
+        FlarkEditor(backend, text: source, caret: caret),
+      );
+      expect(c.receive(at(next, nextCaret)), isTrue, reason: source);
+      expect(
+        (c.text, c.editor.selection, c.notice),
+        (next, FlarkSelection.collapsed(nextCaret), null),
+        reason: source,
+      );
+      final typed = next.replaceRange(nextCaret, nextCaret, 'x');
+      expect(c.receive(at(typed, nextCaret + 1)), isTrue);
+      expect(c.text, typed);
+      c.command(const Undo());
+      c.command(const Undo());
+      expect(
+        (c.text, c.editor.selection),
+        (source, FlarkSelection.collapsed(caret)),
+        reason: source,
+      );
+      c.dispose();
+    }
+    // Text on another line is not the caret's correction: a value that
+    // changes it is still refused as stale.
+    final c = FlarkController(FlarkEditor(backend, text: 'teh\nab', caret: 6));
+    expect(c.receive(at('the\nab', 6)), isFalse);
+    expect((c.text, c.notice), ('teh\nab', 'Input was resynchronized.'));
+    c.dispose();
+  });
+
+  test('a cancelled composition over a selection leaves it deleted', () {
+    // An input method composing over a selection replaces it; cancelling
+    // removes what it composed and leaves the selection deleted, as a
+    // platform text field does. The composed backtick closed a code span,
+    // whose closer is hidden: removing it by range was refused, so the
+    // cancelled text stayed and the composition was kept.
+    for (final (source, composed) in [('a `bcd', '`'), ('ab cd', 'か')]) {
+      final c = FlarkController(
+        FlarkEditor(createParseBackend(), text: source, caret: 0),
+      );
+      final end = source.length;
+      c.command(SetSelection(end - 1, end));
+      final kept = source.substring(0, end - 1);
+      expect(
+        c.receive(
+          at('$kept$composed', end).copyWith(
+            composing: TextRange(start: end - 1, end: end),
+          ),
+        ),
+        isTrue,
+      );
+      expect((c.text, c.editor.composing), ('$kept$composed', true));
+      expect(
+        c.receive(
+          at(kept, end - 1).copyWith(composing: TextRange.collapsed(end - 1)),
+        ),
+        isTrue,
+        reason: source,
+      );
+      expect(
+        (c.text, c.editor.selection, c.editor.composing),
+        (kept, FlarkSelection.collapsed(end - 1), false),
+        reason: source,
+      );
+      c.command(const Undo());
+      expect(
+        (c.text, c.editor.selection),
+        (source, FlarkSelection(end - 1, end)),
+        reason: source,
+      );
+      c.dispose();
+    }
+  });
+
+  test('Undo and Redo with no history are not refused edits', () {
+    // Command-Z on a fresh document said "This edit needs source mode."
+    final c = FlarkController(
+      FlarkEditor(createParseBackend(), text: 'abc', caret: 3),
+    );
+    expect(c.command(const Undo()), isFalse);
+    expect(c.notice, isNull);
+    expect(c.command(const Redo()), isFalse);
+    expect(c.notice, isNull);
+    // A refused edit still says so; an empty Undo leaves its notice.
+    expect(c.command(const InsertText('\uD800')), isFalse);
+    final notice = c.notice;
+    expect(notice, isNotNull);
+    expect(c.command(const Undo()), isFalse);
+    expect(c.notice, notice);
+    c.dispose();
+  });
+
+  test('a notice stays while the platform composes', () {
+    // Taking the notice away moves the document under the composition, and
+    // a browser with accessibility on ends its composition when the editor's
+    // semantics move: the composed text was committed and the next appended.
+    final c = FlarkController(
+      FlarkEditor(createParseBackend(), text: 'abc', caret: 0),
+    );
+    expect(c.command(const InsertText('\uD800')), isFalse);
+    final notice = c.notice;
+    expect(notice, isNotNull);
+    TextEditingValue composing(String text) =>
+        at(text, 1).copyWith(composing: const TextRange(start: 0, end: 1));
+    expect(c.receive(composing('nabc')), isTrue);
+    expect((c.text, c.editor.composing, c.notice), ('nabc', true, notice));
+    expect(c.receive(composing('日abc')), isTrue);
+    expect((c.text, c.editor.composing, c.notice), ('日abc', true, notice));
+    c.receive(at('日abc', 1));
+    expect((c.text, c.editor.composing, c.notice), ('日abc', false, null));
+    c.dispose();
+  });
+
   test('invalid local ranges cannot edit neighboring source', () {
     final input = InputContext.of(at('a' * 5000, 2500));
     expect(input.expand(at('x', 2)), isNull);
@@ -649,6 +775,44 @@ void main() {
       expect(c.text, 'the x');
       await tester.pumpWidget(const SizedBox());
       c.dispose();
+    },
+  );
+
+  testWidgets(
+    'a full-value double-space period and autocorrect apply before the caret',
+    (tester) async {
+      // A browser reports its textarea's whole value. The difference of the
+      // period that replaces the space before the caret, or of the word
+      // corrected before a typed space, ends before the caret; it was
+      // refused as a stale value and the platform resynchronized.
+      for (final (source, caret, next, nextCaret) in [
+        ('word ', 5, 'word. ', 6),
+        ('teh ', 4, 'the ', 4),
+      ]) {
+        final c = FlarkController(
+          FlarkEditor(backend, text: source, caret: caret),
+        );
+        await mount(tester, c);
+        tester.testTextInput.log.clear();
+        tester.testTextInput.updateEditingValue(at(next, nextCaret));
+        await tester.pump();
+        expect(
+          (c.text, c.editor.selection, c.notice),
+          (next, FlarkSelection.collapsed(nextCaret), null),
+        );
+        // The platform already holds the value; it is not resynchronized.
+        expect(
+          tester.testTextInput.log.map((call) => call.method),
+          isNot(contains('TextInput.setEditingState')),
+        );
+        tester.testTextInput.updateEditingValue(
+          at('${next}x', next.length + 1),
+        );
+        await tester.pump();
+        expect(c.text, '${next}x');
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      }
     },
   );
 }
