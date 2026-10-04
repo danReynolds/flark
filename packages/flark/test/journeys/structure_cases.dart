@@ -462,6 +462,12 @@ void _structureCases(FlarkParseBackend backend) {
       // marker would underline the paragraph as a heading.
       final empty = _Session(backend, source: '- a\n- ', caret: 6);
       empty.act(const Indent(), applied: false, source: '- a\n- ');
+      // Tab that cannot indent does nothing, with no reason a host would
+      // show: source mode is no way to indent the item.
+      expect(empty.editor.lastRejection, isNull);
+      final first = _Session(backend, source: '- a', caret: 3);
+      first.act(const Indent(), applied: false, source: '- a');
+      expect(first.editor.lastRejection, isNull);
     });
 
     test(

@@ -242,7 +242,12 @@ final class FlarkEditor implements FlarkDocumentState {
         command is! MoveTableCell &&
         command is! SelectAll &&
         command is! MoveCaret &&
-        command is! PlaceCaret) {
+        command is! PlaceCaret &&
+        // Tab where nothing can be indented, or where indenting would change
+        // the blocks around (an empty item under a paragraph would underline
+        // it), does nothing; source mode is no way to indent it.
+        command is! Indent &&
+        command is! Outdent) {
       _lastRejection ??= FlarkRejection.unsupportedEdit;
     }
     return applied;
