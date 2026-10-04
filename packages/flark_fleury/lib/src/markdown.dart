@@ -156,17 +156,17 @@ class _MarkdownState extends State<FlarkMarkdown> {
             onDragUpdate: (event) =>
                 _select(event.globalPosition, extend: true),
             onTapUp: (event) {
-              final source = _sourceAt(event.globalPosition);
-              if (source == null || !_reader.document!.selection.isCollapsed) {
-                return;
-              }
-              final resource = _reader.document!.document.resourceAt(
-                FlarkSelection.collapsed(source),
-                image: false,
-              );
-              final uri = resource == null
-                  ? null
-                  : flarkOpenableUri(resource.destination, widget.baseUri);
+              // Only a link's own painted text, or an image in it, opens it.
+              final at = event.globalPosition, doc = _reader.document!;
+              final hit = _viewport.resourceAt(doc, at.col, at.row);
+              final link = hit?.isImage != true
+                  ? hit
+                  : doc.document.resourceAt(
+                      FlarkSelection(hit!.start, hit.end),
+                      image: false,
+                    );
+              if (link == null || !doc.selection.isCollapsed) return;
+              final uri = flarkOpenableUri(link.destination, widget.baseUri);
               if (uri != null) widget.onOpenLink?.call(uri);
             },
             child: BoundsObserver(

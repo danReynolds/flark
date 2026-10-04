@@ -911,4 +911,103 @@ void main() {
       expect(editor.source, '**word!**');
     },
   );
+
+  test('Alt or Ctrl with Backspace deletes the word before the caret', () {
+    mount('one two three', caret: 7);
+    for (final modifier in [KeyModifier.alt, KeyModifier.ctrl]) {
+      tester.sendKey(KeyEvent(KeyCode.backspace, modifiers: {modifier}));
+      expect(editor.source, 'one  three', reason: '$modifier+Backspace');
+      expect(lines().first, 'one  three');
+      key(KeyCode.z, cmd: true);
+      expect(editor.source, 'one two three');
+    }
+  });
+
+  test('a lone modifier press keeps the column vertical moves aim for', () {
+    mount('abcdef\nab\nabcdef', caret: 5);
+    // The kitty protocol and the browser report a modifier's own press.
+    tester.keyboardCapabilities = KeyboardCapabilities.full;
+    key(KeyCode.arrowDown);
+    expect(editor.selection.extent, 9);
+    tester.sendKey(
+      const KeyEvent(KeyCode.leftShift, modifiers: {KeyModifier.shift}),
+    );
+    key(KeyCode.arrowDown, shift: true);
+    expect(editor.selection, const FlarkSelection(9, 15));
+  });
+
+  test('each preedit replaces the last, as typing its text would', () {
+    mount('# Title', caret: 2);
+    final claimant = focus.textCompositionClaimant!;
+    // A preedit space after the marker joins the hidden marker. The next
+    // preedit must still replace it rather than land after it.
+    claimant.onTextCompositionUpdate(' ');
+    claimant.onTextCompositionUpdate('日本');
+    expect(lines().first, '日本Title');
+    claimant.onTextCompositionCommit(null);
+    expect(editor.source, '# 日本Title');
+    key(KeyCode.z, cmd: true);
+    expect(editor.source, '# Title');
+  });
+
+  test('a composition takes the formatting chosen before it', () {
+    mount('plain ');
+    key(KeyCode.b, cmd: true);
+    final claimant = focus.textCompositionClaimant!;
+    claimant.onTextCompositionUpdate('日');
+    claimant.onTextCompositionUpdate('日本');
+    claimant.onTextCompositionCommit(null);
+    expect(editor.source, 'plain **日本**');
+    expect(lines().first, 'plain 日本');
+    expect(tester.render().atColRow(6, 0).style.bold, isTrue);
+  });
+
+  test('a tab too wide for a narrow line paints blank, not a stand-in', () {
+    tester.viewportSize = const CellSize(3, 6);
+    mount('a\tb');
+    expect(lines().join('\n'), isNot(contains('\u{FFFD}')));
+    final layout = CellDocumentLayout(
+      controller,
+      3,
+      const FlarkCellTheme(),
+      CellWidthPolicy.spec,
+    );
+    final tab = layout.lines
+        .expand((line) => line.glyphs)
+        .singleWhere((glyph) => glyph.start == 1);
+    expect(tab.text, ' ');
+  });
+
+  test("a lone mark's stand-in is measured, so the next glyph keeps it", () {
+    // A dotted circle is East Asian Ambiguous: two cells where those widen.
+    mount('\u0301x');
+    tester.textPolicy = const TextPresentationPolicy(
+      widths: CellWidthPolicy.cjk,
+    );
+    expect(lines().first, '\u25cc\u0301x');
+    // With a variation selector it is an emoji sequence, wide everywhere.
+    tester.textPolicy = TextPresentationPolicy.spec;
+    editor.loadMarkdown('\ufe0fx');
+    expect(lines().first, '\u25cc\ufe0fx');
+  });
+
+  test('a shorter terminal or wider glyphs keep the caret in view', () {
+    tester.viewportSize = const CellSize(12, 12);
+    mount('0\n1\n2\n3\n4\n5\n6\n7\n8\n9');
+    expect(focus.caretRect!.top, 9);
+    tester.viewportSize = const CellSize(12, 4);
+    expect(lines(), ['6', '7', '8', '9']);
+    expect(focus.caretRect!.top, 3);
+    // Ambiguous glyphs that become two cells wide wrap the caret's line.
+    tester.viewportSize = const CellSize(10, 4);
+    editor.loadMarkdown('a\nb\nc\n${'\u2460' * 8}');
+    editor.apply(SetSelection.caret(editor.source.length));
+    lines();
+    expect(focus.caretRect, isNotNull);
+    tester.textPolicy = const TextPresentationPolicy(
+      widths: CellWidthPolicy.cjk,
+    );
+    expect(lines().last, '\u2460\u2460\u2460\u2460');
+    expect(focus.caretRect!.top, 3);
+  });
 }

@@ -98,4 +98,107 @@ void main() {
     expect(copied, contains('body'));
     tester.dispose();
   });
+
+  test('a reader opens a link only from the link text it paints', () async {
+    final opened = <Uri>[];
+    final tester = FleuryTester(viewportSize: const CellSize(40, 4));
+    tester.pumpWidget(
+      FleuryApp(
+        title: 'Reader',
+        home: FlarkMarkdown(
+          markdown: 'x[ab](https://a.example)c',
+          onOpenLink: opened.add,
+        ),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(tester.renderToString(), startsWith('xabc'));
+    void click(int col) {
+      for (final kind in [MouseEventKind.down, MouseEventKind.up]) {
+        tester.sendMouse(
+          MouseEvent(button: MouseButton.left, kind: kind, col: col, row: 0),
+        );
+      }
+    }
+
+    click(3); // "c", after the link
+    click(20); // blank, past the end of the line
+    expect(opened, isEmpty);
+    click(2); // "b"
+    expect(opened, [Uri.parse('https://a.example')]);
+    // A preview opens the link around its image, as in Flutter.
+    tester.pumpWidget(
+      FleuryApp(
+        title: 'Reader',
+        home: FlarkMarkdown(
+          markdown: '[![pic](i.png)](https://b.example)',
+          onOpenLink: opened.add,
+          imagePreviewBuilder: (_, _, _) => const Text('PREVIEW'),
+        ),
+      ),
+    );
+    tester.render();
+    final preview = tester
+        .renderToString()
+        .split('\n')
+        .indexWhere((row) => row.contains('PREVIEW'));
+    for (final kind in [MouseEventKind.down, MouseEventKind.up]) {
+      tester.sendMouse(
+        MouseEvent(button: MouseButton.left, kind: kind, col: 2, row: preview),
+      );
+    }
+    expect(opened.last, Uri.parse('https://b.example'));
+    // A link in an image's alt text opens from its own text.
+    tester.pumpWidget(
+      FleuryApp(
+        title: 'Reader',
+        home: FlarkMarkdown(
+          markdown: 'see ![x <https://c.example>](i.png)',
+          onOpenLink: opened.add,
+          imagePreviewBuilder: (_, _, _) => const Text('PREVIEW'),
+        ),
+      ),
+    );
+    final row = tester.renderToString().split('\n').first;
+    for (final kind in [MouseEventKind.down, MouseEventKind.up]) {
+      tester.sendMouse(
+        MouseEvent(
+          button: MouseButton.left,
+          kind: kind,
+          col: row.indexOf('c.example'),
+          row: 0,
+        ),
+      );
+    }
+    expect(opened.last, Uri.parse('https://c.example'));
+    tester.dispose();
+  });
+  test(
+    'a composition the controller ended cannot overwrite loaded text',
+    () async {
+      final c = FlarkController(markdown: 'word');
+      await c.ready;
+      final focus = FocusNode();
+      final tester = FleuryTester(viewportSize: const CellSize(100, 30));
+      tester.pumpWidget(
+        FleuryApp(
+          title: 'Composition',
+          home: FlarkEditor(controller: c, focusNode: focus, autofocus: true),
+        ),
+      );
+      tester.render();
+      c.setSelection(4, 4);
+      tester.dispatcher.dispatch(const TextCompositionEvent.update('xyz'));
+      expect(c.markdown, 'wordxyz');
+      // Fetched content replaces the document while an input method composes.
+      c.loadMarkdown('fresh');
+      tester.dispatcher.dispatch(const TextCompositionEvent.update('xyz!'));
+      expect(c.markdown, contains('fresh'));
+      tester.dispatcher.dispatch(const TextCompositionEvent.cancel());
+      expect(c.markdown, 'fresh');
+      tester.dispose();
+      c.dispose();
+      focus.dispose();
+    },
+  );
 }

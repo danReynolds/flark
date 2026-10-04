@@ -64,8 +64,8 @@ final class CellLine {
   InlineResource? imageLabel;
   bool labelVisible(FlarkSelection selection) =>
       imageLabel == null ||
-      (selection.start <= imageLabel!.contentEnd &&
-          selection.end >= imageLabel!.contentStart);
+      (selection.start <= imageLabel!.end &&
+          selection.end >= imageLabel!.start);
   Iterable<CellLine> get fragments => cells ?? [this];
   bool get editable =>
       rule == null && image == null && codeEdgeTop == null && !headingRule;
@@ -560,11 +560,11 @@ final class CellDocumentLayout {
           : _widths.widthOfText(safe, policy);
       if (width == 0) {
         safe = '◌$safe';
-        width = 1;
+        width = _widths.widthOfText(safe, policy);
       }
       final capacity = math.max(cols - prefix.length - 1, 1);
       if (width > capacity) {
-        safe = _tooWide;
+        safe = grapheme == '\t' ? safe : _tooWide;
         width = 1;
       }
       if (col + width > cols - 1 && line.glyphs.isNotEmpty) {

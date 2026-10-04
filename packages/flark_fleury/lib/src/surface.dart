@@ -16,7 +16,7 @@ final class _Viewport {
     if (painted != null) origin = painted.offset;
   }
 
-  int _revision = -1, _width = -1;
+  int _revision = -1;
   FlarkDocumentState? _editor;
   bool _focused = false;
 
@@ -71,12 +71,11 @@ final class _Viewport {
             : (constraints.maxRows ?? layout.lines.length.clamp(1, 24)),
       ),
     );
-    viewport.rows = result.rows;
     final editor = controller.editor;
     if (!fullDocument &&
         (editor.revision != _revision ||
-            cols != _width ||
-            cached?.theme != theme ||
+            !identical(layout, cached) ||
+            result.rows != rows ||
             !identical(_editor, editor) ||
             (!_focused && focus.hasFocus))) {
       final caret = viewport.caret;
@@ -85,13 +84,39 @@ final class _Viewport {
         viewport.top = caret.row - result.rows + 1;
       }
     }
+    viewport.rows = result.rows;
     if (fullDocument) viewport.top = 0;
     viewport.scroll(0);
     _revision = editor.revision;
     _editor = editor;
-    _width = cols;
     _focused = focus.hasFocus;
     return result;
+  }
+
+  /// The image preview or resource text painted at screen cell ([col], [row]).
+  InlineResource? resourceAt(FlarkDocumentState editor, int col, int row) {
+    final layout = this.layout;
+    if (layout == null || editor.sourceMode) return null;
+    final index = row - origin.row + top;
+    if (index < 0 || index >= layout.lines.length) return null;
+    final x = col - origin.col;
+    final line = layout.lines[index].cellAt(x);
+    if (line.image != null) return line.image;
+    if (!line.labelVisible(editor.selection)) return null;
+    for (final glyph in line.glyphs) {
+      if (x < glyph.col || x >= glyph.col + glyph.width) continue;
+      final source = line.sourceAt(glyph.start);
+      // A link in an image's alt text is the link, as in Flutter.
+      InlineResource? image;
+      for (final resource in editor.document.resources) {
+        if (resource.contentStart <= source && source < resource.contentEnd) {
+          if (!resource.isImage) return resource;
+          image ??= resource;
+        }
+      }
+      return image;
+    }
+    return null;
   }
 
   void dispose() {

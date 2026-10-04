@@ -111,8 +111,8 @@ class _EditorState extends State<FlarkEditorView>
     );
   }
 
-  int? _goalColumn, _compositionStart, _compositionEnd;
-  int? _pasteId, _pasteRevision;
+  int? _goalColumn, _pasteId, _pasteRevision;
+  var _composing = false;
   StringBuffer? _paste;
   InlineResource? _link;
   FlarkEditor? _linkEditor;
@@ -136,26 +136,8 @@ class _EditorState extends State<FlarkEditorView>
     if (mounted) setState(() {});
   }
 
-  InlineResource? _linkAt(int col, int row) {
-    final layout = _inputLayout;
-    if (layout == null || _editor.sourceMode) return null;
-    final index = row - _viewport.origin.row + _viewport.top;
-    if (index < 0 || index >= layout.lines.length) return null;
-    final x = col - _viewport.origin.col;
-    final line = layout.lines[index].cellAt(x);
-    if (line.image != null) return line.image;
-    if (!line.labelVisible(_editor.selection)) return null;
-    for (final glyph in line.glyphs) {
-      if (x < glyph.col || x >= glyph.col + glyph.width) continue;
-      final source = line.sourceAt(glyph.start);
-      for (final resource in _editor.document.resources) {
-        if (resource.contentStart <= source && source < resource.contentEnd) {
-          return resource;
-        }
-      }
-    }
-    return null;
-  }
+  InlineResource? _linkAt(int col, int row) =>
+      _inputLayout == null ? null : _viewport.resourceAt(_editor, col, row);
 
   void _pointerDown(int col, int row, Set<KeyModifier> modifiers) {
     final resource = _linkAt(col, row);
@@ -336,7 +318,7 @@ class _EditorState extends State<FlarkEditorView>
   }
 
   void _resetInput() {
-    _compositionStart = _compositionEnd = null;
+    _composing = false;
     _paste = null;
     _pasteId = _pasteRevision = null;
     _goalColumn = null;
@@ -402,26 +384,16 @@ class _EditorState extends State<FlarkEditorView>
   @override
   KeyEventResult onTextCompositionUpdate(String text) {
     if (widget.readOnly) return KeyEventResult.handled;
-    if (_compositionStart == null) {
+    // Each preedit is typed afresh where composition began, so none leaves a
+    // residue the kernel normalized. One the kernel ended starts again.
+    if (_composing && _editor.composing) {
+      _editor.cancelComposition();
+    } else {
       _finishInput();
-      _editor.beginComposition();
-      _compositionStart = _editor.selection.start;
-      _compositionEnd = _editor.selection.end;
+      _composing = true;
     }
-    if (_editor.apply(
-      ReplaceRange(_compositionStart!, _compositionEnd!, text),
-    )) {
-      // The kernel legalizes and may widen a replacement, so the preedit does
-      // not always land at start + text.length. Take the range it reports, or
-      // the next update overwrites whatever moved into it.
-      _compositionStart = _editor.selection.start - text.length >= 0
-          ? _editor.selection.extent - text.length
-          : _editor.selection.start;
-      _compositionEnd = _editor.selection.extent;
-      if (_compositionStart! > _compositionEnd!) {
-        _compositionStart = _compositionEnd;
-      }
-    }
+    _editor.beginComposition();
+    if (text.isNotEmpty) _editor.apply(InsertText(text));
     return KeyEventResult.handled;
   }
 
@@ -657,7 +629,8 @@ class _EditorState extends State<FlarkEditorView>
           event.consume();
           return;
         case TextEditingKeyAction.backspace:
-          command = const DeleteBackward();
+        case TextEditingKeyAction.killWordLeft:
+          command = DeleteBackward(word: event.hasAlt || event.hasCtrl);
         case TextEditingKeyAction.deleteForward:
           command = const DeleteForward();
         case TextEditingKeyAction.insertNewline:
@@ -669,6 +642,8 @@ class _EditorState extends State<FlarkEditorView>
           event.consume();
           return;
         default:
+          // A key the editor ignores, such as a lone Shift before Shift+Down.
+          _goalColumn = goal;
           return;
       }
     }
