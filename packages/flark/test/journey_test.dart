@@ -15,6 +15,7 @@ part 'journeys/inline_cases.dart';
 part 'journeys/navigation_cases.dart';
 part 'journeys/return_cases.dart';
 part 'journeys/structure_cases.dart';
+part 'journeys/typing_cases.dart';
 
 final class _Session {
   _Session(FlarkParseBackend backend, {String source = '', int caret = 0})
@@ -127,4 +128,5 @@ void main() {
   _navigationCases(backend);
   _returnCases(backend);
   _structureCases(backend);
+  _typingCases(backend);
 }

@@ -222,7 +222,8 @@ void _deletionCases(FlarkParseBackend backend) {
           1,
           const DeleteBackward(),
           '||I\n-|-',
-          ['', 'I'],
+          // The editing view shows a header-only table's delimiter row.
+          ['', 'I', '-|-'],
           const DisplayPosition(0, 0),
         ),
         (
@@ -231,7 +232,7 @@ void _deletionCases(FlarkParseBackend backend) {
           3,
           const DeleteBackward(),
           'D||\n-|-',
-          ['D', ''],
+          ['D', '', '-|-'],
           const DisplayPosition(1, 0),
         ),
         (
@@ -240,7 +241,7 @@ void _deletionCases(FlarkParseBackend backend) {
           1,
           const DeleteBackward(),
           '||\n|-',
-          [''],
+          ['', '|-'],
           const DisplayPosition(0, 0),
         ),
         (

@@ -107,7 +107,7 @@ final class FlarkReadDocument implements FlarkDocumentState {
         _backend,
         markdown,
         const FlarkSelection.collapsed(0),
-        const ProjectionOptions(),
+        const ProjectionOptions(editableDelimiterRows: false),
         liveLimits,
         syncLimit,
         previous: current is FlarkLiveSnapshot ? current.document : null,

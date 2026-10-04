@@ -179,9 +179,13 @@ final class FlarkEditRecorder {
         'containerDepth: ${l.containerDepth}),',
       );
     }
-    if (!editor._options.softBreakAsNewline) {
+    final options = editor._options;
+    if (!options.softBreakAsNewline || !options.editableDelimiterRows) {
       out.writeln(
-        '  options: const ProjectionOptions(softBreakAsNewline: false),',
+        '  options: const ProjectionOptions('
+        '${options.softBreakAsNewline ? '' : 'softBreakAsNewline: false, '}'
+        '${options.editableDelimiterRows ? '' : 'editableDelimiterRows: false'}'
+        '),',
       );
     }
     out.writeln(');');

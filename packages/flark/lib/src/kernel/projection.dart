@@ -9,7 +9,9 @@
 /// row's text does not represent — a fence, a setext underline, a blank line
 /// inside indented code — carries -1 and holds no caret: an edit there would
 /// be invisible, or would paint at another line's position. Bare empty
-/// heading/item prefixes remain literal authoring text until completed.
+/// heading/item prefixes remain literal authoring text until completed, and
+/// in the editing view so does the delimiter row of a table without body
+/// rows.
 library;
 
 import 'dart:collection';
@@ -332,11 +334,19 @@ final class ProjectedRow {
 }
 
 final class ProjectionOptions {
-  const ProjectionOptions({this.softBreakAsNewline = true});
+  const ProjectionOptions({
+    this.softBreakAsNewline = true,
+    this.editableDelimiterRows = true,
+  });
 
   /// Editing view: a source newline inside a paragraph stays a line break.
   /// A read-only view may set false to join lines with a space.
   final bool softBreakAsNewline;
+
+  /// Editing view: a table with no body rows shows its delimiter row as its
+  /// source, so the row being typed keeps a caret. A read-only view sets
+  /// false and shows only the header.
+  final bool editableDelimiterRows;
 }
 
 final class Projection {
@@ -367,7 +377,9 @@ final class Projection {
     source,
     options,
     previous != null &&
-            previous.options.softBreakAsNewline == options.softBreakAsNewline
+            previous.options.softBreakAsNewline == options.softBreakAsNewline &&
+            previous.options.editableDelimiterRows ==
+                options.editableDelimiterRows
         ? _Reuse(previous, model, source)
         : null,
   ).build();
@@ -662,6 +674,15 @@ final class _Builder {
           for (var l = first; l < first + n && l < lineCount; l++) {
             claimed[l] = true;
           }
+          // A table of only a header line and its delimiter line shows the
+          // delimiter line as the source it is, so the row being typed keeps
+          // a caret until the first body row hides it.
+          if (options.editableDelimiterRows &&
+              n == 2 &&
+              first + 1 < lineCount) {
+            final row = _delimiterRow(rows.length, b, first + 1, containerOf);
+            if (row != null) addRow(row);
+          }
         default:
           break;
       }
@@ -865,6 +886,59 @@ final class _Builder {
     contentEnds: [end],
     prefixStarts: [start],
   );
+
+  /// The delimiter line [line] of [table], a table without body rows, as one
+  /// row of its source: a table row of its own (no row block) in the first
+  /// column. Inside containers the line must repeat the header line's
+  /// container prefix exactly, which then stays out of the row; otherwise
+  /// the row stays hidden. The parser identifies the table and its lines;
+  /// nothing here reads the delimiters.
+  ProjectedRow? _delimiterRow(
+    int index,
+    int table,
+    int line,
+    List<int> containerOf,
+  ) {
+    final lineStart = m.lineStartUtf16(line), end = _lineEnd(line);
+    var start = lineStart;
+    final container = containerOf[line];
+    if (container >= 0) {
+      final header = m.lineStartUtf16(m.blockFirstLine(table));
+      final prefix = src.substring(header, m.blockStart(table));
+      if (!src.startsWith(prefix, lineStart) ||
+          lineStart + prefix.length > end) {
+        return null;
+      }
+      start += prefix.length;
+    }
+    return ProjectedRow(
+      index: index,
+      kind: RowKind.tableCell,
+      block: -1,
+      firstLine: line,
+      lineCount: 1,
+      text: src.substring(start, end),
+      segments: [
+        if (end > start)
+          Segment(
+            displayStart: 0,
+            displayEnd: end - start,
+            sourceStart: start,
+            sourceEnd: end,
+            styles: 0,
+            exact: true,
+          ),
+      ],
+      shells: _shellsFor(container),
+      sourceStart: start,
+      sourceEnd: end,
+      contentStarts: [start],
+      contentEnds: [end],
+      prefixStarts: [start],
+      tableBlock: table,
+      column: 0,
+    );
+  }
 
   /// Styles of the runs from [first] to [end], one block's: a run's own style
   /// over its parent's. A parent precedes its children in the same block.
@@ -1242,7 +1316,47 @@ final class _Builder {
 
         final style = _styleOf[r];
         final override = m.displayOverride(r);
-        if (override != null && rs >= cs && re <= ce) {
+        final units =
+            override != null &&
+                rs >= cs &&
+                re <= ce &&
+                m.runKind(r) == RunKind.code
+            ? _alignedCode(rs, re, override)
+            : null;
+        if (units != null) {
+          // A code span in a table cell shows its source less the backslash
+          // of each escaped pipe. The rest maps one to one, and a dropped
+          // backslash goes with its pipe as one unit, so a caret can sit
+          // between the span's other characters.
+          var u = 0;
+          while (u < units.length) {
+            final (from, to) = units[u];
+            if (to - from > 1) {
+              final d0 = text.length;
+              text.write(src.substring(to - 1, to));
+              segments.add(
+                Segment(
+                  displayStart: d0,
+                  displayEnd: text.length,
+                  sourceStart: from,
+                  sourceEnd: to,
+                  styles: style,
+                  exact: false,
+                  run: r,
+                ),
+              );
+              u++;
+              continue;
+            }
+            var v = u;
+            while (v + 1 < units.length &&
+                units[v + 1].$2 - units[v + 1].$1 == 1) {
+              v++;
+            }
+            emitExact(from, units[v].$2, style, r);
+            u = v + 1;
+          }
+        } else if (override != null && rs >= cs && re <= ce) {
           final d0 = text.length;
           text.write(override);
           segments.add(
@@ -1342,6 +1456,28 @@ final class _Builder {
           prefixStarts: prefixes,
         );
     }
+  }
+
+  /// [shown], a code span's display, aligned with its source [start]..[end]:
+  /// one source range per displayed code unit, each one unit long or two
+  /// when the source has a character the display drops before it. Null when
+  /// the display is not the source less such characters.
+  List<(int, int)>? _alignedCode(int start, int end, String shown) {
+    final units = <(int, int)>[];
+    var i = start;
+    for (var j = 0; j < shown.length; j++) {
+      final unit = shown.codeUnitAt(j);
+      if (i < end && src.codeUnitAt(i) == unit) {
+        units.add((i, i + 1));
+        i++;
+      } else if (i + 1 < end && src.codeUnitAt(i + 1) == unit) {
+        units.add((i, i + 2));
+        i += 2;
+      } else {
+        return null;
+      }
+    }
+    return i == end ? units : null;
   }
 
   /// A line the leaf owns but has no content record for keeps the caret at its

@@ -27,6 +27,7 @@ part 'resource_editing.dart';
 part 'table_editing.dart';
 part 'inline_formatting.dart';
 part 'recorder.dart';
+part 'typed_lines.dart';
 
 typedef FlarkListener = void Function();
 
@@ -969,10 +970,40 @@ final class FlarkEditor implements FlarkDocumentState {
     final row = _doc.rowAt(sel.extent);
     // A pipe typed into a table cell is that cell's text. Escaped, it stays
     // in the cell; raw, it would split the row, push the last cell's text out
-    // of the table and leave the caret before the delimiter it made. Paste
-    // and source mode keep Markdown's literal meaning.
-    final cell = typing && row.kind == RowKind.tableCell && typed.contains('|');
-    final text = cell ? typed.replaceAll('|', r'\|') : typed;
+    // of the table and leave the caret before the delimiter it made. A typed
+    // backslash must show as typed too: against the cell's delimiter it
+    // would escape it (GFM reads any backslash before a pipe as escaping it,
+    // a doubled one too), so there it is refused. Paste and source mode keep
+    // Markdown's literal meaning, and a delimiter row shown as its source is
+    // no cell.
+    if (typing &&
+        row.kind == RowKind.tableCell &&
+        row.tableRowBlock >= 0 &&
+        (typed.contains('|') || typed.contains(r'\'))) {
+      return _insertText(
+        row,
+        range,
+        typed,
+        typed.replaceAll('|', r'\|'),
+        cell: true,
+        typing: true,
+      );
+    }
+    return _insertText(row, range, typed, typed, cell: false, typing: typing);
+  }
+
+  /// [_insert] of [text], [typed] as the cell escapes it when [cell];
+  /// without a pending style's delimiters around it unless [styled].
+  bool _insertText(
+    ProjectedRow row,
+    ({int start, int end}) range,
+    String typed,
+    String text, {
+    required bool cell,
+    required bool typing,
+    bool styled = true,
+  }) {
+    final sel = selection;
     if (row.fenced && row.contentStarts.every((start) => start < 0)) {
       final code = _pasteCode(text);
       if (code != null) return code;
@@ -988,14 +1019,17 @@ final class FlarkEditor implements FlarkDocumentState {
           typing: typing && text != '\n' && text.characters.length == 1,
         );
     if (code != null) return code;
-    if (sel.isCollapsed) {
+    if (sel.isCollapsed && styled) {
       final continued = _continueSpan(range.start, text, typing: typing);
       if (continued != null) return continued;
     }
     var inserted = text;
     var caret = range.start + text.length;
-    final p = _pending;
+    final p = styled ? _pending : null;
     PendingStyle? pending;
+    // Where a pending style's opening delimiter goes in [inserted], and how
+    // much text it wraps; -1 without one.
+    var wrapAt = -1, wrapped = 0;
     // Empty-owner intent exits on whitespace. A surviving span continues
     // across spaces, keeping its delimiters around non-whitespace content.
     if (p != null && sel.isCollapsed && text.trim().isNotEmpty) {
@@ -1011,6 +1045,9 @@ final class FlarkEditor implements FlarkDocumentState {
       }
       inserted =
           '${text.substring(0, first)}${p.open}${text.substring(first, last)}${p.close}${text.substring(last)}';
+      if (!text.contains('\n') && !text.contains('\r')) {
+        (wrapAt, wrapped) = (first, last - first);
+      }
       caret = sel.start + p.open.length + text.length;
       if (last < text.length) {
         caret += p.close.length;
@@ -1063,37 +1100,108 @@ final class FlarkEditor implements FlarkDocumentState {
               typed,
             ))
         : null;
-    return _commit(
-      normalized.text,
-      FlarkSelection.collapsed(normalized.caret),
-      pending: normalized.pending,
-      typing: typing && typed != '\n' && typed.characters.length == 1,
-      accept: cells != null
-          ? (next) => _showsTableRow(next, normalized.caret, row.column, cells)
-          : gap.isEmpty
-          ? null
-          : (next) => _keepsStructure(next, [
+    final one = typing && typed != '\n' && typed.characters.length == 1;
+    final fence =
+        typing &&
+        !composing &&
+        sel.isCollapsed &&
+        inserted == text &&
+        (text == '`' || text == '```' || text == '~' || text == '~~~') &&
+        row.kind != RowKind.codeBlock;
+    final underline =
+        typing &&
+            !composing &&
+            sel.isCollapsed &&
+            inserted == text &&
+            row.text.isEmpty &&
+            row.kind != RowKind.codeBlock &&
+            _underlineRun.hasMatch(text)
+        ? text
+        : null;
+    // A pending style's delimiters must pair around the text: after a
+    // backslash, inside an autolink or beside another delimiter run they
+    // would be painted. There the text goes in without the style.
+    bool wraps(FlarkDocument next, int typedAt) =>
+        wrapAt < 0 ||
+        _TypedLines._wrapShows(next, typedAt + wrapAt, p!, wrapped);
+    var placed = gap.isEmpty && cells == null
+        ? _typeOnLine(
+            row,
+            at,
+            inserted,
+            normalized,
+            typed,
+            typing: one,
+            removed: end - start,
+            fence: fence,
+            underline: underline,
+            wraps: wrapAt < 0 ? null : wraps,
+          )
+        : null;
+    if (placed == null) {
+      // Text completing block markup can hide the caret's own line, which
+      // sends the caret to another: a table's delimiter row, or a fence's
+      // opening line (see [_unhideLine]).
+      var hides = false;
+      bool accept(FlarkDocument next, {bool hiding = true}) {
+        if (cells != null &&
+            !_showsTableRow(next, normalized.caret, row.column, cells)) {
+          return false;
+        }
+        if (gap.isNotEmpty &&
+            !_keepsStructure(next, [
               (start, end, inserted.length + gap.length),
-            ], const {}),
-      acceptSourceMode: gap.isNotEmpty,
-      completeTypedFence:
-          typing &&
-          !composing &&
-          sel.isCollapsed &&
-          inserted == text &&
-          (text == '`' || text == '```' || text == '~' || text == '~~~') &&
-          row.kind != RowKind.codeBlock,
-      typedUnderline:
-          typing &&
-              !composing &&
-              sel.isCollapsed &&
-              inserted == text &&
-              row.text.isEmpty &&
-              row.kind != RowKind.codeBlock &&
-              _underlineRun.hasMatch(text)
-          ? text
-          : null,
-    );
+            ], const {})) {
+          return false;
+        }
+        if (!wraps(next, at)) return false;
+        final m = next.model;
+        hides =
+            hiding &&
+            one &&
+            row.kind != RowKind.tableCell &&
+            m.lineOfUtf16(next.selection.extent) !=
+                m.lineOfUtf16(normalized.caret);
+        return !hides;
+      }
+
+      placed = _commit(
+        normalized.text,
+        FlarkSelection.collapsed(normalized.caret),
+        pending: normalized.pending,
+        typing: one,
+        accept: accept,
+        acceptSourceMode: cells == null,
+        completeTypedFence: fence,
+        typedUnderline: underline,
+      );
+      if (!placed && hides && _lastRejection == null) {
+        placed =
+            _unhideLine(row, at, normalized, typed) ??
+            _lastRejection == null &&
+                _commit(
+                  normalized.text,
+                  FlarkSelection.collapsed(normalized.caret),
+                  pending: normalized.pending,
+                  typing: one,
+                  acceptSourceMode: true,
+                  accept: (next) => accept(next, hiding: false),
+                );
+      }
+    }
+    // History keeps the intent the text was typed with.
+    if (!placed && wrapAt >= 0 && _lastRejection == null) {
+      return _insertText(
+        row,
+        range,
+        typed,
+        text,
+        cell: cell,
+        typing: typing,
+        styled: false,
+      );
+    }
+    return placed;
   }
 
   /// Where [text] placed at [at] in [row] goes, and the space to insert after
@@ -1304,9 +1412,10 @@ final class FlarkEditor implements FlarkDocumentState {
     return (source: separated, caret: moved);
   }
 
-  /// The parser identifies a newly typed, bare three-character opener. Pair it
-  /// before publication, even if a later existing fence would close it. Source
-  /// input and paste retain Markdown's ordinary unclosed-fence meaning.
+  /// The parser identifies a newly typed, bare three-character opener, its
+  /// last marker typed anywhere in the run. Pair it before publication, even
+  /// if a later existing fence would close it. Source input and paste retain
+  /// Markdown's ordinary unclosed-fence meaning.
   ({String source, int caret})? _completeTypedFence(
     String candidate,
     int caret,
@@ -1318,7 +1427,8 @@ final class FlarkEditor implements FlarkDocumentState {
           block.flags & 1 == 0 ||
           block.attr != 3 ||
           block.firstLine != line ||
-          block.startUtf16 + block.attr != caret ||
+          caret <= block.startUtf16 ||
+          caret > block.startUtf16 + block.attr ||
           model.codeInfoStart(block.index) != model.codeInfoEnd(block.index)) {
         continue;
       }
@@ -1333,7 +1443,10 @@ final class FlarkEditor implements FlarkDocumentState {
         block.startUtf16,
         block.index,
       );
-      final fence = candidate.substring(block.startUtf16, caret);
+      final fence = candidate.substring(
+        block.startUtf16,
+        block.startUtf16 + block.attr,
+      );
       // An empty info range may follow ASCII padding on the opener line.
       final openerEnd = model.codeInfoStart(block.index);
       final newline = candidate.startsWith('\r\n', openerEnd) ? '\r\n' : '\n';
@@ -1385,6 +1498,17 @@ final class FlarkEditor implements FlarkDocumentState {
       '$text$gap',
       at + text.length,
     );
+    if (s == e && gap.isEmpty) {
+      final placed = _typeOnLine(
+        _doc.rowAt(s),
+        at,
+        text,
+        normalized,
+        text,
+        typing: false,
+      );
+      if (placed != null) return placed;
+    }
     return _commit(
       normalized.text,
       FlarkSelection.collapsed(normalized.caret),
@@ -1402,6 +1526,8 @@ final class FlarkEditor implements FlarkDocumentState {
   bool _delete({required bool backward, bool word = false}) {
     final sel = selection;
     if (_wholeRange(sel.start, sel.end)) return _replaceWhole('');
+    final delimiter = _deleteInDelimiterRow(backward: backward, word: word);
+    if (delimiter != null) return delimiter;
     if (!sel.isCollapsed) {
       final range = _contentRange(sel.start, sel.end);
       if (!_supportedRange(range.start, range.end)) return false;
@@ -2588,6 +2714,25 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   bool _returnFromTable(ProjectedRow row) {
+    // A delimiter row shown as its source is none of the table's rows:
+    // Return ends its line, and the next line takes the first body row.
+    if (row.tableRowBlock < 0) {
+      final caret = selection.extent;
+      final line = _doc.model.lineOfUtf16(caret);
+      // The new line repeats the delimiter row's container prefix.
+      final nl =
+          '${_lineBreakAt(caret)}'
+          '${source.substring(_lineStart(source, _doc.model, line), row.sourceStart)}';
+      return selection.isCollapsed &&
+          _commit(
+            source.replaceRange(caret, caret, nl),
+            FlarkSelection.collapsed(caret + nl.length),
+            typing: false,
+            acceptSourceMode: true,
+            accept: (next) =>
+                _keepsStructure(next, [(caret, caret, nl.length)], {row.index}),
+          );
+    }
     for (var i = row.index + 1; i < projection.rows.length; i++) {
       final next = projection.rows[i];
       if (next.kind != RowKind.tableCell || next.tableBlock != row.tableBlock) {

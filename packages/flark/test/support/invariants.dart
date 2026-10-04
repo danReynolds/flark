@@ -66,7 +66,15 @@ void checkInvariants(String src, RenderModel m, Projection p, String label) {
       if (!s.exact && s.run >= 0) {
         final run = m.runs.elementAt(s.run);
         final replacement = run.displayOverride;
-        if (replacement != null) {
+        // A code span's payload is its source less escaped pipes'
+        // backslashes, shown one escaped pipe per segment.
+        if (replacement != null && run.kind == RunKind.code) {
+          expect(
+            replacement.contains(piece),
+            isTrue,
+            reason: '$label: parser code payload',
+          );
+        } else if (replacement != null) {
           expect(
             piece,
             replacement,

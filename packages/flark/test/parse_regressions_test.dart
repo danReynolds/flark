@@ -10,8 +10,10 @@ import 'support/invariants.dart';
 void main() {
   final backend = createParseBackend();
 
+  // The last cell of a table row: a delimiter row the editor shows as its
+  // source, under a table without body rows, is none.
   String cellText(FlarkEditor e) => e.projection.rows
-      .lastWhere((r) => r.kind == RowKind.tableCell)
+      .lastWhere((r) => r.kind == RowKind.tableCell && r.tableRowBlock >= 0)
       .text
       .trim();
 
@@ -55,6 +57,8 @@ void main() {
         (RowKind.paragraph, '---'),
         (RowKind.tableCell, 'a'),
         (RowKind.tableCell, 'b'),
+        // A table without body rows shows its delimiter row as its source.
+        (RowKind.tableCell, '|---|---|'),
       ],
     );
   });

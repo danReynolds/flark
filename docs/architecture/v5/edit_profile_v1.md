@@ -92,6 +92,46 @@ additional product principles or testing layers.
   above, a paragraph, or a thematic break for `---`. The parser identifies the
   underline and confirms the separation. Paste, IME preedit and source mode
   keep Markdown's literal meaning.
+- Text typed, pasted or put (one line) on an empty row starts a block on that
+  line, in the containers the row shows. An empty line in a list item or
+  footnote may lack their indentation, so the line gets the innermost
+  container's continuation prefix; an item marker the projection hides with
+  no space after it (`1.`, `-` after another item, `- [ ]`) gets the
+  separating space, so the item keeps the text; and an empty line after or
+  before the typed line keeps the blocks around it apart where Markdown would
+  read the text into them (a paragraph in another container read on lazily, a
+  table, an HTML block) or them into the text (indented code, an empty item, a
+  definition, a setext underline or rule, a footnote's lazy line). The kernel
+  commits the first spelling the parser reads with every other row keeping
+  its kind, the kinds of its containers and its shown text, nothing the
+  projection hid painted, and the typed text in the row's containers or in
+  containers it opened (or whose prefix the line already carries, as Return
+  leaves a footnote's next line). A paragraph in the same containers may take
+  the typed line as a line of its own, as Return then typing continues it, a
+  line under a table may start its first body row, and text that fills an
+  empty item takes back the blocks indented for it, which the empty item had
+  left out (a lazy paragraph does not count). Where no spelling qualifies the
+  edit is refused; at a limit a typed underline is typed as it is.
+- Text typed on a thematic break starts a block on the line after it, in the
+  rule's containers; the rule stays a rule. Text typed beside a bare marker
+  shown as text joins it as paragraph text, with an empty line after it when
+  the block after would otherwise read on as part of it.
+- A lazy line shows inside its containers without their prefix. Text typed on
+  it commits as it is unless it would open or move a block, which then gets
+  the prefix of the paragraph's first line, so a typed `# ` makes a heading in
+  the item rather than ending the list.
+- A space or tab typed where a line's content starts (alone or over a
+  selection there) is indentation or marker padding Markdown does not show;
+  where it would move a block (an item's content column re-nesting its
+  children, a paragraph becoming indented code) it is refused.
+- A pending style's delimiters must pair around the typed text and hide;
+  where they cannot (after a backslash, inside an autolink, against another
+  delimiter run) the text is typed without the style.
+- Typed text can complete block markup that hides the caret's own line. A
+  table delimiter row gets a line break after it when the lines below would
+  become its rows (see the table rules), and a fence marker that would make a
+  line with text after it an opening fence, hiding that text in its info
+  string and turning what follows into code, is escaped.
 - A heading's opening separator belongs to its hidden prefix, including when
   it has no content yet. Its empty rendered row is exactly empty and its caret
   sits at the content origin; first-frame checks must not trim away a misplaced
@@ -248,9 +288,15 @@ Return and Backspace operate on the visible block structure:
   CRLF document stays CRLF;
 - terminal Return creates one writable following paragraph;
 - table Return moves to the next row in the same column, then exits the table;
-  a typed `|` is escaped as cell text; cell-boundary deletion rejects
-  atomically, emptying a cell keeps its row's cells (a pipe spells the empty
-  cell), and table restructuring uses source mode;
+  a typed `|` is escaped as cell text, and a typed `\` that would escape a
+  cell's delimiter (GFM reads any backslash before a pipe as escaping it) is
+  refused; cell-boundary deletion rejects atomically, emptying a cell keeps
+  its row's cells (a pipe spells the empty cell), and table restructuring
+  uses source mode. In the editing view a table without body rows shows its
+  delimiter row as its source, a row of its own under the header: the row
+  being typed keeps the caret, edits that would dissolve the table are
+  refused, Return at its end opens the next line in its containers, and the
+  first body row typed there hides it. Read-only views show only the header;
 - Backspace at a supported block start merges, lifts, or removes the structural
   boundary users see. A lifted line stays in its outer containers, and when
   the block after it would read on as part of it (a list numbered past 1,
@@ -288,8 +334,8 @@ intentionally literal or incomplete syntax remains visible authoring content.
 ### Typed fence creation
 
 In rendered mode, typing the third backtick (or tilde) on an otherwise bare
-opening-fence line immediately creates one empty code line and a matching
-closing fence. The caret starts inside that line. A writable gap follows the
+opening-fence line, before, between or after the other two, immediately
+creates one empty code line and a matching closing fence. The caret starts inside that line. A writable gap follows the
 block; existing following prose, headings and code blocks stay outside it.
 The parser authenticates the opener and the completed Markdown before the
 single publication. Quotes and list items retain their continuation prefixes.
@@ -315,7 +361,9 @@ Code is literal: edits the code delegate does not propose (typing it
 declines, deletion, replacement, paste and composition) change the projected
 body as given. Every code edit gives new lines the edited line's container
 prefix, and text put on an empty line that omits the indentation of its list
-item or footnote takes the prefix the fence's own lines continue with. When an
+item or footnote takes the prefix the fence's own lines continue with. Text
+typed on an empty line of indented code that lacks the code's indentation
+takes the indentation of the block's first line, so it stays code. When an
 edit leaves a body line the parser would read as the closing fence (a typed
 or pasted fence character, a run a deletion joins, an outdented run), the
 fences grow past the body's longest run of their character instead; while the
