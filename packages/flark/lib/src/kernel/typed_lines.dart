@@ -21,11 +21,12 @@ extension _TypedLines on FlarkEditor {
   /// Commits [plain], text typed or pasted at [at] on [row] (the caret's
   /// row) as `[inserted]` over [removed] characters with the caret
   /// [plain]'s, or another spelling of it; null when [row] is ordinary text,
-  /// where [plain] is committed as it is. Only a lazy line and leading
-  /// whitespace take a selection. [wraps] checks that a pending style's
-  /// delimiters around the text pair. [fence] and [underline] are the
-  /// typed-construct completions [_commit] makes of the spelling that is
-  /// [plain].
+  /// where [plain] is committed as it is. Only a lazy line, leading
+  /// whitespace and a table's delimiter row shown as its source take a
+  /// selection, and only that row lines of text. [wraps] checks that a
+  /// pending style's delimiters around the text pair. [fence] and
+  /// [underline] are the typed-construct completions [_commit] makes of the
+  /// spelling that is [plain].
   bool? _typeOnLine(
     ProjectedRow row,
     int at,
@@ -38,26 +39,33 @@ extension _TypedLines on FlarkEditor {
     String? underline,
     bool Function(FlarkDocument next, int typedAt)? wraps,
   }) {
-    if (typed.contains('\n') || typed.contains('\r')) return null;
     final m = _doc.model, line = m.lineOfUtf16(at);
     final i = line - row.firstLine;
-    if (i < 0 ||
-        i >= row.contentStarts.length ||
-        row.contentStarts[i] < 0 ||
-        m.lineOfUtf16(at + removed) != line) {
+    if (i < 0 || i >= row.contentStarts.length || row.contentStarts[i] < 0) {
       return null;
     }
     // Ordinary text in a row returns here, before anything is computed.
     final delimiterRow = row.kind == RowKind.tableCell && row.tableRowBlock < 0;
+    // Lines pasted into a delimiter row shown as its source must keep the
+    // table too; elsewhere they keep Markdown's literal meaning.
+    final lines = typed.contains('\n') || typed.contains('\r');
+    if (lines && !delimiterRow) return null;
     final lazy =
         row.kind == RowKind.paragraph &&
         i > 0 &&
         row.shells.isNotEmpty &&
         row.prefixStarts[i] == row.contentStarts[i];
+    // Whitespace typed where a line's content shows, where its first
+    // character's hidden syntax starts it too, and over a selection from
+    // there, even one reaching the row's later lines.
     final leading =
         (row.kind == RowKind.paragraph || row.kind == RowKind.heading) &&
-        at == row.contentStarts[i] &&
-        typed.trim().isEmpty;
+        typed.trim().isEmpty &&
+        (at == row.contentStarts[i] ||
+            row.displayForSource(at).$1 ==
+                row.displayForSource(row.contentStarts[i]).$1) &&
+        m.lineOfUtf16(at + removed) < row.firstLine + row.lineCount;
+    if (!leading && m.lineOfUtf16(at + removed) != line) return null;
     if (!lazy &&
         !leading &&
         !delimiterRow &&
@@ -92,7 +100,11 @@ extension _TypedLines on FlarkEditor {
     final plainSpelling = (
       source: plain.text,
       caret: plain.caret,
-      edits: [(at, at + removed, removed + grown)],
+      // Whitespace typed in the hidden syntax that starts a line moves out
+      // before it, so the edit is read from the text.
+      edits: [
+        leading ? _changeTo(plain.text) : (at, at + removed, removed + grown),
+      ],
       typedAt: at,
     );
     // The continuation prefix of [row]'s line (a rule's or a bare marker's,
@@ -110,20 +122,32 @@ extension _TypedLines on FlarkEditor {
       // container when it lacks it (an empty line in an item or footnote may
       // have no indentation), a hidden empty item's marker a separating
       // space, and an empty line before or after keeps the blocks around it
-      // apart where Markdown would read the text into them.
+      // apart where Markdown would read the text into them. Whitespace the
+      // row does not show after its containers' prefix stays unshown: where
+      // it would show (indentation that makes the text code, or that joins
+      // it to code or literal HTML), the text goes where the prefix ends,
+      // an empty item's marker padded with one space. Typing never shortens
+      // the source: the whitespace becomes spaces before the text, which a
+      // paragraph does not show, or the blank line after or before it.
       final existing = source.substring(lineStart, at);
       final inner = row.shells.isEmpty ? null : row.shells.last;
       final opens = inner != null && m.blockFirstLine(inner.block) == line;
-      var lead = existing, sep = '';
+      var lead = existing, sep = '', bare = '';
       if (inner != null) {
         if (inner.kind == ShellKind.blockQuote) {
           sep = existing.trimRight();
+          bare = sep.length < existing.length ? '$sep ' : sep;
         } else {
           final prefix = _innerPrefix(inner.block);
           sep = prefix.trimRight();
           if (!opens && prefix != existing && prefix.startsWith(existing)) {
             lead = prefix;
           }
+          bare = !opens
+              ? prefix
+              : inner.kind == ShellKind.item
+              ? _emptyItemLead(inner, lineStart)
+              : existing;
         }
       }
       // An item marker the projection hides, with no space after it: text
@@ -135,17 +159,60 @@ extension _TypedLines on FlarkEditor {
           (at == m.itemMarkerEnd(inner.block) || at == inner.checkboxEnd) &&
           !FlarkEditor._isSpace(source, at - 1);
       if (spaced) lead = '$existing ';
+      final moved = bare != lead && bare != existing;
+      final item = opens && inner.kind == ShellKind.item;
+      // The blank line that keeps the blocks apart from text at [bare] is
+      // the line's own whitespace (after an empty item's marker) where the
+      // containers' prefix alone would leave the line shorter than it was.
+      final room = bare.length + nl.length + sep.length >= existing.length;
+      final blank = room
+          ? sep
+          : item
+          ? existing.substring(bare.length - 1)
+          : existing;
+      // Under a fence with no body and no closing fence the line would be
+      // its first line of code: the fence closes first, so the text starts
+      // a block after it, where the row shows it.
+      final above = row.index > 0 ? projection.rows[row.index - 1] : null;
+      if (above != null &&
+          above.fenced &&
+          _bodyless(above) &&
+          m.blockFlags(above.block) & 2 == 0 &&
+          above.firstLine + above.lineCount == line) {
+        final fenceAt = m.blockStart(above.block);
+        final closer =
+            '${_continuationPrefix(source, m, above.firstLine, fenceAt, above.block)}'
+            '${source.substring(fenceAt, fenceAt + m.blockAttr(above.block))}';
+        spellings.add(around('$closer$nl', lead, ''));
+      }
       if (lead == existing) {
         spellings.add(plainSpelling);
       } else {
         spellings.add(around('', lead, ''));
         if (!spaced) spellings.add(plainSpelling);
       }
-      if (hasNext) spellings.add(around('', lead, '$nl$sep'));
-      if (line > 0) {
-        spellings.add(around('$sep$nl', lead, ''));
-        if (hasNext) spellings.add(around('$sep$nl', lead, '$nl$sep'));
+      if (moved) {
+        final pad = existing.length - bare.length;
+        final padded = '$bare${' ' * (pad < 0 ? 0 : pad)}';
+        if (padded != existing) spellings.add(around('', padded, ''));
       }
+      final after = moved ? around('', bare, '$nl$blank') : null;
+      if (hasNext) {
+        spellings.add(around('', lead, '$nl$sep'));
+        if (after != null) spellings.add(after);
+      }
+      if (line > 0) {
+        final before = moved && !item ? '$blank$nl' : null;
+        spellings.add(around('$sep$nl', lead, ''));
+        if (before != null) spellings.add(around(before, bare, ''));
+        if (hasNext) {
+          spellings.add(around('$sep$nl', lead, '$nl$sep'));
+          if (before != null) spellings.add(around(before, bare, '$nl$sep'));
+        }
+      }
+      // On the last line a blank line after the text would trail the
+      // document, so one before it comes first.
+      if (!hasNext && after != null) spellings.add(after);
     } else if (removed == 0 && row.kind == RowKind.thematicBreak) {
       // A rule stays a rule: the text starts a block on the line after it.
       final lead = continued();
@@ -242,41 +309,49 @@ extension _TypedLines on FlarkEditor {
     // it is passed over, as the typed underline's blank line is.
     FlarkRejection? rejected;
     var limited = false;
-    for (final s in spellings) {
-      final isPlain = identical(s, plainSpelling);
-      var read = false;
-      _lastRejection = null;
-      if (_commit(
-        s.source,
-        FlarkSelection.collapsed(s.caret),
-        typing: typing,
-        pending: plain.pending,
-        completeTypedFence: isPlain && fence,
-        typedUnderline: isPlain ? underline : null,
-        accept: (next) {
-          read = true;
-          return (wraps == null || wraps(next, s.typedAt)) &&
-              (quick &&
-                      identical(s, spellings.first) &&
-                      _sameRow(next, row, s) ||
-                  _keepsTyped(
-                    next,
-                    row,
-                    s.edits,
-                    s.caret,
-                    s.typedAt,
-                    keepRow: keepRow,
-                    sameKind: sameKind,
-                  ));
-        },
-      )) {
-        return true;
-      }
-      if (isPlain) {
-        rejected = _lastRejection;
-      } else if (!read) {
-        // Past the source limit, or past the live tier into source mode.
-        limited = true;
+    // Text typed on an empty row takes the first spelling that shows no
+    // whitespace the row hid. Where none does (literal HTML that runs on to
+    // the end of the document shows the blank lines it takes), the first
+    // that keeps the rest serves.
+    for (final strict in row.kind == RowKind.blank ? [true, false] : [false]) {
+      if (rejected != null) break;
+      for (final s in spellings) {
+        final isPlain = identical(s, plainSpelling);
+        var read = false;
+        _lastRejection = null;
+        if (_commit(
+          s.source,
+          FlarkSelection.collapsed(s.caret),
+          typing: typing,
+          pending: plain.pending,
+          completeTypedFence: isPlain && fence,
+          typedUnderline: isPlain ? underline : null,
+          accept: (next) {
+            read = true;
+            return (wraps == null || wraps(next, s.typedAt)) &&
+                (quick &&
+                        identical(s, spellings.first) &&
+                        _sameRow(next, row, s) ||
+                    _keepsTyped(
+                      next,
+                      row,
+                      s.edits,
+                      s.caret,
+                      s.typedAt,
+                      keepRow: keepRow,
+                      sameKind: sameKind,
+                      strict: strict,
+                    ));
+          },
+        )) {
+          return true;
+        }
+        if (isPlain) {
+          rejected = _lastRejection;
+        } else if (!read) {
+          // Past the source limit, or past the live tier into source mode.
+          limited = true;
+        }
       }
     }
     _lastRejection = rejected;
@@ -368,15 +443,23 @@ extension _TypedLines on FlarkEditor {
       end = row.sourceForDisplay(to);
     }
     return start < end &&
-        _commit(
-          source.replaceRange(start, end, ''),
-          FlarkSelection.collapsed(start),
-          typing: sel.isCollapsed && !word,
-          acceptSourceMode: true,
-          accept: (next) =>
-              _keepsTyped(next, row, [(start, end, 0)], start, start),
-        );
+        _cutDelimiterRow(row, start, end, typing: sel.isCollapsed && !word);
   }
+
+  /// Deletes [start]..[end] of [row], a delimiter row shown as its source,
+  /// keeping its table (see [_deleteInDelimiterRow]).
+  bool _cutDelimiterRow(
+    ProjectedRow row,
+    int start,
+    int end, {
+    required bool typing,
+  }) => _commit(
+    source.replaceRange(start, end, ''),
+    FlarkSelection.collapsed(start),
+    typing: typing,
+    acceptSourceMode: true,
+    accept: (next) => _keepsTyped(next, row, [(start, end, 0)], start, start),
+  );
 
   /// Whether the caret of [s] is still in [row]'s paragraph in [next]: the
   /// row starts where it did and keeps its kind and containers, so typing on
@@ -405,8 +488,11 @@ extension _TypedLines on FlarkEditor {
   /// inside those when the typed text, or the bare marker it completes,
   /// opened them, or when its line carries their prefix (the indentation
   /// Return gave a footnote's next line); not when it reads on lazily.
-  /// [keepRow] checks [row] too; [sameKind] keeps the caret's row of
-  /// [row]'s kind.
+  /// An empty item stays one, rather than becoming the setext underline of
+  /// the typed text, and a fence that shows no body keeps none. [keepRow]
+  /// checks [row] too; [sameKind] keeps the caret's row of [row]'s kind.
+  /// [strict], for text typed on an empty row, has it start its line with
+  /// no whitespace shown that the current projection hides.
   bool _keepsTyped(
     FlarkDocument next,
     ProjectedRow row,
@@ -415,6 +501,7 @@ extension _TypedLines on FlarkEditor {
     int typedAt, {
     bool keepRow = false,
     bool sameKind = false,
+    bool strict = false,
   }) {
     int forward(int offset) {
       var shift = 0;
@@ -449,7 +536,13 @@ extension _TypedLines on FlarkEditor {
     final now = next.projection.rows;
     var j = 0;
     for (final old in projection.rows) {
-      if (old.kind == RowKind.blank || old.index == row.index && !keepRow) {
+      final emptyItem =
+          old.kind == RowKind.blank &&
+          old.shells.isNotEmpty &&
+          old.shells.last.kind == ShellKind.item &&
+          _doc.model.blockFirstLine(old.shells.last.block) == old.firstLine;
+      if (old.kind == RowKind.blank && !emptyItem ||
+          old.index == row.index && !keepRow) {
         continue;
       }
       final at = forward(old.sourceStart);
@@ -460,6 +553,20 @@ extension _TypedLines on FlarkEditor {
       final holder = at > now[j].sourceEnd && j + 1 < now.length
           ? now[j + 1]
           : now[j];
+      if (emptyItem) {
+        if (holder.kind == RowKind.blank && _sameContainers(holder, old) ||
+            holder.kind == RowKind.paragraph &&
+                holder.block >= 0 &&
+                next.model.blockKind(holder.block) == BlockKind.item) {
+          continue;
+        }
+        return false;
+      }
+      if (old.fenced &&
+          _bodyless(old) &&
+          !(holder.fenced && _bodyless(holder))) {
+        return false;
+      }
       // A bare marker shows as text only while it starts its own list, and
       // as an empty item once another item follows it: a presentation the
       // profile lets flip.
@@ -497,6 +604,9 @@ extension _TypedLines on FlarkEditor {
         typedRow.kind != RowKind.blank) {
       return false;
     }
+    // An empty row shows nothing, so the text typed on it starts its line:
+    // no whitespace or tab column shows before it.
+    if (strict && !_startsLine(next, typedAt)) return false;
     final shells = typedRow.shells;
     if (shells.length < row.shells.length) return false;
     final from = _isBarePrefixRow(row) ? row.sourceStart : typedAt;
@@ -518,7 +628,38 @@ extension _TypedLines on FlarkEditor {
         return false;
       }
     }
-    return !_revealsHiddenText(next, back);
+    // Nor does text typed on an empty row show whitespace that row or the
+    // blocks around it hid, as a line it joins to code or HTML would.
+    return !_revealsHiddenText(next, back, whitespace: strict);
+  }
+
+  /// Whether [next] shows the text typed at [typedAt] first on its line.
+  static bool _startsLine(FlarkDocument next, int typedAt) {
+    final row = next.rowAt(typedAt);
+    final d = row.displayForSource(typedAt).$1;
+    return d == 0 || row.text.codeUnitAt(d - 1) == 0x0A;
+  }
+
+  /// Whether [row], a fenced code row, has no line of code.
+  static bool _bodyless(ProjectedRow row) =>
+      row.contentStarts.every((start) => start < 0);
+
+  /// The edit that made [text] from the current source: where the two first
+  /// differ, where that difference ends in the source, and its length in
+  /// [text].
+  (int, int, int) _changeTo(String text) {
+    final shorter = source.length < text.length ? source.length : text.length;
+    var p = 0;
+    while (p < shorter && source.codeUnitAt(p) == text.codeUnitAt(p)) {
+      p++;
+    }
+    var q = 0;
+    while (q < shorter - p &&
+        source.codeUnitAt(source.length - 1 - q) ==
+            text.codeUnitAt(text.length - 1 - q)) {
+      q++;
+    }
+    return (p, source.length - q, text.length - q - p);
   }
 
   /// Whether [holder], [old]'s row in [next] holding its start [at], is in
@@ -569,11 +710,32 @@ extension _TypedLines on FlarkEditor {
     final marker = source
         .substring(m.blockStart(c), end)
         .replaceAll(_notTab, ' ');
+    // A marker right after a quote's `>` left it no optional space, and the
+    // first of the spaces put in its place would be read as one.
+    final pad =
+        outer.isNotEmpty && !FlarkEditor._isSpace(outer, outer.length - 1)
+        ? ' '
+        : '';
     // A marker with no padding in the source starts an item with a blank
     // line, whose content is one column past it.
     return FlarkEditor._isSpace(source, end - 1)
-        ? '$outer$marker'
-        : '$outer$marker ';
+        ? '$outer$pad$marker'
+        : '$outer$pad$marker ';
+  }
+
+  /// The lead for text typed on the first line of [item], an empty item,
+  /// from [lineStart]: its line up to the marker (or the task checkbox) and
+  /// one space, the padding Markdown puts its content after. Wider padding
+  /// would move the item's content column, and indentation past four
+  /// columns would make the text code.
+  String _emptyItemLead(Shell item, int lineStart) {
+    final m = _doc.model, start = m.blockStart(item.block);
+    var end = m.itemMarkerEnd(item.block);
+    while (end > start && FlarkEditor._isSpace(source, end - 1)) {
+      end--;
+    }
+    if (item.task && item.checkboxEnd > end) end = item.checkboxEnd;
+    return '${source.substring(lineStart, end)} ';
   }
 
   /// Whether [row] shows a bare empty heading or item marker as text.

@@ -101,7 +101,17 @@ additional product principles or testing layers.
   before the typed line keeps the blocks around it apart where Markdown would
   read the text into them (a paragraph in another container read on lazily, a
   table, an HTML block) or them into the text (indented code, an empty item, a
-  definition, a setext underline or rule, a footnote's lazy line). The kernel
+  definition, a setext underline or rule, a footnote's lazy line). Whitespace
+  after the row's container prefix, which the row does not show, stays
+  unshown: where text run into it would show it (a tab's columns before the
+  code its indentation makes of the text, or a line of code or literal HTML
+  the text joins), the text goes where the prefix ends, an empty item's marker
+  padded with one space, unless no spelling keeps the rest that way (literal
+  HTML that runs on to the end of the document). Typing never shortens the
+  source: the whitespace becomes spaces a paragraph does not show, or the
+  blank line after or before the text. An empty item stays one rather than
+  underlining the text, and under a fence with no body and no closing fence
+  the fence closes first, so the text is not its code. The kernel
   commits the first spelling the parser reads with every other row keeping
   its kind, the kinds of its containers and its shown text, nothing the
   projection hid painted, and the typed text in the row's containers or in
@@ -120,10 +130,12 @@ additional product principles or testing layers.
   it commits as it is unless it would open or move a block, which then gets
   the prefix of the paragraph's first line, so a typed `# ` makes a heading in
   the item rather than ending the list.
-- A space or tab typed where a line's content starts (alone or over a
-  selection there) is indentation or marker padding Markdown does not show;
-  where it would move a block (an item's content column re-nesting its
-  children, a paragraph becoming indented code) it is refused.
+- A space or tab typed where a line's content starts (alone, inside the
+  hidden syntax that starts it, or over a selection from there, even one
+  reaching the row's later lines) is indentation or marker padding Markdown
+  does not show; where it would move a block (an item's content column
+  re-nesting its children, a paragraph becoming indented code, an emptied
+  item dropping the blocks after it) it is refused.
 - A pending style's delimiters must pair around the typed text and hide;
   where they cannot (after a backslash, inside an autolink, against another
   delimiter run) the text is typed without the style.
@@ -290,13 +302,22 @@ Return and Backspace operate on the visible block structure:
 - table Return moves to the next row in the same column, then exits the table;
   a typed `|` is escaped as cell text, and a typed `\` that would escape a
   cell's delimiter (GFM reads any backslash before a pipe as escaping it) is
-  refused; cell-boundary deletion rejects atomically, emptying a cell keeps
-  its row's cells (a pipe spells the empty cell), and table restructuring
-  uses source mode. In the editing view a table without body rows shows its
-  delimiter row as its source, a row of its own under the header: the row
-  being typed keeps the caret, edits that would dissolve the table are
-  refused, Return at its end opens the next line in its containers, and the
-  first body row typed there hides it. Read-only views show only the header;
+  refused; other text typed, pasted or put on one line in a cell keeps its
+  row's cells (whitespace that would indent the row out of its table, or a
+  pasted or replacing pipe that would split it, is refused); cell-boundary
+  deletion rejects atomically, a deletion in a cell shows none of its row's
+  other source (one that would leave a backslash escaping the cell's delimiter
+  refuses), emptying a cell keeps its row's cells (a pipe spells the empty
+  cell, so a cell the table drops stays dropped), text put in a cell a short
+  row never wrote adds the pipes it needs right after the row's last cell
+  (which shows no new space; after a backslash, which would escape a pipe, a
+  space goes first), and table restructuring uses source mode. In the editing
+  view a table without body rows shows its delimiter row as its source, a row
+  of its own under the header: the row being typed keeps the caret, edits that
+  would dissolve the table (typed, deleted, replaced or pasted, lines
+  included) are refused, Return at its end opens the next line in its
+  containers, and the first body row typed there hides it. Read-only views
+  show only the header;
 - Backspace at a supported block start merges, lifts, or removes the structural
   boundary users see. A lifted line stays in its outer containers, and when
   the block after it would read on as part of it (a list numbered past 1,

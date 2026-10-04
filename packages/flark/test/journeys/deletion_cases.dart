@@ -308,6 +308,40 @@ void _deletionCases(FlarkParseBackend backend) {
       );
     });
 
+    test('a deletion in a cell shows none of its row\'s other source', () {
+      // A backslash a deletion leaves before the cell's closing pipe would
+      // escape it, painting the pipe as the cell's text: refused, as a typed
+      // backslash there is. An emptied first cell of a row without its
+      // leading pipe would make that pipe lead the row, showing the cell
+      // the table drops: the emptied cell keeps a pipe of its own instead.
+      for (final (source, caret, command) in [
+        ('| a |\n| - |\n| #\\ |', 16, const DeleteForward()),
+        ('\n| a#}<\\\t|\n| - |\n| b|', 9, const DeleteBackward()),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, applied: false, source: source);
+      }
+      for (final (source, caret, command, deleted, rows) in [
+        (
+          '| a |\n| - |\n| b|\nc\n~|~~.\n',
+          20,
+          const DeleteBackward(),
+          '| a |\n| - |\n| b|\nc\n||~~.\n',
+          ['a ', 'b', 'c', '', ''],
+        ),
+        (
+          '| a{ |\n| - |\n| -)_\nb |bbb\n',
+          19,
+          const DeleteForward(),
+          '| a{ |\n| - |\n| -)_\n| |bbb\n',
+          ['a{ ', '-)_', '', ''],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, source: deleted, rows: rows);
+      }
+    });
+
     test('deleting all of a line\'s text in a row removes the line', () {
       // Left blank, the line would end a setext heading above its underline,
       // which would then be painted, or move a lazy line's container.

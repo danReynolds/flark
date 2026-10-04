@@ -155,6 +155,93 @@ void _typingCases(FlarkParseBackend backend) {
       expect(note.editor.projection.rows[2].shells, isEmpty);
     });
 
+    test('text typed on an empty row shows no whitespace the row hid', () {
+      // Whitespace after an empty line's container prefix shows nothing.
+      // Text run into it would show it: as a tab's columns before code the
+      // indentation makes of the text, or as a line of code or literal HTML
+      // the text joins. The text goes where the prefix ends instead, an
+      // empty item's marker padded with one space, with a blank line after
+      // it where the block below would read on into it. Typing never
+      // shortens the source: the whitespace becomes spaces a paragraph does
+      // not show, or that blank line.
+      for (final (source, caret, typed, edited, rows) in [
+        (
+          '    foo *[\n    \t\n\t',
+          18,
+          'a',
+          '    foo *[\n    \t\n a',
+          ['foo *[', '', 'a'],
+        ),
+        (
+          '-\t\t\n \t\t{(>oob\n \t\t<#]',
+          3,
+          'a',
+          '- a\n\n \t\t{(>oob\n \t\t<#]',
+          ['a', '', '  {(>oob\n  <#]'],
+        ),
+        ('>\t\tfoo\n>\t\t\n', 10, 'é', '>\t\tfoo\n>  é\n', ['  foo', 'é', '']),
+        (
+          '- foo\n\n\t\tba_\n\t\t\n',
+          15,
+          '1',
+          '- foo\n\n\t\tba_\n  1\n',
+          ['foo', '', '  ba_', '1', ''],
+        ),
+        (
+          '1. foo\r\n2.  \t\r\n3. \tr\r\n',
+          13,
+          '1',
+          '1. foo\r\n2.   1\r\n3. \tr\r\n',
+          ['foo', '1', 'r', ''],
+        ),
+        (
+          '-\t\tf._>`[1|\r\n \t\t  \r\n',
+          18,
+          'b',
+          '-\t\tf._>`[1|\r\n \tb\r\n \t\t  \r\n',
+          ['  f._>`[1|', 'b', '', ''],
+        ),
+        ('<div {\n \r\n', 8, '1', '<div {\n1\r\n\r\n', ['<div {\n1', '', '']),
+        (
+          '<table>\n\n  <tr>\n\n</table>\n',
+          8,
+          '1',
+          '<table>\n1\n\n  <tr>\n\n</table>\n',
+          ['<table>\n1', '', '<tr>', '', '</table>', ''],
+        ),
+        // A marker right after a quote's `>` left it no optional space:
+        // the item's indentation takes one more.
+        (
+          '>>- one\n>>  |}\n>>\n>>\n  >  > two\n',
+          17,
+          'a',
+          '>>- one\n>>  |}\n>>   a\n>>\n  >  > two\n',
+          ['one\n |}\na', '', 'two', ''],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final shellsBefore = shells(session.editor);
+        session.act(InsertText(typed), source: edited, rows: rows);
+        expect(shells(session.editor), shellsBefore, reason: source);
+      }
+    });
+
+    test('text typed on an empty row keeps an empty item or fence apart', () {
+      // Text typed over an empty item would make the item its setext
+      // underline; under a fence with no body and no closing fence it would
+      // be the fence's first line of code. A blank line keeps the item, and
+      // the fence closes.
+      for (final (source, caret, edited, rows) in [
+        ('- #### \n\n- ', 8, '- #### \nb\n\n- ', ['', 'b', '', '']),
+        ('```\n', 4, '```\n```\nb', ['', 'b']),
+        ('~~~~~~\r\n', 8, '~~~~~~\r\n~~~~~~\r\nb', ['', 'b']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const InsertText('b'), source: edited, rows: rows);
+        expect(session.editor.document.caretRow.kind, RowKind.paragraph);
+      }
+    });
+
     test('text typed after a table starts its first row, not the next', () {
       final session = _Session(
         backend,
@@ -316,6 +403,158 @@ void _typingCases(FlarkParseBackend backend) {
       // Whitespace that moves nothing is typed as before.
       final plain = _Session(backend, source: 'a\n\nb', caret: 3);
       plain.act(const InsertText(' '), source: 'a\n\n b');
+    });
+
+    test('typed whitespace over a row or in its first span keeps blocks', () {
+      // Whitespace typed over all of an item's text, even across its lines,
+      // empties the item, and typed inside the hidden syntax that starts a
+      // line it goes before that syntax, as marker padding. Either can move
+      // the item's content column or its later blocks, so it is refused.
+      for (final (source, base, extent) in [
+        (
+          '  1.  A paragraph\n      with two lines.\n\n          code\n\n'
+              '      > A quote.\n',
+          6,
+          39,
+        ),
+        ('1.  A paragraph\n    wth two lines.\n\n        code\n', 21, 4),
+        ('- foo\n  r|\n\n\t\t*😀(]~1b!', 10, 2),
+        (' -    o#]\n -    **p**\n\n     two\n', 18, 18),
+        ('* # _a_\n* _a<._\n  > ## b>', 11, 11),
+      ]) {
+        final session = _Session(backend, source: source, caret: base);
+        if (extent != base) session.act(SetSelection(base, extent));
+        session.act(const InsertText(' '), applied: false, source: source);
+      }
+      // Where nothing moves, the whitespace is typed.
+      final emptied = _Session(backend, source: '- a b\n- c');
+      emptied.act(const SetSelection(2, 5));
+      emptied.act(const InsertText(' '), source: '-  \n- c');
+      final span = _Session(backend, source: '**p** q', caret: 2);
+      span.act(const InsertText(' '), source: ' **p** q', rows: ['p q']);
+    });
+
+    test(
+      'text put in a table\'s delimiter row shown as its source keeps it',
+      () {
+        // A replacement or pasted lines that would dissolve the table are
+        // refused, as typing and deleting there are; ones that keep it edit
+        // the row.
+        for (final (source, command) in [
+          (
+            '| abc | def |\n| --- | --- |\n|\n',
+            const ReplaceRange(19, 21, 'r'),
+          ),
+          (
+            '| a:éc | def |\r\n| --- | --- |\r\n',
+            const ReplaceRange(16, 17, 'r'),
+          ),
+          ('! _\n:-', const ReplaceRange(4, 6, 'r')),
+          ('| a | b |\n| - | - |', const ReplaceRange(12, 13, '')),
+        ]) {
+          final session = _Session(backend, source: source);
+          session.act(command, applied: false, source: source);
+        }
+        final pasted = _Session(
+          backend,
+          source: '| a | b |\n| - | - |',
+          caret: 12,
+        );
+        pasted.act(
+          const Paste('- x\n- y'),
+          applied: false,
+          source: '| a | b |\n| - | - |',
+        );
+        final kept = _Session(backend, source: '| a | b |\n| -- | - |');
+        kept.act(
+          const ReplaceRange(12, 13, ''),
+          source: '| a | b |\n| - | - |',
+          rows: ['a ', 'b ', '| - | - |'],
+        );
+        kept.act(
+          const ReplaceRange(11, 12, ':'),
+          source: '| a | b |\n|:- | - |',
+          rows: ['a ', 'b ', '|:- | - |'],
+        );
+        final row = _Session(
+          backend,
+          source: '| a | b |\n| - | - |',
+          caret: 19,
+        );
+        row.act(
+          const Paste('\n| c | d |'),
+          source: '| a | b |\n| - | - |\n| c | d |',
+          rows: ['a ', 'b ', 'c ', 'd '],
+        );
+      },
+    );
+
+    test('text put in a table cell keeps the cells of its row', () {
+      // Whitespace that would indent a row out of its table, a replacement
+      // that would let a pipe split the row, and pasted text with a pipe are
+      // refused; a typed pipe is escaped as before.
+      for (final (source, base, extent, command) in [
+        ('| a |\n| - |\n| _\n(b |:', 16, 16, const InsertText('\t')),
+        ('| abc \n.!| def |\n| --- | --- |\n', 9, 7, const InsertText('\t')),
+        ('| a | b |\n| - | - |\n| c | d |', 24, 24, const Paste('x|y')),
+        (
+          '| `\\|\\\\|abcé>] | def |\n | --- | --- |\n',
+          2,
+          2,
+          const ReplaceRange(2, 7, 'r'),
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: base);
+        if (extent != base) session.act(SetSelection(base, extent));
+        session.act(command, applied: false, source: source);
+      }
+      final typed = _Session(
+        backend,
+        source: '| a | b |\n| - | - |\n| c | d |',
+        caret: 24,
+      );
+      typed.act(
+        const InsertText('\t'),
+        source: '| a | b |\n| - | - |\n| c \t| d |',
+        rows: ['a ', 'b ', 'c \t', 'd '],
+      );
+      typed.act(
+        const ReplaceRange(22, 23, 'x'),
+        source: '| a | b |\n| - | - |\n| x \t| d |',
+        rows: ['a ', 'b ', 'x \t', 'd '],
+      );
+    });
+
+    test('text typed in a row\'s unwritten cell keeps the cell before it', () {
+      // A row without its closing pipe gets the pipes the cell needs right
+      // after its last cell, which shows no new trailing space; after a
+      // backslash, which would escape the pipe, a space goes first.
+      for (final (source, typed, rows) in [
+        (
+          '| abc | def |\n| --- | --- |\n!:',
+          '| abc | def |\n| --- | --- |\n!:| b|',
+          ['abc ', 'def ', '!:', 'b'],
+        ),
+        (
+          '| a | b |\n| - | - |\n| ~baz\n',
+          '| a | b |\n| - | - |\n| ~baz| b|\n',
+          ['a ', 'b ', '~baz', 'b', ''],
+        ),
+        (
+          '| a | b |\n| - | - |\nc\\',
+          '| a | b |\n| - | - |\nc\\ | b|',
+          ['a ', 'b ', 'c\\ ', 'b'],
+        ),
+      ]) {
+        final session = _Session(backend, source: source);
+        final cell = session.editor.projection.rows.lastWhere(
+          (row) => row.kind == RowKind.tableCell,
+        );
+        session.act(PlaceCaret(cell.index, 0));
+        expect(session.editor.selection.tableCell, cell.index);
+        session.act(const InsertText('b'), source: typed, rows: rows);
+        expect(session.editor.document.caretRow.column, 1);
+      }
     });
 
     test('a pending style that cannot wrap the character is dropped', () {

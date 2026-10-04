@@ -76,7 +76,11 @@ extension _TableEditing on FlarkEditor {
     final count = row.column - projection.rows[first].column + 1;
     final at = row.sourceStart;
     final closingPipe = at < source.length && source[at] == '|';
-    final prefix = '${closingPipe ? '' : ' '}${'| ' * count}';
+    // A row without its closing pipe gets one right after its last cell,
+    // which then shows no new trailing space, unless that cell ends with a
+    // backslash: GFM reads any backslash before a pipe as escaping it.
+    final escapes = !closingPipe && at > 0 && source[at - 1] == r'\';
+    final prefix = '${escapes ? ' ' : ''}${'| ' * count}';
     final materialized = source.replaceRange(
       at,
       at,

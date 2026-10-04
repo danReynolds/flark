@@ -1096,7 +1096,8 @@ final class FlarkEditor implements FlarkDocumentState {
       pending: pending,
     );
     // The escape must keep the row's cells: the edited cell shows exactly the
-    // typed text, and every other cell is unchanged.
+    // typed text, and every other cell is unchanged. Other text keeps them
+    // too, the edited cell showing whatever Markdown reads in it.
     final cells = cell
         ? (_tableRowCells(projection, row.tableRowBlock)
             ..[row.column] = row.text.replaceRange(
@@ -1105,6 +1106,7 @@ final class FlarkEditor implements FlarkDocumentState {
               typed,
             ))
         : null;
+    final kept = cell ? null : _cellsKept(row, text);
     final one = typing && typed != '\n' && typed.characters.length == 1;
     final fence =
         typing &&
@@ -1150,7 +1152,15 @@ final class FlarkEditor implements FlarkDocumentState {
       var hides = false;
       bool accept(FlarkDocument next, {bool hiding = true}) {
         if (cells != null &&
-            !_showsTableRow(next, normalized.caret, row.column, cells)) {
+                !_showsTableRow(next, normalized.caret, row.column, cells) ||
+            kept != null &&
+                !_showsTableRow(
+                  next,
+                  normalized.caret,
+                  row.column,
+                  kept,
+                  edited: true,
+                )) {
           return false;
         }
         if (gap.isNotEmpty &&
@@ -1478,7 +1488,10 @@ final class FlarkEditor implements FlarkDocumentState {
     e = content.end;
     if (!_supportedRange(s, e)) return false;
     if (text.isEmpty) {
-      return _deleteContent(s, e, typing: false);
+      final row = _doc.rowAt(s);
+      return row.kind == RowKind.tableCell && row.tableRowBlock < 0
+          ? _cutDelimiterRow(row, s, e, typing: false)
+          : _deleteContent(s, e, typing: false);
     }
     // A replacement in a fenced body is literal code, as a paste there is.
     final code = _pasteCode(text, from: s, to: e);
@@ -1495,38 +1508,65 @@ final class FlarkEditor implements FlarkDocumentState {
       s = expanded.start;
       e = expanded.end;
     }
-    // A collapsed replacement places text as typing does.
-    final (at, gap) = s == e ? _sequencePlace(_doc.rowAt(s), s, text) : (s, '');
+    // A replacement places text as typing does: a collapsed one as typed
+    // text, a ranged one in a table's delimiter row shown as its source
+    // keeping the table.
+    final row = _doc.rowAt(s);
+    final (at, gap) = s == e ? _sequencePlace(row, s, text) : (s, '');
     final normalized = _normalizeInlineEdges(
       at,
       at + e - s,
       '$text$gap',
       at + text.length,
     );
-    if (s == e && gap.isEmpty) {
+    if (gap.isEmpty) {
       final placed = _typeOnLine(
-        _doc.rowAt(s),
+        row,
         at,
         text,
         normalized,
         text,
         typing: false,
+        removed: e - s,
       );
       if (placed != null) return placed;
     }
+    final cells = _cellsKept(row, text);
     return _commit(
       normalized.text,
       FlarkSelection.collapsed(normalized.caret),
       typing: false,
       pending: normalized.pending,
       acceptSourceMode: true,
-      accept: gap.isEmpty
+      accept: gap.isEmpty && cells == null
           ? null
-          : (next) => _keepsStructure(next, [
-              (s, e, text.length + gap.length),
-            ], const {}),
+          : (next) =>
+                (cells == null ||
+                    _showsTableRow(
+                      next,
+                      normalized.caret,
+                      row.column,
+                      cells,
+                      edited: true,
+                    )) &&
+                (gap.isEmpty ||
+                    _keepsStructure(next, [
+                      (s, e, text.length + gap.length),
+                    ], const {})),
     );
   }
+
+  /// The cells of [row]'s table row, which one line of [text] put in that
+  /// cell must keep, or null outside a table's header or body: a pipe or
+  /// whitespace that would split the row, end it or end the table is
+  /// refused, as table restructuring uses source mode.
+  List<String>? _cellsKept(ProjectedRow row, String text) =>
+      row.kind == RowKind.tableCell &&
+          row.tableRowBlock >= 0 &&
+          !text.contains('\n') &&
+          !text.contains('\r')
+      ? _tableRowCells(projection, row.tableRowBlock)
+      : null;
 
   bool _delete({required bool backward, bool word = false}) {
     final sel = selection;
@@ -1722,9 +1762,20 @@ final class FlarkEditor implements FlarkDocumentState {
               : onward
               ? (below < 0 ? -1 : map(below))
               : caret;
+      // A table row shows none of its other source either: a backslash the
+      // deletion leaves before the cell's delimiter would escape it, and an
+      // emptied first cell of a row without its leading pipe would make that
+      // pipe lead the row, so a cell the table drops would show.
       return (
         shown &&
-            _keepsStructure(next, e, edited, movesText: false, shells: true),
+            _keepsStructure(
+              next,
+              e,
+              edited,
+              movesText: cells != null,
+              shown: cells == null ? null : (row.sourceStart, row.sourceEnd),
+              shells: true,
+            ),
         (!emptied || _keepsShells(next, row, caret)) &&
             (left < 0 ||
                 _keepsShells(next, row, left) &&
@@ -1775,8 +1826,8 @@ final class FlarkEditor implements FlarkDocumentState {
     final above = top > 0 ? row.contentEnds[top - 1] : -1;
     for (final edits in [
       if (cells != null) ...[
-        [(start, end, '|')],
-        [(start, end, '||')],
+        if (emptied) [(start, end, '|')],
+        if (emptied) [(start, end, '||')],
       ] else ...[
         if (spaced > end && !emptied && ls == a) [(start, spaced, '')],
         if (gap != null) [cut, gap],
@@ -2521,12 +2572,14 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// Whether [next] paints a non-whitespace character of the current source
-  /// that the current projection hides. [old] maps an offset in [next]'s
-  /// source to the current one; [shown] is hidden source allowed to appear.
+  /// that the current projection hides, or with [whitespace] any character.
+  /// [old] maps an offset in [next]'s source to the current one; [shown] is
+  /// hidden source allowed to appear.
   bool _revealsHiddenText(
     FlarkDocument next,
     int Function(int) old, {
     (int, int)? shown,
+    bool whitespace = false,
   }) {
     // Painted source as prefix counts, so a segment that only moved is
     // cleared in constant time and only text near the edit is read.
@@ -2558,7 +2611,7 @@ final class FlarkEditor implements FlarkDocumentState {
           continue;
         }
         for (var o = a; o < b; o++) {
-          if (_isSpace(next.source, o)) continue;
+          if (!whitespace && _isSpace(next.source, o)) continue;
           final at = old(o);
           if (at >= 0 && at < source.length && painted[at + 1] == painted[at]) {
             return true;
