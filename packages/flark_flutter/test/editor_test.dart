@@ -494,6 +494,144 @@ void main() {
     }
   }
   test(
+    'a composition that ends with the source it began with keeps the platform caret',
+    () {
+      // Read as a cancel, the platform's caret was ignored and the state
+      // before the composition restored: retyping a selected word left it
+      // selected, so the next key replaced it, and Gboard finishing a
+      // composed word as the caret moved on kept the caret behind.
+      const source = 'say cat now';
+      final retyped = FlarkController(FlarkEditor(backend, text: source));
+      retyped.command(const SetSelection(4, 7));
+      for (final (text, end) in [('say c now', 5), ('say cat now', 7)]) {
+        retyped.receive(
+          TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: end),
+            composing: TextRange(start: 4, end: end),
+          ),
+        );
+      }
+      retyped.receive(
+        const TextEditingValue(
+          text: source,
+          selection: TextSelection.collapsed(offset: 7),
+        ),
+      );
+      expect(retyped.text, source);
+      expect(retyped.editor.selection, const FlarkSelection.collapsed(7));
+      expect(retyped.editor.composing, isFalse);
+      retyped.dispose();
+
+      final moved = FlarkController(
+        FlarkEditor(backend, text: source, caret: 7),
+      );
+      // Gboard composes the word before the caret, then the caret moves.
+      moved.receive(
+        const TextEditingValue(
+          text: source,
+          selection: TextSelection.collapsed(offset: 7),
+          composing: TextRange(start: 4, end: 7),
+        ),
+      );
+      expect(moved.editor.composing, isTrue);
+      moved.receive(
+        const TextEditingValue(
+          text: source,
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      expect(moved.editor.selection, const FlarkSelection.collapsed(1));
+      expect(moved.editor.composing, isFalse);
+      moved.dispose();
+    },
+  );
+  test(
+    'a platform update at the caret keeps it in an unwritten table cell',
+    () {
+      // An unwritten cell shares its source offset with the end of the cell
+      // before it. A value that only set a composing region (Gboard
+      // composing the word before its caret) applied those offsets again,
+      // which moved the caret into the cell before, where typing then went.
+      const source = '| a | b |\n| --- | --- |\n| x |\n';
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      c.command(SetSelection.caret(source.indexOf('x')));
+      c.command(const MoveTableCell());
+      final cell = c.editor.selection;
+      expect(cell.tableCell, isNotNull);
+      final caret = cell.extent;
+      c.receive(
+        c.value.copyWith(
+          composing: TextRange(start: caret - 1, end: caret),
+        ),
+      );
+      expect(c.editor.selection, cell);
+      c.receive(c.value.copyWith(composing: TextRange.empty));
+      expect(c.editor.selection, cell);
+      expect(c.command(const InsertText('Z')), isTrue);
+      expect(c.editor.document.caretRow.column, 1);
+      expect(c.editor.document.caretRow.text.trim(), 'Z');
+      c.dispose();
+    },
+  );
+  test(
+    'a platform deletion of half a surrogate pair deletes its character',
+    () {
+      // iOS deletes one UTF-16 unit before the caret unless its code point is
+      // an emoji, so Backspace after a supplementary character that is not
+      // one (CJK Extension B, mathematical letters) leaves half of it. That
+      // was refused as invalid Unicode: the character could not be deleted.
+      for (final character in ['\u{20000}', '\u{1D4B3}']) {
+        final source = 'a$character b';
+        final c = FlarkController(FlarkEditor(backend, text: source, caret: 3));
+        final half = source.replaceRange(2, 3, '');
+        expect(
+          c.receive(
+            TextEditingValue(
+              text: half,
+              selection: const TextSelection.collapsed(offset: 2),
+            ),
+          ),
+          isTrue,
+        );
+        expect(c.text, 'a b');
+        expect(c.editor.selection, const FlarkSelection.collapsed(1));
+        expect(c.notice, isNull);
+        c.dispose();
+      }
+    },
+  );
+  test(
+    'a cancelled composition leaves no trace where typing added a line break',
+    () {
+      // Typing at the end of an empty fenced block's opening line starts its
+      // first body line, and the platform is sent that line break too. An
+      // input method that cancels removes only the text it composed; that
+      // was read as deleting it, which kept the line break and an undo step.
+      final c = FlarkController(FlarkEditor(backend, text: '```\n', caret: 3));
+      c.receive(
+        const TextEditingValue(
+          text: '```t\n',
+          selection: TextSelection.collapsed(offset: 4),
+          composing: TextRange(start: 3, end: 4),
+        ),
+      );
+      expect(c.text, '```\nt\n');
+      expect(c.value.composing, const TextRange(start: 4, end: 5));
+      c.receive(
+        const TextEditingValue(
+          text: '```\n\n',
+          selection: TextSelection.collapsed(offset: 4),
+        ),
+      );
+      expect(c.text, '```\n');
+      expect(c.editor.selection, const FlarkSelection.collapsed(3));
+      expect(c.editor.composing, isFalse);
+      expect(c.editor.history.canUndo, isFalse);
+      c.dispose();
+    },
+  );
+  test(
     'a composition opened by a rejected platform value does not stay open',
     () {
       const source = '# Head\n\npara';

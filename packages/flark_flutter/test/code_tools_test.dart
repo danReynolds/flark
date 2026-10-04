@@ -33,6 +33,33 @@ void main() {
       c.dispose();
     });
   }
+  testWidgets('a long code info string fits the language button', (
+    tester,
+  ) async {
+    // The button showed an unknown language's name whole in a row, and a
+    // long first word of the info string overflowed the toolbar. Typing a
+    // fence before other text makes that text the info string.
+    final info = 'quoted<[https://example.com/l](<https://example.com/l>)' * 3;
+    final c = FlarkController(
+      FlarkEditor(
+        createParseBackend(),
+        codeEditing: service,
+        text: '```$info\ncode\n```',
+        caret: info.length + 4,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: FlarkEditorWidget(controller: c, autofocus: true)),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final button = tester.getRect(find.byTooltip('Code language'));
+    expect(button.right, lessThanOrEqualTo(800));
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
   testWidgets('choosing the current code language is an inert dismissal', (
     tester,
   ) async {

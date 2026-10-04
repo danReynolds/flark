@@ -92,6 +92,54 @@ void main() {
     );
   });
 
+  test('a value that only moves a multiline selection keeps its CRLFs', () {
+    // Read as a replacement of the selection it was sent, the unchanged
+    // selected text came back with LF line breaks and replaced the source.
+    const source = 'one\r\ntwo\r\nthree';
+    for (final next in [
+      const TextSelection.collapsed(offset: 1),
+      const TextSelection(baseOffset: 2, extentOffset: 6),
+    ]) {
+      final input = InputContext.of(
+        const TextEditingValue(
+          text: source,
+          selection: TextSelection(baseOffset: 1, extentOffset: 12),
+        ),
+      );
+      final full = input.expand(input.value.copyWith(selection: next))!;
+      expect(full.text, source);
+      expect(
+        full.selection,
+        next.isCollapsed
+            ? const TextSelection.collapsed(offset: 1)
+            : const TextSelection(baseOffset: 2, extentOffset: 7),
+      );
+    }
+    // A selection replaced by text that keeps its line breaks keeps them
+    // as they were spelled.
+    final input = InputContext.of(
+      const TextEditingValue(
+        text: 'a\r\nb\r\nc',
+        selection: TextSelection(baseOffset: 0, extentOffset: 7),
+      ),
+    );
+    expect(input.expand(at('a\nX\nc', 3)), at('a\r\nX\r\nc', 4));
+  });
+
+  test('a line break deleted beside the caret keeps its own spelling', () {
+    // Matched from either end, a deletion in a run of line breaks read as
+    // the last of them: with mixed line endings, Backspace after a CRLF
+    // deleted a later LF instead, which the host then read as Delete.
+    for (final (source, caret, next, full) in [
+      ('a\r\n\nb', 3, at('a\nb', 1), at('a\nb', 1)),
+      ('a\n\r\nb', 2, at('a\nb', 1), at('a\r\nb', 1)),
+      ('a\r\n\nb', 1, at('a\nb', 1), at('a\nb', 1)),
+    ]) {
+      final input = InputContext.of(at(source, caret));
+      expect(input.expand(next), full, reason: '$source at $caret');
+    }
+  });
+
   test('wide reverse selection and active composition are never clipped', () {
     final source = 'a' * 5000;
     final selected = TextEditingValue(
@@ -434,6 +482,171 @@ void main() {
       c.command(const Undo());
       expect(c.text, source);
       expect(c.editor.selection.extent, 2000);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
+
+  // One platform delta batch: each edit replaces [start, end) of the text
+  // before it with [text] and leaves the selection [base, extent].
+  Future<void> deltas(
+    WidgetTester tester,
+    List<(String, int, int, String, int, int)> edits,
+  ) => tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    SystemChannels.textInput.name,
+    SystemChannels.textInput.codec.encodeMethodCall(
+      MethodCall('TextInputClient.updateEditingStateWithDeltas', [
+        client(tester),
+        {
+          'deltas': [
+            for (final (old, start, end, text, base, extent) in edits)
+              {
+                'oldText': old,
+                'deltaText': text,
+                'deltaStart': start,
+                'deltaEnd': end,
+                'selectionBase': base,
+                'selectionExtent': extent,
+                'selectionAffinity': 'TextAffinity.downstream',
+                'selectionIsDirectional': false,
+                'composingBase': -1,
+                'composingExtent': -1,
+              },
+          ],
+        },
+      ]),
+    ),
+    (_) {},
+  );
+
+  testWidgets(
+    'moving the platform selection out of a multiline CRLF selection keeps the document',
+    (tester) async {
+      // Gboard's cursor control or a browser's caret reports a new selection
+      // over the same text. It replaced the selected lines with their LF
+      // spelling, or was refused as a cross-block edit and left the
+      // selection where it was.
+      const source = '- one\r\n- two\r\n\r\nend';
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      await mount(tester, c);
+      c.command(const SetSelection(2, 12));
+      await tester.pump();
+      final before = remote(tester);
+      expect(
+        before.selection,
+        const TextSelection(baseOffset: 2, extentOffset: 11),
+      );
+      await deltas(tester, [(before.text, -1, -1, '', 4, 4)]);
+      expect(c.text, source);
+      expect(c.editor.selection, const FlarkSelection.collapsed(4));
+      expect(c.notice, isNull);
+      expect(c.editor.history.canUndo, isFalse);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
+
+  testWidgets(
+    'a Return the editor handled is not typed again by the newline action',
+    (tester) async {
+      // A browser's textarea sends the newline action from its own keydown
+      // listener after Flutter handled the Return key: every Return made
+      // two line breaks, so a list item continued and then ended.
+      final c = FlarkController(FlarkEditor(backend, text: '- one', caret: 5));
+      await mount(tester, c);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.testTextInput.receiveAction(TextInputAction.newline);
+      expect(c.text, '- one\n- ');
+      expect(c.editor.selection, const FlarkSelection.collapsed(8));
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
+
+  testWidgets(
+    'an iOS Return keeps the autocorrection it sends and continues the list',
+    (tester) async {
+      // UIKit sends the newline action, then the line break it inserted,
+      // after any autocorrection of the word before it, in one delta batch.
+      for (final (source, edits) in [
+        ('- one', [('- one', 5, 5, '\n', 6, 6)]),
+        ('- teh', [('- teh', 2, 5, 'the', 5, 5), ('- the', 5, 5, '\n', 6, 6)]),
+      ]) {
+        final c = FlarkController(
+          FlarkEditor(backend, text: source, caret: source.length),
+        );
+        await mount(tester, c);
+        await tester.testTextInput.receiveAction(TextInputAction.newline);
+        await deltas(tester, edits);
+        expect(c.text, '- ${source == '- one' ? 'one' : 'the'}\n- ');
+        expect(c.editor.selection, const FlarkSelection.collapsed(8));
+        expect(remote(tester).text, c.text);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'platform Backspace after a CRLF in mixed line endings deletes that break',
+    (tester) async {
+      // A CRLF note with an LF paste: the deletion read as a later LF away
+      // from the caret, so Backspace deleted forward or was refused.
+      for (final (source, caret) in [('a\r\n\nb', 3), ('one\r\n\n\ntwo', 5)]) {
+        final expected = FlarkEditor(backend, text: source, caret: caret)
+          ..apply(const DeleteBackward());
+        final c = FlarkController(
+          FlarkEditor(backend, text: source, caret: caret),
+        );
+        await mount(tester, c);
+        final platform = remote(tester);
+        final at = platform.selection.extentOffset;
+        await deltas(tester, [(platform.text, at - 1, at, '', at - 1, at - 1)]);
+        expect(
+          (c.text, c.editor.selection),
+          (expected.source, expected.selection),
+          reason: source,
+        );
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+      }
+    },
+  );
+
+  testWidgets('an edit that repeats an earlier platform value is applied', (
+    tester,
+  ) async {
+    // Return before a space begins a line whose leading space is hidden,
+    // and the caret moves past it. Backspace there deletes the line break
+    // the kernel's way, not the space the platform deleted. The next
+    // Return then sent the value that Backspace had, at the same revision,
+    // and it was dropped as a duplicate.
+    final c = FlarkController(FlarkEditor(backend, text: 'one two', caret: 3));
+    await mount(tester, c);
+    await deltas(tester, [('one two', 3, 3, '\n', 4, 4)]);
+    expect((c.text, c.editor.selection.extent), ('one\n two', 5));
+    await deltas(tester, [('one\n two', 4, 5, '', 4, 4)]);
+    expect((c.text, c.editor.selection.extent), ('onetwo', 3));
+    await deltas(tester, [('onetwo', 3, 3, '\n', 4, 4)]);
+    expect((c.text, c.editor.selection.extent), ('one\ntwo', 4));
+    await tester.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  testWidgets(
+    'an input method correction away from the caret applies and keeps the caret',
+    (tester) async {
+      // Autocorrect replaces the word before a space the platform already
+      // delivered. The delta's old text authenticates it; it was refused as
+      // a stale replacement, and the caret must not jump back over the space.
+      final c = FlarkController(FlarkEditor(backend, text: 'teh ', caret: 4));
+      await mount(tester, c);
+      await deltas(tester, [('teh ', 0, 3, 'the', 4, 4)]);
+      expect(c.text, 'the ');
+      expect(c.editor.selection, const FlarkSelection.collapsed(4));
+      expect(c.notice, isNull);
+      await deltas(tester, [('the ', 4, 4, 'x', 5, 5)]);
+      expect(c.text, 'the x');
       await tester.pumpWidget(const SizedBox());
       c.dispose();
     },

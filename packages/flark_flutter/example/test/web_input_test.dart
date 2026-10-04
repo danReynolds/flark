@@ -123,6 +123,62 @@ void main() {
       expect(c.text, 'say **wha  xy**');
     },
   );
+  test('browser Return continues a list once', () async {
+    // The engine's textarea sends the newline action from its own keydown
+    // listener after Flutter handled the Return key, so each Return made
+    // two line breaks: the item continued, then the list ended. A key press
+    // carries keyCode 13, which the engine reads.
+    final c = FlarkController(FlarkEditor(backend, text: '- one', caret: 5));
+    final focus = FocusNode();
+    addTearDown(() async {
+      runApp(const SizedBox());
+      await binding.endOfFrame;
+      c.dispose();
+      focus.dispose();
+    });
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: FlarkEditorWidget(
+            controller: c,
+            focusNode: focus,
+            autofocus: true,
+          ),
+        ),
+      ),
+    );
+    await binding.endOfFrame;
+    await Future<void>.delayed(Duration.zero);
+    focus.requestFocus();
+    await binding.endOfFrame;
+    for (final (source, caret) in [
+      ('- one\n- ', 8),
+      ('- one\n- two\n- ', 14),
+    ]) {
+      if (caret == 14) c.command(const InsertText('two'));
+      await binding.endOfFrame;
+      final input = web.document.querySelector('textarea.flt-text-editing')!;
+      web.KeyboardEvent key(String type) => web.KeyboardEvent(
+        type,
+        web.KeyboardEventInit(
+          code: 'Enter',
+          key: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        ),
+      );
+      final down = key('keydown');
+      input.dispatchEvent(down);
+      input.dispatchEvent(key('keyup'));
+      await Future<void>.delayed(Duration.zero);
+      await binding.endOfFrame;
+      expect(down.defaultPrevented, isTrue);
+      expect(c.text, source);
+      expect(c.editor.selection.extent, caret);
+    }
+  });
   for (final hasBody in [true, false]) {
     test('browser literal fence paste, existing body: $hasBody', () async {
       final source = '```text\n${hasBody ? 'here\n' : ''}```\n\n# after';

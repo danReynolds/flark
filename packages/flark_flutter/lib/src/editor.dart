@@ -236,6 +236,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         enableDeltaModel: !kIsWeb,
         autocorrect: true,
         enableSuggestions: true,
+        // The text is Markdown source. iOS would turn `--` into a dash,
+        // breaking a rule or a table's delimiter row, and straight quotes
+        // into curly ones, which no longer delimit a link's title or stay
+        // the code they were typed into.
+        smartDashesType: SmartDashesType.disabled,
+        smartQuotesType: SmartQuotesType.disabled,
       ),
     );
     _sync();
@@ -298,12 +304,14 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
   }
 
-  void _receiveInput(TextEditingValue value) {
+  /// [authenticated] input was a delta batch whose old text matched the
+  /// value the platform was sent.
+  void _receiveInput(TextEditingValue value, {bool authenticated = false}) {
     final context = _inputContext;
     if (context == null) return;
     _sentValue = value;
     final full = context.expand(value);
-    if (full != null) c.receive(full);
+    if (full != null) c.receive(full, authenticated: authenticated);
     _sync();
   }
 
@@ -393,6 +401,16 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     if (widget.readOnly) return;
     _hideTouchSelection();
     _focus.requestFocus();
+    // A text field elsewhere that has focus unfocuses itself when a mouse
+    // presses outside it, after this listener, and its scope kept the focus
+    // while this editor held the input connection: typed text arrived, but
+    // no caret was drawn and keys went nowhere. Text fields take focus when
+    // a tap lifts, after that; ask again once the press has been dispatched.
+    scheduleMicrotask(() {
+      if (mounted && !widget.readOnly && !_focus.hasFocus) {
+        _focus.requestFocus();
+      }
+    });
     if (touch && _connection?.attached == true) _connection!.show();
     _attach();
     _goal = null;
@@ -869,7 +887,22 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
   void _dismissLink({bool restoreFocus = false}) {
     _link = null;
     _linkEpoch++;
-    if (_popover.isShowing) _popover.hide();
+    if (_popover.isShowing) {
+      // A rebuild with another controller, or read-only, dismisses it while
+      // the framework builds this widget, when an overlay portal must not
+      // change. Inactive, it already builds nothing; hide it after the frame.
+      if (SchedulerBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks) {
+        final epoch = _linkEpoch;
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (mounted && epoch == _linkEpoch && _popover.isShowing) {
+            _popover.hide();
+          }
+        }, debugLabel: 'FlarkEditorWidget.dismissLink');
+      } else {
+        _popover.hide();
+      }
+    }
     if (restoreFocus && mounted && !widget.readOnly) _focus.requestFocus();
   }
 
@@ -1419,10 +1452,16 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            codeLanguage.isEmpty
-                                ? 'Auto${detectedLabel == null ? '' : ' · $detectedLabel'}'
-                                : codeLanguages[codeLanguage] ?? codeLanguage,
+                          // An unknown language shows its info string's
+                          // first word, which can be any length.
+                          Flexible(
+                            child: Text(
+                              codeLanguage.isEmpty
+                                  ? 'Auto${detectedLabel == null ? '' : ' · $detectedLabel'}'
+                                  : codeLanguages[codeLanguage] ?? codeLanguage,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           const Icon(Icons.arrow_drop_down, size: 18),
                         ],
@@ -1854,16 +1893,19 @@ class _InputClient with TextInputClient, DeltaTextInputClient {
         }
         next = delta.apply(next);
       }
-      state._receiveInput(next);
+      state._receiveInput(next, authenticated: true);
     }
   }
 
+  /// Return reaches a multiline client as a key the editor handles or as a
+  /// line break in the text; the newline action only reports it, as Flutter's
+  /// own multiline fields read it. The web engine sends the action from the
+  /// textarea's keydown listener after Flutter handled the Return key, so a
+  /// Newline here typed a browser's every Return twice. iOS sends it before
+  /// the line break it inserts, which that made stale, with any
+  /// autocorrection UIKit sent alongside.
   @override
-  void performAction(TextInputAction action) {
-    if (active && action == TextInputAction.newline) {
-      state._command(const Newline());
-    }
-  }
+  void performAction(TextInputAction action) {}
 
   @override
   void performSelector(String selectorName) {
