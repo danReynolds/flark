@@ -256,6 +256,35 @@ void _typingCases(FlarkParseBackend backend) {
       expect(selected.editor.projection.rows.last.shells.length, 2);
     });
 
+    test('typing on a lazy line after a quoted definition stays quoted', () {
+      // The paragraph's block opens with the definition, a line before the
+      // row it shows; the prefix for its lazy lines is that first line's.
+      for (final (typed, edited, kind) in [
+        ('x', '> [a]: /u\nb\nxc', RowKind.paragraph),
+        ('# ', '> [a]: /u\nb\n> # c', RowKind.heading),
+      ]) {
+        final session = _Session(backend, source: '> [a]: /u\nb\nc', caret: 12);
+        session.act(InsertText(typed), source: edited);
+        expect(session.editor.document.caretRow.kind, kind);
+        expect(shells(session.editor), 'blockQuote');
+      }
+    });
+
+    test('a heading level after definitions keeps them', () {
+      // A paragraph whose block opens with definitions starts its row, and
+      // so its heading, on its own first line.
+      for (final (source, caret, edited) in [
+        ('[a]: /u\nb', 9, '[a]: /u\n# b'),
+        ('> [a]: /u\n> b', 13, '> [a]: /u\n> # b'),
+        ('- [a]: /u\n  b', 13, '- [a]: /u\n  # b'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const SetHeadingLevel(1), source: edited);
+        expect(session.editor.projection.rows.first.kind, RowKind.definition);
+        expect(session.editor.document.caretRow.kind, RowKind.heading);
+      }
+    });
+
     test('text typed on an empty line of indented code is code', () {
       final session = _Session(
         backend,

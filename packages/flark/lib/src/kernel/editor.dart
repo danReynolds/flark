@@ -3255,7 +3255,12 @@ final class FlarkEditor implements FlarkDocumentState {
       return !heading && _headFirstLine(row, level);
     }
     final m = _doc.model;
-    final blockStart = m.blockStart(row.block),
+    // A paragraph whose block opens with link reference definitions starts
+    // its row on its own first line, and its heading there: from the block's
+    // start the edit would take the definitions with it.
+    final blockStart = m.blockFirstLine(row.block) == row.firstLine
+            ? m.blockStart(row.block)
+            : row.contentStarts[0],
         blockEnd = m.blockEnd(row.block);
     final prefix = level == 0 ? '' : '${'#' * level} ';
     var s = source;

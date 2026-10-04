@@ -208,10 +208,13 @@ extension _TypedLines on FlarkEditor {
       // block syntax typed on it would open the block outside them. Its
       // ordinary text commits as it is; text that would move a block gets
       // the prefix of the paragraph's first line.
+      // The paragraph's first line is its block's, which can be earlier
+      // than its row's when the block opens with link reference definitions
+      // its row leaves out.
       final prefix = _continuationPrefix(
         source,
         m,
-        row.firstLine,
+        m.blockFirstLine(row.block),
         m.blockStart(row.block),
         row.block,
       );
