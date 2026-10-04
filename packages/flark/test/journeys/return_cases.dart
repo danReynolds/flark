@@ -11,6 +11,25 @@ void _returnCases(FlarkParseBackend backend) {
   ];
 
   group('rows', () {
+    test('return before a line break inside a link does not throw', () {
+      // The split rewrites that line break, so a lazy line's prefix edit at
+      // the next line's start is no edit of its own; spliced out of order it
+      // threw.
+      for (final (source, caret, edited) in [
+        ('[a\n](u)', 2, '[a](u)\n\n'),
+        (
+          '![foo [bar](/url) *r*\n](/url2)',
+          20,
+          '![foo [bar](/url) *r*](/url2)\n\n',
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const Newline(), source: edited);
+      }
+      final quoted = _Session(backend, source: '> [a\nb](u)', caret: 4);
+      quoted.act(const Newline(), applied: false, source: '> [a\nb](u)');
+    });
+
     test('text typed after link reference definitions shows below them', () {
       final session = _Session(
         backend,

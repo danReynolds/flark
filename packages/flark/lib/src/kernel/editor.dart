@@ -2867,11 +2867,23 @@ final class FlarkEditor implements FlarkDocumentState {
                 : i > last && shown(end) == shown(row.contentEnds[last])))
           (m.lineStartUtf16(row.firstLine + i), row.contentStarts[i], prefix),
     ];
-    final edits = [
+    // The edits splice the source in order, a lazy line's prefix before a
+    // split at the same offset. One whose line start the split rewrites (a
+    // line break it replaces, with the next line's whitespace) is no edit of
+    // its own: spliced out of order, it would cut the source backwards.
+    bool inSplit((int, int, String) e) =>
+        split.any((s) => e.$1 > s.$1 && e.$1 < s.$2);
+    final ordered = [
       ...lazy.where((e) => e.$1 <= at.$1),
       ...split,
-      ...lazy.where((e) => e.$1 > at.$1),
+      ...lazy.where((e) => e.$1 > at.$1 && !inSplit(e)),
     ];
+    final indexed = [for (final (i, e) in ordered.indexed) (i, e)]
+      ..sort((x, y) {
+        final byStart = x.$2.$1.compareTo(y.$2.$1);
+        return byStart != 0 ? byStart : x.$1.compareTo(y.$1);
+      });
+    final edits = [for (final (_, e) in indexed) e];
     final breaks = '\n' * '\n'.allMatches(separator).length;
     var g = 0;
     for (var i = 0; i < row.index; i++) {
