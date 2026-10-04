@@ -264,9 +264,9 @@ final class ProjectedRow {
   /// Per line of the row (index = line - firstLine): where the caret may sit
   /// on that line, and where the innermost container prefix begins (equal to
   /// the content start when the line has none). All three are -1 for a line
-  /// the row owns but cannot show — a fence's delimiters, a setext underline,
-  /// the definition lines a paragraph swallowed — so every reader must treat a
-  /// negative entry as "no caret here" rather than as an offset.
+  /// the row owns but cannot show — a fence's delimiters, a setext underline —
+  /// so every reader must treat a negative entry as "no caret here" rather
+  /// than as an offset.
   final List<int> contentStarts, contentEnds, prefixStarts;
   final int headingLevel;
   final bool fenced;
@@ -813,7 +813,7 @@ final class _Builder {
   ProjectedRow? _reusedRow(int index, int b, List<int> containerOf) {
     final match = _reuse?.match(b);
     if (match == null) return null;
-    final first = m.blockFirstLine(b);
+    final (first, _) = _rowLines(b);
     final cell = m.blockKind(b) == BlockKind.tableCell ? _cellFields(b) : null;
     return match.row._reused(
       index: index,
@@ -971,13 +971,30 @@ final class _Builder {
     return out;
   }
 
+  /// The lines leaf [block]'s row shows. comrak starts a paragraph, and a
+  /// setext heading made of one, at the link reference definitions it took
+  /// from its start. Their rows show those lines, so the leaf's row starts at
+  /// its first content record and rows stay in line order.
+  (int, int) _rowLines(int block) {
+    final first = m.blockFirstLine(block), n = m.blockLineCount(block);
+    final kind = m.blockKind(block);
+    if (kind != BlockKind.paragraph && kind != BlockKind.heading ||
+        m.blockContentCount(block) == 0) {
+      return (first, n);
+    }
+    final line = m.contentLine(m.blockContentOffset(block));
+    return line > first && line < first + n
+        ? (line, first + n - line)
+        : (first, n);
+  }
+
   ProjectedRow _inlineRow(
     int index,
     int block,
     int kind,
     List<int> containerOf,
   ) {
-    final first = m.blockFirstLine(block), n = m.blockLineCount(block);
+    final (first, n) = _rowLines(block);
     final co = m.blockContentOffset(block), cn = m.blockContentCount(block);
     final hidden = _hiddenIntervals(block);
     // Text comes from runs without children (a link's or autolink's text is
@@ -1249,10 +1266,9 @@ final class _Builder {
       if (p < ce) emitGap(p, ce);
     }
     // An inline leaf's lines without a record are never the row's to show: a
-    // paragraph's are the definition lines a definition row already covers,
-    // and a setext underline is markup this row hides. Giving either a caret
-    // would paint it at the end of the heading or the line above, where the
-    // next character silently rewrites markup the user cannot see.
+    // setext underline is markup this row hides. Giving it a caret would
+    // paint it at the end of the heading, where the next character silently
+    // rewrites markup the user cannot see.
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:

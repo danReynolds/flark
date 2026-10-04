@@ -12,6 +12,7 @@ import 'support/invariants.dart';
 part 'journeys/history_cases.dart';
 part 'journeys/inline_cases.dart';
 part 'journeys/navigation_cases.dart';
+part 'journeys/return_cases.dart';
 part 'journeys/structure_cases.dart';
 
 final class _Session {
@@ -122,5 +123,6 @@ void main() {
   _historyCases(backend);
   _inlineCases(backend);
   _navigationCases(backend);
+  _returnCases(backend);
   _structureCases(backend);
 }

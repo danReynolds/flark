@@ -889,13 +889,13 @@ void _structureCases(FlarkParseBackend backend) {
         );
         expect(session.editor.projection.rows.first.kind, RowKind.heading);
       }
-      // The heading keeps a list item's content where it was, so a block
-      // after it stays in the item.
+      // The heading keeps a list item's content where it was, and the next
+      // item, which Return opens, takes the block after it.
       final item = _Session(backend, source: '- abc\n  ===\n\n  para');
       item.act(const SetSelection(2, 5));
       item.act(
         const Newline(),
-        source: '- # \n\n\n  para',
+        source: '- # \n\n- \n  para',
         rows: ['', '', '', 'para'],
       );
       expect(item.editor.projection.rows.last.shells.map((s) => s.kind), [

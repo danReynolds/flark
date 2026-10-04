@@ -578,19 +578,41 @@ extension _CodeEditing on FlarkEditor {
           ) ??
           false;
     }
-    final prefix = source.substring(
-      _doc.model.lineStartUtf16(line),
+    // Copied markers of items that open on the line would open new items
+    // (`- - -` is a rule); the indentation that continues them does not.
+    final prefix = _continuationPrefix(
+      source,
+      _doc.model,
+      line,
       contentStart,
+      row.block,
     );
     final before = source.substring(contentStart, start);
     final indentation = codeLeadingWhitespace(before);
     final newline = _lineBreakAt(start);
     final first = '$newline$prefix$indentation';
     var inserted = first, to = end;
+    // Both parts stay code in the row's containers, or show nothing yet
+    // (`-     -      -` left on an item's line would be a rule), and the
+    // blocks around keep their kinds and containers.
     return _commit(
       source.replaceRange(start, to, inserted),
       FlarkSelection.collapsed(start + first.length),
       typing: false,
+      acceptSourceMode: true,
+      accept: (next) =>
+          [start, start + first.length].every((offset) {
+            final now = next.rowAt(offset);
+            return now.kind == RowKind.blank ||
+                now.kind == RowKind.codeBlock &&
+                    FlarkEditor._sameShells(now, row);
+          }) &&
+          _keepsStructure(
+            next,
+            [(start, to, inserted.length)],
+            {row.index},
+            shells: true,
+          ),
     );
   }
 

@@ -1971,11 +1971,14 @@ final class FlarkEditor implements FlarkDocumentState {
   /// Whether [row] of the current projection, now at [offset] of [next],
   /// sits in containers of the same kinds: a join that removes an empty line
   /// must not move the next block into a quote or list item, or out of one.
-  static bool _keepsShells(FlarkDocument next, ProjectedRow row, int offset) {
-    final now = next.rowAt(offset).shells;
-    if (now.length != row.shells.length) return false;
-    for (var i = 0; i < now.length; i++) {
-      if (now[i].kind != row.shells[i].kind) return false;
+  static bool _keepsShells(FlarkDocument next, ProjectedRow row, int offset) =>
+      _sameShells(next.rowAt(offset), row);
+
+  /// Whether rows [a] and [b] sit in containers of the same kinds.
+  static bool _sameShells(ProjectedRow a, ProjectedRow b) {
+    if (a.shells.length != b.shells.length) return false;
+    for (var i = 0; i < a.shells.length; i++) {
+      if (a.shells[i].kind != b.shells[i].kind) return false;
     }
     return true;
   }
@@ -2172,13 +2175,15 @@ final class FlarkEditor implements FlarkDocumentState {
   /// onto another line, nothing the projection hides is painted either: text
   /// after a closing fence or sequence paints it, and so do the brackets of
   /// references to a definition the edit merged into a paragraph. [shown] is
-  /// hidden source the edit may paint.
+  /// hidden source the edit may paint. With [shells], every other row also
+  /// stays in containers of the same kinds.
   bool _keepsStructure(
     FlarkDocument next,
     List<(int, int, int)> edits,
     Set<int> rows, {
     bool movesText = true,
     (int, int)? shown,
+    bool shells = false,
   }) {
     // A current offset in [next]'s source, or -1 inside a replacement.
     int forward(int offset) {
@@ -2217,7 +2222,9 @@ final class FlarkEditor implements FlarkDocumentState {
       final holder = at > now[j].sourceEnd && j + 1 < now.length
           ? now[j + 1]
           : now[j];
-      if (holder.kind != row.kind) return false;
+      if (holder.kind != row.kind || shells && !_sameShells(holder, row)) {
+        return false;
+      }
     }
     return !movesText || !_revealsHiddenText(next, back, shown: shown);
   }
@@ -2332,73 +2339,86 @@ final class FlarkEditor implements FlarkDocumentState {
     if (_wholeRange(sel.start, sel.end)) {
       return _replaceWhole(paragraph ? '$nl$nl' : nl);
     }
-    if (!sel.isCollapsed) {
-      final range = _contentRange(sel.start, sel.end);
-      if (!_supportedRange(range.start, range.end) ||
-          _doc.rowAt(range.start).kind == RowKind.tableCell) {
-        return false;
-      }
-      final row = _doc.rowAt(range.start);
-      if (row.kind == RowKind.codeBlock) {
-        return _codeNewline(row, range.start, range.end);
-      }
-      return _splitRow(row, range.start, range.end, paragraph ? '$nl$nl' : nl);
+    final (:start, :end) = _contentRange(sel.start, sel.end);
+    final row = sel.isCollapsed
+        ? projection.rows[_doc.caretPosition.row]
+        : _doc.rowAt(start);
+    if (row.kind == RowKind.tableCell) {
+      return sel.isCollapsed && _returnFromTable(row);
     }
-    final caret = sel.extent;
-    final pos = _doc.caretPosition;
-    final row = projection.rows[pos.row];
-    if (row.kind == RowKind.tableCell) return _returnFromTable(row);
-    final line = _doc.model.lineOfUtf16(caret);
-    final i = (line - row.firstLine).clamp(0, row.contentStarts.length - 1);
-    String text;
+    if (!_supportedRange(start, end)) return false;
     if (row.kind == RowKind.codeBlock) {
-      if (!paragraph) {
+      if (sel.isCollapsed && !paragraph) {
         final exited = _exitCodeOnBlankLine(row);
         if (exited != null) return exited;
       }
-      return _codeNewline(row, caret, caret);
-    } else if (row.shells.isNotEmpty) {
-      final prefixStart = row.prefixStarts[i],
-          contentStart = row.contentStarts[i];
-      // Return on an empty container line exits the container. An empty
-      // heading is not that line: its own markup is part of the prefix, so
-      // exiting would delete the heading with the container marker.
-      if (row.text.isEmpty &&
-          row.kind != RowKind.heading &&
-          prefixStart >= 0 &&
-          prefixStart < contentStart) {
-        final outer = source.substring(
-          _doc.model.lineStartUtf16(line),
-          prefixStart,
-        );
-        final replacement = line > 0 ? '$nl$outer' : '';
-        return _commit(
-          source.replaceRange(prefixStart, contentStart, replacement),
-          FlarkSelection.collapsed(prefixStart + replacement.length),
-          typing: false,
-        );
-      }
-      final inner = row.shells.last;
-      if (inner.kind == ShellKind.item) {
-        text = '$nl${_nextMarker(inner)}';
-      } else {
-        // The new line continues the quote or footnote, so it takes the
-        // line's container prefix: never the markers of the items and
-        // definitions that open on this line, which would open new ones, nor
-        // a heading's own marker, which belongs to the heading.
-        final m = _doc.model, block = row.block >= 0 ? row.block : inner.block;
-        final end =
-            row.block >= 0 &&
-                m.blockFirstLine(block) == line &&
-                m.blockStart(block) < contentStart
-            ? m.blockStart(block)
-            : contentStart;
-        text = '$nl${_continuationPrefix(source, m, line, end, block)}';
-      }
-    } else {
-      text = paragraph && row.kind == RowKind.paragraph ? '$nl$nl' : nl;
+      return _codeNewline(row, start, end);
     }
-    return _splitRow(row, caret, caret, text);
+    final line = _doc.model.lineOfUtf16(start);
+    final i = (line - row.firstLine).clamp(0, row.contentStarts.length - 1);
+    final prefixStart = row.prefixStarts[i],
+        contentStart = row.contentStarts[i];
+    // Return on an empty container line exits the container, unless the
+    // blocks after it would change containers (`   b` after an empty `>`
+    // under `1. a` would move into the item). An empty heading is not that
+    // line: its own markup is part of the prefix, so exiting would delete the
+    // heading with the container marker.
+    if (sel.isCollapsed &&
+        row.shells.isNotEmpty &&
+        row.text.isEmpty &&
+        row.kind != RowKind.heading &&
+        prefixStart >= 0 &&
+        prefixStart < contentStart) {
+      final outer = source.substring(
+        _doc.model.lineStartUtf16(line),
+        prefixStart,
+      );
+      final replacement = line > 0 ? '$nl$outer' : '';
+      return _commit(
+        source.replaceRange(prefixStart, contentStart, replacement),
+        FlarkSelection.collapsed(prefixStart + replacement.length),
+        typing: false,
+        acceptSourceMode: true,
+        accept: (next) => _keepsStructure(
+          next,
+          [(prefixStart, contentStart, replacement.length)],
+          {row.index},
+          movesText: false,
+          shells: true,
+        ),
+      );
+    }
+    // The new line continues the containers, a selection's as a caret at its
+    // start would: an item as the next item, a quote or footnote with
+    // [_rowPrefix].
+    final inner = row.shells.isEmpty ? null : row.shells.last;
+    final continued = inner == null
+        ? paragraph && row.kind == RowKind.paragraph
+              ? nl
+              : ''
+        : inner.kind == ShellKind.item
+        ? _nextMarker(inner)
+        : _rowPrefix(row, line);
+    return _splitRow(row, start, end, '$nl$continued');
+  }
+
+  /// The prefix that continues [row]'s containers after [line]: the line's
+  /// prefix, never the markers of the items and definitions that open on it,
+  /// which would open new ones, nor a heading's own marker, which belongs to
+  /// the heading. A lazy line has none, so the row's first line gives it.
+  String _rowPrefix(ProjectedRow row, int line) {
+    final m = _doc.model;
+    var i = (line - row.firstLine).clamp(0, row.contentStarts.length - 1);
+    if (row.prefixStarts[i] == row.contentStarts[i]) i = 0;
+    final contentStart = row.contentStarts[i], at = row.firstLine + i;
+    final block = row.block >= 0 ? row.block : row.shells.last.block;
+    final end =
+        row.block >= 0 &&
+            m.blockFirstLine(block) == at &&
+            m.blockStart(block) < contentStart
+        ? m.blockStart(block)
+        : contentStart;
+    return _continuationPrefix(source, m, at, end, block);
   }
 
   /// Return from [start] to [end] in [row]. A heading's underline or closing
@@ -2409,10 +2429,12 @@ final class FlarkEditor implements FlarkDocumentState {
   /// it above the underline, so the plain split serves.
   bool _splitRow(ProjectedRow row, int start, int end, String separator) {
     final trail = _headingTrail(row);
-    if (trail == null) return _splitInline(start, end, separator);
+    if (trail == null) return _splitInline(row, start, end, separator);
     final m = _doc.model;
     final line = m.lineOfUtf16(trail.$1);
-    if (m.lineOfUtf16(end) != line) return _splitInline(start, end, separator);
+    if (m.lineOfUtf16(end) != line) {
+      return _splitInline(row, start, end, separator);
+    }
     final first = m.lineOfUtf16(start) - row.firstLine;
     // Text on the split's first line before it, and text after it. Display
     // offsets count what is shown, so hidden delimiters are neither.
@@ -2422,25 +2444,22 @@ final class FlarkEditor implements FlarkDocumentState {
     final after = row.displayForSource(end).$1 < row.text.length;
     if (m.lineOfUtf16(trail.$2) == line ||
         before && first == line - row.firstLine) {
-      return _splitInline(start, end, separator, keep: trail);
+      return _splitInline(row, start, end, separator, keep: trail);
     }
-    if (after) return _splitInline(start, end, separator);
+    if (after) return _splitInline(row, start, end, separator);
     // The split takes the last line's text to its end. Text before it on an
     // earlier line keeps the underline after it. With no text before, from
     // the heading's start, the split leaves the heading empty, so it becomes
-    // the empty heading deleting its text leaves, before the line break.
-    // From the start of a later line, the lines before it remain and the
-    // underline would have to move up to them, which a split cannot do
-    // faithfully, so the edit is refused.
-    if (before) return _splitInline(start, end, separator, keep: trail);
+    // the empty ATX heading of its level deleting its text leaves, before the
+    // line break. From the start of a later line, the lines before it remain
+    // and the underline would have to move up to them, which a split cannot
+    // do faithfully, so the edit is refused.
+    if (before) return _splitInline(row, start, end, separator, keep: trail);
+    final marker = '${'#' * row.headingLevel} ';
     return first == 0 &&
-        (_emptySetext(
-              row.contentStarts[0],
-              trail.$1,
-              separator,
-              typing: false,
-            ) ??
-            false);
+        _commitReturn(row, start, end, [
+          (row.contentStarts[0], trail.$2, '$marker$separator'),
+        ], separator);
   }
 
   bool _returnFromTable(ProjectedRow row) {
@@ -2467,13 +2486,25 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Split parser-owned spans with the block. Move a terminal break outside
   /// closing syntax; at an interior split close and reopen the nonempty parts.
-  /// No empty delimiter pair is ever published as an intermediate document.
+  /// No empty delimiter pair is ever published as an intermediate document,
+  /// and an empty owner, which holds no split, stays whole before the break.
   /// [keep] is heading markup after the split that stays with the first part.
-  bool _splitInline(int start, int end, String separator, {(int, int)? keep}) {
+  bool _splitInline(
+    ProjectedRow row,
+    int start,
+    int end,
+    String separator, {
+    (int, int)? keep,
+  }) {
     var from = start, to = end;
+    for (final o in _doc.ownersAt(start)) {
+      if (start == end && o.contentStart == o.contentEnd && o.end > to) {
+        from = to = o.end;
+      }
+    }
     final shared = _doc
-        .ownersAt(start)
-        .where((o) => end <= o.contentEnd)
+        .ownersAt(from)
+        .where((o) => to <= o.contentEnd)
         .toList();
     final left = <String>[], right = <String>[];
     var leftSpace = '', rightSpace = '';
@@ -2515,23 +2546,194 @@ final class FlarkEditor implements FlarkDocumentState {
     final head = '${left.join()}$leftSpace';
     final tail = '$separator$rightSpace${right.join()}';
     if (keep == null || keep.$1 < to) {
-      return _commit(
-        source.replaceRange(from, to, '$head$tail'),
-        FlarkSelection.collapsed(from + head.length + tail.length),
-        typing: false,
-      );
+      return _commitReturn(row, start, end, [
+        (from, to, '$head$tail'),
+      ], separator);
     }
     final (markupStart, markupEnd) = keep;
     final markup = source.substring(markupStart, markupEnd);
-    return _commit(
-      '${source.substring(0, from)}$head$markup$tail'
-      '${source.substring(to, markupStart)}${source.substring(markupEnd)}',
-      FlarkSelection.collapsed(
-        from + head.length + markup.length + tail.length,
-      ),
-      typing: false,
-      acceptSourceMode: true,
-      accept: (next) => next.rowAt(from).kind == RowKind.heading,
+    return _commitReturn(row, start, end, [
+      (from, to, '$head$markup$tail'),
+      (markupStart, markupEnd, ''),
+    ], separator);
+  }
+
+  /// Commit Return's [split] of [row] at [start]..[end], sorted edits with
+  /// the caret after the first one's text, when the parser reads what Return
+  /// promises: the new line in containers of the kinds of the line it split,
+  /// other rows of the same kinds in the same kinds of containers, nothing
+  /// hidden painted, and the text shown with only the line break, whitespace
+  /// beside it aside. Lazy lines, which have no prefix of their own, take
+  /// [_rowPrefix] where the split would leave them outside the row's
+  /// containers: the split line when nothing is left on it, the lines after
+  /// it when nothing moves. When the parser reads the plain split as other
+  /// Markdown, these are tried in turn, else Return refuses: escaping the
+  /// first ASCII punctuation of the first word moved (`> b`, `1. b`, `=`) or
+  /// of the last word left (`a\`, `# a #`, `a*b*`); dropping the backslash
+  /// of a hard break the split follows; a blank line after the row, as a lift
+  /// keeps the next block apart (a heading's text moved into a paragraph
+  /// above indented code); for an item whose later blocks follow blank
+  /// lines, the next item's marker after them, as an empty item would end at
+  /// a blank line.
+  bool _commitReturn(
+    ProjectedRow row,
+    int start,
+    int end,
+    List<(int, int, String)> split,
+    String separator,
+  ) {
+    final m = _doc.model, at = split.first, rows = projection.rows;
+    final first = m.lineOfUtf16(start) - row.firstLine,
+        last = m.lineOfUtf16(end) - row.firstLine;
+    int shown(int offset) => row.displayForSource(offset).$1;
+    final prefix = row.shells.isEmpty ? '' : _rowPrefix(row, row.firstLine);
+    final lazy = [
+      for (var i = first < 1 ? 1 : first; i < row.lineCount; i++)
+        if (row.contentStarts[i] >= 0 &&
+            row.prefixStarts[i] == row.contentStarts[i] &&
+            (i == first
+                ? shown(start) == shown(row.contentStarts[i]) &&
+                      prefix.trim().isNotEmpty
+                : i > last && shown(end) == shown(row.contentEnds[last])))
+          (m.lineStartUtf16(row.firstLine + i), row.contentStarts[i], prefix),
+    ];
+    final edits = [
+      ...lazy.where((e) => e.$1 <= at.$1),
+      ...split,
+      ...lazy.where((e) => e.$1 > at.$1),
+    ];
+    final breaks = '\n' * '\n'.allMatches(separator).length;
+    var g = 0;
+    for (var i = 0; i < row.index; i++) {
+      g += rows[i].text.length + 1;
+    }
+    final a = g + shown(start), b = g + shown(end);
+    final before = [for (final r in rows) r.text].join('\n');
+    bool attempt(
+      List<(int, int, String)> list,
+      (int, int, String) caretEdit,
+      int offset, {
+      bool apart = false,
+    }) {
+      final out = StringBuffer();
+      var copied = 0, shift = 0, caret = 0;
+      for (final edit in list) {
+        final (from, to, text) = edit;
+        out.write('${source.substring(copied, from)}$text');
+        if (edit == caretEdit) caret = from + shift + offset;
+        shift += text.length - (to - from);
+        copied = to;
+      }
+      out.write(source.substring(copied));
+      return _commit(
+        '$out',
+        FlarkSelection.collapsed(caret),
+        typing: false,
+        acceptSourceMode: true,
+        accept: (next) {
+          final now = next.rowAt(caret);
+          String kinds(Iterable<Shell> shells) =>
+              shells.map((shell) => shell.kind.name).join('/');
+          // A footnote's continuation line holds only its indentation, and is
+          // in no footnote yet while nothing follows it there.
+          final pending =
+              now.kind == RowKind.blank &&
+              row.shells.lastOrNull?.kind == ShellKind.footnoteDefinition &&
+              kinds(now.shells) ==
+                  kinds(row.shells.take(row.shells.length - 1));
+          // A line ended by Return can read as a link reference definition,
+          // which shows its source.
+          final defined =
+              row.kind != RowKind.definition &&
+              next.rowAt(start).kind == RowKind.definition;
+          if (!_sameShells(now, row) && !pending ||
+              !_keepsStructure(
+                next,
+                [for (final (from, to, text) in list) (from, to, text.length)],
+                {row.index},
+                shown: defined ? (row.sourceStart, start) : null,
+                shells: true,
+              )) {
+            return false;
+          }
+          var expected = before.replaceRange(a, b, breaks);
+          if (apart) {
+            final e = g + row.text.length + breaks.length - (b - a);
+            expected = expected.replaceRange(e, e, '\n');
+          }
+          return defined ||
+              [
+                    for (final r in next.projection.rows) r.text,
+                  ].join('\n').replaceAll(_breakSpace, '\n') ==
+                  expected.replaceAll(_breakSpace, '\n');
+        },
+      );
+    }
+
+    if (attempt(edits, at, at.$3.length) || _lastRejection != null) {
+      return _lastRejection == null;
+    }
+    final lineStart = row.contentStarts[first];
+    final moved = _firstEscapable.matchAsPrefix(source, at.$2);
+    final kept = _lastEscapable.firstMatch(
+      source.substring(lineStart, at.$1 < lineStart ? lineStart : at.$1),
+    );
+    final rowLast = row.firstLine + row.lineCount - 1;
+    final rowEnd = projection.lineContentEnd(rowLast);
+    final blank = (
+      rowEnd,
+      rowEnd,
+      '${_lineBreakAt(rowEnd)}'
+          '${prefix.isEmpty ? '' : _rowPrefix(row, rowLast).trimRight()}',
+    );
+    (int, int, String)? unbreak;
+    final runs = row.block < 0 ? 0 : m.firstRunOfBlock(row.block + 1);
+    for (var r = runs > 0 ? m.firstRunOfBlock(row.block) : 0; r < runs; r++) {
+      final s = m.runStart(r);
+      if (m.runKind(r) == RunKind.hardBreak &&
+          m.runEnd(r) == at.$1 &&
+          m.runContentStart(r) == at.$1) {
+        unbreak = (s, projection.lineContentEnd(m.lineOfUtf16(s)), '');
+      }
+    }
+    for (final edit in [
+      if (moved != null &&
+          moved.end <= projection.lineContentEnd(m.lineOfUtf16(end)))
+        (moved.end - 1, moved.end - 1, r'\'),
+      if (kept != null) (lineStart + kept.start, lineStart + kept.start, r'\'),
+      ?unbreak,
+      if (rowLast + 1 < m.lineCount) blank,
+    ]) {
+      // The edit among the others, after those that start where it does.
+      final i = edits.lastIndexWhere((e) => e.$1 <= edit.$1) + 1;
+      final list = [...edits.take(i), edit, ...edits.skip(i)];
+      if (attempt(list, at, at.$3.length, apart: edit == blank)) return true;
+      if (_lastRejection != null) return false;
+    }
+    final item = row.shells.isEmpty ? null : row.shells.last;
+    final following = rows
+        .skip(row.index + 1)
+        .where((r) => r.kind != RowKind.blank)
+        .firstOrNull;
+    if (item?.kind != ShellKind.item ||
+        following == null ||
+        following.index == row.index + 1 ||
+        !following.shells.any((s) => s.block == item!.block) ||
+        shown(end) < row.text.length ||
+        start != end && (split.length > 1 || !at.$3.endsWith(separator))) {
+      return false;
+    }
+    final lineAt = m.lineStartUtf16(following.firstLine);
+    final marker = separator.substring(separator.indexOf('\n') + 1);
+    final edit = (lineAt, lineAt, '$marker${_lineBreakAt(lineAt)}');
+    return attempt(
+      [
+        if (start != end)
+          (at.$1, at.$2, at.$3.substring(0, at.$3.length - separator.length)),
+        edit,
+      ],
+      edit,
+      marker.length,
     );
   }
 
@@ -3118,6 +3320,14 @@ final class FlarkEditor implements FlarkDocumentState {
 /// Characters that can underline a setext heading.
 final _underlineRun = RegExp(r'^(?:-+|=+)$');
 
+/// Spaces and tabs beside a line break, which Markdown shows or strips.
+final _breakSpace = RegExp(r'[ \t]*\n[ \t]*');
+
+/// The first ASCII punctuation, which a backslash escapes, of the first word
+/// at a position, and the last of the last word before an end.
+final _firstEscapable = RegExp(r'[ \t]*[^\s!-/:-@\[-`{-~]*[!-/:-@\[-`{-~]');
+final _lastEscapable = RegExp(r'[!-/:-@\[-`{-~][^\s!-/:-@\[-`{-~]*[ \t]*$');
+
 /// Any character of an item marker but a tab, which keeps its own width.
 final _notTab = RegExp(r'[^\t]');
 
@@ -3182,12 +3392,16 @@ String _continuationPrefix(
             from--;
           }
         }
+        // A marker right after a quote's `>` left it no optional space, and
+        // the first of the spaces put in its place would be read as one.
+        final pad = from > 0 && !FlarkEditor._isSpace(prefix, from - 1);
         prefix = prefix.replaceRange(
           from,
           to,
-          kind == BlockKind.item
-              ? marker.replaceAll(_notTab, ' ')
-              : _footnoteIndent,
+          (pad ? ' ' : '') +
+              (kind == BlockKind.item
+                  ? marker.replaceAll(_notTab, ' ')
+                  : _footnoteIndent),
         );
       }
     }

@@ -1,0 +1,279 @@
+part of '../journey_test.dart';
+
+/// Return splits a row and shows a line break where the caret was, and
+/// nothing else changes: the new line stays in the containers of the line it
+/// split, the text it moves or leaves stays text, and the blocks around it
+/// keep their kinds and containers. Where no spelling keeps all of that,
+/// Return refuses.
+void _returnCases(FlarkParseBackend backend) {
+  List<ShellKind> shells(_Session session) => [
+    for (final shell in session.editor.document.caretRow.shells) shell.kind,
+  ];
+
+  group('rows', () {
+    test('text typed after link reference definitions shows below them', () {
+      final session = _Session(
+        backend,
+        source:
+            '[docs]: https://example.com/docs\n[home]: https://example.com\n',
+        caret: 61,
+      );
+      session.act(
+        const InsertText('M'),
+        source:
+            '[docs]: https://example.com/docs\n[home]: https://example.com\nM',
+        rows: [
+          '[docs]: https://example.com/docs',
+          '[home]: https://example.com',
+          'M',
+        ],
+        caret: const DisplayPosition(2, 1),
+      );
+      session.act(
+        const Newline(),
+        rows: [
+          '[docs]: https://example.com/docs',
+          '[home]: https://example.com',
+          'M',
+          '',
+        ],
+        caret: const DisplayPosition(3, 0),
+      );
+    });
+  });
+
+  group('return', () {
+    test('over a selection continues the containers of its line', () {
+      for (final (source, base, extent, split, typed) in [
+        ('> ab', 3, 4, '> a\n> ', '> a\n> z'),
+        ('- ab', 3, 4, '- a\n- ', '- a\n- z'),
+        ('1. ab', 4, 5, '1. a\n2. ', '1. a\n2. z'),
+        ('- [ ] ab', 7, 8, '- [ ] a\n- [ ] ', '- [ ] a\n- [ ] z'),
+        ('> - ab', 5, 6, '> - a\n> - ', '> - a\n> - z'),
+        ('- > ab', 5, 6, '- > a\n  > ', '- > a\n  > z'),
+        ('> ab\r\n> cd', 3, 4, '> a\r\n> \r\n> cd', '> a\r\n> z\r\n> cd'),
+        ('> # abc', 4, 7, '> # \n> ', '> # \n> z'),
+        (
+          'x[^1]\n\n[^1]: note',
+          14,
+          16,
+          'x[^1]\n\n[^1]: n\n    e',
+          'x[^1]\n\n[^1]: n\n    ze',
+        ),
+      ]) {
+        final session = _Session(backend, source: source);
+        session.act(SetSelection(base, extent));
+        final before = shells(session);
+        session.act(const Newline(), source: split);
+        expect(shells(session), before, reason: source);
+        session.act(const InsertText('z'), source: typed);
+        expect(shells(session), before, reason: source);
+      }
+    });
+
+    test('over a setext heading in an item keeps the item whole', () {
+      // The heading becomes the empty ATX heading deleting its text leaves,
+      // and the next item opens after the blank line, where the item's later
+      // block stays with it: an empty item before a blank line would end
+      // there and leave `para` outside the list.
+      final session = _Session(backend, source: '- abc\n  ===\n\n  para');
+      session.act(const SetSelection(2, 5));
+      session.act(
+        const Newline(),
+        source: '- # \n\n- \n  para',
+        rows: ['', '', '', 'para'],
+        caret: const DisplayPosition(2, 0),
+      );
+      expect(shells(session), [ShellKind.list, ShellKind.item]);
+      session.act(
+        const InsertText('z'),
+        source: '- # \n\n- z\n  para',
+        rows: ['', '', 'z\npara'],
+      );
+      expect(shells(session), [ShellKind.list, ShellKind.item]);
+    });
+
+    test('at the end of an item keeps its later blocks in an item', () {
+      final session = _Session(backend, source: '2. a\n\n   b', caret: 4);
+      session.act(
+        const Newline(),
+        source: '2. a\n\n3. \n   b',
+        rows: ['a', '', '', 'b'],
+        caret: const DisplayPosition(2, 0),
+      );
+      expect(session.editor.projection.rows.last.shells.map((s) => s.kind), [
+        ShellKind.list,
+        ShellKind.item,
+      ]);
+      session.act(const InsertText('z'), source: '2. a\n\n3. z\n   b');
+    });
+
+    test('keeps the text it moves from reading as markup', () {
+      // A marker that starts the moved text is escaped, so it stays the
+      // text it was instead of opening a quote, an item, a fence or an
+      // underline. The empty link stays whole before the break.
+      for (final (source, caret, split, shown) in [
+        ('a> b', 1, 'a\n\\> b', 'a\n> b'),
+        ('a - b', 1, 'a\n \\- b', 'a\n- b'),
+        ('a 1. b', 1, 'a\n 1\\. b', 'a\n1. b'),
+        ('a=', 1, 'a\n\\=', 'a\n='),
+        ('a```b', 1, 'a\n\\```b', 'a\n```b'),
+        ('[]()>', 1, '[]()\n\\>', '\n>'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const Newline(), source: split, rows: [shown]);
+      }
+    });
+
+    test('keeps the text it leaves from reading as markup', () {
+      for (final (source, caret, split, rows) in [
+        ('a\\b', 2, 'a\\\\\nb', ['a\\\nb']),
+        ('# a # b', 6, '# a \\# \nb', ['a # ', 'b']),
+        ('a*b**', 4, 'a*b\\*\n*', ['a*b*\n*']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const Newline(), source: split, rows: rows);
+      }
+    });
+
+    test('after a hard break ends the paragraph there', () {
+      final session = _Session(backend, source: 'a\\\nb', caret: 3);
+      session.act(
+        const Newline(),
+        source: 'a\n\nb',
+        rows: ['a', '', 'b'],
+        caret: const DisplayPosition(2, 0),
+      );
+    });
+
+    test('refuses where no spelling keeps what it splits', () {
+      // An autolink and a reference label hold no line break, and closing
+      // and reopening `__` beside a literal `__` would pair them anew.
+      for (final (source, caret, paragraph) in [
+        ('<http://a.b>', 5, false),
+        ('[foo]\n\n[foo]: /u', 2, false),
+        ('[foo]\n\n[foo]: /u', 9, false),
+        ('__foo __bar__baz__', 13, true),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          Newline(paragraph: paragraph),
+          applied: false,
+          source: source,
+        );
+      }
+    });
+
+    test('on or before a lazy line keeps the quote around both', () {
+      for (final (source, caret, paragraph, split, rows) in [
+        ('>a\nb', 4, false, '>a\nb\n>', ['a\nb', '']),
+        ('>a\nb', 3, false, '>a\n>\n>b', ['a', '', 'b']),
+        ('>a\nb\n-', 2, true, '>a\n>\n>b\n-', ['a', '', 'b', '-']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          Newline(paragraph: paragraph),
+          source: split,
+          rows: rows,
+        );
+        expect(shells(session), [ShellKind.blockQuote], reason: source);
+        expect(
+          session.editor.projection.rows
+              .where((row) => row.text.isNotEmpty && row.text != '-')
+              .every((row) => row.shells.length == 1),
+          isTrue,
+          reason: source,
+        );
+      }
+    });
+
+    test('in a heading keeps the next block apart from its text', () {
+      // The text after the caret becomes a paragraph, which would read the
+      // next line on as part of it: a quote's lazy line, indented code, an
+      // underline. A blank line keeps that block apart, as a lift does.
+      for (final (source, caret, split, rows) in [
+        ('> # a b\nc', 6, '> # a \n> b\n>\nc', ['a ', 'b', '', 'c']),
+        ('# a\n    b', 2, '# \na\n\n    b', ['', 'a', '', 'b']),
+        ('# a\n-', 2, '# \na\n\n-', ['', 'a', '', '-']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const Newline(),
+          source: split,
+          rows: rows,
+          caret: const DisplayPosition(1, 0),
+        );
+      }
+    });
+
+    test('inside a definition keeps the definitions after it', () {
+      final session = _Session(backend, source: '[a]: /x*\n[b]: /y', caret: 7);
+      session.act(
+        const Newline(),
+        source: '[a]: /x\n*\n\n[b]: /y',
+        rows: ['[a]: /x', '*', '', '[b]: /y'],
+        caret: const DisplayPosition(1, 0),
+      );
+      expect(session.editor.projection.rows.last.kind, RowKind.definition);
+    });
+
+    test('continues an item or footnote right after a quote marker', () {
+      // comrak reads the first space after `>` as the quote's own, so the
+      // item's two columns, or the footnote's four, need one more.
+      final session = _Session(backend, source: '>- >a', caret: 5);
+      session.act(const Newline(), source: '>- >a\n>   >');
+      session.act(
+        const InsertText('z'),
+        source: '>- >a\n>   >z',
+        rows: ['a\nz'],
+      );
+      expect(shells(session), [
+        ShellKind.blockQuote,
+        ShellKind.list,
+        ShellKind.item,
+        ShellKind.blockQuote,
+      ]);
+      final note = _Session(backend, source: '>[^1]: a\n\nx[^1]', caret: 8);
+      note.act(const Newline(), source: '>[^1]: a\n>     \n\nx[^1]');
+      note.act(
+        const InsertText('z'),
+        source: '>[^1]: a\n>     z\n\nx[^1]',
+        rows: ['a\nz', '', 'x[^1]'],
+      );
+      expect(shells(note), [
+        ShellKind.blockQuote,
+        ShellKind.footnoteDefinition,
+      ]);
+    });
+
+    test('in code on nested item lines indents past their markers', () {
+      // Copied, `- - -` would make the new line a rule.
+      final session = _Session(backend, source: '- - -     a', caret: 11);
+      session.act(const Newline(), source: '- - -     a\n          ');
+      session.act(
+        const InsertText('z'),
+        source: '- - -     a\n          z',
+        rows: ['a\nz'],
+      );
+      expect(session.editor.document.caretRow.kind, RowKind.codeBlock);
+      // A split that leaves a rule on an item's line, or that empties the
+      // item's first line so the list after it leaves the item, refuses.
+      const rule = '-     -      -      x';
+      _Session(
+        backend,
+        source: rule,
+        caret: 14,
+      ).act(const Newline(), applied: false, source: rule);
+      const nested = '-     a\n\n  - b';
+      _Session(backend, source: nested)
+        ..act(const SetSelection(6, 7))
+        ..act(const Newline(), applied: false, source: nested);
+    });
+
+    test('leaving an empty quote line keeps the next block out of a list', () {
+      // Without the quote, `   b` would read on in the item above.
+      final session = _Session(backend, source: '1. a\n>\n   b', caret: 6);
+      session.act(const Newline(), applied: false, source: '1. a\n>\n   b');
+    });
+  });
+}

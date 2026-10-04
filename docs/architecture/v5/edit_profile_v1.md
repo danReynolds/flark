@@ -208,6 +208,18 @@ Return and Backspace operate on the visible block structure:
   is continued at its indent (a footnote's four columns, counted from the end
   of the containers around it rather than from an indented label) rather than
   by repeating its marker, which would open another;
+- Return shows only its line break. Over a selection it continues the
+  containers as at the selection's start; a lazy line takes the prefix it
+  lacks where it would otherwise leave its quote. Text moved to the new line
+  or left before it stays text: a marker that would start a block there, or
+  syntax that would end one (`> b`, `1. b`, `=`, `a\`, `# a #`), is escaped,
+  and a hard break before the caret gives way to the new break. A blank line
+  keeps the next block apart from the text of a split heading, now a
+  paragraph, as for a lift, and an item whose later blocks follow blank lines
+  continues after them, where an empty item would drop them from the list.
+  Where nothing keeps what it splits (an autolink, a reference's label,
+  delimiters that would pair anew) Return refuses, as it does when leaving an
+  empty container line would move the block after it into another container;
 - Return, including in code, inserts the line ending of the caret's line, so a
   CRLF document stays CRLF;
 - terminal Return creates one writable following paragraph;

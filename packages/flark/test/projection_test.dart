@@ -137,6 +137,33 @@ void main() {
     );
   });
 
+  test('a paragraph after link reference definitions shows after them', () {
+    // comrak starts the paragraph, and a setext heading made of one, at the
+    // definitions it took from its start. Its row starts where its text does,
+    // after the definition rows, in quotes and items too.
+    for (final (source, lines) in [
+      (
+        '[docs]: https://example.com/docs\n[home]: https://example.com\n'
+            'More text',
+        [0, 1, 2],
+      ),
+      ('[a]: /u\r\n[b]: /v\r\nTitle\r\n===\r\n', [0, 1, 2, 4]),
+      ('> [a]: /u\n> [b]: /v\n> text', [0, 1, 2]),
+      ('- [a]: /u\n  [b]: /v\n  text', [0, 1, 2]),
+    ]) {
+      final p = project(source);
+      checkInvariants(source, p.model, p, source);
+      expect(p.rows.map((r) => r.firstLine), lines, reason: source);
+      final leaf = p.rows.firstWhere((r) => r.kind != RowKind.definition);
+      expect(
+        (leaf.lineCount, leaf.contentStarts.first >= 0),
+        (leaf.kind == RowKind.heading ? 2 : 1, true),
+        reason: source,
+      );
+      expect(p.rowsOnLine(0), [0], reason: source);
+    }
+  });
+
   test('an escaped table pipe is one mapped rendered grapheme', () {
     const src = '| a |\n|---|\n| \\|*x* |\n';
     final p = project(src);
