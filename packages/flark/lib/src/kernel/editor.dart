@@ -1542,6 +1542,20 @@ final class FlarkEditor implements FlarkDocumentState {
     final row = projection.rows[pos.row];
     final d = pos.offset;
     if (backward ? d == 0 : d >= row.text.length) {
+      // Backspace at the start of the source (past a byte order mark, which
+      // belongs to the document) in a plain row, with no heading or
+      // container to lift, or Delete at its end, has nothing to delete: it
+      // does nothing, and is no refused edit a host would report.
+      final edge = backward
+          ? (sel.extent == 0 ||
+                    sel.extent == 1 && source.startsWith('\uFEFF')) &&
+                row.shells.isEmpty &&
+                (row.kind == RowKind.paragraph || row.kind == RowKind.blank)
+          : sel.extent == source.length;
+      if (edge) {
+        _inert = true;
+        return false;
+      }
       return backward ? _joinBackward(row) : _joinForward(row);
     }
     // The rendered grapheme's own source bytes, hidden neighbours excluded.

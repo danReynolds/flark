@@ -8,6 +8,21 @@ List<String> _shellsOf(FlarkEditor editor) => [
 
 void _deletionCases(FlarkParseBackend backend) {
   group('deletion', () {
+    test('deleting at the document\'s ends does nothing quietly', () {
+      // Nothing precedes the first row or follows the last: the key does
+      // nothing, with no refusal for a host to report.
+      for (final (source, caret, command) in [
+        ('abc', 0, const DeleteBackward() as FlarkCommand),
+        ('abc', 3, const DeleteForward()),
+        ('', 0, const DeleteBackward()),
+        ('a\n\nb', 4, const DeleteForward()),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
+    });
+
     test('emptying an item under a paragraph keeps the item apart from it', () {
       // An empty item cannot interrupt a paragraph: left as it is, `1. `
       // would show as the paragraph's text and `- ` would underline it. A
