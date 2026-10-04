@@ -399,6 +399,168 @@ void _structureCases(FlarkParseBackend backend) {
       },
     );
 
+    test(
+      'outdent lifts an item that opens on its parent\'s line onto a line of its own',
+      () {
+        // Merging the markers (`-- a`) would paint them as text.
+        final session = _Session(backend, source: '- - a\n    b', caret: 4);
+        session.act(
+          const Outdent(),
+          source: '-\n- a\n  b',
+          rows: ['', 'a\nb'],
+          caret: const DisplayPosition(1, 0),
+        );
+        expect(session.editor.document.caretRow.shells.map((s) => s.kind), [
+          ShellKind.list,
+          ShellKind.item,
+        ]);
+        final ordered = _Session(backend, source: '1. 2. ', caret: 6);
+        ordered.act(const Outdent(), source: '1.\n2. ', rows: ['', '']);
+      },
+    );
+
+    test('outdent refuses when the emptied parent would show its marker', () {
+      // Alone in its list, a bare `-` is presented as the text it is.
+      final session = _Session(backend, source: '- 1. ', caret: 5);
+      session.act(const Outdent(), applied: false, source: '- 1. ');
+    });
+
+    test('outdent shifts tab-indented lines by the columns they show', () {
+      // Two columns of the tab go, not the one space before the item's
+      // column, so the code keeps its own indentation.
+      final code = _Session(
+        backend,
+        source: '- a\n  - b\n\n\t      code',
+        caret: 8,
+      );
+      code.act(
+        const Outdent(),
+        source: '- a\n- b\n\n        code',
+        rows: ['a', 'b', '', '  code'],
+      );
+      // An item that opens on its parent's line keeps a tab-indented child.
+      final child = _Session(backend, source: '- -\n\tz', caret: 3);
+      child.act(const Outdent(), source: '-\n-\n  z', rows: ['', '', 'z']);
+      expect(child.editor.projection.rows.last.shells.length, 2);
+    });
+
+    test('indent refuses when it would move a block after the item', () {
+      // A sibling short of the nested item's column would nest with it.
+      final sibling = _Session(backend, source: '- a\n - b\n  - c', caret: 8);
+      sibling.act(const Indent(), applied: false, source: '- a\n - b\n  - c');
+      // The first item would no longer end at its empty line, and the code
+      // after the list would become its paragraph.
+      final code = _Session(backend, source: '-\n-\n\n    a', caret: 3);
+      code.act(const Indent(), applied: false, source: '-\n-\n\n    a');
+    });
+
+    test('indent refuses to paint a marker the item above would take', () {
+      // An HTML block in the previous item reads the marker as its text.
+      final html = _Session(backend, source: '- <v>\n-', caret: 7);
+      html.act(const Indent(), applied: false, source: '- <v>\n-');
+      // An empty item cannot interrupt a paragraph: nested under one, its
+      // marker would underline the paragraph as a heading.
+      final empty = _Session(backend, source: '- a\n- ', caret: 6);
+      empty.act(const Indent(), applied: false, source: '- a\n- ');
+    });
+
+    test(
+      'a heading level on an empty line keeps the pending style for its text',
+      () {
+        final session = _Session(backend, source: 'a\n\n\nb', caret: 3);
+        session.act(
+          const ToggleStyle(Style.strikethrough),
+          context: Style.strikethrough,
+        );
+        session.act(
+          const SetHeadingLevel(3),
+          source: 'a\n\n### \nb',
+          rows: ['a', '', '', 'b'],
+          context: Style.strikethrough,
+        );
+        session.act(
+          const InsertText('x'),
+          source: 'a\n\n### ~~x~~\nb',
+          rows: ['a', '', 'x', 'b'],
+        );
+        expect(session.editor.document.caretRow.headingLevel, 3);
+      },
+    );
+
+    test('a heading level on an empty line keeps it in its containers', () {
+      // An item runs on over an empty line without its indentation, which
+      // the heading takes.
+      final item = _Session(backend, source: '- a\n\n  b', caret: 4);
+      item.act(
+        const SetHeadingLevel(2),
+        source: '- a\n  ## \n  b',
+        rows: ['a', '', 'b'],
+      );
+      expect(item.editor.projection.rows.map((r) => r.shells.length), [
+        2,
+        2,
+        2,
+      ]);
+      // An empty item's marker is spaced from the heading's.
+      final empty = _Session(backend, source: '-\n      a', caret: 1);
+      empty.act(
+        const SetHeadingLevel(4),
+        source: '- #### \n      a',
+        rows: ['', 'a'],
+      );
+      expect(empty.editor.projection.rows.map((r) => r.kind), [
+        RowKind.heading,
+        RowKind.codeBlock,
+      ]);
+    });
+
+    test(
+      'a heading level on an empty line drops indentation and leaves HTML apart',
+      () {
+        final tab = _Session(backend, source: 'a\n\n\t', caret: 4);
+        tab.act(
+          const SetHeadingLevel(2),
+          source: 'a\n\n## ',
+          rows: ['a', '', ''],
+        );
+        expect(tab.editor.document.caretRow.headingLevel, 2);
+        // An HTML block runs on to an empty line, so the heading takes the
+        // line after this one.
+        final html = _Session(backend, source: '<v>\n\n_', caret: 4);
+        html.act(
+          const SetHeadingLevel(1),
+          source: '<v>\n\n# \n_',
+          rows: ['<v>', '', '', '_'],
+        );
+        expect(html.editor.document.caretRow.kind, RowKind.heading);
+      },
+    );
+
+    test(
+      'a heading level on a paragraph with a lazy line keeps the rest in its item',
+      () {
+        final session = _Session(backend, source: '- a\nb\n\n  c', caret: 2);
+        session.act(
+          const SetHeadingLevel(1),
+          source: '- # a\n  b\n\n  c',
+          rows: ['a', 'b', '', 'c'],
+          caret: const DisplayPosition(0, 0),
+        );
+        expect(session.editor.projection.rows.map((r) => r.shells.length), [
+          2,
+          2,
+          2,
+          2,
+        ]);
+        // A heading is the paragraph's first line, so the level refuses from
+        // a later one, and where it would cut a span in two.
+        final later = _Session(backend, source: '- b\nc\n- ', caret: 4);
+        later.act(const SetHeadingLevel(1), applied: false);
+        final span = _Session(backend, source: '*a\nb*', caret: 1);
+        span.act(const SetHeadingLevel(1), applied: false);
+      },
+    );
+
     test('backspace at a nested item start keeps the outer containers', () {
       final nested = _Session(backend, source: '- a\n  - b', caret: 8);
       nested.act(

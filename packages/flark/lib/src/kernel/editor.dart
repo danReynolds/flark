@@ -2766,81 +2766,155 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// Indent nests the caret's item under its previous sibling by that
-  /// sibling's content offset; Outdent removes the parent's. Every line of
-  /// the item shifts at the item's own column.
+  /// sibling's content offset; Outdent lifts it by its parent's, onto a line
+  /// of its own if it opens on the parent's (`- - a` gives `-` over `- a`).
+  /// All its lines shift at its column. The parser must show every row as
+  /// it was, the item's a list deeper or shallower, or the shift refuses.
   bool _shiftItem({required bool outdent}) {
-    final row = _doc.caretRow;
-    final shells = row.shells;
-    var idx = -1;
-    for (var i = shells.length - 1; i >= 0; i--) {
-      if (shells[i].kind == ShellKind.item) {
-        idx = i;
-        break;
-      }
+    final row = _doc.caretRow, shells = row.shells, m = _doc.model;
+    final idx = shells.lastIndexWhere((s) => s.kind == ShellKind.item);
+    if (idx < 0 ||
+        outdent && (idx < 2 || shells[idx - 2].kind != ShellKind.item)) {
+      return false;
     }
-    if (idx < 0) return false;
-    final item = shells[idx];
-    final m = _doc.model;
-    final list = m.blockParent(item.block);
-    final first = m.blockFirstLine(item.block),
-        n = m.blockLineCount(item.block);
-    final column = m.blockStart(item.block) - m.lineStartUtf16(first);
-    int width;
-    if (!outdent) {
-      var prev = -1;
-      for (var b = list + 1; b < item.block; b++) {
-        if (m.blockParent(b) == list) prev = b;
-      }
-      if (prev < 0) return false;
-      width = m.blockAttr(prev);
-    } else {
-      Shell? parent;
-      for (var i = idx - 1; i >= 0; i--) {
-        if (shells[i].kind == ShellKind.item) {
-          parent = shells[i];
-          break;
-        }
-      }
-      if (parent == null) return false;
-      width = m.blockAttr(parent.block);
+    final item = shells[idx].block, list = m.blockParent(item);
+    var other = outdent ? shells[idx - 2].block : -1;
+    for (var b = list + 1; !outdent && b < item; b++) {
+      if (m.blockParent(b) == list) other = b;
     }
+    if (other < 0) return false;
+    final first = m.blockFirstLine(item), start = m.blockStart(item);
+    final column = _columns(source, _lineStart(source, m, first), start);
+    var delta = m.blockAttr(other) * (outdent ? -1 : 1), from = first;
     final edits = <(int, int, String)>[];
-    for (var l = first; l < first + n; l++) {
-      final ls = m.lineStartUtf16(l), at = ls + column;
-      var le = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : source.length;
-      while (le > ls && source.codeUnitAt(le - 1) == 0x0A) {
-        le--;
-      }
-      if (at > le) continue;
-      if (!outdent) {
-        edits.add((at, at, ' ' * width));
-        // An ordered item nested under its sibling starts a new list at 1.
-        if (l == first && item.ordered) {
-          var k = 0;
-          while (at + k < le &&
-              source.codeUnitAt(at + k) >= 0x30 &&
-              source.codeUnitAt(at + k) <= 0x39) {
-            k++;
-          }
-          if (k > 0) edits.add((at, at + k, '1'));
-        }
-        continue;
-      }
-      var k = 0;
-      while (k < width &&
-          at - k > ls &&
-          source.codeUnitAt(at - k - 1) == 0x20) {
-        k++;
-      }
-      if (k > 0) edits.add((at - k, at, ''));
+    if (outdent && m.blockFirstLine(other) == first) {
+      // The parent keeps its marker, emptied; the item's new line continues
+      // the containers around the parent, as Return's continuation does.
+      var end = m.itemMarkerEnd(other);
+      for (; _isSpace(source, end - 1); end--) {}
+      final prefix = _continuing(other);
+      edits.add((end, start, '${_lineBreakAt(end)}$prefix'));
+      delta = _columns(prefix, 0, prefix.length) - column;
+      from++;
     }
-    if (edits.isEmpty) return false;
-    final (s, map) = _edited(edits);
-    return _commit(
-      s,
-      FlarkSelection(map(selection.base), map(selection.extent)),
-      typing: false,
-    );
+    for (var l = from; l < first + m.blockLineCount(item); l++) {
+      final edit = _shiftLine(l, column, delta);
+      if (edit != null) edits.add(edit);
+    }
+    // An ordered item nested under its sibling starts a new list at 1.
+    final digits = RegExp('[0-9]*').matchAsPrefix(source, start)!.end;
+    if (shells[idx].ordered && !outdent) edits.add((start, digits, '1'));
+    final cut = outdent ? idx - 2 : idx;
+    String moved(ProjectedRow r) {
+      final k = [for (final s in r.shells) s.kind.name];
+      final mine = r.shells.length > idx && r.shells[idx].block == item;
+      if (mine) k.replaceRange(cut, idx, [if (!outdent) 'item/list']);
+      return k.join('/');
+    }
+
+    edits.sort((a, b) => a.$1 == b.$1 ? a.$2 - b.$2 : a.$1 - b.$1);
+    return edits.isNotEmpty &&
+        _commitFirst(
+          [edits],
+          (next, map) =>
+              _showsRows(next, map, shells: moved) &&
+              _kinds(next.caretRow) == moved(row),
+        );
+  }
+
+  /// The visual column after [text] from [from] to [to], tabs counted to
+  /// the next multiple of four, as Markdown counts them.
+  static int _columns(String text, int from, int to, [int column = 0]) {
+    for (var i = from; i < to; i++) {
+      column = text.codeUnitAt(i) == 0x09 ? (column ~/ 4 + 1) * 4 : column + 1;
+    }
+    return column;
+  }
+
+  /// The prefix a new line takes to continue the containers of [block].
+  String _continuing(int block) {
+    final m = _doc.model, line = m.blockFirstLine(block);
+    return _continuationPrefix(source, m, line, m.blockStart(block), block);
+  }
+
+  /// The edit moving what [line] holds after visual [column] by [delta]:
+  /// spaces inserted, or up to -[delta] columns of whitespace before it
+  /// removed, that whitespace respelled as the spaces it shows. Null for a
+  /// line of whitespace, or a lazy one whose text starts before [column].
+  (int, int, String)? _shiftLine(int line, int column, int delta) {
+    final start = _lineStart(source, _doc.model, line);
+    final end = projection.lineContentEnd(line);
+    var at = start, col = 0, a = start, b = start;
+    while (at < end && col < column) {
+      col = _columns(source, at, ++at, col);
+    }
+    // Whitespace that is a row's content (code's own indentation) stays.
+    final spans = projection.lineSpans(line);
+    final content = spans.isEmpty ? end : spans[0].$1;
+    for (a = at; a > start && _isSpace(source, a - 1); a--) {}
+    for (b = at; b < content && _isSpace(source, b); b++) {}
+    if (col < column || b == end || content < at) return null;
+    final left = _columns(source, start, a);
+    final width = _columns(source, a, b, left) - left;
+    final shifted =
+        width + (delta > 0 ? delta : -(column - left).clamp(0, -delta));
+    return shifted == width ? null : (a, b, ' ' * shifted);
+  }
+
+  /// The kinds of [row]'s containers and, given their [doc], their starts.
+  static String _kinds(ProjectedRow row, [FlarkDocument? doc]) => row.shells
+      .map((s) => '${s.kind.name}${doc?.model.blockStart(s.block) ?? ''}')
+      .join('/');
+
+  /// Whether [next] shows each row of the current projection that shows
+  /// anything as it was (but those [shells] gives none for): the row where
+  /// [map] moves its start has its kind, level and text, in containers of
+  /// the kinds [shells] gives, and nothing else shows but [added] rows.
+  bool _showsRows(
+    FlarkDocument next,
+    int Function(int) map, {
+    int added = 0,
+    String? Function(ProjectedRow) shells = _kinds,
+  }) {
+    final now = next.projection.rows;
+    var j = 0, count = added;
+    for (final row in projection.rows) {
+      final kinds = shells(row);
+      if (row.kind == RowKind.blank || kinds == null) continue;
+      count++;
+      final at = map(row.sourceStart);
+      for (; j + 1 < now.length && now[j + 1].sourceStart <= at; j++) {}
+      final r = now[j];
+      if ((r.sourceStart, r.kind, r.text, r.headingLevel, _kinds(r)) !=
+          (at, row.kind, row.text, row.headingLevel, kinds)) {
+        return false;
+      }
+    }
+    return now.where((r) => r.kind != RowKind.blank).length == count;
+  }
+
+  /// Commit the first of [candidates] (sorted edits) whose parse [accept]
+  /// holds for, given their offset map; a rejected source ends the search.
+  bool _commitFirst(
+    List<List<(int, int, String)>> candidates,
+    bool Function(FlarkDocument next, int Function(int) map) accept, {
+    PendingStyle? pending,
+  }) {
+    for (final edits in candidates) {
+      final (s, map) = _edited(edits);
+      if (_commit(
+        s,
+        FlarkSelection(map(selection.base), map(selection.extent)),
+        typing: false,
+        pending: pending,
+        acceptSourceMode: true,
+        accept: (next) => accept(next, map),
+      )) {
+        return true;
+      }
+      if (_lastRejection != null) return false;
+    }
+    return false;
   }
 
   /// Apply sorted, non-overlapping edits; returns the new source and a map
@@ -2894,7 +2968,7 @@ final class FlarkEditor implements FlarkDocumentState {
     if (level < 0 || level > 6) return false;
     final row = _doc.caretRow;
     if (row.kind == RowKind.blank && selection.isCollapsed) {
-      return level > 0 && _insert('${'#' * level} ', typing: false);
+      return level > 0 && _emptyLineHeading(row, level);
     }
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
       return false;
@@ -2907,10 +2981,8 @@ final class FlarkEditor implements FlarkDocumentState {
       return false;
     }
     final heading = row.kind == RowKind.heading || _isBareHeading(row);
-    if (level > 0 &&
-        heading &&
-        row.contentStarts.where((s) => s >= 0).length > 1) {
-      return false;
+    if (level > 0 && row.contentStarts.where((s) => s >= 0).length > 1) {
+      return !heading && _headFirstLine(row, level);
     }
     final m = _doc.model;
     final blockStart = m.blockStart(row.block),
@@ -2938,6 +3010,74 @@ final class FlarkEditor implements FlarkDocumentState {
       (next) =>
           (next.rowAt(move(selection.extent)).kind == RowKind.heading) ==
           (level > 0),
+    );
+  }
+
+  /// A level set on an empty line makes an empty heading in the line's
+  /// containers, the typing intent kept. Its marker follows the line's
+  /// prefix (spaced from a list marker), else that prefix without trailing
+  /// whitespace, else the prefix that continues the containers (an item runs
+  /// on over unindented empty lines), else goes on a line after this one
+  /// (HTML runs to an empty line); the parser must show every row as it was.
+  bool _emptyLineHeading(ProjectedRow row, int level) {
+    final m = _doc.model, start = _lineStart(source, m, row.firstLine);
+    final end = row.sourceEnd, text = source.substring(start, end);
+    String marked(String p) =>
+        '$p${p.isEmpty || _isSpace(p, p.length - 1) ? '' : ' '}${'#' * level} ';
+    final child = row.shells.isEmpty ? m.blockCount : row.shells.last.block + 1;
+    return _commitFirst(
+      [
+        for (final line in {
+          marked(text),
+          marked(text.trimRight()),
+          if (child < m.blockCount && m.blockParent(child) == child - 1)
+            marked(_continuing(child)),
+          '$text${_lineBreakAt(end)}${marked(text.trimRight())}',
+        })
+          [(start, end, line)],
+      ],
+      (next, map) {
+        final now = next.rowAt(map(end));
+        return (now.kind, now.headingLevel, now.text, _kinds(now, next)) ==
+                (RowKind.heading, level, '', _kinds(row, _doc)) &&
+            _showsRows(next, map, added: 1);
+      },
+      pending: _pending,
+    );
+  }
+
+  /// A heading is one line: a level set on a paragraph of several heads the
+  /// first, where the caret must be, and the rest stays a paragraph in the
+  /// same containers, its first line respelled with the containers' prefix
+  /// if lazy or indented as code. Parts showing other text (a span) refuse.
+  bool _headFirstLine(ProjectedRow row, int level) {
+    final m = _doc.model, split = row.text.indexOf('\n');
+    final starts = row.contentStarts.where((s) => s >= 0).toList();
+    final at = starts[0], line = m.lineOfUtf16(at);
+    if (m.lineOfUtf16(selection.extent) != line || split < 0) return false;
+    final marker = (at, at, '${'#' * level} '), prefix = _continuing(row.block);
+    final lazy = _lineStart(source, m, m.lineOfUtf16(starts[1]));
+    var next = starts[1];
+    for (; _isSpace(source, next); next++) {}
+    return _commitFirst(
+      [
+        [marker],
+        if (source.substring(lazy, next) != prefix)
+          [marker, (lazy, next, prefix)],
+      ],
+      (doc, map) {
+        final now = doc.rowAt(map(selection.extent));
+        final rest = doc.projection.rows.elementAtOrNull(now.index + 1) ?? now;
+        final shells = _kinds(row, _doc), head = row.text.substring(0, split);
+        final tail = row.text.substring(split + 1).trimLeft();
+        String? others(ProjectedRow r) => r == row ? null : _kinds(r);
+        return (now.kind, now.headingLevel, _kinds(now, doc)) ==
+                (RowKind.heading, level, shells) &&
+            now.text.trimRight() == head.trimRight() &&
+            (rest.kind, rest.text.trimLeft(), _kinds(rest, doc)) ==
+                (RowKind.paragraph, tail, shells) &&
+            _showsRows(doc, map, added: 2, shells: others);
+      },
     );
   }
 
@@ -3006,7 +3146,8 @@ final class FlarkEditor implements FlarkDocumentState {
     final sel = selection;
     final caret = sel.extent;
     // At an edge of an owner, step across its delimiter: out when inside,
-    // in when outside. Strictly inside, unwrap it.
+    // in when outside. Strictly inside, unwrap it if what it held still
+    // shows as it did, as a selection's toggle requires.
     for (final o in sel.tableCell == null ? _doc.ownersAt(caret) : <Owner>[]) {
       if (o.style != style) continue;
       if (caret == o.contentEnd) {
@@ -3018,10 +3159,13 @@ final class FlarkEditor implements FlarkDocumentState {
       final s = source
           .replaceRange(o.contentEnd, o.end, '')
           .replaceRange(o.start, o.contentStart, '');
+      final before = _formattingContent(_doc, style);
       return _commit(
         s,
         FlarkSelection.collapsed(caret - (o.contentStart - o.start)),
         typing: false,
+        accept: (next) =>
+            _sameFormattingContent(before, _formattingContent(next, style)),
       );
     }
     for (final o

@@ -263,6 +263,32 @@ void _inlineCases(FlarkParseBackend backend) {
       session.act(const InsertText('d'), source: 'ab**c**d', rows: ['abcd']);
     });
 
+    test(
+      'toggling a style off at the caret refuses an unwrap that re-pairs delimiters',
+      () {
+        // Unwrapped, the emphasis's text would run into the strikethrough's
+        // opener, which then could not open.
+        final strike = _Session(backend, source: '*bm*~~😀~~', caret: 2);
+        strike.act(
+          const ToggleStyle(Style.emphasis),
+          applied: false,
+          source: '*bm*~~😀~~',
+          rows: ['bm😀'],
+        );
+        // Unwrapped, the code's tilde would pair with the ones around it.
+        final code = _Session(backend, source: '~`r~`~', caret: 3);
+        code.act(const ToggleStyle(Style.code), applied: false);
+        // A span that unwraps cleanly still does.
+        final plain = _Session(backend, source: 'a *bc* d', caret: 4);
+        plain.act(
+          const ToggleStyle(Style.emphasis),
+          source: 'a bc d',
+          rows: ['a bc d'],
+          context: 0,
+        );
+      },
+    );
+
     test('a phrase typed with strong on stays one span', () {
       final session = _Session(backend, source: 'plain ', caret: 6);
       session.act(const ToggleStyle(Style.strong), context: Style.strong);
