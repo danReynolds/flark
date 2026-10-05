@@ -1561,66 +1561,18 @@ final class FlarkEditor implements FlarkDocumentState {
           ? _cutDelimiterRow(row, s, e, typing: false)
           : _deleteContent(s, e, typing: false);
     }
-    // A replacement in a fenced body is literal code, as a paste there is.
-    final code = _pasteCode(text, from: s, to: e);
-    if (code != null) return code;
-    if (text.trim().isEmpty) {
-      final expanded = _rangeForEmptying(s, e);
-      final heading = _emptySetext(
-        expanded.start,
-        expanded.end,
-        text,
-        typing: false,
-      );
-      if (heading != null) return heading;
-      s = expanded.start;
-      e = expanded.end;
-    }
-    // A replacement places text as typing does: a collapsed one as typed
-    // text, a ranged one in a table's delimiter row shown as its source
-    // keeping the table.
-    final row = _doc.rowAt(s);
-    final (at, gap) = s == e ? _sequencePlace(row, s, text) : (s, '');
-    final normalized = _normalizeInlineEdges(
-      at,
-      at + e - s,
-      '$text$gap',
-      at + text.length,
-    );
-    if (gap.isEmpty) {
-      final placed = _typeOnLine(
-        row,
-        at,
-        text,
-        normalized,
-        text,
-        typing: false,
-        removed: e - s,
-      );
-      if (placed != null) return placed;
-    }
-    final cells = _cellsKept(row, text);
-    return _commit(
-      normalized.text,
-      FlarkSelection.collapsed(normalized.caret),
+    // A replacement goes in as a paste of its text over its range does,
+    // without a pending style, so the routes of one insertion agree:
+    // literal code in a fenced body, text in an empty owner, text after a
+    // lone task checkbox's space.
+    return _insertText(
+      _doc.rowAt(s),
+      (start: s, end: e),
+      text,
+      text,
+      cell: false,
       typing: false,
-      pending: normalized.pending,
-      acceptSourceMode: true,
-      accept: gap.isEmpty && cells == null
-          ? null
-          : (next) =>
-                (cells == null ||
-                    _showsTableRow(
-                      next,
-                      normalized.caret,
-                      row.column,
-                      cells,
-                      edited: true,
-                    )) &&
-                (gap.isEmpty ||
-                    _keepsStructure(next, [
-                      (s, e, text.length + gap.length),
-                    ], const {})),
+      styled: false,
     );
   }
 

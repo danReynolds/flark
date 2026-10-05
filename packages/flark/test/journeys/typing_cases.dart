@@ -525,6 +525,34 @@ void _typingCases(FlarkParseBackend backend) {
       }
     });
 
+    test('a replacement at the caret puts text in as typing does', () {
+      // A host can send one insertion as a replacement of the caret's empty
+      // range: it is the same edit, so it gives the same document. A space
+      // in an empty link is the link's text, not the link replaced, and a
+      // lone checkbox keeps its space before the text.
+      for (final (source, caret, text, edited, rows) in [
+        ('[](u)', 1, ' ', '[ ](u)', [' ']),
+        ('- [ ] \n  Feature', 5, 'I', '- [ ] I\n  Feature', ['I\nFeature']),
+        (
+          '> - [x] \n>   Feature',
+          7,
+          'I',
+          '> - [x] I\n>   Feature',
+          ['I\nFeature'],
+        ),
+      ]) {
+        final typed = _Session(backend, source: source, caret: caret);
+        typed.act(InsertText(text), source: edited, rows: rows);
+        final replaced = _Session(backend, source: source, caret: caret);
+        replaced.act(
+          ReplaceRange(caret, caret, text),
+          source: edited,
+          rows: rows,
+          selection: typed.editor.selection,
+        );
+      }
+    });
+
     test('text typed after a hidden item marker keeps the item', () {
       for (final (source, caret, typed, rows) in [
         ('1.\n', 2, '1. s\n', ['s', '']),
