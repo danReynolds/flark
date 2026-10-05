@@ -2697,19 +2697,32 @@ final class FlarkEditor implements FlarkDocumentState {
         prefixStart,
       );
       final replacement = line > 0 ? '$nl$outer' : '';
-      return _commit(
+      final caret = prefixStart + replacement.length;
+      String kinds(Iterable<Shell> shells) =>
+          shells.map((shell) => shell.kind.name).join('/');
+      if (_commit(
         source.replaceRange(prefixStart, contentStart, replacement),
-        FlarkSelection.collapsed(prefixStart + replacement.length),
+        FlarkSelection.collapsed(caret),
         typing: false,
         acceptSourceMode: true,
-        accept: (next) => _keepsStructure(
-          next,
-          [(prefixStart, contentStart, replacement.length)],
-          {row.index},
-          movesText: false,
-          shells: true,
-        ),
-      );
+        // The line leaves containers and enters none: an empty item's own
+        // nested items, left without it, would take in the line after it.
+        accept: (next) =>
+            kinds(row.shells).startsWith(kinds(next.rowAt(caret).shells)) &&
+            _keepsStructure(
+              next,
+              [(prefixStart, contentStart, replacement.length)],
+              {row.index},
+              movesText: false,
+              shells: true,
+            ),
+      )) {
+        return true;
+      }
+      // Leaving would move the blocks after the line, as an empty item's
+      // nested items would: Return does nothing, with no refusal to report.
+      if (_lastRejection == null) _inert = true;
+      return false;
     }
     // The new line continues the containers, a selection's as a caret at its
     // start would: an item as the next item, a quote or footnote with

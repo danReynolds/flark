@@ -11,6 +11,25 @@ void _returnCases(FlarkParseBackend backend) {
   ];
 
   group('rows', () {
+    test('return on an empty item with nested items leaves no line deeper', () {
+      // Leaving the empty item would leave its nested items to the item
+      // before it, and the line Return makes between them: nested deeper
+      // than the line it left. Return does nothing, with no refusal.
+      const source = '- a\n  - b\n    - c\n  - \n    - d\n';
+      final caret = source.indexOf('  - \n') + 4;
+      final session = _Session(backend, source: source, caret: caret);
+      session.act(const Newline(), applied: false, source: source);
+      expect(session.editor.lastRejection, isNull);
+      // At the top level the nested item joins the item before it, and the
+      // line stays outside the list.
+      final top = _Session(
+        backend,
+        source: '* x\n  * y\n* \n  * z\n',
+        caret: 12,
+      );
+      top.act(const Newline(), source: '* x\n  * y\n\n\n  * z\n');
+    });
+
     test('return before a line break inside a link does not throw', () {
       // The split rewrites that line break, so a lazy line's prefix edit at
       // the next line's start is no edit of its own; spliced out of order it
