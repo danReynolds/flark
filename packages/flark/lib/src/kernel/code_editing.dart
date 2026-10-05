@@ -62,22 +62,14 @@ extension _CodeEditing on FlarkEditor {
     if (edit.start < 0 || edit.end < edit.start || edit.end > row.text.length) {
       throw StateError('Invalid code edit range');
     }
-    final body = row.text.replaceRange(edit.start, edit.end, edit.text);
-    // Only the lines the edit touches need checking. The rest of the body is
-    // the row's own valid text, and a line break neither ends a surrogate
-    // pair nor leaves a carriage return before it bare.
-    final first = edit.start == 0
-        ? 0
-        : body.lastIndexOf('\n', edit.start - 1) + 1;
-    final last = body.indexOf('\n', edit.start + edit.text.length);
-    try {
-      validateFlarkSource(
-        body.substring(first, last < 0 ? body.length : last + 1),
-      );
-    } on FormatException {
+    // A body's lines end in LF. A carriage return in the text would join the
+    // source's line break after it, changing a line ending rather than the
+    // code. The rest of the source contract is checked as the edit commits.
+    if (edit.text.contains('\r')) {
       _lastRejection = FlarkRejection.invalidSource;
       return false;
     }
+    final body = row.text.replaceRange(edit.start, edit.end, edit.text);
     if (edit.base < 0 ||
         edit.extent < 0 ||
         edit.base > body.length ||
