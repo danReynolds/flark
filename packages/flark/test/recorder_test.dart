@@ -1,5 +1,6 @@
 import 'package:flark/flark.dart';
 import 'package:flark/recorder.dart';
+import 'package:flark/render_model.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -165,6 +166,52 @@ expect((editor.selection.base, editor.selection.extent), (3, 3));
     expect(recorder.replay(backend).source, 'abce');
   });
 
+  test('a window starting in source mode keeps its caret', () {
+    // The live document a replay opens with would move a caret inside
+    // hidden markup; source mode comes first, and the caret after it.
+    final editor = FlarkEditor(backend, text: '**ab** c');
+    editor.setSourceMode(true);
+    editor.apply(const SetSelection(1, 1));
+    final recorder = FlarkEditRecorder();
+    editor.recorder = recorder;
+    editor.apply(const InsertText('x'), at: const Duration(seconds: 1));
+    expect(editor.source, '*x*ab** c');
+    expect(recorder.replay(backend).source, editor.source);
+    expect(
+      recorder.repro,
+      contains(
+        'editor.setSourceMode(true);\n'
+        'editor.apply(const SetSelection(1, 1));\n',
+      ),
+    );
+  });
+
+  test('a window starting mid-session says what it does not replay', () {
+    final editor = FlarkEditor(backend, text: 'a', caret: 1);
+    editor.apply(const InsertText('b'), at: const Duration(seconds: 1));
+    final recorder = FlarkEditRecorder();
+    editor.recorder = recorder;
+    editor.apply(const Undo(), at: const Duration(seconds: 5));
+    expect(recorder.repro, contains('// The window starts mid-session'));
+    final fresh = FlarkEditRecorder();
+    FlarkEditor(backend, text: 'a').recorder = fresh;
+    expect(fresh.repro, isNot(contains('mid-session')));
+  });
+
+  test('a result with line breaks stays one line comment', () {
+    final editor = FlarkEditor(_Throwing(backend), text: 'a', caret: 1);
+    final recorder = FlarkEditRecorder();
+    editor.recorder = recorder;
+    expect(
+      () => editor.apply(const InsertText('!'), at: const Duration(seconds: 1)),
+      throwsFormatException,
+    );
+    final call = recorder.repro
+        .split('\n')
+        .singleWhere((line) => line.startsWith('editor.apply'));
+    expect(call, endsWith(r'// threw FormatException: bad\ninput'));
+  });
+
   test('a recorder serves one editor and stops when detached', () {
     final recorder = FlarkEditRecorder();
     final editor = FlarkEditor(backend, text: 'a', caret: 1)
@@ -216,4 +263,22 @@ expect((editor.selection.base, editor.selection.extent), (3, 3));
       expect(FlarkEditRecorder.describeCommand(command), dart);
     }
   });
+}
+
+/// A backend whose parse of `a!` throws an error with a line break in it.
+final class _Throwing implements FlarkParseBackend {
+  _Throwing(this.inner);
+
+  final FlarkParseBackend inner;
+
+  @override
+  int get schemaVersion => inner.schemaVersion;
+
+  @override
+  RenderModel parse(String source) => source == 'a!'
+      ? throw const FormatException('bad\ninput')
+      : inner.parse(source);
+
+  @override
+  void dispose() {}
 }

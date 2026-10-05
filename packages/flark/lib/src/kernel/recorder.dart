@@ -9,8 +9,10 @@ part of 'editor.dart';
 /// returned. A call keeps the change it made to the source rather than a copy
 /// of the document, and past [capacity] calls the oldest is folded into the
 /// window's start, so memory stays near one document plus the recent changes.
-/// A window that does not start where recording did starts with empty
-/// history: an Undo past its start does nothing in the replay.
+/// What the editor held before the window starts beyond that is not
+/// replayed: its history (an Undo past the window's start does nothing in
+/// the replay), a pending style and an unwritten table cell the caret was
+/// in. The repro says when the window starts with any of them.
 final class FlarkEditRecorder {
   FlarkEditRecorder({this.capacity = 2000}) {
     if (capacity < 1) throw ArgumentError.value(capacity, 'capacity');
@@ -25,6 +27,9 @@ final class FlarkEditRecorder {
   late bool _sourceMode, _composing;
   final _calls = ListQueue<_RecordedCall>();
   int _folded = 0;
+
+  /// Whether the window starts with state a replay does not rebuild.
+  bool _partial = false;
 
   /// The calls kept.
   int get length => _calls.length;
@@ -46,6 +51,10 @@ final class FlarkEditRecorder {
     _selection = editor.selection;
     _sourceMode = editor._forceSourceMode;
     _composing = editor.composing;
+    _partial =
+        editor.history.canUndo ||
+        editor._pending != null ||
+        editor.selection.tableCell != null;
     _calls.clear();
     _folded = 0;
   }
@@ -91,6 +100,7 @@ final class FlarkEditRecorder {
       _selection = oldest._selection;
       _sourceMode = oldest._sourceMode;
       _composing = oldest._composing;
+      _partial = true;
       _folded++;
     }
   }
@@ -123,15 +133,17 @@ final class FlarkEditRecorder {
     return editor;
   }
 
-  /// The calls that put a fresh editor where the window starts.
+  /// The calls that put a fresh editor where the window starts. Source mode
+  /// comes first: there any offset holds the caret, which the live document
+  /// the editor opens with would move.
   List<(String, void Function(FlarkEditor))> _setup() => [
-    if (!_selection.isCollapsed)
+    if (_sourceMode)
+      ('editor.setSourceMode(true);', (e) => e.setSourceMode(true)),
+    if (_sourceMode || !_selection.isCollapsed)
       (
         'editor.apply(${describeCommand(SetSelection(_selection.base, _selection.extent))});',
         (e) => e.apply(SetSelection(_selection.base, _selection.extent)),
       ),
-    if (_sourceMode)
-      ('editor.setSourceMode(true);', (e) => e.setSourceMode(true)),
     if (_composing) ('editor.beginComposition();', (e) => e.beginComposition()),
   ];
 
@@ -147,6 +159,12 @@ final class FlarkEditRecorder {
         '// Flark repro: ${_calls.length} calls'
         '${_folded > 0 ? ', after $_folded earlier ones whose history is not replayed' : ''}.',
       );
+    if (_partial) {
+      out.writeln(
+        '// The window starts mid-session: history, a pending style or an '
+        'unwritten table cell from before it is not replayed.',
+      );
+    }
     if (editor.codeEditing != null) {
       out.writeln(
         '// The editor had a ${editor.codeEditing.runtimeType} code delegate; '
@@ -195,10 +213,14 @@ final class FlarkEditRecorder {
     var source = _source;
     var selection = _selection;
     for (final call in _calls) {
+      // A result is a line comment: an error's message may hold line breaks.
+      final result = call._result
+          .replaceAll('\r', r'\r')
+          .replaceAll('\n', r'\n');
       out.writeln(
         call._replay == null
-            ? '// ${call._code}; // ${call._result}'
-            : '${call._code}; // ${call._result}',
+            ? '// ${call._code}; // $result'
+            : '${call._code}; // $result',
       );
       source = call._applyTo(source);
       selection = call._selection;
