@@ -2058,24 +2058,18 @@ final class FlarkEditor implements FlarkDocumentState {
         contentStart = row.contentStarts[i];
     if (prefixStart >= 0 && prefixStart < contentStart) {
       // A lifted line that would lazily continue the previous paragraph
-      // stays a paragraph of its own. A line break and the line's outer
-      // container prefix go before it, so it stays in the quote or item it
-      // was in. A line that opens an outer container cannot be lazy.
+      // stays a paragraph of its own (see [_leavingPrefix]).
       final prev = row.index > 0 ? projection.rows[row.index - 1] : null;
-      final m = _doc.model;
-      final separate =
-          row.text.isNotEmpty &&
-          prev != null &&
-          prev.kind == RowKind.paragraph &&
-          prev.firstLine + prev.lineCount == row.firstLine &&
-          !row.shells.any(
-            (shell) =>
-                shell.kind != ShellKind.list &&
-                m.blockFirstLine(shell.block) == line &&
-                m.blockStart(shell.block) < prefixStart,
-          );
-      final outer = source.substring(m.lineStartUtf16(line), prefixStart);
-      final replacement = separate ? '${_lineBreakAt(prefixStart)}$outer' : '';
+      final replacement = _leavingPrefix(
+        row,
+        line,
+        prefixStart,
+        apart:
+            row.text.isNotEmpty &&
+            prev != null &&
+            prev.kind == RowKind.paragraph &&
+            prev.firstLine + prev.lineCount == row.firstLine,
+      );
       final caret = prefixStart + replacement.length;
       final lifted = _commitApart(
         row,
@@ -2147,6 +2141,31 @@ final class FlarkEditor implements FlarkDocumentState {
     final prev = projection.rows[row.index - 1];
     if (prev.kind == RowKind.tableCell) return false;
     return _joinRows(prev, row);
+  }
+
+  /// What replaces the innermost container prefix of [row]'s [line], from
+  /// [prefixStart] to where the line's content starts, when the line leaves
+  /// that container: nothing, or, to keep the line apart from the one before
+  /// it ([apart]), a line break and the line's outer prefix, which keep it in
+  /// the containers around. A container that opens on the line has its
+  /// marker in that prefix, where it would open another (`- >` would give
+  /// two items): such a line cannot be lazy and stays as it is.
+  String _leavingPrefix(
+    ProjectedRow row,
+    int line,
+    int prefixStart, {
+    required bool apart,
+  }) {
+    final m = _doc.model;
+    final opens = row.shells.any(
+      (shell) =>
+          shell.kind != ShellKind.list &&
+          m.blockFirstLine(shell.block) == line &&
+          m.blockStart(shell.block) < prefixStart,
+    );
+    if (!apart || opens) return '';
+    final outer = source.substring(m.lineStartUtf16(line), prefixStart);
+    return '${_lineBreakAt(prefixStart)}$outer';
   }
 
   /// Delete at a row end: join the next row onto this one. [_delete] answers
@@ -2719,11 +2738,14 @@ final class FlarkEditor implements FlarkDocumentState {
         row.kind != RowKind.heading &&
         prefixStart >= 0 &&
         prefixStart < contentStart) {
-      final outer = source.substring(
-        _doc.model.lineStartUtf16(line),
+      // A line after another goes after an empty one in the outer
+      // containers, which keeps text typed on it from reading on lazily.
+      final replacement = _leavingPrefix(
+        row,
+        line,
         prefixStart,
+        apart: line > 0,
       );
-      final replacement = line > 0 ? '$nl$outer' : '';
       final caret = prefixStart + replacement.length;
       if (_commit(
         source.replaceRange(prefixStart, contentStart, replacement),

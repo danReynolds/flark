@@ -610,5 +610,24 @@ void _returnCases(FlarkParseBackend backend) {
       final session = _Session(backend, source: '> - > a\n  b', caret: 9);
       session.act(const Newline(), applied: false, source: '> - > a\n  b');
     });
+
+    test('leaving a quote opened on an item\'s line stays in the item', () {
+      // The item's marker shares the quote's line: copied before the line,
+      // as a line leaving a quote on a line of its own keeps the prefix
+      // around it, it would open another item.
+      for (final (source, left) in [
+        ('- a\n- >', '- a\n- '),
+        ('1. a\n2. >', '1. a\n2. '),
+        ('> - a\n> - >', '> - a\n> - '),
+      ]) {
+        final session = _Session(backend, source: source, caret: source.length);
+        session.act(const Newline(), source: left, rows: ['a', '']);
+        session.act(
+          const InsertText('x'),
+          source: '${left}x',
+          rows: ['a', 'x'],
+        );
+      }
+    });
   });
 }
