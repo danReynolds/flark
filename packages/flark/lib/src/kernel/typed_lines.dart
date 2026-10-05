@@ -24,9 +24,10 @@ extension _TypedLines on FlarkEditor {
   /// where [plain] is committed as it is. Only a lazy line, leading
   /// whitespace and a table's delimiter row shown as its source take a
   /// selection, and only that row lines of text. [wraps] checks that a
-  /// pending style's delimiters around the text pair. [fence] and
-  /// [underline] are the typed-construct completions [_commit] makes of the
-  /// spelling that is [plain].
+  /// pending style's delimiters around the text pair. [fence], a typed
+  /// fence run, is completed in whichever spelling commits, the completed
+  /// text checked as the spelling is; [underline], a typed setext underline
+  /// run, is typed as it is at a limit where no blank line before it fits.
   bool? _typeOnLine(
     ProjectedRow row,
     int at,
@@ -66,15 +67,19 @@ extension _TypedLines on FlarkEditor {
                 row.displayForSource(row.contentStarts[i]).$1) &&
         m.lineOfUtf16(at + removed) < row.firstLine + row.lineCount;
     if (!leading && m.lineOfUtf16(at + removed) != line) return null;
-    // Text that starts with indentation where a line's content starts (a
-    // paste of indented text): Markdown does not show the indentation, but
+    // Text that starts with indentation and puts it where a line's content
+    // starts: a paste of indented text there, or text over the whole of a
+    // span that starts the line, whose leading whitespace moves out before
+    // the span's delimiters. Markdown does not show the indentation, but
     // after an item's marker it moves the item's content column, and with
-    // it the blocks indented under the item.
+    // it the blocks indented under the item, and before a paragraph's or a
+    // setext heading's first line it can make the text code.
+    final cs = row.contentStarts[i];
     final indented =
         !leading &&
-        row.kind == RowKind.paragraph &&
-        at == row.contentStarts[i] &&
-        _leadingIndentation(typed) > 0;
+        (row.kind == RowKind.paragraph || row.kind == RowKind.heading) &&
+        _leadingIndentation(typed) > 0 &&
+        _leadingIndentation(plain.text, cs) > _leadingIndentation(source, cs);
     if (!lazy &&
         !leading &&
         !indented &&
@@ -92,7 +97,7 @@ extension _TypedLines on FlarkEditor {
     final nl = _lineBreakAt(at);
     final hasNext = line + 1 < m.lineCount;
     final spellings = <_Spelling>[];
-    var keepRow = false, sameKind = false, quick = false;
+    var keepRow = false, sameKind = false, quick = false, apart = false;
     // Whether only the plain spelling must keep the row's kind.
     var plainKind = false;
     // [inserted] replaces [lineStart]..[at] with [before], [lead] and [after]
@@ -112,10 +117,13 @@ extension _TypedLines on FlarkEditor {
     final plainSpelling = (
       source: plain.text,
       caret: plain.caret,
-      // Whitespace typed in the hidden syntax that starts a line moves out
-      // before it, so the edit is read from the text.
+      // Whitespace typed in the hidden syntax that starts a line, or leading
+      // text put over a span there, moves out before it, so the edit is
+      // read from the text.
       edits: [
-        leading ? _changeTo(plain.text) : (at, at + removed, removed + grown),
+        leading || indented
+            ? _changeTo(plain.text)
+            : (at, at + removed, removed + grown),
       ],
       typedAt: at,
     );
@@ -244,8 +252,10 @@ extension _TypedLines on FlarkEditor {
     } else if (removed == 0 && _isBarePrefixRow(row) || delimiterRow) {
       // A bare marker shown as text, which the typed text joins as paragraph
       // text, or a table's delimiter row shown as its source, which the text
-      // edits; the block after either keeps its reading.
+      // edits; the block after either keeps its reading, a paragraph after
+      // the marker too, which would otherwise read on as part of the text.
       spellings.add(plainSpelling);
+      apart = !delimiterRow;
       final end = projection.lineContentEnd(line);
       if (hasNext && row.kind != RowKind.tableCell && end >= at) {
         final sep = '$nl${continued().trimRight()}';
@@ -316,20 +326,22 @@ extension _TypedLines on FlarkEditor {
       sameKind = true;
     } else if (indented) {
       // The text goes in as it is where its indentation changes neither its
-      // row's kind nor another block, else without it, which shows the same:
-      // indentation in pasted text does not make the row code.
+      // row's kind nor another block, else without the indentation it puts
+      // where the line's content starts, which shows the same: indentation
+      // in pasted text does not make the row code.
       spellings.add(plainSpelling);
       plainKind = true;
-      final lead = _leadingIndentation(inserted);
-      if (lead < inserted.length &&
-          plain.text.startsWith(inserted.substring(0, lead), at)) {
-        spellings.add((
-          source: plain.text.replaceRange(at, at + lead, ''),
-          caret: plain.caret - lead,
-          edits: [(at, at + removed, removed + grown - lead)],
-          typedAt: at,
-        ));
-      }
+      final lead =
+          _leadingIndentation(plain.text, cs) - _leadingIndentation(source, cs);
+      final stripped = plain.text.replaceRange(cs, cs + lead, '');
+      spellings.add((
+        source: stripped,
+        caret: plain.caret - lead,
+        edits: [_changeTo(stripped)],
+        // Where the text would start with its indentation, so that a pending
+        // style's delimiters are found after it.
+        typedAt: at - lead,
+      ));
     } else {
       return null;
     }
@@ -337,6 +349,10 @@ extension _TypedLines on FlarkEditor {
     // it is passed over, as the typed underline's blank line is.
     FlarkRejection? rejected;
     var limited = false;
+    // The first spelling passed over because it would leave the live tier,
+    // where no parse checks it: when no spelling qualifies, it enters source
+    // mode, as ordinary text past the tier does.
+    _Spelling? beyond;
     // Text typed on an empty row takes the first spelling that shows no
     // whitespace the row hid. Where none does (literal HTML that runs on to
     // the end of the document shows the blank lines it takes), the first
@@ -346,31 +362,40 @@ extension _TypedLines on FlarkEditor {
       for (final s in spellings) {
         final isPlain = identical(s, plainSpelling);
         var read = false;
+        // Whether [next], [s] made by [edits] with the caret at [caret] (a
+        // typed fence completed in it moves both), qualifies.
+        bool keeps(FlarkDocument next, List<(int, int, int)> edits, int caret) {
+          read = true;
+          return (wraps == null || wraps(next, s.typedAt)) &&
+              (quick &&
+                      identical(s, spellings.first) &&
+                      _sameRow(next, row, caret) ||
+                  _keepsTyped(
+                    next,
+                    row,
+                    edits,
+                    caret,
+                    s.typedAt,
+                    keepRow: keepRow,
+                    sameKind: sameKind || plainKind && isPlain,
+                    strict: strict,
+                    apart: apart,
+                  ));
+        }
+
         _lastRejection = null;
         if (_commit(
           s.source,
           FlarkSelection.collapsed(s.caret),
           typing: typing,
           pending: plain.pending,
-          completeTypedFence: isPlain && fence,
-          typedUnderline: isPlain ? underline : null,
-          accept: (next) {
-            read = true;
-            return (wraps == null || wraps(next, s.typedAt)) &&
-                (quick &&
-                        identical(s, spellings.first) &&
-                        _sameRow(next, row, s) ||
-                    _keepsTyped(
-                      next,
-                      row,
-                      s.edits,
-                      s.caret,
-                      s.typedAt,
-                      keepRow: keepRow,
-                      sameKind: sameKind || plainKind && isPlain,
-                      strict: strict,
-                    ));
-          },
+          completeTypedFence: fence,
+          accept: (next) => keeps(next, s.edits, s.caret),
+          acceptCompleted: (next, at, length) => keeps(
+            next,
+            _withInsertion(s.edits, at, length),
+            next.selection.extent,
+          ),
         )) {
           return true;
         }
@@ -380,20 +405,34 @@ extension _TypedLines on FlarkEditor {
           // Past the source limit, or past the live tier into source mode.
           limited = true;
         }
+        if (!read && _lastRejection == null && s.source != source) {
+          beyond ??= s;
+        }
       }
     }
     _lastRejection = rejected;
+    if (rejected != null) return false;
     // A typed underline the parser reads as one where no blank line fits,
     // at a limit, is typed as it is, as the profile has it.
-    return rejected == null &&
-        limited &&
-        underline != null &&
-        spellings.contains(plainSpelling) &&
+    if (limited && underline != null && spellings.contains(plainSpelling)) {
+      return _commit(
+        plain.text,
+        FlarkSelection.collapsed(plain.caret),
+        typing: typing,
+        pending: plain.pending,
+      );
+    }
+    final over = beyond;
+    return over != null &&
         _commit(
-          plain.text,
-          FlarkSelection.collapsed(plain.caret),
+          over.source,
+          FlarkSelection.collapsed(over.caret),
           typing: typing,
           pending: plain.pending,
+          completeTypedFence: fence,
+          acceptSourceMode: true,
+          accept: (_) => false,
+          acceptCompleted: (_, _, _) => false,
         );
   }
 
@@ -489,11 +528,11 @@ extension _TypedLines on FlarkEditor {
     accept: (next) => _keepsTyped(next, row, [(start, end, 0)], start, start),
   );
 
-  /// Whether the caret of [s] is still in [row]'s paragraph in [next]: the
-  /// row starts where it did and keeps its kind and containers, so typing on
-  /// its lazy line opened no block.
-  bool _sameRow(FlarkDocument next, ProjectedRow row, _Spelling s) {
-    final now = next.rowAt(s.caret);
+  /// Whether [caret] is still in [row]'s paragraph in [next]: the row starts
+  /// where it did and keeps its kind and containers, so typing on its lazy
+  /// line opened no block.
+  bool _sameRow(FlarkDocument next, ProjectedRow row, int caret) {
+    final now = next.rowAt(caret);
     return now.kind == row.kind &&
         now.sourceStart == row.sourceStart &&
         _sameContainers(now, row);
@@ -517,8 +556,12 @@ extension _TypedLines on FlarkEditor {
   /// opened them, or when its line carries their prefix (the indentation
   /// Return gave a footnote's next line); not when it reads on lazily.
   /// An empty item stays one, rather than becoming the setext underline of
-  /// the typed text, and a fence that shows no body keeps none. [keepRow]
-  /// checks [row] too; [sameKind] keeps the caret's row of [row]'s kind.
+  /// the typed text, and a fence that shows no body keeps none. Text typed
+  /// on an empty row joins no table or literal HTML above it, which an
+  /// empty line keeps apart, but may start the first body row of a table
+  /// that has none. [keepRow] checks [row] too; [sameKind] keeps the
+  /// caret's row of [row]'s kind; [apart] keeps each row after [row] a row
+  /// of its own, so no paragraph there reads on as part of the text.
   /// [strict], for text typed on an empty row, has it start its line with
   /// no whitespace shown that the current projection hides.
   bool _keepsTyped(
@@ -530,6 +573,7 @@ extension _TypedLines on FlarkEditor {
     bool keepRow = false,
     bool sameKind = false,
     bool strict = false,
+    bool apart = false,
   }) {
     int forward(int offset) {
       var shift = 0;
@@ -621,11 +665,32 @@ extension _TypedLines on FlarkEditor {
               !_joins(next, holder, old, at, filled) ||
           !(holder.sourceStart == at
               ? holder.text.startsWith(old.text)
-              : holder.text.endsWith(old.text))) {
+              : !(apart && old.index > row.index) &&
+                    holder.text.endsWith(old.text))) {
         return false;
       }
     }
     final typedRow = next.rowAt(caret);
+    // Text typed on an empty row is not read as the next row of a table
+    // above it, or as more of literal HTML above it: an empty line keeps
+    // them apart. A table with no body row, whose delimiter row shows as
+    // its source, takes the text as its first body row (above).
+    if (row.kind == RowKind.blank && row.index > 0) {
+      final above = projection.rows[row.index - 1];
+      final html =
+          above.kind == RowKind.htmlBlock && typedRow.kind == RowKind.htmlBlock;
+      final table =
+          above.kind == RowKind.tableCell &&
+          above.tableRowBlock >= 0 &&
+          typedRow.kind == RowKind.tableCell;
+      final at = html || table ? forward(above.sourceStart) : -1;
+      if (at >= 0 &&
+          (html
+              ? next.rowAt(at).block == typedRow.block
+              : next.rowAt(at).tableBlock == typedRow.tableBlock)) {
+        return false;
+      }
+    }
     // Whitespace typed over all of a row's text may leave it empty.
     if (sameKind &&
         typedRow.kind != row.kind &&
@@ -661,14 +726,42 @@ extension _TypedLines on FlarkEditor {
     return !_revealsHiddenText(next, back, whitespace: strict);
   }
 
-  /// The spaces and tabs [text] starts with.
-  static int _leadingIndentation(String text) {
-    var n = 0;
+  /// The spaces and tabs [text] starts with, or has from [from].
+  static int _leadingIndentation(String text, [int from = 0]) {
+    var n = from;
     while (n < text.length &&
         (text.codeUnitAt(n) == 0x20 || text.codeUnitAt(n) == 0x09)) {
       n++;
     }
-    return n;
+    return n - from;
+  }
+
+  /// [edits], the sorted edits of the current source that made a spelling,
+  /// with [length] characters inserted at [at] of that spelling too: in the
+  /// text of an edit it meets, else as an edit of its own.
+  static List<(int, int, int)> _withInsertion(
+    List<(int, int, int)> edits,
+    int at,
+    int length,
+  ) {
+    final out = <(int, int, int)>[];
+    var shift = 0, placed = false;
+    for (final (start, end, replaced) in edits) {
+      if (!placed && at <= start + shift + replaced) {
+        if (at < start + shift) {
+          out.add((at - shift, at - shift, length));
+          out.add((start, end, replaced));
+        } else {
+          out.add((start, end, replaced + length));
+        }
+        placed = true;
+      } else {
+        out.add((start, end, replaced));
+      }
+      shift += replaced - (end - start);
+    }
+    if (!placed) out.add((at - shift, at - shift, length));
+    return out;
   }
 
   /// Whether [next] shows the text typed at [typedAt] first on its line.

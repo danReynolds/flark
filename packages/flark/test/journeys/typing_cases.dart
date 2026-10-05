@@ -117,11 +117,13 @@ void _typingCases(FlarkParseBackend backend) {
           ['a\nx', '', '[o]: /u'],
           [p, b, RowKind.definition],
         ),
+        // Literal HTML would read the text as its own: an empty line keeps
+        // it apart, and the paragraph after takes the text as its first line.
         (
           '<details>\n<summary>More</summary>\n\nHidden **text**.\n',
           34,
-          '<details>\n<summary>More</summary>\nx\n\nHidden **text**.\n',
-          ['<details>\n<summary>More</summary>\nx', '', 'Hidden text.', ''],
+          '<details>\n<summary>More</summary>\n\nx\nHidden **text**.\n',
+          ['<details>\n<summary>More</summary>', '', 'x\nHidden text.', ''],
           [RowKind.htmlBlock, b, p, b],
         ),
       ]) {
@@ -158,12 +160,12 @@ void _typingCases(FlarkParseBackend backend) {
     test('text typed on an empty row shows no whitespace the row hid', () {
       // Whitespace after an empty line's container prefix shows nothing.
       // Text run into it would show it: as a tab's columns before code the
-      // indentation makes of the text, or as a line of code or literal HTML
-      // the text joins. The text goes where the prefix ends instead, an
-      // empty item's marker padded with one space, with a blank line after
-      // it where the block below would read on into it. Typing never
-      // shortens the source: the whitespace becomes spaces a paragraph does
-      // not show, or that blank line.
+      // indentation makes of the text, or as a line of code the text joins.
+      // The text goes where the prefix ends instead, an empty item's marker
+      // padded with one space, with a blank line after it where the block
+      // below would read on into it. Typing never shortens the source: the
+      // whitespace becomes spaces a paragraph does not show, or that blank
+      // line.
       for (final (source, caret, typed, edited, rows) in [
         (
           '    foo *[\n    \t\n\t',
@@ -201,13 +203,21 @@ void _typingCases(FlarkParseBackend backend) {
           '-\t\tf._>`[1|\r\n \tb\r\n \t\t  \r\n',
           ['  f._>`[1|', 'b', '', ''],
         ),
-        ('<div {\n \r\n', 8, '1', '<div {\n1\r\n\r\n', ['<div {\n1', '', '']),
+        // Under literal HTML the text joins none of it: an empty line keeps
+        // the HTML apart, and the whitespace stays before the text.
+        (
+          '<div {\n \r\n',
+          8,
+          '1',
+          '<div {\n\r\n 1\r\n',
+          ['<div {', '', '1', ''],
+        ),
         (
           '<table>\n\n  <tr>\n\n</table>\n',
           8,
           '1',
-          '<table>\n1\n\n  <tr>\n\n</table>\n',
-          ['<table>\n1', '', '<tr>', '', '</table>', ''],
+          '<table>\n\n1\n  <tr>\n\n</table>\n',
+          ['<table>', '', '1', '<tr>', '', '</table>', ''],
         ),
         // A marker right after a quote's `>` left it no optional space:
         // the item's indentation takes one more.
@@ -255,6 +265,117 @@ void _typingCases(FlarkParseBackend backend) {
       );
       expect(session.editor.document.caretRow.kind, RowKind.tableCell);
       expect(session.editor.projection.rows[3].kind, RowKind.paragraph);
+    });
+
+    test('text typed under a table or literal HTML starts its own block', () {
+      // Markdown would read the text as the table's next row or as more of
+      // the HTML: an empty line before it keeps it apart, and a paragraph
+      // after may take it as its first line. Under a table with no body
+      // row it starts that row instead (above).
+      for (final (source, caret, edited, rows, at) in [
+        (
+          '| a |\n| - |\n| b |\n',
+          18,
+          '| a |\n| - |\n| b |\n\nx',
+          ['a ', 'b ', '', 'x'],
+          const DisplayPosition(3, 1),
+        ),
+        (
+          '> | a |\n> | - |\n> | b |\n>',
+          24,
+          '> | a |\n> | - |\n> | b |\n>\n>x',
+          ['a ', 'b ', '', 'x'],
+          const DisplayPosition(3, 1),
+        ),
+        (
+          '<div>\n\nb',
+          6,
+          '<div>\n\nx\nb',
+          ['<div>', '', 'x\nb'],
+          const DisplayPosition(2, 1),
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final shellsBefore = shells(session.editor);
+        session.act(
+          const InsertText('x'),
+          source: edited,
+          rows: rows,
+          caret: at,
+        );
+        expect(
+          session.editor.document.caretRow.kind,
+          RowKind.paragraph,
+          reason: source,
+        );
+        expect(shells(session.editor), shellsBefore, reason: source);
+      }
+    });
+
+    test('a typed underline or fence keeps the blocks around it', () {
+      // A typed `-` or `=` takes a blank line before it rather than
+      // underline the paragraph above, and one after it where the block
+      // below would read it otherwise: indented code as the content of the
+      // empty item `-` starts, a rule as the underline of `=`, a paragraph
+      // after a quote as the lazy line of `=`. A typed fence on an item's
+      // empty line without its indentation takes it, so the item keeps the
+      // blocks after it.
+      const p = RowKind.paragraph, b = RowKind.blank, c = RowKind.codeBlock;
+      for (final (source, caret, typed, edited, rows, kinds, at) in [
+        (
+          'Intro\n\n    code',
+          6,
+          '-',
+          'Intro\n\n-\n\n    code',
+          ['Intro', '', '-', '', 'code'],
+          [p, b, p, b, c],
+          const DisplayPosition(2, 1),
+        ),
+        (
+          '> a\n>\nb',
+          5,
+          '=',
+          '> a\n>\n>=\n>\nb',
+          ['a', '', '=', '', 'b'],
+          [p, b, p, b, p],
+          const DisplayPosition(2, 1),
+        ),
+        (
+          'Intro\n\n---',
+          6,
+          '=',
+          'Intro\n\n=\n\n---',
+          ['Intro', '', '=', '', ''],
+          [p, b, p, b, RowKind.thematicBreak],
+          const DisplayPosition(2, 1),
+        ),
+        (
+          '- a\n\n  b',
+          4,
+          '```',
+          '- a\n  ```\n  \n  ```\n  \n  b',
+          ['a', '', '', 'b'],
+          [p, c, b, p],
+          const DisplayPosition(1, 0),
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final last = shellsOf(session.editor.projection.rows.last);
+        session.act(InsertText(typed), source: edited, rows: rows, caret: at);
+        expect(
+          session.editor.projection.rows.map((row) => row.kind),
+          kinds,
+          reason: source,
+        );
+        expect(
+          shellsOf(session.editor.projection.rows.last),
+          last,
+          reason: source,
+        );
+        if (typed == '```') {
+          expect(session.editor.document.caretRow.fenced, isTrue);
+        }
+      }
     });
 
     test('text typed on a rule starts a paragraph after it', () {
@@ -313,6 +434,49 @@ void _typingCases(FlarkParseBackend backend) {
         backend,
         source: 'abc\n',
       ).act(const Paste('  # x'), source: '# xabc\n', rows: ['xabc', '']);
+      // Four spaces before a setext heading's text would make it code, and
+      // its underline a rule.
+      _Session(backend, source: 'abc\n---\n').act(
+        const Paste('    x'),
+        source: 'xabc\n---\n',
+        rows: ['xabc', ''],
+        caret: const DisplayPosition(0, 1),
+      );
+      // Text put over the whole of a span that starts an item's line moves
+      // its leading whitespace out before the span's delimiters, where the
+      // item's content starts: it goes too, so the item's text stays a
+      // paragraph and the list nested under it stays nested.
+      const nested = '- a\n  - **snippet** more\n    1. child\n';
+      final span = _Session(backend, source: nested);
+      span.act(const SetSelection(10, 17));
+      span.act(
+        const Paste('\ttabbed text'),
+        source: '- a\n  - **tabbed text** more\n    1. child\n',
+        rows: ['a', 'tabbed text more', 'child', ''],
+        caret: const DisplayPosition(1, 11),
+      );
+      expect(span.editor.projection.rows[2].shells, hasLength(6));
+      // So does a typed space before a word after the span's opening.
+      _Session(backend, source: '- **a**\n\n  b', caret: 4).act(
+        const InsertText(' a'),
+        source: '- **aa**\n\n  b',
+        rows: ['aa', '', 'b'],
+        caret: const DisplayPosition(0, 1),
+      );
+      // Typed or pasted, indentation after a quoted item's marker would
+      // leave the item's later paragraph outside it.
+      for (final (command, edited, at) in [
+        (const InsertText(' a'), '> - aa\n>\n>   b', 1),
+        (const Paste('  lead'), '> - leada\n>\n>   b', 4),
+      ]) {
+        final session = _Session(backend, source: '> - a\n>\n>   b', caret: 4);
+        session.act(command, source: edited, caret: DisplayPosition(0, at));
+        expect(
+          session.editor.projection.rows.last.shells,
+          hasLength(3),
+          reason: edited,
+        );
+      }
     });
 
     test('text typed after a hidden item marker keeps the item', () {
@@ -350,6 +514,20 @@ void _typingCases(FlarkParseBackend backend) {
           session.editor.projection.rows.last.kind,
           RowKind.definition,
           reason: source,
+        );
+      }
+      // A paragraph after the marker would read on as part of the text.
+      for (final (source, caret, typed, rows) in [
+        ('-\nb', 1, '-a\n\nb', ['-a', '', 'b']),
+        ('#\nb', 1, '#a\n\nb', ['#a', '', 'b']),
+        ('> -\n> b', 3, '> -a\n>\n> b', ['-a', '', 'b']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const InsertText('a'),
+          source: typed,
+          rows: rows,
+          caret: const DisplayPosition(0, 2),
         );
       }
     });

@@ -692,6 +692,9 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// Parse, admit and project before publishing source or history.
+  /// [acceptCompleted] checks the source that completes a typed fence in
+  /// [newSource] by inserting `length` characters at `at` of it; without
+  /// it the completion commits unchecked.
   bool _commit(
     String newSource,
     FlarkSelection sel, {
@@ -700,6 +703,7 @@ final class FlarkEditor implements FlarkDocumentState {
     String? typedUnderline,
     PendingStyle? pending,
     bool Function(FlarkDocument)? accept,
+    bool Function(FlarkDocument next, int at, int length)? acceptCompleted,
     bool acceptSourceMode = false,
   }) {
     // An edit that leaves the source as it is has nothing to parse or undo:
@@ -728,10 +732,15 @@ final class FlarkEditor implements FlarkDocumentState {
         parsed = _backend.parse(newSource);
         final completed = _completeTypedFence(newSource, sel.extent, parsed);
         if (completed != null) {
+          final length = completed.source.length - newSource.length;
           return _commit(
             completed.source,
             FlarkSelection.collapsed(completed.caret),
             typing: false,
+            acceptSourceMode: acceptSourceMode,
+            accept: acceptCompleted == null
+                ? null
+                : (next) => acceptCompleted(next, completed.at, length),
           );
         }
       }
@@ -1459,8 +1468,9 @@ final class FlarkEditor implements FlarkDocumentState {
   /// The parser identifies a newly typed, bare three-character opener, its
   /// last marker typed anywhere in the run. Pair it before publication, even
   /// if a later existing fence would close it. Source input and paste retain
-  /// Markdown's ordinary unclosed-fence meaning.
-  ({String source, int caret})? _completeTypedFence(
+  /// Markdown's ordinary unclosed-fence meaning. [at] is where the body and
+  /// closing fence go into [candidate].
+  ({String source, int caret, int at})? _completeTypedFence(
     String candidate,
     int caret,
     RenderModel model,
@@ -1500,6 +1510,7 @@ final class FlarkEditor implements FlarkDocumentState {
       return (
         source: candidate.replaceRange(openerEnd, openerEnd, inserted),
         caret: openerEnd + newline.length + prefix.length,
+        at: openerEnd,
       );
     }
     return null;
@@ -2829,22 +2840,28 @@ final class FlarkEditor implements FlarkDocumentState {
 
   bool _returnFromTable(ProjectedRow row) {
     // A delimiter row shown as its source is none of the table's rows:
-    // Return ends its line, and the next line takes the first body row.
+    // Return ends its line, wherever on it the caret is (a break inside it
+    // would split the row and dissolve the table), and the next line takes
+    // the first body row. Every other row keeps its containers.
     if (row.tableRowBlock < 0) {
-      final caret = selection.extent;
-      final line = _doc.model.lineOfUtf16(caret);
+      final m = _doc.model, line = m.lineOfUtf16(row.sourceStart);
+      final end = projection.lineContentEnd(line);
       // The new line repeats the delimiter row's container prefix.
       final nl =
-          '${_lineBreakAt(caret)}'
-          '${source.substring(_lineStart(source, _doc.model, line), row.sourceStart)}';
+          '${_lineBreakAt(end)}'
+          '${source.substring(_lineStart(source, m, line), row.sourceStart)}';
       return selection.isCollapsed &&
           _commit(
-            source.replaceRange(caret, caret, nl),
-            FlarkSelection.collapsed(caret + nl.length),
+            source.replaceRange(end, end, nl),
+            FlarkSelection.collapsed(end + nl.length),
             typing: false,
             acceptSourceMode: true,
-            accept: (next) =>
-                _keepsStructure(next, [(caret, caret, nl.length)], {row.index}),
+            accept: (next) => _keepsStructure(
+              next,
+              [(end, end, nl.length)],
+              {row.index},
+              shells: true,
+            ),
           );
     }
     for (var i = row.index + 1; i < projection.rows.length; i++) {

@@ -20,6 +20,51 @@ void _inlineCases(FlarkParseBackend backend) {
       expect(definition.editor.canSetResource(), isFalse);
     });
 
+    test('removing a link or image keeps the blocks around it', () {
+      // Unlinked text shows as the link did, or the unlink is refused: here
+      // the strong delimiters after the link could no longer open, and
+      // would show.
+      const strong = '[lbl](<u>)**[(**';
+      _Session(
+        backend,
+        source: strong,
+        caret: 2,
+      ).act(const RemoveLink(), applied: false, source: strong);
+      // Text that would start a block at its line's start escapes its first
+      // punctuation.
+      for (final (source, unlinked, rows, at) in [
+        ('- [1. Intro](#intro)', r'- 1\. Intro', ['1. Intro'], 8),
+        ('[# a](u)', r'\# a', ['# a'], 3),
+      ]) {
+        final session = _Session(
+          backend,
+          source: source,
+          caret: source.indexOf('](') - 1,
+        );
+        session.act(
+          const RemoveLink(),
+          source: unlinked,
+          rows: rows,
+          caret: DisplayPosition(0, at),
+        );
+        expect(session.editor.document.caretRow.kind, RowKind.paragraph);
+      }
+      // An image that starts its line takes the whitespace after it, which
+      // would indent the line out of its table, as indented code.
+      final image = _Session(
+        backend,
+        source: '![a](<i.png>)\ta|b\n-|-',
+        caret: 2,
+      );
+      image.act(
+        const RemoveImage(),
+        source: 'a|b\n-|-',
+        rows: ['a', 'b', '-|-'],
+        caret: const DisplayPosition(0, 0),
+      );
+      expect(image.editor.document.caretRow.kind, RowKind.tableCell);
+    });
+
     test('typing inside emphasis continues it', () {
       final session = _Session(backend, source: 'say *hi* now', caret: 7);
       session.expectState(context: Style.emphasis);

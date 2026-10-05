@@ -603,7 +603,12 @@ extension _CodeEditing on FlarkEditor {
     var inserted = first, to = end;
     // Both parts stay code in the row's containers, or show nothing yet
     // (`-     -      -` left on an item's line would be a rule), and the
-    // blocks around keep their kinds and containers.
+    // blocks around keep their kinds and containers. A new last line of
+    // code that ends its item or footnote is a blank line Markdown leaves
+    // outside them, and no spelling keeps it inside: it shows in their
+    // outer containers, carrying their prefix and the code's indentation,
+    // so text typed there continues the code, as Return leaves a
+    // footnote's next line. A blank line in any other containers fails.
     return _commit(
       source.replaceRange(start, to, inserted),
       FlarkSelection.collapsed(start + first.length),
@@ -612,7 +617,7 @@ extension _CodeEditing on FlarkEditor {
       accept: (next) =>
           [start, start + first.length].every((offset) {
             final now = next.rowAt(offset);
-            return now.kind == RowKind.blank ||
+            return now.kind == RowKind.blank && _outerShells(now, row) ||
                 now.kind == RowKind.codeBlock &&
                     FlarkEditor._sameShells(now, row);
           }) &&
@@ -623,6 +628,15 @@ extension _CodeEditing on FlarkEditor {
             shells: true,
           ),
     );
+  }
+
+  /// Whether [blank]'s containers are [row]'s, or the outer ones of them.
+  static bool _outerShells(ProjectedRow blank, ProjectedRow row) {
+    if (blank.shells.length > row.shells.length) return false;
+    for (var k = 0; k < blank.shells.length; k++) {
+      if (blank.shells[k].kind != row.shells[k].kind) return false;
+    }
+    return true;
   }
 
   bool _shiftBlock({required bool outdent}) {

@@ -308,10 +308,60 @@ void _returnCases(FlarkParseBackend backend) {
         ..act(const Newline(), applied: false, source: nested);
     });
 
+    test('at the end of indented code that ends its item continues it', () {
+      // The new last line is a blank line Markdown leaves outside the item,
+      // and no spelling keeps it inside: it shows outside, carrying the
+      // item's and the code's indentation, and text typed on it continues
+      // the code in the item.
+      final session = _Session(
+        backend,
+        source: '-     ind\n\n[r]: /u\n',
+        caret: 9,
+      );
+      session.act(
+        const Newline(),
+        source: '-     ind\n      \n\n[r]: /u\n',
+        rows: ['ind', '', '', '[r]: /u', ''],
+        anchor: 16,
+      );
+      session.act(
+        const InsertText('x'),
+        source: '-     ind\n      x\n\n[r]: /u\n',
+        rows: ['ind\nx', '', '[r]: /u', ''],
+        caret: const DisplayPosition(0, 5),
+      );
+      expect(session.editor.document.caretRow.kind, RowKind.codeBlock);
+      expect(shells(session), [ShellKind.list, ShellKind.item]);
+    });
+
     test('leaving an empty quote line keeps the next block out of a list', () {
       // Without the quote, `   b` would read on in the item above.
       final session = _Session(backend, source: '1. a\n>\n   b', caret: 6);
       session.act(const Newline(), applied: false, source: '1. a\n>\n   b');
+    });
+
+    test('in a table\'s delimiter row shown as its source ends its line', () {
+      // Wherever on the row the caret is, Return or Tab opens the next line
+      // after it, in its containers: a break inside it would split the row
+      // and dissolve the table, and the line after the quote would read on
+      // into it.
+      for (final command in [const Newline(), const MoveTableCell()]) {
+        for (final caret in [10, 13, 15]) {
+          final session = _Session(
+            backend,
+            source: '> | a |\n> | - |\na',
+            caret: caret,
+          );
+          session.act(
+            command,
+            source: '> | a |\n> | - |\n> \na',
+            rows: ['a ', '| - |', '', 'a'],
+            anchor: 18,
+          );
+          expect(shells(session), [ShellKind.blockQuote]);
+          expect(session.editor.projection.rows.last.shells, isEmpty);
+        }
+      }
     });
   });
 }
