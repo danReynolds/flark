@@ -2320,12 +2320,12 @@ final class FlarkEditor implements FlarkDocumentState {
   /// or read as a rule (`---`), and taken with the text it could leave a list
   /// item empty, whose content starts one column past its marker, moving the
   /// blocks after it. An edit of [start]..[end] that leaves none of the
-  /// heading's text instead respells it as an empty ATX heading of its level
-  /// in the same containers, as a level change does, followed by [text]. The
-  /// caret follows [text], where typing goes on in the heading unless [text]
-  /// breaks the line. Null when the edit is not in a setext heading or leaves
-  /// some of its text; false when the parser would move or change another
-  /// block.
+  /// heading's text ([_emptiedSetext]) instead respells it as an empty ATX
+  /// heading of its level in the same containers, as a level change does,
+  /// followed by [text]. The caret follows [text], where typing goes on in
+  /// the heading unless [text] breaks the line. Null when the edit is not in
+  /// a setext heading or leaves some of its text; false when the parser would
+  /// move or change another block.
   bool? _emptySetext(
     int start,
     int end,
@@ -2340,26 +2340,12 @@ final class FlarkEditor implements FlarkDocumentState {
     )) {
       return null;
     }
-    final row = _doc.rowAt(start), trail = _headingTrail(row);
-    final first = _firstCaretStart(row), m = _doc.model;
-    // The text left is read in the source, not in what is shown: only the
-    // spaces or tabs Markdown strips count as none, so an empty-alt image,
-    // which shows nothing, keeps the heading. An ATX closing sequence shares
-    // the text's line and may close an empty heading; only an underline sits
-    // on a line of its own.
-    if (trail == null ||
-        first > start ||
-        end > trail.$1 ||
-        m.lineOfUtf16(trail.$1) == m.lineOfUtf16(trail.$2) ||
-        !'${source.substring(first, start)}${source.substring(end, trail.$1)}'
-            .codeUnits
-            .every((unit) => unit == 0x20 || unit == 0x09)) {
-      return null;
-    }
-    final marker = '${'#' * row.headingLevel} ', replaced = '$marker$text';
-    final origin = first + marker.length;
+    final row = _doc.rowAt(start), atx = _emptiedSetext(row, start, end);
+    if (atx == null) return null;
+    final replaced = '${atx.marker}$text';
+    final origin = atx.start + atx.marker.length;
     return _commit(
-      source.replaceRange(first, trail.$2, replaced),
+      source.replaceRange(atx.start, atx.end, replaced),
       FlarkSelection.collapsed(origin + text.length),
       coalesce: typing,
       pending: pending,
@@ -2373,13 +2359,48 @@ final class FlarkEditor implements FlarkDocumentState {
             now.text.isEmpty &&
             _keepsStructure(
               next,
-              [(first, trail.$2, replaced.length)],
+              [(atx.start, atx.end, replaced.length)],
               {row.index},
               movesText: false,
               shells: true,
             );
       },
     );
+  }
+
+  /// The empty ATX heading that setext heading [row] becomes when an edit of
+  /// [start]..[end] leaves none of its text: its level's marker in place of
+  /// the row from where its text starts through its underline. Null when
+  /// [row] is no setext heading or the edit leaves some of its text. What is
+  /// left is read in the source, not in what is shown: only the spaces or
+  /// tabs Markdown strips count as none, so an image without alt text, which
+  /// shows nothing, keeps the heading. An ATX closing sequence shares the
+  /// text's line and may close an empty heading; only an underline sits on a
+  /// line of its own.
+  ({int start, int end, String marker})? _emptiedSetext(
+    ProjectedRow row,
+    int start,
+    int end,
+  ) {
+    final trail = _headingTrail(row), first = _firstCaretStart(row);
+    final m = _doc.model;
+    if (trail == null ||
+        first > start ||
+        end > trail.$1 ||
+        m.lineOfUtf16(trail.$1) == m.lineOfUtf16(trail.$2) ||
+        !_blanks(source, first, start) ||
+        !_blanks(source, end, trail.$1)) {
+      return null;
+    }
+    return (start: first, end: trail.$2, marker: '${'#' * row.headingLevel} ');
+  }
+
+  /// Whether [text] holds only spaces or tabs from [from] to [to].
+  static bool _blanks(String text, int from, int to) {
+    for (var i = from; i < to; i++) {
+      if (!_isBlank(text, i)) return false;
+    }
+    return true;
   }
 
   /// Join [right]'s first line onto [left] when a heading's markup trails
@@ -2851,18 +2872,26 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     if (after) return _splitInline(row, start, end, separator);
     // The split takes the last line's text to its end. Text before it on an
-    // earlier line keeps the underline after it. With no text before, from
-    // the heading's start, the split leaves the heading empty, so it becomes
-    // the empty ATX heading of its level deleting its text leaves, before the
-    // line break. From the start of a later line, the lines before it remain
-    // and the underline would have to move up to them, which a split cannot
-    // do faithfully, so the edit is refused.
+    // earlier line keeps the underline after it. From the start of a later
+    // line, the lines before it remain and the underline would have to move
+    // up to them, which a split cannot do faithfully, so the edit is refused.
     if (before) return _splitInline(row, start, end, separator, keep: trail);
-    final marker = '${'#' * row.headingLevel} ';
-    return first == 0 &&
-        _commitReturn(row, start, end, [
-          (row.contentStarts[0], trail.$2, '$marker$separator'),
-        ], separator);
+    if (first != 0) return false;
+    // From the heading's start, the split can leave the heading empty, read
+    // as deleting the text it takes reads it ([_emptiedSetext]): it becomes
+    // the empty ATX heading that deletion leaves, before the line break.
+    final taken = _rangeForEmptying(start, end);
+    final atx = _emptiedSetext(row, taken.start, taken.end);
+    if (atx != null) {
+      return _commitReturn(row, start, end, [
+        (atx.start, atx.end, '${atx.marker}$separator'),
+      ], separator);
+    }
+    // Text that shows nothing (an image without alt text) stays the
+    // heading's, before the line break with its underline, or after it.
+    return _blanks(source, _firstCaretStart(row), taken.start)
+        ? _splitInline(row, start, end, separator)
+        : _splitInline(row, start, end, separator, keep: trail);
   }
 
   bool _returnFromTable(ProjectedRow row) {

@@ -1814,5 +1814,26 @@ void _structureCases(FlarkParseBackend backend) {
         }
       }
     });
+
+    test('return beside a heading\'s text that shows nothing keeps it', () {
+      // An image without alt text, or a link without text, shows nothing but
+      // is the heading's text, as deleting reads it. Return after it opens a
+      // line below the underline, and before it moves the heading down;
+      // respelling the heading as an empty one would lose it.
+      for (final (source, caret, split) in [
+        ('![](u)\n===', 6, '![](u)\n===\n'),
+        ('![](u)\n===', 0, '\n![](u)\n==='),
+        ('[](u)\n===', 5, '[](u)\n===\n'),
+        ('> ![](u)\n> ===', 8, '> ![](u)\n> ===\n> '),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const Newline(), source: split, rows: ['', '']);
+        expect(
+          session.editor.projection.rows.map((r) => r.kind),
+          contains(RowKind.heading),
+          reason: source,
+        );
+      }
+    });
   });
 }
