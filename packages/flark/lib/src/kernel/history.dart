@@ -66,8 +66,6 @@ final class History {
   /// Id of the group the next coalescing record would join.
   int get openGroup => _group;
 
-  /// Group of the most recent undo entry, or -1.
-  int get lastGroup => _undo.isEmpty ? -1 : _undo.last.group;
   bool get canRedo => _redo.isNotEmpty;
   HistoryEntry? get redoTarget => _targetOf(_redo);
 
@@ -110,35 +108,18 @@ final class History {
   /// Record the state before a change. Typing within the coalescing window
   /// joins the open group; anything else starts a new one. A joined change
   /// does not append another full-source snapshot: the group's first state
-  /// is all undo needs.
-  void record(
-    FlarkDocument before, {
-    required PendingStyle? pending,
-    required bool typing,
-    required Duration at,
-    bool composition = false,
-  }) => recordState(
-    before.source,
-    before.selection,
-    pending: pending,
-    typing: typing,
-    at: at,
-    composition: composition,
-  );
-
-  /// Record an editor state that may not own a parsed [FlarkDocument]. Source
-  /// mode uses this path so history never parses merely to store an undo entry.
+  /// is all undo needs. The state is source and selection, not a parsed
+  /// document, so source mode never parses merely to store an undo entry.
   void recordState(
     String source,
     FlarkSelection selection, {
     required PendingStyle? pending,
     required bool typing,
     required Duration at,
-    bool composition = false,
   }) {
     final elapsed = _lastTypingAt == null ? null : at - _lastTypingAt!;
     final joins =
-        (typing || composition) &&
+        typing &&
         _lastWasTyping &&
         _undo.isNotEmpty &&
         _undo.last.group == _group &&
@@ -151,16 +132,13 @@ final class History {
     }
     _clear(_redo);
     _trim();
-    _lastWasTyping = typing || composition;
+    _lastWasTyping = typing;
     _lastTypingAt = at;
     if (_undo.isEmpty || _undo.last.group != _group) breakCoalescing();
   }
 
-  /// Pop the whole most recent group; returns the state to restore.
-  HistoryEntry? undo(FlarkDocument current, PendingStyle? pending) =>
-      undoState(current.source, current.selection, pending);
-
-  /// Undo from an editor state that may not own a parsed document.
+  /// Pop the whole most recent group, given the current state; returns the
+  /// state to restore.
   HistoryEntry? undoState(
     String source,
     FlarkSelection selection,
@@ -178,10 +156,8 @@ final class History {
     return target;
   }
 
-  HistoryEntry? redo(FlarkDocument current, PendingStyle? pending) =>
-      redoState(current.source, current.selection, pending);
-
-  /// Redo from an editor state that may not own a parsed document.
+  /// Take back the most recent undo, given the current state; returns the
+  /// state to restore.
   HistoryEntry? redoState(
     String source,
     FlarkSelection selection,

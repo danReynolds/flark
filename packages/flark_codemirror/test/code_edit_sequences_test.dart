@@ -255,7 +255,7 @@ void main() {
             source: editor.source,
             selection: editor.selection,
             revision: editor.revision,
-            group: editor.history.lastGroup,
+            undo: editor.history.undoTarget,
           );
           final body = _editedBody(editor, command);
           // At the end of an unclosed fence, a pasted last line break ends
@@ -287,9 +287,12 @@ void main() {
               reason: '$label: pasted code',
             );
           }
+          // A command that recorded no undo step (one that moved the
+          // selection or set a pending style) leaves the step to undo as it
+          // was.
           if (command is Undo ||
               command is Redo ||
-              editor.history.lastGroup == before.group) {
+              identical(editor.history.undoTarget, before.undo)) {
             continue;
           }
           final after = (source: editor.source, selection: editor.selection);

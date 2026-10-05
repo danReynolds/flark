@@ -197,9 +197,6 @@ void main() {
   });
 
   group('bounded logical history', () {
-    FlarkDocument document(String source) =>
-        FlarkDocument.load(source, backend, caret: source.length);
-
     test('navigation closes the current typing group', () {
       final editor = FlarkEditor(backend);
       editor.apply(const InsertText('a'), at: Duration.zero);
@@ -274,74 +271,46 @@ void main() {
     });
 
     test('joined typing retains only the group entry needed by undo', () {
-      final history = History(maxEntries: 1);
-      history.record(
-        document(''),
-        pending: null,
-        typing: true,
-        at: Duration.zero,
-      );
-      history.record(
-        document('a'),
-        pending: null,
-        typing: true,
-        at: const Duration(milliseconds: 100),
-      );
-
-      expect(history.undo(document('ab'), null)?.source, isEmpty);
-      expect(history.canUndo, isFalse);
+      // A run of typing longer than the editor's 100-entry cap is still one
+      // undo step back to where it began: joined keystrokes add no entries
+      // that the cap would evict in place of the run's first state.
+      final editor = FlarkEditor(backend);
+      for (var i = 0; i < 150; i++) {
+        editor.apply(InsertText('a'), at: Duration(milliseconds: i * 10));
+      }
+      expect(editor.apply(const Undo()), isTrue);
+      expect(editor.source, isEmpty);
+      expect(editor.history.canUndo, isFalse);
     });
 
     test('entry cap evicts the oldest undo state', () {
-      final history = History(maxEntries: 2);
-      history.record(
-        document('0'),
-        pending: null,
-        typing: false,
-        at: Duration.zero,
-      );
-      history.record(
-        document('1'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 1),
-      );
-      history.record(
-        document('2'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 2),
-      );
-
-      expect(history.undo(document('3'), null)?.source, '2');
-      expect(history.undo(document('2'), null)?.source, '1');
-      expect(history.undo(document('1'), null), isNull);
+      // 101 steps under a cap of 100 entries: the state before the first
+      // is the one evicted.
+      final editor = FlarkEditor(backend);
+      for (var i = 0; i < 101; i++) {
+        editor.apply(const Paste('a'), at: Duration(seconds: i * 2));
+      }
+      for (var i = 100; i > 0; i--) {
+        expect(editor.apply(const Undo()), isTrue);
+        expect(editor.source, 'a' * i);
+      }
+      expect(editor.history.canUndo, isFalse);
     });
 
     test('source budget evicts whole snapshots', () {
-      final history = History(maxEntries: 10, maxSourceCodeUnits: 5);
-      history.record(
-        document('0'),
-        pending: null,
-        typing: false,
-        at: Duration.zero,
-      );
-      history.record(
-        document('11'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 1),
-      );
-      history.record(
-        document('222'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 2),
-      );
-
-      expect(history.undo(document('3333'), null)?.source, '222');
-      expect(history.undo(document('222'), null)?.source, '11');
-      expect(history.undo(document('11'), null), isNull);
+      // Five snapshots of a document of a million characters pass the
+      // 4 Mi code-unit budget: the oldest goes whole, the four after it
+      // stay whole.
+      final start = 'x' * 1000000;
+      final editor = FlarkEditor(backend, text: start, caret: start.length);
+      for (var i = 0; i < 5; i++) {
+        editor.apply(Paste('$i'), at: Duration(seconds: i * 2));
+      }
+      for (var i = 4; i > 0; i--) {
+        expect(editor.apply(const Undo()), isTrue);
+        expect(editor.source, '$start${'01234'.substring(0, i)}');
+      }
+      expect(editor.history.canUndo, isFalse);
     });
   });
 }
