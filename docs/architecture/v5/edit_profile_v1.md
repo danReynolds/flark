@@ -299,7 +299,8 @@ the smallest mounted regression case.
   where it lands even when it leaves the caret where it was, as in common
   editors: a pending formatting toggle does not outlast it, and typing after
   it starts a new undo step. Keyboard navigation keeps its separate
-  context-preserving rules and explicit formatting toggles.
+  context-preserving rules and explicit formatting toggles, Up on the first
+  line and Down on the last included.
 - Selection direction and affinity survive controller, platform-input, layout,
   and paint mapping.
 - Double-click selects the laid-out visible word. Replacement and Undo use
@@ -525,7 +526,11 @@ Decoration failures cannot alter or reject source input.
   completions, the wrappers a replaced selection keeps) is made once, when
   the composition commits, through the typing path the parser validates; a
   composition over more than typing over its selection supports is refused.
-  A committed composition is one undo step, and a cancelled one restores the
+  Composed text typing then refuses is withdrawn with typing's reason when it
+  was composed in one place; text composed in more than one place (an input
+  method correcting a word beside the one it composes) stays as composed, as
+  the platform holds it, rather than taking the correction with it. A
+  committed composition is one undo step, and a cancelled one restores the
   source, selection and typing intent it began with. Code keeps composed
   text literal.
 - Duplicate platform callbacks must not duplicate source mutations.

@@ -1146,6 +1146,14 @@ class RenderFlarkSurface extends RenderBox
       }
     }
     final adjacent = line + (down ? 1 : -1);
+    // Up on the first line or Down on the last has nowhere to go. It is no
+    // press: a pending style and the typing's undo step outlast it, as they
+    // do Left at the document's start.
+    if (!extend &&
+        (adjacent < 0 || adjacent >= lines.length) &&
+        (down ? index == _rows.length - 1 : index == 0)) {
+      return false;
+    }
     final double y;
     if (adjacent >= 0 && adjacent < lines.length) {
       final next = lines[adjacent];

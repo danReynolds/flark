@@ -55,11 +55,12 @@ extension _Composition on FlarkEditor {
     }
     final grown = text.length - (to - from);
     _composed = composed == null
-        ? (from, from + text.length, source)
+        ? (from, from + text.length, source, range != null)
         : (
             from < composed.$1 ? from : composed.$1,
             (to > composed.$2 ? to : composed.$2) + grown,
             source,
+            composed.$4 || !within,
           );
     return true;
   }
@@ -126,6 +127,13 @@ extension _Composition on FlarkEditor {
       text,
     );
     if (refused != null) {
+      // Text composed in more than one place (an input method correcting a
+      // word beside the one it composes), or around other edits, stays as
+      // composed: withdrawn, it would take the platform's other edits with
+      // it. Composed in one place, it is withdrawn, as typing refuses it.
+      if (range == null || !identical(range.$3, now) || range.$4) {
+        return false;
+      }
       _snapshot = identical(over, at) ? restored : _restoreSnapshot(before);
       _pending = before.pending;
       _lastRejection = refused;

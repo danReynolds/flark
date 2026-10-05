@@ -478,6 +478,9 @@ class _EditorState extends State<FlarkEditorView>
     final caret = _viewport.caret;
     _goalColumn ??= caret.col;
     final index = (caret.row + delta).clamp(0, layout.lines.length - 1);
+    // Up on the first line or Down on the last has nowhere to go. It is no
+    // press: a pending style and the typing's undo step outlast it.
+    if (index == caret.row && !extend) return;
     final line = layout.lineAt(index, _goalColumn!, direction: delta);
     final hit = line.hit(_goalColumn!);
     if (line.row case final row?) {

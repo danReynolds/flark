@@ -6,6 +6,22 @@ part of '../journey_test.dart';
 /// the text is made once, when the composition commits, as one undo step.
 void _compositionCases(FlarkParseBackend backend) {
   group('composition', () {
+    test(
+      'a correction composed beside the word stays when its retype is refused',
+      () {
+        // An input method corrects `teh` while it composes `wor` after it:
+        // typing the two as one span across the emphasis is refused, and
+        // withdrawn the composition would take the correction with it.
+        final session = _Session(backend, source: '*teh* ', caret: 6);
+        final editor = session.editor..beginComposition();
+        session.act(const InsertText('wor'), source: '*teh* wor');
+        session.act(const ReplaceRange(1, 4, 'thee'), source: '*thee* wor');
+        editor.commitComposition();
+        session.expectState(source: '*thee* wor', rows: ['thee wor']);
+        expect(editor.composing, isFalse);
+      },
+    );
+
     test('commands that edit around an open composition commit it whole', () {
       // Commands a host would apply after ending the composition, applied
       // while it is open: its commit retypes all that changed, which may

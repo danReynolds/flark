@@ -91,9 +91,11 @@ final class FlarkEditor implements FlarkDocumentState {
   HistoryEntry? _composition;
   bool get composing => _composition != null;
 
-  /// Where the open composition's text is: its range of the source, and the
-  /// source it is a range of. See [_compose].
-  (int, int, String)? _composed;
+  /// Where the open composition's text is: its range of the source, the
+  /// source it is a range of, and whether the platform composed apart from
+  /// that text (an input method's correction beside its word). See
+  /// [_compose].
+  (int, int, String, bool)? _composed;
   FlarkEditRecorder? _recorder;
   bool _recording = false;
 
