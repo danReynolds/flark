@@ -119,12 +119,6 @@ final class Edits {
     if (!placed) out.add((at - shift, at - shift, text));
     return Edits(out);
   }
-
-  /// Each splice with only the length of its text, as the structure checks
-  /// read edits.
-  List<(int, int, int)> get lengths => [
-    for (final (start, end, text) in list) (start, end, text.length),
-  ];
 }
 
 /// One spelling of an edit: the [edits] that make it from the current

@@ -82,10 +82,6 @@ void main() {
     }
   });
 
-  test('lengths give each splice with its text length', () {
-    expect(edits.lengths, [(1, 2, 2), (3, 3, 2), (4, 6, 0)]);
-  });
-
   test('a spelling carries the selection as a caret goes', () {
     final spelling = Spelling.carrying(
       Edits([(0, 0, '# ')]),
