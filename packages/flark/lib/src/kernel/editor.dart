@@ -711,6 +711,12 @@ final class FlarkEditor implements FlarkDocumentState {
     // inert. Recording it would leave an Undo that changes nothing. A missing
     // cell's private preparation is itself the change, so it commits as usual.
     if (newSource == source && _cellOrigin == null) {
+      // Its check still holds, of the document as it is with the selection
+      // moved, or the edit is not kept: unchanged is not done.
+      if (accept != null &&
+          (sourceMode ? !acceptSourceMode : !accept(_doc.withSelection(sel)))) {
+        return _NotKept(passedOver: sourceMode);
+      }
       final moved = sourceMode ? _selectSource(sel) : _select(sel);
       _inert = !moved;
       return moved ? const _Committed() : const _Unchanged();

@@ -241,7 +241,8 @@ extension _ResourceEditing on FlarkEditor {
         );
       }
     }
-    final link = source.substring(resource.start, resource.end);
+    // A bare address written as it is changes no source: its check, that
+    // no link is left, passes it over.
     return _commitSpellings(
           [
             for (final content in {written, escaped})
@@ -250,15 +251,11 @@ extension _ResourceEditing on FlarkEditor {
                 if (_firstEscapable.matchAsPrefix(content) case final first?)
                   content.replaceRange(first.end - 1, first.end - 1, r'\'),
               ])
-                // A bare address written as it is would only move the caret,
-                // which _commit takes without its check, and the link would
-                // stay.
-                if (text != link)
-                  Spelling(
-                    Edits([(resource.start, resource.end, text)]),
-                    FlarkSelection.collapsed(resource.start + text.length),
-                    asAsked: text == written,
-                  ),
+                Spelling(
+                  Edits([(resource.start, resource.end, text)]),
+                  FlarkSelection.collapsed(resource.start + text.length),
+                  asAsked: text == written,
+                ),
           ],
           (next, spelling, edits) {
             final caret = spelling.selection.extent;
