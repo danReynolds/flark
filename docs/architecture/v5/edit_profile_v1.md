@@ -526,10 +526,10 @@ Decoration failures cannot alter or reject source input.
   completions, the wrappers a replaced selection keeps) is made once, when
   the composition commits, through the typing path the parser validates; a
   composition over more than typing over its selection supports is refused.
-  Composed text typing then refuses is withdrawn with typing's reason when it
-  was composed in one place; text composed in more than one place (an input
-  method correcting a word beside the one it composes) stays as composed, as
-  the platform holds it, rather than taking the correction with it. A
+  Text composed in more than one place (an input method correcting a word
+  beside the one it composes) stays as composed, as the platform holds it:
+  typed as one span, the text between the places would be typed over as
+  text. Composed text typing refuses is withdrawn with typing's reason. A
   committed composition is one undo step, and a cancelled one restores the
   source, selection and typing intent it began with. Code keeps composed
   text literal.

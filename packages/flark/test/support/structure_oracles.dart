@@ -1047,7 +1047,7 @@ final class _Check {
   /// blank line after a container's last block, before a block outside it,
   /// is not the container's (a footnote's or an item's continuation line,
   /// the gap after code that ends an item). Such a line is in the
-  /// containers a letter typed on it lands in.
+  /// containers a heading typed on it lands in.
   void _checkReturnContainers() {
     final sel = old.selection;
     final at = old.displayOf(sel.start);
@@ -1075,16 +1075,19 @@ final class _Check {
     );
   }
 
-  /// The containers of a letter typed at the caret after the command, or
+  /// The containers of a heading typed at the caret after the command, or
   /// null when it does not show.
   String? _typedShells() {
+    // A heading, which no paragraph reads on as a lazy line: a line
+    // without its containers' prefix shows outside them.
+    const probe = '# x';
     final at = next.selection.extent;
     final typed = FlarkEditor(
       backend,
-      text: next.source.replaceRange(at, at, 'x'),
-      caret: at + 1,
+      text: next.source.replaceRange(at, at, probe),
+      caret: at + probe.length,
     ).document;
-    final row = typed.rowAt(at + 1);
+    final row = typed.rowAt(at + probe.length);
     return row.kind == RowKind.blank ? null : shellKinds(row);
   }
 

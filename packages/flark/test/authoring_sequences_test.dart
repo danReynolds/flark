@@ -724,13 +724,14 @@ final class _Author {
     reached.add(matrix.stateOf(editor));
     // History keeps 100 entries. Ending sessions before that many keeps
     // their first source reachable for the walk below, and ending them
-    // short of the live tier's 16 KiB keeps them rendered.
+    // short of the live tier's 16 KiB, with room for one action's largest
+    // paste, keeps them rendered.
     final actions = count(8, 40);
     for (
       var i = 0;
       i < actions &&
           editor.history.openGroup < 80 &&
-          utf8.encode(editor.source).length < 14 * 1024;
+          utf8.encode(editor.source).length < 12 * 1024;
       i++
     ) {
       time += Duration(milliseconds: count(300, 2500));

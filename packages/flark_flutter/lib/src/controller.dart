@@ -137,6 +137,7 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
     final nothing =
         (command is Undo && !editor.history.canUndo) ||
         (command is Redo && !editor.history.canRedo);
+    final ended = editor.composing;
     final changed = editor.applyAfterComposition(
       command,
       expectedRevision: expectedRevision,
@@ -145,8 +146,10 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       _composing = TextRange.empty;
       _compositionSource = null;
     }
+    // A command that applied can still have withdrawn the composition it
+    // ended (typing refused what was composed).
     notice = changed
-        ? null
+        ? (ended ? _rejectionNotice : null)
         : nothing
         ? notice
         : _rejectionNotice;

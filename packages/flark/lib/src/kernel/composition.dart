@@ -77,12 +77,17 @@ extension _Composition on FlarkEditor {
   bool _retypeComposition(HistoryEntry before) {
     final began = before.source, now = source;
     if (sourceMode || began == now) return false;
+    // Text composed in more than one place (an input method correcting a
+    // word beside the one it composes) stays as composed: typed as one
+    // span, the text between the places (a cell's pipe, a span's
+    // delimiters) would be typed over as text.
+    final range = _composed;
+    if (range != null && identical(range.$3, now) && range.$4) return false;
     // The composed text and the range of [began] it replaced: the smallest
     // difference that still holds the selection the composition began with
     // and the text it composed, however the text around them repeats.
     final at = before.selection;
     var head = at.start, tail = began.length - at.end;
-    final range = _composed;
     if (range != null && identical(range.$3, now)) {
       if (range.$1 < head) head = range.$1;
       if (now.length - range.$2 < tail) tail = now.length - range.$2;
@@ -127,13 +132,10 @@ extension _Composition on FlarkEditor {
       text,
     );
     if (refused != null) {
-      // Text composed in more than one place (an input method correcting a
-      // word beside the one it composes), or around other edits, stays as
-      // composed: withdrawn, it would take the platform's other edits with
-      // it. Composed in one place, it is withdrawn, as typing refuses it.
-      if (range == null || !identical(range.$3, now) || range.$4) {
-        return false;
-      }
+      // Composed around other edits, it stays as composed: withdrawn, it
+      // would take those edits with it. Composed in one place, it is
+      // withdrawn, as typing refuses it.
+      if (range == null || !identical(range.$3, now)) return false;
       _snapshot = identical(over, at) ? restored : _restoreSnapshot(before);
       _pending = before.pending;
       _lastRejection = refused;

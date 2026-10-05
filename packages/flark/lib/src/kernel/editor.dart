@@ -81,6 +81,10 @@ final class FlarkEditor implements FlarkDocumentState {
   @override
   int get revision => _revision;
   FlarkRejection? _lastRejection;
+
+  /// Why the last call refused its edit, or null. After
+  /// [applyAfterComposition] whose command applied, it is why the
+  /// composition it ended was withdrawn, if it was.
   FlarkRejection? get lastRejection => _lastRejection;
 
   /// Set when the command being applied asked for the state the editor
@@ -236,7 +240,13 @@ final class FlarkEditor implements FlarkDocumentState {
             (command.enabled ? FlarkStyleValue.on : FlarkStyleValue.off)) {
       return false;
     }
-    if (composing && (command is Undo || command is Redo)) commitComposition();
+    // Undo during a composition commits it, so Undo takes it back. Redo has
+    // nothing to redo once it commits: during a composition it does nothing.
+    if (composing && command is Redo) {
+      _inert = true;
+      return false;
+    }
+    if (composing && command is Undo) commitComposition();
     if (command is! SelectAll) _selectedCodeScope = false;
     _now = at ?? _clock();
     final applied = sourceMode
@@ -315,14 +325,19 @@ final class FlarkEditor implements FlarkDocumentState {
 
     // The commit publishes with the command, which may yet be refused.
     _endComposition();
-    final unpublished = _revision;
+    final withdrawn = _lastRejection, unpublished = _revision;
     try {
       final accepted = apply(
         command(),
         at: at,
         expectedRevision: expectedRevision,
       );
-      if (!accepted) restore();
+      if (!accepted) {
+        restore();
+      } else {
+        // A command that applied still reports a composition it withdrew.
+        _lastRejection ??= withdrawn;
+      }
       return accepted;
     } catch (_) {
       // Only a command that failed before it was published is withdrawn.
@@ -1029,7 +1044,13 @@ final class FlarkEditor implements FlarkDocumentState {
     if (start == end) return range;
     for (var grew = true; grew;) {
       grew = false;
-      for (final o in [..._doc.ownersAt(start), ..._doc.ownersAt(end)]) {
+      // An autolink's delimiters are hidden as an owner's are.
+      for (final o in [
+        ..._doc.ownersAt(start),
+        ..._doc.ownersAt(end),
+        ?_doc.autolinkAround(start, start),
+        ?_doc.autolinkAround(end, end),
+      ]) {
         final covers = start <= o.contentStart && end >= o.contentEnd;
         final content = start == o.contentStart && end == o.contentEnd;
         final whole = start <= o.start && end >= o.end;
@@ -1205,18 +1226,35 @@ final class FlarkEditor implements FlarkDocumentState {
     // A pending style's delimiters must pair around the text: after a
     // backslash, inside an autolink or beside another delimiter run they
     // would be painted, or pair with that run and show or hide its
-    // characters. The row must show what it showed with the text in it;
+    // characters. The line typed on must show what it showed with the text
+    // in it, whitespace at its edges aside (Markdown's to show or strip);
     // otherwise the text goes in without the style.
+    String line(String text, int at) {
+      final start = at == 0 ? 0 : text.lastIndexOf('\n', at - 1) + 1;
+      final end = text.indexOf('\n', at);
+      return text.substring(start, end < 0 ? text.length : end);
+    }
+
     final shown = wrapAt < 0
         ? null
         : () {
             final d = row.displayForSource(range.start).$1;
-            return row.text.replaceRange(d, d, text);
+            final was = line(row.text, d);
+            final inLine =
+                d - (d == 0 ? 0 : row.text.lastIndexOf('\n', d - 1) + 1);
+            return was.replaceRange(inLine, inLine, text).trim();
           }();
-    bool wraps(FlarkDocument next, int typedAt) =>
-        wrapAt < 0 ||
-        _TypedLines._wrapShows(next, typedAt + wrapAt, p!, wrapped) &&
-            next.rowAt(typedAt + wrapAt + p.open.length).text == shown;
+    bool wraps(FlarkDocument next, int typedAt) {
+      if (wrapAt < 0) return true;
+      if (!_TypedLines._wrapShows(next, typedAt + wrapAt, p!, wrapped)) {
+        return false;
+      }
+      final at = typedAt + wrapAt + p.open.length;
+      final typedRow = next.rowAt(at);
+      return line(typedRow.text, typedRow.displayForSource(at).$1).trim() ==
+          shown;
+    }
+
     var placed = gap.isEmpty && cells == null
         ? _typeOnLine(
             row,
@@ -1752,11 +1790,13 @@ final class FlarkEditor implements FlarkDocumentState {
       return d >= row.text.length && row.index == projection.rows.length - 1;
     }
     if (d != 0 || row.index != 0 || row.shells.isNotEmpty) return false;
-    final i = (_doc.model.lineOfUtf16(selection.extent) - row.firstLine).clamp(
-      0,
-      row.contentStarts.length - 1,
-    );
-    return row.prefixStarts[i] == row.contentStarts[i] &&
+    final line = _doc.model.lineOfUtf16(selection.extent);
+    final i = (line - row.firstLine).clamp(0, row.contentStarts.length - 1);
+    // A byte order mark starting the document is no prefix to delete.
+    return (row.prefixStarts[i] == row.contentStarts[i] ||
+            row.kind == RowKind.blank &&
+                row.contentStarts[i] ==
+                    lineStartPastMark(source, _doc.model, line)) &&
         row.kind != RowKind.heading &&
         row.kind != RowKind.thematicBreak &&
         !_isBareHeading(row) &&
@@ -2730,11 +2770,23 @@ final class FlarkEditor implements FlarkDocumentState {
       for (var r = high; r >= 0; r--) {
         final row = rows[r];
         if (row.sourceEnd <= row.sourceStart) continue;
-        var at = from;
-        for (final s in row.segments) {
-          if (!s.lineBreak && s.sourceStart <= at && at < s.sourceEnd) {
-            at = s.sourceEnd;
+        // Segments are in source order: from the first that ends past
+        // [from], follow those that paint on from where the last ended.
+        final segments = row.segments;
+        var lo = 0, hi = segments.length;
+        while (lo < hi) {
+          final mid = (lo + hi) >> 1;
+          if (segments[mid].sourceEnd <= from) {
+            lo = mid + 1;
+          } else {
+            hi = mid;
           }
+        }
+        var at = from;
+        for (var k = lo; k < segments.length && at <= to; k++) {
+          final s = segments[k];
+          if (s.sourceStart > at) break;
+          if (!s.lineBreak && at < s.sourceEnd) at = s.sourceEnd;
         }
         return at > to;
       }
