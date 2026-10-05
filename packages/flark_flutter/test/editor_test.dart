@@ -408,23 +408,20 @@ void main() {
     () {
       final c = FlarkController(FlarkEditor(backend));
       c.command(const ToggleStyle(Style.emphasis));
-      expect(
-        c.receive(
-          const TextEditingValue(
-            text: 'n',
-            selection: TextSelection.collapsed(offset: 1),
-            composing: TextRange(start: 0, end: 1),
-          ),
-        ),
-        isTrue,
+      const composed = TextEditingValue(
+        text: 'n',
+        selection: TextSelection.collapsed(offset: 1),
+        composing: TextRange(start: 0, end: 1),
       );
-      expect(c.text, '*n*');
-      expect(c.value.composing, const TextRange(start: 1, end: 2));
+      expect(c.receive(composed), isTrue);
+      // The platform's text stays as it composed it.
+      expect(c.value, composed);
+      expect(c.editor.typingContext, Style.emphasis);
       expect(
         c.receive(
           const TextEditingValue(
-            text: '**',
-            selection: TextSelection.collapsed(offset: 1),
+            text: '',
+            selection: TextSelection.collapsed(offset: 0),
           ),
         ),
         isTrue,
@@ -438,6 +435,74 @@ void main() {
       c.dispose();
     },
   );
+  test('composed text takes pending formatting when it commits', () {
+    // Wrapped as it was composed, the platform's text changed under its
+    // input method, and the next preedit or the commit landed after the
+    // delimiters (`**n日本**`).
+    final c = FlarkController(FlarkEditor(backend, text: 'abc', caret: 3));
+    c.command(const ToggleStyle(Style.strong));
+    final values = <TextEditingValue>[];
+    c.addListener(() => values.add(c.value));
+    for (final preedit in ['n', 'に', '日本']) {
+      final value = TextEditingValue(
+        text: 'abc$preedit',
+        selection: TextSelection.collapsed(offset: 3 + preedit.length),
+        composing: TextRange(start: 3, end: 3 + preedit.length),
+      );
+      expect(c.receive(value), isTrue);
+      expect(c.value, value);
+    }
+    expect(
+      c.receive(
+        const TextEditingValue(
+          text: 'abc日本',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      ),
+      isTrue,
+    );
+    expect(c.text, 'abc**日本**');
+    expect(c.value.selection, const TextSelection.collapsed(offset: 7));
+    expect(c.value.composing, TextRange.empty);
+    expect(c.editor.composing, isFalse);
+    expect(values.last, c.value);
+    expect(c.command(const Undo()), isTrue);
+    expect(c.text, 'abc');
+    expect(c.editor.typingContext, Style.strong);
+    c.dispose();
+  });
+  test('a commit that typing refuses is withdrawn with a notice', () {
+    // Composed before a cell's delimiter, a backslash would escape it, which
+    // typing refuses.
+    const table = '| a | b |\n| - | - |\n| 1| 2 |';
+    final c = FlarkController(FlarkEditor(backend, text: table, caret: 23));
+    for (final preedit in ['x', r'\']) {
+      expect(
+        c.receive(
+          TextEditingValue(
+            text: table.replaceRange(23, 23, preedit),
+            selection: const TextSelection.collapsed(offset: 24),
+            composing: const TextRange(start: 23, end: 24),
+          ),
+        ),
+        isTrue,
+      );
+    }
+    expect(
+      c.receive(
+        TextEditingValue(
+          text: table.replaceRange(23, 23, r'\'),
+          selection: const TextSelection.collapsed(offset: 24),
+        ),
+      ),
+      isTrue,
+    );
+    expect((c.text, c.editor.composing), (table, false));
+    expect(c.value.selection, const TextSelection.collapsed(offset: 23));
+    expect(c.notice, 'This edit needs source mode.');
+    expect(c.editor.history.canUndo, isFalse);
+    c.dispose();
+  });
 
   for (final (typed, committed) in [('milk', 'milk'), ('teh', 'the')]) {
     for (final batched in [false, true]) {

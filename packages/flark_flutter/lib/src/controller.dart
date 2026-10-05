@@ -420,7 +420,13 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       }
     }
     if (changed || next.text == text) {
-      final shift = editor.selection.extent - next.selection.extentOffset;
+      // The kernel composes text as the platform holds it, so the platform's
+      // composing range is the kernel's, wherever the caret was legalized.
+      // Text the kernel reshaped (code opening its first body line) moved
+      // the range with the caret.
+      final shift = next.text == text
+          ? 0
+          : editor.selection.extent - next.selection.extentOffset;
       _composing = isComposing
           ? TextRange(
               start: (next.composing.start + shift).clamp(0, text.length),
@@ -435,11 +441,13 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       notice = _rejectionNotice ?? 'This edit needs source mode.';
       if (opened) _abandonComposition();
     }
+    // A commit types what was composed, which can change the document.
+    final revision = editor.revision;
     if (!isComposing && editor.composing) _endComposition();
     _lastReceived = next;
     _lastReceivedRevision = editor.revision;
     _changed();
-    return changed || committedWord;
+    return changed || committedWord || editor.revision != revision;
   }
 
   /// Whether the editor's selection has the offsets of [next]'s.
@@ -447,15 +455,23 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       editor.selection.base == next.selection.baseOffset &&
       editor.selection.extent == next.selection.extentOffset;
 
-  /// The platform ended its composition. Keep what it composed as one history
-  /// step, or restore the exact prior state when it left the source as it was.
+  /// The platform ended its composition. Keep what it composed, typed, as one
+  /// history step, or restore the exact prior state when it left the source
+  /// as it was.
   void _endComposition() {
     if (editor.source == _compositionSource) {
       editor.cancelComposition();
     } else {
-      editor.commitComposition();
+      _commitComposition();
     }
     _compositionSource = null;
+  }
+
+  /// Typing can refuse what was composed, which withdraws it: say why.
+  void _commitComposition() {
+    if (!editor.composing) return;
+    editor.commitComposition();
+    if (editor.lastRejection != null) notice = _rejectionNotice;
   }
 
   /// Ends a composition that a rejected platform value opened. The platform
@@ -475,7 +491,7 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
     if (cancel) {
       editor.cancelComposition();
     } else {
-      editor.commitComposition();
+      _commitComposition();
     }
     _changed();
   }

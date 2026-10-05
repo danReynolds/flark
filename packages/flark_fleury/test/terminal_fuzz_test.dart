@@ -1009,8 +1009,10 @@ final class _EditorSession {
         // Only Undo changes the source and leaves something to redo: a
         // click or action on the toolbar's Undo.
         !editor.history.canRedo &&
-        // A composition continued from an earlier step undoes to its start.
-        !(composing && step.kind == 'compose') &&
+        // A composition continued from an earlier step undoes to its start,
+        // and one the step ends commits its text, typed, as an undo step of
+        // its own.
+        !composing &&
         focus.hasFocus &&
         !readOnly) {
       final after = state;

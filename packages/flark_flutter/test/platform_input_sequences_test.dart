@@ -24,8 +24,9 @@
 ///  * an event with one logical meaning (text typed at the caret, Backspace,
 ///    Return, a selection the platform moved, a decidable key, selector,
 ///    toolbar command or correction) left the controller as that command
-///    leaves a fresh kernel editor in the same state; a composition that
-///    commits equals typing its text, and one that cancels leaves no trace;
+///    leaves a fresh kernel editor in the same state; a composition holds
+///    its text as the platform does while it composes, one that commits
+///    equals typing its text, and one that cancels leaves no trace;
 ///  * a composition ends with the connection, focus or view that held it,
 ///    and input for another field or a replaced client never edits.
 ///
@@ -222,6 +223,11 @@ class _Sequence {
   int theme = 0;
   String? clipboard;
   int _labelStep = 0;
+
+  /// The composition [_compose] has open: the state it began in, when a
+  /// reference editor can take it, what it shows, and whether it replaced
+  /// a selection.
+  ({_State? pre, String shown, bool selected})? _preedit;
 
   /// History coalescing reads this clock, which advances with each event,
   /// so a replayed sequence groups its undo steps as it did.
@@ -976,6 +982,7 @@ class _Sequence {
   /// occasional interruptions by the host's own events between updates.
   Future<void> _compose() async {
     if (!_editorInput || _platformComposing) return _idle();
+    _preedit = null;
     final held = platform.held;
     final values = _compositions[r.nextInt(_compositions.length)];
     final plain = values.every(_letters.hasMatch);
@@ -1034,6 +1041,7 @@ class _Sequence {
       // previous one.
       final region = platform.held.composing;
       shown = platform.held.text.substring(region.start, region.end);
+      _preedit = (pre: pre, shown: shown, selected: selected);
       if (oracle) {
         _compareComposition(pre, selected, shown, 'composing');
         if (!c.editor.composing || c.value.composing == TextRange.empty) {
@@ -1056,10 +1064,10 @@ class _Sequence {
         _drain();
         await _settle(true);
         if (oracle) {
-          final typed = _reference(from: pre);
-          if (typed != null) {
-            if (shown.isNotEmpty) typed.apply(InsertText(shown));
-            expect(c.text, typed.source, reason: '${_label()}: caret move');
+          final composed = _reference(from: pre)?..beginComposition();
+          if (composed != null) {
+            if (shown.isNotEmpty) composed.apply(InsertText(shown));
+            expect(c.text, composed.source, reason: '${_label()}: caret move');
           }
           expect(
             c.editor.composing && _platformComposing,
@@ -1180,6 +1188,7 @@ class _Sequence {
   /// into it, then a commit.
   Future<void> _recompose() async {
     if (!_editorInput || _platformComposing) return _idle();
+    _preedit = null;
     final held = platform.held;
     final word = held.selection.isCollapsed ? _wordBefore(held) : null;
     if (word == null) return _compose();
@@ -1347,6 +1356,9 @@ class _Sequence {
   ) {
     final ref = _reference(from: pre);
     if (ref == null) return;
+    // While the platform composes, the kernel holds its text as it is; the
+    // commit types it.
+    if (what == 'composing') ref.beginComposition();
     if (shown.isNotEmpty) {
       ref.apply(InsertText(shown));
     } else if (selected) {
@@ -1616,6 +1628,8 @@ class _Sequence {
       view.top + 4 + r.nextDouble() * (view.height - 8),
     );
     final before = c.text;
+    // A press ends a composition, which commits its text, typed.
+    final committed = _committedSource();
     final kind = touch ? PointerDeviceKind.touch : PointerDeviceKind.mouse;
     final at = point();
     final gesture = r.nextInt(4);
@@ -1649,7 +1663,11 @@ class _Sequence {
     await tester.pump(kDoubleTapTimeout);
     _drain();
     await _settle(true);
-    if (c.text != before && !_taskToggle(before, c.text)) {
+    if (committed != null &&
+        c.text != before &&
+        c.text != committed &&
+        !_taskToggle(before, c.text) &&
+        !_taskToggle(committed, c.text)) {
       fail(
         '${_label()}: a press changed the document: '
         '${jsonEncode(before)} -> ${jsonEncode(c.text)}',
@@ -1750,14 +1768,19 @@ class _Sequence {
     if (pick == commands.length) {
       log.add('toolbar source mode ${!e.sourceMode}');
       final source = c.text, selection = e.selection;
+      // Switching ends a composition, which commits its text, typed.
+      final committed = _committedSource();
       c.sourceMode(!e.sourceMode);
       await _settle(true);
-      expect(
-        (c.text, c.editor.composing),
-        (source, false),
-        reason: '${_label()}: switching modes changed the document',
-      );
-      if (c.editor.sourceMode) {
+      expect(c.editor.composing, isFalse, reason: _label());
+      if (committed != null) {
+        expect(
+          c.text,
+          committed,
+          reason: '${_label()}: switching modes changed the document',
+        );
+      }
+      if (c.editor.sourceMode && c.text == source) {
         expect(c.editor.selection, selection, reason: _label());
       }
       return;
@@ -1784,7 +1807,9 @@ class _Sequence {
     }
     final command = commands[pick];
     final composing = e.composing;
-    final ref = _reference(ignoreComposition: true);
+    final ref = composing
+        ? _committedReference()
+        : _reference(ignoreComposition: true);
     final source = c.text, selection = e.selection;
     log.add('toolbar ${_name(command)}${composing ? ' while composing' : ''}');
     final accepted = c.command(command);
@@ -1883,7 +1908,9 @@ class _Sequence {
     log.add(
       'platform closes the connection${c.editor.composing ? ' while composing' : ''}',
     );
-    final source = c.text;
+    final source = c.text, composing = c.editor.composing;
+    // The composition the connection held commits its text, typed.
+    final committed = composing ? _committedReference() : null;
     await _platformCall('TextInputClient.onConnectionClosed', [
       platform.client,
     ]);
@@ -1897,7 +1924,11 @@ class _Sequence {
         isFalse,
         reason: '${_label()}: the composition outlived its connection',
       );
-      expect(c.text, source, reason: _label());
+      if (composing) {
+        _compare(committed, 'commit as the connection closes');
+      } else {
+        expect(c.text, source, reason: _label());
+      }
     }
   }
 
@@ -2015,7 +2046,9 @@ class _Sequence {
           ? const ['x', 'ab', 'é', 'Zz'][r.nextInt(4)]
           : _randomText();
       log.add('accessibility sets text: $a..$b -> ${jsonEncode(text)}');
-      final source = c.text;
+      // An edit ends a composition, which commits its text, typed; a refused
+      // one leaves it composing.
+      final composed = c.text, source = _committedSource();
       final requested = value.replaceRange(a, b, text);
       tester.binding.performSemanticsAction(
         SemanticsActionEvent(
@@ -2034,7 +2067,8 @@ class _Sequence {
       // the blank line before a link definition). Other text can start or
       // end Markdown structure.
       final removed = value.substring(a, b);
-      if (_letters.hasMatch('$text${removed}x') &&
+      if (source != null &&
+          _letters.hasMatch('$text${removed}x') &&
           !c.editor.sourceMode &&
           !readOnly &&
           mounted) {
@@ -2043,7 +2077,7 @@ class _Sequence {
         final (cut, added) = _difference(source, c.text);
         final explained =
             shown == requested ||
-            (c.text == source && c.notice != null) ||
+            ((c.text == source || c.text == composed) && c.notice != null) ||
             (c.text != source &&
                 (a != b || (cut.isEmpty && added.contains(text))));
         if (!explained) {
@@ -2352,6 +2386,35 @@ class _Sequence {
         : TextRange.empty;
     if (composing != heldComposing) return null;
     return _Window(start, crs);
+  }
+
+  /// A reference editor in the state the open composition began in, with
+  /// what it shows typed, as its commit types it. Null without a reference
+  /// or a composition [_compose] opened.
+  FlarkEditor? _typedPreedit() {
+    final preedit = _preedit, pre = preedit?.pre;
+    final typed = pre == null ? null : _reference(from: pre);
+    if (typed == null) return null;
+    if (preedit!.shown.isNotEmpty) {
+      typed.apply(InsertText(preedit.shown));
+    } else if (preedit.selected) {
+      typed.apply(const DeleteBackward());
+    }
+    return typed;
+  }
+
+  /// The source the open composition's commit leaves, or the source when
+  /// none is open. Null when no reference can tell.
+  String? _committedSource() =>
+      c.editor.composing ? _typedPreedit()?.source : c.text;
+
+  /// A reference editor in the state the open composition's commit leaves:
+  /// the composed state, where typing its text reads it so too (the
+  /// selection stays where the platform left it), or the typed one.
+  FlarkEditor? _committedReference() {
+    final typed = _typedPreedit();
+    if (typed == null) return null;
+    return typed.source == c.text ? _reference(ignoreComposition: true) : typed;
   }
 
   /// A fresh kernel editor in the controller's state, or null when the

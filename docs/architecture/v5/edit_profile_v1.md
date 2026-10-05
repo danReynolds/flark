@@ -90,8 +90,8 @@ additional product principles or testing layers.
   heading's line. The kernel inserts a blank line (keeping container markers)
   before the typed line instead, so it starts its own block: the bare marker
   above, a paragraph, or a thematic break for `---`. The parser identifies the
-  underline and confirms the separation. Paste, IME preedit and source mode
-  keep Markdown's literal meaning.
+  underline and confirms the separation. Paste and source mode keep
+  Markdown's literal meaning, as an IME preedit does until it commits.
 - Text typed, pasted or put (one line) on an empty row starts a block on that
   line, in the containers the row shows. An empty line in a list item or
   footnote may lack their indentation, so the line gets the innermost
@@ -367,10 +367,11 @@ Backspace in an empty closed code block removes the fences and retains its
 container context. Completion is its own Undo step: Undo restores the two
 typed markers and their caret; Redo restores the empty bounded block.
 
-This is a typing convenience. Paste, range replacement, source mode and IME
-preedit preserve their literal input. Existing language tags are preserved;
-under immediate creation, characters typed after the third marker enter the
-code body. Opening-line padding and CRLF at the insertion site are retained.
+This is a typing convenience. Paste, range replacement and source mode
+preserve their literal input, as an IME preedit does until it commits.
+Existing language tags are preserved; under immediate creation, characters
+typed after the third marker enter the code body. Opening-line padding and
+CRLF at the insertion site are retained.
 
 ### Code editing
 
@@ -448,6 +449,16 @@ Decoration failures cannot alter or reject source input.
   publishes nothing, records no history and is not reported as refused.
 - Equivalent full-value, delta, key, paste, and composition delivery routes
   produce the same accepted logical command.
+- While an input method composes, its text goes into the source as it is,
+  where the platform holds it, so each preedit and the commit edit the text
+  the platform knows. What typing makes of text (a pending style's
+  delimiters, an escaped pipe in a table cell, the typed fence and setext
+  completions, the wrappers a replaced selection keeps) is made once, when
+  the composition commits, through the typing path the parser validates; a
+  composition over more than typing over its selection supports is refused.
+  A committed composition is one undo step, and a cancelled one restores the
+  source, selection and typing intent it began with. Code keeps composed
+  text literal.
 - Duplicate platform callbacks must not duplicate source mutations.
 - Browser copy/cut exports visible selected text in rendered mode and exact
   selected source in source mode. Copy Markdown remains the full-source export.

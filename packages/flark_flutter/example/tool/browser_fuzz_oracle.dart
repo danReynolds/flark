@@ -219,13 +219,12 @@ final class _Replay {
       case 'ime':
         final end = event['end'];
         final commit = event['commit'] as String?;
-        // A known kernel issue: composed text the kernel rewrites as it is
-        // composed (wrapped in a pending style's delimiters, a pipe escaped
-        // in a table cell, a fence's body line opened). A browser drops a
-        // composition the page rewrites; its next update, or its commit,
-        // lands after the first ("**n日本**", "**``**"), so the page is not
-        // predicted from there. Remove this once the kernel inserts composed
-        // text as it is.
+        // The kernel composes text as the input element holds it and types
+        // it when the composition commits. A browser drops a composition
+        // whose text the page changes under it: one the kernel refuses, as
+        // typing its text there is refused, or that code reshapes (an empty
+        // fence's first body line). Its next update, or its commit, then
+        // lands elsewhere, so the page is not predicted from there.
         final steps = (event['steps']! as List).cast<String>();
         final before = editor.source, s = editor.selection;
         final where = editor.sourceMode
@@ -245,7 +244,7 @@ final class _Replay {
             editor.source != before.replaceRange(s.start, s.end, steps.first);
         editor.cancelComposition();
         if (rewritten) {
-          unchecked ??= (i, 'composition the kernel rewrites ($where)');
+          unchecked ??= (i, 'composition the kernel refuses ($where)');
         }
         if ((end == 'commit' || end == 'enter') &&
             commit != null &&

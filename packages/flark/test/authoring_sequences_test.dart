@@ -627,9 +627,12 @@ final class _Author {
       matrix.checkStep(editor, label);
       checkRowOrder(editor, label);
       matrix.checkStructure(before, command, editor, label, backend);
-      checkCaretInEdit(before, command, editor, label);
-      checkVisibleEdit(before, command, editor, label);
-      checkEditKeepsRows(before, command, editor, label);
+      // Composed text goes in as it is; its commit is checked as typing.
+      if (!editor.composing) {
+        checkCaretInEdit(before, command, editor, label);
+        checkVisibleEdit(before, command, editor, label);
+        checkEditKeepsRows(before, command, editor, label);
+      }
       if (command is Undo || command is Redo) {
         expect(
           reached,
@@ -1062,28 +1065,38 @@ final class _Author {
   }
 
   /// An input method's preedit runs: the first preedit is typed at the
-  /// selection, later ones replace the composing range, which ends at the
-  /// caret; the run commits, or is cancelled.
+  /// selection, later ones replace the composing range, which the source
+  /// holds as the platform does; the run commits, typed, or is cancelled.
   void compose() {
     if (editor.composing) return;
     if (_afterWord && editor.selection.isCollapsed) type(' ');
     final (preedits, committed) = pick(_compositions);
-    final before = matrix.stateOf(editor);
+    final before = matrix.stateOf(editor), start = editor.snapshot;
     final undo = editor.history.undoTarget, redo = editor.history.redoTarget;
     hostCall('beginComposition()', editor.beginComposition);
-    var length = 0;
+    final at = editor.selection.start;
+    var composed = '';
     for (final preedit in [...preedits, committed]) {
-      final caret = editor.selection.extent;
-      final applied = length == 0
+      final applied = composed.isEmpty
           ? step(InsertText(preedit), gap: count(80, 200))
           : step(
-              ReplaceRange(caret - length, caret, preedit),
+              ReplaceRange(at, at + composed.length, preedit),
               gap: count(80, 200),
             );
-      if (applied) length = preedit.length;
+      if (applied) composed = preedit;
     }
     if (chance(0.8)) {
       hostCall('commitComposition()', editor.commitComposition);
+      final label = 'seed $seed step ${log.length - 1} commitComposition()';
+      if (editor.lastRejection != null) {
+        // Typing refused what was composed, which is withdrawn.
+        expect(matrix.stateOf(editor), before, reason: '$label: withdrawn');
+      } else if (composed.isNotEmpty) {
+        final typed = InsertText(composed);
+        checkCaretInEdit(start, typed, editor, label);
+        checkVisibleEdit(start, typed, editor, label);
+        checkEditKeepsRows(start, typed, editor, label);
+      }
       if (chance(0.5)) type(' ${phrase()}');
     } else {
       // Cancelling restores the state before the preedit and leaves history

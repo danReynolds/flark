@@ -139,8 +139,9 @@ per key, `Newline`, deletes, `MoveCaret`, `Paste`, a composition's committed
 text) on a `FlarkEditor` on the Dart VM and compares; events placed by glyph
 geometry (pointer, Up/Down, line edges) take the page's caret. Where the page
 cannot be predicted (a press in a long line of one repeated word, or a
-composition the kernel rewrites, a known issue), the rest of the sequence is
-checked only for errors, and the summary counts it as checked in part. A
+composition the kernel refuses, which the browser then drops), the rest of
+the sequence is checked only for errors, and the summary counts it as
+checked in part. A
 failure is minimized by replaying subsets in the browser. `--out
 failures.jsonl` keeps failures, `--replay file.json` runs one `{doc,
 clipboard, events}` sequence, `--only seed:index` one generated sequence, and

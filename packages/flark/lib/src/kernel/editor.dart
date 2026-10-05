@@ -28,6 +28,7 @@ part 'table_editing.dart';
 part 'inline_formatting.dart';
 part 'recorder.dart';
 part 'typed_lines.dart';
+part 'composition.dart';
 
 typedef FlarkListener = void Function();
 
@@ -89,6 +90,10 @@ final class FlarkEditor implements FlarkDocumentState {
   bool _forceSourceMode = false;
   HistoryEntry? _composition;
   bool get composing => _composition != null;
+
+  /// Where the open composition's text is: its range of the source, and the
+  /// source it is a range of. See [_compose].
+  (int, int, String)? _composed;
   FlarkEditRecorder? _recorder;
   bool _recording = false;
 
@@ -234,6 +239,10 @@ final class FlarkEditor implements FlarkDocumentState {
     _now = at ?? _clock();
     final applied = sourceMode
         ? _applySource(command)
+        : composing && command is InsertText
+        ? _compose(selection.start, selection.end, command.text)
+        : composing && command is ReplaceRange
+        ? _compose(command.start, command.end, command.text)
         : _withMissingCell(command);
     if (applied) {
       _notify();
@@ -262,7 +271,7 @@ final class FlarkEditor implements FlarkDocumentState {
     int? expectedRevision,
   }) => _record(
     () => _applyAfterComposition(
-      command,
+      () => command,
       at: at,
       expectedRevision: expectedRevision,
     ),
@@ -276,21 +285,24 @@ final class FlarkEditor implements FlarkDocumentState {
     },
   );
 
+  /// [command] is built once the composition has ended: committing its
+  /// text can respell the source the command's offsets are in.
   bool _applyAfterComposition(
-    FlarkCommand command, {
+    FlarkCommand Function() command, {
     Duration? at,
     int? expectedRevision,
   }) {
     if (!composing ||
         (expectedRevision != null && expectedRevision != revision)) {
-      return apply(command, at: at, expectedRevision: expectedRevision);
+      return apply(command(), at: at, expectedRevision: expectedRevision);
     }
-    final composition = _composition;
+    final composition = _composition, composed = _composed;
     final before = _snapshot, pending = _pending, origin = _cellOrigin;
     final selectedCode = _selectedCodeScope, goal = _goalColumn;
     final savedHistory = history.checkpoint();
     void restore() {
       _composition = composition;
+      _composed = composed;
       _snapshot = before;
       _pending = pending;
       _cellOrigin = origin;
@@ -299,11 +311,12 @@ final class FlarkEditor implements FlarkDocumentState {
       history.restore(savedHistory);
     }
 
-    commitComposition();
+    // The commit publishes with the command, which may yet be refused.
+    _endComposition();
     final unpublished = _revision;
     try {
       final accepted = apply(
-        command,
+        command(),
         at: at,
         expectedRevision: expectedRevision,
       );
@@ -439,7 +452,8 @@ final class FlarkEditor implements FlarkDocumentState {
         _pending == null) {
       return false;
     }
-    commitComposition();
+    // The splice's offsets are in the composed text as it stands.
+    _endComposition(retype: false);
     history.recordState(
       source,
       selection,
@@ -494,6 +508,7 @@ final class FlarkEditor implements FlarkDocumentState {
     final next = _admitSource(text, const FlarkSelection.collapsed(0));
     if (next == null) return false;
     _composition = null;
+    _composed = null;
     _pending = null;
     _cellOrigin = null;
     _goalColumn = null;
@@ -524,15 +539,15 @@ final class FlarkEditor implements FlarkDocumentState {
         _lastRejection = FlarkRejection.unsupportedEdit;
         return false;
       }
-      final row = _doc.caretRow;
-      return applyAfterComposition(
-        SetSelection(
+      return _applyAfterComposition(() {
+        final row = _doc.caretRow;
+        return SetSelection(
           row.sourceForDisplay(0),
           row.sourceForDisplay(row.text.length),
-        ),
-      );
+        );
+      });
     }
-    return applyAfterComposition(SetSelection(0, source.length));
+    return _applyAfterComposition(() => SetSelection(0, source.length));
   }
 
   void _notify() {
@@ -541,6 +556,8 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// Input methods may publish several preedit values as one logical action.
+  /// While it composes, its text goes into the source as it is ([_compose]);
+  /// committing makes of it what typing would, as one undo step.
   /// Cancellation restores source, selection and typing intent without using
   /// or clearing the user's undo/redo stacks.
   void beginComposition() {
@@ -556,14 +573,14 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   void _beginComposition() {
-    _composition ??= HistoryEntry(
-      source,
-      selection,
-      _pending,
-      history.openGroup,
-    );
+    if (_composition != null) return;
+    _composition = HistoryEntry(source, selection, _pending, history.openGroup);
+    _composed = null;
   }
 
+  /// Ends the composition with its text typed. Typing can refuse what was
+  /// composed, which withdraws it as [cancelComposition] does:
+  /// [lastRejection] then says why.
   void commitComposition() {
     if (!composing) return;
     _record(
@@ -575,8 +592,17 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   void _commitComposition() {
+    _lastRejection = null;
+    if (_endComposition()) _notify();
+  }
+
+  /// Ends the composition, one undo step from the state it began in, with
+  /// what typing makes of its text unless [retype] is false. Publishes
+  /// nothing; true when that changed the snapshot or the typing intent.
+  bool _endComposition({bool retype = true}) {
     final before = _composition;
-    if (before == null) return;
+    if (before == null) return false;
+    final retyped = retype && _retypeComposition(before);
     if (source != before.source) {
       history.recordState(
         before.source,
@@ -587,7 +613,9 @@ final class FlarkEditor implements FlarkDocumentState {
       );
     }
     _composition = null;
+    _composed = null;
     history.breakCoalescing();
+    return retyped;
   }
 
   void cancelComposition() {
@@ -607,6 +635,7 @@ final class FlarkEditor implements FlarkDocumentState {
     _snapshot = next;
     _pending = before.pending;
     _composition = null;
+    _composed = null;
     _notify();
   }
 

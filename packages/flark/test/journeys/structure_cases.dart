@@ -1239,21 +1239,32 @@ void _structureCases(FlarkParseBackend backend) {
         );
         expect(session.editor.projection.rows.first.headingLevel, 2);
       }
-      // So does a preedit that passes through empty on its way to new text.
-      final composed = _Session(backend, source: 'abc\n---\n\np');
-      composed.act(const SetSelection(0, 3));
-      composed.editor.beginComposition();
-      composed.act(const ReplaceRange(0, 3, 'x'), source: 'x\n---\n\np');
-      composed.act(const ReplaceRange(0, 1, ''), source: '## \n\np');
-      final caret = composed.editor.selection.extent;
-      composed.act(
-        ReplaceRange(caret, caret, 'z'),
-        source: '## z\n\np',
-        rows: ['z', '', 'p'],
-      );
-      composed.editor.commitComposition();
-      expect(composed.editor.projection.rows.first.kind, RowKind.heading);
-      composed.act(const Undo(), source: 'abc\n---\n\np');
+      // A preedit that passes through empty on its way to new text is held
+      // as the platform holds it, and the text it commits keeps the
+      // heading; committed empty, it is deleted as Backspace deletes.
+      for (final last in ['z', '']) {
+        final composed = _Session(backend, source: 'abc\n---\n\np');
+        composed.act(const SetSelection(0, 3));
+        composed.editor.beginComposition();
+        composed.act(const ReplaceRange(0, 3, 'x'), source: 'x\n---\n\np');
+        composed.act(const ReplaceRange(0, 1, ''), source: '\n---\n\np');
+        if (last.isNotEmpty) {
+          final caret = composed.editor.selection.extent;
+          composed.act(
+            ReplaceRange(caret, caret, last),
+            source: '$last\n---\n\np',
+            rows: [last, '', 'p'],
+          );
+        }
+        composed.editor.commitComposition();
+        composed.expectState(
+          source: last.isEmpty ? '## \n\np' : 'z\n---\n\np',
+          rows: [last, '', 'p'],
+          caret: DisplayPosition(0, last.length),
+        );
+        expect(composed.editor.projection.rows.first.headingLevel, 2);
+        composed.act(const Undo(), source: 'abc\n---\n\np');
+      }
     });
 
     test('typing over all of a setext heading\'s text keeps its underline', () {
