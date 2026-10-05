@@ -717,7 +717,6 @@ final class FlarkEditor implements FlarkDocumentState {
     FlarkSelection sel, {
     required bool typing,
     bool completeTypedFence = false,
-    String? typedUnderline,
     PendingStyle? pending,
     bool Function(FlarkDocument)? accept,
     bool Function(FlarkDocument next, int at, int length)? acceptCompleted,
@@ -758,23 +757,6 @@ final class FlarkEditor implements FlarkDocumentState {
             accept: acceptCompleted == null
                 ? null
                 : (next) => acceptCompleted(next, completed.at, length),
-          );
-        }
-      }
-      if (typedUnderline != null && live) {
-        parsed = _backend.parse(newSource);
-        final separated = _separateTypedUnderline(
-          newSource,
-          sel.extent,
-          typedUnderline,
-          parsed,
-        );
-        if (separated != null) {
-          return _commit(
-            separated.source,
-            FlarkSelection.collapsed(separated.caret),
-            pending: pending,
-            typing: typing,
           );
         }
       }
@@ -1325,7 +1307,6 @@ final class FlarkEditor implements FlarkDocumentState {
         accept: accept,
         acceptSourceMode: cells == null,
         completeTypedFence: fence,
-        typedUnderline: underline,
       );
       if (!placed && hides && _lastRejection == null) {
         placed =
@@ -1507,61 +1488,6 @@ final class FlarkEditor implements FlarkDocumentState {
           ),
     );
     return continued ? true : null;
-  }
-
-  /// Typing `-` or `=` on the empty line under a paragraph makes that line a
-  /// setext underline: the paragraph becomes a heading, and the underline is
-  /// hidden markup with no caret position, so the next character would land
-  /// at the end of the heading's text. A blank line before the typed line
-  /// gives it a block of its own, the bare list marker or paragraph the user
-  /// is starting (`---` becomes a thematic break). The parser identifies the
-  /// heading and confirms the separation; paste, IME preedit and source mode
-  /// keep Markdown's literal meaning.
-  ({String source, int caret})? _separateTypedUnderline(
-    String candidate,
-    int caret,
-    String typed,
-    RenderModel model,
-  ) {
-    bool underlines(RenderModel model, int line) => model.blocks.any(
-      (block) =>
-          block.kind == BlockKind.heading &&
-          block.lineCount > 1 &&
-          block.firstLine + block.lineCount - 1 == line,
-    );
-    final start = caret - typed.length;
-    final line = model.lineOfUtf16(caret);
-    if (start < 0 ||
-        model.lineOfUtf16(start) != line ||
-        !underlines(model, line)) {
-      return null;
-    }
-    // The typed row was empty, so the text before the typed characters is
-    // only its container prefix (quote markers, item indentation).
-    final lineStart = model.lineStartUtf16(line);
-    final newline =
-        lineStart >= 2 && candidate.startsWith('\r\n', lineStart - 2)
-        ? '\r\n'
-        : '\n';
-    final blank =
-        '${candidate.substring(lineStart, start).trimRight()}$newline';
-    final separated = candidate.replaceRange(lineStart, lineStart, blank);
-    final moved = caret + blank.length;
-    // The blank line must not cost the edit its admission: near a byte,
-    // line or shape limit the typed characters are inserted as they are.
-    final stats = _SourceStats.of(separated);
-    if (!stats.valid ||
-        stats.utf8Bytes > sourceLimit ||
-        stats.utf8Bytes > syncLimit ||
-        !liveLimits._admitsStats(stats)) {
-      return null;
-    }
-    final check = _backend.parse(separated);
-    if (!liveLimits._admitsModel(check) ||
-        underlines(check, check.lineOfUtf16(moved))) {
-      return null;
-    }
-    return (source: separated, caret: moved);
   }
 
   /// The parser identifies a newly typed, bare three-character opener, its
