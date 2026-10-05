@@ -1683,7 +1683,11 @@ impl<'a> Extractor<'a> {
         let block_end = self.blocks[blk as usize][block::END_BYTE] as usize;
         let mut from = self.last_text_end.max(sibling_end).max(s.saturating_sub(4)).min(src.len());
         while from > 0 && !src.is_char_boundary(from) { from -= 1; }
-        let mut to = block_end.max(from).min(src.len());
+        // A match is taken only when it starts within 8 + (e - s) bytes, so
+        // the search stops there: searched to the block's end, a paragraph
+        // of distinct misplaced tags was quadratic in its length.
+        let reach = from + 8 + (e - s) + literal.len();
+        let mut to = block_end.max(from).min(reach).min(src.len());
         while to < src.len() && !src.is_char_boundary(to) { to += 1; }
         match src[from..to].find(literal) {
             Some(off) if off <= 8 + (e - s) => Some(from + off),

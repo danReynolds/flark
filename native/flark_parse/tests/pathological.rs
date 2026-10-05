@@ -40,6 +40,21 @@ fn lines(unit: &str, bytes: usize) -> String { fill(&(fill(unit, 4_000.min(bytes
 /// numbers a line early from there on.
 fn drifted(unit: &str, bytes: usize) -> String { "[](\n)\n".to_string() + &fill(unit, bytes) }
 
+/// A paragraph after a drifted link, of tags no two alike: each is looked
+/// for near where comrak misplaced it, which a search to the block's end
+/// made quadratic.
+fn distinct_tags(bytes: usize) -> String {
+    let (mut s, mut line) = (String::from("[](\n)\n"), String::new());
+    for i in 0.. {
+        if s.len() + line.len() >= bytes { break; }
+        let unit = format!("<t{i}>&amp; ");
+        // Lines of up to 60 bytes.
+        if line.len() + unit.len() > 60 { s.push_str(&line); s.push('\n'); line.clear(); }
+        line.push_str(&unit);
+    }
+    s + &line
+}
+
 /// A table of [columns] whose rows are [row].
 fn table(columns: usize, row: &str, bytes: usize) -> String { "a|".repeat(columns) + "\n" + &"-|".repeat(columns) + "\n" + &fill(&(row.to_string() + "\n"), bytes) }
 
@@ -128,6 +143,7 @@ fn shapes() -> Vec<(&'static str, Make)> {
         ("misplaced references and pipes", |n| drifted("|&#319;\\||&#575;|\n", n)),
         ("misplaced code spans", |n| drifted("x &`c`\nx &amp; *a* `c`\nx c`\n", n)),
         ("misplaced tags", |n| drifted("<b> ", n)),
+        ("misplaced distinct tags", distinct_tags),
         ("misplaced references after a definition", |n| fill(&("[a]: /u\n[](\n)\n".to_string() + &(0..300).map(|i| format!("a&#{};b *x* ", 256 + i)).collect::<String>() + "\n\n"), n)),
         ("code spans across lines", |n| fill("`a\nb` x ", n)),
         ("tags across lines", |n| fill("<a\nb='c'> x ", n)),
