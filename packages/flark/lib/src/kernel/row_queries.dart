@@ -1,9 +1,10 @@
 /// Questions about projected rows that several kernel paths ask: which of
-/// the projection's special presentations a row is, and whether two rows sit
-/// in the same containers. The projection makes those choices from the
-/// render model; this library names them once, so callers do not decode a
-/// row's fields to recognize them. It is kernel-internal and not exported:
-/// hosts read [ProjectedRow] itself.
+/// the projection's special presentations a row is, whether two rows sit in
+/// the same containers, and which of a row's lines, source or displayed,
+/// holds an offset. The projection makes those choices from the render
+/// model; this library answers them once, so callers do not decode a row's
+/// fields to recognize them. It is kernel-internal and not exported: hosts
+/// read [ProjectedRow] itself.
 library;
 
 import '../parse/render_model.dart';
