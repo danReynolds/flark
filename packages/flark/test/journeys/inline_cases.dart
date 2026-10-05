@@ -34,9 +34,13 @@ void _inlineCases(FlarkParseBackend backend) {
         session.act(SetSelection(base, extent));
         session.act(command, applied: false, source: source);
       }
-      // A definition or a rule offers no link at all.
+      // A definition or a rule offers no link or image at all.
       final definition = _Session(backend, source: '[a]: /u\nb', caret: 1);
       expect(definition.editor.canSetResource(), isFalse);
+      final rule = _Session(backend, source: 'a\n\n---\n\nb', caret: 6);
+      expect(rule.editor.document.caretRow.kind, RowKind.thematicBreak);
+      expect(rule.editor.canSetResource(), isFalse);
+      expect(rule.editor.canSetResource(image: true), isFalse);
     });
 
     test('removing a link or image keeps the blocks around it', () {
