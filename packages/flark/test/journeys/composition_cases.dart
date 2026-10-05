@@ -319,6 +319,21 @@ void _compositionCases(FlarkParseBackend backend) {
       expect((editor.composing, editor.history.canUndo), (false, false));
     });
 
+    test('Redo during a composition does nothing', () {
+      // Redo has nothing to redo once the composition commits. Made while it
+      // composes, it would replace the text under the composition.
+      final session = _Session(backend, source: 'abc', caret: 3);
+      final editor = session.editor;
+      session.act(const InsertText('x'), source: 'abcx');
+      session.act(const Undo(), source: 'abc');
+      editor.beginComposition();
+      session.act(const InsertText('k'), source: 'abck');
+      session.act(const Redo(), applied: false, source: 'abck');
+      expect((editor.composing, editor.lastRejection), (true, null));
+      editor.commitComposition();
+      session.expectState(source: 'abck');
+    });
+
     test(
       'a committed composition is one undo step, typing after it another',
       () {
