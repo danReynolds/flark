@@ -77,15 +77,23 @@ void _typingCases(FlarkParseBackend backend) {
     test('text typed into an empty item takes back its indented blocks', () {
       // An empty item ends at the blank line after it, so the paragraph
       // indented for it reads outside it; the text that fills the item
-      // takes it back, as the item had it before it was emptied.
-      final session = _Session(backend, source: '- \n\n  b\n', caret: 2);
-      expect(session.editor.projection.rows[2].shells, isEmpty);
-      session.act(
-        const InsertText('x'),
-        source: '- x\n\n  b\n',
-        rows: ['x', '', 'b', ''],
-      );
-      expect(shellsOf(session.editor.projection.rows[2]), 'list/item');
+      // takes it back, as the item had it before it was emptied. A marker
+      // with no space gets one before the text.
+      for (final (source, caret, edited, rows) in [
+        ('- \n\n  b\n', 2, '- x\n\n  b\n', ['x', '', 'b', '']),
+        ('- a\n-\n\n  b\n', 5, '- a\n- x\n\n  b\n', ['a', 'x', '', 'b', '']),
+        ('1.\n\n   b\n', 2, '1. x\n\n   b\n', ['x', '', 'b', '']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final b = rows.length - 2;
+        expect(session.editor.projection.rows[b].shells, isEmpty);
+        session.act(const InsertText('x'), source: edited, rows: rows);
+        expect(
+          shellsOf(session.editor.projection.rows[b]),
+          'list/item',
+          reason: source,
+        );
+      }
     });
 
     test('text typed on an empty row joins no span with the row below', () {

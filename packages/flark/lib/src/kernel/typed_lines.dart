@@ -574,25 +574,8 @@ extension _TypedLines on FlarkEditor {
     bool strict = false,
     bool apart = false,
   }) {
-    int forward(int offset) {
-      var shift = 0;
-      for (final (start, end, length) in edits) {
-        if (offset < start) break;
-        if (offset < end) return -1;
-        shift += length - (end - start);
-      }
-      return offset + shift;
-    }
-
-    int back(int offset) {
-      var shift = 0;
-      for (final (start, end, length) in edits) {
-        if (offset < start + shift) break;
-        if (offset < start + shift + length) return -1;
-        shift += length - (end - start);
-      }
-      return offset - shift;
-    }
+    int forward(int offset) => FlarkEditor._afterEdits(edits, offset);
+    int back(int offset) => FlarkEditor._beforeEdits(edits, offset);
 
     // An empty item the text fills: the blocks after it that are indented
     // for it join it again, as they were before it was emptied.

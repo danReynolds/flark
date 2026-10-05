@@ -2535,6 +2535,33 @@ final class FlarkEditor implements FlarkDocumentState {
     );
   }
 
+  /// Where [offset] of the current source is in the source [edits] make
+  /// (sorted replacements: start, end, and the length of what replaced
+  /// them), or -1 inside a replacement. An offset at a replacement's start
+  /// stays before it: a block that starts where an edit does starts there
+  /// still.
+  static int _afterEdits(List<(int, int, int)> edits, int offset) {
+    var shift = 0;
+    for (final (start, end, length) in edits) {
+      if (offset <= start) break;
+      if (offset < end) return -1;
+      shift += length - (end - start);
+    }
+    return offset + shift;
+  }
+
+  /// Where [offset] of the source [edits] make was in the current source,
+  /// or -1 in text an edit put there.
+  static int _beforeEdits(List<(int, int, int)> edits, int offset) {
+    var shift = 0;
+    for (final (start, end, length) in edits) {
+      if (offset < start + shift) break;
+      if (offset < start + shift + length) return -1;
+      shift += length - (end - start);
+    }
+    return offset - shift;
+  }
+
   /// Whether [next], a join or lift of [rows] made by [edits] (sorted
   /// replacements of current source: start, end, and the length of what
   /// replaced it), keeps what the user sees elsewhere. A reparse can
@@ -2555,27 +2582,8 @@ final class FlarkEditor implements FlarkDocumentState {
     (int, int)? shown,
     bool shells = false,
   }) {
-    // A current offset in [next]'s source, or -1 inside a replacement.
-    int forward(int offset) {
-      var shift = 0;
-      for (final (start, end, length) in edits) {
-        if (offset <= start) break;
-        if (offset < end) return -1;
-        shift += length - (end - start);
-      }
-      return offset + shift;
-    }
-
-    // An offset of [next]'s source in the current one, or -1 in new text.
-    int back(int offset) {
-      var shift = 0;
-      for (final (start, end, length) in edits) {
-        if (offset < start + shift) break;
-        if (offset < start + shift + length) return -1;
-        shift += length - (end - start);
-      }
-      return offset - shift;
-    }
+    int forward(int offset) => _afterEdits(edits, offset);
+    int back(int offset) => _beforeEdits(edits, offset);
 
     // Rows inside a container whose marker the edit removed, from its line
     // (a lift) or before text the line keeps (an item joined up), leave it;
