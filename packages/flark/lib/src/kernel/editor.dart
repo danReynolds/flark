@@ -1165,10 +1165,19 @@ final class FlarkEditor implements FlarkDocumentState {
         : null;
     // A pending style's delimiters must pair around the text: after a
     // backslash, inside an autolink or beside another delimiter run they
-    // would be painted. There the text goes in without the style.
+    // would be painted, or pair with that run and show or hide its
+    // characters. The row must show what it showed with the text in it;
+    // otherwise the text goes in without the style.
+    final shown = wrapAt < 0
+        ? null
+        : () {
+            final d = row.displayForSource(range.start).$1;
+            return row.text.replaceRange(d, d, text);
+          }();
     bool wraps(FlarkDocument next, int typedAt) =>
         wrapAt < 0 ||
-        _TypedLines._wrapShows(next, typedAt + wrapAt, p!, wrapped);
+        _TypedLines._wrapShows(next, typedAt + wrapAt, p!, wrapped) &&
+            next.rowAt(typedAt + wrapAt + p.open.length).text == shown;
     var placed = gap.isEmpty && cells == null
         ? _typeOnLine(
             row,
