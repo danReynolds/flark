@@ -620,11 +620,10 @@ extension _TypedLines on FlarkEditor {
       final holder = at > now[j].sourceEnd && j + 1 < now.length
           ? now[j + 1]
           : now[j];
+      // An empty item stays one. Shown as a bare marker instead, it would
+      // paint the marker it hides, which the hidden-text check refuses.
       if (emptyItem) {
-        if (holder.kind == RowKind.blank && _sameContainers(holder, old) ||
-            holder.kind == RowKind.paragraph &&
-                holder.block >= 0 &&
-                next.model.blockKind(holder.block) == BlockKind.item) {
+        if (holder.kind == RowKind.blank && _sameContainers(holder, old)) {
           continue;
         }
         return false;
