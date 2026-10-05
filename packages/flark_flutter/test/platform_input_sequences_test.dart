@@ -27,6 +27,11 @@
 ///    leaves a fresh kernel editor in the same state; a composition holds
 ///    its text as the platform does while it composes, one that commits
 ///    equals typing its text, and one that cancels leaves no trace;
+///  * an application's exact source splice is accepted or refused as a
+///    fresh kernel editor in the same state decides, and a refused one
+///    leaves no trace;
+///  * an accessibility edit of letters by letters shows the requested text
+///    or refuses with a notice;
 ///  * a composition ends with the connection, focus or view that held it,
 ///    and input for another field or a replaced client never edits.
 ///
@@ -138,6 +143,7 @@ const _corrections = {
 };
 
 final _letters = RegExp(r'^[\p{L}\p{M}´]+$', unicode: true);
+final _word = RegExp(r'[\p{L}\p{M}´]+', unicode: true);
 
 /// Events run and oracle comparisons made, printed with FLARK_INPUT_STATS.
 final _stats = <String, int>{};
@@ -154,10 +160,13 @@ void main() {
       int.tryParse(Platform.environment['FLARK_INPUT_STEPS'] ?? '') ?? 70;
   // Replays one sequence a failure printed, on the platform filtered by name.
   final only = int.tryParse(Platform.environment['FLARK_INPUT_SEQUENCE'] ?? '');
+  final runs = only == null
+      ? 'seed $seed, $iterations sequences'
+      : 'sequence seed $only';
   for (final target in _Target.values) {
     testWidgets(
       'platform input sequences keep the host and kernel in step: '
-      '${target.name} (seed $seed, $iterations sequences)',
+      '${target.name} ($runs)',
       (tester) async {
         final semantics = tester.ensureSemantics();
         final master = Random(seed * 31 + target.index);
@@ -430,7 +439,7 @@ class _Sequence {
         'close': 2,
         'lifecycle': 2,
         'rebuild': 4,
-        'semantics': 2,
+        'semantics': 4,
         'existing': 1,
         'burst': 5,
       },
@@ -450,7 +459,7 @@ class _Sequence {
         'close': 3,
         'lifecycle': 2,
         'rebuild': 4,
-        'semantics': 2,
+        'semantics': 4,
         'existing': 1,
         'burst': 5,
       },
@@ -469,7 +478,7 @@ class _Sequence {
         'focus': 4,
         'lifecycle': 3,
         'rebuild': 5,
-        'semantics': 2,
+        'semantics': 4,
         'close': 1,
         'existing': 1,
         'burst': 5,
@@ -489,7 +498,7 @@ class _Sequence {
         'focus': 5,
         'lifecycle': 3,
         'rebuild': 5,
-        'semantics': 2,
+        'semantics': 4,
         'burst': 5,
       },
     };
@@ -893,6 +902,24 @@ class _Sequence {
     if (window != null && ref != null) {
       _expect(ref, [SetSelection(window.source(base), window.source(extent))]);
     }
+  }
+
+  /// The grapheme boundaries within each run of letters in [value] that
+  /// holds more than one grapheme, from [boundaries], all of [value]'s.
+  static List<List<int>> _words(String value, List<int> boundaries) {
+    final words = <List<int>>[];
+    var k = 0;
+    for (final word in _word.allMatches(value)) {
+      while (k < boundaries.length && boundaries[k] < word.start) {
+        k++;
+      }
+      final inside = [
+        for (var j = k; j < boundaries.length && boundaries[j] <= word.end; j++)
+          boundaries[j],
+      ];
+      if (inside.length > 1) words.add(inside);
+    }
+    return words;
   }
 
   static List<int> _boundaries(String text) {
@@ -1756,13 +1783,25 @@ class _Sequence {
       final text = _randomText();
       log.add('application splices $from..$to with ${jsonEncode(text)}');
       final ref = _reference(ignoreComposition: true);
+      final before = (c.text, c.editor.selection, c.editor.composing);
       final spliced = c.editor.replaceSourceRange(from, to, text);
+      final after = (c.text, c.editor.selection, c.editor.composing);
       await _settle(true);
-      if (ref != null &&
-          spliced == ref.replaceSourceRange(from, to, text) &&
-          spliced) {
-        _compare(ref, 'application splice');
+      // The kernel admits a splice before it commits a composition: a
+      // refused one leaves no trace, and a composition in progress changes
+      // nothing a kernel editor in the same state decides.
+      if (!spliced) {
+        expect(after, before, reason: '${_label()}: a refused splice');
       }
+      if (ref == null) return;
+      if (ref.replaceSourceRange(from, to, text) != spliced) {
+        fail(
+          '${_label()}: the host ${spliced ? 'accepted' : 'refused'} a '
+          'splice a kernel editor in the same state '
+          '${spliced ? 'refuses' : 'accepts'}',
+        );
+      }
+      if (spliced) _compare(ref, 'application splice');
       return;
     }
     if (pick == commands.length) {
@@ -1876,6 +1915,12 @@ class _Sequence {
       ownFocus.requestFocus();
       await tester.pump();
     } else {
+      // A press while the view still flings only stops it, as on a device,
+      // so the user presses once it rests.
+      final position = tester.state<ScrollableState>(_viewport).position;
+      for (var i = 0; i < 40 && position.isScrollingNotifier.value; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       // Past the ends of lines, clear of a scrollbar at the edge.
       final view = tester.getRect(_viewport);
       await tester.tapAt(
@@ -2037,19 +2082,36 @@ class _Sequence {
       );
     } else {
       final boundaries = _boundaries(value);
-      var a = boundaries[r.nextInt(boundaries.length)];
-      var b = r.nextInt(3) == 0 ? boundaries[r.nextInt(boundaries.length)] : a;
-      if (b < a) (a, b) = (b, a);
-      final text = r.nextInt(4) == 0
-          ? ''
-          : r.nextBool()
-          ? const ['x', 'ab', 'é', 'Zz'][r.nextInt(4)]
-          : _randomText();
+      var a = boundaries[r.nextInt(boundaries.length)], b = a;
+      final shape = r.nextInt(4);
+      final words = shape == 0
+          ? _words(value, boundaries)
+          : const <List<int>>[];
+      final String text;
+      if (words.isNotEmpty) {
+        // Part of a word, replaced by letters or deleted, as "replace X with
+        // Y" or a correction names it.
+        final word = words[r.nextInt(words.length)];
+        final from = r.nextInt(word.length - 1);
+        a = word[from];
+        b = word[from + 1 + r.nextInt(word.length - 1 - from)];
+        text = const ['', 'x', 'ab', 'é', 'Zz', '中'][r.nextInt(6)];
+      } else {
+        if (shape == 1) b = boundaries[r.nextInt(boundaries.length)];
+        if (b < a) (a, b) = (b, a);
+        text = r.nextInt(4) == 0
+            ? ''
+            : r.nextBool()
+            ? const ['x', 'ab', 'é', 'Zz'][r.nextInt(4)]
+            : _randomText();
+      }
       log.add('accessibility sets text: $a..$b -> ${jsonEncode(text)}');
       // An edit ends a composition, which commits its text, typed; a refused
       // one leaves it composing.
       final composed = c.text, source = _committedSource();
       final requested = value.replaceRange(a, b, text);
+      // A notice left from an earlier event explains nothing here.
+      c.notice = null;
       tester.binding.performSemanticsAction(
         SemanticsActionEvent(
           viewId: tester.view.viewId,
@@ -2061,11 +2123,13 @@ class _Sequence {
       _drain();
       await _settle(true);
       // Letters replacing letters mean what they say: the document shows the
-      // requested text, refuses with a notice, or (inserting) gains those
-      // letters, with the structure a missing table cell needs around them,
-      // which can change how Markdown reads its neighbors (a line typed into
-      // the blank line before a link definition). Other text can start or
-      // end Markdown structure.
+      // requested text, but for the delimiter padding a table cell's text
+      // ends with, which is not painted (an emptied cell has none), or
+      // refuses with a notice. Letters inserted may also come with the
+      // structure a missing table cell needs around them, which can change
+      // how Markdown reads its neighbors (a line typed into the blank line
+      // before a link definition). Other text can start or end Markdown
+      // structure.
       final removed = value.substring(a, b);
       if (source != null &&
           _letters.hasMatch('$text${removed}x') &&
@@ -2075,11 +2139,16 @@ class _Sequence {
         await tester.pump();
         final shown = tester.getSemantics(finder).getSemanticsData().value;
         final (cut, added) = _difference(source, c.text);
+        final cell =
+            !c.editor.sourceMode &&
+            c.editor.document.caretRow.kind == RowKind.tableCell;
+        String unpadded(String value) =>
+            value.replaceAll(RegExp(r'[ \t]+(?=\n|$)'), '');
         final explained =
             shown == requested ||
+            (cell && unpadded(shown) == unpadded(requested)) ||
             ((c.text == source || c.text == composed) && c.notice != null) ||
-            (c.text != source &&
-                (a != b || (cut.isEmpty && added.contains(text))));
+            (a == b && c.text != source && cut.isEmpty && added.contains(text));
         if (!explained) {
           fail(
             '${_label()}: accessibility asked for ${jsonEncode(requested)}, '
@@ -2087,7 +2156,7 @@ class _Sequence {
             '(source ${jsonEncode(c.text)}, notice ${c.notice})',
           );
         }
-        _count('oracle accessibility');
+        _count('oracle accessibility ${a == b ? 'insertion' : 'replacement'}');
       }
       return;
     }

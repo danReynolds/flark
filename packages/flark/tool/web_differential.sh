@@ -4,7 +4,10 @@
 # and under node with dart2js and dart2wasm, through the bundled Wasm parser,
 # then compare every sequence's digest of the states it reached. A sequence
 # whose digests disagree is replayed in full on the platforms involved and
-# the first differences are printed. Exits 0 when every platform agrees.
+# the first differences are printed. A sequence that ended in an error (the
+# editor threw, or a check of a host action failed) is digested by its kind,
+# so the digests are still compared, and is reported after them. Exits 0 when
+# every platform agrees and no sequence ended in an error on any of them.
 #
 #   tool/web_differential.sh [-n SEQUENCES] [-s SEED] [-k STEPS] [-j SHARDS]
 #                            [-p "vm dart2js dart2wasm"] [--release] [--contract]
@@ -40,7 +43,7 @@ while [ $# -gt 0 ]; do
     -p) PLATFORMS="$2"; shift 2;;
     --release) RELEASE=1; shift;;
     --contract) CONTRACT=1; shift;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0;;
     *) echo "unknown option $1" >&2; exit 2;;
   esac
 done
@@ -123,19 +126,20 @@ for platform in $PLATFORMS; do
     done
   done
 done
-failed=0
-for pid in $pids; do wait "$pid" || failed=1; done
+for pid in $pids; do wait "$pid"; done
 pids=""
+# A run that ended its sequences prints its summary, and fails when any of
+# them ended in an error: its digests are complete, and compared below. A run
+# that failed otherwise (a crash, a timeout) leaves nothing to compare.
+broken=0
 for log in "$WORK"/*.log; do
-  grep -h 'web differential' "$log" | sed 's/^/  /'
+  grep -h 'web differential [a-z0-9]*: [0-9]' "$log" | sed 's/^/  /'
+  grep -q 'All tests passed' "$log" && continue
+  grep -q 'web differential error: ' "$log" && continue
+  broken=1
+  echo "--- $(basename "$log" .log) failed:"; tail -40 "$log"
 done
-if [ "$failed" -ne 0 ]; then
-  for log in "$WORK"/*.log; do
-    grep -q 'All tests passed' "$log" && continue
-    echo "--- $(basename "$log" .log) failed:"; tail -40 "$log"
-  done
-  exit 1
-fi
+[ "$broken" -ne 0 ] && exit 1
 
 reference=""
 status=0
@@ -163,6 +167,16 @@ for platform in $PLATFORMS; do
   diff -u -F '^#[0-9]' "$WORK/$reference.trace" "$WORK/$platform.trace" |
     sed 1,2d | head -80
 done
+
+# Errors fail the run whether or not the platforms agree on them.
+errors=$(grep -ho 'ms, [0-9]* ended in an error' "$WORK"/*.log |
+  awk '{n += $2} END {print n + 0}')
+if [ "$errors" -gt 0 ]; then
+  status=1
+  echo "$errors sequences ended in an error, over all runs (each lists its first 20):"
+  grep -h 'web differential error: ' "$WORK"/*.log |
+    sed 's/.*web differential error: /  /' | head -40
+fi
 
 if [ "$CONTRACT" -eq 1 ]; then
   for platform in $PLATFORMS; do

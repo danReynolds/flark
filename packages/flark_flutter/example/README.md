@@ -138,14 +138,17 @@ event it reads the saved draft and the input element's text and selection.
 per key, `Newline`, deletes, `MoveCaret`, `Paste`, a composition's committed
 text) on a `FlarkEditor` on the Dart VM and compares; events placed by glyph
 geometry (pointer, Up/Down, line edges) take the page's caret. Where the page
-cannot be predicted (a press in a long line of one repeated word, or a
-composition the kernel refuses, which the browser then drops), the rest of
-the sequence is checked only for errors, and the summary counts it as
-checked in part. A
-failure is minimized by replaying subsets in the browser. `--out
-failures.jsonl` keeps failures, `--replay file.json` runs one `{doc,
-clipboard, events}` sequence, `--only seed:index` one generated sequence, and
-`--verbose` traces each event.
+shows other than the one composition predicted, the oracle takes the page's
+document and caret as its own and checks the events after it from there; the
+summary counts these. Where the page cannot be predicted (a press in a long
+line of one repeated word, a composition the kernel refuses, which the browser
+then drops, or an Undo or Redo reaching back past an adopted state), the rest
+of the sequence is checked only for errors, and the summary counts it as
+checked in part. A failure is minimized by replaying subsets in the browser.
+The seed is 1 unless `--seed` picks another, so a run is the same wherever it
+runs. `--out failures.jsonl` keeps failures, `--replay file.json` runs one
+`{doc, clipboard, events}` sequence, `--only seed:index` one generated
+sequence, and `--verbose` traces each event.
 
 Headless Chrome on macOS echoes a synthesized key the page leaves unhandled
 back to the page endlessly; the driver consumes the echo. Its emulated input

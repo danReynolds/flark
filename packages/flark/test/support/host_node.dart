@@ -30,9 +30,6 @@ String? readHostFile(String path) {
       : null;
 }
 
-void writeHostFile(String path, String contents) =>
-    _files.writeFileSync(path, contents);
-
 void appendHostFile(String path, String contents) =>
     _files.appendFileSync(path, contents);
 
@@ -54,6 +51,5 @@ _Fs get _files =>
 extension type _Fs._(JSObject _) implements JSObject {
   external bool existsSync(String path);
   external String readFileSync(String path, String encoding);
-  external void writeFileSync(String path, String contents);
   external void appendFileSync(String path, String contents);
 }

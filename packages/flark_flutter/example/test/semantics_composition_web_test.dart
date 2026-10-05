@@ -10,6 +10,8 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web/web.dart' as web;
 
+import 'web_input_test.dart' show compose, composition;
+
 void main() {
   ui_web.TestEnvironment.setUp(
     const ui_web.TestEnvironment(
@@ -156,33 +158,5 @@ void main() {
         for (var n = 1; n <= 22; n += 3) ('あ' * n, '$lines${'あ' * n}'),
       ], caret: lines.length);
     },
-  );
-}
-
-void composition(web.Element input, String type, String data) =>
-    input.dispatchEvent(
-      web.CompositionEvent(type, web.CompositionEventInit(data: data)),
-    );
-
-/// An input method's composition update: its event, the text it puts in
-/// place of the composed range, and the input event that reports it.
-void compose(
-  web.HTMLTextAreaElement input,
-  String data,
-  String value,
-  int caret,
-) {
-  composition(input, 'compositionupdate', data);
-  input.value = value;
-  input.setSelectionRange(caret, caret);
-  input.dispatchEvent(
-    web.InputEvent(
-      'input',
-      web.InputEventInit(
-        bubbles: true,
-        inputType: 'insertCompositionText',
-        data: data,
-      ),
-    ),
   );
 }

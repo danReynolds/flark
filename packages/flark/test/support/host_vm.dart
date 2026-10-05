@@ -17,8 +17,5 @@ String? readHostFile(String path) {
   return file.existsSync() ? file.readAsStringSync() : null;
 }
 
-void writeHostFile(String path, String contents) =>
-    File(path).writeAsStringSync(contents);
-
 void appendHostFile(String path, String contents) =>
     File(path).writeAsStringSync(contents, mode: FileMode.append);

@@ -5,7 +5,11 @@
 /// bundled Wasm parser) and compares the digests, so behavior that differs
 /// between platforms anywhere from the parser's model to the projection, the
 /// caret model and the commands shows up as a sequence whose digests
-/// disagree. Run alone, it only checks that every sequence completes.
+/// disagree. Run alone, it checks that every sequence completes: an error,
+/// thrown by the editor or by a failed check of a host action, ends its
+/// sequence, is digested by kind (so platforms that fail alike still agree),
+/// and fails the test once every digest is written. Each one is printed as a
+/// `web differential error:` line, which the script reports.
 ///
 /// A sequence is shaped like the matrix's (`matrix_test.dart`): a document in
 /// LF or CRLF spelling, a seeded caret and forty commands from its
@@ -34,7 +38,8 @@
 ///   FLARK_WEB_DIFF_STEPS       commands per sequence (default 40)
 ///   FLARK_WEB_DIFF_OUT         file to append `index seed digest` lines to
 ///   FLARK_WEB_DIFF_TRACE       comma-separated indexes to run alone, their
-///                              states appended in full, for diffing
+///                              states and any error appended in full to
+///                              FLARK_WEB_DIFF_OUT, for diffing
 @TestOn('vm || node')
 library;
 
@@ -70,22 +75,31 @@ void main() {
   // The matrix's documents, and one sequence in ten from a dense one, so
   // that table, task, list, code and resource commands find their targets.
   final corpus = [...matrixCorpus(), for (var k = 0; k < 30; k++) ..._dense];
+  // A trace runs its sequences alone, wherever they are in the seed's run.
+  final indexes = traced.isEmpty
+      ? [for (var i = first; i < first + iterations; i++) i]
+      : (traced.toList()..sort());
+  final end = indexes.isEmpty ? 0 : indexes.last + 1;
 
   test(
-    '$hostPlatform: sequences $first..${first + iterations} of seed $seed',
+    traced.isEmpty
+        ? '$hostPlatform: sequences $first..${first + iterations} of seed $seed'
+        : '$hostPlatform: traced sequences ${indexes.join(', ')} of seed $seed',
     () {
       final watch = Stopwatch()..start();
       final master = Random(seed);
-      var failed = 0;
+      final errors = <String>[];
       final lines = StringBuffer();
-      for (var i = 0; i < first + iterations; i++) {
+      for (var i = 0; i < end; i++) {
         final s = master.nextInt(1 << 30);
         // Each sequence has a seed of its own, so a trace runs only its own.
-        if (i < first || traced.isNotEmpty && !traced.contains(i)) continue;
+        if (traced.isEmpty ? i < first : !traced.contains(i)) continue;
         final trace = traced.contains(i) ? StringBuffer() : null;
         final record = _Record(i, trace);
         _runSequence(backend, corpus, i, s, steps, record);
-        failed += record.failed ? 1 : 0;
+        if (record.failure case final failure?) {
+          errors.add('$hostPlatform sequence $i (seed $s) $failure');
+        }
         if (out == null) continue;
         if (trace != null) {
           appendHostFile(out, '=== sequence $i seed $s\n$trace');
@@ -102,10 +116,27 @@ void main() {
       if (out != null && lines.isNotEmpty) appendHostFile(out, '$lines');
       // ignore: avoid_print
       print(
-        'web differential $hostPlatform: $iterations sequences from $first '
-        '(seed $seed) in ${watch.elapsedMilliseconds} ms, '
-        '$failed ended in an error',
+        'web differential $hostPlatform: ${indexes.length} sequences from '
+        '${indexes.firstOrNull ?? first} (seed $seed) in '
+        '${watch.elapsedMilliseconds} ms, ${errors.length} ended in an error',
       );
+      for (final error in errors.take(20)) {
+        // One line each, for the script to report.
+        final line = error.split('\n').first;
+        // ignore: avoid_print
+        print(
+          'web differential error: '
+          '${line.length > 400 ? '${line.substring(0, 400)}…' : line}',
+        );
+      }
+      if (errors.isNotEmpty) {
+        fail(
+          '${errors.length} sequences ended in an error. The first:\n'
+          '${errors.first}\n'
+          'FLARK_WEB_DIFF_TRACE=<index> with FLARK_WEB_DIFF_OUT=<file> writes '
+          'a sequence\'s states and its error in full.',
+        );
+      }
     },
     timeout: const Timeout(Duration(hours: 2)),
   );
@@ -113,7 +144,7 @@ void main() {
 
 /// Run sequence [index] from [seed] and record every state it reaches. An
 /// error ends the sequence and is recorded by kind, so platforms that fail
-/// alike still agree.
+/// alike still agree, and in full as the record's [_Record.failure].
 void _runSequence(
   FlarkParseBackend backend,
   List<String> corpus,
@@ -149,7 +180,7 @@ void _runSequence(
       final at = Duration(milliseconds: step * 100);
       if (r.nextInt(5) == 0) {
         final (label, run) = extraCommand(r, editor, at);
-        record.state(label, run(), editor);
+        record.state(record.attempt(label), run(), editor);
       } else {
         final FlarkCommand command;
         try {
@@ -161,7 +192,7 @@ void _runSequence(
           continue;
         }
         record.state(
-          describeCommand(command),
+          record.attempt(describeCommand(command)),
           editor.apply(command, at: at),
           editor,
         );
@@ -169,26 +200,37 @@ void _runSequence(
     }
     // The host actions' oracles hold from where the matrix leaves them.
     if (editor.composing) {
+      record.attempt('commitComposition()');
       editor.commitComposition();
       record.state('commitComposition()', null, editor);
     }
     if (editor.sourceMode) {
+      record.attempt('setSourceMode(false)');
       editor.setSourceMode(false);
       record.state('setSourceMode(false)', null, editor);
     }
     final host = Random(seed ^ 0x5eed);
     for (var k = 0; k < 3; k++) {
       final log = <String>[];
+      record.attempt('host action $k');
       hostAction(host, editor, log, 'seed $seed host $k');
       record.state(log.join('; '), null, editor);
     }
     var undone = 0;
     while (editor.history.canUndo && undone < 100) {
-      record.state('Undo()', editor.apply(const Undo()), editor);
+      record.state(
+        record.attempt('Undo()'),
+        editor.apply(const Undo()),
+        editor,
+      );
       undone++;
     }
     for (var k = 0; k < undone; k++) {
-      record.state('Redo()', editor.apply(const Redo()), editor);
+      record.state(
+        record.attempt('Redo()'),
+        editor.apply(const Redo()),
+        editor,
+      );
     }
   } catch (error, stack) {
     record.error(error, stack);
@@ -385,7 +427,15 @@ final class _Record {
   final _sink = _DigestSink();
   late final ByteConversionSink _input;
   var _step = 0;
-  bool failed = false;
+  var _attempting = 'load';
+
+  /// The error that ended the sequence, with the event that raised it and
+  /// its stack, or null when the sequence completed.
+  String? failure;
+
+  /// Notes [event] as the one about to run, for an error's report, and
+  /// returns it.
+  String attempt(String event) => _attempting = event;
 
   String get digest {
     _input.close();
@@ -406,7 +456,6 @@ final class _Record {
   }
 
   void error(Object error, StackTrace stack) {
-    failed = true;
     final kind = switch (error) {
       FlarkParseException(:final code) => 'FlarkParseException($code)',
       TestFailure() => 'TestFailure',
@@ -421,6 +470,9 @@ final class _Record {
     final step = '#$_sequence.${_step++}';
     _input.add(utf8.encode('$step threw $kind\n'));
     _trace?.write('$step threw $kind: $error\n$stack\n');
+    // The message on the first line, which the script reports.
+    final message = '$error'.replaceAll('\n', ' ');
+    failure = 'at $step, $_attempting, threw $kind: $message\n$stack';
   }
 }
 

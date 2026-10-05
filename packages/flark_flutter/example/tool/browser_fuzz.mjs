@@ -13,7 +13,7 @@
 //   node tool/browser_fuzz.mjs --sequences 100 --seed 1 [--semantics]
 //
 // Options: --build <dir> (build/web), --sequences <n> (40), --steps <n>
-// (30 events each), --seed <n>, --semantics (turn accessibility on after
+// (30 events each), --seed <n> (1), --semantics (turn accessibility on after
 // load, as a screen reader does), --only <seed:index> (one generated
 // sequence), --replay <file.json> (one {doc, clipboard, events} sequence),
 // --no-minimize, --out <file.jsonl> (failures), --verbose (trace events),
@@ -41,7 +41,8 @@ const options = {
   build: resolve(option('build', join(example, 'build', 'web'))),
   sequences: Number(option('sequences', 40)),
   steps: Number(option('steps', 30)),
-  seed: Number(option('seed', Date.now() % 100000)),
+  // Fixed, so that a run is the same run wherever it runs.
+  seed: Number(option('seed', 1)),
   semantics: flag('semantics'),
   only: option('only', null),
   replay: option('replay', null),
@@ -930,7 +931,7 @@ async function main() {
     const indices = options.only || options.replay ? [Number(options.only?.split(':')[1] ?? 0)] : [...Array(options.sequences).keys()];
     const seed = options.only ? Number(options.only.split(':')[0]) : options.seed;
     let ran = 0, events = 0;
-    const unchecked = {};
+    const unchecked = {}, adopted = {};
     for (const index of indices) {
       // A replay file holds one sequence: {preset, doc, clipboard, events}.
       const sequence = options.replay
@@ -946,7 +947,9 @@ async function main() {
         // issue, the oracle cannot predict the page; it checks only errors.
         const why = verdict.unchecked?.why;
         if (why) unchecked[why] = (unchecked[why] ?? 0) + 1;
-        debug(`ok ${sequence.id} (${sequence.preset})${why ? ` (unchecked from step ${verdict.unchecked.step}: ${why})` : ''}`);
+        // At a known issue the oracle takes the page's state as its own.
+        for (const { why: reason } of verdict.adopted ?? []) adopted[reason] = (adopted[reason] ?? 0) + 1;
+        debug(`ok ${sequence.id} (${sequence.preset})${why ? ` (unchecked from step ${verdict.unchecked.step}: ${why})` : ''}${verdict.adopted ? ` (adopted the page's state at steps ${verdict.adopted.map((a) => a.step).join(', ')})` : ''}`);
         continue;
       }
       failures++;
@@ -967,7 +970,8 @@ async function main() {
       }
     }
     const partly = Object.entries(unchecked).map(([why, n]) => `${n} ${why}`).join(', ');
-    log(`browser fuzz: ${ran} sequences, ${events} events, ${failures} failing (${build}, semantics ${options.semantics}, seed ${seed})${partly ? `; checked in part: ${partly}` : ''}`);
+    const taken = Object.entries(adopted).map(([why, n]) => `${n} ${why}`).join(', ');
+    log(`browser fuzz: ${ran} sequences, ${events} events, ${failures} failing (${build}, semantics ${options.semantics}, seed ${seed})${partly ? `; checked in part: ${partly}` : ''}${taken ? `; page state adopted after: ${taken}` : ''}`);
   } finally {
     oracle.close();
     await page.close();

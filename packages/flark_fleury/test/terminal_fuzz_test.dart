@@ -650,7 +650,10 @@ final class _EditorSession {
   CellWidthPolicy get policy => tester.textPolicy.widths;
 
   /// History groups follow the session clock except in the composer, whose
-  /// editor keeps its own: there Undo may join typing across steps.
+  /// editor reads wall time: `FlarkController` takes no clock. Each step
+  /// closes the composer's group itself ([perform]), so steps never join
+  /// there either, but within a step a pause of over a second would split
+  /// its group, so Undo after a step is not checked exactly there.
   bool get exactUndo => mount != _Mount.composer;
 
   Future<void> run() async {
@@ -801,6 +804,9 @@ final class _EditorSession {
     // Each step is its own history group: typing never coalesces across
     // steps, so one Undo after a step returns the state before it.
     now += const Duration(seconds: 5);
+    // The composer's editor reads wall time, where steps are milliseconds
+    // apart, so whether they joined would depend on the machine's speed.
+    if (mount == _Mount.composer) editor.history.breakCoalescing();
     final before = state;
     final composing = editor.composing;
     final size = tester.viewportSize;
@@ -1683,27 +1689,57 @@ final class _ReaderSession {
   }
 }
 
-/// Whether [stack] failed inside Fleury code this package does not own, in
-/// a known Fleury defect, to be fixed there: a toolbar picker, or the app's
-/// text selection over toolbar labels, outliving the state or text it was
-/// built for (open "Paragraph style", change the document, click outside or
-/// pick by key; drag across labels, change the document, press
-/// Shift+Right). Such a session stops without failing; the test prints how
-/// many did.
-bool _upstream(StackTrace stack) {
+/// The known Fleury defect [error] is, or null for any other error. Both are
+/// in Fleury code this package does not own, to be fixed there, and each is
+/// matched by its error and the frames that throw it:
+///
+///  * a toolbar picker outliving the state it was built for (open
+///    "Paragraph style", change the document, click outside or pick by key):
+///    fleury_widgets' `Select` closes itself from its deactivated state,
+///    where `FocusManager.of` finds no manager, or its disposed one, where
+///    `State.context` throws;
+///  * the app's text selection over toolbar labels outliving the text it was
+///    built for (drag across labels, change the document, press Shift with
+///    an arrow): `SelectableTextMixin.nextGraphemeBoundary` clamps a column
+///    to a label left with no width, which throws an `ArgumentError`.
+///
+/// Any other error, in Fleury code or not, fails the session. A session that
+/// stops at a known defect does not fail; the test prints how many did.
+String? _upstream(Object error, StackTrace stack) {
   final frames = stack.toString().split('\n');
   final own = frames.indexWhere(
     (frame) =>
         frame.contains('package:flark_fleury/') ||
         frame.contains('terminal_fuzz_test.dart'),
   );
-  return frames
-      .take(own < 0 ? frames.length : own)
-      .any(
-        (frame) =>
-            frame.contains('package:fleury_widgets/src/select.dart') ||
-            frame.contains('package:fleury/src/widgets/selection/'),
-      );
+  final fleury = frames.take(own < 0 ? frames.length : own).toList();
+  // Whether the innermost frames are [callers], in order.
+  bool thrownBy(List<String> callers) {
+    if (fleury.length < callers.length) return false;
+    for (var i = 0; i < callers.length; i++) {
+      if (!fleury[i].contains(callers[i])) return false;
+    }
+    return true;
+  }
+
+  const close = '_SelectState._close (package:fleury_widgets/src/select.dart:';
+  if (error is StateError &&
+      ((error.message.startsWith('No FocusManager found in this context') &&
+              thrownBy(['FocusManager.of (package:fleury/', close])) ||
+          (error.message.startsWith('State.context accessed before') &&
+              thrownBy(['State.context (package:fleury/', close])))) {
+    return 'a Select closed from a replaced state';
+  }
+  if (error is ArgumentError &&
+      thrownBy([
+        '.clamp (dart:core',
+        'SelectableTextMixin.nextGraphemeBoundary (package:fleury/',
+        'SelectionContainerDelegate.findNextGraphemeBoundary (package:fleury/',
+        '_SelectionAreaState._extendCursor (package:fleury/',
+      ])) {
+    return 'a SelectionArea extended over a rebuilt label';
+  }
+  return null;
 }
 
 /// Greedily drops steps while [fails] still fails, for a readable repro.
@@ -1735,6 +1771,10 @@ void main() {
   final iterations =
       int.tryParse(environment['FLARK_FLEURY_ITERATIONS'] ?? '') ?? 40;
   final minimize = environment['FLARK_FLEURY_MINIMIZE'] == '1';
+  // Replays one session a failure printed, by its seed.
+  final only = int.tryParse(environment['FLARK_FLEURY_SESSION'] ?? '');
+  String runs(int sessions) =>
+      only == null ? 'seed $seed, $sessions sessions' : 'session $only';
 
   final upstream = <String>{};
   tearDownAll(() {
@@ -1746,13 +1786,16 @@ void main() {
     );
   });
 
+  /// Runs [sessions] sessions of [what], drawn from the master seed and
+  /// [stream], a constant of each fuzzer's own: a string's hash code may
+  /// differ between SDKs.
   Future<void> fuzz(
     String what,
+    int stream,
     int sessions,
     Future<void> Function(int session, List<_Step> steps) run,
   ) async {
-    final master = Random(seed ^ what.hashCode);
-    final only = int.tryParse(environment['FLARK_FLEURY_SESSION'] ?? '');
+    final master = Random(seed ^ stream);
     for (var i = 0; i < (only == null ? sessions : 1); i++) {
       final session = only ?? master.nextInt(1 << 30);
       final steps = _generate(Random(session));
@@ -1763,8 +1806,9 @@ void main() {
         } on _Failure catch (failure) {
           return failure.message;
         } catch (error, stack) {
-          if (!_upstream(stack)) return 'threw $error\n$stack';
-          upstream.add('$what session $session: $error');
+          final defect = _upstream(error, stack);
+          if (defect == null) return 'threw $error\n$stack';
+          upstream.add('$what session $session, $defect: $error');
           return null;
         }
       }
@@ -1794,9 +1838,10 @@ void main() {
 
   test(
     'random terminal input keeps editors and their frames consistent '
-    '(seed $seed, $iterations sessions)',
+    '(${runs(iterations)})',
     () => fuzz(
       'editor',
+      0x0ed1,
       iterations,
       (session, steps) => _EditorSession(backend, session, steps).run(),
     ),
@@ -1805,9 +1850,10 @@ void main() {
 
   test(
     'random updates and gestures keep the reader consistent '
-    '(seed $seed, ${iterations ~/ 2} sessions)',
+    '(${runs(iterations ~/ 2)})',
     () => fuzz(
       'reader',
+      0x7ead,
       iterations ~/ 2,
       (session, steps) => _ReaderSession(backend, session, steps).run(),
     ),

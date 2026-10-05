@@ -11,9 +11,13 @@
 /// back to its first source, then redo exactly to its end. Before that walk,
 /// host actions follow the commands: an IME composition that commits or
 /// cancels, a source-mode round trip, a programmatic select all and an exact
-/// source splice. A failure prints the seed and command log so it can be
-/// minimized into a direct regression; `package:flark/recorder.dart` turns a
-/// sequence into a replayable script.
+/// source splice. A failure prints the master seed, the sequence's index in
+/// its run and its own seed, the document with its initial caret, the result,
+/// the command log, and the repro of the `FlarkEditRecorder`
+/// (`package:flark/recorder.dart`) every sequence's editor carries: Dart that
+/// replays the sequence's calls as a test, to minimize into a direct
+/// regression. FLARK_MATRIX_SEQUENCE runs only the sequence at that index of
+/// the master seed's run.
 ///
 /// The default seed passes. Long runs of other seeds (FLARK_MATRIX_SEED,
 /// FLARK_MATRIX_ITERATIONS) still find rare classes, about 3 in 100,000
@@ -26,6 +30,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flark/flark.dart';
+import 'package:flark/recorder.dart';
 import 'package:test/test.dart';
 
 import 'support/host.dart';
@@ -165,33 +170,37 @@ void main() {
   final iterations =
       int.tryParse(hostEnvironment('FLARK_MATRIX_ITERATIONS') ?? '') ?? 60;
   final seed = int.tryParse(hostEnvironment('FLARK_MATRIX_SEED') ?? '') ?? 2026;
+  // The one sequence to run, by its index in the master seed's run.
+  final only = int.tryParse(hostEnvironment('FLARK_MATRIX_SEQUENCE') ?? '');
+  final count = only == null ? '$iterations sequences' : 'sequence $only';
   final corpus = matrixCorpus();
 
   test(
-    'random command sequences keep every invariant (seed $seed, $iterations sequences)',
+    'random command sequences keep every invariant (seed $seed, $count)',
     () {
       final master = Random(seed);
-      for (var i = 0; i < iterations; i++) {
+      for (var i = 0; i < (only == null ? iterations : only + 1); i++) {
         final s = master.nextInt(1 << 30);
+        if (only != null && i != only) continue;
         final r = Random(s);
         var source = corpus[r.nextInt(corpus.length)]
             .replaceAll('\r\n', '\n')
             .replaceAll('\r', '\n');
         // Every other sequence edits the CRLF spelling of its document.
         if (i.isOdd) source = source.replaceAll('\n', '\r\n');
-        final editor = FlarkEditor(
-          backend,
-          text: source,
-          caret: r.nextInt(source.length + 1),
-        );
+        final caret = r.nextInt(source.length + 1);
+        final editor = FlarkEditor(backend, text: source, caret: caret);
+        // Records the calls the sequence makes, for a failure's repro.
+        final recorder = FlarkEditRecorder();
+        editor.recorder = recorder;
         final log = <String>[];
         try {
           checkStep(editor, 'seed $s load');
           final reached = {stateOf(editor)};
           for (var step = 0; step < 40; step++) {
-            final c = randomCommand(r, editor);
-            log.add(describeCommand(c));
-            final label = 'seed $s step $step $c';
+            final c = randomCommand(r, editor), command = describeCommand(c);
+            log.add(command);
+            final label = 'seed $s step $step $command';
             final before = editor.snapshot, state = stateOf(editor);
             final revision = editor.revision;
             if (editor.apply(c, at: Duration(milliseconds: step * 100))) {
@@ -214,9 +223,12 @@ void main() {
         } catch (error) {
           // ignore: avoid_print
           print(
-            'matrix failure: seed $s source ${jsonEncode(source)}\n'
+            'matrix failure: sequence $i of seed $seed (FLARK_MATRIX_SEED=$seed '
+            'FLARK_MATRIX_SEQUENCE=$i runs it alone), its own seed $s\n'
+            'source ${jsonEncode(source)} caret $caret\n'
             'result ${jsonEncode(editor.source)} selection ${editor.selection}\n'
-            '  ${log.join('\n  ')}',
+            '  ${log.join('\n  ')}\n'
+            'repro:\n${recorder.repro}',
           );
           rethrow;
         }

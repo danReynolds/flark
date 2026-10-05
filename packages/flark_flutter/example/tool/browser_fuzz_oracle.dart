@@ -84,6 +84,14 @@ final class _Replay {
   /// a windowed document whose text repeats, or a known issue. Only errors
   /// are checked after it.
   (int, String)? unchecked;
+
+  /// Steps after which the oracle took the page's state as its own, and why.
+  final adopted = <Map<String, Object?>>[];
+
+  /// Whether the oracle's history starts at a state it adopted (null when
+  /// it does not), and whether the page's history has a group boundary
+  /// there with nothing to redo: true when the event committed a change.
+  bool? _adoptedBoundary;
   String? why;
   Map<String, Object?>? expected, observed;
   String? event;
@@ -132,7 +140,7 @@ final class _Replay {
   );
 
   /// The toolbar's buttons, as the editor presses them.
-  void _toolbar(String button) {
+  void _toolbar(int i, String button) {
     final style = switch (button) {
       'Bold' => Style.strong,
       'Italic' => Style.emphasis,
@@ -146,9 +154,9 @@ final class _Replay {
         editor.apply(SetStyle(style, enabled: !state.isOn));
       }
     } else if (button == 'Undo') {
-      editor.apply(const Undo());
+      _history(i, redo: false);
     } else if (button == 'Redo') {
-      editor.apply(const Redo());
+      _history(i, redo: true);
     } else if (button == 'Source') {
       editor.setSourceMode(!editor.sourceMode);
     }
@@ -175,6 +183,7 @@ final class _Replay {
     if (ok) 'final': _state(),
     if (unchecked != null)
       'unchecked': {'step': unchecked!.$1, 'why': unchecked!.$2},
+    if (adopted.isNotEmpty) 'adopted': adopted,
     if (!ok) ...{
       'step': step,
       'why': why,
@@ -224,7 +233,9 @@ final class _Replay {
         // whose text the page changes under it: one the kernel refuses, as
         // typing its text there is refused, or that code reshapes (an empty
         // fence's first body line). Its next update, or its commit, then
-        // lands elsewhere, so the page is not predicted from there.
+        // lands elsewhere; where the page differs from the one composition
+        // predicted, the oracle takes the page's state as its own and checks
+        // the steps after it from there.
         final steps = (event['steps']! as List).cast<String>();
         final before = editor.source, s = editor.selection;
         final where = editor.sourceMode
@@ -243,9 +254,6 @@ final class _Replay {
         final rewritten =
             editor.source != before.replaceRange(s.start, s.end, steps.first);
         editor.cancelComposition();
-        if (rewritten) {
-          unchecked ??= (i, 'composition the kernel refuses ($where)');
-        }
         if ((end == 'commit' || end == 'enter') &&
             commit != null &&
             commit.isNotEmpty) {
@@ -257,10 +265,14 @@ final class _Replay {
           // as a platform text field does.
           editor.apply(const DeleteBackward());
         }
+        if (rewritten && !_shows(obs)) {
+          final why = 'composition the kernel refuses ($where)';
+          if (!_adopt(i, obs, before, why)) unchecked ??= (i, why);
+        }
       case 'key':
         _key(i, event['key']! as String, shift, alt, meta, ctrl, obs);
       case 'shortcut':
-        _shortcut(event['key']! as String, shift);
+        _shortcut(i, event['key']! as String, shift);
       case 'click' || 'dblclick' || 'drag' || 'geometry':
         _resync(i, event, obs);
       case 'clipboard':
@@ -268,8 +280,9 @@ final class _Replay {
       case 'reload':
         // The saved draft reopens with its first caret and no history.
         editor = _open(editor.source);
+        _adoptedBoundary = null;
       case 'toolbar' when e['missing'] != true:
-        _toolbar(event['button']! as String);
+        _toolbar(i, event['button']! as String);
       default:
       // Focus, visibility, pauses and accessibility focus change nothing.
     }
@@ -336,10 +349,10 @@ final class _Replay {
     }
   }
 
-  void _shortcut(String key, bool shift) {
+  void _shortcut(int i, String key, bool shift) {
     switch (key) {
       case 'z':
-        editor.apply(shift ? const Redo() : const Undo());
+        _history(i, redo: shift);
       case 'b':
         editor.apply(const ToggleStyle(Style.strong));
       case 'i':
@@ -393,6 +406,79 @@ final class _Replay {
     editor.apply(SetSelection(base, extent));
     if (saved != null && saved != editor.source) {
       editor.apply(const ToggleTask());
+    }
+  }
+
+  /// Whether the page, as [obs] saw it, shows the oracle's source and
+  /// selection (in either direction, as a textarea keeps none).
+  bool _shows(Map<String, Object?>? obs) {
+    final saved = obs?['saved'] as String?;
+    final start = obs?['start'] as int?, end = obs?['end'] as int?;
+    if (obs == null ||
+        saved == null ||
+        saved != editor.source ||
+        start == null ||
+        end == null) {
+      return false;
+    }
+    final lf = _Lf(saved);
+    final window = _window(obs, lf, saved);
+    if (window == null) return false;
+    final s = editor.selection;
+    return (lf.toSource(start + window), lf.toSource(end + window)) ==
+        (s.start, s.end);
+  }
+
+  /// Takes the page's document and selection after event [i] as the
+  /// oracle's own, when the oracle cannot predict them, so the events after
+  /// it are checked from there. [before] is the source before the event.
+  /// False, adopting nothing, when the page's state cannot be read: no
+  /// observation, no saved draft, or a caret in a repeating window.
+  ///
+  /// The oracle's history starts again at the adopted state; the page's
+  /// goes back further. When the event changed the document, the page
+  /// committed it as a step of its own with nothing left to redo, so only an
+  /// Undo past the adopted state is not predicted; otherwise the next edit
+  /// may join the page's previous step, and its redo steps remain ([_history]).
+  bool _adopt(int i, Map<String, Object?>? obs, String before, String why) {
+    final saved = obs?['saved'] as String?;
+    final start = obs?['start'] as int?, end = obs?['end'] as int?;
+    if (obs == null || saved == null || start == null || end == null) {
+      return false;
+    }
+    final lf = _Lf(saved);
+    final window = _window(obs, lf, saved);
+    if (window == null) return false;
+    var base = lf.toSource(start + window), extent = lf.toSource(end + window);
+    // The textarea keeps no direction: forward unless a retry flips it.
+    if (base != extent) {
+      ambiguous.add(i);
+      if (flips.contains(i)) (base, extent) = (extent, base);
+    }
+    editor = _open(saved)..apply(SetSelection(base, extent));
+    _adoptedBoundary = saved != before;
+    adopted.add({'step': i, 'why': why});
+    return true;
+  }
+
+  /// Undo or Redo at event [i]. After [_adopt], the page's history reaches
+  /// past the oracle's: an Undo past the adopted state is not predicted, nor,
+  /// when the adopting event changed nothing, an Undo back to that state (the
+  /// edit after it may have joined the page's step before) or a Redo before
+  /// any edit (the page's redo steps remain). Only errors are checked from
+  /// there.
+  void _history(int i, {required bool redo}) {
+    final history = editor.history;
+    final boundary = _adoptedBoundary;
+    if (boundary != null &&
+        (redo
+            ? !boundary && !history.canUndo && !history.canRedo
+            : !history.canUndo)) {
+      unchecked ??= (i, '${redo ? 'redo' : 'undo'} past an adopted state');
+    }
+    editor.apply(redo ? const Redo() : const Undo());
+    if (boundary == false && !redo && !history.canUndo) {
+      unchecked ??= (i, 'undo to an adopted state');
     }
   }
 
