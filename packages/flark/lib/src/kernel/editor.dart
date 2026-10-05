@@ -2192,7 +2192,8 @@ final class FlarkEditor implements FlarkDocumentState {
       // it closing, so everything after it becomes code, and on a fence that
       // displays nothing it becomes an info string the editor never shows.
       if (right.text.isNotEmpty) return false;
-      // An empty fence after it goes whole instead of joining its closer.
+      // An empty fence after it goes whole instead of joining its closer,
+      // and the caret stays at the end of the code, not past its closer.
       if (right.fenced) {
         final from = _lastCaretEnd(left);
         final end = projection.lineContentEnd(
@@ -2200,7 +2201,14 @@ final class FlarkEditor implements FlarkDocumentState {
         );
         return from >= 0 &&
             end > from &&
-            _joinContent(from, end, null, rows, movesText: false);
+            _joinContent(
+              from,
+              end,
+              null,
+              rows,
+              at: _lastContentEnd(left),
+              movesText: false,
+            );
       }
     }
     // A row that displays nothing gives way to the one joined onto it.

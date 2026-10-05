@@ -1746,7 +1746,8 @@ void _structureCases(FlarkParseBackend backend) {
 
     test('delete at the end of code removes an empty fence after it', () {
       // Joined onto the closing fence, the empty fence's lines would run
-      // the two fences together: it goes whole instead.
+      // the two fences together: it goes whole instead, and the caret stays
+      // at the end of the code rather than past its hidden closer.
       final session = _Session(
         backend,
         source: '```\na\n```\n```\n```\n',
@@ -1756,6 +1757,7 @@ void _structureCases(FlarkParseBackend backend) {
         const DeleteForward(),
         source: '```\na\n```\n',
         rows: ['a', ''],
+        caret: const DisplayPosition(0, 1),
       );
     });
 
