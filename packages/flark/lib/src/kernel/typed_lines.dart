@@ -346,68 +346,64 @@ extension _TypedLines on FlarkEditor {
       return null;
     }
     // A longer spelling must not cost the edit its admission: past a limit
-    // it is passed over, as the typed underline's blank line is.
+    // it is passed over.
     FlarkRejection? rejected;
     var limited = false;
     // The first spelling passed over because it would leave the live tier,
     // where no parse checks it: when no spelling qualifies, it enters source
     // mode, as ordinary text past the tier does.
     _Spelling? beyond;
-    // Text typed on an empty row takes the first spelling that shows no
-    // whitespace the row hid. Where none does (literal HTML that runs on to
-    // the end of the document shows the blank lines it takes), the first
-    // that keeps the rest serves.
-    for (final strict in row.kind == RowKind.blank ? [true, false] : [false]) {
-      if (rejected != null) break;
-      for (final s in spellings) {
-        final isPlain = identical(s, plainSpelling);
-        var read = false;
-        // Whether [next], [s] made by [edits] with the caret at [caret] (a
-        // typed fence completed in it moves both), qualifies.
-        bool keeps(FlarkDocument next, List<(int, int, int)> edits, int caret) {
-          read = true;
-          return (wraps == null || wraps(next, s.typedAt)) &&
-              (quick &&
-                      identical(s, spellings.first) &&
-                      _sameRow(next, row, caret) ||
-                  _keepsTyped(
-                    next,
-                    row,
-                    edits,
-                    caret,
-                    s.typedAt,
-                    keepRow: keepRow,
-                    sameKind: sameKind || plainKind && isPlain,
-                    strict: strict,
-                    apart: apart,
-                  ));
-        }
+    // Text typed on an empty row starts its line and shows no whitespace the
+    // row hid.
+    final strict = row.kind == RowKind.blank;
+    for (final s in spellings) {
+      final isPlain = identical(s, plainSpelling);
+      var read = false;
+      // Whether [next], [s] made by [edits] with the caret at [caret] (a
+      // typed fence completed in it moves both), qualifies.
+      bool keeps(FlarkDocument next, List<(int, int, int)> edits, int caret) {
+        read = true;
+        return (wraps == null || wraps(next, s.typedAt)) &&
+            (quick &&
+                    identical(s, spellings.first) &&
+                    _sameRow(next, row, caret) ||
+                _keepsTyped(
+                  next,
+                  row,
+                  edits,
+                  caret,
+                  s.typedAt,
+                  keepRow: keepRow,
+                  sameKind: sameKind || plainKind && isPlain,
+                  strict: strict,
+                  apart: apart,
+                ));
+      }
 
-        _lastRejection = null;
-        if (_commit(
-          s.source,
-          FlarkSelection.collapsed(s.caret),
-          typing: typing,
-          pending: plain.pending,
-          completeTypedFence: fence,
-          accept: (next) => keeps(next, s.edits, s.caret),
-          acceptCompleted: (next, at, length) => keeps(
-            next,
-            _withInsertion(s.edits, at, length),
-            next.selection.extent,
-          ),
-        )) {
-          return true;
-        }
-        if (isPlain) {
-          rejected = _lastRejection;
-        } else if (!read) {
-          // Past the source limit, or past the live tier into source mode.
-          limited = true;
-        }
-        if (!read && _lastRejection == null && s.source != source) {
-          beyond ??= s;
-        }
+      _lastRejection = null;
+      if (_commit(
+        s.source,
+        FlarkSelection.collapsed(s.caret),
+        typing: typing,
+        pending: plain.pending,
+        completeTypedFence: fence,
+        accept: (next) => keeps(next, s.edits, s.caret),
+        acceptCompleted: (next, at, length) => keeps(
+          next,
+          _withInsertion(s.edits, at, length),
+          next.selection.extent,
+        ),
+      )) {
+        return true;
+      }
+      if (isPlain) {
+        rejected = _lastRejection;
+      } else if (!read) {
+        // Past the source limit, or past the live tier into source mode.
+        limited = true;
+      }
+      if (!read && _lastRejection == null && s.source != source) {
+        beyond ??= s;
       }
     }
     _lastRejection = rejected;

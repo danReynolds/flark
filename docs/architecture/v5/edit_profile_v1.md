@@ -111,9 +111,8 @@ additional product principles or testing layers.
   container prefix, which the row does not show, stays unshown: where text
   run into it would show it (a tab's columns before the code its indentation
   makes of the text, or a line of code the text joins), the text goes where
-  the prefix ends, an empty item's marker padded with one space, unless no
-  spelling keeps the rest that way (literal HTML the text starts that runs on
-  to the end of the document). Typing never shortens the source: the
+  the prefix ends, an empty item's marker padded with one space. Typing
+  never shortens the source: the
   whitespace becomes spaces a paragraph does not show, or the blank line after
   or before the text. An empty item stays one rather than underlining the
   text, and under a fence with no body and no closing fence the fence closes
