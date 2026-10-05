@@ -1068,9 +1068,22 @@ final class FlarkEditor implements FlarkDocumentState {
     if (typed.isEmpty) return false;
     final sel = selection;
     if (_wholeRange(sel.start, sel.end)) return _replaceWhole(typed);
-    final range = _contentRange(sel.start, sel.end);
+    var range = _contentRange(sel.start, sel.end);
     if (!_supportedRange(range.start, range.end)) return false;
     final row = _doc.rowAt(sel.extent);
+    // A task item's checkbox ends at the space after it: text typed against
+    // it would run into the checkbox and show its source. When the item's
+    // text is on the next line, that space is the row's first, and the text
+    // goes after it.
+    if (sel.isCollapsed &&
+        row.shells.isNotEmpty &&
+        row.shells.last.kind == ShellKind.item &&
+        row.shells.last.checkboxEnd == range.start &&
+        range.start < source.length &&
+        (source.codeUnitAt(range.start) == 0x20 ||
+            source.codeUnitAt(range.start) == 0x09)) {
+      range = (start: range.start + 1, end: range.start + 1);
+    }
     // A pipe typed into a table cell is that cell's text. Escaped, it stays
     // in the cell; raw, it would split the row, push the last cell's text out
     // of the table and leave the caret before the delimiter it made. A typed
@@ -1151,7 +1164,7 @@ final class FlarkEditor implements FlarkDocumentState {
       if (!text.contains('\n') && !text.contains('\r')) {
         (wrapAt, wrapped) = (first, last - first);
       }
-      caret = sel.start + p.open.length + text.length;
+      caret = range.start + p.open.length + text.length;
       if (last < text.length) {
         caret += p.close.length;
         pending = PendingStyle(

@@ -479,6 +479,22 @@ void _typingCases(FlarkParseBackend backend) {
       }
     });
 
+    test('text typed against a checkbox alone on its line keeps it', () {
+      // With the item's text on the next line, the space the checkbox needs
+      // after it is the row's first; typed before it, the text would end the
+      // checkbox and show `[ ]`.
+      for (final (source, caret, typed, rows) in [
+        ('- [ ] \n  Feature', 5, '- [ ] I\n  Feature', ['I\nFeature']),
+        ('> - [x] \n>   Feature', 7, '> - [x] I\n>   Feature', ['I\nFeature']),
+      ]) {
+        _Session(
+          backend,
+          source: source,
+          caret: caret,
+        ).act(const InsertText('I'), source: typed, rows: rows);
+      }
+    });
+
     test('text typed after a hidden item marker keeps the item', () {
       for (final (source, caret, typed, rows) in [
         ('1.\n', 2, '1. s\n', ['s', '']),
