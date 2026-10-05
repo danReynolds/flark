@@ -3794,67 +3794,6 @@ final class FlarkEditor implements FlarkDocumentState {
     );
   }
 
-  bool _toggleCaretStyle(int style) {
-    final sel = selection;
-    final caret = sel.extent;
-    // At an edge of an owner, step across its delimiter: out when inside,
-    // in when outside. Strictly inside, unwrap it if what it held still
-    // shows as it did, as a selection's toggle requires.
-    for (final o in sel.tableCell == null ? _doc.ownersAt(caret) : <Owner>[]) {
-      if (o.style != style) continue;
-      if (caret == o.contentEnd) {
-        return _select(FlarkSelection.collapsed(o.end));
-      }
-      if (caret == o.contentStart) {
-        return _select(FlarkSelection.collapsed(o.start));
-      }
-      final s = source
-          .replaceRange(o.contentEnd, o.end, '')
-          .replaceRange(o.start, o.contentStart, '');
-      final before = _formattingContent(_doc, style);
-      return _commit(
-        s,
-        FlarkSelection.collapsed(caret - (o.contentStart - o.start)),
-        coalesce: false,
-        accept: (next) =>
-            _sameFormattingContent(before, _formattingContent(next, style)),
-      );
-    }
-    for (final o
-        in sel.tableCell == null ? _doc.ownersTouching(caret) : <Owner>[]) {
-      if (o.style != style) continue;
-      return _select(
-        FlarkSelection.collapsed(
-          caret == o.end ? o.contentEnd : o.contentStart,
-        ),
-      );
-    }
-    final mask = (_pending?.styles ?? 0) ^ style;
-    // Recombine the supported formatting intents before materializing them.
-    // Link/image destinations are separate pending closures, not style bits we
-    // can reconstruct without their original owner records.
-    if (mask &
-            ~(Style.strong |
-                Style.emphasis |
-                Style.strikethrough |
-                Style.code) !=
-        0) {
-      return false;
-    }
-    final delimiters = <String>[
-      if (mask & Style.strong != 0) '**',
-      if (mask & Style.emphasis != 0) '*',
-      if (mask & Style.strikethrough != 0) '~~',
-      if (mask & Style.code != 0) '`',
-    ];
-    _pending = mask == 0
-        ? null
-        : PendingStyle(delimiters.join(), delimiters.reversed.join(), mask);
-    history.breakCoalescing();
-    _goalColumn = null;
-    return true;
-  }
-
   // ------------------------------------------------------------- caret
 
   /// The anchor for display offset [d] of [row] when arriving from the
