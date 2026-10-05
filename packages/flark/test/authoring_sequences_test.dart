@@ -1452,7 +1452,12 @@ void checkEditKeepsRows(
   }
   String shells(ProjectedRow row) =>
       row.shells.map((shell) => shell.kind.name).join('/');
-  if (shells(next.projection.rows[caret]) != shells(rows[edited])) {
+  // A deletion that empties its line leaves no text to keep: a blank line
+  // belongs to whichever container its neighbours give it.
+  final emptied =
+      next.projection.rows[caret].text.isEmpty &&
+      next.projection.rows[caret].kind == RowKind.blank;
+  if (!emptied && shells(next.projection.rows[caret]) != shells(rows[edited])) {
     fail(
       '$label: the edited text left the containers of its row '
       '(${shells(rows[edited])} to ${shells(next.projection.rows[caret])}), '
