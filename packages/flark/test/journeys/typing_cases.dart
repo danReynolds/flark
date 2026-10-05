@@ -883,6 +883,44 @@ void _typingCases(FlarkParseBackend backend) {
       edited.act(const DeleteBackward(word: true), applied: false);
     });
 
+    test('a header-only table opening on a marker line shows its delimiter '
+        'row', () {
+      // The delimiter line continues the item or footnote with spaces where
+      // the header's line has the marker. Compared with the marker itself,
+      // the row stayed hidden, and Return in the header added no body row.
+      for (final (source, prefix) in [
+        ('- | a |\n  | - |', '  '),
+        ('1. | a |\n   | - |', '   '),
+        ('[^1]: | a |\n    | - |', '    '),
+        ('- > | a |\n  > | - |', '  > '),
+      ]) {
+        final session = _Session(backend, source: source);
+        session.expectState(rows: ['a ', '| - |']);
+        final shells = session.editor.projection.rows.first.shells.length;
+        expect(session.editor.projection.rows[1].shells.length, shells);
+        session.act(SetSelection.caret(source.length));
+        session.act(
+          const Newline(),
+          source: '$source\n$prefix',
+          caret: const DisplayPosition(2, 0),
+        );
+        session.act(
+          const InsertText('b'),
+          source: '$source\n${prefix}b',
+          rows: ['a ', 'b'],
+          caret: const DisplayPosition(1, 1),
+        );
+        expect(session.editor.document.caretRow.kind, RowKind.tableCell);
+        // A read-only view shows only the header.
+        final read = Projection.of(
+          backend.parse(source),
+          source,
+          options: const ProjectionOptions(editableDelimiterRows: false),
+        );
+        expect([for (final row in read.rows) row.text], ['a ']);
+      }
+    });
+
     test('the third fence marker completes the fence wherever it is typed', () {
       for (final (source, caret, typed) in [
         ('~~\n\nnext\n', 0, '~'),

@@ -215,6 +215,10 @@ additional product principles or testing layers.
 - Backspace removes the previous rendered grapheme; Delete removes the next
   rendered grapheme.
 - Hidden opening and closing delimiters are never separate deletion steps.
+- Backspace before the first row's text, where no heading marker, rule, empty
+  fence, container or indentation is left to lift, and Delete after the last
+  row's text have nothing to delete, hidden markup beside the caret (a closing
+  `**` or `#`, a fence, a cell's pipe) included: they are inert, not refused.
 - Deleting content from a styled span preserves unaffected surrounding source,
   styling, and block presentation.
 - Word deletion uses the same word boundaries as word navigation. It is one
@@ -249,7 +253,9 @@ additional product principles or testing layers.
   row refuses (`#` between `- b` and `  [` stays: `[` would join the item);
   any other goes ahead as Markdown reads it, literal HTML and definitions
   included, so Backspace from the end and Delete from the start still empty a
-  document.
+  document. Emptying a longer row's first line keeps the text below it in the
+  row (deleting `a` from `a`, `    b`, `===` leaves the heading `b`: under an
+  empty line, `    b` would read as code and the underline as text).
 - If deletion exposes whitespace against emphasis/strong/strike delimiters,
   move that whitespace outside the owner so surviving words retain their
   style, and retain typing intent when deletion exits an owner's trailing
@@ -334,6 +340,10 @@ Return and Backspace operate on the visible block structure:
   keeps the next block apart from the text of a split heading, now a
   paragraph, as for a lift, and an item whose later blocks follow blank lines
   continues after them, where an empty item would drop them from the list.
+  A span split beside a line break inside it closes after the text before
+  the split and reopens where the text after it starts, past that line's
+  container prefix (a lazy line's is the row's); Return before the break
+  leaves the caret on the new line, and after it, in the moved text's span.
   Where nothing keeps what it splits (an autolink, a reference's label,
   delimiters that would pair anew) Return refuses, as it does when leaving an
   empty container line would move the block after it into another container;
@@ -387,7 +397,13 @@ Return and Backspace operate on the visible block structure:
   of a quote or list item (`b` after `> a` and an empty line would read on
   lazily inside the quote; `c` after `- # a`, `b` and an empty line would
   join the item once `b` joins `a`), except the blocks of a container whose
-  marker the lift removes, which leave it with that marker; and
+  marker the lift removes, which leave it with that marker;
+- Tab on a list item nests it under the item before it, past that item's
+  content offset; Shift-Tab lifts it to its parent item's column, however
+  deep it was nested (four spaces or a tab), onto a line of its own if it
+  opens on the parent's. Every row must show as it was, the item's a list
+  deeper or shallower; otherwise the key does nothing, with no refusal to
+  report; and
 - repeated Return or Backspace followed immediately by typing must leave one
   live caret and accept the next input.
 
@@ -499,6 +515,7 @@ Decoration failures cannot alter or reject source input.
   heading level in any spelling, the current code language, a link's own
   destination) is an inert, successful no-op, like a repeated SetStyle: it
   publishes nothing, records no history and is not reported as refused.
+  Undo or Redo with nothing to undo or redo is one too.
 - Equivalent full-value, delta, key, paste, and composition delivery routes
   produce the same accepted logical command.
 - While an input method composes, its text goes into the source as it is,
@@ -528,15 +545,19 @@ Inside the live tier, every accepted source mutation returns enough parser-owned
 information to paint the complete current result. That result is bound to the
 committed source revision. Outside the configured UTF-8 byte-and-shape
 admission envelope, the editor publishes a source-mode snapshot and does not
-retain a full parsed projection. Text put where it changes its line's block
-structure (see Insertion) is checked by parsing each spelling of it, which
-cannot happen there: rather than being refused for that, it enters source
-mode in the first spelling that leaves the envelope. A typed extraction
-deviation also keeps an initially opened or already-source-mode document in
-source mode rather than publishing an untrustworthy projection; the same
-deviation rejects an edit to an existing live snapshot atomically. M2
-implements the byte gate; M3 adds shape admission before this becomes a
-product-qualified live boundary.
+retain a full parsed projection. A spelling the kernel chooses in place of
+the edit as given (a blank line that keeps blocks apart, an escape, a
+respelled prefix) must keep the result inside the envelope, where the parser
+checks it: past it that spelling is passed over, and only the edit as given
+may leave the live tier. Text put where it changes its line's block structure
+(see Insertion), which may have no spelling as given, is the exception: when
+no spelling of it stays inside the envelope, it enters source mode in the
+first that leaves it rather than being refused. A typed extraction deviation
+also keeps an initially opened or already-source-mode document in source mode
+rather than publishing an untrustworthy projection; the same deviation
+rejects an edit to an existing live snapshot atomically. M2 implements the
+byte gate; M3 adds shape admission before this becomes a product-qualified
+live boundary.
 
 Flutter may validate and render this information. It may not reconstruct the
 result with delimiter scans, character allowlists, or stale row structure.

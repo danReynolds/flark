@@ -4,7 +4,6 @@ library;
 
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:characters/characters.dart';
 import '../../code.dart';
@@ -13,6 +12,7 @@ import '../parse/backend.dart';
 import '../parse/render_model.dart';
 import '../parse/schema.g.dart';
 import 'commands.dart';
+import 'continuation.dart';
 import 'document.dart';
 import 'history.dart';
 import 'notify.dart';
@@ -1137,7 +1137,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // typed text, and every other cell is unchanged. Other text keeps them
     // too, the edited cell showing whatever Markdown reads in it.
     final cells = cell
-        ? (_tableRowCells(projection, row.tableRowBlock)
+        ? (_tableRowCells(projection, row)
             ..[row.column] = row.text.replaceRange(
               row.displayForSource(range.start).$1,
               row.displayForSource(range.end).$1,
@@ -1614,12 +1614,19 @@ final class FlarkEditor implements FlarkDocumentState {
           row.tableRowBlock >= 0 &&
           !text.contains('\n') &&
           !text.contains('\r')
-      ? _tableRowCells(projection, row.tableRowBlock)
+      ? _tableRowCells(projection, row)
       : null;
 
   bool _delete({required bool backward, bool word = false}) {
     final sel = selection;
     if (_wholeRange(sel.start, sel.end)) return _replaceWhole('');
+    final pos = _doc.displayOf(sel.extent);
+    final row = projection.rows[pos.row];
+    final d = pos.offset;
+    if (sel.isCollapsed && _atDocumentEdge(row, d, backward: backward)) {
+      _inert = true;
+      return false;
+    }
     final delimiter = _deleteInDelimiterRow(backward: backward, word: word);
     if (delimiter != null) return delimiter;
     if (!sel.isCollapsed) {
@@ -1627,24 +1634,7 @@ final class FlarkEditor implements FlarkDocumentState {
       if (!_supportedRange(range.start, range.end)) return false;
       return _deleteContent(range.start, range.end, typing: false);
     }
-    final pos = _doc.displayOf(sel.extent);
-    final row = projection.rows[pos.row];
-    final d = pos.offset;
     if (backward ? d == 0 : d >= row.text.length) {
-      // Backspace at the start of the source (past a byte order mark, which
-      // belongs to the document) in a plain row, with no heading or
-      // container to lift, or Delete at its end, has nothing to delete: it
-      // does nothing, and is no refused edit a host would report.
-      final edge = backward
-          ? (sel.extent == 0 ||
-                    sel.extent == 1 && source.startsWith('\uFEFF')) &&
-                row.shells.isEmpty &&
-                (row.kind == RowKind.paragraph || row.kind == RowKind.blank)
-          : sel.extent == source.length;
-      if (edge) {
-        _inert = true;
-        return false;
-      }
       return backward ? _joinBackward(row) : _joinForward(row);
     }
     // The rendered grapheme's own source bytes, hidden neighbours excluded.
@@ -1706,6 +1696,28 @@ final class FlarkEditor implements FlarkDocumentState {
     // EP1-DELETE-TO-EMPTY: an owner this deletion empties goes with it, and
     // its delimiters wait for the next ordinary character.
     return _deleteContent(a, b, typing: !word && !join);
+  }
+
+  /// Whether a collapsed deletion at display offset [d] of [row] has nothing
+  /// to delete, at the start of the first row with nothing to lift (no
+  /// heading marker, rule, empty fence, container or indentation) or at the
+  /// end of the last: hidden markup beside the caret (a closing `**`, a
+  /// fence, a cell's pipe) is no grapheme of its own. It does nothing, and is
+  /// no refused edit a host would report.
+  bool _atDocumentEdge(ProjectedRow row, int d, {required bool backward}) {
+    if (!backward) {
+      return d >= row.text.length && row.index == projection.rows.length - 1;
+    }
+    if (d != 0 || row.index != 0 || row.shells.isNotEmpty) return false;
+    final i = (_doc.model.lineOfUtf16(selection.extent) - row.firstLine).clamp(
+      0,
+      row.contentStarts.length - 1,
+    );
+    return row.prefixStarts[i] == row.contentStarts[i] &&
+        row.kind != RowKind.heading &&
+        row.kind != RowKind.thematicBreak &&
+        !_isBareHeading(row) &&
+        !(row.fenced && row.text.isEmpty);
   }
 
   bool _deleteContent(int start, int end, {required bool typing}) {
@@ -1792,7 +1804,7 @@ final class FlarkEditor implements FlarkDocumentState {
     final emptied = cs >= 0 && blank(ls, a) && blank(b, le);
     final below = row.contentStarts.elementAtOrNull(bottom + 1) ?? -1;
     final cells = row.kind == RowKind.tableCell
-        ? _tableRowCells(projection, row.tableRowBlock)
+        ? _tableRowCells(projection, row)
         : null;
     // A table row is checked whole, its cells' text by [_showsTableRow].
     final cell0 = row.index - (cells == null ? 0 : row.column);
@@ -1804,43 +1816,54 @@ final class FlarkEditor implements FlarkDocumentState {
           : _showsTableRow(next, caret, row.column, cells, edited: true);
       final e = [for (final (x, y, text) in edits) (x, y, text.length)];
       // The row's remaining text, before the deletion, after it or on the
-      // next line, keeps its containers, and its kind unless it moved up.
-      final onward = a == 0 && emptied,
+      // next line, keeps its containers, and its kind unless it moved up
+      // onto the emptied line: left below it, the line after a setext
+      // heading's emptied first line could read as indented code.
+      final onward = a == 0 && emptied && below >= 0,
           left = a > 0
               ? map(row.sourceStart)
-              : onward
+              : emptied
               ? (below < 0 ? -1 : map(below))
-              : caret;
+              : caret,
+          up = onward && left == map(start);
       // A table row shows none of its other source either: a backslash the
       // deletion leaves before the cell's delimiter would escape it, and an
       // emptied first cell of a row without its leading pipe would make that
-      // pipe lead the row, so a cell the table drops would show.
+      // pipe lead the row, so a cell the table drops would show. Nor do the
+      // lines left below an emptied first line, as a heading's underline
+      // would.
       return (
         shown &&
             _keepsStructure(
               next,
               e,
               edited,
-              movesText: cells != null,
+              movesText: cells != null || onward && !up,
               shown: cells == null ? null : (row.sourceStart, row.sourceEnd),
               shells: true,
             ),
         (!emptied || _keepsShells(next, row, caret)) &&
             (left < 0 ||
                 _keepsShells(next, row, left) &&
-                    (onward || next.rowAt(left).kind == row.kind)),
+                    (up || next.rowAt(left).kind == row.kind)),
       );
     }
 
-    bool commit(String text, int caret, [bool Function(FlarkDocument)? ok]) =>
-        _commit(
-          text,
-          FlarkSelection.collapsed(caret),
-          typing: typing,
-          pending: plain.pending,
-          acceptSourceMode: true,
-          accept: ok,
-        );
+    // Only the deletion as asked may leave the live tier, into source mode:
+    // a respelling past it is passed over, as it could not be checked.
+    bool commit(
+      String text,
+      int caret, [
+      bool Function(FlarkDocument)? ok,
+      bool respelled = false,
+    ]) => _commit(
+      text,
+      FlarkSelection.collapsed(caret),
+      typing: typing,
+      pending: plain.pending,
+      acceptSourceMode: !respelled,
+      accept: ok,
+    );
     var damage = false;
     if (commit(plain.text, plain.caret, (next) {
       final (kept, own) = check(next, [(start, end, '')]);
@@ -1887,7 +1910,12 @@ final class FlarkEditor implements FlarkDocumentState {
       ],
     ]) {
       final (text, map) = _edited(edits);
-      if (commit(text, map(start), (n) => check(n, edits) == (true, true))) {
+      if (commit(
+        text,
+        map(start),
+        (n) => check(n, edits) == (true, true),
+        true,
+      )) {
         return true;
       }
     }
@@ -2630,41 +2658,67 @@ final class FlarkEditor implements FlarkDocumentState {
     (int, int)? shown,
     bool whitespace = false,
   }) {
-    // Painted source as prefix counts, so a segment that only moved is
-    // cleared in constant time and only text near the edit is read.
-    final depth = Int32List(source.length + 1);
-    void paint(int start, int end) {
-      depth[start]++;
-      depth[end]--;
+    final rows = projection.rows;
+    // Whether the current projection paints [from] through [to]. Rows come in
+    // source order and do not overlap, so the last row with text that starts
+    // at or before [from] is the one whose segments can paint it.
+    bool painted(int from, int to) {
+      if (shown != null && from >= shown.$1 && to < shown.$2) return true;
+      var low = 0, high = rows.length - 1;
+      while (low <= high) {
+        final mid = (low + high) >> 1;
+        if (rows[mid].sourceStart <= from) {
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      for (var r = high; r >= 0; r--) {
+        final row = rows[r];
+        if (row.sourceEnd <= row.sourceStart) continue;
+        var at = from;
+        for (final s in row.segments) {
+          if (!s.lineBreak && s.sourceStart <= at && at < s.sourceEnd) {
+            at = s.sourceEnd;
+          }
+        }
+        return at > to;
+      }
+      return false;
     }
 
-    for (final row in projection.rows) {
-      for (final segment in row.segments) {
-        if (!segment.lineBreak) paint(segment.sourceStart, segment.sourceEnd);
-      }
-    }
-    if (shown != null) paint(shown.$1, shown.$2);
-    final painted = Int32List(source.length + 1);
-    for (var i = 0, open = 0; i < source.length; i++) {
-      open += depth[i];
-      painted[i + 1] = painted[i] + (open > 0 ? 1 : 0);
-    }
+    var i = 0;
     for (final row in next.projection.rows) {
-      for (final segment in row.segments) {
+      final segments = row.segments;
+      // A row the projection reused paints what it painted, moved with it:
+      // the same text (the same string) where [old] maps the row's ends.
+      if (row.text.isNotEmpty && row.sourceEnd > row.sourceStart) {
+        final at = old(row.sourceStart);
+        for (; i < rows.length && rows[i].sourceStart < at; i++) {}
+        var reused = false;
+        for (var j = i; j < rows.length && rows[j].sourceStart == at; j++) {
+          final was = rows[j];
+          if (identical(was.text, row.text) &&
+              was.segments.length == segments.length &&
+              old(row.sourceEnd - 1) == was.sourceEnd - 1 &&
+              was.sourceEnd - at == row.sourceEnd - row.sourceStart) {
+            reused = true;
+            break;
+          }
+        }
+        if (reused) continue;
+      }
+      for (final segment in segments) {
         final a = segment.sourceStart, b = segment.sourceEnd;
         if (segment.lineBreak || a >= b) continue;
         final first = old(a), last = old(b - 1);
-        if (first >= 0 &&
-            last - first == b - 1 - a &&
-            painted[last + 1] - painted[first] == b - a) {
+        if (first >= 0 && last - first == b - 1 - a && painted(first, last)) {
           continue;
         }
         for (var o = a; o < b; o++) {
           if (!whitespace && _isSpace(next.source, o)) continue;
           final at = old(o);
-          if (at >= 0 && at < source.length && painted[at + 1] == painted[at]) {
-            return true;
-          }
+          if (at >= 0 && at < source.length && !painted(at, at)) return true;
         }
       }
     }
@@ -2918,6 +2972,27 @@ final class FlarkEditor implements FlarkDocumentState {
         .toList();
     final left = <String>[], right = <String>[];
     var leftSpace = '', rightSpace = '';
+    final m = _doc.model;
+    int lineOf(int offset) =>
+        (m.lineOfUtf16(offset) - row.firstLine).clamp(0, row.lineCount - 1);
+    String? lazyPrefix;
+    // The line break before line [i] of the row and its container prefix,
+    // from [a] to [b]. A lazy line has no prefix of its own: it gets the
+    // row's, as [_commitReturn] gives one the split empties ([emptied]) or
+    // that keeps all of its text below the new line.
+    String gap(int a, int b, int i, {required bool emptied}) {
+      if (row.shells.isEmpty || row.prefixStarts[i] != row.contentStarts[i]) {
+        return source.substring(a, b);
+      }
+      final prefix = lazyPrefix ??= _rowPrefix(row, row.firstLine);
+      if (emptied && prefix.trim().isEmpty) return source.substring(a, b);
+      return '${source.substring(a, m.lineStartUtf16(row.firstLine + i))}'
+          '$prefix';
+    }
+
+    // Whether the whitespace after the split ran on past a line break: the
+    // text after it then keeps its own line, below the new one.
+    var below = false;
     for (var grew = true; grew;) {
       grew = false;
       for (final o in shared.reversed) {
@@ -2931,16 +3006,42 @@ final class FlarkEditor implements FlarkDocumentState {
         }
       }
       // Emphasis delimiters cannot close after or open before whitespace.
-      // Keep those bytes adjacent to the break, outside the split owners.
+      // Keep those bytes adjacent to the break, outside the split owners. At
+      // a line's edge the whitespace runs on through the line break and the
+      // next line's container prefix, never into the prefix alone, so the
+      // delimiters stay on their text's lines.
       if (shared.isNotEmpty && shared.last.kind != RunKind.code) {
-        while (from > shared.first.contentStart && _isSpace(source, from - 1)) {
-          leftSpace = source.substring(from - 1, from) + leftSpace;
-          from--;
+        while (from > shared.first.contentStart) {
+          final i = lineOf(from);
+          if (from > row.contentStarts[i] && _isBlank(source, from - 1)) {
+            leftSpace = source.substring(from - 1, from) + leftSpace;
+            from--;
+          } else if (from == row.contentStarts[i] &&
+              i > 0 &&
+              row.contentEnds[i - 1] >= 0) {
+            final before = row.contentEnds[i - 1];
+            leftSpace = gap(before, from, i, emptied: true) + leftSpace;
+            from = before;
+          } else {
+            break;
+          }
           grew = true;
         }
-        while (to < shared.first.contentEnd && _isSpace(source, to)) {
-          rightSpace += source.substring(to, to + 1);
-          to++;
+        while (to < shared.first.contentEnd) {
+          final i = lineOf(to);
+          if (to < row.contentEnds[i] && _isBlank(source, to)) {
+            rightSpace += source.substring(to, to + 1);
+            to++;
+          } else if (to == row.contentEnds[i] &&
+              i + 1 < row.lineCount &&
+              row.contentStarts[i + 1] >= 0) {
+            final after = row.contentStarts[i + 1];
+            rightSpace += gap(to, after, i + 1, emptied: false);
+            to = after;
+            below = true;
+          } else {
+            break;
+          }
           grew = true;
         }
       }
@@ -2954,45 +3055,61 @@ final class FlarkEditor implements FlarkDocumentState {
       }
     }
     final head = '${left.join()}$leftSpace';
-    final tail = '$separator$rightSpace${right.join()}';
+    final opened = right.join(), tail = '$separator$rightSpace$opened';
+    // The caret goes where the text after the split now starts, or, when
+    // that text kept its line, on the new line before it.
+    final moved = below ? rightSpace.length + opened.length : 0;
     if (keep == null || keep.$1 < to) {
-      return _commitReturn(row, start, end, [
-        (from, to, '$head$tail'),
-      ], separator);
+      final text = '$head$tail';
+      return _commitReturn(
+        row,
+        start,
+        end,
+        [(from, to, text)],
+        separator,
+        caret: text.length - moved,
+      );
     }
     final (markupStart, markupEnd) = keep;
-    final markup = source.substring(markupStart, markupEnd);
-    return _commitReturn(row, start, end, [
-      (from, to, '$head$markup$tail'),
-      (markupStart, markupEnd, ''),
-    ], separator);
+    final text = '$head${source.substring(markupStart, markupEnd)}$tail';
+    return _commitReturn(
+      row,
+      start,
+      end,
+      [(from, to, text), (markupStart, markupEnd, '')],
+      separator,
+      caret: text.length - moved,
+    );
   }
 
   /// Commit Return's [split] of [row] at [start]..[end], sorted edits with
-  /// the caret after the first one's text, when the parser reads what Return
-  /// promises: the new line in containers of the kinds of the line it split,
-  /// other rows of the same kinds in the same kinds of containers, nothing
-  /// hidden painted, and the text shown with only the line break, whitespace
-  /// beside it aside. Lazy lines, which have no prefix of their own, take
-  /// [_rowPrefix] where the split would leave them outside the row's
-  /// containers: the split line when nothing is left on it, the lines after
-  /// it when nothing moves. When the parser reads the plain split as other
-  /// Markdown, these are tried in turn, else Return refuses: escaping the
-  /// first ASCII punctuation of the first word moved (`> b`, `1. b`, `=`) or
-  /// of the last word left (`a\`, `# a #`, `a*b*`); dropping the backslash
-  /// of a hard break the split follows; a blank line after the row, as a lift
-  /// keeps the next block apart (a heading's text moved into a paragraph
-  /// above indented code); for an item whose later blocks follow blank
-  /// lines, the next item's marker after them, as an empty item would end at
-  /// a blank line.
+  /// the caret [caret] units into the first one's text (by default after
+  /// it), when the parser reads what Return promises: the new line in
+  /// containers of the kinds of the line it split, other rows of the same
+  /// kinds in the same kinds of containers, nothing hidden painted, and the
+  /// text shown with only the line break, whitespace beside it aside. Lazy
+  /// lines, which have no prefix of their own, take [_rowPrefix] where the
+  /// split would leave them outside the row's containers: the split line
+  /// when nothing is left on it, the lines after it when nothing moves. When
+  /// the parser reads the plain split as other Markdown, these are tried in
+  /// turn, else Return refuses: escaping the first ASCII punctuation of the
+  /// first word moved (`> b`, `1. b`, `=`) or of the last word left (`a\`,
+  /// `# a #`, `a*b*`); dropping the backslash of a hard break the split
+  /// follows; a blank line after the row, as a lift keeps the next block
+  /// apart (a heading's text moved into a paragraph above indented code);
+  /// for an item whose later blocks follow blank lines, the next item's
+  /// marker after them, as an empty item would end at a blank line. Only the
+  /// plain split may leave the live tier.
   bool _commitReturn(
     ProjectedRow row,
     int start,
     int end,
     List<(int, int, String)> split,
-    String separator,
-  ) {
+    String separator, {
+    int? caret,
+  }) {
     final m = _doc.model, at = split.first, rows = projection.rows;
+    final offset = caret ?? at.$3.length;
     final first = m.lineOfUtf16(start) - row.firstLine,
         last = m.lineOfUtf16(end) - row.firstLine;
     int shown(int offset) => row.displayForSource(offset).$1;
@@ -3008,11 +3125,12 @@ final class FlarkEditor implements FlarkDocumentState {
           (m.lineStartUtf16(row.firstLine + i), row.contentStarts[i], prefix),
     ];
     // The edits splice the source in order, a lazy line's prefix before a
-    // split at the same offset. One whose line start the split rewrites (a
-    // line break it replaces, with the next line's whitespace) is no edit of
-    // its own: spliced out of order, it would cut the source backwards.
+    // split at the same offset. One whose line break the split takes (with
+    // the line's prefix, which the split gives the row's, see
+    // [_splitInline]) is no edit of its own: spliced as well, it would
+    // overlap the split and cut the source backwards.
     bool inSplit((int, int, String) e) =>
-        split.any((s) => e.$1 > s.$1 && e.$1 < s.$2);
+        split.any((s) => e.$1 > s.$1 && e.$1 <= s.$2);
     final ordered = [
       ...lazy.where((e) => e.$1 <= at.$1),
       ...split,
@@ -3025,18 +3143,49 @@ final class FlarkEditor implements FlarkDocumentState {
       });
     final edits = [for (final (_, e) in indexed) e];
     final breaks = '\n' * '\n'.allMatches(separator).length;
-    var g = 0;
-    for (var i = 0; i < row.index; i++) {
-      g += rows[i].text.length + 1;
+    final a = shown(start), b = shown(end);
+    // Whether [next] shows the current rows' text with [row]'s from [a] to
+    // [b] made [breaks], and with [apart] a line break after the row,
+    // whitespace beside line breaks aside. Rows that show what they showed,
+    // from either end up to the edit, are compared as they are (a reused
+    // row's text is the same string), so only the rest is joined.
+    bool showsBreak(FlarkDocument next, {required bool apart}) {
+      final now = next.projection.rows;
+      var p = 0, s = 0, off = 0;
+      while (p < row.index && p < now.length && rows[p].text == now[p].text) {
+        p++;
+      }
+      while (s < rows.length - row.index - 1 &&
+          s < now.length - p - 1 &&
+          rows[rows.length - 1 - s].text == now[now.length - 1 - s].text) {
+        s++;
+      }
+      for (var i = p; i < row.index; i++) {
+        off += rows[i].text.length + 1;
+      }
+      String join(List<ProjectedRow> list) =>
+          [for (var i = p; i < list.length - s; i++) list[i].text].join('\n');
+      var expected = join(rows).replaceRange(off + a, off + b, breaks);
+      if (apart) {
+        final e = off + row.text.length + breaks.length - (b - a);
+        expected = expected.replaceRange(e, e, '\n');
+      }
+      final lead = p > 0 ? '\n' : '', trail = s > 0 ? '\n' : '';
+      return '$lead$expected$trail'.replaceAll(_breakSpace, '\n') ==
+          '$lead${join(now)}$trail'.replaceAll(_breakSpace, '\n');
     }
-    final a = g + shown(start), b = g + shown(end);
-    final before = [for (final r in rows) r.text].join('\n');
+
     bool attempt(
       List<(int, int, String)> list,
       (int, int, String) caretEdit,
       int offset, {
       bool apart = false,
+      bool plain = false,
     }) {
+      if (!_disjoint(list)) {
+        assert(false, 'Return spliced overlapping edits $list');
+        return false;
+      }
       final out = StringBuffer();
       var copied = 0, shift = 0, caret = 0;
       for (final edit in list) {
@@ -3051,7 +3200,7 @@ final class FlarkEditor implements FlarkDocumentState {
         '$out',
         FlarkSelection.collapsed(caret),
         typing: false,
-        acceptSourceMode: true,
+        acceptSourceMode: plain,
         accept: (next) {
           final now = next.rowAt(caret);
           String kinds(Iterable<Shell> shells) =>
@@ -3078,21 +3227,12 @@ final class FlarkEditor implements FlarkDocumentState {
               )) {
             return false;
           }
-          var expected = before.replaceRange(a, b, breaks);
-          if (apart) {
-            final e = g + row.text.length + breaks.length - (b - a);
-            expected = expected.replaceRange(e, e, '\n');
-          }
-          return defined ||
-              [
-                    for (final r in next.projection.rows) r.text,
-                  ].join('\n').replaceAll(_breakSpace, '\n') ==
-                  expected.replaceAll(_breakSpace, '\n');
+          return defined || showsBreak(next, apart: apart);
         },
       );
     }
 
-    if (attempt(edits, at, at.$3.length) || _lastRejection != null) {
+    if (attempt(edits, at, offset, plain: true) || _lastRejection != null) {
       return _lastRejection == null;
     }
     final lineStart = row.contentStarts[first];
@@ -3129,7 +3269,7 @@ final class FlarkEditor implements FlarkDocumentState {
       // The edit among the others, after those that start where it does.
       final i = edits.lastIndexWhere((e) => e.$1 <= edit.$1) + 1;
       final list = [...edits.take(i), edit, ...edits.skip(i)];
-      if (attempt(list, at, at.$3.length, apart: edit == blank)) return true;
+      if (attempt(list, at, offset, apart: edit == blank)) return true;
       if (_lastRejection != null) return false;
     }
     final item = row.shells.isEmpty ? null : row.shells.last;
@@ -3188,10 +3328,11 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// Indent nests the caret's item under its previous sibling by that
-  /// sibling's content offset; Outdent lifts it by its parent's, onto a line
-  /// of its own if it opens on the parent's (`- - a` gives `-` over `- a`).
-  /// All its lines shift at its column. The parser must show every row as
-  /// it was, the item's a list deeper or shallower, or the shift refuses.
+  /// sibling's content offset; Outdent lifts it to its parent's column,
+  /// however deep it was nested (four spaces, a tab), onto a line of its own
+  /// if it opens on the parent's (`- - a` gives `-` over `- a`). All its
+  /// lines shift at its column. The parser must show every row as it was,
+  /// the item's a list deeper or shallower, or the shift refuses.
   bool _shiftItem({required bool outdent}) {
     final row = _doc.caretRow, shells = row.shells, m = _doc.model;
     final idx = shells.lastIndexWhere((s) => s.kind == ShellKind.item);
@@ -3205,9 +3346,15 @@ final class FlarkEditor implements FlarkDocumentState {
       if (m.blockParent(b) == list) other = b;
     }
     if (other < 0) return false;
+    int columnOf(int block) => _columns(
+      source,
+      _lineStart(source, m, m.blockFirstLine(block)),
+      m.blockStart(block),
+    );
     final first = m.blockFirstLine(item), start = m.blockStart(item);
-    final column = _columns(source, _lineStart(source, m, first), start);
-    var delta = m.blockAttr(other) * (outdent ? -1 : 1), from = first;
+    final column = columnOf(item);
+    var delta = outdent ? columnOf(other) - column : m.blockAttr(other);
+    var from = first;
     final edits = <(int, int, String)>[];
     if (outdent && m.blockFirstLine(other) == first) {
       // The parent keeps its marker, emptied; the item's new line continues
@@ -3317,6 +3464,8 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Commit the first of [candidates] (sorted edits) whose parse [accept]
   /// holds for, given their offset map; a rejected source ends the search.
+  /// Only the first, the edit as asked, may leave the live tier: a later
+  /// respelling past it is passed over, as it could not be checked.
   bool _commitFirst(
     List<List<(int, int, String)>> candidates,
     bool Function(FlarkDocument next, int Function(int) map) accept, {
@@ -3329,7 +3478,7 @@ final class FlarkEditor implements FlarkDocumentState {
         FlarkSelection(map(selection.base), map(selection.extent)),
         typing: false,
         pending: pending,
-        acceptSourceMode: true,
+        acceptSourceMode: identical(edits, candidates.first),
         accept: (next) => accept(next, map),
       )) {
         return true;
@@ -3339,9 +3488,19 @@ final class FlarkEditor implements FlarkDocumentState {
     return false;
   }
 
+  /// Whether [edits] are sorted and none overlaps the next, so they splice
+  /// the source in order.
+  static bool _disjoint(List<(int, int, String)> edits) {
+    for (var i = 1; i < edits.length; i++) {
+      if (edits[i].$1 < edits[i - 1].$2) return false;
+    }
+    return true;
+  }
+
   /// Apply sorted, non-overlapping edits; returns the new source and a map
   /// from old offsets to new ones.
   (String, int Function(int)) _edited(List<(int, int, String)> edits) {
+    assert(_disjoint(edits), 'overlapping edits $edits');
     final out = StringBuffer();
     var last = 0;
     for (final (a, b, text) in edits) {
@@ -3566,11 +3725,12 @@ final class FlarkEditor implements FlarkDocumentState {
     );
     final blank = '${_lineBreakAt(rowEnd)}${outer.trimRight()}';
     int after(int offset) => offset > at ? offset + blank.length : offset;
+    // The blank line must keep the edit in the live tier, where it is
+    // checked; only [candidate] itself may leave it.
     return _commit(
       candidate.replaceRange(at, at, blank),
       FlarkSelection(after(selected.base), after(selected.extent)),
       typing: false,
-      acceptSourceMode: true,
       accept: (next) => keeps(next, [...edits, (rowEnd, rowEnd, blank.length)]),
     );
   }
@@ -3807,6 +3967,10 @@ final class FlarkEditor implements FlarkDocumentState {
       text.codeUnitAt(i) == 0x0A ||
       text.codeUnitAt(i) == 0x09;
 
+  /// A space or tab: whitespace within a line.
+  static bool _isBlank(String text, int i) =>
+      text.codeUnitAt(i) == 0x20 || text.codeUnitAt(i) == 0x09;
+
   static int _wordEnd(String text, int d) {
     var i = d;
     while (i < text.length && _isSpace(text, i)) {
@@ -3864,7 +4028,11 @@ final class FlarkEditor implements FlarkDocumentState {
     final currentSelection = selection;
     final currentPending = _pending;
     final target = history.undoTarget;
-    if (target == null) return false;
+    // With nothing to undo the command does nothing, and is no refused edit.
+    if (target == null) {
+      _inert = true;
+      return false;
+    }
     final next = _restoreSnapshot(target);
     final e = history.undoState(
       currentSource,
@@ -3883,7 +4051,10 @@ final class FlarkEditor implements FlarkDocumentState {
     final currentSelection = selection;
     final currentPending = _pending;
     final target = history.redoTarget;
-    if (target == null) return false;
+    if (target == null) {
+      _inert = true;
+      return false;
+    }
     final next = _restoreSnapshot(target);
     final e = history.redoState(
       currentSource,
@@ -3915,85 +4086,18 @@ final _lastEscapable = RegExp(r'[!-/:-@\[-`{-~][^\s!-/:-@\[-`{-~]*[ \t]*$');
 /// Markdown's spaces and tabs, which show nothing at a line's edges.
 final _spaces = RegExp(r'^[ \t]+$');
 
-/// Any character of an item marker but a tab, which keeps its own width.
-final _notTab = RegExp(r'[^\t]');
+// The shared container prefixes (see continuation.dart), under the names
+// this library and its parts use.
+final _notTab = notTab;
+const _footnoteIndent = footnoteIndent;
 
-/// Where [line] of [text] starts, past the byte order mark that may lead the
-/// first line. comrak skips the mark, so it belongs to the document rather
-/// than to that line: removing the line must keep it, and a prefix copied
-/// from the line must not carry it into the middle of the document, where it
-/// is text that would stop the copied markers from being read.
-int _lineStart(String text, RenderModel model, int line) {
-  final start = model.lineStartUtf16(line);
-  return start == 0 && text.isNotEmpty && text.codeUnitAt(0) == 0xFEFF
-      ? 1
-      : start;
-}
+int _lineStart(String text, RenderModel model, int line) =>
+    lineStartPastMark(text, model, line);
 
-/// comrak's footnote continuation indent: a line continues a footnote
-/// definition when it is indented at least four columns past the containers
-/// around the definition (`parse_footnote_definition_block_prefix`). The
-/// render model gives continuation lines this indent as their prefix range,
-/// but a label's line has no such range to copy.
-const _footnoteIndent = '    ';
-
-/// The container prefix that continues [line] of [text] up to [end], for a
-/// line inside [block] (whose own markers stay out of it): the line's prefix
-/// with the markers of the items and footnote definitions that open on [line]
-/// turned into the indentation that continues them. A copied marker would
-/// open another item or definition, where a continuation line belongs to the
-/// open ones. An item continues at its marker's width, tabs kept; a footnote
-/// definition at [_footnoteIndent]. Every range comes from the parser's
-/// blocks.
 String _continuationPrefix(
   String text,
   RenderModel model,
   int line,
   int end,
   int block,
-) {
-  final lineStart = _lineStart(text, model, line);
-  var prefix = text.substring(lineStart, end);
-  var child = block;
-  for (var parent = model.blockParent(block); parent != noParent;) {
-    final kind = model.blockKind(parent);
-    if ((kind == BlockKind.item || kind == BlockKind.footnoteDefinition) &&
-        model.blockFirstLine(parent) == line) {
-      var from = model.blockStart(parent) - lineStart;
-      final to = model.blockStart(child) - lineStart;
-      if (from >= 0 && from < to && to <= prefix.length) {
-        final marker = prefix.substring(from, to);
-        // The indent counts from the end of the containers' prefix, not from
-        // the label, so the label's own indentation goes with it; kept, it
-        // would indent what follows past the definition's content, turning
-        // an item's next marker into an underline or adding spaces to code.
-        // That end is known for a definition at the document level, where it
-        // is the line's start. An item opening on the line pads up to the
-        // label; the model records no end for a quote's prefix or an earlier
-        // item's indentation, so a label indented inside those keeps it.
-        if (kind == BlockKind.footnoteDefinition &&
-            model.blockKind(model.blockParent(parent)) == BlockKind.document) {
-          while (from > 0 &&
-              (prefix.codeUnitAt(from - 1) == 0x20 ||
-                  prefix.codeUnitAt(from - 1) == 0x09)) {
-            from--;
-          }
-        }
-        // A marker right after a quote's `>` left it no optional space, and
-        // the first of the spaces put in its place would be read as one.
-        final pad = from > 0 && !FlarkEditor._isSpace(prefix, from - 1);
-        prefix = prefix.replaceRange(
-          from,
-          to,
-          (pad ? ' ' : '') +
-              (kind == BlockKind.item
-                  ? marker.replaceAll(_notTab, ' ')
-                  : _footnoteIndent),
-        );
-      }
-    }
-    child = parent;
-    parent = model.blockParent(parent);
-  }
-  return prefix;
-}
+) => continuationPrefix(text, model, line, end, block);

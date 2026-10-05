@@ -45,8 +45,123 @@ void _returnCases(FlarkParseBackend backend) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(const Newline(), source: edited);
       }
+      // The lazy line takes the quote's prefix, and the link reopens after
+      // it rather than before it.
       final quoted = _Session(backend, source: '> [a\nb](u)', caret: 4);
-      quoted.act(const Newline(), applied: false, source: '> [a\nb](u)');
+      quoted.act(
+        const Newline(),
+        source: '> [a](u)\n> \n> [b](u)',
+        rows: ['a', '', 'b'],
+        caret: const DisplayPosition(1, 0),
+      );
+    });
+
+    test('beside a line break inside a span keeps both parts in its '
+        'containers', () {
+      // The span closes after the text left and reopens where the next
+      // line's text starts, past its container prefix, which a lazy line
+      // takes from the row. Spliced into a lazy line's prefix, the
+      // delimiters threw, or read as markup and Return refused. Return
+      // after the break moves the text after it, with its context; before
+      // it, the caret is on the new line.
+      for (final (source, caret, split, at, context) in [
+        (
+          '> > *a\n> b*',
+          9,
+          '> > *a*\n> > \n> > *b*',
+          const DisplayPosition(2, 0),
+          Style.emphasis,
+        ),
+        (
+          '> - *a\n> b*',
+          9,
+          '> - *a*\n>   \n> - *b*',
+          const DisplayPosition(2, 0),
+          Style.emphasis,
+        ),
+        (
+          '> - [a\n> b](u)',
+          9,
+          '> - [a](u)\n>   \n> - [b](u)',
+          const DisplayPosition(2, 0),
+          Style.link,
+        ),
+        (
+          '> 1. **a\n> b**',
+          11,
+          '> 1. **a**\n>    \n> 2. **b**',
+          const DisplayPosition(2, 0),
+          Style.strong,
+        ),
+        (
+          '> **a\n> b**',
+          8,
+          '> **a**\n> \n> **b**',
+          const DisplayPosition(2, 0),
+          Style.strong,
+        ),
+        (
+          '> **a\n> b**',
+          5,
+          '> **a**\n> \n> **b**',
+          const DisplayPosition(1, 0),
+          0,
+        ),
+        (
+          '> > *a\n> b*',
+          6,
+          '> > *a*\n> > \n> > *b*',
+          const DisplayPosition(1, 0),
+          0,
+        ),
+        ('> *a\nb*', 4, '> *a*\n> \n> *b*', const DisplayPosition(1, 0), 0),
+        ('- *a\nb*', 4, '- *a*\n- \n  *b*', const DisplayPosition(1, 0), 0),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final kinds = shells(session);
+        session.act(
+          const Newline(),
+          source: split,
+          rows: ['a', '', 'b'],
+          caret: at,
+          context: context,
+        );
+        for (final row in session.editor.projection.rows) {
+          expect([for (final s in row.shells) s.kind], kinds, reason: source);
+        }
+      }
+      final typed = _Session(backend, source: '> > *a\n> b*', caret: 9);
+      typed.act(const Newline());
+      typed.act(const InsertText('x'), source: '> > *a*\n> > \n> > *xb*');
+    });
+
+    test('before a soft line break inside a span puts the caret on the new '
+        'line', () {
+      // The whitespace Return moves out of the span runs through the line
+      // break, and the caret went after it, onto the text that kept its
+      // line: the next letter was typed into `bar`.
+      final session = _Session(backend, source: '**foo\nbar**', caret: 5);
+      session.act(
+        const Newline(),
+        source: '**foo**\n\n**bar**',
+        rows: ['foo', '', 'bar'],
+        caret: const DisplayPosition(1, 0),
+      );
+      session.act(
+        const InsertText('x'),
+        source: '**foo**\nx\n**bar**',
+        rows: ['foo\nx\nbar'],
+        caret: const DisplayPosition(0, 5),
+      );
+      // After the break the caret moves with the text, in its span.
+      final after = _Session(backend, source: '**foo\nbar**', caret: 6);
+      after.act(
+        const Newline(),
+        source: '**foo**\n\n**bar**',
+        rows: ['foo', '', 'bar'],
+        caret: const DisplayPosition(2, 0),
+        context: Style.strong,
+      );
     });
 
     test('text typed after link reference definitions shows below them', () {

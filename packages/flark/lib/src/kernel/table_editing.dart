@@ -1,12 +1,21 @@
 part of 'editor.dart';
 
-/// The displayed text of each cell of the table row [tableRowBlock], in
-/// column order, including the cells the parser supplies for a short row.
-List<String> _tableRowCells(Projection projection, int tableRowBlock) => [
-  for (final row in projection.rows)
-    if (row.kind == RowKind.tableCell && row.tableRowBlock == tableRowBlock)
-      row.text,
-];
+/// The displayed text of each cell of [cell]'s table row, in column order,
+/// including the cells the parser supplies for a short row. A table row's
+/// cells are consecutive rows of the projection.
+List<String> _tableRowCells(Projection projection, ProjectedRow cell) {
+  final rows = projection.rows, block = cell.tableRowBlock;
+  bool inRow(int i) =>
+      i >= 0 &&
+      i < rows.length &&
+      rows[i].kind == RowKind.tableCell &&
+      rows[i].tableRowBlock == block;
+  var first = cell.index;
+  while (inRow(first - 1)) {
+    first--;
+  }
+  return [for (var i = first; inRow(i); i++) rows[i].text];
+}
 
 /// Whether [next] displays [cells] as the table row holding [offset], with
 /// [offset] in [column]. GFM drops a row's surplus cells, so comparing the
@@ -21,7 +30,7 @@ bool _showsTableRow(
 }) {
   final row = next.rowAt(offset);
   if (row.kind != RowKind.tableCell || row.column != column) return false;
-  final now = _tableRowCells(next.projection, row.tableRowBlock);
+  final now = _tableRowCells(next.projection, row);
   if (now.length != cells.length) return false;
   for (var i = 0; i < now.length; i++) {
     if ((!edited || i != column) && now[i] != cells[i]) return false;

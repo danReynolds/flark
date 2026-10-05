@@ -10,16 +10,36 @@ void _deletionCases(FlarkParseBackend backend) {
   group('deletion', () {
     test('deleting at the document\'s ends does nothing quietly', () {
       // Nothing precedes the first row or follows the last: the key does
-      // nothing, with no refusal for a host to report.
+      // nothing, with no refusal for a host to report. Hidden markup beside
+      // the caret is no grapheme of its own: a closing `**` or `#`, a fence,
+      // a cell's pipe, a link's brackets.
       for (final (source, caret, command) in [
         ('abc', 0, const DeleteBackward() as FlarkCommand),
         ('abc', 3, const DeleteForward()),
         ('', 0, const DeleteBackward()),
         ('a\n\nb', 4, const DeleteForward()),
+        ('Hello **wo**', 10, const DeleteForward()),
+        ('# Title #', 7, const DeleteForward()),
+        ('```\ncode\n```', 8, const DeleteForward()),
+        ('| a |\n| - |\n| b |', 16, const DeleteForward()),
+        ('| a |\n| - |', 11, const DeleteForward()),
+        ('**ab** c', 2, const DeleteBackward()),
+        ('[a](u) b', 1, const DeleteBackward()),
+        ('```\ncode\n```', 4, const DeleteBackward()),
       ]) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(command, applied: false, source: source);
         expect(session.editor.lastRejection, isNull, reason: source);
+      }
+      // At the start of the first row a heading's marker, indentation or a
+      // container still lifts.
+      for (final (source, caret, lifted) in [
+        ('# Title #', 2, 'Title'),
+        ('    code', 4, 'code'),
+        ('> a', 2, 'a'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteBackward(), source: lifted);
       }
     });
 
@@ -378,6 +398,32 @@ void _deletionCases(FlarkParseBackend backend) {
           ['with two lines.', '', 'code'],
           const DisplayPosition(0, 0),
         ),
+        // A first line emptied goes too: left blank, the line after it
+        // would read as indented code and the underline as text.
+        (
+          'a\n    b\n===',
+          1,
+          const DeleteBackward(),
+          'b\n===',
+          ['b'],
+          const DisplayPosition(0, 0),
+        ),
+        (
+          '*a\n    b*\n===',
+          2,
+          const DeleteBackward(),
+          '*b*\n===',
+          ['b'],
+          const DisplayPosition(0, 0),
+        ),
+        (
+          'a\n    b',
+          1,
+          const DeleteBackward(),
+          'b',
+          ['b'],
+          const DisplayPosition(0, 0),
+        ),
       ]) {
         final session = _Session(backend, source: source, caret: caret);
         final kinds = session.editor.projection.rows
@@ -392,6 +438,19 @@ void _deletionCases(FlarkParseBackend backend) {
           reason: source,
         );
       }
+    });
+
+    test('text deleted from a definition above a setext heading joins it', () {
+      // The definition's rest reads as the heading's first line; the
+      // underline stays hidden and nothing becomes code.
+      final session = _Session(backend, source: '[a]: /u\nb\n===', caret: 4);
+      session.act(
+        const DeleteBackward(word: true),
+        source: ' /u\nb\n===',
+        rows: ['/u\nb'],
+        caret: const DisplayPosition(0, 0),
+      );
+      expect(session.editor.projection.rows.single.kind, RowKind.heading);
     });
 
     test('a deletion that would move another block refuses', () {

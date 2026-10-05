@@ -444,6 +444,41 @@ void _structureCases(FlarkParseBackend backend) {
       expect(child.editor.projection.rows.last.shells.length, 2);
     });
 
+    test('outdent lifts an item nested past its parent\'s content to the '
+        'parent\'s column', () {
+      // Four spaces or a tab nest an item past its parent's content offset.
+      // Lifted by that offset it stayed nested, so the shift was refused and
+      // Shift-Tab did nothing.
+      for (final (source, caret, outdented, rows) in [
+        ('- a\n    - b', 10, '- a\n- b', ['a', 'b']),
+        ('- a\n\t- b', 7, '- a\n- b', ['a', 'b']),
+        ('> - a\n>     - b', 14, '> - a\n> - b', ['a', 'b']),
+        ('- a\n    - b\n      c', 10, '- a\n- b\n  c', ['a', 'b\nc']),
+        ('- a\n    - b\n        - c', 10, '- a\n- b\n    - c', ['a', 'b', 'c']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final depth = session.editor.document.caretRow.shells.length;
+        session.act(
+          const Outdent(),
+          source: outdented,
+          rows: rows,
+          caret: const DisplayPosition(1, 0),
+        );
+        expect(
+          session.editor.document.caretRow.shells.length,
+          depth - 2,
+          reason: source,
+        );
+      }
+      // The item's own child moves with it and stays its child.
+      final child = _Session(
+        backend,
+        source: '- a\n    - b\n        - c',
+        caret: 10,
+      )..act(const Outdent());
+      expect(child.editor.projection.rows.last.shells.length, 4);
+    });
+
     test('indent refuses when it would move a block after the item', () {
       // A sibling short of the nested item's column would nest with it.
       final sibling = _Session(backend, source: '- a\n - b\n  - c', caret: 8);

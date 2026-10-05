@@ -467,12 +467,13 @@ extension _TypedLines on FlarkEditor {
       if (typed == '~' || typed == '`')
         (text.replaceRange(at, at, r'\'), caret + 1, [(at, at, grown + 1)]),
     ]) {
+      // Past the live tier the parser cannot check the respelling: it is
+      // passed over, and the text is typed as it is.
       if (_commit(
         spelled,
         FlarkSelection.collapsed(moved),
         pending: plain.pending,
         typing: true,
-        acceptSourceMode: true,
         accept: (next) =>
             next.selection.extent == moved &&
             _keepsTyped(next, row, edits, moved, at),

@@ -20,6 +20,7 @@ import 'package:characters/characters.dart';
 
 import '../parse/render_model.dart';
 import '../parse/schema.g.dart';
+import 'continuation.dart';
 
 /// Inline style bits carried by a segment.
 abstract final class Style {
@@ -889,10 +890,11 @@ final class _Builder {
 
   /// The delimiter line [line] of [table], a table without body rows, as one
   /// row of its source: a table row of its own (no row block) in the first
-  /// column. Inside containers the line must repeat the header line's
-  /// container prefix exactly, which then stays out of the row; otherwise
-  /// the row stays hidden. The parser identifies the table and its lines;
-  /// nothing here reads the delimiters.
+  /// column. Inside containers the line must start with the prefix that
+  /// continues the header line's containers (an item's marker as spaces),
+  /// which then stays out of the row; otherwise the row stays hidden. The
+  /// parser identifies the table and its lines; nothing here reads the
+  /// delimiters.
   ProjectedRow? _delimiterRow(
     int index,
     int table,
@@ -903,8 +905,13 @@ final class _Builder {
     var start = lineStart;
     final container = containerOf[line];
     if (container >= 0) {
-      final header = m.lineStartUtf16(m.blockFirstLine(table));
-      final prefix = src.substring(header, m.blockStart(table));
+      final prefix = continuationPrefix(
+        src,
+        m,
+        m.blockFirstLine(table),
+        m.blockStart(table),
+        table,
+      );
       if (!src.startsWith(prefix, lineStart) ||
           lineStart + prefix.length > end) {
         return null;
