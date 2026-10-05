@@ -97,7 +97,7 @@ extension _TypedLines on FlarkEditor {
     final nl = _lineBreakAt(at);
     final hasNext = line + 1 < m.lineCount;
     final spellings = <_Spelling>[];
-    var keepRow = false, sameKind = false, quick = false, apart = false;
+    var sameKind = false, quick = false, apart = false;
     // Whether only the plain spelling must keep the row's kind.
     var plainKind = false;
     // [inserted] replaces [lineStart]..[at] with [before], [lead] and [after]
@@ -248,7 +248,6 @@ extension _TypedLines on FlarkEditor {
 
       spellings.add(after(''));
       if (hasNext) spellings.add(after('$nl${lead.trimRight()}'));
-      keepRow = true;
     } else if (removed == 0 && _isBarePrefixRow(row) || delimiterRow) {
       // A bare marker shown as text, which the typed text joins as paragraph
       // text, or a table's delimiter row shown as its source, which the text
@@ -373,7 +372,6 @@ extension _TypedLines on FlarkEditor {
                   edits,
                   caret,
                   s.typedAt,
-                  keepRow: keepRow,
                   sameKind: sameKind || plainKind && isPlain,
                   strict: strict,
                   apart: apart,
@@ -556,9 +554,11 @@ extension _TypedLines on FlarkEditor {
   /// the typed text, and a fence that shows no body keeps none. Text typed
   /// on an empty row joins no table or literal HTML above it, which an
   /// empty line keeps apart, but may start the first body row of a table
-  /// that has none. [keepRow] checks [row] too; [sameKind] keeps the
-  /// caret's row of [row]'s kind; [apart] keeps each row after [row] a row
-  /// of its own, so no paragraph there reads on as part of the text.
+  /// that has none. [row] takes the typed text and is not compared; a rule
+  /// takes it on the line after, which cannot change the rule. [sameKind]
+  /// keeps the caret's row of [row]'s kind; [apart] keeps each row after
+  /// [row] a row of its own, so no paragraph there reads on as part of the
+  /// text.
   /// [strict], for text typed on an empty row, has it start its line with
   /// no whitespace shown that the current projection hides.
   bool _keepsTyped(
@@ -567,7 +567,6 @@ extension _TypedLines on FlarkEditor {
     List<(int, int, int)> edits,
     int caret,
     int typedAt, {
-    bool keepRow = false,
     bool sameKind = false,
     bool strict = false,
     bool apart = false,
@@ -610,8 +609,7 @@ extension _TypedLines on FlarkEditor {
           old.shells.isNotEmpty &&
           old.shells.last.kind == ShellKind.item &&
           _doc.model.blockFirstLine(old.shells.last.block) == old.firstLine;
-      if (old.kind == RowKind.blank && !emptyItem ||
-          old.index == row.index && !keepRow) {
+      if (old.kind == RowKind.blank && !emptyItem || old.index == row.index) {
         continue;
       }
       final at = forward(old.sourceStart);
