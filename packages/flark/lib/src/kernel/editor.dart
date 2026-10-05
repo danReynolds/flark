@@ -793,25 +793,24 @@ final class FlarkEditor implements FlarkDocumentState {
   /// spelling's own, or with the typed fence it completed
   /// ([completeTypedFence]) put in them.
   ///
-  /// A spelling past the live tier, where no parse checks it, commits
+  /// Only the edit as asked can cost the edit its admission: when the parser
+  /// refuses it, the edit is refused, and a respelling it refuses is passed
+  /// over. A spelling past the live tier, where no parse checks it, commits
   /// unchecked only when it is the edit as asked
-  /// (EP1-RESULT-PRESENTATION-001); a respelling there is passed over. The
-  /// typed-line [tier] instead commits the first spelling past the tier when
-  /// none qualifies (see [_Tier.firstPast]), or before it [atLimit], when a
-  /// respelling was passed over at a limit. What a spelling the parser
-  /// refuses does to the search is [refusals]'s to say.
+  /// (EP1-RESULT-PRESENTATION-001); a respelling there is passed over too.
+  /// The typed-line [tier] instead commits the first spelling past the tier
+  /// when none qualifies (see [_Tier.firstPast]), or before it [atLimit],
+  /// when a respelling was passed over at a limit.
   _Outcome _commitSpellings(
     Iterable<Spelling> spellings,
     bool Function(FlarkDocument next, Spelling spelling, Edits edits) keep, {
     required bool coalesce,
     _Tier tier = _Tier.asAsked,
-    _Refusals refusals = _Refusals.stop,
     bool completeTypedFence = false,
     Spelling? atLimit,
   }) {
     // A refusal the search passes over is no outcome of the call.
     final before = _lastRejection;
-    FlarkRejection? asked;
     Spelling? past;
     var passedOver = false;
     for (final spelling in spellings) {
@@ -831,31 +830,17 @@ final class FlarkEditor implements FlarkDocumentState {
         ),
       );
       switch (outcome) {
-        case _Committed() || _Unchanged():
-          return outcome;
         case _NotKept(passedOver: true):
           past ??= spelling;
           if (!spelling.asAsked) passedOver = true;
         case _NotKept():
           break;
-        case _Refused(:final reason):
-          final passes = switch (refusals) {
-            _Refusals.stop => false,
-            _Refusals.passRespellings => !spelling.asAsked,
-            _Refusals.passAll => true,
-          };
-          if (!passes) return outcome;
-          if (spelling.asAsked) {
-            asked ??= reason;
-          } else {
-            passedOver = true;
-          }
+        case _Refused() when !spelling.asAsked:
+          passedOver = true;
           _lastRejection = before;
+        case _Committed() || _Unchanged() || _Refused():
+          return outcome;
       }
-    }
-    if (asked != null) {
-      _lastRejection = asked;
-      return _Refused(asked);
     }
     if (tier == _Tier.firstPast) {
       if (atLimit != null && passedOver) {
@@ -2000,7 +1985,6 @@ final class FlarkEditor implements FlarkDocumentState {
             return kept && own;
           },
           coalesce: typing,
-          refusals: _Refusals.passRespellings,
         )
         is _Committed;
   }
@@ -2941,12 +2925,13 @@ final class FlarkEditor implements FlarkDocumentState {
     // A caret beside hidden syntax shows the same place from the anchors
     // around it. Where a break at its own anchor would split a construct
     // that holds no split (the end of an autolink's text, before its hidden
-    // `>`), the break goes beside the construct instead.
+    // `>`), the break goes beside the construct instead: a respelling,
+    // passed over when the parser refuses it.
+    final before = _lastRejection;
     for (final other in _doc.anchorsAt(start)) {
       if (other == start) continue;
-      final split = _splitRow(row, other, other, separator);
-      if (split is _Committed) return true;
-      if (split is _Refused) return false;
+      if (_splitRow(row, other, other, separator) is _Committed) return true;
+      _lastRejection = before;
     }
     return false;
   }
@@ -4179,9 +4164,10 @@ final class _Unchanged extends _Outcome {
   const _Unchanged();
 }
 
-/// No spelling read as it must, and none the parser refused stopped the
-/// search. [passedOver]: a spelling went unchecked past the live tier, or,
-/// from the search, a respelling past the live tier or a refused one.
+/// No spelling read as it must, and the parser refused none but respellings,
+/// which are passed over. [passedOver]: a spelling went unchecked past the
+/// live tier, or, from the search, a respelling past the live tier or a
+/// refused one.
 final class _NotKept extends _Outcome {
   const _NotKept({this.passedOver = false});
 
@@ -4206,20 +4192,6 @@ enum _Tier {
   /// structure may have no spelling as asked: when none qualifies, the first
   /// spelling past the tier enters source mode, as ordinary text does.
   firstPast,
-}
-
-/// What a spelling the parser refuses does to the search. The edits that
-/// search spellings refuse differently for now; each says which it does.
-enum _Refusals {
-  /// It refuses the edit: no later spelling is tried.
-  stop,
-
-  /// A respelling is passed over; only the edit as asked refuses the edit.
-  passRespellings,
-
-  /// Every refused spelling is passed over. When none commits, the edit is
-  /// refused for the reason the edit as asked was, if it was.
-  passAll,
 }
 
 /// Characters that can underline a setext heading.

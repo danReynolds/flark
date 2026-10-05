@@ -343,12 +343,10 @@ extension _TypedLines on FlarkEditor {
     // Text typed on an empty row starts its line and shows no whitespace the
     // row hid.
     final strict = row.kind == RowKind.blank;
-    // A longer spelling must not cost the edit its admission: a refused one
-    // is passed over, and only the text as asked refuses the edit. Past the
-    // live tier, where no parse checks a spelling, the first one there enters
-    // source mode when none qualifies, as ordinary text past the tier does;
-    // a typed underline the parser reads as one where no blank line fits, at
-    // a limit, is typed as it is instead, as the profile has it.
+    // Past the live tier, where no parse checks a spelling, the first one
+    // there enters source mode when none qualifies, as ordinary text past the
+    // tier does; a typed underline the parser reads as one where no blank
+    // line fits, at a limit, is typed as it is instead, as the profile has it.
     _lastRejection = null;
     return _commitSpellings(
       spellings,
@@ -377,7 +375,6 @@ extension _TypedLines on FlarkEditor {
       },
       coalesce: typing,
       tier: _Tier.firstPast,
-      refusals: _Refusals.passAll,
       completeTypedFence: fence,
       atLimit: underline != null && spellings.contains(plainSpelling)
           ? plainSpelling
@@ -413,8 +410,8 @@ extension _TypedLines on FlarkEditor {
       FlarkSelection.collapsed(caret),
       pending: plain.pending,
     );
-    // Past the live tier the parser cannot check a respelling: it is passed
-    // over, and the text is typed as it is.
+    // A respelling past the live tier, which no parse checks, or one the
+    // parser refuses is passed over, and the text is typed as it is.
     return _commitSpellings(
       [
         if (end > 0) spelled(asTyped.withInsertion(end, nl), caret),
