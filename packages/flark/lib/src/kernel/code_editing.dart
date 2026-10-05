@@ -683,11 +683,9 @@ extension _CodeEditing on FlarkEditor {
           : leading.length.clamp(0, unit.length);
       edits.add((at, at + length, ''));
     }
-    if (edits.isEmpty) {
-      // Indenting only blank lines changes nothing, which is not a refusal.
-      _inert = !outdent;
-      return false;
-    }
+    // Indenting only blank lines changes nothing. Like every Indent or
+    // Outdent that cannot apply, that is no refusal (see [FlarkEditor.apply]).
+    if (edits.isEmpty) return false;
     final (candidate, map) = _edited(edits);
     final shifted = FlarkSelection(map(selection.base), map(selection.extent));
     if (!row.fenced) return _commit(candidate, shifted, typing: false);
