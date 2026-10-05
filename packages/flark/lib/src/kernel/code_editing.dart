@@ -149,21 +149,12 @@ extension _CodeEditing on FlarkEditor {
     final end = row.sourceForDisplay(edit.end);
     final line = _doc.model.lineOfUtf16(start);
     final lineStart = _doc.model.lineStartUtf16(line);
-    var prefix = source.substring(
-      lineStart,
-      row.contentStarts[line - row.firstLine],
+    final contentStart = row.contentStarts[line - row.firstLine];
+    var prefix = _newLinePrefix(
+      row,
+      contentStart,
+      source.substring(lineStart, contentStart),
     );
-    for (final segment in row.segments) {
-      if (!segment.exact &&
-          !segment.lineBreak &&
-          segment.sourceStart == row.contentStarts[line - row.firstLine]) {
-        // A partially consumed prefix tab contributes visible code spaces.
-        // New lines need only its hidden columns, or every pasted newline
-        // would acquire extra literal indentation. Existing prefix bytes stay.
-        prefix = _hiddenCodePrefix(prefix, segment.displayLength);
-        break;
-      }
-    }
     // An empty line in a list item or footnote needs none of its container's
     // indentation, so its source can lack the prefix that keeps text inside
     // the block. Text an edit puts on such a line, and lines it starts there,
@@ -172,14 +163,7 @@ extension _CodeEditing on FlarkEditor {
     if ((edit.start == 0 || row.text.codeUnitAt(edit.start - 1) == 10) &&
         (edit.start == row.text.length ||
             row.text.codeUnitAt(edit.start) == 10)) {
-      final block = _doc.model.blockAt(row.block);
-      final continued = continuationPrefix(
-        source,
-        _doc.model,
-        block.firstLine,
-        block.startUtf16,
-        block.index,
-      );
+      final continued = _continuing(row.block);
       // A tab's columns depend on where it lands; leave those prefixes be.
       if (!continued.contains('\t')) {
         prefix = continued;
@@ -190,8 +174,7 @@ extension _CodeEditing on FlarkEditor {
     }
     // New lines end the way the edited line does, so a CRLF block stays
     // CRLF, even in a document whose other lines end differently.
-    final newline = _lineBreakAt(start);
-    String expand(String value) => value.replaceAll('\n', '$newline$prefix');
+    final expand = _codeLines(_lineBreakAt(start), prefix);
     final inserted = '$lead${expand(edit.text)}';
     int position(int offset) {
       if (offset < edit.start) return row.sourceForDisplay(offset);
@@ -255,13 +238,7 @@ extension _CodeEditing on FlarkEditor {
     final model = _doc.model;
     final block = model.blockAt(row.block);
     // Use the same parser-owned container ranges as typed fence completion.
-    var prefix = continuationPrefix(
-      source,
-      model,
-      block.firstLine,
-      block.startUtf16,
-      block.index,
-    );
+    var prefix = _continuing(row.block);
     // The body line ends the way the opening fence's line does.
     final newline = _lineBreakAt(block.startUtf16);
     final closed = block.flags & 2 != 0;
@@ -296,17 +273,13 @@ extension _CodeEditing on FlarkEditor {
         orElse: () => -1,
       );
       if (contentStart < 0) return false;
-      prefix = scaffold.substring(at + leading.length, contentStart);
-      for (final segment in preparedRow.segments) {
-        if (!segment.exact &&
-            !segment.lineBreak &&
-            segment.sourceStart == contentStart) {
-          prefix = _hiddenCodePrefix(prefix, segment.displayLength);
-          break;
-        }
-      }
+      prefix = _newLinePrefix(
+        preparedRow,
+        contentStart,
+        scaffold.substring(at + leading.length, contentStart),
+      );
     }
-    String expand(String value) => value.replaceAll('\n', '$newline$prefix');
+    final expand = _codeLines(newline, prefix);
     final inserted = '$leading$prefix${expand(body)}${closed ? newline : ''}';
     final bodyStart = at + leading.length + prefix.length;
     return _commitCodeEdit(
@@ -321,17 +294,38 @@ extension _CodeEditing on FlarkEditor {
     );
   }
 
-  String _hiddenCodePrefix(String prefix, int virtualSpaces) {
-    final expanded = StringBuffer();
-    for (final unit in prefix.codeUnits) {
-      if (unit == 9) {
-        expanded.write(' ' * (4 - expanded.length % 4));
-      } else {
-        expanded.writeCharCode(unit);
+  /// The prefix a new code line takes from [prefix], the source of [row]'s
+  /// line before its content at [contentStart]. A partially consumed
+  /// container tab there shows some of its columns as code: new lines take
+  /// only its hidden columns, as spaces, or every pasted line break would add
+  /// literal indentation. The edited line keeps its own prefix bytes.
+  static String _newLinePrefix(
+    ProjectedRow row,
+    int contentStart,
+    String prefix,
+  ) {
+    for (final segment in row.segments) {
+      if (segment.exact ||
+          segment.lineBreak ||
+          segment.sourceStart != contentStart) {
+        continue;
       }
+      final spaces = StringBuffer();
+      for (var i = 0, column = 0; i < prefix.length; i++) {
+        final next = FlarkEditor._columns(prefix, i, i + 1, column);
+        spaces.write(prefix[i] == '\t' ? ' ' * (next - column) : prefix[i]);
+        column = next;
+      }
+      final hidden = spaces.toString();
+      return hidden.substring(0, hidden.length - segment.displayLength);
     }
-    return expanded.toString().substring(0, expanded.length - virtualSpaces);
+    return prefix;
   }
+
+  /// Writes lines of code as source: each line break becomes [newline] and
+  /// [prefix], the containers' prefix a new line of the block takes.
+  static String Function(String) _codeLines(String newline, String prefix) =>
+      (text) => text.replaceAll('\n', '$newline$prefix');
 
   bool _commitCodeEdit(
     ProjectedRow row,
@@ -499,13 +493,7 @@ extension _CodeEditing on FlarkEditor {
     // The fence's containers continue on the lines the exit writes. A blank
     // line needs none of their indentation, so its own prefix can be
     // shorter: the fence's opening line gives it.
-    final prefix = continuationPrefix(
-      source,
-      model,
-      model.lineOfUtf16(block.startUtf16),
-      block.startUtf16,
-      row.block,
-    );
+    final prefix = _continuing(row.block);
     final newline = source.substring(row.contentEnds[i - 1], lineStart);
     final edits = <(int, int, String)>[];
     late int destination;
