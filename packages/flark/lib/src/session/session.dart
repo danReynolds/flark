@@ -251,10 +251,6 @@ final class FlarkSession {
   FlarkEditResult command(FlarkCommand command, {int? expectedRevision}) {
     final rejected = _guard(expectedRevision);
     if (rejected != null) return rejected;
-    if (command is Undo && !_state.canUndo ||
-        command is Redo && !_state.canRedo) {
-      return const FlarkEditResult.unchanged();
-    }
     final handler = commandHandler;
     return _result(
       handler == null

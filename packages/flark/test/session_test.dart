@@ -36,6 +36,27 @@ void main() {
   });
 
   test(
+    'Undo during a first composition undoes it, as the editor does',
+    () async {
+      // Undo commits an open composition and takes it back, also when no
+      // step came before it: then the composition is the step to undo.
+      final session = FlarkSession(markdown: 'abc');
+      await session.ready;
+      addTearDown(session.dispose);
+      final editor = session.engine!;
+      editor.apply(const SetSelection(3, 3));
+      editor.beginComposition();
+      editor.apply(const InsertText('k'));
+      expect(session.state.canUndo, isFalse);
+      expect(session.command(const Undo()).changed, isTrue);
+      expect((session.state.markdown, editor.composing), ('abc', false));
+      expect(session.command(const Redo()).changed, isTrue);
+      expect(session.state.markdown, 'abck');
+      expect(session.command(const Redo()).outcome, FlarkEditOutcome.unchanged);
+    },
+  );
+
+  test(
     'latest loading seed, save stream, reset and undoable replacement',
     () async {
       final gate = Completer<FlarkBackendLease>();
