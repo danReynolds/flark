@@ -1305,13 +1305,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       case 'paste:':
         unawaited(_paste());
       case 'undo:':
-        widget.actions == null
-            ? _command(const Undo())
-            : widget.actions!.undo();
+        _command(const Undo());
       case 'redo:':
-        widget.actions == null
-            ? _command(const Redo())
-            : widget.actions!.redo();
+        _command(const Redo());
     }
   }
 
@@ -1377,12 +1373,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
             onPressed: widget.readOnly || !state.canToggle
                 ? null
                 : () {
-                    final actions = widget.actions;
-                    if (actions != null) {
-                      actions.setStyle(publicStyle, enabled: !state.isOn);
-                    } else {
-                      _command(SetStyle(style, enabled: !state.isOn));
-                    }
+                    _command(SetStyle(style, enabled: !state.isOn));
                     _focus.requestFocus();
                   },
             icon: state.isMixed
@@ -1468,9 +1459,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                     initialValue: codeLanguage,
                     onSelected: (language) {
                       if (menuActive() && language != codeLanguage) {
-                        (widget.actions == null
-                            ? _command(SetCodeLanguage(language))
-                            : widget.actions!.setCodeLanguage(language));
+                        _command(SetCodeLanguage(language));
                       }
                       _focus.requestFocus();
                     },
@@ -1518,13 +1507,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                       widget.actions?.state.heading.canSet ?? headingFormatting,
                   initialValue: codeRow?.headingLevel ?? 0,
                   onSelected: (level) {
-                    if (menuActive()) {
-                      if (widget.actions != null) {
-                        widget.actions!.setHeading(level);
-                      } else {
-                        _command(SetHeadingLevel(level));
-                      }
-                    }
+                    if (menuActive()) _command(SetHeadingLevel(level));
                     _focus.requestFocus();
                   },
                   itemBuilder: (_) => [
@@ -1567,27 +1550,21 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                   onPressed:
                       !(widget.actions?.state.link.canSet ?? e.canSetResource())
                       ? null
-                      : () =>
-                            widget.actions?.showLinkEditor() ??
-                            _editResource(false),
+                      : () => _editResource(false),
                 ),
                 IconButton(
                   tooltip: 'Image',
                   icon: const Icon(Icons.image_outlined, size: 20),
                   onPressed: !e.canSetResource(image: true)
                       ? null
-                      : () =>
-                            widget.actions?.showImageEditor() ??
-                            _editResource(true),
+                      : () => _editResource(true),
                 ),
                 IconButton(
                   tooltip: 'Undo',
                   onPressed:
                       (widget.actions?.state.canUndo ?? e.history.canUndo)
                       ? () {
-                          widget.actions == null
-                              ? _command(const Undo())
-                              : widget.actions!.undo();
+                          _command(const Undo());
                           _focus.requestFocus();
                         }
                       : null,
@@ -1598,9 +1575,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                   onPressed:
                       (widget.actions?.state.canRedo ?? e.history.canRedo)
                       ? () {
-                          widget.actions == null
-                              ? _command(const Redo())
-                              : widget.actions!.redo();
+                          _command(const Redo());
                           _focus.requestFocus();
                         }
                       : null,
