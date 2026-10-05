@@ -120,36 +120,10 @@ FlarkCommand randomCommand(Random r, FlarkEditor e) {
   return ReplaceRange(a, min(len, a + r.nextInt(6)), 'r');
 }
 
-String describeCommand(FlarkCommand command) => switch (command) {
-  InsertText(:final text) => 'InsertText(${jsonEncode(text)})',
-  Paste(:final text) => 'Paste(${jsonEncode(text)})',
-  DeleteBackward() => 'DeleteBackward()',
-  DeleteForward() => 'DeleteForward()',
-  Newline(:final paragraph) => 'Newline(paragraph: $paragraph)',
-  ReplaceRange(:final start, :final end, :final text) =>
-    'ReplaceRange($start, $end, ${jsonEncode(text)})',
-  SetSelection(:final base, :final extent) => 'SetSelection($base, $extent)',
-  SelectAll() => 'SelectAll()',
-  MoveTableCell(:final backward) => 'MoveTableCell(backward: $backward)',
-  PlaceCaret(:final row, :final offset, :final leadingHalf, :final extend) =>
-    'PlaceCaret($row, $offset, leadingHalf: $leadingHalf, extend: $extend)',
-  MoveCaret(:final direction, :final unit, :final extend) =>
-    'MoveCaret(${direction.name}, unit: ${unit.name}, extend: $extend)',
-  Undo() => 'Undo()',
-  Redo() => 'Redo()',
-  ToggleTask() => 'ToggleTask()',
-  ToggleStyle(:final style) => 'ToggleStyle($style)',
-  SetStyle(:final style, :final enabled) =>
-    'SetStyle($style, enabled: $enabled)',
-  SetHeadingLevel(:final level) => 'SetHeadingLevel($level)',
-  SetCodeLanguage(:final language) => 'SetCodeLanguage($language)',
-  Indent() => 'Indent()',
-  Outdent() => 'Outdent()',
-  SetLink(:final destination) => 'SetLink(${jsonEncode(destination)})',
-  SetImage(:final destination) => 'SetImage(${jsonEncode(destination)})',
-  RemoveLink() => 'RemoveLink()',
-  RemoveImage() => 'RemoveImage()',
-};
+/// [command] as the Dart that constructs it, as the recorder writes it: the
+/// command log and the web differential's records name commands this way.
+String describeCommand(FlarkCommand command) =>
+    FlarkEditRecorder.describeCommand(command);
 
 /// The documents sequences start from: the upstream CommonMark and GFM cases
 /// when the repository's fixtures are present, and two of the matrix's own.
