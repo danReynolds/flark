@@ -367,19 +367,15 @@ extension _CodeEditing on FlarkEditor {
     // A run as long as the fence closes the block only alone on its line, so
     // a body can already hold one, indented or beside other text. Where the
     // parser still reads the block as it was, its fences stay as they are:
-    // an edit elsewhere in that body must not respell them.
-    if (length > block.attr &&
-        _commit(
-          candidate,
-          selected,
-          coalesce: typing,
-          accept: (next) => keeps(next, selected.extent),
-        )) {
-      return true;
-    }
-    if (_lastRejection != null) return false;
+    // an edit elsewhere in that body must not respell them. That spelling
+    // is tried first, but longer fences are the edit as asked: they keep
+    // any body literal code, and so may leave the live tier unchecked.
+    final kept = length > block.attr
+        ? Spelling(Edits.between(source, candidate), selected)
+        : null;
     final openingGrowth = length - block.attr;
     final fenceCharacter = String.fromCharCode(marker);
+    String? grown = candidate;
     if (block.flags & 2 != 0) {
       // The model identifies the closing line. Preserve its container prefix,
       // existing longer marker run, and trailing horizontal whitespace exactly.
@@ -396,10 +392,11 @@ extension _CodeEditing on FlarkEditor {
       while (start > lineStart && source.codeUnitAt(start - 1) == marker) {
         start--;
       }
-      if (end - start < block.attr) return false;
-      if (length > end - start) {
+      if (end - start < block.attr) {
+        grown = null;
+      } else if (length > end - start) {
         final at = end + candidate.length - source.length;
-        candidate = candidate.replaceRange(
+        grown = candidate.replaceRange(
           at,
           at,
           fenceCharacter * (length - (end - start)),
@@ -407,22 +404,30 @@ extension _CodeEditing on FlarkEditor {
       }
     }
     final openingEnd = block.startUtf16 + block.attr;
-    candidate = candidate.replaceRange(
-      openingEnd,
-      openingEnd,
-      fenceCharacter * openingGrowth,
-    );
-    final nextSelection = FlarkSelection(
-      selected.base + openingGrowth,
-      selected.extent + openingGrowth,
-    );
-    return _commit(
-      candidate,
-      nextSelection,
-      coalesce: typing,
-      acceptSourceMode: true,
-      accept: (next) => keeps(next, nextSelection.extent),
-    );
+    return _commitSpellings(
+          [
+            ?kept,
+            if (grown != null)
+              Spelling(
+                Edits.between(
+                  source,
+                  grown.replaceRange(
+                    openingEnd,
+                    openingEnd,
+                    fenceCharacter * openingGrowth,
+                  ),
+                ),
+                FlarkSelection(
+                  selected.base + openingGrowth,
+                  selected.extent + openingGrowth,
+                ),
+                asAsked: true,
+              ),
+          ],
+          (next, spelling, _) => keeps(next, spelling.selection.extent),
+          coalesce: typing,
+        )
+        is _Committed;
   }
 
   String _codeInfo(ProjectedRow row) => row.codeInfoStart < 0
