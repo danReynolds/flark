@@ -47,7 +47,7 @@ extension _Composition on FlarkEditor {
     if (!_commit(
       source.replaceRange(from, to, text),
       FlarkSelection.collapsed(from + text.length),
-      typing: false,
+      coalesce: false,
       pending: _pending,
       acceptSourceMode: true,
     )) {

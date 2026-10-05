@@ -100,7 +100,7 @@ extension _CodeEditing on FlarkEditor {
           row.sourceForDisplay(edit.base),
           row.sourceForDisplay(edit.extent),
         ),
-        typing: false,
+        coalesce: false,
       );
     }
     if (row.bodyless) {
@@ -353,7 +353,7 @@ extension _CodeEditing on FlarkEditor {
     if (length == block.attr &&
         row.contentStarts.any((start) => start >= 0) &&
         !row.segments.any((s) => !s.exact && !s.lineBreak)) {
-      return _commit(candidate, selected, typing: typing);
+      return _commit(candidate, selected, coalesce: typing);
     }
     // The block keeps its start, fences, containers and the literal body.
     bool keeps(FlarkDocument next, int caret) {
@@ -386,7 +386,7 @@ extension _CodeEditing on FlarkEditor {
         _commit(
           candidate,
           selected,
-          typing: typing,
+          coalesce: typing,
           accept: (next) => keeps(next, selected.extent),
         )) {
       return true;
@@ -433,7 +433,7 @@ extension _CodeEditing on FlarkEditor {
     return _commit(
       candidate,
       nextSelection,
-      typing: typing,
+      coalesce: typing,
       acceptSourceMode: true,
       accept: (next) => keeps(next, nextSelection.extent),
     );
@@ -470,7 +470,7 @@ extension _CodeEditing on FlarkEditor {
     return _commit(
       candidate,
       FlarkSelection(map(selection.base), map(selection.extent)),
-      typing: false,
+      coalesce: false,
     );
   }
 
@@ -556,7 +556,7 @@ extension _CodeEditing on FlarkEditor {
     return _commit(
       candidate,
       FlarkSelection.collapsed(caret),
-      typing: false,
+      coalesce: false,
       acceptSourceMode: true,
       accept: (next) =>
           next.selection.extent == caret &&
@@ -611,7 +611,7 @@ extension _CodeEditing on FlarkEditor {
     return _commit(
       source.replaceRange(start, to, inserted),
       FlarkSelection.collapsed(start + first.length),
-      typing: false,
+      coalesce: false,
       acceptSourceMode: true,
       accept: (next) =>
           [start, start + first.length].every((offset) {
@@ -654,7 +654,7 @@ extension _CodeEditing on FlarkEditor {
       return _commit(
         source.replaceRange(at, at, unit),
         FlarkSelection.collapsed(at + unit.length),
-        typing: false,
+        coalesce: false,
       );
     }
     if (!selection.isCollapsed &&
@@ -687,7 +687,7 @@ extension _CodeEditing on FlarkEditor {
     if (edits.isEmpty) return false;
     final (candidate, map) = _edited(edits);
     final shifted = FlarkSelection(map(selection.base), map(selection.extent));
-    if (!row.fenced) return _commit(candidate, shifted, typing: false);
+    if (!row.fenced) return _commit(candidate, shifted, coalesce: false);
     // Outdented to three spaces, a body line of fence characters would close
     // the block, so the shifted body is committed as literal code.
     var body = row.text;

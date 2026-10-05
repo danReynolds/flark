@@ -57,7 +57,7 @@ extension _ResourceEditing on FlarkEditor {
     return _commit(
       candidate,
       FlarkSelection.collapsed(contentEnd),
-      typing: false,
+      coalesce: false,
       accept: (doc) =>
           doc.resources.any(
             (r) =>
@@ -185,7 +185,7 @@ extension _ResourceEditing on FlarkEditor {
         if (_commit(
           normalized.text,
           FlarkSelection.collapsed(normalized.caret),
-          typing: false,
+          coalesce: false,
           pending: normalized.pending,
           acceptSourceMode: true,
           accept: (next) =>
@@ -231,7 +231,7 @@ extension _ResourceEditing on FlarkEditor {
       if (_commit(
         source.replaceRange(resource.start, resource.end, text),
         FlarkSelection.collapsed(caret),
-        typing: false,
+        coalesce: false,
         acceptSourceMode: true,
         accept: (next) =>
             keeps(next, caret, (resource.start, resource.end, text.length)),

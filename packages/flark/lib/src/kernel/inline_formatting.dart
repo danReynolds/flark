@@ -162,7 +162,7 @@ extension _InlineFormatting on FlarkEditor {
     return _commit(
       source.replaceRange(start, end, content),
       nextSelection,
-      typing: false,
+      coalesce: false,
       accept: (next) =>
           _selectedStyleValue(next, style) ==
               (enabled ? FlarkStyleValue.on : FlarkStyleValue.off) &&

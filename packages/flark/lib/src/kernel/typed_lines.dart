@@ -379,7 +379,7 @@ extension _TypedLines on FlarkEditor {
       if (_commit(
         s.source,
         FlarkSelection.collapsed(s.caret),
-        typing: typing,
+        coalesce: typing,
         pending: plain.pending,
         completeTypedFence: fence,
         accept: (next) => keeps(next, s.edits, s.caret),
@@ -409,7 +409,7 @@ extension _TypedLines on FlarkEditor {
       return _commit(
         plain.text,
         FlarkSelection.collapsed(plain.caret),
-        typing: typing,
+        coalesce: typing,
         pending: plain.pending,
       );
     }
@@ -418,7 +418,7 @@ extension _TypedLines on FlarkEditor {
         _commit(
           over.source,
           FlarkSelection.collapsed(over.caret),
-          typing: typing,
+          coalesce: typing,
           pending: plain.pending,
           completeTypedFence: fence,
           acceptSourceMode: true,
@@ -464,7 +464,7 @@ extension _TypedLines on FlarkEditor {
         spelled,
         FlarkSelection.collapsed(moved),
         pending: plain.pending,
-        typing: true,
+        coalesce: true,
         accept: (next) =>
             next.selection.extent == moved &&
             _keepsTyped(next, row, edits, moved, at),
@@ -515,7 +515,7 @@ extension _TypedLines on FlarkEditor {
   }) => _commit(
     source.replaceRange(start, end, ''),
     FlarkSelection.collapsed(start),
-    typing: typing,
+    coalesce: typing,
     acceptSourceMode: true,
     accept: (next) => _keepsTyped(next, row, [(start, end, 0)], start, start),
   );

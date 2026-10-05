@@ -728,13 +728,14 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// Parse, admit and project before publishing source or history.
-  /// [acceptCompleted] checks the source that completes a typed fence in
-  /// [newSource] by inserting `length` characters at `at` of it; without
-  /// it the completion commits unchecked.
+  /// [coalesce] lets history join the commit to the typing before it, as it
+  /// joins one keystroke ([_keystroke]). [acceptCompleted] checks the source
+  /// that completes a typed fence in [newSource] by inserting `length`
+  /// characters at `at` of it; without it the completion commits unchecked.
   bool _commit(
     String newSource,
     FlarkSelection sel, {
-    required bool typing,
+    required bool coalesce,
     bool completeTypedFence = false,
     PendingStyle? pending,
     bool Function(FlarkDocument)? accept,
@@ -763,7 +764,7 @@ final class FlarkEditor implements FlarkDocumentState {
           return _commit(
             completed.source,
             FlarkSelection.collapsed(completed.caret),
-            typing: false,
+            coalesce: false,
             acceptSourceMode: acceptSourceMode,
             accept: acceptCompleted == null
                 ? null
@@ -795,7 +796,7 @@ final class FlarkEditor implements FlarkDocumentState {
         _cellOrigin?.source ?? source,
         _cellOrigin?.selection ?? selection,
         pending: _pending,
-        typing: typing,
+        typing: coalesce,
         at: _now,
       );
     }
@@ -887,7 +888,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(sel.start, sel.end, text),
       FlarkSelection.collapsed(sel.start + text.length),
-      typing: typing && _keystroke(text),
+      coalesce: typing && _keystroke(text),
     );
   }
 
@@ -899,7 +900,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(from, to, text),
       FlarkSelection.collapsed(from + text.length),
-      typing: false,
+      coalesce: false,
     );
   }
 
@@ -922,7 +923,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(from, to, ''),
       FlarkSelection.collapsed(from),
-      typing: sel.isCollapsed && !word,
+      coalesce: sel.isCollapsed && !word,
     );
   }
 
@@ -993,7 +994,7 @@ final class FlarkEditor implements FlarkDocumentState {
       start == 0 && end == source.length && start != end;
 
   bool _replaceWhole(String text) =>
-      _commit(text, FlarkSelection.collapsed(text.length), typing: false);
+      _commit(text, FlarkSelection.collapsed(text.length), coalesce: false);
 
   /// A visible selection contained in an inline owner edits its content even
   /// when navigation chose the outer anchor at one of its hidden boundaries.
@@ -1321,7 +1322,7 @@ final class FlarkEditor implements FlarkDocumentState {
         normalized.text,
         FlarkSelection.collapsed(normalized.caret),
         pending: normalized.pending,
-        typing: one,
+        coalesce: one,
         accept: accept,
         acceptSourceMode: cells == null,
         completeTypedFence: fence,
@@ -1334,7 +1335,7 @@ final class FlarkEditor implements FlarkDocumentState {
                   normalized.text,
                   FlarkSelection.collapsed(normalized.caret),
                   pending: normalized.pending,
-                  typing: one,
+                  coalesce: one,
                   acceptSourceMode: true,
                   accept: (next) => accept(next, hiding: false),
                 );
@@ -1448,7 +1449,7 @@ final class FlarkEditor implements FlarkDocumentState {
       ),
       // Trailing spaces leave the span again and keep its intent.
       pending: trailing.isEmpty ? null : p,
-      typing: typing && _keystroke(text),
+      coalesce: typing && _keystroke(text),
       accept: (document) => document
           .ownersTouching(owner.start)
           .any((o) => o.start == owner.start && o.end == end),
@@ -1495,7 +1496,7 @@ final class FlarkEditor implements FlarkDocumentState {
         '${source.substring(at, gap)}',
       ),
       FlarkSelection.collapsed(start + p.open.length + text.length - first),
-      typing: typing && _keystroke(text),
+      coalesce: typing && _keystroke(text),
       accept: (document) => document
           .ownersTouching(start)
           .any(
@@ -1847,7 +1848,7 @@ final class FlarkEditor implements FlarkDocumentState {
     ]) => _commit(
       text,
       FlarkSelection.collapsed(caret),
-      typing: typing,
+      coalesce: typing,
       pending: plain.pending,
       acceptSourceMode: !respelled,
       accept: ok,
@@ -2095,7 +2096,7 @@ final class FlarkEditor implements FlarkDocumentState {
         return _commit(
           source.replaceRange(start, end, ''),
           FlarkSelection.collapsed(start),
-          typing: false,
+          coalesce: false,
           acceptSourceMode: true,
           // The blocks around it must stay as they were. A fence at a column
           // outside a list or quote ends that container, and once it is gone
@@ -2185,7 +2186,7 @@ final class FlarkEditor implements FlarkDocumentState {
       if (_commit(
         source.replaceRange(start, end, ''),
         FlarkSelection.collapsed(start),
-        typing: false,
+        coalesce: false,
         acceptSourceMode: true,
         accept: (next) => _keepsStructure(
           next,
@@ -2331,7 +2332,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(start, end, ''),
       FlarkSelection.collapsed(caret),
-      typing: false,
+      coalesce: false,
       acceptSourceMode: true,
       accept: (next) {
         final now = next.rowAt(caret);
@@ -2410,7 +2411,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(first, trail.$2, replaced),
       FlarkSelection.collapsed(origin + text.length),
-      typing: typing,
+      coalesce: typing,
       pending: pending,
       acceptSourceMode: true,
       accept: (next) {
@@ -2478,7 +2479,7 @@ final class FlarkEditor implements FlarkDocumentState {
       '${source.substring(0, a)}${source.substring(b, textEnd)}$gap$markup'
       '${source.substring(lineEnd)}',
       FlarkSelection.collapsed(a),
-      typing: false,
+      coalesce: false,
       acceptSourceMode: true,
       accept: (next) =>
           next.rowAt(a).kind == left.kind &&
@@ -2512,7 +2513,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(from, to, ''),
       FlarkSelection.collapsed(caret),
-      typing: false,
+      coalesce: false,
       acceptSourceMode: true,
       accept: (next) =>
           (kind == null || next.rowAt(caret).kind == kind) &&
@@ -2795,7 +2796,7 @@ final class FlarkEditor implements FlarkDocumentState {
       if (_commit(
         source.replaceRange(prefixStart, contentStart, replacement),
         FlarkSelection.collapsed(caret),
-        typing: false,
+        coalesce: false,
         acceptSourceMode: true,
         // The line leaves containers and enters none: an empty item's own
         // nested items, left without it, would take in the line after it.
@@ -2926,7 +2927,7 @@ final class FlarkEditor implements FlarkDocumentState {
           _commit(
             source.replaceRange(end, end, nl),
             FlarkSelection.collapsed(end + nl.length),
-            typing: false,
+            coalesce: false,
             acceptSourceMode: true,
             accept: (next) => _keepsStructure(
               next,
@@ -2953,7 +2954,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(end, end, '$nl$nl'),
       FlarkSelection.collapsed(end + 2 * nl.length),
-      typing: false,
+      coalesce: false,
     );
   }
 
@@ -3212,7 +3213,7 @@ final class FlarkEditor implements FlarkDocumentState {
       return _commit(
         '$out',
         FlarkSelection.collapsed(caret),
-        typing: false,
+        coalesce: false,
         acceptSourceMode: plain,
         accept: (next) {
           final now = next.rowAt(caret);
@@ -3523,7 +3524,7 @@ final class FlarkEditor implements FlarkDocumentState {
       if (_commit(
         s,
         FlarkSelection(map(selection.base), map(selection.extent)),
-        typing: false,
+        coalesce: false,
         pending: pending,
         acceptSourceMode: identical(edits, candidates.first),
         accept: (next) => accept(next, map),
@@ -3579,7 +3580,7 @@ final class FlarkEditor implements FlarkDocumentState {
           sh.checked ? ' ' : 'x',
         ),
         selection,
-        typing: false,
+        coalesce: false,
       );
     }
     // No task item holds the caret: there is no checkbox to toggle, which
@@ -3759,7 +3760,7 @@ final class FlarkEditor implements FlarkDocumentState {
     if (_commit(
       candidate,
       selected,
-      typing: false,
+      coalesce: false,
       acceptSourceMode: true,
       accept: (next) => keeps(next, edits),
     )) {
@@ -3790,7 +3791,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       candidate.replaceRange(at, at, blank),
       FlarkSelection(after(selected.base), after(selected.extent)),
-      typing: false,
+      coalesce: false,
       accept: (next) => keeps(next, [...edits, (rowEnd, rowEnd, blank.length)]),
     );
   }
@@ -3816,7 +3817,7 @@ final class FlarkEditor implements FlarkDocumentState {
       return _commit(
         s,
         FlarkSelection.collapsed(caret - (o.contentStart - o.start)),
-        typing: false,
+        coalesce: false,
         accept: (next) =>
             _sameFormattingContent(before, _formattingContent(next, style)),
       );
