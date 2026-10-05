@@ -355,10 +355,7 @@ class RenderFlarkSurface extends RenderBox
   /// was before, so that the node does not change until the composition ends.
   FlarkEditorSnapshot? _described;
 
-  bool get _composingOnWeb {
-    final c = controller;
-    return kIsWeb && c is FlarkController && c.editor.composing;
-  }
+  bool get _composingOnWeb => kIsWeb && controller.composing;
 
   void _clearRows() {
     _layoutContent = null;

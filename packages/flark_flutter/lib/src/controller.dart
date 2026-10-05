@@ -56,6 +56,10 @@ enum _Composing {
 abstract interface class FlarkSurfaceController implements Listenable {
   FlarkDocumentState get editor;
   String get text;
+
+  /// Whether an input method is composing in the document. A reader never
+  /// composes.
+  bool get composing;
   bool command(FlarkCommand command, {int? expectedRevision});
   void sourceMode(bool enabled);
 }
@@ -82,6 +86,8 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   bool _batching = false;
   @override
   String get text => editor.source;
+  @override
+  bool get composing => editor.composing;
 
   /// Current selection/typing style. Re-read when this controller notifies.
   FlarkStyleState styleState(int style) => editor.styleState(style);

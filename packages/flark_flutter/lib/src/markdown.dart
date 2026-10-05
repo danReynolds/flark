@@ -43,6 +43,8 @@ class _ReadSurfaceController extends ChangeNotifier
   @override
   String get text => editor.source;
   @override
+  bool get composing => false;
+  @override
   void sourceMode(bool enabled) {}
   @override
   bool command(FlarkCommand command, {int? expectedRevision}) {
