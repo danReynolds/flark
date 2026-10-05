@@ -2193,20 +2193,13 @@ final class FlarkEditor implements FlarkDocumentState {
       // An empty fence after it goes whole instead of joining its closer,
       // and the caret stays at the end of the code, not past its closer.
       if (right.fenced) {
-        final from = _lastCaretEnd(left);
+        final from = _lastCaretEnd(left), code = _lastContentEnd(left);
         final end = projection.lineContentEnd(
           right.firstLine + right.lineCount - 1,
         );
         return from >= 0 &&
             end > from &&
-            _joinContent(
-              from,
-              end,
-              null,
-              rows,
-              at: _lastContentEnd(left),
-              movesText: false,
-            );
+            _joinContent(from, end, null, rows, at: code, movesText: false);
       }
     }
     // A row that displays nothing gives way to the one joined onto it.
