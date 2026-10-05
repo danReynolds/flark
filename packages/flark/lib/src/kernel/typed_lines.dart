@@ -10,15 +10,15 @@ part of 'editor.dart';
 extension _TypedLines on FlarkEditor {
   /// Commits [plain], text typed or pasted at [at] on [row] (the caret's
   /// row) as `[inserted]` over [removed] characters with the caret
-  /// [plain]'s, or another spelling of it; null when [row] is ordinary text,
-  /// where [plain] is committed as it is. Only a lazy line, leading
+  /// [plain]'s, or another spelling of it, and says what became of it; null
+  /// when [row] is ordinary text, where [plain] is committed as it is. Only a lazy line, leading
   /// whitespace and a table's delimiter row shown as its source take a
   /// selection, and only that row lines of text. [wraps] checks that a
   /// pending style's delimiters around the text pair. [fence], a typed
   /// fence run, is completed in whichever spelling commits, the completed
   /// text checked as the spelling is; [underline], a typed setext underline
   /// run, is typed as it is at a limit where no blank line before it fits.
-  bool? _typeOnLine(
+  _Outcome? _typeOnLine(
     ProjectedRow row,
     int at,
     String inserted,
@@ -351,39 +351,38 @@ extension _TypedLines on FlarkEditor {
     // a limit, is typed as it is instead, as the profile has it.
     _lastRejection = null;
     return _commitSpellings(
-          spellings,
-          (next, spelling, edits) {
-            // A typed fence completed in the spelling moves its caret.
-            final caret = identical(edits, spelling.edits)
-                ? spelling.selection.extent
-                : next.selection.extent;
-            final textAt = typedAt[spelling]!;
-            return (wraps == null || wraps(next, textAt)) &&
-                (ordinary &&
-                        identical(spelling, spellings.first) &&
-                        _sameRow(next, row, caret) ||
-                    _keepsTyped(
-                      next,
-                      row,
-                      edits,
-                      caret,
-                      textAt,
-                      sameKind:
-                          sameKind ||
-                          plainKind && identical(spelling, plainSpelling),
-                      strict: strict,
-                      apart: apart,
-                    ));
-          },
-          coalesce: typing,
-          tier: _Tier.firstPast,
-          refusals: _Refusals.passAll,
-          completeTypedFence: fence,
-          atLimit: underline != null && spellings.contains(plainSpelling)
-              ? plainSpelling
-              : null,
-        )
-        is _Committed;
+      spellings,
+      (next, spelling, edits) {
+        // A typed fence completed in the spelling moves its caret.
+        final caret = identical(edits, spelling.edits)
+            ? spelling.selection.extent
+            : next.selection.extent;
+        final textAt = typedAt[spelling]!;
+        return (wraps == null || wraps(next, textAt)) &&
+            (ordinary &&
+                    identical(spelling, spellings.first) &&
+                    _sameRow(next, row, caret) ||
+                _keepsTyped(
+                  next,
+                  row,
+                  edits,
+                  caret,
+                  textAt,
+                  sameKind:
+                      sameKind ||
+                      plainKind && identical(spelling, plainSpelling),
+                  strict: strict,
+                  apart: apart,
+                ));
+      },
+      coalesce: typing,
+      tier: _Tier.firstPast,
+      refusals: _Refusals.passAll,
+      completeTypedFence: fence,
+      atLimit: underline != null && spellings.contains(plainSpelling)
+          ? plainSpelling
+          : null,
+    );
   }
 
   /// [plain], typed at [at] in [row], completed block markup that hides the
@@ -394,10 +393,10 @@ extension _TypedLines on FlarkEditor {
   /// underline gets a line of its own. A fence marker that makes a line
   /// with text after it an opening fence would hide that text in its info
   /// string and turn what follows into code: the marker is escaped instead,
-  /// as a pipe typed in a cell is. Null when neither keeps the caret on its
-  /// line in [row]'s containers. [plain] was typed over [removed]
+  /// as a pipe typed in a cell is. Not kept when neither keeps the caret on
+  /// its line in [row]'s containers. [plain] was typed over [removed]
   /// characters.
-  bool? _unhideLine(
+  _Outcome _unhideLine(
     ProjectedRow row,
     int at,
     int removed,
@@ -416,7 +415,7 @@ extension _TypedLines on FlarkEditor {
     );
     // Past the live tier the parser cannot check a respelling: it is passed
     // over, and the text is typed as it is.
-    final outcome = _commitSpellings(
+    return _commitSpellings(
       [
         if (end > 0) spelled(asTyped.withInsertion(end, nl), caret),
         if (typed == '~' || typed == '`')
@@ -429,11 +428,6 @@ extension _TypedLines on FlarkEditor {
       },
       coalesce: true,
     );
-    return switch (outcome) {
-      _Committed() => true,
-      _Refused() => false,
-      _NotKept() || _Unchanged() => null,
-    };
   }
 
   /// A deletion in a table's delimiter row shown as its source edits that

@@ -1345,7 +1345,7 @@ final class FlarkEditor implements FlarkDocumentState {
       return typedRow.text.substring(start, end).trim() == shown;
     }
 
-    var placed = gap.isEmpty && cells == null
+    var outcome = gap.isEmpty && cells == null
         ? _typeOnLine(
             row,
             at,
@@ -1359,10 +1359,13 @@ final class FlarkEditor implements FlarkDocumentState {
             wraps: wrapAt < 0 ? null : wraps,
           )
         : null;
-    if (placed == null) {
+    if (outcome == null) {
       // Text completing block markup can hide the caret's own line, which
       // sends the caret to another: a table's delimiter row, or a fence's
-      // opening line (see [_unhideLine]).
+      // opening line. Text kept but for the line it hides tries the
+      // respellings that keep the line (see [_unhideLine]), and failing them
+      // goes in as typed. [hides] says why the text was not kept, which the
+      // outcome does not.
       var hides = false;
       bool accept(FlarkDocument next, {bool hiding = true}) {
         if (cells != null &&
@@ -1394,7 +1397,7 @@ final class FlarkEditor implements FlarkDocumentState {
         return !hides;
       }
 
-      placed = _commit(
+      outcome = _attempt(
         normalized.text,
         FlarkSelection.collapsed(normalized.caret),
         pending: normalized.pending,
@@ -1403,22 +1406,23 @@ final class FlarkEditor implements FlarkDocumentState {
         acceptSourceMode: cells == null,
         completeTypedFence: fence,
       );
-      if (!placed && hides && _lastRejection == null) {
-        placed =
-            _unhideLine(row, at, end - start, normalized, typed) ??
-            _lastRejection == null &&
-                _commit(
-                  normalized.text,
-                  FlarkSelection.collapsed(normalized.caret),
-                  pending: normalized.pending,
-                  coalesce: one,
-                  acceptSourceMode: true,
-                  accept: (next) => accept(next, hiding: false),
-                );
+      if (outcome is _NotKept && hides) {
+        outcome = _unhideLine(row, at, end - start, normalized, typed);
+        if (outcome is _NotKept || outcome is _Unchanged) {
+          outcome = _attempt(
+            normalized.text,
+            FlarkSelection.collapsed(normalized.caret),
+            pending: normalized.pending,
+            coalesce: one,
+            acceptSourceMode: true,
+            accept: (next) => accept(next, hiding: false),
+          );
+        }
       }
     }
-    // History keeps the intent the text was typed with.
-    if (!placed && wrapAt >= 0 && _lastRejection == null) {
+    // Text the pending style's delimiters cannot wrap goes in without them,
+    // unless it was refused. History keeps the intent it was typed with.
+    if (wrapAt >= 0 && (outcome is _NotKept || outcome is _Unchanged)) {
       return _insertText(
         row,
         range,
@@ -1429,7 +1433,7 @@ final class FlarkEditor implements FlarkDocumentState {
         styled: false,
       );
     }
-    return placed;
+    return outcome is _Committed;
   }
 
   /// Where [text] placed at [at] in [row] goes, and the space to insert after
