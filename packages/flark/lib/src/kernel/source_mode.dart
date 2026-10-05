@@ -64,27 +64,6 @@ final class FlarkSourceSnapshot extends FlarkEditorSnapshot {
   }
 }
 
-/// True when [source] fits [limit] UTF-8 bytes. Stops as soon as the limit is
-/// crossed and never allocates a full encoded copy of an oversized source.
-bool _withinLiveByteLimit(String source, int limit) {
-  var bytes = 0;
-  for (var i = 0; i < source.length; i++) {
-    final unit = source.codeUnitAt(i);
-    if (unit <= 0x7F) {
-      bytes++;
-    } else if (unit <= 0x7FF) {
-      bytes += 2;
-    } else if (unit >= 0xD800 && unit <= 0xDBFF) {
-      bytes += 4;
-      i++;
-    } else {
-      bytes += 3;
-    }
-    if (bytes > limit) return false;
-  }
-  return true;
-}
-
 int _legalSourceOffset(String source, int offset) {
   final target = offset.clamp(0, source.length);
   if (target == 0 || target == source.length) return target;

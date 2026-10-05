@@ -38,18 +38,10 @@ final class FlarkLiveLimits {
   bool _admitsStats(_SourceStats stats) =>
       stats.lines <= lines && stats.widestLine <= lineCodeUnits;
 
-  bool _admitsSource(String source) {
-    var lineCount = 1, width = 0;
-    for (var i = 0; i < source.length; i++) {
-      if (source.codeUnitAt(i) == 10) {
-        if (++lineCount > lines) return false;
-        width = 0;
-      } else if (++width > lineCodeUnits) {
-        return false;
-      }
-    }
-    return lineCount <= lines;
-  }
+  /// Whether a source of [stats] is rendered live: within [syncLimit] UTF-8
+  /// bytes and this shape.
+  bool _admitsLive(_SourceStats stats, int syncLimit) =>
+      stats.utf8Bytes <= syncLimit && _admitsStats(stats);
 }
 
 /// Throw an [ArgumentError] for the limits [FlarkEditor]'s constructor
@@ -132,6 +124,10 @@ final class _SourceStats {
   final bool valid;
   final int utf8Bytes, lines, widestLine;
 }
+
+/// Whether [source] fits [limit] UTF-8 bytes.
+bool _withinLiveByteLimit(String source, int limit) =>
+    _SourceStats.of(source).utf8Bytes <= limit;
 
 enum FlarkRejection {
   staleRevision,

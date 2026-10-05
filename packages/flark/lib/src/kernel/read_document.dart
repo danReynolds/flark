@@ -29,9 +29,7 @@ FlarkEditorSnapshot _projectSnapshot(
   FlarkDocument? previous,
 }) {
   if (forceSourceMode ||
-      !(live ??
-          (_withinLiveByteLimit(text, syncLimit) &&
-              liveLimits._admitsSource(text)))) {
+      !(live ?? liveLimits._admitsLive(_SourceStats.of(text), syncLimit))) {
     return FlarkSourceSnapshot._(text, selected);
   }
   try {

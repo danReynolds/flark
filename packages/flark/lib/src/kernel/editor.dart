@@ -488,19 +488,33 @@ final class FlarkEditor implements FlarkDocumentState {
     return true;
   }
 
-  FlarkEditorSnapshot? _admitSource(String text, FlarkSelection selected) {
-    try {
-      validateFlarkSource(text);
-    } on FormatException {
+  /// Whether [text] keeps the source contract (no bare CR, well-formed
+  /// UTF-16) within the writable limit, and if so whether it is rendered
+  /// live. Null, with [_lastRejection] set, when it is refused. One pass
+  /// over the text decides all of it, for every edit.
+  bool? _admits(String text) {
+    final stats = _SourceStats.of(text);
+    if (!stats.valid) {
       _lastRejection = FlarkRejection.invalidSource;
       return null;
     }
-    if (!_withinLiveByteLimit(text, sourceLimit)) {
+    if (stats.utf8Bytes > sourceLimit) {
       _lastRejection = FlarkRejection.sourceLimit;
       return null;
     }
+    return liveLimits._admitsLive(stats, syncLimit);
+  }
+
+  FlarkEditorSnapshot? _admitSource(String text, FlarkSelection selected) {
+    final live = _admits(text);
+    if (live == null) return null;
     try {
-      return _buildSnapshot(text, selected, rejectDeviation: !sourceMode);
+      return _buildSnapshot(
+        text,
+        selected,
+        rejectDeviation: !sourceMode,
+        live: live,
+      );
     } on FlarkParseException catch (error) {
       if (error.code != FlarkParseException.extractionDeviationCode) rethrow;
       _lastRejection = FlarkRejection.extractionDeviation;
@@ -732,16 +746,8 @@ final class FlarkEditor implements FlarkDocumentState {
       _inert = !moved;
       return moved;
     }
-    final stats = _SourceStats.of(newSource);
-    if (!stats.valid) {
-      _lastRejection = FlarkRejection.invalidSource;
-      return false;
-    }
-    if (stats.utf8Bytes > sourceLimit) {
-      _lastRejection = FlarkRejection.sourceLimit;
-      return false;
-    }
-    final live = stats.utf8Bytes <= syncLimit && liveLimits._admitsStats(stats);
+    final live = _admits(newSource);
+    if (live == null) return false;
     late FlarkEditorSnapshot next;
     try {
       RenderModel? parsed;
