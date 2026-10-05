@@ -2937,7 +2937,7 @@ final class FlarkEditor implements FlarkDocumentState {
         ? _nextMarker(inner)
         : _rowPrefix(row, line);
     final separator = '$nl$continued';
-    if (_splitRow(row, start, end, separator)) return true;
+    if (_splitRow(row, start, end, separator) is _Committed) return true;
     if (_lastRejection != null || start != end) return false;
     // A caret beside hidden syntax shows the same place from the anchors
     // around it. Where a break at its own anchor would split a construct
@@ -2945,7 +2945,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // `>`), the break goes beside the construct instead.
     for (final other in _doc.anchorsAt(start)) {
       if (other == start) continue;
-      if (_splitRow(row, other, other, separator)) return true;
+      if (_splitRow(row, other, other, separator) is _Committed) return true;
       if (_lastRejection != null) return false;
     }
     return false;
@@ -2984,7 +2984,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// painted on it. A split that starts on an earlier line of a multi-line
   /// setext heading, or at the start of its last line, keeps the text after
   /// it above the underline, so the plain split serves.
-  bool _splitRow(ProjectedRow row, int start, int end, String separator) {
+  _Outcome _splitRow(ProjectedRow row, int start, int end, String separator) {
     final trail = _headingTrail(row);
     if (trail == null) return _splitInline(row, start, end, separator);
     final m = _doc.model;
@@ -3009,7 +3009,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // line, the lines before it remain and the underline would have to move
     // up to them, which a split cannot do faithfully, so the edit is refused.
     if (before) return _splitInline(row, start, end, separator, keep: trail);
-    if (first != 0) return false;
+    if (first != 0) return const _NotKept();
     // From the heading's start, the split can leave the heading empty, read
     // as deleting the text it takes reads it ([_emptiedSetext]): it becomes
     // the empty ATX heading that deletion leaves, before the line break.
@@ -3076,7 +3076,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// No empty delimiter pair is ever published as an intermediate document,
   /// and an empty owner, which holds no split, stays whole before the break.
   /// [keep] is heading markup after the split that stays with the first part.
-  bool _splitInline(
+  _Outcome _splitInline(
     ProjectedRow row,
     int start,
     int end,
@@ -3221,7 +3221,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// for an item whose later blocks follow blank lines, the next item's
   /// marker after them, as an empty item would end at a blank line. Only the
   /// plain split may leave the live tier.
-  bool _commitReturn(
+  _Outcome _commitReturn(
     ProjectedRow row,
     int start,
     int end,
@@ -3295,104 +3295,33 @@ final class FlarkEditor implements FlarkDocumentState {
           '$lead${join(now)}$trail'.replaceAll(_breakSpace, '\n');
     }
 
-    // Where in the split's edit a caret would start the new line, when the
-    // plain split's own caret does not (see the check below).
-    int? lineStartOffset;
-
-    bool attempt(
-      List<(int, int, String)> list,
-      (int, int, String) caretEdit,
+    // [list] with the caret [offset] units into [caretEdit]'s text, or null
+    // when an alternative's escape falls in what the split moves (`#` of a
+    // heading's closing sequence): that spelling is passed over. The plain
+    // split's own edits never overlap.
+    Spelling? spellingOf(
+      List<Edit> list,
+      Edit caretEdit,
       int offset, {
-      bool apart = false,
-      bool plain = false,
+      bool asAsked = false,
     }) {
-      if (!_disjoint(list)) {
-        // An alternative's escape can fall in what the split moves (`#` of
-        // a heading's closing sequence): that spelling is passed over. The
-        // plain split's own edits never overlap.
-        assert(!plain, 'Return spliced overlapping edits $list');
-        return false;
+      if (!Edits.isDisjoint(list)) {
+        assert(!asAsked, 'Return spliced overlapping edits $list');
+        return null;
       }
-      final out = StringBuffer();
-      var copied = 0, shift = 0, caret = 0;
+      var shift = 0, caret = 0;
       for (final edit in list) {
-        final (from, to, text) = edit;
-        out.write('${source.substring(copied, from)}$text');
-        if (edit == caretEdit) caret = from + shift + offset;
-        shift += text.length - (to - from);
-        copied = to;
+        if (edit == caretEdit) caret = edit.$1 + shift + offset;
+        shift += edit.$3.length - (edit.$2 - edit.$1);
       }
-      out.write(source.substring(copied));
-      return _commit(
-        '$out',
+      return Spelling(
+        Edits(list),
         FlarkSelection.collapsed(caret),
-        coalesce: false,
-        acceptSourceMode: plain,
-        accept: (next) {
-          final now = next.rowAt(caret);
-          // A footnote's continuation line holds only its indentation, and is
-          // in no footnote yet while nothing follows it there.
-          final pending =
-              now.kind == RowKind.blank &&
-              row.shells.lastOrNull?.kind == ShellKind.footnoteDefinition &&
-              now.shells.length == row.shells.length - 1 &&
-              now.withinContainerKindsOf(row);
-          // A line ended by Return can read as a link reference definition,
-          // which shows its source.
-          final defined =
-              row.kind != RowKind.definition &&
-              next.rowAt(start).kind == RowKind.definition;
-          if (!now.sameContainerKinds(row) && !pending ||
-              !_keepsStructure(
-                next,
-                Edits(list),
-                {row.index},
-                shown: defined ? (row.sourceStart, start) : null,
-                shells: true,
-              )) {
-            return false;
-          }
-          if (defined) return true;
-          // The caret starts the line Return made: a delimiter the split
-          // reopens can pair with literal ones after it otherwise and leave
-          // them before the caret (`*foo**bar*` split before the `**`).
-          bool startsLine(int offset) {
-            final shownAt = next.displayOf(offset);
-            return shownAt.offset == 0 ||
-                next.projection.rows[shownAt.row].text.codeUnitAt(
-                      shownAt.offset - 1,
-                    ) ==
-                    0x0A;
-          }
-
-          if (!startsLine(caret)) {
-            if (plain) {
-              // Failing faithful spellings, the caret can go before the
-              // reopened delimiters, where the line starts.
-              final lineFrom = caretEdit.$3.lastIndexOf('\n') + 1;
-              for (var o = offset - 1; o >= lineFrom; o--) {
-                if (startsLine(caret - (offset - o))) {
-                  lineStartOffset = o;
-                  break;
-                }
-              }
-            }
-            return false;
-          }
-          return showsBreak(next, apart: apart);
-        },
+        asAsked: asAsked,
       );
     }
 
-    if (attempt(edits, at, offset, plain: true) || _lastRejection != null) {
-      return _lastRejection == null;
-    }
-    // The plain split with its caret where the line starts.
-    bool atLineStart() {
-      final o = lineStartOffset;
-      return o != null && attempt(edits, at, o, plain: true);
-    }
-
+    final plain = spellingOf(edits, at, offset, asAsked: true);
     final lineStart = row.contentStarts[first];
     final moved = _firstEscapable.matchAsPrefix(source, at.$2);
     final kept = _lastEscapable.firstMatch(
@@ -3413,6 +3342,9 @@ final class FlarkEditor implements FlarkDocumentState {
         unbreak = (s, projection.lineContentEnd(m.lineOfUtf16(s)), '');
       }
     }
+    final spellings = [?plain];
+    // The blank line after the row, which [showsBreak] expects.
+    Spelling? apart;
     for (final edit in [
       if (moved != null &&
           moved.end <= projection.lineContentEnd(m.lineOfUtf16(end)))
@@ -3423,40 +3355,110 @@ final class FlarkEditor implements FlarkDocumentState {
     ]) {
       // The edit among the others, after those that start where it does.
       final i = edits.lastIndexWhere((e) => e.$1 <= edit.$1) + 1;
-      final list = [...edits.take(i), edit, ...edits.skip(i)];
-      if (attempt(list, at, offset, apart: edit == blank)) return true;
-      if (_lastRejection != null) return false;
+      final respelled = spellingOf(
+        [...edits.take(i), edit, ...edits.skip(i)],
+        at,
+        offset,
+      );
+      if (respelled == null) continue;
+      if (edit == blank) apart = respelled;
+      spellings.add(respelled);
     }
     final item = row.shells.isEmpty ? null : row.shells.last;
     final following = rows
         .skip(row.index + 1)
         .where((r) => r.kind != RowKind.blank)
         .firstOrNull;
-    if (item?.kind != ShellKind.item ||
-        following == null ||
-        following.index == row.index + 1 ||
-        !following.shells.any((s) => s.block == item!.block) ||
-        shown(end) < row.text.length ||
-        start != end && (split.length > 1 || !at.$3.endsWith(separator))) {
-      return atLineStart();
-    }
-    final lineAt = m.lineStartUtf16(following.firstLine);
-    final marker = separator.substring(separator.indexOf('\n') + 1);
-    final edit = (lineAt, lineAt, '$marker${_lineBreakAt(lineAt)}');
-    return attempt(
-          [
-            if (start != end)
-              (
-                at.$1,
-                at.$2,
-                at.$3.substring(0, at.$3.length - separator.length),
-              ),
-            edit,
-          ],
+    if (item?.kind == ShellKind.item &&
+        following != null &&
+        following.index != row.index + 1 &&
+        following.shells.any((s) => s.block == item!.block) &&
+        shown(end) >= row.text.length &&
+        (start == end || split.length == 1 && at.$3.endsWith(separator))) {
+      final lineAt = m.lineStartUtf16(following.firstLine);
+      final marker = separator.substring(separator.indexOf('\n') + 1);
+      final edit = (lineAt, lineAt, '$marker${_lineBreakAt(lineAt)}');
+      final continued = spellingOf(
+        [
+          if (start != end)
+            (at.$1, at.$2, at.$3.substring(0, at.$3.length - separator.length)),
           edit,
-          marker.length,
-        ) ||
-        _lastRejection == null && atLineStart();
+        ],
+        edit,
+        marker.length,
+      );
+      if (continued != null) spellings.add(continued);
+    }
+    // Failing faithful spellings, the caret can go before the delimiters the
+    // split reopens, to the nearest place before its own where the line
+    // starts: the plain split at each place, nearest first.
+    final lineStarts = [
+      for (var o = offset - 1; o >= at.$3.lastIndexOf('\n') + 1; o--)
+        ?spellingOf(edits, at, o, asAsked: true),
+    ];
+
+    bool keeps(FlarkDocument next, Spelling spelling, Edits edits) {
+      // Whether [caret] is in containers of the kinds of the line split. A
+      // footnote's continuation line holds only its indentation, and is in
+      // no footnote yet while nothing follows it there.
+      bool contained(int caret) {
+        final now = next.rowAt(caret);
+        return now.sameContainerKinds(row) ||
+            now.kind == RowKind.blank &&
+                row.shells.lastOrNull?.kind == ShellKind.footnoteDefinition &&
+                now.shells.length == row.shells.length - 1 &&
+                now.withinContainerKindsOf(row);
+      }
+
+      // Whether [offset] shows where a line starts.
+      bool startsLine(int offset) {
+        final shownAt = next.displayOf(offset);
+        return shownAt.offset == 0 ||
+            next.projection.rows[shownAt.row].text.codeUnitAt(
+                  shownAt.offset - 1,
+                ) ==
+                0x0A;
+      }
+
+      final caret = spelling.selection.extent;
+      // A line ended by Return can read as a link reference definition,
+      // which shows its source.
+      final defined =
+          row.kind != RowKind.definition &&
+          next.rowAt(start).kind == RowKind.definition;
+      if (!contained(caret) ||
+          !_keepsStructure(
+            next,
+            edits,
+            {row.index},
+            shown: defined ? (row.sourceStart, start) : null,
+            shells: true,
+          )) {
+        return false;
+      }
+      // A place before the plain split's caret serves only where the plain
+      // split failed for its caret alone, in the containers but starting no
+      // line, and only the nearest place before it that starts one.
+      if (lineStarts.contains(spelling)) {
+        final own = plain!.selection.extent;
+        if (!contained(own)) return false;
+        for (var c = caret + 1; c <= own; c++) {
+          if (startsLine(c)) return false;
+        }
+      }
+      if (defined) return true;
+      // The caret starts the line Return made: a delimiter the split
+      // reopens can pair with literal ones after it otherwise and leave
+      // them before the caret (`*foo**bar*` split before the `**`).
+      if (!startsLine(caret)) return false;
+      return showsBreak(next, apart: identical(spelling, apart));
+    }
+
+    return _commitSpellings(
+      [...spellings, ...lineStarts],
+      keeps,
+      coalesce: false,
+    );
   }
 
   /// The marker line for the item after [item]: the same outer prefixes,
@@ -3624,11 +3626,6 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     return now.where((r) => r.kind != RowKind.blank).length == count;
   }
-
-  /// Whether [edits] are sorted and none overlaps the next, so they splice
-  /// the source in order.
-  static bool _disjoint(List<(int, int, String)> edits) =>
-      Edits.isDisjoint(edits);
 
   /// Apply sorted, non-overlapping edits; returns the new source and a map
   /// from old offsets to new ones, as a caret goes ([Edits.forward]).
