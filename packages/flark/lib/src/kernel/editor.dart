@@ -1077,9 +1077,9 @@ final class FlarkEditor implements FlarkDocumentState {
     return _insertText(row, range, typed, typed, cell: false, typing: typing);
   }
 
-  /// [_insert] of [text] over [range] of [row], [typed] as the cell
-  /// escapes it when [cell]; without a pending style's delimiters around it
-  /// unless [styled].
+  /// Puts [text] in over [range] of [row], for [_insert] and [_replace]:
+  /// [typed] as the cell escapes it when [cell]; without a pending style's
+  /// delimiters around it unless [styled].
   bool _insertText(
     ProjectedRow row,
     ({int start, int end}) range,
