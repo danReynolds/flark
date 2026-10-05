@@ -409,27 +409,31 @@ extension _TypedLines on FlarkEditor {
     if (end > 0 && text.codeUnitAt(end - 1) == 0x0D) end--;
     final nl = _lineBreakAt(at);
     final asTyped = _typedEdits(text, at, removed);
-    for (final (edits, moved) in [
-      if (end > 0) (asTyped.withInsertion(end, nl), caret),
-      if (typed == '~' || typed == '`')
-        (asTyped.withInsertion(at, r'\'), caret + 1),
-    ]) {
-      // Past the live tier the parser cannot check the respelling: it is
-      // passed over, and the text is typed as it is.
-      if (_commit(
-        edits.apply(source),
-        FlarkSelection.collapsed(moved),
-        pending: plain.pending,
-        coalesce: true,
-        accept: (next) =>
-            next.selection.extent == moved &&
-            _keepsTyped(next, row, edits, moved, at),
-      )) {
-        return true;
-      }
-      if (_lastRejection != null) return false;
-    }
-    return null;
+    Spelling spelled(Edits edits, int caret) => Spelling(
+      edits,
+      FlarkSelection.collapsed(caret),
+      pending: plain.pending,
+    );
+    // Past the live tier the parser cannot check a respelling: it is passed
+    // over, and the text is typed as it is.
+    final outcome = _commitSpellings(
+      [
+        if (end > 0) spelled(asTyped.withInsertion(end, nl), caret),
+        if (typed == '~' || typed == '`')
+          spelled(asTyped.withInsertion(at, r'\'), caret + 1),
+      ],
+      (next, spelling, edits) {
+        final moved = spelling.selection.extent;
+        return next.selection.extent == moved &&
+            _keepsTyped(next, row, edits, moved, at);
+      },
+      coalesce: true,
+    );
+    return switch (outcome) {
+      _Committed() => true,
+      _Refused() => false,
+      _NotKept() || _Unchanged() => null,
+    };
   }
 
   /// A deletion in a table's delimiter row shown as its source edits that
