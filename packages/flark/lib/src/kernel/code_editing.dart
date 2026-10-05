@@ -497,7 +497,16 @@ extension _CodeEditing on FlarkEditor {
     final model = _doc.model;
     final block = model.blockAt(row.block);
     final lineStart = model.lineStartUtf16(line);
-    final prefix = source.substring(lineStart, row.contentStarts[i]);
+    // The fence's containers continue on the lines the exit writes. A blank
+    // line needs none of their indentation, so its own prefix can be
+    // shorter: the fence's opening line gives it.
+    final prefix = _continuationPrefix(
+      source,
+      model,
+      model.lineOfUtf16(block.startUtf16),
+      block.startUtf16,
+      row.block,
+    );
     final newline = source.substring(row.contentEnds[i - 1], lineStart);
     final edits = <(int, int, String)>[];
     late int destination;
