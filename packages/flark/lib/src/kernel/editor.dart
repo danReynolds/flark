@@ -225,13 +225,6 @@ final class FlarkEditor implements FlarkDocumentState {
 
   bool _apply(FlarkCommand command, Duration at, int? expectedRevision) {
     if (!_enter(expectedRevision)) return false;
-    if (command is SetStyle &&
-        !sourceMode &&
-        _styleDelimiter(command.style) != null &&
-        styleState(command.style).value ==
-            (command.enabled ? FlarkStyleValue.on : FlarkStyleValue.off)) {
-      return false;
-    }
     // Undo during a composition commits it, so Undo takes it back. Redo has
     // nothing to redo once it commits: during a composition it does nothing.
     if (composing && command is Redo) {

@@ -120,6 +120,13 @@ extension _InlineFormatting on FlarkEditor {
 
   bool _setStyle(int style, bool enabled) {
     final state = styleState(style);
+    // SetStyle asking for the formatting the caret or selection already has
+    // changes nothing: a successful no-op, which records no step.
+    if (_styleDelimiter(style) != null &&
+        state.value == (enabled ? FlarkStyleValue.on : FlarkStyleValue.off)) {
+      _inert = true;
+      return false;
+    }
     if (!(enabled ? state.canEnable : state.canDisable)) return false;
     if (selection.isCollapsed) return _toggleCaretStyle(style);
     final range = _styleRange();

@@ -63,6 +63,27 @@ void main() {
       expect(e.source, source.replaceRange(at, at, 'inside'));
     },
   );
+  test('a command that changes nothing restarts the sequence too', () {
+    // Other commands restart Select All's progression, those that change
+    // nothing as well, a SetStyle asking for the style the caret has
+    // among them: in an empty fence Select All after one is the first
+    // again, which selects the empty body, and the next the document.
+    const source = 'Before.\n\n```\n\n```\n\nAfter.';
+    final at = source.indexOf('```\n') + 4;
+    for (final command in const <FlarkCommand>[
+      Undo(),
+      SetStyle(Style.strong, enabled: false),
+    ]) {
+      final e = FlarkEditor(backend, text: source, caret: at);
+      expect(e.apply(const SelectAll()), isFalse);
+      expect(e.apply(command), isFalse);
+      expect(e.lastRejection, isNull);
+      expect(e.apply(const SelectAll()), isFalse, reason: '$command');
+      expect(e.selection, FlarkSelection.collapsed(at), reason: '$command');
+      expect(e.apply(const SelectAll()), isTrue);
+      expect(e.selection, const FlarkSelection(0, source.length));
+    }
+  });
   test(
     'one empty fence cannot turn its first Select All into document replacement',
     () {
