@@ -213,13 +213,18 @@ final class FlarkEditor implements FlarkDocumentState {
     );
   }
 
-  bool _apply(FlarkCommand command, Duration at, int? expectedRevision) {
+  /// The step an editing call starts with: the call's outcome starts unset,
+  /// and a call made for a revision the editor has left is refused.
+  bool _enter(int? expectedRevision) {
     _lastRejection = null;
     _inert = false;
-    if (expectedRevision != null && expectedRevision != revision) {
-      _lastRejection = FlarkRejection.staleRevision;
-      return false;
-    }
+    if (expectedRevision == null || expectedRevision == revision) return true;
+    _lastRejection = FlarkRejection.staleRevision;
+    return false;
+  }
+
+  bool _apply(FlarkCommand command, Duration at, int? expectedRevision) {
+    if (!_enter(expectedRevision)) return false;
     if (command is SetStyle &&
         !sourceMode &&
         _styleDelimiter(command.style) != null &&
@@ -409,11 +414,7 @@ final class FlarkEditor implements FlarkDocumentState {
     int? expectedRevision,
     bool replaceAll = false,
   }) {
-    _lastRejection = null;
-    if (expectedRevision != null && expectedRevision != revision) {
-      _lastRejection = FlarkRejection.staleRevision;
-      return false;
-    }
+    if (!_enter(expectedRevision)) return false;
     bool boundary(int offset) =>
         offset >= 0 &&
         offset <= source.length &&
@@ -506,11 +507,7 @@ final class FlarkEditor implements FlarkDocumentState {
   );
 
   bool _loadMarkdown(String text, {int? expectedRevision}) {
-    _lastRejection = null;
-    if (expectedRevision != null && expectedRevision != revision) {
-      _lastRejection = FlarkRejection.staleRevision;
-      return false;
-    }
+    if (!_enter(expectedRevision)) return false;
     final next = _admitSource(text, const FlarkSelection.collapsed(0));
     if (next == null) return false;
     _composition = null;
