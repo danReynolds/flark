@@ -1001,6 +1001,17 @@ final class FlarkEditor implements FlarkDocumentState {
         }
       }
     }
+    // An autolink hides its delimiters too, and its text is its address: a
+    // range over part of the address edits the address, one over all of it
+    // replaces the link, delimiters and all.
+    if (_doc.autolinkAround(start, end) case final link?) {
+      final a = start < link.contentStart ? link.contentStart : start;
+      final b = end > link.contentEnd ? link.contentEnd : end;
+      if (a == link.contentStart && b == link.contentEnd) {
+        return (start: link.start, end: link.end);
+      }
+      if (a < b) return (start: a, end: b);
+    }
     return (start: start, end: end);
   }
 

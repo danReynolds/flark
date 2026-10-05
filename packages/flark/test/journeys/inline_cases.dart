@@ -2,6 +2,25 @@ part of '../journey_test.dart';
 
 void _inlineCases(FlarkParseBackend backend) {
   group('inline', () {
+    test('a range at an autolink\'s hidden edges edits its address', () {
+      // Its `<` and `>` are hidden like a span's delimiters: part of the
+      // address edits the address, all of it replaces the link.
+      for (final (start, end, text, edited, rows) in [
+        (14, 16, 'Zz', 'x <https://a.bZz> y', ['x https://a.bZz y']),
+        (14, 16, '', 'x <https://a.b> y', ['x https://a.b y']),
+        (3, 16, 'Zz', 'x Zz y', ['x Zz y']),
+        (2, 15, 'Zz', 'x Zz y', ['x Zz y']),
+      ]) {
+        _Session(
+          backend,
+          source: 'x <https://a.bk> y',
+        ).act(ReplaceRange(start, end, text), source: edited, rows: rows);
+      }
+      final selected = _Session(backend, source: 'x <b@c.dk> y');
+      selected.act(const SetSelection(8, 10));
+      selected.act(const InsertText('Zz'), source: 'x <b@c.dZz> y');
+    });
+
     test('a link or image keeps the blocks around it', () {
       // A link wrapped in a definition's label would end the definition, one
       // after a rule's dashes would paint them, and an image on the empty

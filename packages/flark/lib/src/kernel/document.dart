@@ -585,6 +585,20 @@ final class FlarkDocument {
     ];
   }
 
+  /// The autolink whose source, delimiters included, holds [start, end],
+  /// as an [Owner] of no style; null when none does.
+  Owner? autolinkAround(int start, int end) {
+    final (first, last) = _runsNear(start);
+    for (var r = first; r < last; r++) {
+      if (model.runKind(r) == RunKind.autolink &&
+          model.runStart(r) <= start &&
+          end <= model.runEnd(r)) {
+        return _owner(r);
+      }
+    }
+    return null;
+  }
+
   /// Owners whose content is exactly [start, end): emptied by deleting it.
   List<Owner> ownersOfContent(int start, int end) {
     final (first, last) = _runsNear(start);
