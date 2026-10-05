@@ -1820,9 +1820,9 @@ final class FlarkEditor implements FlarkDocumentState {
               shown: cells == null ? null : (row.sourceStart, row.sourceEnd),
               shells: true,
             ),
-        (!emptied || _keepsShells(next, row, caret)) &&
+        (!emptied || next.rowAt(caret).sameContainerKinds(row)) &&
             (left < 0 ||
-                _keepsShells(next, row, left) &&
+                next.rowAt(left).sameContainerKinds(row) &&
                     (up || next.rowAt(left).kind == row.kind)),
       );
     }
@@ -2331,7 +2331,7 @@ final class FlarkEditor implements FlarkDocumentState {
         final now = next.rowAt(caret);
         if (now.kind != row.kind ||
             row.fenced && (!now.fenced || now.text != row.text) ||
-            !_keepsShells(next, row, caret)) {
+            !now.sameContainerKinds(row)) {
           return false;
         }
         // Without the gap, [row]'s text can run on from the paragraph above
@@ -2345,21 +2345,6 @@ final class FlarkEditor implements FlarkDocumentState {
         );
       },
     );
-  }
-
-  /// Whether [row] of the current projection, now at [offset] of [next],
-  /// sits in containers of the same kinds: a join that removes an empty line
-  /// must not move the next block into a quote or list item, or out of one.
-  static bool _keepsShells(FlarkDocument next, ProjectedRow row, int offset) =>
-      _sameShells(next.rowAt(offset), row);
-
-  /// Whether rows [a] and [b] sit in containers of the same kinds.
-  static bool _sameShells(ProjectedRow a, ProjectedRow b) {
-    if (a.shells.length != b.shells.length) return false;
-    for (var i = 0; i < a.shells.length; i++) {
-      if (a.shells[i].kind != b.shells[i].kind) return false;
-    }
-    return true;
   }
 
   /// The markup a heading keeps after its content on its last line: a setext
@@ -2427,7 +2412,7 @@ final class FlarkEditor implements FlarkDocumentState {
         return now.kind == RowKind.heading &&
             now.headingLevel == row.headingLevel &&
             now.text.isEmpty &&
-            _keepsShells(next, row, origin) &&
+            now.sameContainerKinds(row) &&
             _keepsStructure(
               next,
               [(first, trail.$2, replaced.length)],
@@ -2617,7 +2602,8 @@ final class FlarkEditor implements FlarkDocumentState {
       final holder = at > now[j].sourceEnd && j + 1 < now.length
           ? now[j + 1]
           : now[j];
-      if (holder.kind != row.kind || shells && !_sameShells(holder, row)) {
+      if (holder.kind != row.kind ||
+          shells && !holder.sameContainerKinds(row)) {
         if (holder.kind != row.kind || !lifted(row)) return false;
       }
     }
@@ -2810,8 +2796,6 @@ final class FlarkEditor implements FlarkDocumentState {
       );
       final replacement = line > 0 ? '$nl$outer' : '';
       final caret = prefixStart + replacement.length;
-      String kinds(Iterable<Shell> shells) =>
-          shells.map((shell) => shell.kind.name).join('/');
       if (_commit(
         source.replaceRange(prefixStart, contentStart, replacement),
         FlarkSelection.collapsed(caret),
@@ -2820,7 +2804,7 @@ final class FlarkEditor implements FlarkDocumentState {
         // The line leaves containers and enters none: an empty item's own
         // nested items, left without it, would take in the line after it.
         accept: (next) =>
-            kinds(row.shells).startsWith(kinds(next.rowAt(caret).shells)) &&
+            next.rowAt(caret).withinContainerKindsOf(row) &&
             _keepsStructure(
               next,
               [(prefixStart, contentStart, replacement.length)],
@@ -3239,21 +3223,19 @@ final class FlarkEditor implements FlarkDocumentState {
         acceptSourceMode: plain,
         accept: (next) {
           final now = next.rowAt(caret);
-          String kinds(Iterable<Shell> shells) =>
-              shells.map((shell) => shell.kind.name).join('/');
           // A footnote's continuation line holds only its indentation, and is
           // in no footnote yet while nothing follows it there.
           final pending =
               now.kind == RowKind.blank &&
               row.shells.lastOrNull?.kind == ShellKind.footnoteDefinition &&
-              kinds(now.shells) ==
-                  kinds(row.shells.take(row.shells.length - 1));
+              now.shells.length == row.shells.length - 1 &&
+              now.withinContainerKindsOf(row);
           // A line ended by Return can read as a link reference definition,
           // which shows its source.
           final defined =
               row.kind != RowKind.definition &&
               next.rowAt(start).kind == RowKind.definition;
-          if (!_sameShells(now, row) && !pending ||
+          if (!now.sameContainerKinds(row) && !pending ||
               !_keepsStructure(
                 next,
                 [for (final (from, to, text) in list) (from, to, text.length)],
@@ -3448,11 +3430,15 @@ final class FlarkEditor implements FlarkDocumentState {
     final digits = RegExp('[0-9]*').matchAsPrefix(source, start)!.end;
     if (shells[idx].ordered && !outdent) edits.add((start, digits, '1'));
     final cut = outdent ? idx - 2 : idx;
-    String moved(ProjectedRow r) {
-      final k = [for (final s in r.shells) s.kind.name];
+    List<ShellKind> moved(ProjectedRow r) {
+      final kinds = r.containerKinds;
       final mine = r.shells.length > idx && r.shells[idx].block == item;
-      if (mine) k.replaceRange(cut, idx, [if (!outdent) 'item/list']);
-      return k.join('/');
+      if (mine) {
+        kinds.replaceRange(cut, idx, [
+          if (!outdent) ...[ShellKind.item, ShellKind.list],
+        ]);
+      }
+      return kinds;
     }
 
     edits.sort((a, b) => a.$1 == b.$1 ? a.$2 - b.$2 : a.$1 - b.$1);
@@ -3461,7 +3447,7 @@ final class FlarkEditor implements FlarkDocumentState {
           [edits],
           (next, map) =>
               _showsRows(next, map, shells: moved) &&
-              _kinds(next.caretRow) == moved(row),
+              next.caretRow.hasContainerKinds(moved(row)),
         );
   }
 
@@ -3504,32 +3490,29 @@ final class FlarkEditor implements FlarkDocumentState {
     return shifted == width ? null : (a, b, ' ' * shifted);
   }
 
-  /// The kinds of [row]'s containers and, given their [doc], their starts.
-  static String _kinds(ProjectedRow row, [FlarkDocument? doc]) => row.shells
-      .map((s) => '${s.kind.name}${doc?.model.blockStart(s.block) ?? ''}')
-      .join('/');
-
   /// Whether [next] shows each row of the current projection that shows
   /// anything as it was (but those [shells] gives none for): the row where
   /// [map] moves its start has its kind, level and text, in containers of
-  /// the kinds [shells] gives, and nothing else shows but [added] rows.
+  /// the kinds [shells] gives (by default the row's own), and nothing else
+  /// shows but [added] rows.
   bool _showsRows(
     FlarkDocument next,
     int Function(int) map, {
     int added = 0,
-    String? Function(ProjectedRow) shells = _kinds,
+    List<ShellKind>? Function(ProjectedRow)? shells,
   }) {
     final now = next.projection.rows;
     var j = 0, count = added;
     for (final row in projection.rows) {
-      final kinds = shells(row);
+      final kinds = shells == null ? row.containerKinds : shells(row);
       if (row.kind == RowKind.blank || kinds == null) continue;
       count++;
       final at = map(row.sourceStart);
       for (; j + 1 < now.length && now[j + 1].sourceStart <= at; j++) {}
       final r = now[j];
-      if ((r.sourceStart, r.kind, r.text, r.headingLevel, _kinds(r)) !=
-          (at, row.kind, row.text, row.headingLevel, kinds)) {
+      if ((r.sourceStart, r.kind, r.text, r.headingLevel) !=
+              (at, row.kind, row.text, row.headingLevel) ||
+          !r.hasContainerKinds(kinds)) {
         return false;
       }
     }
@@ -3679,7 +3662,7 @@ final class FlarkEditor implements FlarkDocumentState {
       (next) =>
           (next.rowAt(move(selection.extent)).kind == RowKind.heading) ==
               (level > 0) &&
-          _keepsShells(next, row, move(selection.extent)),
+          next.rowAt(move(selection.extent)).sameContainerKinds(row),
     );
   }
 
@@ -3708,8 +3691,9 @@ final class FlarkEditor implements FlarkDocumentState {
       ],
       (next, map) {
         final now = next.rowAt(map(end));
-        return (now.kind, now.headingLevel, now.text, _kinds(now, next)) ==
-                (RowKind.heading, level, '', _kinds(row, _doc)) &&
+        return (now.kind, now.headingLevel, now.text) ==
+                (RowKind.heading, level, '') &&
+            now.sameContainersAs(row, next.model, _doc.model) &&
             _showsRows(next, map, added: 1);
       },
       pending: _pending,
@@ -3738,14 +3722,15 @@ final class FlarkEditor implements FlarkDocumentState {
       (doc, map) {
         final now = doc.rowAt(map(selection.extent));
         final rest = doc.projection.rows.elementAtOrNull(now.index + 1) ?? now;
-        final shells = _kinds(row, _doc), head = row.text.substring(0, split);
+        final head = row.text.substring(0, split);
         final tail = row.text.substring(split + 1).trimLeft();
-        String? others(ProjectedRow r) => r == row ? null : _kinds(r);
-        return (now.kind, now.headingLevel, _kinds(now, doc)) ==
-                (RowKind.heading, level, shells) &&
+        List<ShellKind>? others(ProjectedRow r) =>
+            r == row ? null : r.containerKinds;
+        return (now.kind, now.headingLevel) == (RowKind.heading, level) &&
+            now.sameContainersAs(row, doc.model, _doc.model) &&
             now.text.trimRight() == head.trimRight() &&
-            (rest.kind, rest.text.trimLeft(), _kinds(rest, doc)) ==
-                (RowKind.paragraph, tail, shells) &&
+            (rest.kind, rest.text.trimLeft()) == (RowKind.paragraph, tail) &&
+            rest.sameContainersAs(row, doc.model, _doc.model) &&
             _showsRows(doc, map, added: 2, shells: others);
       },
     );

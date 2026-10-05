@@ -74,7 +74,7 @@ extension _ResourceEditing on FlarkEditor {
           // dashes would paint them, one on an empty line before indented
           // code would make it the link's paragraph.
           (row.kind == RowKind.blank || doc.rowAt(at).kind == row.kind) &&
-          FlarkEditor._sameShells(doc.rowAt(at), row) &&
+          doc.rowAt(at).sameContainerKinds(row) &&
           _keepsStructure(
             doc,
             [(at, at + end - start, replacement.length + gap.length)],
@@ -128,7 +128,7 @@ extension _ResourceEditing on FlarkEditor {
       final now = next.rowAt(caret);
       return (now.kind == row.kind ||
               now.kind == RowKind.blank && (image || row.text.isEmpty)) &&
-          FlarkEditor._sameShells(now, row) &&
+          now.sameContainerKinds(row) &&
           (image || now.text == row.text) &&
           _keepsStructure(next, [edit], {row.index}, shells: true);
     }

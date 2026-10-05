@@ -617,9 +617,9 @@ extension _CodeEditing on FlarkEditor {
       accept: (next) =>
           [start, start + first.length].every((offset) {
             final now = next.rowAt(offset);
-            return now.kind == RowKind.blank && _outerShells(now, row) ||
-                now.kind == RowKind.codeBlock &&
-                    FlarkEditor._sameShells(now, row);
+            return now.kind == RowKind.blank &&
+                    now.withinContainerKindsOf(row) ||
+                now.kind == RowKind.codeBlock && now.sameContainerKinds(row);
           }) &&
           _keepsStructure(
             next,
@@ -628,15 +628,6 @@ extension _CodeEditing on FlarkEditor {
             shells: true,
           ),
     );
-  }
-
-  /// Whether [blank]'s containers are [row]'s, or the outer ones of them.
-  static bool _outerShells(ProjectedRow blank, ProjectedRow row) {
-    if (blank.shells.length > row.shells.length) return false;
-    for (var k = 0; k < blank.shells.length; k++) {
-      if (blank.shells[k].kind != row.shells[k].kind) return false;
-    }
-    return true;
   }
 
   bool _shiftBlock({required bool outdent}) {

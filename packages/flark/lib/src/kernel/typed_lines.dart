@@ -532,15 +532,7 @@ extension _TypedLines on FlarkEditor {
     final now = next.rowAt(caret);
     return now.kind == row.kind &&
         now.sourceStart == row.sourceStart &&
-        _sameContainers(now, row);
-  }
-
-  static bool _sameContainers(ProjectedRow a, ProjectedRow b) {
-    if (a.shells.length != b.shells.length) return false;
-    for (var k = 0; k < a.shells.length; k++) {
-      if (a.shells[k].kind != b.shells[k].kind) return false;
-    }
-    return true;
+        now.sameContainerKinds(row);
   }
 
   /// Whether [next], typed on [row] by [edits] with the caret at [caret] and
@@ -608,7 +600,7 @@ extension _TypedLines on FlarkEditor {
       // An empty item stays one. Shown as a bare marker instead, it would
       // paint the marker it hides, which the hidden-text check refuses.
       if (emptyItem) {
-        if (holder.kind == RowKind.blank && _sameContainers(holder, old)) {
+        if (holder.kind == RowKind.blank && holder.sameContainerKinds(old)) {
           continue;
         }
         return false;
@@ -630,14 +622,14 @@ extension _TypedLines on FlarkEditor {
       // row, which the text typed under it starts.
       if (old.delimiterSource &&
           holder.kind == RowKind.tableCell &&
-          _sameContainers(holder, old)) {
+          holder.sameContainerKinds(old)) {
         continue;
       }
       // The row keeps what it shows: a paragraph the typed line joins is
       // that line's start or end, and its last `\` or spaces stay text
       // rather than becoming a hard break.
       if (holder.kind != old.kind ||
-          !_sameContainers(holder, old) &&
+          !holder.sameContainerKinds(old) &&
               !_joins(next, holder, old, at, filled) ||
           !(holder.sourceStart == at
               ? holder.text.startsWith(old.text)
@@ -676,8 +668,10 @@ extension _TypedLines on FlarkEditor {
     // An empty row shows nothing, so the text typed on it starts its line:
     // no whitespace or tab column shows before it.
     if (strict && !_startsLine(next, typedAt)) return false;
+    // The typed row keeps the row's containers; any it gains are checked
+    // below.
+    if (!row.withinContainerKindsOf(typedRow)) return false;
     final shells = typedRow.shells;
-    if (shells.length < row.shells.length) return false;
     final from = projection.isBarePrefix(row) ? row.sourceStart : typedAt;
     // Only a paragraph's line reads on lazily: any other row in a container
     // carries its prefix.
@@ -688,12 +682,10 @@ extension _TypedLines on FlarkEditor {
             k < typedRow.prefixStarts.length &&
             typedRow.prefixStarts[k] >= 0 &&
             typedRow.prefixStarts[k] < typedRow.contentStarts[k];
-    for (var s = 0; s < shells.length; s++) {
-      if (s < row.shells.length
-          ? shells[s].kind != row.shells[s].kind
-          : !prefixed &&
-                shells[s].kind != ShellKind.list &&
-                next.model.blockStart(shells[s].block) < from) {
+    for (var s = row.shells.length; s < shells.length; s++) {
+      if (!prefixed &&
+          shells[s].kind != ShellKind.list &&
+          next.model.blockStart(shells[s].block) < from) {
         return false;
       }
     }
@@ -785,12 +777,11 @@ extension _TypedLines on FlarkEditor {
             holder.prefixStarts[k] >= holder.contentStarts[k])) {
       return false;
     }
-    for (var s = 0; s < holder.shells.length; s++) {
+    if (!old.withinContainerKindsOf(holder)) return false;
+    for (var s = old.shells.length; s < holder.shells.length; s++) {
       final shell = holder.shells[s];
-      if (s < old.shells.length
-          ? shell.kind != old.shells[s].kind
-          : shell.kind != ShellKind.list &&
-                next.model.blockStart(shell.block) != filled) {
+      if (shell.kind != ShellKind.list &&
+          next.model.blockStart(shell.block) != filled) {
         return false;
       }
     }

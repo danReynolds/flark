@@ -1,10 +1,12 @@
 /// Questions about projected rows that several kernel paths ask: which of
-/// the projection's special presentations a row is. The projection makes
-/// those choices from the render model; this library names them once, so
-/// callers do not decode a row's fields to recognize them. It is
-/// kernel-internal and not exported: hosts read [ProjectedRow] itself.
+/// the projection's special presentations a row is, and whether two rows sit
+/// in the same containers. The projection makes those choices from the
+/// render model; this library names them once, so callers do not decode a
+/// row's fields to recognize them. It is kernel-internal and not exported:
+/// hosts read [ProjectedRow] itself.
 library;
 
+import '../parse/render_model.dart';
 import '../parse/schema.g.dart';
 import 'projection.dart';
 
@@ -16,6 +18,58 @@ extension RowQueries on ProjectedRow {
   /// A table's delimiter line shown as its source, in a table without body
   /// rows (the editing view): a cell of no table row.
   bool get delimiterSource => kind == RowKind.tableCell && tableRowBlock < 0;
+
+  /// The kinds of the containers this row sits in, outermost first, as a new
+  /// list the caller may change.
+  List<ShellKind> get containerKinds => [
+    for (final shell in shells) shell.kind,
+  ];
+
+  /// Whether this row's containers are of [kinds], outermost first.
+  bool hasContainerKinds(List<ShellKind> kinds) {
+    if (shells.length != kinds.length) return false;
+    for (var i = 0; i < kinds.length; i++) {
+      if (shells[i].kind != kinds[i]) return false;
+    }
+    return true;
+  }
+
+  /// Whether this row and [other] sit in containers of the same kinds.
+  bool sameContainerKinds(ProjectedRow other) =>
+      shells.length == other.shells.length && _kindsLead(other);
+
+  /// Whether this row sits in containers of the kinds of [outer]'s, or of
+  /// their outer part only: a line that left inner containers and entered
+  /// none.
+  bool withinContainerKindsOf(ProjectedRow outer) =>
+      shells.length <= outer.shells.length && _kindsLead(outer);
+
+  /// Whether this row of [model] and [other] of [otherModel] sit in the same
+  /// containers: of the same kinds, each starting where the other's does.
+  bool sameContainersAs(
+    ProjectedRow other,
+    RenderModel model,
+    RenderModel otherModel,
+  ) {
+    if (shells.length != other.shells.length) return false;
+    for (var i = 0; i < shells.length; i++) {
+      final a = shells[i], b = other.shells[i];
+      if (a.kind != b.kind ||
+          model.blockStart(a.block) != otherModel.blockStart(b.block)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Whether this row's containers, outermost first, are of the kinds that
+  /// [other]'s start with. [other] has at least as many.
+  bool _kindsLead(ProjectedRow other) {
+    for (var i = 0; i < shells.length; i++) {
+      if (shells[i].kind != other.shells[i].kind) return false;
+    }
+    return true;
+  }
 }
 
 extension ProjectionQueries on Projection {
