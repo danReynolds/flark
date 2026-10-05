@@ -156,6 +156,30 @@ final class FlarkEditor implements FlarkDocumentState {
   /// Display column vertical movement aims for, kept across rows.
   int? _goalColumn;
 
+  /// The editing state as it is, history as its checkpoint ([_EditState]).
+  _EditState get _editState => (
+    snapshot: _snapshot,
+    pending: _pending,
+    goalColumn: _goalColumn,
+    selectedCodeScope: _selectedCodeScope,
+    composition: _composition,
+    composed: _composed,
+    cellOrigin: _cellOrigin,
+    history: history.checkpoint(),
+  );
+
+  /// Puts [state] back whole.
+  set _editState(_EditState state) {
+    _snapshot = state.snapshot;
+    _pending = state.pending;
+    _goalColumn = state.goalColumn;
+    _selectedCodeScope = state.selectedCodeScope;
+    _composition = state.composition;
+    _composed = state.composed;
+    _cellOrigin = state.cellOrigin;
+    history.restore(state.history);
+  }
+
   /// The time history coalescing reads when a command brings none. A
   /// stopwatch started with the editor unless the constructor was given a
   /// clock: a test that types a long run as one undo step passes one, so a
@@ -283,28 +307,14 @@ final class FlarkEditor implements FlarkDocumentState {
   /// in.
   bool _applyAfterComposition(FlarkCommand Function() command, Duration at) {
     if (!composing) return _apply(command(), at, null);
-    final composition = _composition, composed = _composed;
-    final before = _snapshot, pending = _pending, origin = _cellOrigin;
-    final selectedCode = _selectedCodeScope, goal = _goalColumn;
-    final savedHistory = history.checkpoint();
-    void restore() {
-      _composition = composition;
-      _composed = composed;
-      _snapshot = before;
-      _pending = pending;
-      _cellOrigin = origin;
-      _selectedCodeScope = selectedCode;
-      _goalColumn = goal;
-      history.restore(savedHistory);
-    }
-
+    final whileComposing = _editState;
     // The commit publishes with the command, which may yet be refused.
     _endComposition();
     final withdrawn = _lastRejection, unpublished = _revision;
     try {
       final accepted = _apply(command(), at, null);
       if (!accepted) {
-        restore();
+        _editState = whileComposing;
       } else {
         // A command that applied still reports a composition it withdrew.
         _lastRejection ??= withdrawn;
@@ -314,7 +324,7 @@ final class FlarkEditor implements FlarkDocumentState {
       // Only a command that failed before it was published is withdrawn.
       // Listeners that heard of an edit hold its source, so restoring the
       // snapshot under them would split the document in two.
-      if (_revision == unpublished) restore();
+      if (_revision == unpublished) _editState = whileComposing;
       rethrow;
     }
   }
@@ -4169,6 +4179,22 @@ final class FlarkEditor implements FlarkDocumentState {
   FlarkEditorSnapshot _restoreSnapshot(HistoryEntry entry) =>
       _buildSnapshot(entry.source, entry.selection, previous: _liveDocument);
 }
+
+/// The editor's editing state, which one capture sets aside and one restore
+/// puts back whole: around a host's command that may yet be refused after
+/// the composition it ends, a composition's dry run of typing, and an
+/// unwritten table cell's private preparation (audit C7). The call's own
+/// outcome (its refusal, an inert no-op) is no part of it.
+typedef _EditState = ({
+  FlarkEditorSnapshot snapshot,
+  PendingStyle? pending,
+  int? goalColumn,
+  bool selectedCodeScope,
+  HistoryEntry? composition,
+  (int, int, String, bool)? composed,
+  FlarkEditorSnapshot? cellOrigin,
+  HistoryCheckpoint history,
+});
 
 /// What became of an edit ([FlarkEditor._attempt],
 /// [FlarkEditor._commitSpellings]), so that no caller reads it back from the

@@ -54,8 +54,9 @@ extension _TableEditing on FlarkEditor {
   /// Prepare an unwritten cell privately, then use the ordinary editing path.
   /// The preparation and final edit parse privately; only the final edit
   /// publishes and enters history.
-  /// A refusal/exception restores the original snapshot; composition captures
-  /// the original source and virtual caret before any delimiters are created.
+  /// A refusal or exception puts the editing state back whole
+  /// ([_EditState]); composition captures the original source and virtual
+  /// caret before any delimiters are created.
   bool _withMissingCell(FlarkCommand command) {
     final index = selection.tableCell;
     if (index == null) return _applyLive(command);
@@ -76,7 +77,7 @@ extension _TableEditing on FlarkEditor {
         !replacement) {
       return _applyLive(command);
     }
-    final before = _snapshot, pending = _pending, goal = _goalColumn;
+    final before = _editState;
     final row = projection.rows[index];
     var first = index;
     while (projection.isMissingCell(first - 1)) {
@@ -100,7 +101,7 @@ extension _TableEditing on FlarkEditor {
       return false;
     }
     var applied = false;
-    _cellOrigin = before;
+    _cellOrigin = before.snapshot;
     try {
       // Only delimiters for this already-admitted table are added here. Keep
       // the private preparation live so formatting uses the same semantics as
@@ -124,11 +125,10 @@ extension _TableEditing on FlarkEditor {
       _lastRejection = FlarkRejection.extractionDeviation;
       return false;
     } finally {
-      _cellOrigin = null;
-      if (!applied) {
-        _snapshot = before;
-        _pending = pending;
-        _goalColumn = goal;
+      if (applied) {
+        _cellOrigin = null;
+      } else {
+        _editState = before;
       }
     }
   }

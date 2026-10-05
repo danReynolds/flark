@@ -27,18 +27,17 @@ extension _Composition on FlarkEditor {
     if (!within && !_wholeRange(from, to)) {
       final code = _pasteCode(text, from: from, to: to);
       if (code != null) return code;
+      // Typing the text is only asked whether it would refuse it.
+      final composing = _editState;
       final current = _snapshot as FlarkLiveSnapshot;
-      final kept = _pending, goal = _goalColumn;
       final refused = _typeComposed(
         from == selection.start && to == selection.end
             ? current
             : FlarkLiveSnapshot._(_doc.withSelection(FlarkSelection(from, to))),
-        kept,
+        _pending,
         text,
       );
-      _snapshot = current;
-      _pending = kept;
-      _goalColumn = goal;
+      _editState = composing;
       if (refused != null) {
         _lastRejection = refused;
         return false;
@@ -142,6 +141,9 @@ extension _Composition on FlarkEditor {
       return true;
     }
     if (source != composed.source) return true;
+    // Typing made the source as composed: the composed snapshot stays, its
+    // selection where the platform left it, with typing's intent. Nothing
+    // else needs putting back: [_typeComposed] did.
     _snapshot = composed;
     return !identical(_pending, pending);
   }
@@ -156,9 +158,8 @@ extension _Composition on FlarkEditor {
     PendingStyle? pending,
     String text,
   ) {
-    final snapshot = _snapshot, kept = _pending, goal = _goalColumn;
-    final composition = _composition, rejection = _lastRejection;
-    final inert = _inert, saved = history.checkpoint();
+    final saved = _editState;
+    final rejection = _lastRejection, inert = _inert;
     FlarkRejection? refused;
     var typed = false;
     try {
@@ -171,15 +172,16 @@ extension _Composition on FlarkEditor {
       );
       if (!typed) refused = _lastRejection ?? FlarkRejection.unsupportedEdit;
     } finally {
-      _composition = composition;
-      _lastRejection = rejection;
-      _inert = inert;
-      history.restore(saved);
-      if (!typed) {
+      // Everything goes back but, typed, the text typing made.
+      final (snapshot, kept, goal) = (_snapshot, _pending, _goalColumn);
+      _editState = saved;
+      if (typed) {
         _snapshot = snapshot;
         _pending = kept;
         _goalColumn = goal;
       }
+      _lastRejection = rejection;
+      _inert = inert;
     }
     return refused;
   }
