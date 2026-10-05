@@ -451,7 +451,7 @@ extension _CodeEditing on FlarkEditor {
     // Keep any info-string metadata. An explicit auto tag preserves its
     // position when clearing the first token would reinterpret it as a language.
     final replacement = language.isEmpty && end < info.length
-        ? 'auto'
+        ? codeAutoLanguage
         : language;
     if (info.substring(0, end) == replacement) {
       // Choosing the language a fence already has is a successful no-op.

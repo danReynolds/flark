@@ -1867,5 +1867,24 @@ void _structureCases(FlarkParseBackend backend) {
       final session = _Session(backend, source: 'x\n\n| a |\n| - |', caret: 2);
       session.act(const DeleteForward(), source: 'x\n| a |\n| - |');
     });
+    test('choosing automatic keeps a fence\'s metadata in its place', () {
+      // Automatic removes the language. With metadata after it, the fence
+      // takes the `auto` tag instead: with the language gone, the
+      // metadata's first word would be read as the language.
+      const tagged = '```ruby title="x"\nputs 1\n```';
+      _Session(backend, source: tagged, caret: tagged.indexOf('puts')).act(
+        const SetCodeLanguage(''),
+        source: '```auto title="x"\nputs 1\n```',
+        rows: ['puts 1'],
+        anchor: tagged.indexOf('puts'),
+      );
+      const bare = '```ruby\nputs 1\n```';
+      _Session(backend, source: bare, caret: bare.indexOf('puts')).act(
+        const SetCodeLanguage(''),
+        source: '```\nputs 1\n```',
+        rows: ['puts 1'],
+        anchor: 4,
+      );
+    });
   });
 }

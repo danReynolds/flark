@@ -22,6 +22,11 @@ abstract interface class CodeEditingDelegate {
 
 enum CodeEditingAction { insert, newline, indent, outdent }
 
+/// The info-string language that asks for detection, as an untagged fence
+/// does. Clearing a fence's language writes it where metadata follows, so the
+/// metadata keeps its place instead of being read as the language.
+const codeAutoLanguage = 'auto';
+
 final class CodeEditProposal {
   const CodeEditProposal(
     this.start,

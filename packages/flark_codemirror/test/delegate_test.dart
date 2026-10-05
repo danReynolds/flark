@@ -398,7 +398,7 @@ void main() {
     expect(code.resolveLanguage('', 'js title="x"'), 'javascript');
     expect(code.resolveLanguage('', 'TS'), 'typescript');
     expect(code.resolveLanguage('Just words.', ''), '');
-    expect(code.resolveLanguage('', 'auto'), '');
+    expect(code.resolveLanguage('', codeAutoLanguage), '');
     expect(code.resolveLanguage('', 'py'), 'python');
     expect(code.resolveLanguage('', 'kotlin'), 'kotlin');
   });
@@ -557,6 +557,26 @@ void main() {
       );
       expect(e.apply(const Newline()), isTrue);
       expect(e.source, source.replaceFirst('{}', '{\n  \n}'));
+    });
+
+    test('a language cleared beside metadata is detected again', () {
+      // The kernel keeps the metadata in its place behind codeAutoLanguage,
+      // which this delegate must read as no language rather than as one.
+      const source = '```ruby title="x"\nfunction f() {\n  return 1;\n}\n```';
+      final e = FlarkEditor(
+        backend,
+        codeEditing: code,
+        text: source,
+        caret: source.indexOf('function'),
+      );
+      expect(e.apply(const SetCodeLanguage('')), isTrue);
+      final row = e.document.caretRow;
+      final info = e.source.substring(row.codeInfoStart, row.codeInfoEnd);
+      expect(info, '$codeAutoLanguage title="x"');
+      expect(
+        code.resolveLanguage(row.text, info),
+        code.resolveLanguage(row.text, ''),
+      );
     });
 
     test('a typed brace outdents, and Undo restores the indentation', () {
