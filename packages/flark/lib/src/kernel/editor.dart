@@ -1202,9 +1202,10 @@ final class FlarkEditor implements FlarkDocumentState {
             source.codeUnitAt(range.start) == 0x09)) {
       range = (start: range.start + 1, end: range.start + 1);
     }
-    if (collapsed && styled) {
-      final continued = _continueSpan(range.start, text, typing: typing);
-      if (continued != null) return continued;
+    if (collapsed &&
+        styled &&
+        _continueSpan(range.start, text, typing: typing) is _Committed) {
+      return true;
     }
     var inserted = text;
     var caret = range.start + text.length;
@@ -1466,8 +1467,10 @@ final class FlarkEditor implements FlarkDocumentState {
   /// the word, giving `**one two**` rather than `**one** **two**`. The parser
   /// must own that syntax as a span ending where the spaces begin, and must
   /// still see one span from the same opener afterwards; otherwise the word
-  /// takes its own pair as before. Null when this does not apply.
-  bool? _continueSpan(int at, String text, {required bool typing}) {
+  /// takes its own pair as before. The continuation respells the word typed
+  /// with its own pair, so one the parser refuses is passed over too. Null
+  /// when this does not apply.
+  _Outcome? _continueSpan(int at, String text, {required bool typing}) {
     final p = _pending;
     if (p == null ||
         !p.continueAcrossSpaces ||
@@ -1509,19 +1512,22 @@ final class FlarkEditor implements FlarkDocumentState {
     final word = '${source.substring(gap, at)}${text.substring(0, last)}';
     final end = closeStart + word.length + p.close.length;
     final trailing = text.substring(last);
-    final continued = _commit(
-      source.replaceRange(closeStart, at, '$word${p.close}$trailing'),
-      FlarkSelection.collapsed(
-        trailing.isEmpty ? end - p.close.length : end + trailing.length,
-      ),
-      // Trailing spaces leave the span again and keep its intent.
-      pending: trailing.isEmpty ? null : p,
-      coalesce: typing && _keystroke(text),
-      accept: (document) => document
+    return _commitSpellings(
+      [
+        Spelling(
+          Edits([(closeStart, at, '$word${p.close}$trailing')]),
+          FlarkSelection.collapsed(
+            trailing.isEmpty ? end - p.close.length : end + trailing.length,
+          ),
+          // Trailing spaces leave the span again and keep its intent.
+          pending: trailing.isEmpty ? null : p,
+        ),
+      ],
+      (document, _, _) => document
           .ownersTouching(owner.start)
           .any((o) => o.start == owner.start && o.end == end),
+      coalesce: typing && _keystroke(text),
     );
-    return continued ? true : null;
   }
 
   /// The mirror of [_continueSpan]: a word typed where an emphasis, strong or
@@ -1531,7 +1537,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// one span of the same kind from the moved opening to the old closing
   /// syntax; otherwise the word takes its own pair. Null when this does not
   /// apply.
-  bool? _continueSpanBefore(int at, String text, {required bool typing}) {
+  _Outcome? _continueSpanBefore(int at, String text, {required bool typing}) {
     final p = _pending!;
     var gap = at;
     while (gap < source.length &&
@@ -1555,16 +1561,17 @@ final class FlarkEditor implements FlarkDocumentState {
       first++;
     }
     final start = at + first;
-    final continued = _commit(
-      source.replaceRange(
-        at,
-        gap + p.open.length,
+    final moved =
         '${text.substring(0, first)}${p.open}${text.substring(first)}'
-        '${source.substring(at, gap)}',
-      ),
-      FlarkSelection.collapsed(start + p.open.length + text.length - first),
-      coalesce: typing && _keystroke(text),
-      accept: (document) => document
+        '${source.substring(at, gap)}';
+    return _commitSpellings(
+      [
+        Spelling(
+          Edits([(at, gap + p.open.length, moved)]),
+          FlarkSelection.collapsed(start + p.open.length + text.length - first),
+        ),
+      ],
+      (document, _, _) => document
           .ownersTouching(start)
           .any(
             (o) =>
@@ -1572,8 +1579,8 @@ final class FlarkEditor implements FlarkDocumentState {
                 o.kind == owner.kind &&
                 o.end == owner.end + text.length,
           ),
+      coalesce: typing && _keystroke(text),
     );
-    return continued ? true : null;
   }
 
   /// The parser identifies a newly typed, bare three-character opener, its

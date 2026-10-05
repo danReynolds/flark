@@ -167,6 +167,31 @@ void main() {
       expect(editor.history.canUndo, isFalse);
     });
 
+    test('a span continuation the parser cannot read is passed over', () {
+      // Moving a span's delimiter past the word typed beside it is a
+      // respelling of that word: refused, it is passed over, and the word
+      // takes a pair of its own, with no refusal to report.
+      for (final (source, caret, deletions, word, deviates, typed) in [
+        ('plain ', 6, 0, 'one t', 'plain **one t**', 'plain **one** **t**'),
+        ('x **one two**', 7, 3, 'n', 'x **n two**', 'x **n** **two**'),
+      ]) {
+        final editor = FlarkEditor(
+          _DeviatesOn(backend, deviates),
+          text: source,
+          caret: caret,
+        );
+        if (deletions == 0) editor.apply(const ToggleStyle(Style.strong));
+        for (var i = 0; i < deletions; i++) {
+          editor.apply(const DeleteBackward());
+        }
+        for (final char in word.characters) {
+          expect(editor.apply(InsertText(char)), isTrue, reason: deviates);
+        }
+        expect(editor.lastRejection, isNull, reason: deviates);
+        expect(editor.source, typed);
+      }
+    });
+
     test('a published live snapshot cannot be mutated by its host', () {
       final editor = FlarkEditor(backend, text: '- item');
       final snapshot = editor.snapshot as FlarkLiveSnapshot;

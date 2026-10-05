@@ -347,7 +347,6 @@ extension _TypedLines on FlarkEditor {
     // there enters source mode when none qualifies, as ordinary text past the
     // tier does; a typed underline the parser reads as one where no blank
     // line fits, at a limit, is typed as it is instead, as the profile has it.
-    _lastRejection = null;
     return _commitSpellings(
       spellings,
       (next, spelling, edits) {
