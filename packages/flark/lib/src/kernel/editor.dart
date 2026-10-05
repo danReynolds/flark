@@ -2856,11 +2856,19 @@ final class FlarkEditor implements FlarkDocumentState {
   /// The prefix that continues [row]'s containers after [line]: the line's
   /// prefix, never the markers of the items and definitions that open on it,
   /// which would open new ones, nor a heading's own marker, which belongs to
-  /// the heading. A lazy line has none, so the row's first line gives it.
+  /// the heading. A lazy line has none, so the row's first line gives it,
+  /// or, when that line reads on lazily too after the link reference
+  /// definitions its paragraph's block opens with, the block's first line,
+  /// as for text typed on a lazy line.
   String _rowPrefix(ProjectedRow row, int line) {
     final m = _doc.model;
     var i = (line - row.firstLine).clamp(0, row.contentStarts.length - 1);
     if (row.prefixStarts[i] == row.contentStarts[i]) i = 0;
+    if (row.block >= 0 &&
+        row.prefixStarts[i] == row.contentStarts[i] &&
+        m.blockFirstLine(row.block) < row.firstLine) {
+      return _continuing(row.block);
+    }
     final contentStart = row.contentStarts[i], at = row.firstLine + i;
     final block = row.block >= 0 ? row.block : row.shells.last.block;
     final end =

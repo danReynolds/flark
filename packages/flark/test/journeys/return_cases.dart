@@ -422,6 +422,25 @@ void _returnCases(FlarkParseBackend backend) {
       }
     });
 
+    test('on a lazy line after a quoted definition stays in the quote', () {
+      // The paragraph's block opens with the definition, a line before its
+      // row, whose first line reads on lazily: the new line takes the
+      // quote's prefix from the block's first line, as typing there does.
+      for (final (source, split) in [
+        ('> [a]: /u\nb', '> [a]: /u\nb\n> '),
+        ('> [a]: /u\nb\nc', '> [a]: /u\nb\nc\n> '),
+      ]) {
+        final session = _Session(backend, source: source, caret: source.length);
+        session.act(const Newline(), source: split);
+        expect(shells(session), [ShellKind.blockQuote], reason: source);
+        session.act(
+          const InsertText('d'),
+          source: '${split}d',
+          rows: ['[a]: /u', '${source.substring(10)}\nd'],
+        );
+      }
+    });
+
     test('in a heading keeps the next block apart from its text', () {
       // The text after the caret becomes a paragraph, which would read the
       // next line on as part of it: a quote's lazy line, indented code, an
