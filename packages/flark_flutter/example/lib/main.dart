@@ -89,6 +89,9 @@ class Workbench extends StatefulWidget {
 
 class _WorkbenchState extends State<Workbench> {
   late FlarkController c;
+
+  /// The session of [c]'s editor, for Copy repro.
+  late FlarkEditRecorder _recorder;
   String active = 'Tour';
   final Map<String, String> _pendingSaves = {};
   bool _saving = false, inspect = false;
@@ -129,7 +132,7 @@ class _WorkbenchState extends State<Workbench> {
     );
     // The workbench is for dogfooding: every document records its session,
     // so that Copy repro can turn a surprise into a test.
-    editor.recorder = FlarkEditRecorder();
+    _recorder = FlarkEditRecorder(editor);
     c = FlarkController(editor);
     _lastQueuedSource = source;
     c.addListener(_changed);
@@ -251,7 +254,7 @@ class _WorkbenchState extends State<Workbench> {
                   icon: const Icon(Icons.copy_outlined, size: 20),
                   onSelected: (repro) => Clipboard.setData(
                     ClipboardData(
-                      text: repro ? c.editor.recorder?.repro ?? '' : c.text,
+                      text: repro ? _recorder.repro : c.text,
                     ),
                   ),
                   itemBuilder: (_) => const [

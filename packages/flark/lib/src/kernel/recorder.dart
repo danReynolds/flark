@@ -1,30 +1,60 @@
-part of 'editor.dart';
+/// Session recording for dogfooding: the calls made to an editor, written
+/// as a Dart repro and made again on a fresh editor.
+library;
+
+import 'dart:collection';
+import 'dart:convert';
+
+import '../../code.dart';
+import '../parse/backend.dart';
+import 'calls.dart';
+import 'commands.dart';
+import 'document.dart';
+import 'editor.dart';
+import 'projection.dart';
 
 /// Records the calls made to one editor so that a session can be replayed as
-/// a test. A host attaches one while dogfooding ([FlarkEditor.recorder]) and
-/// copies [repro] when something goes wrong.
+/// a test. A host attaches one while dogfooding and copies [repro] when
+/// something goes wrong.
 ///
-/// The recorder keeps where its window starts (source, selection, forced
-/// source mode) and each call since, with the time history used and what it
-/// returned. A call keeps the change it made to the source rather than a copy
-/// of the document, and past [capacity] calls the oldest is folded into the
-/// window's start, so memory stays near one document plus the recent changes.
-/// What the editor held before the window starts beyond that is not
-/// replayed: its history (an Undo past the window's start does nothing in
-/// the replay), a pending style and an unwritten table cell the caret was
-/// in. The repro says when the window starts with any of them.
+/// The recorder observes the editor's calls ([FlarkEditor.onCall]) and keeps
+/// where its window starts (source, selection, forced source mode) and each
+/// call since, as the [FlarkEditorCall] it was, with what it returned. Its
+/// two readers of a call are [repro], which writes it as Dart, and [replay],
+/// which makes it again. A call keeps the change it made to the source
+/// rather than a copy of the document, and past [capacity] calls the oldest
+/// is folded into the window's start, so memory stays near one document
+/// plus the recent changes. What the editor held before the window starts
+/// beyond that is not replayed: its history (an Undo past the window's
+/// start does nothing in the replay), a pending style and an unwritten table
+/// cell the caret was in. The repro says when the window starts with any of
+/// them.
 final class FlarkEditRecorder {
-  FlarkEditRecorder({this.capacity = 2000}) {
+  /// Records [editor]'s calls from now on, as its [FlarkEditor.onCall]. An
+  /// editor serves one observer at a time: one that has another throws a
+  /// [StateError].
+  FlarkEditRecorder(this.editor, {this.capacity = 2000}) {
     if (capacity < 1) throw ArgumentError.value(capacity, 'capacity');
+    if (editor.onCall != null) {
+      throw StateError('the editor already has a call observer');
+    }
+    _restart();
+    editor.onCall = _observer;
   }
+
+  /// The editor recorded.
+  final FlarkEditor editor;
 
   /// The most calls kept.
   final int capacity;
 
-  FlarkEditor? _editor;
+  late final _observer = _add;
   late String _source;
   late FlarkSelection _selection;
   late bool _sourceMode, _composing;
+
+  /// The source the last call left, which the next one changes.
+  late String _last;
   final _calls = ListQueue<_RecordedCall>();
   int _folded = 0;
 
@@ -37,23 +67,14 @@ final class FlarkEditRecorder {
   /// Calls folded into the window's start because [capacity] was reached.
   int get folded => _folded;
 
-  void _attach(FlarkEditor editor) {
-    final current = _editor;
-    if (current != null && !identical(current, editor)) {
-      throw StateError('a FlarkEditRecorder records one editor');
-    }
-    _editor = editor;
-    _restart(editor);
-  }
-
-  void _restart(FlarkEditor editor) {
-    _source = editor.source;
+  void _restart() {
+    _source = _last = editor.source;
     _selection = editor.selection;
-    _sourceMode = editor._forceSourceMode;
+    _sourceMode = editor.sourceModeForced;
     _composing = editor.composing;
     _partial =
         editor.history.canUndo ||
-        editor._pending != null ||
+        editor.hasPendingStyle ||
         editor.selection.tableCell != null;
     _calls.clear();
     _folded = 0;
@@ -61,13 +82,31 @@ final class FlarkEditRecorder {
 
   /// Forget the calls so far: the window starts again at the editor's
   /// present state.
-  void clear() {
-    final editor = _editor;
-    if (editor != null) _restart(editor);
+  void clear() => _restart();
+
+  /// Stop recording. The calls kept stay.
+  void detach() {
+    if (editor.onCall == _observer) editor.onCall = null;
   }
 
-  void _add(FlarkEditor editor, String before, _RecordedCall call) {
-    final after = editor.source;
+  void _add(FlarkEditorCall call, bool? returned, Object? error) {
+    final before = _last, after = editor.source;
+    // A call refused for a stale revision is noted but not replayed: a
+    // replay's revisions would not reproduce it.
+    final stale =
+        returned == false &&
+        editor.lastRejection == FlarkRejection.staleRevision;
+    final recorded = _RecordedCall(
+      call,
+      stale
+          ? 'false, stale revision'
+          : error != null
+          ? 'threw $error'
+          : returned == null
+          ? 'done'
+          : '$returned',
+      replayed: !stale,
+    );
     if (!identical(before, after) && before != after) {
       var start = 0;
       final shorter = before.length < after.length
@@ -83,17 +122,18 @@ final class FlarkEditRecorder {
               after.codeUnitAt(after.length - 1 - end)) {
         end++;
       }
-      call._change = (
+      recorded._change = (
         start,
         before.length - end - start,
         after.substring(start, after.length - end),
       );
     }
-    call
+    _last = after;
+    recorded
       .._selection = editor.selection
-      .._sourceMode = editor._forceSourceMode
+      .._sourceMode = editor.sourceModeForced
       .._composing = editor.composing;
-    _calls.add(call);
+    _calls.add(recorded);
     if (_calls.length > capacity) {
       final oldest = _calls.removeFirst();
       _source = oldest._applyTo(_source);
@@ -112,39 +152,33 @@ final class FlarkEditRecorder {
     FlarkParseBackend backend, {
     CodeEditingDelegate? codeEditing,
   }) {
-    final recorded = _editor;
-    if (recorded == null) throw StateError('nothing was recorded');
-    final editor = FlarkEditor(
+    final replayed = FlarkEditor(
       backend,
       text: _source,
       caret: _selection.extent,
       codeEditing: codeEditing,
-      syncLimit: recorded.syncLimit,
-      liveLimits: recorded.liveLimits,
-      sourceLimit: recorded.sourceLimit,
-      options: recorded._options,
+      syncLimit: editor.syncLimit,
+      liveLimits: editor.liveLimits,
+      sourceLimit: editor.sourceLimit,
+      options: editor.options,
     );
-    for (final step in _setup()) {
-      step.$2(editor);
+    for (final call in _setup()) {
+      _make(call, replayed);
     }
     for (final call in _calls) {
-      call._replay?.call(editor);
+      if (call._replayed) _make(call._call, replayed);
     }
-    return editor;
+    return replayed;
   }
 
   /// The calls that put a fresh editor where the window starts. Source mode
   /// comes first: there any offset holds the caret, which the live document
   /// the editor opens with would move.
-  List<(String, void Function(FlarkEditor))> _setup() => [
-    if (_sourceMode)
-      ('editor.setSourceMode(true);', (e) => e.setSourceMode(true)),
+  List<FlarkEditorCall> _setup() => [
+    if (_sourceMode) const SetSourceModeCall(true),
     if (_sourceMode || !_selection.isCollapsed)
-      (
-        'editor.apply(${describeCommand(SetSelection(_selection.base, _selection.extent))});',
-        (e) => e.apply(SetSelection(_selection.base, _selection.extent)),
-      ),
-    if (_composing) ('editor.beginComposition();', (e) => e.beginComposition()),
+      ApplyCall(SetSelection(_selection.base, _selection.extent), null),
+    if (_composing) const CompositionCall(CompositionStep.begin),
   ];
 
   /// Dart that rebuilds the editor where the window starts, makes the
@@ -152,8 +186,6 @@ final class FlarkEditRecorder {
   /// selection they ended with. As a regression test it passes until the
   /// behavior changes: correct the expectations to the intended result.
   String get repro {
-    final editor = _editor;
-    if (editor == null) return '// Nothing was recorded.';
     final out = StringBuffer()
       ..writeln(
         '// Flark repro: ${_calls.length} calls'
@@ -197,7 +229,7 @@ final class FlarkEditRecorder {
         'containerDepth: ${l.containerDepth}),',
       );
     }
-    final options = editor._options;
+    final options = editor.options;
     if (!options.softBreakAsNewline || !options.editableDelimiterRows) {
       out.writeln(
         '  options: const ProjectionOptions('
@@ -207,8 +239,8 @@ final class FlarkEditRecorder {
       );
     }
     out.writeln(');');
-    for (final (code, _) in _setup()) {
-      out.writeln(code);
+    for (final call in _setup()) {
+      out.writeln('${_dart(call)};');
     }
     var source = _source;
     var selection = _selection;
@@ -217,10 +249,9 @@ final class FlarkEditRecorder {
       final result = call._result
           .replaceAll('\r', r'\r')
           .replaceAll('\n', r'\n');
+      final code = _dart(call._call);
       out.writeln(
-        call._replay == null
-            ? '// ${call._code}; // $result'
-            : '${call._code}; // $result',
+        call._replayed ? '$code; // $result' : '// $code; // $result',
       );
       source = call._applyTo(source);
       selection = call._selection;
@@ -232,6 +263,56 @@ final class FlarkEditRecorder {
         '(${selection.base}, ${selection.extent}));',
       );
     return out.toString();
+  }
+
+  /// [call] as the Dart that makes it on `editor`.
+  static String _dart(FlarkEditorCall call) => switch (call) {
+    ApplyCall(:final command, :final at, :final afterComposition) =>
+      'editor.${afterComposition ? 'applyAfterComposition' : 'apply'}'
+          '(${describeCommand(command)}'
+          '${at == null ? '' : ', at: const Duration(microseconds: ${at.inMicroseconds})'})',
+    ReplaceSourceRangeCall(
+      :final start,
+      :final end,
+      :final text,
+      :final replaceAll,
+    ) =>
+      'editor.replaceSourceRange($start, $end, ${_literal(text)}'
+          '${replaceAll ? ', replaceAll: true' : ''})',
+    LoadMarkdownCall(:final text) => 'editor.loadMarkdown(${_literal(text)})',
+    SelectAllCall(:final codeBlock) =>
+      'editor.selectAll(${codeBlock ? 'codeBlock: true' : ''})',
+    CompositionCall(:final step) => 'editor.${step.name}Composition()',
+    SetSourceModeCall(:final enabled) => 'editor.setSourceMode($enabled)',
+  };
+
+  /// Makes [call] on [editor] again.
+  static void _make(FlarkEditorCall call, FlarkEditor editor) {
+    switch (call) {
+      case ApplyCall(:final command, :final at, afterComposition: true):
+        editor.applyAfterComposition(command, at: at);
+      case ApplyCall(:final command, :final at):
+        editor.apply(command, at: at);
+      case ReplaceSourceRangeCall(
+        :final start,
+        :final end,
+        :final text,
+        :final replaceAll,
+      ):
+        editor.replaceSourceRange(start, end, text, replaceAll: replaceAll);
+      case LoadMarkdownCall(:final text):
+        editor.loadMarkdown(text);
+      case SelectAllCall(:final codeBlock):
+        editor.selectAll(codeBlock: codeBlock);
+      case CompositionCall(step: CompositionStep.begin):
+        editor.beginComposition();
+      case CompositionCall(step: CompositionStep.commit):
+        editor.commitComposition();
+      case CompositionCall(step: CompositionStep.cancel):
+        editor.cancelComposition();
+      case SetSourceModeCall(:final enabled):
+        editor.setSourceMode(enabled);
+    }
   }
 
   /// [command] as the Dart that constructs it.
@@ -277,15 +358,16 @@ final class FlarkEditRecorder {
       jsonEncode(text).replaceAll(r'$', r'\$');
 }
 
-/// One recorded call: the Dart that makes it, what it returned, how to make
-/// it again (null when a replay must not, as for a call refused for a stale
-/// revision, which a replay's revisions would not reproduce), and the change
-/// it made with the state it left.
+/// One recorded call: the call, what it returned, whether a replay makes it
+/// again (not one refused for a stale revision, which a replay's revisions
+/// would not reproduce), and the change it made with the state it left.
 final class _RecordedCall {
-  _RecordedCall(this._code, this._result, this._replay);
+  _RecordedCall(this._call, this._result, {required bool replayed})
+    : _replayed = replayed;
 
-  final String _code, _result;
-  final void Function(FlarkEditor)? _replay;
+  final FlarkEditorCall _call;
+  final String _result;
+  final bool _replayed;
   (int, int, String)? _change;
   late FlarkSelection _selection;
   late bool _sourceMode, _composing;

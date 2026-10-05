@@ -21,7 +21,7 @@ Future<void> main(List<String> args) async {
     for (final arg in args)
       if (arg.startsWith('--repro=')) arg.substring('--repro='.length),
   ].lastOrNull;
-  if (repro != null) editor.recorder = FlarkEditRecorder();
+  final recorder = repro == null ? null : FlarkEditRecorder(editor);
   final controller = FlarkFleuryController(editor);
   try {
     await runApp(
@@ -51,7 +51,7 @@ Future<void> main(List<String> args) async {
           : null,
     );
   } finally {
-    if (repro != null) File(repro).writeAsStringSync(editor.recorder!.repro);
+    if (repro != null) File(repro).writeAsStringSync(recorder!.repro);
     controller.dispose();
     parser.dispose();
   }

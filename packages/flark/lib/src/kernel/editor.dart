@@ -2,15 +2,13 @@
 /// applies commands, keeps history, and reports the typing context.
 library;
 
-import 'dart:collection';
-import 'dart:convert';
-
 import 'package:characters/characters.dart';
 import '../../code.dart';
 
 import '../parse/backend.dart';
 import '../parse/render_model.dart';
 import '../parse/schema.g.dart';
+import 'calls.dart';
 import 'commands.dart';
 import 'continuation.dart';
 import 'document.dart';
@@ -27,7 +25,6 @@ part 'code_editing.dart';
 part 'resource_editing.dart';
 part 'table_editing.dart';
 part 'inline_formatting.dart';
-part 'recorder.dart';
 part 'typed_lines.dart';
 part 'composition.dart';
 
@@ -105,56 +102,45 @@ final class FlarkEditor implements FlarkDocumentState {
   /// that text (an input method's correction beside its word). See
   /// [_compose].
   (int, int, String, bool)? _composed;
-  FlarkEditRecorder? _recorder;
-  bool _recording = false;
 
-  /// Records the calls made to this editor from now on, so that a session
-  /// can be replayed as a test ([FlarkEditRecorder.repro]). Null stops
-  /// recording. A recorder serves one editor; setting it again starts its
-  /// recording over.
-  FlarkEditRecorder? get recorder => _recorder;
-  set recorder(FlarkEditRecorder? recorder) {
-    recorder?._attach(this);
-    _recorder = recorder;
-  }
+  /// Told of each call to this editor's editing API once it returns or
+  /// throws: the call as data, what it returned (null for a call that
+  /// returns nothing) and what it threw. A call made inside another (one
+  /// a listener makes while the editor notifies) is part of that one. A
+  /// `FlarkEditRecorder` from `package:flark/recorder.dart` sets it to record
+  /// a session as a replayable test. It serves one observer at a time.
+  void Function(FlarkEditorCall call, bool? returned, Object? error)? onCall;
+  bool _observing = false;
 
-  /// Runs [call] and, while recording, records it as [code], built after the
-  /// call when the time history used is known, with [replay] to make it
-  /// again. A call made inside another recorded call is part of that one. A
-  /// call refused for a stale revision is recorded but not replayed: a
-  /// replay's revisions would not reproduce it.
-  T _record<T>(
-    T Function() call,
-    String Function() code,
-    void Function(FlarkEditor) Function() replay,
-  ) {
-    final recorder = _recorder;
-    if (recorder == null || _recording) return call();
-    _recording = true;
-    final before = source;
-    var result = 'threw';
+  /// Runs [body], the work of [call], and tells [onCall] of it.
+  T _observe<T>(FlarkEditorCall call, T Function() body) {
+    final observer = onCall;
+    if (observer == null || _observing) return body();
+    _observing = true;
+    Object? returned, error;
     try {
-      final value = call();
-      result = value is bool ? '$value' : 'done';
+      final value = body();
+      returned = value;
       return value;
-    } catch (error) {
-      result = 'threw $error';
+    } catch (thrown) {
+      error = thrown;
       rethrow;
     } finally {
-      _recording = false;
-      final stale =
-          result == 'false' && _lastRejection == FlarkRejection.staleRevision;
-      recorder._add(
-        this,
-        before,
-        _RecordedCall(
-          code(),
-          stale ? 'false, stale revision' : result,
-          stale ? null : replay(),
-        ),
-      );
+      _observing = false;
+      observer(call, returned is bool ? returned : null, error);
     }
   }
+
+  /// The projection options this editor renders with.
+  ProjectionOptions get options => _options;
+
+  /// Whether source mode was asked for ([setSourceMode]), apart from a
+  /// document past the live tier, which shows its source anyway.
+  bool get sourceModeForced => _forceSourceMode;
+
+  /// Whether the next typed text takes a pending style: one a formatting
+  /// command set at the caret, or one an emptied span left behind.
+  bool get hasPendingStyle => _pending != null;
 
   final History history = History();
   final List<FlarkListener> _listeners = [];
@@ -219,19 +205,15 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Apply one command. Returns whether anything changed. [at] is the
   /// command's time, used only for history coalescing.
-  bool apply(FlarkCommand command, {Duration? at, int? expectedRevision}) =>
-      _record(
-        () => _apply(command, at: at, expectedRevision: expectedRevision),
-        () =>
-            'editor.apply(${FlarkEditRecorder.describeCommand(command)}, '
-            'at: const Duration(microseconds: ${_now.inMicroseconds}))',
-        () {
-          final now = _now;
-          return (editor) => editor.apply(command, at: now);
-        },
-      );
+  bool apply(FlarkCommand command, {Duration? at, int? expectedRevision}) {
+    final now = at ?? _clock();
+    return _observe(
+      ApplyCall(command, now),
+      () => _apply(command, now, expectedRevision),
+    );
+  }
 
-  bool _apply(FlarkCommand command, {Duration? at, int? expectedRevision}) {
+  bool _apply(FlarkCommand command, Duration at, int? expectedRevision) {
     _lastRejection = null;
     _inert = false;
     if (expectedRevision != null && expectedRevision != revision) {
@@ -253,7 +235,7 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     if (composing && command is Undo) commitComposition();
     if (command is! SelectAll) _selectedCodeScope = false;
-    _now = at ?? _clock();
+    _now = at;
     final applied = sourceMode
         ? _applySource(command)
         : composing && command is InsertText
@@ -286,21 +268,17 @@ final class FlarkEditor implements FlarkDocumentState {
     FlarkCommand command, {
     Duration? at,
     int? expectedRevision,
-  }) => _record(
-    () => _applyAfterComposition(
-      () => command,
-      at: at,
-      expectedRevision: expectedRevision,
-    ),
-    () =>
-        'editor.applyAfterComposition('
-        '${FlarkEditRecorder.describeCommand(command)}, '
-        'at: const Duration(microseconds: ${_now.inMicroseconds}))',
-    () {
-      final now = _now;
-      return (editor) => editor.applyAfterComposition(command, at: now);
-    },
-  );
+  }) {
+    final now = at ?? _clock();
+    return _observe(
+      ApplyCall(command, now, afterComposition: true),
+      () => _applyAfterComposition(
+        () => command,
+        at: now,
+        expectedRevision: expectedRevision,
+      ),
+    );
+  }
 
   /// [command] is built once the composition has ended: committing its
   /// text can respell the source the command's offsets are in.
@@ -413,7 +391,8 @@ final class FlarkEditor implements FlarkDocumentState {
     String text, {
     int? expectedRevision,
     bool replaceAll = false,
-  }) => _record(
+  }) => _observe(
+    ReplaceSourceRangeCall(start, end, text, replaceAll: replaceAll),
     () => _replaceSourceRange(
       start,
       end,
@@ -421,13 +400,6 @@ final class FlarkEditor implements FlarkDocumentState {
       expectedRevision: expectedRevision,
       replaceAll: replaceAll,
     ),
-    () =>
-        'editor.replaceSourceRange($start, $end, '
-        '${FlarkEditRecorder._literal(text)}'
-        '${replaceAll ? ', replaceAll: true' : ''})',
-    () =>
-        (editor) =>
-            editor.replaceSourceRange(start, end, text, replaceAll: replaceAll),
   );
 
   bool _replaceSourceRange(
@@ -528,11 +500,9 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Establish external content without creating an undo step. Always
   /// publishes a revision, even when resetting identical content.
-  bool loadMarkdown(String text, {int? expectedRevision}) => _record(
+  bool loadMarkdown(String text, {int? expectedRevision}) => _observe(
+    LoadMarkdownCall(text),
     () => _loadMarkdown(text, expectedRevision: expectedRevision),
-    () => 'editor.loadMarkdown(${FlarkEditRecorder._literal(text)})',
-    () =>
-        (editor) => editor.loadMarkdown(text),
   );
 
   bool _loadMarkdown(String text, {int? expectedRevision}) {
@@ -557,12 +527,10 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Programmatic selection has an explicit scope; keyboard SelectAll keeps
   /// its familiar fence-first, then whole-document progression.
-  bool selectAll({bool codeBlock = false, int? expectedRevision}) => _record(
+  bool selectAll({bool codeBlock = false, int? expectedRevision}) => _observe(
+    SelectAllCall(codeBlock: codeBlock),
     () =>
         _selectAllIn(codeBlock: codeBlock, expectedRevision: expectedRevision),
-    () => 'editor.selectAll(${codeBlock ? 'codeBlock: true' : ''})',
-    () =>
-        (editor) => editor.selectAll(codeBlock: codeBlock),
   );
 
   bool _selectAllIn({required bool codeBlock, int? expectedRevision}) {
@@ -597,15 +565,10 @@ final class FlarkEditor implements FlarkDocumentState {
   /// Cancellation restores source, selection and typing intent without using
   /// or clearing the user's undo/redo stacks.
   void beginComposition() {
-    // Composition calls that change nothing (a hand that commits or begins
-    // on every focus change) are not worth a line of a repro.
+    // Composition calls that change nothing (a host that commits or begins
+    // on every focus change) are no calls worth observing.
     if (composing) return;
-    _record(
-      _beginComposition,
-      () => 'editor.beginComposition()',
-      () =>
-          (editor) => editor.beginComposition(),
-    );
+    _observe(const CompositionCall(CompositionStep.begin), _beginComposition);
   }
 
   void _beginComposition() {
@@ -619,12 +582,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// [lastRejection] then says why.
   void commitComposition() {
     if (!composing) return;
-    _record(
-      _commitComposition,
-      () => 'editor.commitComposition()',
-      () =>
-          (editor) => editor.commitComposition(),
-    );
+    _observe(const CompositionCall(CompositionStep.commit), _commitComposition);
   }
 
   void _commitComposition() {
@@ -656,12 +614,7 @@ final class FlarkEditor implements FlarkDocumentState {
 
   void cancelComposition() {
     if (!composing) return;
-    _record(
-      _cancelComposition,
-      () => 'editor.cancelComposition()',
-      () =>
-          (editor) => editor.cancelComposition(),
-    );
+    _observe(const CompositionCall(CompositionStep.cancel), _cancelComposition);
   }
 
   void _cancelComposition() {
@@ -677,12 +630,8 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Explicit source editing remains available for unsupported rich edits.
   /// Returning to rendered mode uses the same admission path as opening.
-  void setSourceMode(bool enabled) => _record(
-    () => _setSourceMode(enabled),
-    () => 'editor.setSourceMode($enabled)',
-    () =>
-        (editor) => editor.setSourceMode(enabled),
-  );
+  void setSourceMode(bool enabled) =>
+      _observe(SetSourceModeCall(enabled), () => _setSourceMode(enabled));
 
   void _setSourceMode(bool enabled) {
     commitComposition();

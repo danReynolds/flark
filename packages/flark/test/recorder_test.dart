@@ -34,8 +34,7 @@ void main() {
       text: '# Notes\n\n- one\n- two\n\nSome text.',
       caret: 7,
     );
-    final recorder = FlarkEditRecorder();
-    editor.recorder = recorder;
+    final recorder = FlarkEditRecorder(editor);
     var t = 0;
     void type(String text) {
       for (final c in text.split('')) {
@@ -80,8 +79,7 @@ void main() {
 
   test('the repro is the Dart that makes the same calls', () {
     final editor = FlarkEditor(backend, text: r'a $b', caret: 1);
-    final recorder = FlarkEditRecorder();
-    editor.recorder = recorder;
+    final recorder = FlarkEditRecorder(editor);
     editor.apply(const InsertText('x'), at: ms(10));
     editor.apply(const DeleteForward(word: true), at: ms(20));
     editor.beginComposition();
@@ -132,8 +130,7 @@ expect((editor.selection.base, editor.selection.extent), (3, 3));
 
   test('a full recorder folds its oldest calls into where it starts', () {
     final editor = FlarkEditor(backend, text: 'start', caret: 5);
-    final recorder = FlarkEditRecorder(capacity: 3);
-    editor.recorder = recorder;
+    final recorder = FlarkEditRecorder(editor, capacity: 3);
     for (var i = 0; i < 10; i++) {
       editor.apply(InsertText('$i'), at: ms(i * 1000));
     }
@@ -151,8 +148,7 @@ expect((editor.selection.base, editor.selection.extent), (3, 3));
 
   test('a call refused for a stale revision is noted, not replayed', () {
     final editor = FlarkEditor(backend, text: 'abc', caret: 3);
-    final recorder = FlarkEditRecorder();
-    editor.recorder = recorder;
+    final recorder = FlarkEditRecorder(editor);
     expect(
       editor.apply(
         const InsertText('d'),
@@ -172,8 +168,7 @@ expect((editor.selection.base, editor.selection.extent), (3, 3));
     final editor = FlarkEditor(backend, text: '**ab** c');
     editor.setSourceMode(true);
     editor.apply(const SetSelection(1, 1));
-    final recorder = FlarkEditRecorder();
-    editor.recorder = recorder;
+    final recorder = FlarkEditRecorder(editor);
     editor.apply(const InsertText('x'), at: const Duration(seconds: 1));
     expect(editor.source, '*x*ab** c');
     expect(recorder.replay(backend).source, editor.source);
@@ -189,19 +184,16 @@ expect((editor.selection.base, editor.selection.extent), (3, 3));
   test('a window starting mid-session says what it does not replay', () {
     final editor = FlarkEditor(backend, text: 'a', caret: 1);
     editor.apply(const InsertText('b'), at: const Duration(seconds: 1));
-    final recorder = FlarkEditRecorder();
-    editor.recorder = recorder;
+    final recorder = FlarkEditRecorder(editor);
     editor.apply(const Undo(), at: const Duration(seconds: 5));
     expect(recorder.repro, contains('// The window starts mid-session'));
-    final fresh = FlarkEditRecorder();
-    FlarkEditor(backend, text: 'a').recorder = fresh;
+    final fresh = FlarkEditRecorder(FlarkEditor(backend, text: 'a'));
     expect(fresh.repro, isNot(contains('mid-session')));
   });
 
   test('a result with line breaks stays one line comment', () {
     final editor = FlarkEditor(_Throwing(backend), text: 'a', caret: 1);
-    final recorder = FlarkEditRecorder();
-    editor.recorder = recorder;
+    final recorder = FlarkEditRecorder(editor);
     expect(
       () => editor.apply(const InsertText('!'), at: const Duration(seconds: 1)),
       throwsFormatException,
@@ -212,15 +204,15 @@ expect((editor.selection.base, editor.selection.extent), (3, 3));
     expect(call, endsWith(r'// threw FormatException: bad\ninput'));
   });
 
-  test('a recorder serves one editor and stops when detached', () {
-    final recorder = FlarkEditRecorder();
-    final editor = FlarkEditor(backend, text: 'a', caret: 1)
-      ..recorder = recorder;
-    expect(() => FlarkEditor(backend)..recorder = recorder, throwsStateError);
-    editor.recorder = null;
+  test('an editor serves one recorder, which stops when detached', () {
+    final editor = FlarkEditor(backend, text: 'a', caret: 1);
+    final recorder = FlarkEditRecorder(editor);
+    expect(() => FlarkEditRecorder(editor), throwsStateError);
+    recorder.detach();
     editor.apply(const InsertText('b'));
     expect(recorder.length, 0);
-    expect(editor.recorder, isNull);
+    expect(editor.onCall, isNull);
+    expect(FlarkEditRecorder(editor).length, 0);
   });
 
   test('commands are written as the Dart that constructs them', () {

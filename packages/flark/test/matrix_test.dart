@@ -191,8 +191,7 @@ void main() {
         final caret = r.nextInt(source.length + 1);
         final editor = FlarkEditor(backend, text: source, caret: caret);
         // Records the calls the sequence makes, for a failure's repro.
-        final recorder = FlarkEditRecorder();
-        editor.recorder = recorder;
+        final recorder = FlarkEditRecorder(editor);
         final log = <String>[];
         try {
           checkStep(editor, 'seed $s load');
