@@ -2901,7 +2901,7 @@ final class FlarkEditor implements FlarkDocumentState {
         apart: line > 0,
       );
       final caret = prefixStart + replacement.length;
-      if (_commit(
+      final left = _attempt(
         source.replaceRange(prefixStart, contentStart, replacement),
         FlarkSelection.collapsed(caret),
         coalesce: false,
@@ -2917,13 +2917,11 @@ final class FlarkEditor implements FlarkDocumentState {
               movesText: false,
               shells: true,
             ),
-      )) {
-        return true;
-      }
+      );
       // Leaving would move the blocks after the line, as an empty item's
       // nested items would: Return does nothing, with no refusal to report.
-      if (_lastRejection == null) _inert = true;
-      return false;
+      if (left is _NotKept) _inert = true;
+      return left is _Committed;
     }
     // The new line continues the containers, a selection's as a caret at its
     // start would: an item as the next item, a quote or footnote with
@@ -2937,16 +2935,18 @@ final class FlarkEditor implements FlarkDocumentState {
         ? _nextMarker(inner)
         : _rowPrefix(row, line);
     final separator = '$nl$continued';
-    if (_splitRow(row, start, end, separator) is _Committed) return true;
-    if (_lastRejection != null || start != end) return false;
+    final split = _splitRow(row, start, end, separator);
+    if (split is _Committed) return true;
+    if (split is _Refused || start != end) return false;
     // A caret beside hidden syntax shows the same place from the anchors
     // around it. Where a break at its own anchor would split a construct
     // that holds no split (the end of an autolink's text, before its hidden
     // `>`), the break goes beside the construct instead.
     for (final other in _doc.anchorsAt(start)) {
       if (other == start) continue;
-      if (_splitRow(row, other, other, separator) is _Committed) return true;
-      if (_lastRejection != null) return false;
+      final split = _splitRow(row, other, other, separator);
+      if (split is _Committed) return true;
+      if (split is _Refused) return false;
     }
     return false;
   }
