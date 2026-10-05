@@ -453,6 +453,47 @@ void _deletionCases(FlarkParseBackend backend) {
       expect(session.editor.projection.rows.single.kind, RowKind.heading);
     });
 
+    test('a word deleted over a whole span takes its delimiters', () {
+      // The word before the caret is all of the span's text and the space
+      // after it. Its start lies past the span's hidden opening syntax,
+      // which deleting the word must not strand: the span goes whole, as
+      // deleting all of an owner's text takes its delimiters.
+      for (final (source, caret, deleted, rows) in [
+        ('a **bold** ', 11, 'a ', ['a ']),
+        ('see `draft` now', 12, 'see now', ['see now']),
+        ('an ![icon](i.png) here', 18, 'an here', ['an here']),
+        ('- *one* two', 8, '- two', ['two']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const DeleteBackward(word: true),
+          source: deleted,
+          rows: rows,
+        );
+        session.act(const Undo(), source: source);
+      }
+    });
+
+    test('an empty quoted line whose marker cannot go alone goes whole', () {
+      // Without its `>`, the empty line between two items of the quoted
+      // list would end the quote, and `- c` would be indented code there.
+      // The line goes whole instead, as an empty line without a prefix
+      // joins the row before it, and the caret ends that row.
+      final session = _Session(
+        backend,
+        source: '> 1) a\n>    - b\n>\n>    - c\n',
+        caret: 17,
+      );
+      final shells = _shellsOf(session.editor)..removeAt(2);
+      session.act(
+        const DeleteBackward(),
+        source: '> 1) a\n>    - b\n>    - c\n',
+        rows: ['a', 'b', 'c', ''],
+        caret: const DisplayPosition(1, 1),
+      );
+      expect(_shellsOf(session.editor), shells);
+    });
+
     test('a deletion that would move another block refuses', () {
       // No spelling of the emptied `#` line keeps `[` out of the item: a
       // blank line lets the item go on over it, and without one `[` reads

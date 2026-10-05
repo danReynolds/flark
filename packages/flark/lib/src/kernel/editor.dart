@@ -1015,6 +1015,32 @@ final class FlarkEditor implements FlarkDocumentState {
     return (start: start, end: end);
   }
 
+  /// A word that shows all of an inline owner's text and text beside it,
+  /// where the word's edge falls inside the owner's hidden delimiters (the
+  /// word `bold ` deleted back from after `**bold** `), covers the owner:
+  /// its delimiters go with its text, as deleting all of an owner's text
+  /// takes them (EP1-DELETE-TO-EMPTY), so none is stranded. A word of
+  /// exactly an owner's text stays its content. An explicit selection keeps
+  /// its own range (see [_supportedRange]).
+  ({int start, int end}) _coverOwners(({int start, int end}) range) {
+    var (:start, :end) = range;
+    if (start == end) return range;
+    for (var grew = true; grew;) {
+      grew = false;
+      for (final o in [..._doc.ownersAt(start), ..._doc.ownersAt(end)]) {
+        final covers = start <= o.contentStart && end >= o.contentEnd;
+        final content = start == o.contentStart && end == o.contentEnd;
+        final whole = start <= o.start && end >= o.end;
+        if (covers && !content && !whole) {
+          if (o.start < start) start = o.start;
+          if (o.end > end) end = o.end;
+          grew = true;
+        }
+      }
+    }
+    return (start: start, end: end);
+  }
+
   bool _insert(String typed, {required bool typing}) {
     if (typed.isEmpty) return false;
     final sel = selection;
@@ -1652,14 +1678,18 @@ final class FlarkEditor implements FlarkDocumentState {
     final int a, b;
     final atomic = _adjacentAtomicSegment(row, d, forward: !backward);
     if (word) {
-      a = row.sourceForDisplay(
-        backward ? _wordStart(row.text, d) : d,
-        anchor: Anchor.after,
-      );
-      b = row.sourceForDisplay(
-        backward ? d : _wordEnd(row.text, d),
-        anchor: Anchor.before,
-      );
+      final covered = _coverOwners((
+        start: row.sourceForDisplay(
+          backward ? _wordStart(row.text, d) : d,
+          anchor: Anchor.after,
+        ),
+        end: row.sourceForDisplay(
+          backward ? d : _wordEnd(row.text, d),
+          anchor: Anchor.before,
+        ),
+      ));
+      a = covered.start;
+      b = covered.end;
       if (!_supportedRange(a, b)) return false;
     } else if (atomic != null) {
       a = atomic.sourceStart;
@@ -2168,7 +2198,7 @@ final class FlarkEditor implements FlarkDocumentState {
       final outer = source.substring(m.lineStartUtf16(line), prefixStart);
       final replacement = separate ? '${_lineBreakAt(prefixStart)}$outer' : '';
       final caret = prefixStart + replacement.length;
-      return _commitApart(
+      final lifted = _commitApart(
         row,
         source.replaceRange(prefixStart, contentStart, replacement),
         [(prefixStart, contentStart, replacement.length)],
@@ -2188,6 +2218,15 @@ final class FlarkEditor implements FlarkDocumentState {
                   now.shells.length <= row.shells.length;
         },
       );
+      if (lifted || _inert || _lastRejection != null) return lifted;
+      // An empty line whose prefix cannot go alone (without its `>`, the
+      // line between two items of a quoted list would end the quote) goes
+      // whole, as an empty line without a prefix joins the row before it.
+      if (row.kind != RowKind.blank || row.index == 0) return false;
+      final above = projection.rows[row.index - 1];
+      return above.kind != RowKind.tableCell &&
+          above.firstLine + above.lineCount <= row.firstLine &&
+          _joinRows(above, row);
     }
     if (row.index == 0) {
       // Nothing precedes this row to join onto. A thematic break is the one
@@ -2849,7 +2888,19 @@ final class FlarkEditor implements FlarkDocumentState {
         : inner.kind == ShellKind.item
         ? _nextMarker(inner)
         : _rowPrefix(row, line);
-    return _splitRow(row, start, end, '$nl$continued');
+    final separator = '$nl$continued';
+    if (_splitRow(row, start, end, separator)) return true;
+    if (_lastRejection != null || start != end) return false;
+    // A caret beside hidden syntax shows the same place from the anchors
+    // around it. Where a break at its own anchor would split a construct
+    // that holds no split (the end of an autolink's text, before its hidden
+    // `>`), the break goes beside the construct instead.
+    for (final other in _doc.anchorsAt(start)) {
+      if (other == start) continue;
+      if (_splitRow(row, other, other, separator)) return true;
+      if (_lastRejection != null) return false;
+    }
+    return false;
   }
 
   /// The prefix that continues [row]'s containers after [line]: the line's
@@ -3546,6 +3597,9 @@ final class FlarkEditor implements FlarkDocumentState {
         typing: false,
       );
     }
+    // No task item holds the caret: there is no checkbox to toggle, which
+    // is nothing to do rather than an edit Markdown cannot make.
+    _inert = true;
     return false;
   }
 
@@ -3560,7 +3614,13 @@ final class FlarkEditor implements FlarkDocumentState {
     if (level < 0 || level > 6) return false;
     final row = _doc.caretRow;
     if (row.kind == RowKind.blank && selection.isCollapsed) {
-      return level > 0 && _emptyLineHeading(row, level);
+      // An empty line is no heading already: clearing its level has
+      // nothing to do, as on a paragraph.
+      if (level == 0) {
+        _inert = true;
+        return false;
+      }
+      return _emptyLineHeading(row, level);
     }
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
       return false;

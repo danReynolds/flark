@@ -342,6 +342,16 @@ void _structureCases(FlarkParseBackend backend) {
       session.act(const ToggleTask(), source: '- [ ] a');
     });
 
+    test('a task toggle off any task item does nothing quietly', () {
+      // There is no checkbox to toggle: nothing to do, which a host does not
+      // report as a refused edit.
+      for (final (source, caret) in [('a', 1), ('- a', 3), ('> b', 3)]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const ToggleTask(), applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
+    });
+
     test('heading level is set and cleared on the caret\'s row', () {
       final session = _Session(backend, source: 'title', caret: 5);
       session.act(
@@ -356,6 +366,20 @@ void _structureCases(FlarkParseBackend backend) {
         rows: ['title'],
         caret: const DisplayPosition(0, 5),
       );
+    });
+
+    test('clearing the level of a line that is no heading does nothing', () {
+      // An empty line, like a paragraph, is at level 0 already: the command
+      // is inert, with no refusal for a host to report.
+      for (final (source, caret) in [
+        ('a\n\nb', 2),
+        ('- a\n\n  b', 4),
+        ('a', 1),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const SetHeadingLevel(0), applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
     });
 
     test('backspace joins a quote line into the previous quote line', () {

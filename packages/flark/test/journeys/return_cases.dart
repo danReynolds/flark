@@ -196,6 +196,48 @@ void _returnCases(FlarkParseBackend backend) {
   });
 
   group('return', () {
+    test('at the end of an autolink goes after its hidden closer', () {
+      // A click at the row's end takes the autolink's side, before its
+      // hidden `>`, where a break would split it. The anchors around the
+      // caret show the same place, so the break goes after the `>`, in the
+      // containers of the line.
+      for (final (source, end, split, rows) in [
+        (
+          'see <https://x.y>',
+          15,
+          'see <https://x.y>\n',
+          ['see https://x.y', ''],
+        ),
+        (
+          '- see <https://x.y>',
+          15,
+          '- see <https://x.y>\n- ',
+          ['see https://x.y', ''],
+        ),
+        (
+          '> see <https://x.y>',
+          15,
+          '> see <https://x.y>\n> ',
+          ['see https://x.y', ''],
+        ),
+      ]) {
+        final session = _Session(backend, source: source);
+        session.act(PlaceCaret(0, end, leadingHalf: false));
+        expect(
+          session.editor.selection.extent,
+          source.length - 1,
+          reason: '$source: the caret is the autolink\'s',
+        );
+        session.act(
+          const Newline(),
+          source: split,
+          rows: rows,
+          caret: const DisplayPosition(1, 0),
+        );
+        session.act(const InsertText('z'), source: '${split}z');
+      }
+    });
+
     test('over a selection continues the containers of its line', () {
       for (final (source, base, extent, split, typed) in [
         ('> ab', 3, 4, '> a\n> ', '> a\n> z'),

@@ -12,9 +12,12 @@
 /// - (c) a typed letter or digit shows where the caret was, the caret
 ///   follows it, and nothing else shown changes;
 /// - (d) Return keeps the new line in the containers of the line it split;
-/// - (e) Return shows one line break (two for a paragraph break) and changes
-///   nothing else shown;
+/// - (e) Return shows one line break (two for a paragraph break, which
+///   leaves a blank row before the caret) and changes nothing else shown;
 /// - (f) a heading level applies to the caret's row in its containers;
+/// - (g) a Backspace or Delete of one grapheme inside a row removes that
+///   grapheme from what shows, the caret where it was, and changes nothing
+///   else shown;
 /// - rows paint in source order.
 ///
 /// Markdown legitimately reads some edits beyond the edited rows. Each
@@ -24,22 +27,66 @@
 /// - literal lines: text with a line break from paste, range replacement or
 ///   raw input takes Markdown's meaning with the blocks around it;
 /// - inline pairing: an edit of characters can pair the inline delimiters of
-///   the rows it touches anew (flanking, backtick strings, brackets);
+///   the rows it touches anew (flanking, backtick strings, brackets, escapes
+///   and break markers), so in (c) and (g) those delimiters may appear or
+///   disappear; a pending style's delimiters typed against a delimiter run
+///   already there pair with it as the rule of three says (`***b***`);
 /// - references: editing a definition or a reference's label re-resolves
 ///   references across the document;
 /// - openers: an edit of characters can complete a block opener (a fence,
 ///   an HTML block start, a list or quote marker, an ATX heading, a rule, a
-///   table delimiter row), which Markdown reads on into the lines after it,
-///   and
-///   HTML blocks are literal source whose end conditions are their own
-///   characters;
+///   table delimiter row), which Markdown reads on into the lines after it;
+///   a letter can complete a table row (`|` becomes `|b`), whose pipes the
+///   table then hides;
+/// - literal HTML: HTML blocks are literal source whose end conditions are
+///   their own characters, so an edit in one, or a line break Return puts in
+///   it, may end it elsewhere or start another, and a whitespace-only line
+///   in an HTML block that runs to the document's end is its literal text;
+/// - literal text: a raw inline tag and code show their source as written,
+///   where text shows entities decoded and escapes without their backslash,
+///   so in (g) an edit that makes or breaks a tag, an entity or an escape
+///   (`&#87654321;` less `8` is a character reference) shows its characters
+///   anew;
+/// - closing sequences: an edit of characters can make or break a heading's
+///   closing sequence, the `#` run after a space at its end (`# a #b` less
+///   `b`);
+/// - deletion respellings: an emptied line of a longer row goes with its
+///   line break, and deleting a hard break takes its whole marker, the
+///   spaces shown before it included;
+/// - source-only leaves: a leaf whose inlines the parse crate could not
+///   verify against comrak shows its source, so in (g) an edit that makes
+///   or unmakes one shows that leaf anew;
 /// - removed containers: blocks inside a container whose marker the edit
 ///   removed lose that container with it;
+/// - filled items: text put into an empty list item takes back the blocks
+///   indented for that item, which Markdown read outside it while the item
+///   was empty (an empty item ends at a blank line);
 /// - bare markers: the profile presents a bare marker that starts its own
 ///   list as text, and one between other items as an empty item;
 /// - empty rows on joins: a row that shows no text joins wherever its
 ///   source lands, so Backspace can always erase a document;
 /// - whole document: replacing the whole-document selection replaces it all.
+///
+/// [checkMustApply] is the other half: a refused command only has to leave
+/// no trace, so where the context leaves the profile no reason to refuse a
+/// command, it must apply.
+///
+/// Sweeps on other seeds (2026-10-04: 100,000 matrix sequences, 800
+/// authoring sessions) still find kernel classes these checks name, about 1
+/// in 1,500 matrix sequences: Return between delimiter runs that pair anew
+/// leaves the caret after a literal delimiter (`*foo**bar*` split after
+/// `foo`, (e)); a deletion that leaves a backslash before a line end makes a
+/// hard break the caret is legalized past (`a\o` less `o` before a line
+/// break, (g)); a deletion that empties a line inside a longer row keeps
+/// the line, so the row's later lines read anew (`- y` over a lazy `  2. b`
+/// less `y` makes `2. b` an item, (g)), or respells it after a blank line
+/// that makes its indented text code (g); Delete on an empty line of
+/// indented code joins the next line without its indentation, which leaves
+/// the code (`    a`, ``, `      b`, (g)); Return at the end of a setext
+/// heading whose last line shows only hidden syntax refuses (`` a`b ``,
+/// `` ` ``, `---`, must-apply); and so does Return at the end of a footnote
+/// definition inside a list item or another footnote (`- [^2]: a`,
+/// must-apply).
 ///
 /// Undo and Redo restore states the history walk already checks.
 library;
@@ -47,6 +94,7 @@ library;
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:characters/characters.dart';
 import 'package:flark/flark.dart';
 import 'package:flark/render_model.dart';
 import 'package:test/test.dart';
@@ -282,6 +330,166 @@ void checkStructure(
   _Check(old, next, command, label, backend).run();
 }
 
+/// Must-apply, for a command the editor refused or found inert. A refused
+/// command has only to leave no trace, so a kernel that builds an edit
+/// wrongly would pass every other check by refusing it. Where the context
+/// leaves the edit profile no reason to refuse ([mustApply]), the command
+/// must apply.
+void checkMustApply(
+  FlarkEditorSnapshot before,
+  FlarkCommand command,
+  FlarkEditor editor,
+  String label,
+) {
+  if (before is! FlarkLiveSnapshot) return;
+  final context = mustApply(before.document, command);
+  if (context == null) return;
+  final rejection = editor.lastRejection;
+  // The caret's source line, the caret marked, is the context to minimize.
+  final source = before.source, caret = before.selection.extent;
+  final lineStart = source.lastIndexOf('\n', max(0, caret - 1)) + 1;
+  var lineEnd = source.indexOf('\n', caret);
+  if (lineEnd < 0) lineEnd = source.length;
+  fail(
+    '$label: [must-apply] $context was '
+    '${rejection == null ? 'inert' : 'refused (${rejection.name})'}: line '
+    '${jsonEncode('${source.substring(min(lineStart, caret), caret)}|'
+    '${source.substring(caret, lineEnd)}')} at caret $caret',
+  );
+}
+
+/// What makes [command] one that must apply in [doc], or null where the
+/// profile may refuse it or find nothing to do. Each context is a collapsed
+/// caret, outside a table cell, in a paragraph or heading row (an item's or
+/// quote's text is a paragraph row in them) that is no bare marker, away
+/// from the live tier's byte limit:
+///
+/// - a letter or digit typed where no hidden delimiter starts or ends and no
+///   raw HTML holds the caret: typing there opens no block, and a digit
+///   after other text on its line completes no list marker;
+/// - Return (a line break, not a paragraph break) at the end of a row with
+///   text, which the next line continues, unless a block of another kind
+///   follows on the next line or the row's item holds later blocks, which
+///   the empty line or the next item, while empty, may read otherwise, or
+///   the row ends on a lazy line, which takes the prefix it lacks;
+/// - Backspace after, or Delete before, a letter the row shows inside its
+///   text, whose line keeps other text: a deletion that empties its line is
+///   the one the profile refuses where no respelling keeps the blocks
+///   around it.
+String? mustApply(FlarkDocument doc, FlarkCommand command) {
+  final sel = doc.selection;
+  if (!sel.isCollapsed || sel.tableCell != null) return null;
+  if (utf8.encode(doc.source).length > 15 * 1024) return null;
+  final at = doc.displayOf(sel.extent);
+  final row = doc.projection.rows[at.row];
+  if (row.kind != RowKind.paragraph && row.kind != RowKind.heading ||
+      isBarePrefix(doc, row)) {
+    return null;
+  }
+  final text = row.text, d = at.offset;
+  // The text the caret's line shows, before and after the caret.
+  final lineStart = text.lastIndexOf('\n', max(0, d - 1)) + 1;
+  final lineEnd = text.indexOf('\n', d) < 0
+      ? text.length
+      : text.indexOf('\n', d);
+  final shownBefore = text.substring(lineStart < d ? lineStart : d, d);
+  final shownAfter = text.substring(d, lineEnd);
+  // Whether the grapheme the row shows from [from] to [to] is a letter shown
+  // as its own source.
+  bool letter(String g, int from, int to) =>
+      _letter.hasMatch(g) &&
+      row.segments.any(
+        (s) => s.exact && s.displayStart <= from && to <= s.displayEnd,
+      );
+  final row1 = 'row ${at.row} ${row.kind.name} ${jsonEncode(text)}';
+  switch (command) {
+    case InsertText(text: final typed) when _letterOrDigit.hasMatch(typed):
+      final offset = sel.extent;
+      if (doc.hiddenIntervals.any((h) => h.$1 == offset || h.$2 == offset) ||
+          _inRawHtml(doc, offset)) {
+        return null;
+      }
+      final digit = RegExp(r'^\p{N}$', unicode: true).hasMatch(typed);
+      if (digit &&
+          RegExp(r'^[\s\p{N}]*$', unicode: true).hasMatch(shownBefore)) {
+        return null;
+      }
+      return '${jsonEncode(typed)} typed at offset $d of $row1';
+    case Newline(paragraph: false) when text.isNotEmpty && d == text.length:
+      // Return puts an empty line or the next item before the block after
+      // the row, which the profile refuses to change: a block of another
+      // kind right on the next line (a table, code, HTML) can read
+      // otherwise after an empty line, and the item's own later blocks go
+      // to the next item, whose content, while it is empty, starts one
+      // column past its marker (indented code there would gain a space).
+      final item = row.shells.lastOrNull;
+      // The next block: a row with text, or an empty item nested deeper.
+      final after = doc.projection.rows
+          .skip(at.row + 1)
+          .where(
+            (r) =>
+                r.kind != RowKind.blank ||
+                r.shells.length > row.shells.length &&
+                    r.shells.last.kind == ShellKind.item,
+          )
+          .firstOrNull;
+      // A lazy last line takes the prefix it lacks, which can read it anew
+      // (`| - |` given a quote's `>` under a table-like line).
+      final last = row.lineCount - 1;
+      if (last > 0 &&
+          row.shells.isNotEmpty &&
+          row.prefixStarts[last] == row.contentStarts[last]) {
+        return null;
+      }
+      if (after != null &&
+          (after.firstLine == row.firstLine + row.lineCount &&
+                  after.kind != RowKind.paragraph &&
+                  after.kind != RowKind.heading ||
+              item != null &&
+                  item.kind == ShellKind.item &&
+                  after.shells.any((shell) => shell.block == item.block))) {
+        return null;
+      }
+      return 'Return at the end of $row1';
+    case DeleteBackward(word: false) when d > 0:
+      final g = text.substring(0, d).characters.last;
+      if (!letter(g, d - g.length, d) ||
+          '${shownBefore.substring(0, shownBefore.length - g.length)}$shownAfter'
+              .trim()
+              .isEmpty) {
+        return null;
+      }
+      return 'Backspace after ${jsonEncode(g)} at offset $d of $row1';
+    case DeleteForward(word: false) when d < text.length:
+      final g = text.substring(d).characters.first;
+      if (!letter(g, d, d + g.length) ||
+          '$shownBefore${shownAfter.substring(g.length)}'.trim().isEmpty) {
+        return null;
+      }
+      return 'Delete before ${jsonEncode(g)} at offset $d of $row1';
+    default:
+      return null;
+  }
+}
+
+/// A letter with its combining marks.
+final _letter = RegExp(r'^\p{L}\p{M}*$', unicode: true);
+
+/// Characters inline pairing can hide or show: emphasis, strikethrough and
+/// code delimiters, escapes, link and image brackets, and angle brackets.
+const _delimiterCharacters = {
+  '*',
+  '_',
+  '~',
+  '`',
+  r'\',
+  '[',
+  ']',
+  '!',
+  '<',
+  '>',
+};
+
 final class _Check {
   _Check(this.old, this.next, this.command, this.label, this.backend)
     : edit = SourceEdit(old.source, next.source),
@@ -504,6 +712,7 @@ final class _Check {
     }
     if (command is SetHeadingLevel) _checkHeadingLevel();
     _checkTypedCharacter();
+    _checkDeletedCharacter();
     _checkRowOrder();
   }
 
@@ -885,7 +1094,12 @@ final class _Check {
   /// `- `), and no delimiter is painted. Whitespace beside a line break is
   /// Markdown's to show or strip. Code (auto-indentation, a fence's exit),
   /// tables (Return moves between rows) and an empty container line (which
-  /// Return leaves) are other rules.
+  /// Return leaves) are other rules. The lines are compared with blank ones
+  /// squeezed out, since a blank line Return adds after the new line to keep
+  /// a block apart shows nothing; the breaks right before the caret are
+  /// counted apart, so a paragraph break, which leaves a blank row between
+  /// the text before the caret and the caret's row, is not a line break
+  /// within one row.
   void _checkReturnText() {
     final sel = old.selection;
     if (!sel.isCollapsed) return;
@@ -924,6 +1138,45 @@ final class _Check {
         '$label: [return-text] Return at row ${at.row} offset ${at.offset} '
         'showed ${jsonEncode(after)}, expected ${jsonEncode(expected)}, '
         '$transition',
+      );
+    }
+    // The line breaks shown right before and after a position, whitespace
+    // aside.
+    int lineBreaks(String text, int at, {required bool after}) {
+      var n = 0;
+      for (
+        var k = after ? at : at - 1;
+        after ? k < text.length : k >= 0;
+        k += after ? 1 : -1
+      ) {
+        final unit = text.codeUnitAt(k);
+        if (unit == 0x0A) {
+          n++;
+        } else if (unit != 0x20 && unit != 0x09) {
+          break;
+        }
+      }
+      return n;
+    }
+
+    final p = next.displayOf(next.selection.extent);
+    var caret = p.offset;
+    for (var i = 0; i < p.row; i++) {
+      caret += next.projection.rows[i].text.length + 1;
+    }
+    // Return puts its break where the caret was, or past the blank lines
+    // after it (an item whose later blocks follow blank lines continues
+    // after them), which then show before the caret too.
+    final shown = lineBreaks(after, caret, after: false);
+    final least = lineBreaks(before, g, after: false) + breaks.length;
+    final most = least + lineBreaks(before, g, after: true);
+    if (shown < least || shown > most) {
+      fail(
+        '$label: [return-break] Return at row ${at.row} offset ${at.offset} '
+        'left $shown line breaks before the caret, expected '
+        '${least == most ? '$least' : '$least to $most'} '
+        '(${breaks.length == 2 ? 'a paragraph break' : 'a line break'}), '
+        '${jsonEncode(after)}, $transition',
       );
     }
   }
@@ -1014,18 +1267,6 @@ final class _Check {
         return;
       }
     }
-    int global(Projection p, DisplayPosition d) {
-      var g = 0;
-      for (var i = 0; i < d.row; i++) {
-        g += p.rows[i].text.length + 1;
-      }
-      return g + d.offset;
-    }
-
-    bool repaired(FlarkDocument doc, int offset) =>
-        offset >= 0 &&
-        inInlineDelimiter(doc, offset) &&
-        oldRowTouched(oldRowOf(doc == old ? offset : edit.back(offset)));
     // A pending style's delimiters typed against a delimiter run already
     // there pair with it as Markdown's flanking rules and rule of three say
     // (`***b***`), which the profile leaves to Markdown.
@@ -1036,7 +1277,7 @@ final class _Check {
     }
     // What the old text shows, less what the edit paired into delimiters,
     // with the letter where the caret was.
-    final g = global(old.projection, at);
+    final g = _global(old.projection, at);
     final expected = StringBuffer();
     var caretAt = -1;
     final before = paintedUnits(old.projection);
@@ -1050,13 +1291,13 @@ final class _Check {
       }
       if (k == before.length) break;
       final (char, source) = before[k];
-      if (source >= 0 && repaired(next, edit.forward(source))) continue;
+      if (source >= 0 && _repaired(next, edit.forward(source))) continue;
       expected.write(char);
     }
     // What the new text shows, less delimiters the edit paired anew.
     final shown = StringBuffer();
     final after = paintedUnits(next.projection);
-    final caret = global(
+    final caret = _global(
       next.projection,
       next.displayOf(next.selection.extent),
     );
@@ -1066,7 +1307,7 @@ final class _Check {
       if (k == after.length) break;
       final (char, source) = after[k];
       final was = source < 0 ? -1 : edit.back(source);
-      if (was >= 0 && repaired(old, was)) continue;
+      if (was >= 0 && _repaired(old, was)) continue;
       shown.write(char);
     }
     // A blank line typing adds to keep the typed text apart from a block it
@@ -1075,39 +1316,8 @@ final class _Check {
     // Markdown's to show or strip (a space left at a line's start once a
     // letter follows it). Compare the lines with text, and the caret within
     // them.
-    (String, int) lines(String text, int caret) {
-      bool space(int i) => text[i] == ' ' || text[i] == '\t';
-      final keep = List<bool>.filled(text.length, true);
-      for (var j = 0; j < text.length && space(j); j++) {
-        keep[j] = false;
-      }
-      for (var i = 0; i < text.length; i++) {
-        if (text[i] != '\n') continue;
-        for (var j = i - 1; j >= 0 && space(j); j--) {
-          keep[j] = false;
-        }
-        for (var j = i + 1; j < text.length && space(j); j++) {
-          keep[j] = false;
-        }
-      }
-      final out = StringBuffer();
-      var mapped = -1, last = '';
-      for (var i = 0; i <= text.length; i++) {
-        if (i == caret) mapped = out.length;
-        if (i == text.length) break;
-        if (!keep[i] || text[i] == '\n' && last == '\n') continue;
-        out.write(last = text[i]);
-      }
-      var lines = '$out';
-      if (lines.endsWith('\n')) {
-        lines = lines.substring(0, lines.length - 1);
-        if (mapped > lines.length) mapped = lines.length;
-      }
-      return (lines, mapped);
-    }
-
-    final (shownLines, shownCaret) = lines('$shown', caretShown);
-    final (expectedLines, expectedCaret) = lines('$expected', caretAt);
+    final (shownLines, shownCaret) = _lines('$shown', caretShown);
+    final (expectedLines, expectedCaret) = _lines('$expected', caretAt);
     if (shownLines != expectedLines) {
       fail(
         '$label: [typed] ${jsonEncode(c.text)} at row ${at.row} offset '
@@ -1122,5 +1332,342 @@ final class _Check {
         'row ${d.row} offset ${d.offset}, not after it, $transition',
       );
     }
+  }
+
+  /// (g) A collapsed Backspace or Delete inside a row removes the rendered
+  /// grapheme beside the caret, and only it, from what shows: the
+  /// counterpart of (c). The caret shows where the grapheme was. Inline
+  /// pairing may still change the rows the deletion touches, as in (c):
+  /// delimiter characters there may appear or disappear (deleting the `*`
+  /// of `**a*` pairs the other two), and so may a heading's trailing `#`,
+  /// which a deletion can make its closing sequence (`# a #b` less `b`).
+  /// Whitespace beside a line break is Markdown's to show or strip, and an
+  /// emptied line of a longer row goes with its line break, the caret then
+  /// at the end of the line before it (the profile's respelling). Deleting a
+  /// hard break takes its whole marker, the spaces shown before it included.
+  /// Joins at a row's edge are (a) and (b)'s.
+  void _checkDeletedCharacter() {
+    final c = command;
+    final backward = c is DeleteBackward;
+    if (c is DeleteBackward && c.word ||
+        c is DeleteForward && c.word ||
+        c is! DeleteBackward && c is! DeleteForward ||
+        !old.selection.isCollapsed ||
+        join) {
+      return;
+    }
+    final at = old.displayOf(old.selection.extent);
+    final row = old.projection.rows[at.row];
+    final d = at.offset;
+    if (backward ? d == 0 : d >= row.text.length) return;
+    // HTML blocks are literal source whose end conditions are their own
+    // characters; references re-resolve, and openers read on (see (b)).
+    if (row.kind == RowKind.htmlBlock ||
+        editsHtml ||
+        definitionsChanged ||
+        inReference(old, old.selection.extent) ||
+        inReference(next, next.selection.extent) ||
+        openedBlocks.isNotEmpty ||
+        _sourceOnlyTouched ||
+        _literalRunsChanged()) {
+      return;
+    }
+    // Openers: what a deletion leaves on its line can be a container's
+    // marker (`~>` less `~` is the `>` that continues the quote above),
+    // which Markdown reads as syntax; the profile lets a deletion that
+    // keeps text on its line go ahead as Markdown reads it.
+    if (shellKinds(next.rowAt(next.selection.extent)) != shellKinds(row)) {
+      return;
+    }
+    // The rendered grapheme the key removes: an atomic glyph (a line break,
+    // an entity, code's normalized space) whole, else one grapheme.
+    var from = backward
+        ? d - row.text.substring(0, d).characters.last.length
+        : d;
+    var to = backward ? d : d + row.text.substring(d).characters.first.length;
+    // The grapheme's own source, hidden neighbours excluded.
+    var a = row.sourceForDisplay(from, anchor: Anchor.after);
+    var b = row.sourceForDisplay(to, anchor: Anchor.before);
+    for (final s in row.segments) {
+      if (s.exact ||
+          s.sourceEnd <= s.sourceStart ||
+          s.displayEnd <= s.displayStart) {
+        continue;
+      }
+      if (backward ? s.displayEnd == d : s.displayStart == d) {
+        (from, to, a, b) = (
+          s.displayStart,
+          s.displayEnd,
+          s.sourceStart,
+          s.sourceEnd,
+        );
+        break;
+      }
+    }
+    final removed = row.text.substring(from, to);
+    // Where the shared start and end cannot tell which of two equal
+    // characters went (the second backtick of three), the grapheme's own
+    // source does, when the edit removed just that.
+    final plain = b > a && next.source == old.source.replaceRange(a, b, '');
+    int forward(int o) => !plain
+        ? edit.forward(o)
+        : o < a
+        ? o
+        : o >= b
+        ? o - (b - a)
+        : -1;
+    int back(int o) => !plain ? edit.back(o) : (o < a ? o : o + (b - a));
+    // A delimiter character inline pairing may take or give: one in a row
+    // the deletion touched, read as inline text in both versions. Code
+    // shows its delimiters as text, and the trailing `#` run of a heading
+    // can become its closing sequence.
+    bool prose(ProjectedRow row) =>
+        row.kind == RowKind.paragraph ||
+        row.kind == RowKind.heading ||
+        row.kind == RowKind.tableCell;
+    bool pairs(String char, ProjectedRow row, ProjectedRow? Function() other) {
+      final heading = char == '#' && row.kind == RowKind.heading;
+      if (!prose(row) || !heading && !_delimiterCharacters.contains(char)) {
+        return false;
+      }
+      final counterpart = other();
+      return counterpart == null ||
+          prose(counterpart) &&
+              (!heading || counterpart.kind == RowKind.heading);
+    }
+
+    final g = _global(old.projection, at);
+    final removedFrom = g - (d - from), removedTo = g + (to - d);
+    final expected = StringBuffer();
+    var caretAt = -1;
+    final before = paintedUnits(old.projection);
+    final beforeRows = _unitRows(old.projection);
+    for (var k = 0; k <= before.length; k++) {
+      if (k == removedFrom) caretAt = expected.length;
+      if (k == before.length) break;
+      if (k >= removedFrom && k < removedTo) continue;
+      final (char, source) = before[k];
+      final now = source < 0 ? -1 : forward(source);
+      if (_repaired(next, now)) continue;
+      final r = beforeRows[k];
+      if (r >= 0 &&
+          oldRowTouched(old.projection.rows[r]) &&
+          pairs(
+            char,
+            old.projection.rows[r],
+            () => now < 0 ? null : next.rowAt(now),
+          )) {
+        continue;
+      }
+      expected.write(char);
+    }
+    final shown = StringBuffer();
+    final after = paintedUnits(next.projection);
+    final afterRows = _unitRows(next.projection);
+    final caret = _global(
+      next.projection,
+      next.displayOf(next.selection.extent),
+    );
+    var caretShown = -1;
+    for (var k = 0; k <= after.length; k++) {
+      if (k == caret) caretShown = shown.length;
+      if (k == after.length) break;
+      final (char, source) = after[k];
+      final was = source < 0 ? -1 : back(source);
+      final r = afterRows[k];
+      // Delimiters Markdown now shows as code are no pairing.
+      if (was >= 0 &&
+          _repaired(old, was) &&
+          (r < 0 || prose(next.projection.rows[r]))) {
+        continue;
+      }
+      if (r >= 0 &&
+          (newRowTouched(next.projection.rows[r]) ||
+              was >= 0 && oldRowTouched(oldRowOf(was))) &&
+          pairs(
+            char,
+            next.projection.rows[r],
+            () => was < 0 ? null : oldRowOf(was),
+          )) {
+        continue;
+      }
+      shown.write(char);
+    }
+    var (shownLines, shownCaret) = _lines('$shown', caretShown);
+    var (expectedLines, expectedCaret) = _lines('$expected', caretAt);
+    // A hard break's marker goes whole, the spaces before it included: a
+    // deleted line break leaves the lines it joined, whatever spaces
+    // between.
+    if (removed == '\n') {
+      (shownLines, shownCaret) = _unspaced(shownLines, shownCaret);
+      (expectedLines, expectedCaret) = _unspaced(expectedLines, expectedCaret);
+    }
+    if (shownLines != expectedLines) {
+      fail(
+        '$label: [deleted] ${backward ? 'Backspace' : 'Delete'} of '
+        '${jsonEncode(removed)} at row ${at.row} offset $d showed '
+        '${jsonEncode('$shown')}, expected ${jsonEncode('$expected')}, '
+        '$transition',
+      );
+    }
+    // An emptied line goes with its line break, which puts the caret at the
+    // end of the line before: count the characters before the caret.
+    final lineStart = row.text.lastIndexOf('\n', max(0, from - 1)) + 1;
+    var lineEnd = row.text.indexOf('\n', to);
+    if (lineEnd < 0) lineEnd = row.text.length;
+    final emptied =
+        '${row.text.substring(min(lineStart, from), from)}'
+                '${row.text.substring(to, lineEnd)}'
+            .trim()
+            .isEmpty;
+    int text(String lines, int caret) => caret < 0
+        ? caret
+        : lines.substring(0, caret).replaceAll('\n', '').length;
+    if (emptied
+        ? text(shownLines, shownCaret) != text(expectedLines, expectedCaret)
+        : shownCaret != expectedCaret) {
+      final p = next.displayOf(next.selection.extent);
+      fail(
+        '$label: [deleted-caret] after deleting ${jsonEncode(removed)} the '
+        'caret shows at row ${p.row} offset ${p.offset}, not where it was, '
+        '$transition',
+      );
+    }
+  }
+
+  /// The row each unit of [paintedUnits] belongs to, -1 for the line break
+  /// between two rows.
+  static List<int> _unitRows(Projection projection) => [
+    for (final row in projection.rows) ...[
+      if (row.index > 0) -1,
+      for (final s in row.segments)
+        for (var d = s.displayStart; d < s.displayEnd; d++) row.index,
+    ],
+  ];
+
+  /// [text] without spaces and tabs, and where [caret] falls in it.
+  static (String, int) _unspaced(String text, int caret) {
+    final kept = text.replaceAll(RegExp('[ \t]'), '');
+    return (
+      kept,
+      caret < 0
+          ? caret
+          : text.substring(0, caret).replaceAll(RegExp('[ \t]'), '').length,
+    );
+  }
+
+  /// Literal text: whether the edit made or broke, in the rows it touched, a
+  /// raw inline tag, an entity or an escape, or moved one into or out of
+  /// code. A raw tag and code show their source as written while text shows
+  /// entities decoded and escapes without their backslash, so `&ouml;` in
+  /// `<a href="&ouml;">` shows as `ö` once a deletion takes the `<`, and
+  /// `&#87654321;` less `8` is a character reference.
+  bool _literalRunsChanged() {
+    // The lines of the rows the edit touched, whose inlines it can pair
+    // anew, in either version.
+    (int, int) span(FlarkDocument doc, bool Function(ProjectedRow) touched) {
+      var first = -1, last = -2;
+      for (final row in doc.projection.rows) {
+        if (!touched(row)) continue;
+        if (first < 0) first = row.firstLine;
+        last = _lastLine(row);
+      }
+      return (first, last);
+    }
+
+    Set<(int, int, int)> runs(
+      FlarkDocument doc,
+      (int, int) lines,
+      int Function(int) map,
+    ) {
+      final m = doc.model;
+      return {
+        for (var r = 0; r < m.runCount; r++)
+          if ((m.runKind(r) == RunKind.htmlInline ||
+                  m.runKind(r) == RunKind.replacement ||
+                  m.runKind(r) == RunKind.escape) &&
+              m.lineOfUtf16(m.runStart(r)) >= lines.$1 - 1 &&
+              m.lineOfUtf16(m.runStart(r)) <= lines.$2 + 1)
+            (m.runKind(r), map(m.runStart(r)), map(m.runEnd(r))),
+      };
+    }
+
+    final a = runs(old, span(old, oldRowTouched), edit.forward);
+    final b = runs(next, span(next, newRowTouched), (o) => o);
+    return a.length != b.length || !a.containsAll(b);
+  }
+
+  /// Source-only leaves: the parse crate publishes a leaf whose inlines it
+  /// could not verify against comrak without runs, showing its source
+  /// (native/flark_parse/REGISTER.md), so an edit that makes or unmakes one
+  /// among the rows it touched shows that leaf anew.
+  late final bool _sourceOnlyTouched =
+      old.projection.rows.any(
+        (row) =>
+            row.block >= 0 &&
+            old.model.blockSourceOnly(row.block) &&
+            oldRowTouched(row),
+      ) ||
+      next.projection.rows.any(
+        (row) =>
+            row.block >= 0 &&
+            next.model.blockSourceOnly(row.block) &&
+            newRowTouched(row),
+      );
+
+  /// [d]'s offset in the text [p] paints, rows joined by line breaks.
+  static int _global(Projection p, DisplayPosition d) {
+    var g = 0;
+    for (var i = 0; i < d.row; i++) {
+      g += p.rows[i].text.length + 1;
+    }
+    return g + d.offset;
+  }
+
+  /// Inline pairing: whether [offset] of [doc] (the old or the new version)
+  /// lies in hidden inline delimiters of a row the edit touched, which an
+  /// edit of characters can pair anew.
+  bool _repaired(FlarkDocument doc, int offset) =>
+      offset >= 0 &&
+      inInlineDelimiter(doc, offset) &&
+      oldRowTouched(oldRowOf(doc == old ? offset : edit.back(offset)));
+
+  /// [text]'s lines with text, whitespace beside a line break or at either
+  /// end and blank lines dropped, and where [caret] falls in them.
+  static (String, int) _lines(String text, int caret) {
+    bool space(int i) => text[i] == ' ' || text[i] == '\t';
+    final keep = List<bool>.filled(text.length, true);
+    for (var j = 0; j < text.length && space(j); j++) {
+      keep[j] = false;
+    }
+    for (var j = text.length - 1; j >= 0 && space(j); j--) {
+      keep[j] = false;
+    }
+    for (var i = 0; i < text.length; i++) {
+      if (text[i] != '\n') continue;
+      for (var j = i - 1; j >= 0 && space(j); j--) {
+        keep[j] = false;
+      }
+      for (var j = i + 1; j < text.length && space(j); j++) {
+        keep[j] = false;
+      }
+    }
+    final out = StringBuffer();
+    var mapped = -1, last = '';
+    for (var i = 0; i <= text.length; i++) {
+      if (i == caret) mapped = out.length;
+      if (i == text.length) break;
+      // Blank lines, and line breaks before any text, show nothing.
+      if (!keep[i] || text[i] == '\n' && (last == '\n' || last == '')) {
+        continue;
+      }
+      out.write(last = text[i]);
+    }
+    var lines = '$out';
+    if (lines.endsWith('\n')) {
+      lines = lines.substring(0, lines.length - 1);
+      if (mapped > lines.length) mapped = lines.length;
+    }
+    return (lines, mapped);
   }
 }

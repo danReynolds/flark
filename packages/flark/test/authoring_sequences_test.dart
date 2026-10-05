@@ -15,17 +15,24 @@
 /// heading, task, indent and link commands.
 ///
 /// Every command passes the matrix's step and structure checks and a refused
-/// command leaves no trace. Beyond them, a session checks what a person sees:
-/// rows show in source order, typed or pasted text leaves the caret in the
-/// text it changed, plain letters typed or deleted never make hidden markup
-/// show, and typing into one row or deleting prose inside it leaves the other
-/// rows' kinds and containers as they were. An Undo or Redo lands on a state
-/// the session reached, a cancelled composition restores the state before it,
-/// and each session ends with the matrix's host actions and history walk
-/// back to its first source and forward again. A failure prints the seed,
-/// the state before the failing command and the command log.
+/// command leaves no trace; one the profile has no reason to refuse (a
+/// letter typed in a row's text, Return at a row's end, a letter deleted
+/// inside a row) must apply. Beyond them, a session checks what a person
+/// sees: rows show in source order, typed or pasted text leaves the caret in
+/// the text it changed, plain letters typed or deleted never make hidden
+/// markup show nor make another letter vanish, and typing into one row or
+/// deleting prose inside it leaves the other rows' kinds and containers as
+/// they were. An Undo or Redo lands on a state the session reached, a
+/// cancelled composition restores the state before it, and each session
+/// ends with the matrix's host actions and history walk back to its first
+/// source and forward again. A failure prints the seed, the state before
+/// the failing command and the command log.
 /// `FLARK_AUTHORING_SEED` is the first seed and `FLARK_AUTHORING_ITERATIONS`
 /// the number of sessions; a seed with one iteration replays one session.
+/// The run counts applied, inert and refused commands per kind
+/// ([AuthoringStats]) and fails when a kind is refused above its ceiling;
+/// `FLARK_AUTHORING_STATS=1` prints the counts, and `=refusals` lists each
+/// refusal too.
 library;
 
 import 'dart:convert';
@@ -34,9 +41,12 @@ import 'dart:math';
 
 import 'package:characters/characters.dart';
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart' show BlockKind;
 import 'package:test/test.dart';
 
 import 'matrix_test.dart' as matrix;
+import 'support/structure_oracles.dart'
+    show checkMustApply, definitionsOf, inReference;
 
 void main() {
   final backend = createParseBackend();
@@ -47,16 +57,27 @@ void main() {
       int.tryParse(Platform.environment['FLARK_AUTHORING_SEED'] ?? '') ?? 2026;
   test('authoring sessions keep every invariant '
       '(seeds $seed..${seed + iterations - 1})', () {
+    final stats = AuthoringStats();
     for (var s = seed; s < seed + iterations; s++) {
-      authoringSession(backend, s);
+      authoringSession(backend, s, stats: stats);
     }
+    final verbose = Platform.environment['FLARK_AUTHORING_STATS'];
+    if (verbose != null && verbose.isNotEmpty && verbose != '0') {
+      // ignore: avoid_print
+      print(stats.summary(refusals: verbose == 'refusals'));
+    }
+    stats.checkCeilings(sessions: iterations);
   }, timeout: const Timeout(Duration(minutes: 20)));
 }
 
 /// Runs the session [seed] names and throws its first failed check, after
-/// printing what reproduces it.
-void authoringSession(FlarkParseBackend backend, int seed) {
-  final author = _Author(backend, seed);
+/// printing what reproduces it. [stats] counts its commands.
+void authoringSession(
+  FlarkParseBackend backend,
+  int seed, {
+  AuthoringStats? stats,
+}) {
+  final author = _Author(backend, seed, stats);
   try {
     author.run();
   } catch (error) {
@@ -65,6 +86,173 @@ void authoringSession(FlarkParseBackend backend, int seed) {
     rethrow;
   }
 }
+
+/// A refused command, with the state it was refused in.
+typedef AuthoringRefusal = ({
+  String label,
+  FlarkEditorSnapshot before,
+  FlarkCommand command,
+  int context,
+});
+
+/// Commands applied, inert and refused, per kind, over the sessions of a run.
+/// A refused command is one the editor reports as unsupported; an inert one
+/// had nothing to do (Backspace at the document's start, Return on an empty
+/// item whose leaving would move the blocks after it, a task toggle off any
+/// task) and reports nothing, as navigation that does not move does. A
+/// refusal of the same kind in the state the last one left (a run of
+/// Backspaces against a join the profile refuses, a word typed over a
+/// selection it refuses) is counted as a repeat, so one refused context
+/// weighs once.
+final class AuthoringStats {
+  final _counts = <String, List<int>>{};
+  final refusals = <AuthoringRefusal>[];
+  (String, FlarkSelection, String)? _lastRefused;
+
+  /// The share of each kind's commands refused at a caret, distinct
+  /// contexts counted, in 500 sessions (seeds 10000..10299 and
+  /// 20000..20199, 2026-10-04): joins and lifts the profile refuses, Return
+  /// in literal HTML, typing beside a bare marker. Refusals over a
+  /// selection, which the profile leaves unsupported across rows and inline
+  /// owners, are not counted. [checkCeilings] allows these shares and six
+  /// standard errors for the run's size, so a kernel that refuses a kind of
+  /// command broadly fails the run; the must-apply contexts
+  /// ([checkMustApply]) catch a refusal in a context the profile never
+  /// refuses.
+  static const ceilings = {
+    'letter': 0.0002,
+    'space': 0.0,
+    'other text': 0.001,
+    'Return': 0.02,
+    'paragraph break': 0.04,
+    'Backspace': 0.055,
+    'Delete': 0.08,
+    'word Backspace': 0.07,
+    'word Delete': 0.12,
+  };
+  static const _least = 30;
+
+  /// The kind [command] is counted as.
+  static String kindOf(FlarkCommand command) => switch (command) {
+    InsertText(:final text) when _letter.hasMatch(text) => 'letter',
+    InsertText(:final text) when text.trim().isEmpty => 'space',
+    InsertText() => 'other text',
+    Newline(paragraph: false) => 'Return',
+    Newline(paragraph: true) => 'paragraph break',
+    DeleteBackward(word: false) => 'Backspace',
+    DeleteBackward(word: true) => 'word Backspace',
+    DeleteForward(word: false) => 'Delete',
+    DeleteForward(word: true) => 'word Delete',
+    _ => '${command.runtimeType}',
+  };
+
+  void count(
+    FlarkCommand command, {
+    required bool applied,
+    required FlarkRejection? rejection,
+    required FlarkEditorSnapshot before,
+    required int context,
+    required String label,
+  }) {
+    final kind = kindOf(command);
+    final counts = _counts[kind] ??= [0, 0, 0, 0, 0];
+    if (applied) {
+      counts[0]++;
+      _lastRefused = null;
+    } else if (rejection == null) {
+      counts[1]++;
+    } else {
+      final key = (before.source, before.selection, kind);
+      if (key == _lastRefused) {
+        counts[3]++;
+        return;
+      }
+      _lastRefused = key;
+      counts[2]++;
+      if (before.selection.isCollapsed) counts[4]++;
+      refusals.add((
+        label: label,
+        before: before,
+        command: command,
+        context: context,
+      ));
+    }
+  }
+
+  /// Applied, inert and refused commands of [kind], the repeated refusals,
+  /// and the refusals at a caret.
+  ({int applied, int inert, int refused, int repeats, int atCaret}) of(
+    String kind,
+  ) {
+    final c = _counts[kind] ?? const [0, 0, 0, 0, 0];
+    return (
+      applied: c[0],
+      inert: c[1],
+      refused: c[2],
+      repeats: c[3],
+      atCaret: c[4],
+    );
+  }
+
+  /// The share of [kind]'s commands refused at a caret, and the most its
+  /// ceiling allows in a run of this size; null below [_least] commands or
+  /// without a ceiling.
+  (double, double)? caretShare(String kind) {
+    final rate = ceilings[kind];
+    final c = of(kind);
+    final total = c.applied + c.inert + c.refused;
+    if (rate == null || total < _least) return null;
+    final spread = sqrt(max(rate, 0.003) * (1 - rate) / total);
+    return (c.atCaret / total, rate + 6 * spread);
+  }
+
+  String summary({bool refusals = false}) {
+    final out = StringBuffer(
+      'authoring commands: applied, inert, refused (+ repeats), at a caret\n',
+    );
+    final kinds = _counts.keys.toList()..sort();
+    for (final kind in kinds) {
+      final c = of(kind);
+      final share = caretShare(kind);
+      out.writeln(
+        '  ${kind.padRight(16)} ${'${c.applied}'.padLeft(6)} '
+        '${'${c.inert}'.padLeft(5)} ${'${c.refused}'.padLeft(5)} '
+        '${'(+${c.repeats})'.padRight(7)} ${'${c.atCaret}'.padLeft(4)}'
+        '${share == null ? '' : '  ${(100 * share.$1).toStringAsFixed(2)}% '
+                  'of ${(100 * share.$2).toStringAsFixed(2)}% allowed'}',
+      );
+    }
+    if (refusals) {
+      for (final r in this.refusals) {
+        out.writeln(
+          '  refused ${r.label}: ${jsonEncode(r.before.source)} '
+          '${r.before.selection}',
+        );
+      }
+    }
+    return '$out';
+  }
+
+  /// Fails when a kind of command is refused at a caret more often than its
+  /// ceiling allows, over a run of at least four [sessions]: one session
+  /// replayed alone can hold a cluster of refusals a run averages out.
+  void checkCeilings({required int sessions}) {
+    if (sessions < 4) return;
+    for (final kind in ceilings.keys) {
+      final share = caretShare(kind);
+      if (share == null) continue;
+      expect(
+        share.$1,
+        lessThanOrEqualTo(share.$2),
+        reason:
+            '$kind refused at a caret ${of(kind).atCaret} times, over its '
+            'ceiling; FLARK_AUTHORING_STATS=refusals lists the refusals',
+      );
+    }
+  }
+}
+
+final _letter = RegExp(r'^[\p{L}\p{N}]\p{M}*$', unicode: true);
 
 // ------------------------------------------------------------- documents
 
@@ -476,12 +664,13 @@ const _styles = [Style.strong, Style.emphasis, Style.code, Style.strikethrough];
 typedef _State = (String, FlarkSelection, int);
 
 final class _Author {
-  _Author(this.backend, this.seed) : r = Random(seed) {
+  _Author(this.backend, this.seed, this.stats) : r = Random(seed) {
     writer = _Writer(r);
   }
 
   final FlarkParseBackend backend;
   final int seed;
+  final AuthoringStats? stats;
   final Random r;
   late final _Writer writer;
   FlarkEditor? _editor;
@@ -619,7 +808,16 @@ final class _Author {
       selection: editor.selection,
       command: description,
     );
+    final context = editor.typingContext;
     final applied = editor.apply(command, at: time);
+    stats?.count(
+      command,
+      applied: applied,
+      rejection: editor.lastRejection,
+      before: before,
+      context: context,
+      label: label,
+    );
     // Sessions stay inside the live tier's limits, so source mode means a
     // command gave up rendering.
     expect(editor.sourceMode, isFalse, reason: '$label: left rendered mode');
@@ -643,6 +841,7 @@ final class _Author {
     } else {
       expect(matrix.stateOf(editor), state, reason: '$label: refused');
       expect(editor.revision, revision, reason: '$label: refused');
+      checkMustApply(before, command, editor, label);
     }
     if (!editor.composing) reached.add(matrix.stateOf(editor));
     return applied;
@@ -1394,8 +1593,9 @@ void checkCaretInEdit(
 /// end its list item or table. Joins at a row's edge are
 /// `matrix.checkStructure`'s. Text typed after a line's bare markup, which it
 /// may complete (`- ` becomes an item once it has text), is left out, as are
-/// rows with brackets, entities or tags and edits beside delimiters, as in
-/// [checkVisibleEdit].
+/// edits beside delimiters and edits a letter or a deleted character can
+/// make or stop matching a reference, entity, tag or HTML block ([_tagged]),
+/// as in [checkVisibleEdit].
 void checkEditKeepsRows(
   FlarkEditorSnapshot before,
   FlarkCommand command,
@@ -1467,10 +1667,7 @@ void checkEditKeepsRows(
   }
   final edited = old.displayOf(start).row;
   final caret = next.displayOf(landed).row;
-  if (rows[edited].text.contains(_tagged) ||
-      next.projection.rows[caret].text.contains(_tagged)) {
-    return;
-  }
+  if (_tagged(old, next, start, end, landed)) return;
   String shells(ProjectedRow row) =>
       row.shells.map((shell) => shell.kind.name).join('/');
   // A deletion that empties its line leaves no text to keep: a blank line
@@ -1561,12 +1758,13 @@ final _plain = RegExp(
 /// whitespace aside since rows split and join, is what showed with the
 /// selection's text replaced, or that with markup hidden: typed letters may
 /// complete a construct (`**` around a letter becomes emphasis), but nothing
-/// hidden may show. With nothing hidden, the caret shows right after the
-/// edit. Edits beside `_`, `*`, `~` or a backtick, whose pairing an adjacent
-/// letter can decide (delimiter collisions the edit profile leaves
-/// unsupported), and
-/// rows with brackets, entities or tags, which a letter can make or stop
-/// matching a definition, entity or HTML block, are left out.
+/// hidden may show, and what markup hides is punctuation: no letter or digit
+/// vanishes beyond the deleted text. With nothing hidden, the caret shows
+/// right after the edit. Edits beside `_`, `*`, `~` or a backtick, whose
+/// pairing an adjacent letter can decide (delimiter collisions the edit
+/// profile leaves unsupported), and edits a letter or a deleted character
+/// can make or stop matching a reference, entity, tag or HTML block
+/// ([_tagged]) are left out.
 void checkVisibleEdit(
   FlarkEditorSnapshot before,
   FlarkCommand command,
@@ -1634,12 +1832,20 @@ void checkVisibleEdit(
   final a = whole ? null : old.displayOf(start);
   final b = whole ? null : old.displayOf(end);
   final caret = next.displayOf(next.selection.extent);
-  for (final row in [
-    if (a != null && b != null)
-      for (var i = a.row; i <= b.row; i++) old.projection.rows[i],
-    next.projection.rows[caret.row],
-  ]) {
-    if (row.text.contains(_tagged)) return;
+  if (whole
+      ? _tagged(next, next, landed, landed, landed)
+      : _tagged(old, next, start, end, landed)) {
+    return;
+  }
+  // After a line's bare markup, typed text can complete the block that
+  // markup opens (`1. ` becomes an item once text follows), which then
+  // hides it, digits too.
+  final lineStart = source.lastIndexOf('\n', max(0, start - 1)) + 1;
+  if (text.isNotEmpty &&
+      !whole &&
+      lineStart < start &&
+      _markupOnly.hasMatch(source.substring(lineStart, start))) {
+    return;
   }
   final (shown, rowStarts) = _shown(old);
   final i = a == null ? 0 : rowStarts[a.row] + a.offset;
@@ -1664,12 +1870,16 @@ void checkVisibleEdit(
   }
 
   // Hidden markup only: what shows is what was expected with characters
-  // left out.
+  // left out, and none of them a letter or digit: markup hides punctuation.
   var k = 0;
   for (var m = 0; m < expected.length && k < actual.length; m++) {
     if (expected.codeUnitAt(m) == actual.codeUnitAt(k)) k++;
   }
   if (k < actual.length) fail(reason());
+  String words(String text) => text.replaceAll(_notWord, '');
+  if (words(actual) != words(expected)) {
+    fail('$label: a letter or digit vanished, ${reason()}');
+  }
   if (actual == expected &&
       _bare(now.substring(0, nowStarts[caret.row] + caret.offset)).length !=
           kept.length + _bare(text).length) {
@@ -1697,9 +1907,56 @@ final _shownOf = Expando<(String, List<int>)>();
 
 final _space = RegExp(r'\s');
 
-/// Brackets, entities and tags: text a letter can make or stop matching a
-/// definition, entity or HTML block.
-final _tagged = RegExp(r'[\[\]&<>]');
+/// Brackets, entities and tags: whether the edit of [start]..[end] in [old],
+/// which left the caret at [landed] in [next], is one a letter or a deleted
+/// character can make or stop matching a definition, reference, entity, tag
+/// or HTML block: the run of non-whitespace around the edit or the caret
+/// holds a bracket, `&` or angle bracket, the edit changes a definition or a
+/// reference's label, or an HTML block holds it or starts on its line (a
+/// letter can complete a start or end condition, and a whole-line tag is
+/// one only alone on its line).
+bool _tagged(
+  FlarkDocument old,
+  FlarkDocument next,
+  int start,
+  int end,
+  int landed,
+) {
+  bool run(String text, int from, int to) {
+    while (from > 0 && !_space.hasMatch(text[from - 1])) {
+      from--;
+    }
+    while (to < text.length && !_space.hasMatch(text[to])) {
+      to++;
+    }
+    return text.substring(from, to).contains(_tagCharacters);
+  }
+
+  bool html(FlarkDocument doc, int offset) {
+    final line = doc.model.lineOfUtf16(offset);
+    return doc.rowAt(offset).kind == RowKind.htmlBlock ||
+        doc.model.blocks.any(
+          (b) => b.kind == BlockKind.htmlBlock && b.firstLine == line,
+        );
+  }
+
+  final defined = definitionsOf(old), redefined = definitionsOf(next);
+  return run(old.source, start, end) ||
+      run(next.source, landed, landed) ||
+      defined.length != redefined.length ||
+      !defined.containsAll(redefined) ||
+      inReference(old, start) ||
+      inReference(old, end) ||
+      inReference(next, landed) ||
+      html(old, start) ||
+      html(old, end) ||
+      html(next, landed);
+}
+
+final _tagCharacters = RegExp(r'[\[\]&<>]');
+
+/// What is not a letter, mark or digit.
+final _notWord = RegExp(r'[^\p{L}\p{M}\p{N}]', unicode: true);
 
 String _bare(String text) => text.replaceAll(_space, '');
 

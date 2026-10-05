@@ -209,6 +209,7 @@ void main() {
             } else {
               expect(stateOf(editor), state, reason: '$label: refused');
               expect(editor.revision, revision, reason: '$label: refused');
+              checkMustApply(before, c, editor, label);
             }
             reached.add(stateOf(editor));
           }
