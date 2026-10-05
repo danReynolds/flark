@@ -343,6 +343,35 @@ void _compositionCases(FlarkParseBackend backend) {
       expect((editor.composing, editor.history.canUndo), (false, false));
     });
 
+    test('beginning or cancelling a composition reports no refusal', () {
+      // lastRejection is why the last call refused its edit: a call that
+      // refused nothing says so, whatever a call before it refused.
+      final session = _Session(backend, source: 'abc', caret: 3);
+      final editor = session.editor;
+      session.act(const InsertText('\uD800'), applied: false, source: 'abc');
+      expect(editor.lastRejection, FlarkRejection.invalidSource);
+      editor.beginComposition();
+      expect(editor.lastRejection, isNull);
+      session.act(const InsertText('\uD800'), applied: false, source: 'abc');
+      expect(editor.lastRejection, FlarkRejection.invalidSource);
+      editor.cancelComposition();
+      expect((editor.lastRejection, editor.composing), (null, false));
+    });
+
+    test('a host command after a refused preedit reports no withdrawal', () {
+      // The input method's preedit was refused, so its composition holds
+      // nothing to withdraw: the command that ends it reports only its own
+      // outcome, not the preedit's refusal.
+      const source = '> quote\n-\n> next';
+      final session = _Session(backend, source: source, caret: 9);
+      final editor = session.editor..beginComposition();
+      session.act(const InsertText('t'), applied: false, source: source);
+      expect(editor.lastRejection, FlarkRejection.unsupportedEdit);
+      expect(editor.applyAfterComposition(const SetSelection.caret(0)), isTrue);
+      session.expectState(source: source, anchor: 2);
+      expect((editor.lastRejection, editor.composing), (null, false));
+    });
+
     test('Redo during a composition does nothing', () {
       // Redo has nothing to redo once the composition commits. Made while it
       // composes, it would replace the text under the composition.

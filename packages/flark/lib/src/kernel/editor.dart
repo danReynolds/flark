@@ -231,7 +231,7 @@ final class FlarkEditor implements FlarkDocumentState {
       _inert = true;
       return false;
     }
-    if (composing && command is Undo) commitComposition();
+    if (composing && command is Undo) _commitComposition();
     if (command is! SelectAll) _selectedCodeScope = false;
     _now = at;
     final applied = sourceMode
@@ -270,25 +270,17 @@ final class FlarkEditor implements FlarkDocumentState {
     final now = at ?? _clock();
     return _observe(
       ApplyCall(command, now, afterComposition: true),
-      () => _applyAfterComposition(
-        () => command,
-        at: now,
-        expectedRevision: expectedRevision,
-      ),
+      () =>
+          _enter(expectedRevision) &&
+          _applyAfterComposition(() => command, now),
     );
   }
 
-  /// [command] is built once the composition has ended: committing its
-  /// text can respell the source the command's offsets are in.
-  bool _applyAfterComposition(
-    FlarkCommand Function() command, {
-    Duration? at,
-    int? expectedRevision,
-  }) {
-    if (!composing ||
-        (expectedRevision != null && expectedRevision != revision)) {
-      return apply(command(), at: at, expectedRevision: expectedRevision);
-    }
+  /// [command], made at [at], is built once the composition has ended:
+  /// committing its text can respell the source the command's offsets are
+  /// in.
+  bool _applyAfterComposition(FlarkCommand Function() command, Duration at) {
+    if (!composing) return _apply(command(), at, null);
     final composition = _composition, composed = _composed;
     final before = _snapshot, pending = _pending, origin = _cellOrigin;
     final selectedCode = _selectedCodeScope, goal = _goalColumn;
@@ -308,11 +300,7 @@ final class FlarkEditor implements FlarkDocumentState {
     _endComposition();
     final withdrawn = _lastRejection, unpublished = _revision;
     try {
-      final accepted = apply(
-        command(),
-        at: at,
-        expectedRevision: expectedRevision,
-      );
+      final accepted = _apply(command(), at, null);
       if (!accepted) {
         restore();
       } else {
@@ -519,15 +507,10 @@ final class FlarkEditor implements FlarkDocumentState {
   /// its familiar fence-first, then whole-document progression.
   bool selectAll({bool codeBlock = false, int? expectedRevision}) => _observe(
     SelectAllCall(codeBlock: codeBlock),
-    () =>
-        _selectAllIn(codeBlock: codeBlock, expectedRevision: expectedRevision),
+    () => _enter(expectedRevision) && _selectAllIn(codeBlock: codeBlock),
   );
 
-  bool _selectAllIn({required bool codeBlock, int? expectedRevision}) {
-    if (expectedRevision != null && expectedRevision != revision) {
-      _lastRejection = FlarkRejection.staleRevision;
-      return false;
-    }
+  bool _selectAllIn({required bool codeBlock}) {
     if (codeBlock) {
       if (sourceMode || !_doc.caretRow.fenced) {
         _lastRejection = FlarkRejection.unsupportedEdit;
@@ -539,9 +522,12 @@ final class FlarkEditor implements FlarkDocumentState {
           row.sourceForDisplay(0),
           row.sourceForDisplay(row.text.length),
         );
-      });
+      }, _clock());
     }
-    return _applyAfterComposition(() => SetSelection(0, source.length));
+    return _applyAfterComposition(
+      () => SetSelection(0, source.length),
+      _clock(),
+    );
   }
 
   void _notify() {
@@ -555,6 +541,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// Cancellation restores source, selection and typing intent without using
   /// or clearing the user's undo/redo stacks.
   void beginComposition() {
+    _enter(null);
     // Composition calls that change nothing (a host that commits or begins
     // on every focus change) are no calls worth observing.
     if (composing) return;
@@ -571,12 +558,12 @@ final class FlarkEditor implements FlarkDocumentState {
   /// composed, which withdraws it as [cancelComposition] does:
   /// [lastRejection] then says why.
   void commitComposition() {
+    _enter(null);
     if (!composing) return;
     _observe(const CompositionCall(CompositionStep.commit), _commitComposition);
   }
 
   void _commitComposition() {
-    _lastRejection = null;
     if (_endComposition()) _notify();
   }
 
@@ -603,6 +590,7 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   void cancelComposition() {
+    _enter(null);
     if (!composing) return;
     _observe(const CompositionCall(CompositionStep.cancel), _cancelComposition);
   }
@@ -620,11 +608,13 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// Explicit source editing remains available for unsupported rich edits.
   /// Returning to rendered mode uses the same admission path as opening.
-  void setSourceMode(bool enabled) =>
-      _observe(SetSourceModeCall(enabled), () => _setSourceMode(enabled));
+  void setSourceMode(bool enabled) => _observe(SetSourceModeCall(enabled), () {
+    _enter(null);
+    _setSourceMode(enabled);
+  });
 
   void _setSourceMode(bool enabled) {
-    commitComposition();
+    _commitComposition();
     _selectedCodeScope = false;
     final previous = _forceSourceMode;
     _forceSourceMode = enabled;

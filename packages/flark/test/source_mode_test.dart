@@ -69,6 +69,16 @@ void main() {
   late FlarkParseBackend backend;
   setUpAll(() => backend = createParseBackend());
 
+  test('switching source mode reports no earlier refusal', () {
+    // lastRejection is why the last call refused its edit, and a switch
+    // refuses nothing.
+    final editor = FlarkEditor(backend, text: 'abc', caret: 3);
+    expect(editor.apply(const InsertText('\uD800')), isFalse);
+    expect(editor.lastRejection, FlarkRejection.invalidSource);
+    editor.setSourceMode(true);
+    expect((editor.sourceMode, editor.lastRejection), (true, null));
+  });
+
   test('the conservative default is 16 KiB of UTF-8', () {
     expect(FlarkEditor.defaultSyncLimit, 16 * 1024);
     expect(() => FlarkEditor(backend, syncLimit: -1), throwsArgumentError);
