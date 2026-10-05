@@ -1722,9 +1722,8 @@ final class FlarkEditor implements FlarkDocumentState {
     final cs = row.contentStarts[top], ce = row.contentEnds[bottom];
     final a = row.displayForSource(start).$1, b = row.displayForSource(end).$1;
     final ls = row.displayForSource(cs).$1, le = row.displayForSource(ce).$1;
-    bool blank(int x, int y) =>
-        x >= y || _spaces.hasMatch(row.text.substring(x, y));
-    final emptied = cs >= 0 && blank(ls, a) && blank(b, le);
+    final emptied =
+        cs >= 0 && _blanks(row.text, ls, a) && _blanks(row.text, b, le);
     final below = row.contentStarts.elementAtOrNull(bottom + 1) ?? -1;
     final cells = row.kind == RowKind.tableCell
         ? _tableRowCells(projection, row)
@@ -2409,7 +2408,8 @@ final class FlarkEditor implements FlarkDocumentState {
     return (start: first, end: trail.$2, marker: '${'#' * row.headingLevel} ');
   }
 
-  /// Whether [text] holds only spaces or tabs from [from] to [to].
+  /// Whether [text] holds only Markdown's spaces and tabs, which show
+  /// nothing at a line's edges, from [from] to [to].
   static bool _blanks(String text, int from, int to) {
     for (var i = from; i < to; i++) {
       if (!_isBlank(text, i)) return false;
@@ -4148,6 +4148,3 @@ final _breakSpace = RegExp(r'[ \t]*\n[ \t]*');
 /// at a position, and the last of the last word before an end.
 final _firstEscapable = RegExp(r'[ \t]*[^\s!-/:-@\[-`{-~]*[!-/:-@\[-`{-~]');
 final _lastEscapable = RegExp(r'[!-/:-@\[-`{-~][^\s!-/:-@\[-`{-~]*[ \t]*$');
-
-/// Markdown's spaces and tabs, which show nothing at a line's edges.
-final _spaces = RegExp(r'^[ \t]+$');
