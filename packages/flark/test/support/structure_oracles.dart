@@ -350,6 +350,9 @@ final class _Check {
   /// one only where a paragraph could start, and resolves references by
   /// label across the document, so the definitions after it and the
   /// references elsewhere (with the delimiters they pair) may be read anew.
+  /// A paragraph a table header splits keeps its leading definitions as
+  /// text (native/flark_parse/REGISTER.md), so an edit that makes or
+  /// unmakes a table under definitions reads them anew too.
   late final bool rereadsDefinitions =
       definitionsChanged &&
       (literalLines ||
@@ -361,7 +364,19 @@ final class _Check {
                   next.projection.rows.any(
                     (row) =>
                         row.kind == RowKind.definition && newRowTouched(row),
-                  )));
+                  ) ||
+                  _touchedTables(old, oldLines).length !=
+                      _touchedTables(next, newLines).length));
+
+  /// The tables with a line in [lines] of [doc].
+  static List<int> _touchedTables(FlarkDocument doc, (int, int) lines) => [
+    for (final b in doc.model.blocks)
+      if (b.kind == BlockKind.table &&
+          b.lineCount > 0 &&
+          b.firstLine <= lines.$2 &&
+          b.firstLine + b.lineCount - 1 >= lines.$1)
+        b.index,
+  ];
 
   /// Whether old block [block] of [kind] now starts where new block [now]
   /// does: the same block, moved by the edit.
