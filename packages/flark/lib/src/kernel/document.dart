@@ -354,6 +354,10 @@ final class FlarkDocument {
     // This is a linear merge over three ordered interval streams. Calling an
     // interval scan for every grapheme made dense 64 KiB documents quadratic.
     final blocked = _blockedPairs;
+    // A projection without a caret span keeps the source's end legal, here
+    // and in [isLegal], so the caret keeps a place. None is known to occur:
+    // every kind of row holds a caret, an inline leaf's on the content lines
+    // the model gives it, and the model does not promise to give them.
     final caretSpans = projection.hasCaretSpans
         ? _mergePairs([
             _sortPairs([
