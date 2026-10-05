@@ -1837,5 +1837,35 @@ void _structureCases(FlarkParseBackend backend) {
         );
       }
     });
+
+    test('backspace removes an empty line or a rule after a table', () {
+      // A row that shows nothing joins the table's last row whole, which
+      // keeps its cells, so Backspace erases on into the table.
+      for (final (source, caret, removed) in [
+        ('| a |\n| - |\n| b |\n', 18, '| a |\n| - |\n| b |'),
+        ('| a |\n| - |\n| b |\n---', 21, '| a |\n| - |\n| b |'),
+        ('| a | b |\n| - | - |\n| c |\n', 26, '| a | b |\n| - | - |\n| c |'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteBackward(), source: removed);
+      }
+    });
+
+    test('a join never runs a line into a table row', () {
+      // What a join puts on a table row's line is read as one of its cells,
+      // or as one the table drops from view: text, or the fence of code with
+      // no body. Only an empty line or a rule joins, going whole.
+      for (final (source, caret, command) in <(String, int, FlarkCommand)>[
+        ('| a |\n| - |\n| b |\n<div>', 18, const DeleteBackward()),
+        ('| a |\n| - |\n| b |\n~~~', 18, const DeleteBackward()),
+        ('x\n| a |\n| - |', 1, const DeleteForward()),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, applied: false, source: source);
+      }
+      // An empty line before a table goes whole, as before any row.
+      final session = _Session(backend, source: 'x\n\n| a |\n| - |', caret: 2);
+      session.act(const DeleteForward(), source: 'x\n| a |\n| - |');
+    });
   });
 }

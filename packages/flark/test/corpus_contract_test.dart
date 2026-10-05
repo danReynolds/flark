@@ -376,15 +376,12 @@ void checkErasure(String label, FlarkEditor e) {
         final hiddenLeaf =
             backward && row.index == 0 && row.block >= 0 && row.text.isEmpty;
         // Forward delete has nothing to take from a row that displays nothing,
-        // and neither direction may lift a pipe or a delimiter row, so a
-        // document ending in a table stops here (see the review note).
-        final previous = row.index > 0
-            ? editor.projection.rows[row.index - 1]
-            : null;
+        // and a cell's boundary refuses deletion, which would lift a pipe, so
+        // a document ending in a table stops at the start of its last cell.
         final atEnd =
             (!backward &&
                 (editor.selection.extent == last || row.text.isEmpty)) ||
-            (backward && previous?.kind == RowKind.tableCell) ||
+            (backward && row.kind == RowKind.tableCell) ||
             openFence ||
             hiddenLeaf;
         if (!atEnd) {
