@@ -2676,28 +2676,18 @@ final class FlarkEditor implements FlarkDocumentState {
       return false;
     }
 
-    var i = 0;
     for (final row in next.projection.rows) {
-      final segments = row.segments;
-      // A row the projection reused paints what it painted, moved with it:
-      // the same text (the same string) where [old] maps the row's ends.
-      if (row.text.isNotEmpty && row.sourceEnd > row.sourceStart) {
-        final at = old(row.sourceStart);
-        for (; i < rows.length && rows[i].sourceStart < at; i++) {}
-        var reused = false;
-        for (var j = i; j < rows.length && rows[j].sourceStart == at; j++) {
-          final was = rows[j];
-          if (identical(was.text, row.text) &&
-              was.segments.length == segments.length &&
-              old(row.sourceEnd - 1) == was.sourceEnd - 1 &&
-              was.sourceEnd - at == row.sourceEnd - row.sourceStart) {
-            reused = true;
-            break;
-          }
-        }
-        if (reused) continue;
+      // A row the projection carried over from this one paints what it
+      // painted, moved with it, where [old] maps the row's ends.
+      final was = next.projection.reusedFrom(row, projection);
+      if (was != null &&
+          row.text.isNotEmpty &&
+          row.sourceEnd > row.sourceStart &&
+          old(row.sourceStart) == was.sourceStart &&
+          old(row.sourceEnd - 1) == was.sourceEnd - 1) {
+        continue;
       }
-      for (final segment in segments) {
+      for (final segment in row.segments) {
         final a = segment.sourceStart, b = segment.sourceEnd;
         if (segment.lineBreak || a >= b) continue;
         final first = old(a), last = old(b - 1);

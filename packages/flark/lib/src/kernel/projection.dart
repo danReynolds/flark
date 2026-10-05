@@ -154,6 +154,7 @@ final class ProjectedRow {
     this.header = false,
     this.alignment = 0,
   }) : _index = index,
+       _origin = -1,
        segments = UnmodifiableListView(segments),
        shells = UnmodifiableListView(shells),
        contentStarts = UnmodifiableListView(contentStarts),
@@ -181,6 +182,7 @@ final class ProjectedRow {
     final moved = delta != 0 || runDelta != 0;
     return ProjectedRow._copy(
       index: index,
+      origin: _index,
       kind: kind,
       block: block,
       firstLine: firstLine,
@@ -227,6 +229,7 @@ final class ProjectedRow {
 
   ProjectedRow._copy({
     required int index,
+    required int origin,
     required this.kind,
     required this.block,
     required this.firstLine,
@@ -248,11 +251,18 @@ final class ProjectedRow {
     required this.column,
     required this.header,
     required this.alignment,
-  }) : _index = index;
+  }) : _index = index,
+       _origin = origin;
 
   /// Position in [Projection.rows], assigned once rows are ordered.
   int _index;
   int get index => _index;
+
+  /// For a row reused from the projection its own was built from, that
+  /// row's index there; -1 for a row built anew. Provenance, not content: a
+  /// reused row and a rebuilt one show the same, so comparisons of rows
+  /// leave it out. Read it through [Projection.reusedFrom].
+  final int _origin;
   final RowKind kind;
 
   /// The block this row projects; for a bare prefix shown as text, the
@@ -358,6 +368,7 @@ final class Projection {
     List<ProjectedRow> rows,
     this._rowsByLine,
     this.options,
+    this._builtFrom,
   ) : rows = UnmodifiableListView(rows);
 
   final RenderModel model;
@@ -365,6 +376,14 @@ final class Projection {
   final List<ProjectedRow> rows;
   final List<List<int>> _rowsByLine;
   final ProjectionOptions options;
+
+  /// Names this projection to the ones built from it, without holding on
+  /// to its rows the way a reference to the projection itself would.
+  final Object _generation = Object();
+
+  /// The [_generation] of the projection whose rows this one reused, or
+  /// null when it built every row.
+  final Object? _builtFrom;
 
   /// Project [model] of [source]. [previous], a projection of an earlier
   /// version of the source, lets rows of blocks an edit did not touch be
@@ -385,6 +404,15 @@ final class Projection {
         ? _Reuse(previous, model, source)
         : null,
   ).build();
+
+  /// The row of [previous] that [row], a row of this projection, carries
+  /// over: the same text and segments with source offsets moved, because the
+  /// edit between the two left its block alone. Null for a row built anew,
+  /// or when this projection was not built from [previous].
+  ProjectedRow? reusedFrom(ProjectedRow row, Projection previous) =>
+      row._origin >= 0 && identical(_builtFrom, previous._generation)
+      ? previous.rows[row._origin]
+      : null;
 
   /// Rows that own [line] (a table line holds one per cell).
   List<int> rowsOnLine(int line) =>
@@ -809,7 +837,14 @@ final class _Builder {
         }
       }
     }
-    return Projection._(m, src, ordered, rowsByLine, options);
+    return Projection._(
+      m,
+      src,
+      ordered,
+      rowsByLine,
+      options,
+      _reuse?.previous._generation,
+    );
   }
 
   /// A table cell's place in its table, which its row carries but its own

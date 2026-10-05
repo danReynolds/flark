@@ -197,6 +197,34 @@ void main() {
     expect(kept, greaterThan(withText * 0.9));
   });
 
+  test('a reused row names the row it carries over', () {
+    final source = _mixed(4);
+    final before = Projection.of(backend.parse(source), source);
+    final at = source.length ~/ 2;
+    final after = source.replaceRange(at, at, 'x');
+    final model = backend.parse(after);
+    final reused = Projection.of(model, after, previous: before);
+    var carried = 0;
+    for (final row in reused.rows) {
+      final was = reused.reusedFrom(row, before);
+      if (was == null) continue;
+      carried++;
+      // The row it was: the same text, moved by the edit if after it.
+      expect(identical(was.text, row.text), isTrue);
+      expect(row.sourceStart - was.sourceStart, was.sourceStart < at ? 0 : 1);
+    }
+    expect(carried, greaterThan(reused.rows.length ~/ 2));
+    // A projection built from nothing carries no row over, and one asked
+    // about a projection it was not built from names none.
+    final fresh = Projection.of(model, after);
+    for (final row in fresh.rows) {
+      expect(fresh.reusedFrom(row, before), isNull);
+    }
+    for (final row in reused.rows) {
+      expect(reused.reusedFrom(row, fresh), isNull);
+    }
+  });
+
   test('a read-only document reuses rows when its markdown grows', () {
     final source = _mixed(20);
     final reader = FlarkReadDocument(backend, source);
