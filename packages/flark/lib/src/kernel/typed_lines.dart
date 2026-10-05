@@ -91,7 +91,7 @@ extension _TypedLines on FlarkEditor {
                 (row.kind != RowKind.codeBlock || row.fenced))) {
       return null;
     }
-    final lineStart = _lineStart(source, m, line);
+    final lineStart = lineStartPastMark(source, m, line);
     // Where the caret sits in [inserted].
     final offset = plain.caret - at;
     final nl = _lineBreakAt(at);
@@ -129,13 +129,8 @@ extension _TypedLines on FlarkEditor {
     );
     // The continuation prefix of [row]'s line (a rule's or a bare marker's,
     // whose block starts on it) for the lines after it.
-    String continued() => _continuationPrefix(
-      source,
-      m,
-      line,
-      m.blockStart(row.block),
-      row.block,
-    );
+    String continued() =>
+        continuationPrefix(source, m, line, m.blockStart(row.block), row.block);
     if (removed == 0 && row.kind == RowKind.blank) {
       // An empty row: the typed text starts a block on its line, in the
       // containers the row shows. The line gets the prefix of the innermost
@@ -200,7 +195,7 @@ extension _TypedLines on FlarkEditor {
           above.firstLine + above.lineCount == line) {
         final fenceAt = m.blockStart(above.block);
         final closer =
-            '${_continuationPrefix(source, m, above.firstLine, fenceAt, above.block)}'
+            '${continuationPrefix(source, m, above.firstLine, fenceAt, above.block)}'
             '${source.substring(fenceAt, fenceAt + m.blockAttr(above.block))}';
         spellings.add(around('$closer$nl', lead, ''));
       }
@@ -277,7 +272,7 @@ extension _TypedLines on FlarkEditor {
           row.contentStarts[i] != row.contentEnds[i]) {
         return null;
       }
-      final prefix = _continuationPrefix(
+      final prefix = continuationPrefix(
         source,
         m,
         row.firstLine + first,
@@ -301,7 +296,7 @@ extension _TypedLines on FlarkEditor {
       // The paragraph's first line is its block's, which can be earlier
       // than its row's when the block opens with link reference definitions
       // its row leaves out.
-      final prefix = _continuationPrefix(
+      final prefix = continuationPrefix(
         source,
         m,
         m.blockFirstLine(row.block),
@@ -795,15 +790,15 @@ extension _TypedLines on FlarkEditor {
   /// or a footnote's four columns. Every range comes from the parser.
   String _innerPrefix(int c) {
     final m = _doc.model, line = m.blockFirstLine(c);
-    final outer = _continuationPrefix(source, m, line, m.blockStart(c), c);
+    final outer = continuationPrefix(source, m, line, m.blockStart(c), c);
     if (m.blockKind(c) == BlockKind.footnoteDefinition) {
       final top = m.blockKind(m.blockParent(c)) == BlockKind.document;
-      return '${top ? '' : outer}$_footnoteIndent';
+      return '${top ? '' : outer}$footnoteIndent';
     }
     final end = m.itemMarkerEnd(c);
     final marker = source
         .substring(m.blockStart(c), end)
-        .replaceAll(_notTab, ' ');
+        .replaceAll(notTab, ' ');
     // A marker right after a quote's `>` left it no optional space, and the
     // first of the spaces put in its place would be read as one.
     final pad =

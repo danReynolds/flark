@@ -173,7 +173,7 @@ extension _CodeEditing on FlarkEditor {
         (edit.start == row.text.length ||
             row.text.codeUnitAt(edit.start) == 10)) {
       final block = _doc.model.blockAt(row.block);
-      final continued = _continuationPrefix(
+      final continued = continuationPrefix(
         source,
         _doc.model,
         block.firstLine,
@@ -256,7 +256,7 @@ extension _CodeEditing on FlarkEditor {
     final model = _doc.model;
     final block = model.blockAt(row.block);
     // Use the same parser-owned container ranges as typed fence completion.
-    var prefix = _continuationPrefix(
+    var prefix = continuationPrefix(
       source,
       model,
       block.firstLine,
@@ -500,7 +500,7 @@ extension _CodeEditing on FlarkEditor {
     // The fence's containers continue on the lines the exit writes. A blank
     // line needs none of their indentation, so its own prefix can be
     // shorter: the fence's opening line gives it.
-    final prefix = _continuationPrefix(
+    final prefix = continuationPrefix(
       source,
       model,
       model.lineOfUtf16(block.startUtf16),
@@ -589,7 +589,7 @@ extension _CodeEditing on FlarkEditor {
     }
     // Copied markers of items that open on the line would open new items
     // (`- - -` is a rule); the indentation that continues them does not.
-    final prefix = _continuationPrefix(
+    final prefix = continuationPrefix(
       source,
       _doc.model,
       line,

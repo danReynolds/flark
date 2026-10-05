@@ -1519,7 +1519,7 @@ final class FlarkEditor implements FlarkDocumentState {
       // or footnote label becomes the indentation that continues it, so
       // subsequent lines stay in the same item, including tab-padded and
       // nested items, or footnote.
-      final prefix = _continuationPrefix(
+      final prefix = continuationPrefix(
         candidate,
         model,
         line,
@@ -1773,7 +1773,7 @@ final class FlarkEditor implements FlarkDocumentState {
     int lineOf(int offset) =>
         (m.lineOfUtf16(offset) - row.firstLine).clamp(0, row.lineCount - 1);
     final top = lineOf(start), bottom = lineOf(end);
-    final at = _lineStart(source, m, row.firstLine + top);
+    final at = lineStartPastMark(source, m, row.firstLine + top);
     final cs = row.contentStarts[top], ce = row.contentEnds[bottom];
     final a = row.displayForSource(start).$1, b = row.displayForSource(end).$1;
     final ls = row.displayForSource(cs).$1, le = row.displayForSource(ce).$1;
@@ -1858,7 +1858,8 @@ final class FlarkEditor implements FlarkDocumentState {
     while (k < rows.length && rows[k].kind == RowKind.blank) {
       k++;
     }
-    int startOf(ProjectedRow row) => _lineStart(source, m, row.firstLine);
+    int startOf(ProjectedRow row) =>
+        lineStartPastMark(source, m, row.firstLine);
     final gap = emptied && k > row.index + 1 && k < rows.length
         ? (startOf(rows[row.index + 1]), startOf(rows[k]), '')
         : null;
@@ -2319,7 +2320,7 @@ final class FlarkEditor implements FlarkDocumentState {
       return false;
     }
     final m = _doc.model;
-    final start = _lineStart(source, m, above.firstLine);
+    final start = lineStartPastMark(source, m, above.firstLine);
     final end = m.lineStartUtf16(row.firstLine);
     final caret = _firstCaretStart(row) - (end - start);
     return _commit(
@@ -2870,7 +2871,7 @@ final class FlarkEditor implements FlarkDocumentState {
             m.blockStart(block) < contentStart
         ? m.blockStart(block)
         : contentStart;
-    return _continuationPrefix(source, m, at, end, block);
+    return continuationPrefix(source, m, at, end, block);
   }
 
   /// Return from [start] to [end] in [row]. A heading's underline or closing
@@ -2925,7 +2926,7 @@ final class FlarkEditor implements FlarkDocumentState {
       // The new line repeats the delimiter row's container prefix.
       final nl =
           '${_lineBreakAt(end)}'
-          '${source.substring(_lineStart(source, m, line), row.sourceStart)}';
+          '${source.substring(lineStartPastMark(source, m, line), row.sourceStart)}';
       return selection.isCollapsed &&
           _commit(
             source.replaceRange(end, end, nl),
@@ -3364,7 +3365,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // The parser converts column padding (including partially consumed tabs)
     // to an exact source endpoint before the optional task checkbox.
     final markerEnd = m.itemMarkerEnd(item.block);
-    final outer = _continuationPrefix(
+    final outer = continuationPrefix(
       source,
       m,
       itemLine,
@@ -3404,7 +3405,7 @@ final class FlarkEditor implements FlarkDocumentState {
     if (other < 0) return false;
     int columnOf(int block) => _columns(
       source,
-      _lineStart(source, m, m.blockFirstLine(block)),
+      lineStartPastMark(source, m, m.blockFirstLine(block)),
       m.blockStart(block),
     );
     final first = m.blockFirstLine(item), start = m.blockStart(item);
@@ -3463,7 +3464,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// The prefix a new line takes to continue the containers of [block].
   String _continuing(int block) {
     final m = _doc.model, line = m.blockFirstLine(block);
-    return _continuationPrefix(source, m, line, m.blockStart(block), block);
+    return continuationPrefix(source, m, line, m.blockStart(block), block);
   }
 
   /// The edit moving what [line] holds after visual [column] by [delta]:
@@ -3471,7 +3472,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// removed, that whitespace respelled as the spaces it shows. Null for a
   /// line of whitespace, or a lazy one whose text starts before [column].
   (int, int, String)? _shiftLine(int line, int column, int delta) {
-    final start = _lineStart(source, _doc.model, line);
+    final start = lineStartPastMark(source, _doc.model, line);
     final end = projection.lineContentEnd(line);
     var at = start, col = 0, a = start, b = start;
     while (at < end && col < column) {
@@ -3673,7 +3674,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// on over unindented empty lines), else goes on a line after this one
   /// (HTML runs to an empty line); the parser must show every row as it was.
   bool _emptyLineHeading(ProjectedRow row, int level) {
-    final m = _doc.model, start = _lineStart(source, m, row.firstLine);
+    final m = _doc.model, start = lineStartPastMark(source, m, row.firstLine);
     final end = row.sourceEnd, text = source.substring(start, end);
     String marked(String p) =>
         '$p${p.isEmpty || _isSpace(p, p.length - 1) ? '' : ' '}${'#' * level} ';
@@ -3710,7 +3711,7 @@ final class FlarkEditor implements FlarkDocumentState {
     final at = starts[0], line = m.lineOfUtf16(at);
     if (m.lineOfUtf16(selection.extent) != line || split < 0) return false;
     final marker = (at, at, '${'#' * level} '), prefix = _continuing(row.block);
-    final lazy = _lineStart(source, m, m.lineOfUtf16(starts[1]));
+    final lazy = lineStartPastMark(source, m, m.lineOfUtf16(starts[1]));
     var next = starts[1];
     for (; _isSpace(source, next); next++) {}
     return _commitFirst(
@@ -3783,7 +3784,7 @@ final class FlarkEditor implements FlarkDocumentState {
     for (final (start, end, length) in edits) {
       at += length - (end - start);
     }
-    final outer = _continuationPrefix(
+    final outer = continuationPrefix(
       source,
       m,
       m.lineOfUtf16(prefixEnd),
@@ -4152,19 +4153,3 @@ final _lastEscapable = RegExp(r'[!-/:-@\[-`{-~][^\s!-/:-@\[-`{-~]*[ \t]*$');
 
 /// Markdown's spaces and tabs, which show nothing at a line's edges.
 final _spaces = RegExp(r'^[ \t]+$');
-
-// The shared container prefixes (see continuation.dart), under the names
-// this library and its parts use.
-final _notTab = notTab;
-const _footnoteIndent = footnoteIndent;
-
-int _lineStart(String text, RenderModel model, int line) =>
-    lineStartPastMark(text, model, line);
-
-String _continuationPrefix(
-  String text,
-  RenderModel model,
-  int line,
-  int end,
-  int block,
-) => continuationPrefix(text, model, line, end, block);
