@@ -1050,22 +1050,9 @@ final class FlarkEditor implements FlarkDocumentState {
     if (typed.isEmpty) return false;
     final sel = selection;
     if (_wholeRange(sel.start, sel.end)) return _replaceWhole(typed);
-    var range = _contentRange(sel.start, sel.end);
+    final range = _contentRange(sel.start, sel.end);
     if (!_supportedRange(range.start, range.end)) return false;
     final row = _doc.rowAt(sel.extent);
-    // A task item's checkbox ends at the space after it: text typed against
-    // it would run into the checkbox and show its source. When the item's
-    // text is on the next line, that space is the row's first, and the text
-    // goes after it.
-    if (sel.isCollapsed &&
-        row.shells.isNotEmpty &&
-        row.shells.last.kind == ShellKind.item &&
-        row.shells.last.checkboxEnd == range.start &&
-        range.start < source.length &&
-        (source.codeUnitAt(range.start) == 0x20 ||
-            source.codeUnitAt(range.start) == 0x09)) {
-      range = (start: range.start + 1, end: range.start + 1);
-    }
     // A pipe typed into a table cell is that cell's text. Escaped, it stays
     // in the cell; raw, it would split the row, push the last cell's text out
     // of the table and leave the caret before the delimiter it made. A typed
@@ -1090,8 +1077,9 @@ final class FlarkEditor implements FlarkDocumentState {
     return _insertText(row, range, typed, typed, cell: false, typing: typing);
   }
 
-  /// [_insert] of [text], [typed] as the cell escapes it when [cell];
-  /// without a pending style's delimiters around it unless [styled].
+  /// [_insert] of [text] over [range] of [row], [typed] as the cell
+  /// escapes it when [cell]; without a pending style's delimiters around it
+  /// unless [styled].
   bool _insertText(
     ProjectedRow row,
     ({int start, int end}) range,
@@ -1101,9 +1089,9 @@ final class FlarkEditor implements FlarkDocumentState {
     required bool typing,
     bool styled = true,
   }) {
-    final sel = selection;
+    final collapsed = range.start == range.end;
     if (row.fenced && row.contentStarts.every((start) => start < 0)) {
-      final code = _pasteCode(text);
+      final code = _pasteCode(text, from: range.start, to: range.end);
       if (code != null) return code;
     }
     // Typed text goes to the code delegate first. What it does not propose,
@@ -1116,10 +1104,25 @@ final class FlarkEditor implements FlarkDocumentState {
             : null) ??
         _pasteCode(
           text,
+          from: range.start,
+          to: range.end,
           typing: typing && text != '\n' && text.characters.length == 1,
         );
     if (code != null) return code;
-    if (sel.isCollapsed && styled) {
+    // A task item's checkbox ends at the space after it: text typed against
+    // it would run into the checkbox and show its source. When the item's
+    // text is on the next line, that space is the row's first, and the text
+    // goes after it.
+    if (collapsed &&
+        row.shells.isNotEmpty &&
+        row.shells.last.kind == ShellKind.item &&
+        row.shells.last.checkboxEnd == range.start &&
+        range.start < source.length &&
+        (source.codeUnitAt(range.start) == 0x20 ||
+            source.codeUnitAt(range.start) == 0x09)) {
+      range = (start: range.start + 1, end: range.start + 1);
+    }
+    if (collapsed && styled) {
       final continued = _continueSpan(range.start, text, typing: typing);
       if (continued != null) return continued;
     }
@@ -1132,7 +1135,7 @@ final class FlarkEditor implements FlarkDocumentState {
     var wrapAt = -1, wrapped = 0;
     // Empty-owner intent exits on whitespace. A surviving span continues
     // across spaces, keeping its delimiters around non-whitespace content.
-    if (p != null && sel.isCollapsed && text.trim().isNotEmpty) {
+    if (p != null && collapsed && text.trim().isNotEmpty) {
       var first = 0, last = text.length;
       if (p.styles & (Style.strong | Style.emphasis | Style.strikethrough) !=
           0) {
@@ -1159,14 +1162,14 @@ final class FlarkEditor implements FlarkDocumentState {
         );
       }
     } else if (p != null &&
-        sel.isCollapsed &&
+        collapsed &&
         p.continueAcrossSpaces &&
         !text.contains('\n') &&
         !text.contains('\r')) {
       pending = p;
     }
     var start = range.start, end = range.end;
-    if (!sel.isCollapsed && text.trim().isEmpty) {
+    if (!collapsed && text.trim().isEmpty) {
       final expanded = _rangeForEmptying(start, end);
       final heading = _emptySetext(
         expanded.start,
@@ -1180,7 +1183,7 @@ final class FlarkEditor implements FlarkDocumentState {
       caret = start + inserted.length;
     }
     // Text typed into an empty closed heading can go before the caret.
-    final (at, gap) = sel.isCollapsed
+    final (at, gap) = collapsed
         ? _sequencePlace(row, start, inserted)
         : (start, '');
     final normalized = _normalizeInlineEdges(
@@ -1205,13 +1208,13 @@ final class FlarkEditor implements FlarkDocumentState {
     final one = typing && typed != '\n' && typed.characters.length == 1;
     final fence =
         typing &&
-        sel.isCollapsed &&
+        collapsed &&
         inserted == text &&
         (text == '`' || text == '```' || text == '~' || text == '~~~') &&
         row.kind != RowKind.codeBlock;
     final underline =
         typing &&
-            sel.isCollapsed &&
+            collapsed &&
             inserted == text &&
             row.text.isEmpty &&
             row.kind != RowKind.codeBlock &&
