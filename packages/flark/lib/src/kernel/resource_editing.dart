@@ -210,7 +210,8 @@ extension _ResourceEditing on FlarkEditor {
       // Unwrapping a URL label must not immediately turn it into a GFM
       // automatic link. Escape punctuation in parser-owned text leaves only;
       // retain inline formatting, code, images and already escaped text.
-      for (final run in _doc.model.runs.toList().reversed) {
+      final runs = _doc.model.runsOfBlock(resource.block).toList();
+      for (final run in runs.reversed) {
         if (run.kind != RunKind.text ||
             run.startUtf16 < resource.contentStart ||
             run.endUtf16 > resource.contentEnd) {
