@@ -1658,11 +1658,8 @@ final class FlarkEditor implements FlarkDocumentState {
       var start = a;
       // Editable spaces before a hard break remain visible caret positions,
       // but deleting the break removes its entire parser-authenticated marker.
-      for (final r in _doc.model.runsOfBlock(row.block)) {
-        if (r.kind == RunKind.hardBreak &&
-            r.startUtf16 <= a &&
-            r.endUtf16 >= a &&
-            r.endUtf16 <= b) {
+      for (final r in _doc.hardBreaksOf(row)) {
+        if (r.startUtf16 <= a && r.endUtf16 >= a && r.endUtf16 <= b) {
           start = r.startUtf16;
           break;
         }
@@ -3294,12 +3291,9 @@ final class FlarkEditor implements FlarkDocumentState {
           '${prefix.isEmpty ? '' : _rowPrefix(row, rowLast).trimRight()}',
     );
     (int, int, String)? unbreak;
-    final runs = row.block < 0 ? 0 : m.firstRunOfBlock(row.block + 1);
-    for (var r = runs > 0 ? m.firstRunOfBlock(row.block) : 0; r < runs; r++) {
-      final s = m.runStart(r);
-      if (m.runKind(r) == RunKind.hardBreak &&
-          m.runEnd(r) == at.$1 &&
-          m.runContentStart(r) == at.$1) {
+    for (final r in _doc.hardBreaksOf(row)) {
+      if (r.endUtf16 == at.$1 && r.contentStartUtf16 == at.$1) {
+        final s = r.startUtf16;
         unbreak = (s, projection.lineContentEnd(m.lineOfUtf16(s)), '');
       }
     }

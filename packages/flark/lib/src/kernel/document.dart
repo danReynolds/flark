@@ -560,14 +560,36 @@ final class FlarkDocument {
     model.runContentEnd(r),
   );
 
+  /// The runs of the leaf block [row] projects: (first, end).
+  (int, int) _runsOf(ProjectedRow row) => row.block < 0
+      ? (0, 0)
+      : (
+          model.firstRunOfBlock(row.block),
+          model.firstRunOfBlock(row.block + 1),
+        );
+
   /// The runs of the leaf block projected at [offset]: (first, end).
-  (int, int) _runsNear(int offset) {
-    final row = rowAt(offset);
-    if (row.block < 0) return (0, 0);
-    return (
-      model.firstRunOfBlock(row.block),
-      model.firstRunOfBlock(row.block + 1),
-    );
+  (int, int) _runsNear(int offset) => _runsOf(rowAt(offset));
+
+  /// Styled owners in the leaf block [row] projects, in source order.
+  List<Owner> ownersOf(ProjectedRow row) {
+    final (first, end) = _runsOf(row);
+    return [
+      for (var r = first; r < end; r++)
+        if (_owns(model.runKind(r)) && model.runKind(r) != RunKind.escape)
+          _owner(r),
+    ];
+  }
+
+  /// The hard breaks in the leaf block [row] projects, in source order. A
+  /// break's run spans its marker (a backslash, or the spaces it keeps as
+  /// its content) and the line ending after it.
+  List<RunView> hardBreaksOf(ProjectedRow row) {
+    final (first, end) = _runsOf(row);
+    return [
+      for (var r = first; r < end; r++)
+        if (model.runKind(r) == RunKind.hardBreak) model.runAt(r),
+    ];
   }
 
   /// Styled owners whose content contains [offset], outermost first. An

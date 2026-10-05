@@ -43,28 +43,11 @@ extension _InlineFormatting on FlarkEditor {
     );
   }
 
-  List<Owner> _styleOwners(ProjectedRow row, int style) {
-    if (row.block < 0) return [];
-    final model = _doc.model;
-    final owners = <Owner>[];
-    for (
-      var r = model.firstRunOfBlock(row.block),
-          end = model.firstRunOfBlock(row.block + 1);
-      r < end;
-      r++
-    ) {
-      final owner = Owner(
-        r,
-        model.runKind(r),
-        model.runStart(r),
-        model.runEnd(r),
-        model.runContentStart(r),
-        model.runContentEnd(r),
-      );
-      if (owner.style == style) owners.add(owner);
-    }
-    return owners;
-  }
+  /// The owners of [style] in [row]'s block, in source order.
+  List<Owner> _styleOwners(ProjectedRow row, int style) => [
+    for (final owner in _doc.ownersOf(row))
+      if (owner.style == style) owner,
+  ];
 
   FlarkStyleState _styleState(int style) {
     if (sourceMode || _styleDelimiter(style) == null) {
