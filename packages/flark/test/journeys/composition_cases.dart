@@ -229,6 +229,76 @@ void _compositionCases(FlarkParseBackend backend) {
       expect(session.editor.lastRejection, FlarkRejection.unsupportedEdit);
     });
 
+    test('a correction composed where typing is refused is refused', () {
+      // An input method composing at the end corrects text elsewhere, where
+      // typing would read on into the quote: that preedit is refused as the
+      // first one would be. A correction is never retyped at the commit, so
+      // this is its only check.
+      const source = '> quote\n-\n> next\n\nend';
+      final session = _Session(backend, source: source, caret: 21);
+      session.editor.beginComposition();
+      session.act(const InsertText('x'), source: '${source}x');
+      session.act(
+        const ReplaceRange(9, 9, 't'),
+        applied: false,
+        source: '${source}x',
+      );
+      expect(session.editor.lastRejection, FlarkRejection.unsupportedEdit);
+      session.editor.commitComposition();
+      session.expectState(
+        source: '${source}x',
+        rows: ['quote', '-', 'next', '', 'endx'],
+      );
+    });
+
+    test(
+      'a composition around other edits stays when its retype is refused',
+      () {
+        // A deletion inside the emphasis while the input method composes
+        // after it: retyped as one span, the text would cross the emphasis,
+        // which typing refuses, and withdrawn it would take the deletion with
+        // it. The composition stays as the platform holds it.
+        final session = _Session(backend, source: '*teh* ', caret: 6);
+        final editor = session.editor..beginComposition();
+        session.act(const InsertText('wor'), source: '*teh* wor');
+        session.act(const SetSelection.caret(4));
+        session.act(const DeleteBackward(), source: '*te* wor');
+        session.act(const SetSelection.caret(8));
+        session.act(const InsertText('l'), source: '*te* worl');
+        editor.commitComposition();
+        session.expectState(source: '*te* worl', rows: ['te worl']);
+        expect(editor.lastRejection, isNull);
+      },
+    );
+
+    test('a retyped composition keeps a surrogate pair whole', () {
+      // The input method replaces 😀 with 😁| while a paste lands later in
+      // the row, so the commit retypes all that changed. The two emoji share
+      // their first code unit; from there the change would start inside a
+      // pair, and the text would not be typed at all. Retyped from the
+      // pair's start, the composed pipe is escaped as typed pipes are.
+      final session = _Session(
+        backend,
+        source: '| a | b |\n| - | - |\n| 😀 | c |',
+        caret: 24,
+      );
+      final editor = session.editor..beginComposition();
+      session.act(
+        const ReplaceRange(22, 24, '😁|'),
+        source: '| a | b |\n| - | - |\n| 😁| | c |',
+      );
+      session.act(const SetSelection.caret(26));
+      session.act(
+        const Paste('!'),
+        source: '| a | b |\n| - | - |\n| 😁| !| c |',
+      );
+      editor.commitComposition();
+      session.expectState(
+        source: '| a | b |\n| - | - |\n| 😁\\| !| c |',
+        rows: ['a ', 'b ', '😁| !', 'c '],
+      );
+    });
+
     test('a commit that typing refuses is withdrawn', () {
       // Composed into a cell, a backslash before its delimiter would escape
       // it, which typing refuses: the composition ends as a cancelled one.
