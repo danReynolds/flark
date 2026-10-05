@@ -104,6 +104,13 @@ The later v4 tip is on the `codex/editor-runtime-boundaries` branch.
   canonical Markdown, but their candidate result must validate through Rust.
   A range the model lacks is a parse-crate bug, not a Dart workaround (content
   records carry each line's innermost prefix start for exactly this reason).
+- A structural edit is a list of `Spelling`s (`Edits` plus the selection
+  after them, the edit as asked first) and the check its re-parse must pass;
+  `_commitSpellings` commits the first that passes and owns the live-tier
+  and refusal rules. Do not hand-roll a candidate loop or read
+  `_lastRejection` to learn an outcome; special rows come from
+  `row_queries.dart`, not from decoding fields. The reasoning and the next
+  steps are in `docs/architecture/v5/structure_review_2026_10_05.md`.
 - The caret is a source offset that is never strictly inside a hidden range
   and always on a row's caret span; several legal offsets can share one
   display position, and which one the caret holds is its typing context.
