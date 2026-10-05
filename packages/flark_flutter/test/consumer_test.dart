@@ -126,6 +126,28 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a refused consumer command shows the notice a refused key does',
+    (t) async {
+      // The session hands the controller's commands to the view's input
+      // controller, which says why the kernel refused one, whatever sent it.
+      final c = FlarkController(markdown: '```\ncode\n```');
+      await t.runAsync(() => c.ready);
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FlarkEditor(controller: c)),
+        ),
+      );
+      c.setSelection(5, 5);
+      expect(c.setHeading(1).reason, FlarkEditRejection.unsupportedEdit);
+      await t.pump();
+      expect(find.text('This edit needs source mode.'), findsOneWidget);
+      expect(c.markdown, '```\ncode\n```');
+      await t.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
+
   testWidgets('the Source button takes the notice away, as it does alone', (
     t,
   ) async {

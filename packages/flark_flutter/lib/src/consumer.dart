@@ -31,8 +31,15 @@ class FlarkController extends ChangeNotifier with FlarkActions {
   final FlarkSession session;
   input.FlarkController? _input;
   bool _disposed = false;
-  input.FlarkController get _bridge {
-    final bridge = _input ??= input.FlarkController(session.engine!);
+
+  /// The input controller the editor's view is built on, made with the first
+  /// view. The session hands it this controller's commands, so that one the
+  /// kernel refuses raises the notice a refused key does, and one that ends
+  /// a composition ends it as the view's own commands do.
+  input.FlarkController get _bridge => _input ??= _createBridge();
+
+  input.FlarkController _createBridge() {
+    final bridge = input.FlarkController(session.engine!);
     session.commandHandler = (command, revision) =>
         bridge.command(command, expectedRevision: revision);
     return bridge;
