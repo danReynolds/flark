@@ -64,6 +64,47 @@ final class FlarkSourceSnapshot extends FlarkEditorSnapshot {
   }
 }
 
+/// The snapshot of [text] with [selected]: live, parsed and projected, when
+/// source mode is not forced, [text] is within the live tier ([live], the
+/// admission a caller already computed, or else [syncLimit] and
+/// [liveLimits]) and so is its parse; otherwise source. An extraction
+/// deviation makes a source snapshot too, unless [rejectDeviation], when it
+/// is thrown. [previous], the live document being replaced, lends the new
+/// projection the rows the edit did not touch.
+FlarkEditorSnapshot _projectSnapshot(
+  FlarkParseBackend backend,
+  String text,
+  FlarkSelection selected,
+  ProjectionOptions options,
+  FlarkLiveLimits liveLimits,
+  int syncLimit, {
+  bool forceSourceMode = false,
+  bool rejectDeviation = false,
+  RenderModel? parsed,
+  bool? live,
+  FlarkDocument? previous,
+}) {
+  if (forceSourceMode ||
+      !(live ?? liveLimits._admitsLive(_SourceStats.of(text), syncLimit))) {
+    return FlarkSourceSnapshot._(text, selected);
+  }
+  try {
+    final model = parsed ?? backend.parse(text);
+    if (!liveLimits._admitsModel(model)) {
+      return FlarkSourceSnapshot._(text, selected);
+    }
+    return FlarkLiveSnapshot._(
+      projectFlarkDocument(text, model, selected, options, previous: previous),
+    );
+  } on FlarkParseException catch (error) {
+    if (error.code != FlarkParseException.extractionDeviationCode ||
+        rejectDeviation) {
+      rethrow;
+    }
+    return FlarkSourceSnapshot._(text, selected);
+  }
+}
+
 int _legalSourceOffset(String source, int offset) {
   final target = offset.clamp(0, source.length);
   if (target == 0 || target == source.length) return target;

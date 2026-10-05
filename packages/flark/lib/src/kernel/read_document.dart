@@ -12,43 +12,6 @@ abstract interface class FlarkDocumentState {
   CodeEditingDelegate? get codeEditing;
 }
 
-/// [live] is the byte/line admission a caller already computed for [text].
-/// [previous], the live document being replaced, lends the new projection
-/// the rows the edit did not touch.
-FlarkEditorSnapshot _projectSnapshot(
-  FlarkParseBackend backend,
-  String text,
-  FlarkSelection selected,
-  ProjectionOptions options,
-  FlarkLiveLimits liveLimits,
-  int syncLimit, {
-  bool forceSourceMode = false,
-  bool rejectDeviation = false,
-  RenderModel? parsed,
-  bool? live,
-  FlarkDocument? previous,
-}) {
-  if (forceSourceMode ||
-      !(live ?? liveLimits._admitsLive(_SourceStats.of(text), syncLimit))) {
-    return FlarkSourceSnapshot._(text, selected);
-  }
-  try {
-    final model = parsed ?? backend.parse(text);
-    if (!liveLimits._admitsModel(model)) {
-      return FlarkSourceSnapshot._(text, selected);
-    }
-    return FlarkLiveSnapshot._(
-      projectFlarkDocument(text, model, selected, options, previous: previous),
-    );
-  } on FlarkParseException catch (error) {
-    if (error.code != FlarkParseException.extractionDeviationCode ||
-        rejectDeviation) {
-      rethrow;
-    }
-    return FlarkSourceSnapshot._(text, selected);
-  }
-}
-
 /// Per-instance read-only projection. It owns no history, editing commands,
 /// composition state or code indentation service. The caller owns the backend.
 final class FlarkReadDocument implements FlarkDocumentState {

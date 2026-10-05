@@ -20,7 +20,7 @@ import 'projection.dart';
 import 'row_queries.dart';
 import 'style_state.dart';
 
-part 'source_mode.dart';
+part 'snapshot.dart';
 part 'read_document.dart';
 part 'admission.dart';
 part 'code_editing.dart';
