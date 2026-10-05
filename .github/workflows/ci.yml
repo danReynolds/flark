@@ -76,8 +76,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # The Flutter whose flutter_test the lockfile's package:test resolves
+      # against: package:test before 1.31.2 cannot load a newer SDK's
+      # dart2wasm output under node ("instantiate is not a function").
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.44.4'
           channel: stable
       - name: Resolve the workspace
         run: flutter pub get
