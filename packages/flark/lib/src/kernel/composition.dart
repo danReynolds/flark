@@ -92,8 +92,11 @@ extension _Composition on FlarkEditor {
         began.codeUnitAt(a) == now.codeUnitAt(a)) {
       a++;
     }
+    // Neither end may pass the other in either text: a composition beside
+    // other edits can leave [began] shorter than [now] around it.
     while (b < tail &&
         b < now.length - a &&
+        b < began.length - a &&
         began.codeUnitAt(began.length - 1 - b) ==
             now.codeUnitAt(now.length - 1 - b)) {
       b++;

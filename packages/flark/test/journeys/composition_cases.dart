@@ -6,6 +6,39 @@ part of '../journey_test.dart';
 /// the text is made once, when the composition commits, as one undo step.
 void _compositionCases(FlarkParseBackend backend) {
   group('composition', () {
+    test('commands that edit around an open composition commit it whole', () {
+      // Commands a host would apply after ending the composition, applied
+      // while it is open: its commit retypes all that changed, which may
+      // span lines around a hard break inside emphasis, and must neither
+      // throw nor leave an illegal state. Found by the web differential.
+      final session = _Session(
+        backend,
+        source: '*fooé`*\n\n*\\\nbar*\n',
+        caret: 10,
+      );
+      session.editor.beginComposition();
+      for (final command in const <FlarkCommand>[
+        ToggleStyle(Style.strong),
+        MoveCaret(MoveDirection.forward, unit: MoveUnit.word),
+        InsertText('\t'),
+        MoveCaret(MoveDirection.backward, unit: MoveUnit.word),
+        DeleteBackward(),
+        InsertText('1'),
+        DeleteBackward(),
+        InsertText('\n'),
+        InsertText('_'),
+        Paste('```\nc\n```'),
+        InsertText('!'),
+        MoveCaret(MoveDirection.backward, unit: MoveUnit.row),
+        InsertText('!'),
+      ]) {
+        session.editor.apply(command);
+      }
+      session.editor.apply(const Undo());
+      session.expectState();
+      expect(session.editor.composing, isFalse);
+    });
+
     test('a pending style wraps the composed text when it commits', () {
       // One host replaces its preedit by range, another cancels and types
       // each preedit afresh.

@@ -2007,7 +2007,9 @@ final class FlarkEditor implements FlarkDocumentState {
         if (text.codeUnitAt(first++) != 0x0A) continue;
         final row = _doc.rowAt(o.start);
         final l = _doc.model.lineOfUtf16(first + removed) - row.firstLine;
-        final resume = l < row.lineCount ? row.contentStarts[l] - removed : -1;
+        final resume = l >= 0 && l < row.lineCount
+            ? row.contentStarts[l] - removed
+            : -1;
         if (resume > first && resume <= last) first = resume;
       }
       while (last > first && _isSpace(text, last - 1)) {
