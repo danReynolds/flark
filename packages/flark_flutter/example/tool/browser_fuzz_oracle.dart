@@ -273,7 +273,9 @@ final class _Replay {
         _key(i, event['key']! as String, shift, alt, meta, ctrl, obs);
       case 'shortcut':
         _shortcut(i, event['key']! as String, shift);
-      case 'click' || 'dblclick' || 'drag' || 'geometry':
+      case 'click' || 'dblclick' || 'drag':
+        _resync(i, event, obs, press: true);
+      case 'geometry':
         _resync(i, event, obs);
       case 'clipboard':
         clipboard = event['text']! as String;
@@ -326,7 +328,9 @@ final class _Replay {
             SetSelection(shift ? editor.selection.base : target, target),
           );
         } else {
-          _resync(i, {'k': 'geometry', 'shift': shift}, obs);
+          // The page moves between lines by pressing the caret's place on
+          // the next one.
+          _resync(i, {'k': 'geometry', 'shift': shift}, obs, press: true);
         }
       case 'Home' || 'End':
         if (ctrl) {
@@ -380,7 +384,21 @@ final class _Replay {
 
   /// Events placed by glyph geometry: take the selection the page shows. A
   /// pressed task box toggles that task, which the page's source shows too.
-  void _resync(int i, Map<String, Object?> event, Map<String, Object?>? obs) {
+  ///
+  /// A [press] (a click, double click or drag, or Up and Down, which the
+  /// page makes by pressing the caret's place on the next line) takes the
+  /// typing context where it lands, as in common editors, even where it
+  /// leaves the caret: a pending style does not outlast it, and typing after
+  /// it is an undo step of its own. So it does not matter that the page's
+  /// selection can pass through states the observation misses, such as the
+  /// word a double click selects on the way, when its first press pairs
+  /// with the click before.
+  void _resync(
+    int i,
+    Map<String, Object?> event,
+    Map<String, Object?>? obs, {
+    bool press = false,
+  }) {
     if (obs == null || obs['start'] == null) return;
     final lf = _Lf(editor.source);
     final window = _window(obs, lf, editor.source);
@@ -403,6 +421,10 @@ final class _Replay {
       if (backward) (base, extent) = (end, start);
     }
     final saved = obs['saved'] as String?;
+    if (press && !editor.sourceMode) {
+      final at = editor.projection.displayForSource(extent);
+      if (at != null) editor.apply(PlaceCaret(at.row, at.offset));
+    }
     editor.apply(SetSelection(base, extent));
     if (saved != null && saved != editor.source) {
       editor.apply(const ToggleTask());

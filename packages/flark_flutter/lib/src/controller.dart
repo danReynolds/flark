@@ -28,6 +28,29 @@ String _paired(String text) {
   return out.toString();
 }
 
+/// What an open composition's composing range holds. An input method can
+/// commit part of what it composes and compose on in the same composition
+/// (a Korean syllable as the next one's first letter is typed, a Japanese
+/// clause converted ahead of the rest), and so move its composing range off
+/// text the composition inserted.
+enum _Composing {
+  /// Text that was there before the composition began.
+  existing,
+
+  /// All that the composition inserted at a caret.
+  inserted,
+
+  /// All that the composition put in place of a selection.
+  replaced,
+
+  /// The end of what the composition inserted or put in place of a
+  /// selection: the input method committed the rest, before the range.
+  rest,
+
+  /// Text elsewhere: the range moved off what the composition inserted.
+  moved,
+}
+
 /// One Flutter-facing publication of the kernel. Platform values are input
 /// messages; the editor's snapshot remains the sole document authority.
 abstract interface class FlarkSurfaceController implements Listenable {
@@ -47,9 +70,8 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   TextRange _composing = TextRange.empty;
   String? _compositionSource;
 
-  /// Whether the open composition began by inserting its text at a caret,
-  /// so that its composing range holds only what it composed.
-  bool _compositionInserted = false;
+  /// What the open composition's composing range holds.
+  _Composing _compositionHolds = _Composing.existing;
 
   /// The selection the open composition replaced, if it began over one.
   (int, int)? _compositionReplaced;
@@ -207,25 +229,35 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
     final opened = isComposing && !editor.composing;
     if (opened) {
       _compositionSource = text;
-      _compositionInserted =
-          editor.selection.isCollapsed &&
-          next.composing.start == editor.selection.start &&
-          next.text.length - before.text.length ==
-              next.composing.end - next.composing.start;
+      final selection = editor.selection;
+      _compositionHolds =
+          next.composing.start != selection.start ||
+              next.text.length - before.text.length !=
+                  next.composing.end -
+                      next.composing.start -
+                      (selection.end - selection.start)
+          ? _Composing.existing
+          : selection.isCollapsed
+          ? _Composing.inserted
+          : _Composing.replaced;
       _compositionReplaced = editor.selection.isCollapsed
           ? null
           : (editor.selection.start, editor.selection.end);
       editor.beginComposition();
+    } else if (isComposing && editor.composing) {
+      _composingMoved(before, next);
     }
     // An input method that cancels removes the text it composed. Typing it
     // can have added structure around it (a fenced block's first line
     // break), which the platform then holds too; removing only the composed
-    // text still restores the state before the composition.
+    // text still restores the state before the composition. Once the input
+    // method committed some of it, removing what it still composes is no
+    // cancel.
     final cancelled =
         editor.composing &&
         !isComposing &&
         (next.text == _compositionSource ||
-            (_compositionInserted &&
+            (_compositionHolds == _Composing.inserted &&
                 _composing.isValid &&
                 !_composing.isCollapsed &&
                 next.text ==
@@ -455,6 +487,36 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       editor.selection.base == next.selection.baseOffset &&
       editor.selection.extent == next.selection.extentOffset;
 
+  /// Follows what the composing range holds as [next] continues the open
+  /// composition. An input method that commits part of it and composes on,
+  /// in one update (Android's batch edit, iOS's deltas of one run loop
+  /// turn), starts its composing range past what it committed; the
+  /// composition goes on, but removing that range no longer cancels it. A
+  /// start the platform reported before stands: a browser keeps reporting
+  /// where its composition began after the editor moved the composed text
+  /// (code opening its first body line).
+  void _composingMoved(TextEditingValue before, TextEditingValue next) {
+    final from = _composing, start = next.composing.start;
+    final reported = _lastReceived?.composing;
+    if (!from.isValid ||
+        from.isCollapsed ||
+        start == from.start ||
+        (reported != null && reported.isValid && start == reported.start)) {
+      return;
+    }
+    // A later start at the same end, with the text around the composition as
+    // it was, leaves the input method composing the end of what it composed.
+    final grown = next.text.length - before.text.length;
+    final rest =
+        _compositionHolds != _Composing.existing &&
+        _compositionHolds != _Composing.moved &&
+        start > from.start &&
+        next.composing.end == from.end + grown &&
+        next.text.startsWith(before.text.substring(0, from.start)) &&
+        next.text.endsWith(before.text.substring(from.end));
+    _compositionHolds = rest ? _Composing.rest : _Composing.moved;
+  }
+
   /// The platform ended its composition. Keep what it composed, typed, as one
   /// history step, or restore the exact prior state when it left the source
   /// as it was.
@@ -483,16 +545,31 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
     _compositionSource = null;
   }
 
+  /// Ends the composition. Cancelled, it leaves what the input method
+  /// committed of it: only the text it still composes goes, or, when its
+  /// composing range moved to other text, nothing.
   void finishComposition({bool cancel = false}) =>
       _batch(() => _finishComposition(cancel: cancel));
   void _finishComposition({bool cancel = false}) {
+    final composing = _composing;
     _composing = TextRange.empty;
-    _compositionSource = null;
-    if (cancel) {
+    if (!cancel) {
+      _commitComposition();
+    } else if (_compositionHolds != _Composing.rest &&
+        _compositionHolds != _Composing.moved) {
       editor.cancelComposition();
     } else {
-      _commitComposition();
+      // The input method committed what it composed before its range.
+      if (editor.composing &&
+          _compositionHolds == _Composing.rest &&
+          composing.isValid &&
+          !composing.isCollapsed &&
+          composing.end <= text.length) {
+        editor.apply(ReplaceRange(composing.start, composing.end, ''));
+      }
+      if (editor.composing) _endComposition();
     }
+    _compositionSource = null;
     _changed();
   }
 

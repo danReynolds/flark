@@ -93,8 +93,14 @@ final class _Viewport {
     return result;
   }
 
-  /// The image preview or resource text painted at screen cell ([col], [row]).
-  InlineResource? resourceAt(FlarkDocumentState editor, int col, int row) {
+  /// The image preview or resource text painted at screen cell ([col], [row]),
+  /// in a view that paints a [caret] or, the reader, none.
+  InlineResource? resourceAt(
+    FlarkDocumentState editor,
+    int col,
+    int row, {
+    bool caret = true,
+  }) {
     final layout = this.layout;
     if (layout == null || editor.sourceMode) return null;
     final index = row - origin.row + top;
@@ -102,7 +108,7 @@ final class _Viewport {
     final x = col - origin.col;
     final line = layout.lines[index].cellAt(x);
     if (line.image != null) return line.image;
-    if (!line.labelVisible(editor.selection)) return null;
+    if (!line.labelVisible(editor.selection, caret: caret)) return null;
     for (final glyph in line.glyphs) {
       if (x < glyph.col || x >= glyph.col + glyph.width) continue;
       final source = line.sourceAt(glyph.start);
@@ -354,7 +360,9 @@ class _RenderSurface extends RenderObject implements CaretHost {
         continue;
       }
       for (final line in visual.fragments) {
-        if (!line.labelVisible(selection)) continue;
+        if (!line.labelVisible(selection, caret: !widget.fullDocument)) {
+          continue;
+        }
         if (line.image != null) {
           for (var x = 0; x < line.prefix.length; x++) {
             write(x, y, line.prefix[x], background.merge(widget.theme.marker));

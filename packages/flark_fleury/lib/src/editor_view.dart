@@ -113,6 +113,10 @@ class _EditorState extends State<FlarkEditorView>
 
   int? _goalColumn, _pasteId, _pasteRevision;
   var _composing = false;
+
+  /// Where the last preedit is in the source, and the source it is a range
+  /// of. Null when the next preedit cannot replace it there.
+  ({int start, int end, String source})? _preedit;
   StringBuffer? _paste;
   InlineResource? _link;
   FlarkEditor? _linkEditor;
@@ -319,6 +323,7 @@ class _EditorState extends State<FlarkEditorView>
 
   void _resetInput() {
     _composing = false;
+    _preedit = null;
     _paste = null;
     _pasteId = _pasteRevision = null;
     _goalColumn = null;
@@ -384,8 +389,29 @@ class _EditorState extends State<FlarkEditorView>
   @override
   KeyEventResult onTextCompositionUpdate(String text) {
     if (widget.readOnly) return KeyEventResult.handled;
-    // Each preedit is typed afresh where composition began, so none leaves a
-    // residue the kernel normalized. One the kernel ended starts again.
+    // Only the last preedit counts, as if typed where the composition began.
+    // The kernel holds composed text as it is, so a preedit replaces the
+    // last where it stands: cancelling and composing again from the start
+    // rebuilt the document twice for every preedit.
+    final last = _preedit;
+    if (_composing &&
+        _editor.composing &&
+        last != null &&
+        identical(last.source, _editor.source) &&
+        (last.source.substring(last.start, last.end) == text ||
+            (text.isNotEmpty &&
+                _composePreedit(
+                  ReplaceRange(last.start, last.end, text),
+                  last.start,
+                  last.end,
+                  text,
+                )))) {
+      return KeyEventResult.handled;
+    }
+    // A first preedit is typed where the composition began, and so is one
+    // that cannot replace the last: an empty one, which gives back a
+    // selection the last replaced; one the kernel did not put in as it is;
+    // one the kernel refused. One the kernel ended starts again.
     if (_composing && _editor.composing) {
       _editor.cancelComposition();
     } else {
@@ -393,8 +419,33 @@ class _EditorState extends State<FlarkEditorView>
       _composing = true;
     }
     _editor.beginComposition();
-    if (text.isNotEmpty) _editor.apply(InsertText(text));
+    _preedit = null;
+    final at = _editor.selection;
+    if (text.isNotEmpty) {
+      _composePreedit(InsertText(text), at.start, at.end, text);
+    }
     return KeyEventResult.handled;
+  }
+
+  /// Applies [command], which composes [text] over [start]..[end], and
+  /// records where the text is when the kernel put it in as it is: in a live
+  /// document, outside code it reshapes (an empty fence's first body line).
+  /// In source mode a replacement widens to whole graphemes, and a preedit
+  /// can join the text after it (a variation selector), so there the next
+  /// preedit is not put over this one's range. False when the kernel refused
+  /// the text.
+  bool _composePreedit(FlarkCommand command, int start, int end, String text) {
+    final before = _editor.source;
+    if (!_editor.apply(command)) return false;
+    final after = _editor.source;
+    _preedit =
+        !_editor.sourceMode &&
+            after.length == before.length - (end - start) + text.length &&
+            after.startsWith(text, start) &&
+            after == before.replaceRange(start, end, text)
+        ? (start: start, end: start + text.length, source: after)
+        : null;
+    return true;
   }
 
   @override

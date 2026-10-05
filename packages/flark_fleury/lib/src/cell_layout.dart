@@ -62,9 +62,15 @@ final class CellLine {
   bool caretLine = true;
   InlineResource? image;
   InlineResource? imageLabel;
-  bool labelVisible(FlarkSelection selection) =>
+
+  /// Whether this line shows: a standalone image's label shows while the
+  /// selection reaches its image. A collapsed selection reaches it only
+  /// where a [caret] is painted: the reader paints none, and its selection
+  /// rests at the document's start, before a first image.
+  bool labelVisible(FlarkSelection selection, {bool caret = true}) =>
       imageLabel == null ||
-      (selection.start <= imageLabel!.end &&
+      ((caret || !selection.isCollapsed) &&
+          selection.start <= imageLabel!.end &&
           selection.end >= imageLabel!.start);
   Iterable<CellLine> get fragments => cells ?? [this];
   bool get editable =>

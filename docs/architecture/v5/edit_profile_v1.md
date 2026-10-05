@@ -289,8 +289,11 @@ the smallest mounted regression case.
   choose that word's formatting, including when the hit falls slightly across
   the painted caret. Clicking after the following space chooses its own
   context. Between adjacent non-whitespace glyphs with different formatting,
-  the glyph half distinguishes their targets. Keyboard navigation keeps its
-  separate context-preserving rules and explicit formatting toggles.
+  the glyph half distinguishes their targets. A press takes the context
+  where it lands even when it leaves the caret where it was, as in common
+  editors: a pending formatting toggle does not outlast it, and typing after
+  it starts a new undo step. Keyboard navigation keeps its separate
+  context-preserving rules and explicit formatting toggles.
 - Selection direction and affinity survive controller, platform-input, layout,
   and paint mapping.
 - Double-click selects the laid-out visible word. Replacement and Undo use

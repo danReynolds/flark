@@ -3832,22 +3832,29 @@ final class FlarkEditor implements FlarkDocumentState {
   bool _place(int rowIndex, int offset, bool leadingHalf, bool extend) {
     if (projection.rows.isEmpty) return false;
     final row = projection.rows[rowIndex.clamp(0, projection.rows.length - 1)];
+    final FlarkSelection placed;
     if (projection.isMissingCell(row.index) &&
         (!extend || selection.base == row.sourceStart)) {
-      return _select(
-        FlarkSelection.collapsed(row.sourceStart, tableCell: row.index),
+      placed = FlarkSelection.collapsed(row.sourceStart, tableCell: row.index);
+    } else {
+      final target = _doc.pointerAnchorAt(
+        row.index,
+        offset,
+        leadingHalf: leadingHalf,
       );
-    }
-    final target = _doc.pointerAnchorAt(
-      row.index,
-      offset,
-      leadingHalf: leadingHalf,
-    );
-    return _select(
-      extend
+      placed = extend
           ? FlarkSelection(selection.base, target)
-          : FlarkSelection.collapsed(target),
-    );
+          : FlarkSelection.collapsed(target);
+    }
+    if (_select(placed)) return true;
+    // A press takes the context of where it lands, as in common editors,
+    // even where the caret already was: a pending style does not outlast
+    // it, and typing after it is an undo step of its own.
+    history.breakCoalescing();
+    _goalColumn = null;
+    if (_pending == null) return false;
+    _pending = null;
+    return true;
   }
 
   // ----------------------------------------------------------- history

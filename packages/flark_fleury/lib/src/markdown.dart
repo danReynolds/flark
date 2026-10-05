@@ -158,7 +158,12 @@ class _MarkdownState extends State<FlarkMarkdown> {
             onTapUp: (event) {
               // Only a link's own painted text, or an image in it, opens it.
               final at = event.globalPosition, doc = _reader.document!;
-              final hit = _viewport.resourceAt(doc, at.col, at.row);
+              final hit = _viewport.resourceAt(
+                doc,
+                at.col,
+                at.row,
+                caret: false,
+              );
               final link = hit?.isImage != true
                   ? hit
                   : doc.document.resourceAt(

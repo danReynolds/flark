@@ -99,6 +99,50 @@ void main() {
     tester.dispose();
   });
 
+  test('a reader paints a first image as any other, its label only while '
+      'selected', () async {
+    // An editor shows a standalone image's label while its caret is at the
+    // image. A reader paints no caret, and its selection rests at the
+    // document's start: a document that began with an image showed that
+    // image's label, and no other.
+    final tester = FleuryTester(viewportSize: const CellSize(40, 30));
+    void read(String markdown) => tester.pumpWidget(
+      FleuryApp(
+        title: 'Reader',
+        home: FlarkMarkdown(
+          markdown: markdown,
+          selectable: true,
+          imagePreviewBuilder: (_, _, _) => const Text('PREVIEW'),
+        ),
+      ),
+    );
+    for (final markdown in [
+      '![Photo label](demo.png)\n\nafter',
+      'intro\n\n![Photo label](demo.png)\n\nafter',
+    ]) {
+      read(markdown);
+      await Future<void>.delayed(Duration.zero);
+      tester.render();
+      expect(tester.renderToString(), contains('PREVIEW'));
+      expect(tester.renderToString(), isNot(contains('Photo label')));
+    }
+    // A selection that takes the image shows its label, as in an editor.
+    final rows = tester.renderToString().split('\n');
+    final after = rows.indexWhere((row) => row.startsWith('after'));
+    expect(after, isPositive);
+    for (final kind in [MouseEventKind.down, MouseEventKind.up]) {
+      tester.sendMouse(
+        MouseEvent(button: MouseButton.left, kind: kind, col: 1, row: after),
+      );
+    }
+    expect(tester.renderToString(), isNot(contains('Photo label')));
+    tester.sendKey(
+      const KeyEvent(KeyCode.a, modifiers: {KeyModifier.superKey}),
+    );
+    expect(tester.renderToString(), contains('Photo label'));
+    tester.dispose();
+  });
+
   test('a reader opens a link only from the link text it paints', () async {
     final opened = <Uri>[];
     final tester = FleuryTester(viewportSize: const CellSize(40, 4));

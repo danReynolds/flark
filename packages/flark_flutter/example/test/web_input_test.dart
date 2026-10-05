@@ -1,6 +1,7 @@
 @TestOn('browser')
 library;
 
+import 'dart:async';
 import 'dart:ui_web' as ui_web;
 import 'package:flark/wasm.dart';
 import 'package:flark_flutter/flark_flutter_legacy.dart';
@@ -610,20 +611,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(c.text, 'one\nstwo');
       expect(c.editor.composing, isTrue);
-      web.KeyboardEvent escape(String type) => web.KeyboardEvent(
-        type,
-        web.KeyboardEventInit(
-          key: 'Escape',
-          code: 'Escape',
-          keyCode: 229,
-          which: 229,
-          isComposing: true,
-          bubbles: true,
-          cancelable: true,
-        ),
-      );
-      input.dispatchEvent(escape('keydown'));
-      input.dispatchEvent(escape('keyup'));
+      input.dispatchEvent(composingEscape('keydown'));
+      input.dispatchEvent(composingEscape('keyup'));
       await Future<void>.delayed(Duration.zero);
       if (input.value == 'one\nstwo') {
         // The input method removes its text and ends the composition.
@@ -649,6 +638,74 @@ void main() {
         (c.text, c.editor.selection),
         (expected.source, expected.selection),
       );
+    },
+  );
+  test(
+    'browser Escape in a composition leaves a dialog around the editor open',
+    () async {
+      // The editor ignored the input method's Escape, so it reached the app's
+      // shortcuts, whose dismissal closed the barrier-dismissible dialog the
+      // editor was in.
+      final c = FlarkController(
+        FlarkEditor(backend, text: 'one\ntwo', caret: 4),
+      );
+      final focus = FocusNode();
+      final navigator = GlobalKey<NavigatorState>();
+      addTearDown(() async {
+        runApp(const SizedBox());
+        await binding.endOfFrame;
+        c.dispose();
+        focus.dispose();
+      });
+      runApp(
+        MaterialApp(
+          navigatorKey: navigator,
+          home: const Scaffold(body: Text('home')),
+        ),
+      );
+      await binding.endOfFrame;
+      var dismissed = false;
+      unawaited(
+        showDialog<void>(
+          context: navigator.currentContext!,
+          builder: (_) => Dialog(
+            child: SizedBox(
+              width: 400,
+              height: 300,
+              child: FlarkEditorWidget(
+                controller: c,
+                focusNode: focus,
+                autofocus: true,
+              ),
+            ),
+          ),
+        ).then((_) => dismissed = true),
+      );
+      // The dialog's entrance transition.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      focus.requestFocus();
+      await binding.endOfFrame;
+      await Future<void>.delayed(Duration.zero);
+      final input =
+          web.document.querySelector('textarea.flt-text-editing')!
+              as web.HTMLTextAreaElement;
+      composition(input, 'compositionstart', '');
+      compose(input, 's', 'one\nstwo', 5);
+      await Future<void>.delayed(Duration.zero);
+      expect(c.editor.composing, isTrue);
+      final down = composingEscape('keydown');
+      input.dispatchEvent(down);
+      input.dispatchEvent(composingEscape('keyup'));
+      await Future<void>.delayed(Duration.zero);
+      // The key still goes to the browser, whose input method cancels.
+      expect(down.defaultPrevented, isFalse);
+      compose(input, '', 'one\ntwo', 4);
+      composition(input, 'compositionend', '');
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(dismissed, isFalse);
+      expect(find.byType(Dialog), findsOneWidget);
+      expect((c.text, c.editor.composing), ('one\ntwo', false));
+      expect(c.editor.history.canUndo, isFalse);
     },
   );
   test(
@@ -893,6 +950,20 @@ Future<bool> pressPrimaryKey(
   await Future<void>.delayed(Duration.zero);
   return shortcut.defaultPrevented;
 }
+
+/// Escape as a browser sends it while an input method composes.
+web.KeyboardEvent composingEscape(String type) => web.KeyboardEvent(
+  type,
+  web.KeyboardEventInit(
+    key: 'Escape',
+    code: 'Escape',
+    keyCode: 229,
+    which: 229,
+    isComposing: true,
+    bubbles: true,
+    cancelable: true,
+  ),
+);
 
 void composition(web.Element input, String type, String data) =>
     input.dispatchEvent(

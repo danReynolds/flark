@@ -962,6 +962,88 @@ void main() {
     expect(tester.render().atColRow(6, 0).style.bold, isTrue);
   });
 
+  test('each preedit after the first is one edit of the document', () {
+    // A preedit cancelled the composition and composed again from where it
+    // began: the document was built twice for every key the input method
+    // took.
+    mount('one two', caret: 4);
+    final claimant = focus.textCompositionClaimant!;
+    claimant.onTextCompositionUpdate('n');
+    for (final preedit in ['ni', 'nih', 'niho', 'nihon', '日本']) {
+      final revision = editor.revision;
+      claimant.onTextCompositionUpdate(preedit);
+      expect(editor.revision, revision + 1, reason: preedit);
+      expect(editor.source, 'one ${preedit}two');
+      expect(editor.selection, FlarkSelection.collapsed(4 + preedit.length));
+      expect(editor.composing, isTrue);
+    }
+    // A repeated preedit changes nothing.
+    final revision = editor.revision;
+    claimant.onTextCompositionUpdate('日本');
+    expect(editor.revision, revision);
+    claimant.onTextCompositionCommit(null);
+    expect(editor.source, 'one 日本two');
+    expect(lines().first, 'one 日本two');
+    key(KeyCode.z, cmd: true);
+    expect(editor.source, 'one two');
+  });
+
+  test(
+    'an empty preedit gives back the selection the composition replaced',
+    () {
+      // Only the last preedit counts, as if typed where the composition began:
+      // emptied, it replaces nothing.
+      mount('one two');
+      editor.apply(const SetSelection(4, 7));
+      final claimant = focus.textCompositionClaimant!;
+      claimant.onTextCompositionUpdate('x');
+      expect(editor.source, 'one x');
+      claimant.onTextCompositionUpdate('');
+      expect(editor.source, 'one two');
+      expect(editor.selection, const FlarkSelection(4, 7));
+      claimant.onTextCompositionUpdate('y');
+      claimant.onTextCompositionUpdate('yz');
+      expect(editor.source, 'one yz');
+      claimant.onTextCompositionCommit(null);
+      expect(editor.source, 'one yz');
+      key(KeyCode.z, cmd: true);
+      expect(editor.source, 'one two');
+    },
+  );
+
+  test('in source mode a preedit that joins the text after it is replaced '
+      'whole', () {
+    // Before a variation selector, a preedit's last character takes it into
+    // its grapheme, and source mode widens a replacement to whole graphemes:
+    // replacing the preedit by its range kept that character.
+    mount('\u{fe0f}', caret: 0);
+    editor.setSourceMode(true);
+    final claimant = focus.textCompositionClaimant!;
+    claimant.onTextCompositionUpdate('にほ');
+    expect(editor.source, 'にほ\u{fe0f}');
+    claimant.onTextCompositionUpdate('日本');
+    expect(editor.source, '日本\u{fe0f}');
+    claimant.onTextCompositionCommit(null);
+    expect(editor.source, '日本\u{fe0f}');
+  });
+
+  test('preedits in an empty fence, which code reshapes, still replace '
+      'each other', () {
+    // Composed text starts the fence's first body line, so it is not where
+    // the preedit was put: each one is composed again from the start.
+    mount('```\n', caret: 3);
+    final claimant = focus.textCompositionClaimant!;
+    for (final preedit in ['n', 'に', '日本']) {
+      claimant.onTextCompositionUpdate(preedit);
+      expect(editor.source, '```\n$preedit\n');
+    }
+    claimant.onTextCompositionCommit(null);
+    expect(editor.source, '```\n日本\n');
+    expect(editor.composing, isFalse);
+    key(KeyCode.z, cmd: true);
+    expect(editor.source, '```\n');
+  });
+
   test('a tab too wide for a narrow line paints blank, not a stand-in', () {
     tester.viewportSize = const CellSize(3, 6);
     mount('a\tb');

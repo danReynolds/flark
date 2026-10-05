@@ -172,6 +172,57 @@ void main() {
   );
 
   testWidgets(
+    'the link dialog takes its destination as a URL, with plain dashes',
+    (tester) async {
+      // iOS turned `--` in a destination into a dash and straight quotes
+      // into curly ones, as it does in prose, and autocorrected its words.
+      final c = FlarkController(
+        FlarkEditor(backend, text: 'before read after'),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      c.command(const SetSelection(7, 11));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Link'));
+      await tester.pumpAndSettle();
+      expect(find.text('Insert link'), findsOneWidget);
+      // The destination field has focus, and the input connection.
+      final destination = tester.testTextInput.setClientArgs!;
+      expect((destination['inputType'] as Map)['name'], 'TextInputType.url');
+      expect(destination['autocorrect'], isFalse);
+      expect(
+        destination['smartDashesType'],
+        '${SmartDashesType.disabled.index}',
+      );
+      expect(
+        destination['smartQuotesType'],
+        '${SmartQuotesType.disabled.index}',
+      );
+      // The link's text stays prose.
+      await tester.tap(find.widgetWithText(TextField, 'Text'));
+      await tester.pump();
+      final label = tester.testTextInput.setClientArgs!;
+      expect(label['smartDashesType'], '${SmartDashesType.enabled.index}');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Destination'),
+        'https://example.com/a--b',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(c.text, 'before [read](<https://example.com/a--b>) after');
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'dialog cancellation and stale submissions preserve newer source',
     (tester) async {
       final c = FlarkController(FlarkEditor(backend, text: 'hello'));

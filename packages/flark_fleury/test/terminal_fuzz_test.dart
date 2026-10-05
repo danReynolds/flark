@@ -400,13 +400,15 @@ typedef _StateView = ({
 
 /// Finds which window of [page] (a fresh paint of every line of [layout])
 /// [frame] shows inside [region], comparing graphemes, then styles outside
-/// caret cells and image slots. Returns the window tops that match.
+/// caret cells and image slots. The page's [blank] lines must be blank in
+/// the frame. Returns the window tops that match.
 List<int> _matchWindow(
   CellBuffer frame,
   CellRect region,
   CellBuffer page,
-  CellDocumentLayout layout,
-) {
+  CellDocumentLayout layout, {
+  Set<int> blank = const {},
+}) {
   final cols = region.size.cols, rows = region.size.rows;
   final left = region.offset.col, top0 = region.offset.row;
   bool masked(int x, int pageRow) => layout.images.any(
@@ -423,7 +425,9 @@ List<int> _matchWindow(
   String key(CellBuffer b, int x0, int y, int pageRow) => [
     for (var x = 0; x < cols; x++)
       if (!slotRows.contains(pageRow) || !masked(x, pageRow))
-        '${b.atColRow(x0 + x, y).role.index}${b.atColRow(x0 + x, y).grapheme ?? ''}',
+        identical(b, page) && blank.contains(pageRow)
+            ? '${CellRole.leading.index} '
+            : '${b.atColRow(x0 + x, y).role.index}${b.atColRow(x0 + x, y).grapheme ?? ''}',
   ].join(',');
   final maxTop = max(0, layout.lines.length - rows);
   final tops = <int>[];
@@ -462,7 +466,12 @@ List<int> _matchWindow(
       for (var x = 0; x < cols; x++) {
         final a = frame.atColRow(left + x, top0 + y),
             b = page.atColRow(x, top + y);
-        if (_caretCell(a) || _caretCell(b) || masked(x, top + y)) continue;
+        if (_caretCell(a) ||
+            _caretCell(b) ||
+            masked(x, top + y) ||
+            blank.contains(top + y)) {
+          continue;
+        }
         if (a.style != b.style) {
           return 'cell ($x,$y) ${jsonEncode(a.grapheme)} is painted '
               '${a.style} where a fresh paint gives ${b.style}';
@@ -1367,7 +1376,9 @@ final class _EditorSession {
 /// The reader: random Markdown updates, selection gestures, copies and link
 /// clicks. Its selection is replayed with the reader's own rules (a press
 /// places it, a drag extends it, Command+A takes everything, new text resets
-/// it), and every frame must equal a fresh read-only paint of that state.
+/// it), and every frame must equal a fresh read-only paint of that state,
+/// except that a collapsed selection, which the reader paints no caret for,
+/// shows no image's label.
 final class _ReaderSession {
   _ReaderSession(this.backend, this.seed, this.steps) : r = Random(seed);
   final FlarkParseBackend backend;
@@ -1635,7 +1646,17 @@ final class _ReaderSession {
         focused: false,
       );
       _checkPagePaint(page, layout, selection);
-      final tops = _matchWindow(frame, region, page, layout);
+      // The reader paints no caret, so a collapsed selection shows no
+      // image's label, which the fresh editor shows at its caret.
+      final hidden = {
+        if (selection.isCollapsed)
+          for (var y = 0; y < layout.lines.length; y++)
+            if (layout.lines[y].fragments.any(
+              (line) => !line.labelVisible(selection, caret: false),
+            ))
+              y,
+      };
+      final tops = _matchWindow(frame, region, page, layout, blank: hidden);
       if (!tops.contains(0)) {
         throw _Failure('the reader scrolled its own content to ${tops.first}');
       }
@@ -1664,7 +1685,11 @@ final class _ReaderSession {
                 '',
           );
         }
-        for (final glyph in line.glyphs) {
+        // A label the reader does not paint has no link text to press.
+        for (final glyph
+            in line.labelVisible(selection, caret: false)
+                ? line.glyphs
+                : const <CellGlyph>[]) {
           if (col < glyph.col || col >= glyph.col + glyph.width) continue;
           final at = line.sourceAt(glyph.start);
           for (final resource in editor.document.resources) {

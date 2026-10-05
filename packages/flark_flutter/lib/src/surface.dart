@@ -1668,9 +1668,15 @@ class RenderFlarkSurface extends RenderBox
         if (edit.start == edit.end) {
           // Inserted text goes where typing it at that visible offset would:
           // a caret is placed there as a pointer places one, then the text is
-          // typed, so a list continues and a missing table cell fills.
-          final (row, offset) = rowAt(edit.start);
-          controller.command(PlaceCaret(row.index, offset, leadingHalf: false));
+          // typed, so a list continues and a missing table cell fills. At the
+          // caret it is typed there, in the caret's context: a press would
+          // drop a style chosen for the next text.
+          if (!current.selection.isCollapsed || edit.start != caret) {
+            final (row, offset) = rowAt(edit.start);
+            controller.command(
+              PlaceCaret(row.index, offset, leadingHalf: false),
+            );
+          }
           controller.command(
             edit.text == '\n' ? const Newline() : InsertText(edit.text),
           );

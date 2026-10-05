@@ -241,7 +241,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         // The text is Markdown source. iOS would turn `--` into a dash,
         // breaking a rule or a table's delimiter row, and straight quotes
         // into curly ones, which no longer delimit a link's title or stay
-        // the code they were typed into.
+        // the code they were typed into. The web engine reads neither
+        // setting (it passes on only autocorrect, as Safari's attribute), so
+        // in a browser, Safari on iOS included, these substitutions are the
+        // browser's to make: they are not turned off there.
         smartDashesType: SmartDashesType.disabled,
         smartQuotesType: SmartQuotesType.disabled,
       ),
@@ -1145,9 +1148,15 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       // which then ended without a compositionend: the engine kept reporting
       // the cancelled text's range as composing, and every editing key went
       // to the input element instead of the editor until the next one.
-      if (key == LogicalKeyboardKey.escape && !kIsWeb) {
-        c.finishComposition(cancel: true);
-        return KeyEventResult.handled;
+      if (key == LogicalKeyboardKey.escape) {
+        if (!kIsWeb) {
+          c.finishComposition(cancel: true);
+          return KeyEventResult.handled;
+        }
+        // The key is the input method's, not the app's: ignored, it reached
+        // ancestor shortcuts, whose dismissal closed a dialog or route the
+        // editor is in. Skipped, it still goes to the browser.
+        return KeyEventResult.skipRemainingHandlers;
       }
       return KeyEventResult.ignored;
     }

@@ -6,10 +6,10 @@
 /// iOS and macOS input methods' delta batches, or a browser textarea's full
 /// values on a desktop target, since tests never run with kIsWeb. Events
 /// include typing, each platform's Backspace and Return, compositions that
-/// grow, shrink, convert, commit or cancel, autocorrect, stale and invalid
-/// values, hardware keys and selectors, pointer presses, focus, connection
-/// and lifecycle changes, widget rebuilds, accessibility edits, the link
-/// popover's own field and toolbar or application commands.
+/// grow, shrink, convert, commit in part or whole, or cancel, autocorrect,
+/// stale and invalid values, hardware keys and selectors, pointer presses,
+/// focus, connection and lifecycle changes, widget rebuilds, accessibility
+/// edits, the link popover's own field and toolbar or application commands.
 ///
 /// A model of the platform's own text buffer applies every value the host
 /// sends it, as an input method does: the web model keeps a textarea's LF
@@ -26,7 +26,8 @@
 ///    toolbar command or correction) left the controller as that command
 ///    leaves a fresh kernel editor in the same state; a composition holds
 ///    its text as the platform does while it composes, one that commits
-///    equals typing its text, and one that cancels leaves no trace;
+///    equals typing its text, and one that cancels leaves no trace but
+///    what the input method committed of it;
 ///  * an application's exact source splice is accepted or refused as a
 ///    fresh kernel editor in the same state decides, and a refused one
 ///    leaves no trace;
@@ -1023,6 +1024,9 @@ class _Sequence {
     var replaceEnd = held.selection.end;
     log.add('compose ${jsonEncode(values)} at $at..$replaceEnd');
     var shown = '';
+    // What the input method committed of its composition, before the text
+    // it still composes: it stays.
+    var kept = '';
     var oracle = pre != null && plain;
     for (var i = 0; i < values.length; i++) {
       if (!_editorInput || (i > 0 && !_platformComposing)) {
@@ -1066,13 +1070,45 @@ class _Sequence {
       }
       // What the platform shows: a preedit the kernel refused leaves the
       // previous one.
-      final region = platform.held.composing;
+      var region = platform.held.composing;
       shown = platform.held.text.substring(region.start, region.end);
-      _preedit = (pre: pre, shown: shown, selected: selected);
+      _preedit = (pre: pre, shown: '$kept$shown', selected: selected);
       if (oracle) {
-        _compareComposition(pre, selected, shown, 'composing');
+        _compareComposition(pre, selected, '$kept$shown', 'composing');
         if (!c.editor.composing || c.value.composing == TextRange.empty) {
           fail('${_label()}: the host is not composing ${jsonEncode(shown)}');
+        }
+      }
+      if (shown.characters.length > 1 && r.nextInt(6) == 0) {
+        // The input method commits the start of what it composes and goes on
+        // composing the rest, in one update: a Korean syllable as the next
+        // one's first letter is typed, a Japanese clause converted ahead of
+        // the rest. The composition goes on; what it committed stays.
+        final head = shown.characters
+            .take(1 + r.nextInt(shown.characters.length - 1))
+            .string;
+        region = TextRange(start: region.start + head.length, end: region.end);
+        final moved = platform.held.copyWith(composing: region);
+        log.add('  commits ${jsonEncode(head)} and composes on');
+        _count('partial commit');
+        platform.held = moved;
+        if (web) {
+          await _sendValue(moved);
+        } else {
+          await _sendDeltas([_nonText(moved.text, moved)]);
+        }
+        _drain();
+        await _settle(true);
+        kept += head;
+        shown = shown.substring(head.length);
+        _preedit = (pre: pre, shown: '$kept$shown', selected: selected);
+        if (oracle) {
+          _compareComposition(pre, selected, '$kept$shown', 'composing');
+          expect(
+            c.editor.composing && c.value.composing != TextRange.empty,
+            isTrue,
+            reason: '${_label()}: a partial commit ended the composition',
+          );
         }
       }
       if (shown.length > 1 && r.nextInt(8) == 0) {
@@ -1093,7 +1129,9 @@ class _Sequence {
         if (oracle) {
           final composed = _reference(from: pre)?..beginComposition();
           if (composed != null) {
-            if (shown.isNotEmpty) composed.apply(InsertText(shown));
+            if ('$kept$shown'.isNotEmpty) {
+              composed.apply(InsertText('$kept$shown'));
+            }
             expect(c.text, composed.source, reason: '${_label()}: caret move');
           }
           expect(
@@ -1129,8 +1167,9 @@ class _Sequence {
       await _deliver(now, next, region.start, region.end, '');
       await _settle(true);
       if (oracle) {
-        _compareComposition(pre, selected, '', 'cancel');
-        if (!selected) {
+        // What the input method committed stays.
+        _compareComposition(pre, selected, kept, 'cancel');
+        if (!selected && kept.isEmpty) {
           expect(
             c.editor.history.canUndo,
             preHistory,
@@ -1144,7 +1183,12 @@ class _Sequence {
       log.add('  escape');
       await _sendKey(LogicalKeyboardKey.escape);
       await _settle(true);
-      if (oracle) _compare(_reference(from: pre), 'escape cancels');
+      if (oracle) {
+        // What the input method committed stays.
+        kept.isEmpty
+            ? _compare(_reference(from: pre), 'escape cancels')
+            : _compareComposition(pre, selected, kept, 'escape');
+      }
     } else {
       final trailing = target == _Target.android && ending >= 8
           ? (ending == 8 ? ' ' : '\n')
@@ -1185,14 +1229,14 @@ class _Sequence {
       if (oracle) {
         if (trailing == '\n') {
           final ref = _reference(from: pre);
-          ref?.apply(InsertText(shown));
+          ref?.apply(InsertText('$kept$shown'));
           ref?.apply(const Newline());
           _compare(ref, 'commit with Return');
         } else if (trailing == ' ') {
-          final ref = _reference(from: pre)?..apply(InsertText('$shown '));
+          final ref = _reference(from: pre)?..apply(InsertText('$kept$shown '));
           _compare(ref, 'commit with a space');
         } else {
-          _compareComposition(pre, selected, shown, 'commit');
+          _compareComposition(pre, selected, '$kept$shown', 'commit');
         }
         expect(
           c.editor.composing,
