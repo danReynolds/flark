@@ -53,6 +53,7 @@ extension _ResourceEditing on FlarkEditor {
       '$replacement$gap',
     );
     final contentEnd = at + open.length + content.length;
+    final row = _doc.rowAt(start);
     return _commit(
       candidate,
       FlarkSelection.collapsed(contentEnd),
@@ -67,10 +68,19 @@ extension _ResourceEditing on FlarkEditor {
                 r.title == resolvedTitle &&
                 r.contentEnd == contentEnd,
           ) &&
-          (gap.isEmpty ||
-              _keepsStructure(doc, [
-                (at, at, replacement.length + gap.length),
-              ], const {})),
+          // Every other row keeps its kind and containers, the edited row
+          // its kind (an empty row takes the resource in the containers it
+          // shows), and nothing hidden shows: a link written after a rule's
+          // dashes would paint them, one on an empty line before indented
+          // code would make it the link's paragraph.
+          (row.kind == RowKind.blank || doc.rowAt(at).kind == row.kind) &&
+          FlarkEditor._sameShells(doc.rowAt(at), row) &&
+          _keepsStructure(
+            doc,
+            [(at, at + end - start, replacement.length + gap.length)],
+            {row.index},
+            shells: true,
+          ),
     );
   }
 
@@ -80,7 +90,12 @@ extension _ResourceEditing on FlarkEditor {
     final end = existing?.end ?? selection.end;
     if (!_supportedRange(start, end)) return false;
     final row = _doc.rowAt(start);
-    if (row.kind == RowKind.codeBlock || _doc.rowAt(end).index != row.index) {
+    // Code shows its source; so do a link reference definition, whose label
+    // a link would end, and a rule, whose dashes text beside it would paint.
+    if (row.kind == RowKind.codeBlock ||
+        row.kind == RowKind.definition ||
+        row.kind == RowKind.thematicBreak ||
+        _doc.rowAt(end).index != row.index) {
       return false;
     }
     if (existing == null &&

@@ -2,6 +2,24 @@ part of '../journey_test.dart';
 
 void _inlineCases(FlarkParseBackend backend) {
   group('inline', () {
+    test('a link or image keeps the blocks around it', () {
+      // A link wrapped in a definition's label would end the definition, one
+      // after a rule's dashes would paint them, and an image on the empty
+      // line before indented code would make the code its paragraph.
+      for (final (source, base, extent, command) in [
+        ("[spec]: /s 'S'\n[docs]: /d", 0, 7, const SetLink('https://x')),
+        ('a\n\n---\n\nb', 6, 6, const SetLink('https://x')),
+        ('web\n\n    code', 4, 4, const SetImage('i.png', alt: 'you')),
+      ]) {
+        final session = _Session(backend, source: source);
+        session.act(SetSelection(base, extent));
+        session.act(command, applied: false, source: source);
+      }
+      // A definition or a rule offers no link at all.
+      final definition = _Session(backend, source: '[a]: /u\nb', caret: 1);
+      expect(definition.editor.canSetResource(), isFalse);
+    });
+
     test('typing inside emphasis continues it', () {
       final session = _Session(backend, source: 'say *hi* now', caret: 7);
       session.expectState(context: Style.emphasis);
