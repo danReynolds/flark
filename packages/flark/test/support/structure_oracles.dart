@@ -250,6 +250,7 @@ void checkStructure(
   FlarkCommand command,
   FlarkEditor editor,
   String label,
+  FlarkParseBackend backend,
 ) {
   if (before is! FlarkLiveSnapshot || editor.sourceMode) return;
   final old = before.document, next = editor.document;
@@ -275,11 +276,11 @@ void checkStructure(
   ) when min(start, end) <= 0 && max(start, end) >= old.source.length) {
     return;
   }
-  _Check(old, next, command, label).run();
+  _Check(old, next, command, label, backend).run();
 }
 
 final class _Check {
-  _Check(this.old, this.next, this.command, this.label)
+  _Check(this.old, this.next, this.command, this.label, this.backend)
     : edit = SourceEdit(old.source, next.source),
       inserted = insertedText(command),
       join = isJoin(old, command) {
@@ -302,6 +303,7 @@ final class _Check {
   final FlarkDocument old, next;
   final FlarkCommand command;
   final String label;
+  final FlarkParseBackend backend;
   final SourceEdit edit;
   final String? inserted;
   final bool join;
@@ -393,6 +395,19 @@ final class _Check {
             !_existed(b.kind, b.index))
           b.index,
   };
+
+  /// Fences pair in source order, so an opened block that reads on over a
+  /// fence's opening line (an HTML block typed above it, read on to a blank
+  /// line) releases that fence's closing line to open a fence of its own,
+  /// and the fences after it pair anew.
+  late final bool releasesFences = openedBlocks.any((b) {
+    final start = next.model.blockStart(b), end = next.model.blockEnd(b);
+    return old.model.blocks.any((f) {
+      if (f.kind != BlockKind.codeBlock || f.flags & 1 == 0) return false;
+      final at = edit.forward(f.startUtf16);
+      return at >= start && at < end;
+    });
+  });
 
   /// Blocks whose own syntax opens them on their first line. Indented code
   /// is whitespace, which the profile has typing paint and advance past, and
@@ -523,6 +538,10 @@ final class _Check {
       if (openedBlocks.isNotEmpty) {
         final was = edit.back(now.sourceStart);
         if (was >= 0 && oldRowTouched(oldRowOf(was))) continue;
+      }
+      if (releasesFences &&
+          openedBlocks.any((b) => next.model.blockStart(b) < mapped)) {
+        continue;
       }
       // Openers interrupt the table they are typed in, and a new fence pairs
       // with the next fence line, releasing what a later fence held.
@@ -717,6 +736,12 @@ final class _Check {
         lostDestroyedContainer(from)) {
       return true;
     }
+    if (releasesFences &&
+        openedBlocks.any(
+          (b) => next.model.blockStart(b) <= edit.forward(was),
+        )) {
+      return true;
+    }
     if (editsHtml && was >= edit.start) return true;
     // Inline pairing. Markdown pairs inline delimiters across a paragraph
     // from the characters beside them (emphasis flanking and the rule of
@@ -772,6 +797,12 @@ final class _Check {
   /// then it leaves only containers (the line's are a prefix of them). Code
   /// continues as code, or Return on its final blank line exits the fence
   /// into the gap in the same containers.
+  ///
+  /// A line of a container's indentation alone is blank to Markdown, and a
+  /// blank line after a container's last block, before a block outside it,
+  /// is not the container's (a footnote's or an item's continuation line,
+  /// the gap after code that ends an item). Such a line is in the
+  /// containers a letter typed on it lands in.
   void _checkReturnContainers() {
     final sel = old.selection;
     final at = old.displayOf(sel.start);
@@ -784,21 +815,32 @@ final class _Check {
     final caret = next.displayOf(next.selection.extent);
     final now = next.projection.rows[caret.row];
     final was = shellKinds(row), shells = shellKinds(now);
-    // Return in a footnote definition opens a line of its indentation alone,
-    // which Markdown reads as blank until text is typed on it.
-    if (was.contains('footnote') && now.kind == RowKind.blank) return;
-    if (sel.isCollapsed &&
+    final leaves =
+        sel.isCollapsed &&
         row.text.isEmpty &&
         row.kind != RowKind.heading &&
-        row.kind != RowKind.codeBlock) {
-      if (was.startsWith(shells)) return;
-    } else if (shells == was) {
-      return;
-    }
+        row.kind != RowKind.codeBlock;
+    bool fits(String? kinds) =>
+        kinds != null && (leaves ? was.startsWith(kinds) : kinds == was);
+    if (fits(shells)) return;
+    if (now.kind == RowKind.blank && fits(_typedShells())) return;
     fail(
       '$label: [return] the line Return made is in <$shells>, the '
       '${row.kind.name} row ${row.index} it split in <$was>, $transition',
     );
+  }
+
+  /// The containers of a letter typed at the caret after the command, or
+  /// null when it does not show.
+  String? _typedShells() {
+    final at = next.selection.extent;
+    final typed = FlarkEditor(
+      backend,
+      text: next.source.replaceRange(at, at, 'x'),
+      caret: at + 1,
+    ).document;
+    final row = typed.rowAt(at + 1);
+    return row.kind == RowKind.blank ? null : shellKinds(row);
   }
 
   /// (e) Return inserts a line break where the caret showed it, two for a

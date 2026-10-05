@@ -534,9 +534,16 @@ final class _Author {
     checkRowOrder(editor, 'seed $seed load');
     reached.add(matrix.stateOf(editor));
     // History keeps 100 entries. Ending sessions before that many keeps
-    // their first source reachable for the walk below.
+    // their first source reachable for the walk below, and ending them
+    // short of the live tier's 16 KiB keeps them rendered.
     final actions = count(8, 40);
-    for (var i = 0; i < actions && editor.history.openGroup < 80; i++) {
+    for (
+      var i = 0;
+      i < actions &&
+          editor.history.openGroup < 80 &&
+          utf8.encode(editor.source).length < 14 * 1024;
+      i++
+    ) {
       time += Duration(milliseconds: count(300, 2500));
       _act();
     }
@@ -619,7 +626,7 @@ final class _Author {
     if (applied) {
       matrix.checkStep(editor, label);
       checkRowOrder(editor, label);
-      matrix.checkStructure(before, command, editor, label);
+      matrix.checkStructure(before, command, editor, label, backend);
       checkCaretInEdit(before, command, editor, label);
       checkVisibleEdit(before, command, editor, label);
       checkEditKeepsRows(before, command, editor, label);

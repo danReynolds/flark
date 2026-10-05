@@ -196,7 +196,7 @@ void main() {
             final revision = editor.revision;
             if (editor.apply(c, at: Duration(milliseconds: step * 100))) {
               checkStep(editor, label);
-              checkStructure(before, c, editor, label);
+              checkStructure(before, c, editor, label, backend);
             } else {
               expect(stateOf(editor), state, reason: '$label: refused');
               expect(editor.revision, revision, reason: '$label: refused');
