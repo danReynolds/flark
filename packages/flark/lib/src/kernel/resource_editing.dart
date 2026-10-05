@@ -183,6 +183,9 @@ extension _ResourceEditing on FlarkEditor {
           spaced++;
         }
       }
+      // Where each spelling's removal ends: at the image, or past the
+      // whitespace after it.
+      final ends = <Spelling, int>{};
       for (final end in [range.end, if (spaced > range.end) spaced]) {
         final normalized = _normalizeInlineEdges(
           range.start,
@@ -191,20 +194,19 @@ extension _ResourceEditing on FlarkEditor {
           range.start,
           pending: pending,
         );
-        if (_commit(
-          normalized.text,
+        final spelling = Spelling(
+          Edits.between(source, normalized.text),
           FlarkSelection.collapsed(normalized.caret),
-          coalesce: false,
           pending: normalized.pending,
-          acceptSourceMode: end == range.end,
-          accept: (next) =>
-              keeps(next, normalized.caret, (range.start, end, 0)),
-        )) {
-          return true;
-        }
-        if (_lastRejection != null) return false;
+          asAsked: end == range.end,
+        );
+        ends[spelling] = end;
       }
-      return false;
+      return _commitSpellings([...ends.keys], (next, spelling, _) {
+            final removed = (range.start, ends[spelling]!, 0);
+            return keeps(next, spelling.selection.extent, removed);
+          }, coalesce: false)
+          is _Committed;
     }
     // The text as written goes first: only the parser knows whether GFM
     // reads an automatic link in it, alone or with the text beside it. The
@@ -240,34 +242,35 @@ extension _ResourceEditing on FlarkEditor {
       }
     }
     final link = source.substring(resource.start, resource.end);
-    for (final content in {written, escaped}) {
-      final first = _firstEscapable.matchAsPrefix(content);
-      for (final text in [
-        content,
-        if (first != null)
-          content.replaceRange(first.end - 1, first.end - 1, r'\'),
-      ]) {
-        // A bare address written as it is would only move the caret, which
-        // _commit takes without its check, and the link would stay.
-        if (text == link) continue;
-        final caret = resource.start + text.length;
-        if (_commit(
-          source.replaceRange(resource.start, resource.end, text),
-          FlarkSelection.collapsed(caret),
+    return _commitSpellings(
+          [
+            for (final content in {written, escaped})
+              for (final text in [
+                content,
+                if (_firstEscapable.matchAsPrefix(content) case final first?)
+                  content.replaceRange(first.end - 1, first.end - 1, r'\'),
+              ])
+                // A bare address written as it is would only move the caret,
+                // which _commit takes without its check, and the link would
+                // stay.
+                if (text != link)
+                  Spelling(
+                    Edits([(resource.start, resource.end, text)]),
+                    FlarkSelection.collapsed(resource.start + text.length),
+                    asAsked: text == written,
+                  ),
+          ],
+          (next, spelling, edits) {
+            final caret = spelling.selection.extent;
+            return keeps(next, caret, edits.lengths.single) &&
+                !next.resources.any(
+                  (r) =>
+                      !r.isImage && r.start < caret && r.end > resource.start,
+                );
+          },
           coalesce: false,
-          acceptSourceMode: text == written,
-          accept: (next) =>
-              keeps(next, caret, (resource.start, resource.end, text.length)) &&
-              !next.resources.any(
-                (r) => !r.isImage && r.start < caret && r.end > resource.start,
-              ),
-        )) {
-          return true;
-        }
-        if (_lastRejection != null) return false;
-      }
-    }
-    return false;
+        )
+        is _Committed;
   }
 }
 
