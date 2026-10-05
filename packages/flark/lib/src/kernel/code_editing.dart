@@ -234,8 +234,7 @@ extension _CodeEditing on FlarkEditor {
         edit.start == row.displayForSource(selection.start).$1 &&
         edit.end == row.displayForSource(selection.end).$1 &&
         edit.text == text &&
-        text != '\n' &&
-        text.characters.length == 1;
+        FlarkEditor._keystroke(text);
     return _commitCodeEdit(
       row,
       body,

@@ -805,6 +805,13 @@ final class FlarkEditor implements FlarkDocumentState {
     return true;
   }
 
+  /// Whether [text], typed, is one keystroke, which history joins to the
+  /// typing before it within the coalescing window: a single grapheme other
+  /// than a line break. A typed line break, a paste or text typed in one
+  /// go is an undo step of its own.
+  static bool _keystroke(String text) =>
+      text != '\n' && text.characters.length == 1;
+
   bool _select(FlarkSelection s) {
     final next = _doc.withSelection(s);
     if (next.selection == selection) return false;
@@ -880,7 +887,7 @@ final class FlarkEditor implements FlarkDocumentState {
     return _commit(
       source.replaceRange(sel.start, sel.end, text),
       FlarkSelection.collapsed(sel.start + text.length),
-      typing: typing && text != '\n' && text.characters.length == 1,
+      typing: typing && _keystroke(text),
     );
   }
 
@@ -1117,7 +1124,7 @@ final class FlarkEditor implements FlarkDocumentState {
           text,
           from: range.start,
           to: range.end,
-          typing: typing && text != '\n' && text.characters.length == 1,
+          typing: typing && _keystroke(text),
         );
     if (code != null) return code;
     // A task item's checkbox ends at the space after it: text typed against
@@ -1186,7 +1193,7 @@ final class FlarkEditor implements FlarkDocumentState {
         expanded.start,
         expanded.end,
         inserted,
-        typing: typing && typed != '\n' && typed.characters.length == 1,
+        typing: typing && _keystroke(typed),
       );
       if (heading != null) return heading;
       start = expanded.start;
@@ -1216,7 +1223,7 @@ final class FlarkEditor implements FlarkDocumentState {
             ))
         : null;
     final kept = cell ? null : _cellsKept(row, text);
-    final one = typing && typed != '\n' && typed.characters.length == 1;
+    final one = typing && _keystroke(typed);
     final fence =
         typing &&
         collapsed &&
@@ -1441,7 +1448,7 @@ final class FlarkEditor implements FlarkDocumentState {
       ),
       // Trailing spaces leave the span again and keep its intent.
       pending: trailing.isEmpty ? null : p,
-      typing: typing && text.characters.length == 1,
+      typing: typing && _keystroke(text),
       accept: (document) => document
           .ownersTouching(owner.start)
           .any((o) => o.start == owner.start && o.end == end),
@@ -1488,7 +1495,7 @@ final class FlarkEditor implements FlarkDocumentState {
         '${source.substring(at, gap)}',
       ),
       FlarkSelection.collapsed(start + p.open.length + text.length - first),
-      typing: typing && text.characters.length == 1,
+      typing: typing && _keystroke(text),
       accept: (document) => document
           .ownersTouching(start)
           .any(
