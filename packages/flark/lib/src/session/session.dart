@@ -30,15 +30,13 @@ final class FlarkSession {
        syncLimit = syncLimit ?? flarkDefaultLiveBytes {
     checkFlarkLimits(
       syncLimit: this.syncLimit,
-      sourceLimit: _writableBytes,
+      sourceLimit: FlarkEditor.defaultSourceLimit,
       liveLimits: liveLimits,
     );
     _publish();
     _start();
   }
 
-  /// [FlarkEditor]'s default writable limit, which this session's editor has.
-  static const int _writableBytes = 1024 * 1024;
   final Future<FlarkBackendLease> Function() _loader;
   final int syncLimit;
   final FlarkLiveLimits liveLimits;
@@ -216,7 +214,7 @@ final class FlarkSession {
           : (unit < 0x800 || (unit >= 0xD800 && unit <= 0xDFFF))
           ? 2
           : 3;
-      if (bytes > _writableBytes) return false;
+      if (bytes > FlarkEditor.defaultSourceLimit) return false;
     }
     return true;
   }

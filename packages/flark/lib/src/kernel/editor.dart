@@ -41,7 +41,7 @@ final class FlarkEditor implements FlarkDocumentState {
     this.codeEditing,
     this.syncLimit = defaultSyncLimit,
     this.liveLimits = const FlarkLiveLimits(),
-    this.sourceLimit = 1024 * 1024,
+    this.sourceLimit = defaultSourceLimit,
     ProjectionOptions options = const ProjectionOptions(),
     Duration Function()? clock,
   }) : _options = options,
@@ -59,6 +59,10 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   static const int defaultSyncLimit = 16 * 1024;
+
+  /// The writable source limit an editor has unless it is given another:
+  /// 1 MiB of UTF-8.
+  static const int defaultSourceLimit = 1024 * 1024;
 
   static Duration Function() _stopwatch() {
     final watch = Stopwatch()..start();

@@ -179,7 +179,7 @@ final class FlarkEditRecorder {
     if (editor.syncLimit != FlarkEditor.defaultSyncLimit) {
       out.writeln('  syncLimit: ${editor.syncLimit},');
     }
-    if (editor.sourceLimit != 1024 * 1024) {
+    if (editor.sourceLimit != FlarkEditor.defaultSourceLimit) {
       out.writeln('  sourceLimit: ${editor.sourceLimit},');
     }
     final l = editor.liveLimits;
