@@ -62,6 +62,44 @@ extension RowQueries on ProjectedRow {
     return true;
   }
 
+  /// The display range of the line of this row's text that holds display
+  /// offset [d]. A line feed the row displays ends a line, except one a
+  /// replacement displays, such as `&#10;`: that is a character of its line.
+  (int, int) displayLineAt(int d) {
+    var start = d;
+    while (start > 0) {
+      final k = text.lastIndexOf('\n', start - 1);
+      if (k < 0 || _endsLine(k)) {
+        start = k + 1;
+        break;
+      }
+      start = k;
+    }
+    for (var end = d; ;) {
+      final k = text.indexOf('\n', end);
+      if (k < 0) return (start, text.length);
+      if (_endsLine(k)) return (start, k);
+      end = k + 1;
+    }
+  }
+
+  /// Whether the line feed at display offset [k] ends a line: it is not one
+  /// a replacement displays.
+  bool _endsLine(int k) {
+    var lo = 0, hi = segments.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (segments[mid].displayEnd <= k) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo == segments.length ||
+        segments[lo].exact ||
+        segments[lo].lineBreak;
+  }
+
   /// The index into this row's per-line lists ([ProjectedRow.contentStarts]
   /// and the others) of the line of [model] that holds source [offset]:
   /// negative before the row's first line, [ProjectedRow.lineCount] or more

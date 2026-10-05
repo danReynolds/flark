@@ -626,6 +626,17 @@ void _structureCases(FlarkParseBackend backend) {
       },
     );
 
+    test('a heading level heads a first line whose text shows a line feed', () {
+      // `&#10;` displays a line feed inside the paragraph's first line; the
+      // paragraph's own line break is the one after it.
+      final session = _Session(backend, source: 'a&#10;b\nc', caret: 0);
+      session.act(
+        const SetHeadingLevel(1),
+        source: '# a&#10;b\nc',
+        rows: ['a\nb', 'c'],
+      );
+    });
+
     test('backspace at a nested item start keeps the outer containers', () {
       final nested = _Session(backend, source: '- a\n  - b', caret: 8);
       nested.act(

@@ -1228,20 +1228,15 @@ final class FlarkEditor implements FlarkDocumentState {
     // characters. The line typed on must show what it showed with the text
     // in it, whitespace at its edges aside (Markdown's to show or strip);
     // otherwise the text goes in without the style.
-    String line(String text, int at) {
-      final start = at == 0 ? 0 : text.lastIndexOf('\n', at - 1) + 1;
-      final end = text.indexOf('\n', at);
-      return text.substring(start, end < 0 ? text.length : end);
-    }
-
     final shown = wrapAt < 0
         ? null
         : () {
             final d = row.displayForSource(range.start).$1;
-            final was = line(row.text, d);
-            final inLine =
-                d - (d == 0 ? 0 : row.text.lastIndexOf('\n', d - 1) + 1);
-            return was.replaceRange(inLine, inLine, text).trim();
+            final (start, end) = row.displayLineAt(d);
+            return row.text
+                .substring(start, end)
+                .replaceRange(d - start, d - start, text)
+                .trim();
           }();
     bool wraps(FlarkDocument next, int typedAt) {
       if (wrapAt < 0) return true;
@@ -1250,8 +1245,10 @@ final class FlarkEditor implements FlarkDocumentState {
       }
       final at = typedAt + wrapAt + p.open.length;
       final typedRow = next.rowAt(at);
-      return line(typedRow.text, typedRow.displayForSource(at).$1).trim() ==
-          shown;
+      final (start, end) = typedRow.displayLineAt(
+        typedRow.displayForSource(at).$1,
+      );
+      return typedRow.text.substring(start, end).trim() == shown;
     }
 
     var placed = gap.isEmpty && cells == null
@@ -1961,10 +1958,8 @@ final class FlarkEditor implements FlarkDocumentState {
       var escaped = false;
       if (first > cs && caret >= cs && caret <= first) {
         final at = _doc.displayOf(o.start);
-        final shown = projection.rows[at.row].text;
-        if (caret < first &&
-            at.offset > 0 &&
-            shown.codeUnitAt(at.offset - 1) != 0x0A) {
+        final ownerRow = projection.rows[at.row];
+        if (caret < first && ownerRow.displayLineAt(at.offset).$1 < at.offset) {
           // Deleting an owner's first word leaves the caret before the
           // whitespace that now leads it, and that whitespace stays visible
           // before the owner. The caret keeps that visible deletion point and
@@ -3683,7 +3678,10 @@ final class FlarkEditor implements FlarkDocumentState {
   /// same containers, its first line respelled with the containers' prefix
   /// if lazy or indented as code. Parts showing other text (a span) refuse.
   bool _headFirstLine(ProjectedRow row, int level) {
-    final m = _doc.model, split = row.text.indexOf('\n');
+    final m = _doc.model;
+    // Where the first line's text ends, or -1 for a row of one line.
+    final (_, firstEnd) = row.displayLineAt(0);
+    final split = firstEnd < row.text.length ? firstEnd : -1;
     final starts = row.contentStarts.where((s) => s >= 0).toList();
     final at = starts[0], line = m.lineOfUtf16(at);
     if (m.lineOfUtf16(selection.extent) != line || split < 0) return false;

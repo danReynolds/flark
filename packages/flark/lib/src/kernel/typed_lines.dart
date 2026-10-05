@@ -731,7 +731,7 @@ extension _TypedLines on FlarkEditor {
   static bool _startsLine(FlarkDocument next, int typedAt) {
     final row = next.rowAt(typedAt);
     final d = row.displayForSource(typedAt).$1;
-    return d == 0 || row.text.codeUnitAt(d - 1) == 0x0A;
+    return row.displayLineAt(d).$1 == d;
   }
 
   /// The edit that made [text] from the current source: where the two first

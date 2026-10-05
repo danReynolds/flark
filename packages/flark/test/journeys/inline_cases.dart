@@ -485,6 +485,22 @@ void _inlineCases(FlarkParseBackend backend) {
       }
     });
 
+    test('deleting a span\'s first word after a shown line feed keeps the '
+        'gap', () {
+      // `&#10;` shows a line feed inside the line, so the space the deletion
+      // leaves before the span shows, as it does after any other text: the
+      // caret stays before it, in the span's intent.
+      final session = _Session(backend, source: 'x&#10;*one two*', caret: 10);
+      session.act(
+        const DeleteBackward(word: true),
+        source: 'x&#10; *two*',
+        caret: const DisplayPosition(0, 2),
+        context: Style.emphasis,
+      );
+      // The word rejoins the span rather than fusing with the next one.
+      session.act(const InsertText('z'), source: 'x&#10;*z two*');
+    });
+
     test('word backspace over a styled first word keeps the gap', () {
       final session = _Session(backend, source: 'x **one two**', caret: 7);
       session.act(
