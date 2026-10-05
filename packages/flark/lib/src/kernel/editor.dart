@@ -2248,8 +2248,11 @@ final class FlarkEditor implements FlarkDocumentState {
   /// Remove [above], an empty line or a rule directly over [row], as a
   /// whole line, so [row] keeps its own container prefix and markup. Code is
   /// the one row no join may reach: its opening fence would go. The result
-  /// is refused when [row] changes kind or moves out of its containers, when
-  /// code changes, or when [_keepsStructure] fails.
+  /// is refused when [row] changes kind or moves out of its containers, or
+  /// when [_keepsStructure] fails. Code that stays code in containers of the
+  /// same kinds keeps its text: its own lines are untouched, and only the
+  /// line opening an item could change their columns, which takes the code
+  /// out of that item.
   bool _removeLineAbove(ProjectedRow above, ProjectedRow row) {
     if ((above.kind != RowKind.blank && above.kind != RowKind.thematicBreak) ||
         above.firstLine + above.lineCount != row.firstLine) {
@@ -2266,9 +2269,7 @@ final class FlarkEditor implements FlarkDocumentState {
       acceptSourceMode: true,
       accept: (next) {
         final now = next.rowAt(caret);
-        if (now.kind != row.kind ||
-            row.fenced && (!now.fenced || now.text != row.text) ||
-            !now.sameContainerKinds(row)) {
+        if (now.kind != row.kind || !now.sameContainerKinds(row)) {
           return false;
         }
         // Without the gap, [row]'s text can run on from the paragraph above
@@ -2346,10 +2347,11 @@ final class FlarkEditor implements FlarkDocumentState {
       acceptSourceMode: true,
       accept: (next) {
         final now = next.rowAt(origin);
+        // The heading keeps its first line's prefix, and with it the
+        // containers that line is in.
         return now.kind == RowKind.heading &&
             now.headingLevel == row.headingLevel &&
             now.text.isEmpty &&
-            now.sameContainerKinds(row) &&
             _keepsStructure(
               next,
               [(first, trail.$2, replaced.length)],
