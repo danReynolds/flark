@@ -282,6 +282,39 @@ void _typingCases(FlarkParseBackend backend) {
       pasted.act(const Paste('word'), source: '---\nword');
     });
 
+    test('pasted indentation never makes a row code or moves a block', () {
+      for (final (source, caret, text, pasted, rows) in [
+        // A tab after an item's marker would move its content column past
+        // the item nested under it, or make the item's text code.
+        (
+          '- a\n  - b\n    1) c\n',
+          8,
+          '\ttabbed ',
+          '- a\n  - tabbed b\n    1) c\n',
+          ['a', 'tabbed b', 'c', ''],
+        ),
+        (
+          '- a\n  - b\n    1) c\n',
+          8,
+          '   x',
+          '- a\n  - xb\n    1) c\n',
+          ['a', 'xb', 'c', ''],
+        ),
+        // Four spaces at a paragraph's start would make it indented code.
+        ('abc\n', 0, '    x', 'xabc\n', ['xabc', '']),
+        // Indentation Markdown strips anyway stays in the source.
+        ('a\n\nbc\n', 3, '  x', 'a\n\n  xbc\n', ['a', '', 'xbc', '']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(Paste(text), source: pasted, rows: rows);
+      }
+      // The text's own markup still applies.
+      _Session(
+        backend,
+        source: 'abc\n',
+      ).act(const Paste('  # x'), source: '# xabc\n', rows: ['xabc', '']);
+    });
+
     test('text typed after a hidden item marker keeps the item', () {
       for (final (source, caret, typed, rows) in [
         ('1.\n', 2, '1. s\n', ['s', '']),

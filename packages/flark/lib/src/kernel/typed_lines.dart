@@ -66,8 +66,18 @@ extension _TypedLines on FlarkEditor {
                 row.displayForSource(row.contentStarts[i]).$1) &&
         m.lineOfUtf16(at + removed) < row.firstLine + row.lineCount;
     if (!leading && m.lineOfUtf16(at + removed) != line) return null;
+    // Text that starts with indentation where a line's content starts (a
+    // paste of indented text): Markdown does not show the indentation, but
+    // after an item's marker it moves the item's content column, and with
+    // it the blocks indented under the item.
+    final indented =
+        !leading &&
+        row.kind == RowKind.paragraph &&
+        at == row.contentStarts[i] &&
+        _leadingIndentation(typed) > 0;
     if (!lazy &&
         !leading &&
+        !indented &&
         !delimiterRow &&
         (removed > 0 ||
             row.kind != RowKind.blank &&
@@ -83,6 +93,8 @@ extension _TypedLines on FlarkEditor {
     final hasNext = line + 1 < m.lineCount;
     final spellings = <_Spelling>[];
     var keepRow = false, sameKind = false, quick = false;
+    // Whether only the plain spelling must keep the row's kind.
+    var plainKind = false;
     // [inserted] replaces [lineStart]..[at] with [before], [lead] and [after]
     // around it; plain when it only goes at [at].
     _Spelling around(String before, String lead, String after) {
@@ -302,6 +314,22 @@ extension _TypedLines on FlarkEditor {
       // marker padding Markdown does not show; it may not move a block.
       spellings.add(plainSpelling);
       sameKind = true;
+    } else if (indented) {
+      // The text goes in as it is where its indentation changes neither its
+      // row's kind nor another block, else without it, which shows the same:
+      // indentation in pasted text does not make the row code.
+      spellings.add(plainSpelling);
+      plainKind = true;
+      final lead = _leadingIndentation(inserted);
+      if (lead < inserted.length &&
+          plain.text.startsWith(inserted.substring(0, lead), at)) {
+        spellings.add((
+          source: plain.text.replaceRange(at, at + lead, ''),
+          caret: plain.caret - lead,
+          edits: [(at, at + removed, removed + grown - lead)],
+          typedAt: at,
+        ));
+      }
     } else {
       return null;
     }
@@ -339,7 +367,7 @@ extension _TypedLines on FlarkEditor {
                       s.caret,
                       s.typedAt,
                       keepRow: keepRow,
-                      sameKind: sameKind,
+                      sameKind: sameKind || plainKind && isPlain,
                       strict: strict,
                     ));
           },
@@ -631,6 +659,16 @@ extension _TypedLines on FlarkEditor {
     // Nor does text typed on an empty row show whitespace that row or the
     // blocks around it hid, as a line it joins to code or HTML would.
     return !_revealsHiddenText(next, back, whitespace: strict);
+  }
+
+  /// The spaces and tabs [text] starts with.
+  static int _leadingIndentation(String text) {
+    var n = 0;
+    while (n < text.length &&
+        (text.codeUnitAt(n) == 0x20 || text.codeUnitAt(n) == 0x09)) {
+      n++;
+    }
+    return n;
   }
 
   /// Whether [next] shows the text typed at [typedAt] first on its line.
