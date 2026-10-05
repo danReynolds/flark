@@ -1405,7 +1405,7 @@ final class FlarkEditor implements FlarkDocumentState {
       );
       if (!placed && hides && _lastRejection == null) {
         placed =
-            _unhideLine(row, at, normalized, typed) ??
+            _unhideLine(row, at, end - start, normalized, typed) ??
             _lastRejection == null &&
                 _commit(
                   normalized.text,

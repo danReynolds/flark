@@ -1,15 +1,5 @@
 part of 'editor.dart';
 
-/// One spelling of typed text: the source, the caret, the edits that made it
-/// from the current source (start, end and the length of what replaced it,
-/// sorted), and where the typed text starts in it.
-typedef _Spelling = ({
-  String source,
-  int caret,
-  List<(int, int, int)> edits,
-  int typedAt,
-});
-
 /// Typing where the text changes the block structure of its line: an empty
 /// row, a rule, a bare or hidden marker, a lazy line, an empty line of
 /// indented code, a table's delimiter row shown as its source, or leading
@@ -96,37 +86,42 @@ extension _TypedLines on FlarkEditor {
     final offset = plain.caret - at;
     final nl = _lineBreakAt(at);
     final hasNext = line + 1 < m.lineCount;
-    final spellings = <_Spelling>[];
+    final spellings = <Spelling>[];
+    // Where the typed text starts in each spelling's source.
+    final typedAt = Map<Spelling, int>.identity();
+    Spelling spelled(Edits edits, int caret, int textAt) {
+      final spelling = Spelling(
+        edits,
+        FlarkSelection.collapsed(caret),
+        pending: plain.pending,
+      );
+      typedAt[spelling] = textAt;
+      return spelling;
+    }
+
     var sameKind = false, ordinary = false, apart = false;
     // Whether only the plain spelling must keep the row's kind.
     var plainKind = false;
     // [inserted] replaces [lineStart]..[at] with [before], [lead] and [after]
     // around it; plain when it only goes at [at].
-    _Spelling around(String before, String lead, String after) {
+    Spelling around(String before, String lead, String after) {
       final text = '$before$lead$inserted$after';
-      final typedAt = lineStart + before.length + lead.length;
-      return (
-        source: source.replaceRange(lineStart, at, text),
-        caret: typedAt + offset,
-        edits: [(lineStart, at, text.length)],
-        typedAt: typedAt,
-      );
+      final textAt = lineStart + before.length + lead.length;
+      return spelled(Edits([(lineStart, at, text)]), textAt + offset, textAt);
     }
 
-    final grown = plain.text.length - source.length;
-    final plainSpelling = (
-      source: plain.text,
-      caret: plain.caret,
-      // Whitespace typed in the hidden syntax that starts a line, or leading
-      // text put over a span there, moves out before it, so the edit is
-      // read from the text.
-      edits: [
-        leading || indented
-            ? _changeTo(plain.text)
-            : (at, at + removed, removed + grown),
-      ],
-      typedAt: at,
+    // Whitespace typed in the hidden syntax that starts a line, or leading
+    // text put over a span there, moves out before it, so the edit is read
+    // from the text.
+    final plainSpelling = Spelling(
+      leading || indented
+          ? Edits.between(source, plain.text)
+          : _typedEdits(plain.text, at, removed),
+      FlarkSelection.collapsed(plain.caret),
+      pending: plain.pending,
+      asAsked: true,
     );
+    typedAt[plainSpelling] = at;
     // The continuation prefix of [row]'s line (a rule's or a bare marker's,
     // whose block starts on it) for the lines after it.
     String continued() =>
@@ -230,14 +225,10 @@ extension _TypedLines on FlarkEditor {
     } else if (removed == 0 && row.kind == RowKind.thematicBreak) {
       // A rule stays a rule: the text starts a block on the line after it.
       final lead = continued();
-      _Spelling after(String rest) {
+      Spelling after(String rest) {
         final text = '$nl$lead$inserted$rest';
-        return (
-          source: source.replaceRange(at, at, text),
-          caret: at + nl.length + lead.length + offset,
-          edits: [(at, at, text.length)],
-          typedAt: at + nl.length + lead.length,
-        );
+        final textAt = at + nl.length + lead.length;
+        return spelled(Edits([(at, at, text)]), textAt + offset, textAt);
       }
 
       spellings.add(after(''));
@@ -252,12 +243,13 @@ extension _TypedLines on FlarkEditor {
       final end = projection.lineContentEnd(line);
       if (hasNext && row.kind != RowKind.tableCell && end >= at) {
         final sep = '$nl${continued().trimRight()}';
-        spellings.add((
-          source: plain.text.replaceRange(end + grown, end + grown, sep),
-          caret: plain.caret,
-          edits: [(at, at, grown), (end, end, sep.length)],
-          typedAt: at,
-        ));
+        spellings.add(
+          spelled(
+            Edits([...plainSpelling.edits.list, (end, end, sep)]),
+            plain.caret,
+            at,
+          ),
+        );
       }
     } else if (removed == 0 && row.kind == RowKind.codeBlock && !row.fenced) {
       // An empty line of indented code needs the code's indentation, as a
@@ -303,17 +295,23 @@ extension _TypedLines on FlarkEditor {
         m.blockStart(row.block),
         row.block,
       );
+      // A span's delimiters moved around whitespace can reach back before
+      // the line, where the prefix goes: then the edit is read from the text.
+      final asTyped = plainSpelling.edits.list;
       spellings
         ..add(plainSpelling)
-        ..add((
-          source: plain.text.replaceRange(lineStart, lineStart, prefix),
-          caret: plain.caret + prefix.length,
-          edits: [
-            (lineStart, lineStart, prefix.length),
-            (at, at + removed, removed + grown),
-          ],
-          typedAt: at + prefix.length,
-        ));
+        ..add(
+          spelled(
+            asTyped.first.$1 >= lineStart
+                ? Edits([(lineStart, lineStart, prefix), ...asTyped])
+                : Edits.between(
+                    source,
+                    plain.text.replaceRange(lineStart, lineStart, prefix),
+                  ),
+            plain.caret + prefix.length,
+            at + prefix.length,
+          ),
+        );
       ordinary = true;
     } else if (leading) {
       // Whitespace typed where a line's content starts is indentation or
@@ -330,101 +328,62 @@ extension _TypedLines on FlarkEditor {
       final lead =
           _leadingIndentation(plain.text, cs) - _leadingIndentation(source, cs);
       final stripped = plain.text.replaceRange(cs, cs + lead, '');
-      spellings.add((
-        source: stripped,
-        caret: plain.caret - lead,
-        edits: [_changeTo(stripped)],
-        // Where the text would start with its indentation, so that a pending
-        // style's delimiters are found after it.
-        typedAt: at - lead,
-      ));
+      spellings.add(
+        spelled(
+          Edits.between(source, stripped),
+          plain.caret - lead,
+          // Where the text would start with its indentation, so that a
+          // pending style's delimiters are found after it.
+          at - lead,
+        ),
+      );
     } else {
       return null;
     }
-    // A longer spelling must not cost the edit its admission: past a limit
-    // it is passed over.
-    FlarkRejection? rejected;
-    var limited = false;
-    // The first spelling passed over because it would leave the live tier,
-    // where no parse checks it: when no spelling qualifies, it enters source
-    // mode, as ordinary text past the tier does.
-    _Spelling? beyond;
     // Text typed on an empty row starts its line and shows no whitespace the
     // row hid.
     final strict = row.kind == RowKind.blank;
-    for (final s in spellings) {
-      final isPlain = identical(s, plainSpelling);
-      var read = false;
-      // Whether [next], [s] made by [edits] with the caret at [caret] (a
-      // typed fence completed in it moves both), qualifies.
-      bool keeps(FlarkDocument next, List<(int, int, int)> edits, int caret) {
-        read = true;
-        return (wraps == null || wraps(next, s.typedAt)) &&
-            (ordinary &&
-                    identical(s, spellings.first) &&
-                    _sameRow(next, row, caret) ||
-                _keepsTyped(
-                  next,
-                  row,
-                  edits,
-                  caret,
-                  s.typedAt,
-                  sameKind: sameKind || plainKind && isPlain,
-                  strict: strict,
-                  apart: apart,
-                ));
-      }
-
-      _lastRejection = null;
-      if (_commit(
-        s.source,
-        FlarkSelection.collapsed(s.caret),
-        coalesce: typing,
-        pending: plain.pending,
-        completeTypedFence: fence,
-        accept: (next) => keeps(next, s.edits, s.caret),
-        acceptCompleted: (next, at, length) => keeps(
-          next,
-          _withInsertion(s.edits, at, length),
-          next.selection.extent,
-        ),
-      )) {
-        return true;
-      }
-      if (isPlain) {
-        rejected = _lastRejection;
-      } else if (!read) {
-        // Past the source limit, or past the live tier into source mode.
-        limited = true;
-      }
-      if (!read && _lastRejection == null && s.source != source) {
-        beyond ??= s;
-      }
-    }
-    _lastRejection = rejected;
-    if (rejected != null) return false;
-    // A typed underline the parser reads as one where no blank line fits,
-    // at a limit, is typed as it is, as the profile has it.
-    if (limited && underline != null && spellings.contains(plainSpelling)) {
-      return _commit(
-        plain.text,
-        FlarkSelection.collapsed(plain.caret),
-        coalesce: typing,
-        pending: plain.pending,
-      );
-    }
-    final over = beyond;
-    return over != null &&
-        _commit(
-          over.source,
-          FlarkSelection.collapsed(over.caret),
+    // A longer spelling must not cost the edit its admission: a refused one
+    // is passed over, and only the text as asked refuses the edit. Past the
+    // live tier, where no parse checks a spelling, the first one there enters
+    // source mode when none qualifies, as ordinary text past the tier does;
+    // a typed underline the parser reads as one where no blank line fits, at
+    // a limit, is typed as it is instead, as the profile has it.
+    _lastRejection = null;
+    return _commitSpellings(
+          spellings,
+          (next, spelling, edits) {
+            // A typed fence completed in the spelling moves its caret.
+            final caret = identical(edits, spelling.edits)
+                ? spelling.selection.extent
+                : next.selection.extent;
+            final textAt = typedAt[spelling]!;
+            return (wraps == null || wraps(next, textAt)) &&
+                (ordinary &&
+                        identical(spelling, spellings.first) &&
+                        _sameRow(next, row, caret) ||
+                    _keepsTyped(
+                      next,
+                      row,
+                      edits,
+                      caret,
+                      textAt,
+                      sameKind:
+                          sameKind ||
+                          plainKind && identical(spelling, plainSpelling),
+                      strict: strict,
+                      apart: apart,
+                    ));
+          },
           coalesce: typing,
-          pending: plain.pending,
+          tier: _Tier.firstPast,
+          refusals: _Refusals.passAll,
           completeTypedFence: fence,
-          acceptSourceMode: true,
-          accept: (_) => false,
-          acceptCompleted: (_, _, _) => false,
-        );
+          atLimit: underline != null && spellings.contains(plainSpelling)
+              ? plainSpelling
+              : null,
+        )
+        is _Committed;
   }
 
   /// [plain], typed at [at] in [row], completed block markup that hides the
@@ -436,32 +395,29 @@ extension _TypedLines on FlarkEditor {
   /// with text after it an opening fence would hide that text in its info
   /// string and turn what follows into code: the marker is escaped instead,
   /// as a pipe typed in a cell is. Null when neither keeps the caret on its
-  /// line in [row]'s containers.
+  /// line in [row]'s containers. [plain] was typed over [removed]
+  /// characters.
   bool? _unhideLine(
     ProjectedRow row,
     int at,
+    int removed,
     ({String text, int caret, PendingStyle? pending}) plain,
     String typed,
   ) {
     final text = plain.text, caret = plain.caret;
-    final grown = text.length - source.length;
     var end = text.indexOf('\n', caret);
     if (end > 0 && text.codeUnitAt(end - 1) == 0x0D) end--;
     final nl = _lineBreakAt(at);
-    for (final (spelled, moved, edits) in [
-      if (end > 0)
-        (
-          text.replaceRange(end, end, nl),
-          caret,
-          [(at, at, grown), (end - grown, end - grown, nl.length)],
-        ),
+    final asTyped = _typedEdits(text, at, removed);
+    for (final (edits, moved) in [
+      if (end > 0) (asTyped.withInsertion(end, nl), caret),
       if (typed == '~' || typed == '`')
-        (text.replaceRange(at, at, r'\'), caret + 1, [(at, at, grown + 1)]),
+        (asTyped.withInsertion(at, r'\'), caret + 1),
     ]) {
       // Past the live tier the parser cannot check the respelling: it is
       // passed over, and the text is typed as it is.
       if (_commit(
-        spelled,
+        edits.apply(source),
         FlarkSelection.collapsed(moved),
         pending: plain.pending,
         coalesce: true,
@@ -517,7 +473,8 @@ extension _TypedLines on FlarkEditor {
     FlarkSelection.collapsed(start),
     coalesce: typing,
     acceptSourceMode: true,
-    accept: (next) => _keepsTyped(next, row, [(start, end, 0)], start, start),
+    accept: (next) =>
+        _keepsTyped(next, row, Edits([(start, end, '')]), start, start),
   );
 
   /// Whether [caret] is still in [row]'s paragraph in [next]: the row starts
@@ -553,16 +510,13 @@ extension _TypedLines on FlarkEditor {
   bool _keepsTyped(
     FlarkDocument next,
     ProjectedRow row,
-    List<(int, int, int)> edits,
+    Edits edits,
     int caret,
     int typedAt, {
     bool sameKind = false,
     bool strict = false,
     bool apart = false,
   }) {
-    int forward(int offset) => FlarkEditor._afterEdits(edits, offset);
-    int back(int offset) => FlarkEditor._beforeEdits(edits, offset);
-
     // An empty item the text fills: the blocks after it that are indented
     // for it join it again, as they were before it was emptied.
     final inner = row.shells.isEmpty ? null : row.shells.last;
@@ -571,7 +525,7 @@ extension _TypedLines on FlarkEditor {
             inner != null &&
             inner.kind == ShellKind.item &&
             _doc.model.blockFirstLine(inner.block) == row.firstLine
-        ? forward(_doc.model.blockStart(inner.block))
+        ? edits.forward(_doc.model.blockStart(inner.block))
         : -1;
     final now = next.projection.rows;
     var j = 0;
@@ -584,7 +538,7 @@ extension _TypedLines on FlarkEditor {
       if (old.kind == RowKind.blank && !emptyItem || old.index == row.index) {
         continue;
       }
-      final at = forward(old.sourceStart);
+      final at = edits.forward(old.sourceStart);
       if (at < 0) continue;
       while (j + 1 < now.length && now[j + 1].sourceStart <= at) {
         j++;
@@ -646,7 +600,7 @@ extension _TypedLines on FlarkEditor {
           above.kind == RowKind.tableCell &&
           !above.delimiterSource &&
           typedRow.kind == RowKind.tableCell;
-      final at = html || table ? forward(above.sourceStart) : -1;
+      final at = html || table ? edits.forward(above.sourceStart) : -1;
       if (at >= 0 &&
           (html
               ? next.rowAt(at).block == typedRow.block
@@ -686,7 +640,7 @@ extension _TypedLines on FlarkEditor {
     }
     // Nor does text typed on an empty row show whitespace that row or the
     // blocks around it hid, as a line it joins to code or HTML would.
-    return !_revealsHiddenText(next, back, whitespace: strict);
+    return !_revealsHiddenText(next, edits.back, whitespace: strict);
   }
 
   /// The spaces and tabs [text] starts with, or has from [from].
@@ -699,32 +653,17 @@ extension _TypedLines on FlarkEditor {
     return n - from;
   }
 
-  /// [edits], the sorted edits of the current source that made a spelling,
-  /// with [length] characters inserted at [at] of that spelling too: in the
-  /// text of an edit it meets, else as an edit of its own.
-  static List<(int, int, int)> _withInsertion(
-    List<(int, int, int)> edits,
-    int at,
-    int length,
-  ) {
-    final out = <(int, int, int)>[];
-    var shift = 0, placed = false;
-    for (final (start, end, replaced) in edits) {
-      if (!placed && at <= start + shift + replaced) {
-        if (at < start + shift) {
-          out.add((at - shift, at - shift, length));
-          out.add((start, end, replaced));
-        } else {
-          out.add((start, end, replaced + length));
-        }
-        placed = true;
-      } else {
-        out.add((start, end, replaced));
-      }
-      shift += replaced - (end - start);
-    }
-    if (!placed) out.add((at - shift, at - shift, length));
-    return out;
+  /// The edits that make [text], typed at [at] over [removed] characters,
+  /// from the current source: that one splice, unless the typing moved a
+  /// span's delimiters around whitespace beside it
+  /// ([FlarkEditor._normalizeInlineEdges]), when the edit is read from the
+  /// text.
+  Edits _typedEdits(String text, int at, int removed) {
+    final end = at + removed + text.length - source.length;
+    final spliced = Edits([(at, at + removed, text.substring(at, end))]);
+    return spliced.apply(source) == text
+        ? spliced
+        : Edits.between(source, text);
   }
 
   /// Whether [next] shows the text typed at [typedAt] first on its line.
@@ -732,24 +671,6 @@ extension _TypedLines on FlarkEditor {
     final row = next.rowAt(typedAt);
     final d = row.displayForSource(typedAt).$1;
     return row.displayLineAt(d).$1 == d;
-  }
-
-  /// The edit that made [text] from the current source: where the two first
-  /// differ, where that difference ends in the source, and its length in
-  /// [text].
-  (int, int, int) _changeTo(String text) {
-    final shorter = source.length < text.length ? source.length : text.length;
-    var p = 0;
-    while (p < shorter && source.codeUnitAt(p) == text.codeUnitAt(p)) {
-      p++;
-    }
-    var q = 0;
-    while (q < shorter - p &&
-        source.codeUnitAt(source.length - 1 - q) ==
-            text.codeUnitAt(text.length - 1 - q)) {
-      q++;
-    }
-    return (p, source.length - q, text.length - q - p);
   }
 
   /// Whether [holder], [old]'s row in [next] holding its start [at], is in
