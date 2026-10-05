@@ -992,18 +992,40 @@ final class _Check {
       shown.write(char);
     }
     // A blank line typing adds to keep the typed text apart from a block it
-    // is not part of, or after a rule it keeps, shows nothing: compare the
-    // lines with text, and the caret within them.
+    // is not part of, or after a rule it keeps, shows nothing, nor does one
+    // it adds at the document's end; and whitespace beside a line break is
+    // Markdown's to show or strip (a space left at a line's start once a
+    // letter follows it). Compare the lines with text, and the caret within
+    // them.
     (String, int) lines(String text, int caret) {
+      bool space(int i) => text[i] == ' ' || text[i] == '\t';
+      final keep = List<bool>.filled(text.length, true);
+      for (var j = 0; j < text.length && space(j); j++) {
+        keep[j] = false;
+      }
+      for (var i = 0; i < text.length; i++) {
+        if (text[i] != '\n') continue;
+        for (var j = i - 1; j >= 0 && space(j); j--) {
+          keep[j] = false;
+        }
+        for (var j = i + 1; j < text.length && space(j); j++) {
+          keep[j] = false;
+        }
+      }
       final out = StringBuffer();
       var mapped = -1, last = '';
       for (var i = 0; i <= text.length; i++) {
         if (i == caret) mapped = out.length;
         if (i == text.length) break;
-        if (text[i] == '\n' && last == '\n') continue;
+        if (!keep[i] || text[i] == '\n' && last == '\n') continue;
         out.write(last = text[i]);
       }
-      return ('$out', mapped);
+      var lines = '$out';
+      if (lines.endsWith('\n')) {
+        lines = lines.substring(0, lines.length - 1);
+        if (mapped > lines.length) mapped = lines.length;
+      }
+      return (lines, mapped);
     }
 
     final (shownLines, shownCaret) = lines('$shown', caretShown);
