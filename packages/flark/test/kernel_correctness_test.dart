@@ -41,6 +41,25 @@ final class _SwitchableFaultBackend implements FlarkParseBackend {
   void dispose() => delegate.dispose();
 }
 
+/// A parser that fails on any source holding [marker].
+final class _FailOnMarker implements FlarkParseBackend {
+  _FailOnMarker(this.delegate, this.marker);
+
+  final FlarkParseBackend delegate;
+  final String marker;
+
+  @override
+  int get schemaVersion => delegate.schemaVersion;
+
+  @override
+  RenderModel parse(String source) => source.contains(marker)
+      ? throw StateError('synthetic parse failure')
+      : delegate.parse(source);
+
+  @override
+  void dispose() => delegate.dispose();
+}
+
 void main() {
   late FlarkParseBackend backend;
   setUpAll(() => backend = createParseBackend());
@@ -78,6 +97,33 @@ void main() {
       expect(editor.source, 'ab');
       expect(editor.history.canUndo, isTrue);
       expect(editor.history.canRedo, isFalse);
+    });
+
+    test('a host command that fails after ending a composition keeps it', () {
+      // applyAfterComposition ends the composition before its command runs.
+      // A command that then fails before publishing anything (here the
+      // parser fails on its text) fails the call whole: the composition is
+      // open again over the text it composed, with no undo step.
+      final editor = FlarkEditor(
+        _FailOnMarker(backend, '!'),
+        text: 'abc',
+        caret: 3,
+      );
+      final revision = editor.revision;
+      editor.beginComposition();
+      expect(editor.apply(const InsertText('k')), isTrue);
+
+      expect(
+        () => editor.applyAfterComposition(const InsertText('!')),
+        throwsStateError,
+      );
+      expect(editor.revision, revision + 1);
+      expect(
+        (editor.source, editor.composing, editor.history.canUndo),
+        ('abck', true, false),
+      );
+      editor.commitComposition();
+      expect((editor.source, editor.history.canUndo), ('abck', true));
     });
 
     test('a published live snapshot cannot be mutated by its host', () {
