@@ -46,7 +46,7 @@ extension _TypedLines on FlarkEditor {
       return null;
     }
     // Ordinary text in a row returns here, before anything is computed.
-    final delimiterRow = row.kind == RowKind.tableCell && row.tableRowBlock < 0;
+    final delimiterRow = row.delimiterSource;
     // Lines pasted into a delimiter row shown as its source must keep the
     // table too; elsewhere they keep Markdown's literal meaning.
     final lines = typed.contains('\n') || typed.contains('\r');
@@ -87,7 +87,7 @@ extension _TypedLines on FlarkEditor {
         (removed > 0 ||
             row.kind != RowKind.blank &&
                 row.kind != RowKind.thematicBreak &&
-                !_isBarePrefixRow(row) &&
+                !projection.isBarePrefix(row) &&
                 (row.kind != RowKind.codeBlock || row.fenced))) {
       return null;
     }
@@ -195,8 +195,7 @@ extension _TypedLines on FlarkEditor {
       // a block after it, where the row shows it.
       final above = row.index > 0 ? projection.rows[row.index - 1] : null;
       if (above != null &&
-          above.fenced &&
-          _bodyless(above) &&
+          above.bodyless &&
           m.blockFlags(above.block) & 2 == 0 &&
           above.firstLine + above.lineCount == line) {
         final fenceAt = m.blockStart(above.block);
@@ -248,7 +247,7 @@ extension _TypedLines on FlarkEditor {
 
       spellings.add(after(''));
       if (hasNext) spellings.add(after('$nl${lead.trimRight()}'));
-    } else if (removed == 0 && _isBarePrefixRow(row) || delimiterRow) {
+    } else if (removed == 0 && projection.isBarePrefix(row) || delimiterRow) {
       // A bare marker shown as text, which the typed text joins as paragraph
       // text, or a table's delimiter row shown as its source, which the text
       // edits; the block after either keeps its reading, a paragraph after
@@ -488,7 +487,7 @@ extension _TypedLines on FlarkEditor {
   /// Null outside such a row.
   bool? _deleteInDelimiterRow({required bool backward, required bool word}) {
     final sel = selection, row = _doc.rowAt(sel.extent);
-    if (row.kind != RowKind.tableCell || row.tableRowBlock >= 0) return null;
+    if (!row.delimiterSource) return null;
     if (_doc.rowAt(sel.base).index != row.index) return false;
     var start = sel.start, end = sel.end;
     if (sel.isCollapsed) {
@@ -614,15 +613,13 @@ extension _TypedLines on FlarkEditor {
         }
         return false;
       }
-      if (old.fenced &&
-          _bodyless(old) &&
-          !(holder.fenced && _bodyless(holder))) {
+      if (old.bodyless && !holder.bodyless) {
         return false;
       }
       // A bare marker shows as text only while it starts its own list, and
       // as an empty item once another item follows it: a presentation the
       // profile lets flip.
-      if (_isBarePrefixRow(old) &&
+      if (projection.isBarePrefix(old) &&
           holder.kind == RowKind.blank &&
           holder.shells.isNotEmpty &&
           holder.shells.last.kind == ShellKind.item &&
@@ -631,8 +628,7 @@ extension _TypedLines on FlarkEditor {
       }
       // A delimiter row shown as its source hides once its table has a body
       // row, which the text typed under it starts.
-      if (old.kind == RowKind.tableCell &&
-          old.tableRowBlock < 0 &&
+      if (old.delimiterSource &&
           holder.kind == RowKind.tableCell &&
           _sameContainers(holder, old)) {
         continue;
@@ -661,7 +657,7 @@ extension _TypedLines on FlarkEditor {
           above.kind == RowKind.htmlBlock && typedRow.kind == RowKind.htmlBlock;
       final table =
           above.kind == RowKind.tableCell &&
-          above.tableRowBlock >= 0 &&
+          !above.delimiterSource &&
           typedRow.kind == RowKind.tableCell;
       final at = html || table ? forward(above.sourceStart) : -1;
       if (at >= 0 &&
@@ -682,7 +678,7 @@ extension _TypedLines on FlarkEditor {
     if (strict && !_startsLine(next, typedAt)) return false;
     final shells = typedRow.shells;
     if (shells.length < row.shells.length) return false;
-    final from = _isBarePrefixRow(row) ? row.sourceStart : typedAt;
+    final from = projection.isBarePrefix(row) ? row.sourceStart : typedAt;
     // Only a paragraph's line reads on lazily: any other row in a container
     // carries its prefix.
     final k = next.model.lineOfUtf16(caret) - typedRow.firstLine;
@@ -750,10 +746,6 @@ extension _TypedLines on FlarkEditor {
     final d = row.displayForSource(typedAt).$1;
     return d == 0 || row.text.codeUnitAt(d - 1) == 0x0A;
   }
-
-  /// Whether [row], a fenced code row, has no line of code.
-  static bool _bodyless(ProjectedRow row) =>
-      row.contentStarts.every((start) => start < 0);
 
   /// The edit that made [text] from the current source: where the two first
   /// differ, where that difference ends in the source, and its length in
@@ -848,13 +840,6 @@ extension _TypedLines on FlarkEditor {
     if (item.task && item.checkboxEnd > end) end = item.checkboxEnd;
     return '${source.substring(lineStart, end)} ';
   }
-
-  /// Whether [row] shows a bare empty heading or item marker as text.
-  bool _isBarePrefixRow(ProjectedRow row) =>
-      row.kind == RowKind.paragraph &&
-      row.block >= 0 &&
-      (_doc.model.blockKind(row.block) == BlockKind.heading ||
-          _doc.model.blockKind(row.block) == BlockKind.item);
 
   /// Whether [next] shows the [length] characters typed after a pending
   /// style's opening delimiter at [from] in that style, with the delimiters

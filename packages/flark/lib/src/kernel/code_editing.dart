@@ -103,7 +103,7 @@ extension _CodeEditing on FlarkEditor {
         typing: false,
       );
     }
-    if (row.contentStarts.every((start) => start < 0)) {
+    if (row.bodyless) {
       return _createEmptyCodeBody(row, body, edit.base, edit.extent);
     }
     if (action == CodeEditingAction.indent ||

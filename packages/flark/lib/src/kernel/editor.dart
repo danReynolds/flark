@@ -17,6 +17,7 @@ import 'document.dart';
 import 'history.dart';
 import 'notify.dart';
 import 'projection.dart';
+import 'row_queries.dart';
 import 'style_state.dart';
 
 part 'source_mode.dart';
@@ -1063,7 +1064,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // no cell.
     if (typing &&
         row.kind == RowKind.tableCell &&
-        row.tableRowBlock >= 0 &&
+        !row.delimiterSource &&
         (typed.contains('|') || typed.contains(r'\'))) {
       return _insertText(
         row,
@@ -1090,7 +1091,7 @@ final class FlarkEditor implements FlarkDocumentState {
     bool styled = true,
   }) {
     final collapsed = range.start == range.end;
-    if (row.fenced && row.contentStarts.every((start) => start < 0)) {
+    if (row.bodyless) {
       final code = _pasteCode(text, from: range.start, to: range.end);
       if (code != null) return code;
     }
@@ -1557,7 +1558,7 @@ final class FlarkEditor implements FlarkDocumentState {
     if (!_supportedRange(s, e)) return false;
     if (text.isEmpty) {
       final row = _doc.rowAt(s);
-      return row.kind == RowKind.tableCell && row.tableRowBlock < 0
+      return row.delimiterSource
           ? _cutDelimiterRow(row, s, e, typing: false)
           : _deleteContent(s, e, typing: false);
     }
@@ -1582,7 +1583,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// refused, as table restructuring uses source mode.
   List<String>? _cellsKept(ProjectedRow row, String text) =>
       row.kind == RowKind.tableCell &&
-          row.tableRowBlock >= 0 &&
+          !row.delimiterSource &&
           !text.contains('\n') &&
           !text.contains('\r')
       ? _tableRowCells(projection, row)
@@ -2274,7 +2275,7 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     // Joining the line break before a fence that displays nothing turns its
     // delimiter line into text: the way to delete one that has no body.
-    final bodyless = right.fenced && right.contentStarts.every((s) => s < 0);
+    final bodyless = right.bodyless;
     final keepsLeft = !empty(left) || empty(right);
     return _joinContent(
       from,
@@ -2934,7 +2935,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // Return ends its line, wherever on it the caret is (a break inside it
     // would split the row and dissolve the table), and the next line takes
     // the first body row. Every other row keeps its containers.
-    if (row.tableRowBlock < 0) {
+    if (row.delimiterSource) {
       final m = _doc.model, line = m.lineOfUtf16(row.sourceStart);
       final end = projection.lineContentEnd(line);
       // The new line repeats the delimiter row's container prefix.
@@ -3617,8 +3618,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// A bare `#` is projected as authoring text, but it is still the parser's
   /// heading: a level command has to replace that marker, not prepend to it.
   bool _isBareHeading(ProjectedRow row) =>
-      row.kind == RowKind.paragraph &&
-      row.block >= 0 &&
+      projection.isBarePrefix(row) &&
       _doc.model.blockKind(row.block) == BlockKind.heading;
 
   bool _setHeading(int level) {

@@ -21,6 +21,7 @@ import 'package:characters/characters.dart';
 import '../parse/render_model.dart';
 import '../parse/schema.g.dart';
 import 'continuation.dart';
+import 'row_queries.dart';
 
 /// Inline style bits carried by a segment.
 abstract final class Style {
@@ -254,7 +255,9 @@ final class ProjectedRow {
   int get index => _index;
   final RowKind kind;
 
-  /// The block this row projects, or -1 for a blank row; definitions use -1 too.
+  /// The block this row projects; for a bare prefix shown as text, the
+  /// heading or item it starts. -1 for a blank row, a definition and a
+  /// table's delimiter line shown as its source.
   final int block;
   final int firstLine, lineCount;
   final String text;
@@ -283,9 +286,7 @@ final class ProjectedRow {
   /// caret's typing context.
   int sourceForDisplay(int offset, {Anchor anchor = Anchor.after}) {
     if (segments.isEmpty) {
-      return fenced && contentStarts.every((start) => start < 0)
-          ? sourceEnd
-          : sourceStart;
+      return bodyless ? sourceEnd : sourceStart;
     }
     final o = offset.clamp(0, text.length);
     for (var i = 0; i < segments.length; i++) {
@@ -420,9 +421,7 @@ final class Projection {
       if (s >= 0) out.add((s, e < s ? s : e));
       // An imported fence may have no body line. Give its empty displayed row
       // one anchor; its first insertion creates the body transactionally.
-      if (row.fenced &&
-          row.contentStarts.every((start) => start < 0) &&
-          line == model.lineOfUtf16(row.sourceEnd)) {
+      if (row.bodyless && line == model.lineOfUtf16(row.sourceEnd)) {
         out.add((row.sourceEnd, row.sourceEnd));
       }
     }
@@ -430,18 +429,7 @@ final class Projection {
     return out;
   }
 
-  int _lineEnd(int l) {
-    final start = model.lineStartUtf16(l);
-    var e = l + 1 < model.lineCount
-        ? model.lineStartUtf16(l + 1)
-        : source.length;
-    while (e > start &&
-        (source.codeUnitAt(e - 1) == 0x0A ||
-            source.codeUnitAt(e - 1) == 0x0D)) {
-      e--;
-    }
-    return e;
-  }
+  int _lineEnd(int l) => _lineEndOf(model, source, l);
 
   /// Whether the parser supplied a cell absent from the source row.
   bool isMissingCell(int? index) {
@@ -489,6 +477,17 @@ final class Projection {
     final (offset, snapped) = rows[best].displayForSource(source);
     return DisplayPosition(best, offset, snapped: snapped);
   }
+}
+
+/// Where line [l] of [src] ends, excluding its terminator.
+int _lineEndOf(RenderModel m, String src, int l) {
+  final start = m.lineStartUtf16(l);
+  var e = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : src.length;
+  while (e > start &&
+      (src.codeUnitAt(e - 1) == 0x0A || src.codeUnitAt(e - 1) == 0x0D)) {
+    e--;
+  }
+  return e;
 }
 
 final class _Builder {
@@ -1508,16 +1507,7 @@ final class _Builder {
     }
   }
 
-  /// Line end excluding the terminator.
-  int _lineEnd(int l) {
-    final start = m.lineStartUtf16(l);
-    var e = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : src.length;
-    while (e > start &&
-        (src.codeUnitAt(e - 1) == 0x0A || src.codeUnitAt(e - 1) == 0x0D)) {
-      e--;
-    }
-    return e;
-  }
+  int _lineEnd(int l) => _lineEndOf(m, src, l);
 
   List<int> _lineEnds(int first, int n) => [
     for (var l = first; l < first + n && l < m.lineCount; l++) _lineEnd(l),
