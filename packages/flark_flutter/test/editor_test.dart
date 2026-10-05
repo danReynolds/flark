@@ -1,4 +1,6 @@
 import 'package:flark_flutter/flark_flutter_legacy.dart';
+import 'package:flark_flutter/src/surface.dart';
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -503,6 +505,55 @@ void main() {
     expect(c.editor.history.canUndo, isFalse);
     c.dispose();
   });
+
+  for (final ending in ['a toolbar button', 'a click']) {
+    testWidgets('a composition that $ending ends says why typing withdrew it', (
+      tester,
+    ) async {
+      // As above, typing refuses the backslash composed before the cell's
+      // delimiter. Here a command ends the composition and applies, and the
+      // notice still says why the composed text went.
+      const table = '| a | b |\n| - | - |\n| 1| 2 |';
+      final c = FlarkController(FlarkEditor(backend, text: table, caret: 23));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (final preedit in ['x', r'\']) {
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: table.replaceRange(23, 23, preedit),
+            selection: const TextSelection.collapsed(offset: 24),
+            composing: const TextRange(start: 23, end: 24),
+          ),
+        );
+        await tester.pump();
+      }
+      expect(c.editor.composing, isTrue);
+      expect(c.notice, isNull);
+      if (ending == 'a toolbar button') {
+        await tester.tap(find.byTooltip('Bold'));
+      } else {
+        final surface = tester.renderObject<RenderFlarkSurface>(
+          find.byType(FlarkSurface),
+        );
+        await tester.tapAt(
+          surface.localToGlobal(surface.caretRectAt(2).center),
+        );
+      }
+      // Past the double tap's timeout, which a lone tap leaves running.
+      await tester.pump(kDoubleTapTimeout);
+      expect((c.text, c.editor.composing), (table, false));
+      expect(c.notice, 'This edit needs source mode.');
+      expect(find.text('This edit needs source mode.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  }
 
   TextEditingValue composing(String text, int caret, [TextRange? range]) =>
       TextEditingValue(
