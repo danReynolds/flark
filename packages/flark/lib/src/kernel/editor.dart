@@ -723,9 +723,12 @@ final class FlarkEditor implements FlarkDocumentState {
     if (newSource == source && _cellOrigin == null) {
       // Its check still holds, of the document as it is with the selection
       // moved, or the edit is not kept: unchanged is not done.
+      final read = accept == null || sourceMode
+          ? null
+          : _doc.withSelection(sel);
       if (accept != null &&
-          (sourceMode ? !acceptSourceMode : !accept(_doc.withSelection(sel)))) {
-        return _NotKept(passedOver: sourceMode);
+          (read == null ? !acceptSourceMode : !accept(read))) {
+        return _NotKept(passedOver: sourceMode, read: read);
       }
       final moved = sourceMode ? _selectSource(sel) : _select(sel);
       _inert = !moved;
@@ -767,7 +770,7 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     if (accept != null) {
       if (next is FlarkLiveSnapshot) {
-        if (!accept(next.document)) return const _NotKept();
+        if (!accept(next.document)) return _NotKept(read: next.document);
       } else if (!acceptSourceMode) {
         return const _NotKept(passedOver: true);
       }
@@ -1348,53 +1351,44 @@ final class FlarkEditor implements FlarkDocumentState {
     if (outcome == null) {
       // Text completing block markup can hide the caret's own line, which
       // sends the caret to another: a table's delimiter row, or a fence's
-      // opening line. Text kept but for the line it hides tries the
-      // respellings that keep the line (see [_unhideLine]), and failing them
-      // goes in as typed. [hides] says why the text was not kept, which the
-      // outcome does not.
-      var hides = false;
-      bool accept(FlarkDocument next, {bool hiding = true}) {
-        if (cells != null &&
-                !_showsTableRow(next, normalized.caret, row.column, cells) ||
-            kept != null &&
-                !_showsTableRow(
-                  next,
-                  normalized.caret,
-                  row.column,
-                  kept,
-                  edited: true,
-                )) {
-          return false;
-        }
-        if (gap.isNotEmpty &&
-            !_keepsStructure(
-              next,
-              Edits([(start, end, '$inserted$gap')]),
-              const {},
-            )) {
-          return false;
-        }
-        if (!wraps(next, at)) return false;
-        final m = next.model;
-        hides =
-            hiding &&
-            one &&
-            row.kind != RowKind.tableCell &&
-            m.lineOfUtf16(next.selection.extent) !=
-                m.lineOfUtf16(normalized.caret);
-        return !hides;
-      }
+      // opening line. Text the parser reads as kept but for the line it
+      // hides tries the respellings that keep the line (see [_unhideLine]),
+      // and failing them goes in as typed.
+      bool accept(FlarkDocument next) =>
+          (cells == null ||
+              _showsTableRow(next, normalized.caret, row.column, cells)) &&
+          (kept == null ||
+              _showsTableRow(
+                next,
+                normalized.caret,
+                row.column,
+                kept,
+                edited: true,
+              )) &&
+          (gap.isEmpty ||
+              _keepsStructure(
+                next,
+                Edits([(start, end, '$inserted$gap')]),
+                const {},
+              )) &&
+          wraps(next, at);
+      bool keepsLine(FlarkDocument next) =>
+          !one ||
+          row.kind == RowKind.tableCell ||
+          next.model.lineOfUtf16(next.selection.extent) ==
+              next.model.lineOfUtf16(normalized.caret);
 
       outcome = _attempt(
         normalized.text,
         FlarkSelection.collapsed(normalized.caret),
         pending: normalized.pending,
         coalesce: one,
-        accept: accept,
+        accept: (next) => accept(next) && keepsLine(next),
         acceptSourceMode: cells == null,
         completeTypedFence: fence,
       );
-      if (outcome is _NotKept && hides) {
+      final read = outcome is _NotKept ? outcome.read : null;
+      if (read != null && !keepsLine(read) && accept(read)) {
         outcome = _unhideLine(row, at, end - start, normalized, typed);
         if (outcome is _NotKept || outcome is _Unchanged) {
           outcome = _attempt(
@@ -1403,7 +1397,7 @@ final class FlarkEditor implements FlarkDocumentState {
             pending: normalized.pending,
             coalesce: one,
             acceptSourceMode: true,
-            accept: (next) => accept(next, hiding: false),
+            accept: accept,
           );
         }
       }
@@ -4174,11 +4168,13 @@ final class _Unchanged extends _Outcome {
 /// No spelling read as it must, and the parser refused none but respellings,
 /// which are passed over. [passedOver]: a spelling went unchecked past the
 /// live tier, or, from the search, a respelling past the live tier or a
-/// refused one.
+/// refused one. [read]: the document a check found wanting, from an attempt
+/// that checked one.
 final class _NotKept extends _Outcome {
-  const _NotKept({this.passedOver = false});
+  const _NotKept({this.passedOver = false, this.read});
 
   final bool passedOver;
+  final FlarkDocument? read;
 }
 
 /// The parser refused the edit: its source was not valid, past the
