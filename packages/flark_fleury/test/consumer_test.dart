@@ -99,6 +99,37 @@ void main() {
     tester.dispose();
   });
 
+  for (final (name, markdown, shown) in [
+    (
+      'an emoji at its cut',
+      '${'x' * 1023}\u{1F600}${'x' * 20000}',
+      '\u{1F600}',
+    ),
+    ('an unpaired surrogate as U+FFFD', 'a\uD800b ${'x' * 20000}', '\uFFFD'),
+  ]) {
+    test('the source fallback shows $name', () async {
+      // A 20,000-unit line is past the live shape limit, so the reader shows
+      // the opening of the source. Cut between its halves, the emoji showed
+      // as nothing, and so did an unpaired surrogate.
+      final tester = FleuryTester(viewportSize: const CellSize(100, 40));
+      tester.pumpWidget(
+        FleuryApp(
+          title: 'Reader',
+          home: FlarkMarkdown(markdown: markdown),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      tester.render();
+      final screen = tester.renderToString();
+      expect(
+        screen,
+        contains('Rendered preview unavailable for this document.'),
+      );
+      expect(screen, contains(shown));
+      tester.dispose();
+    });
+  }
+
   test('a reader paints a first image as any other, its label only while '
       'selected', () async {
     // An editor shows a standalone image's label while its caret is at the
