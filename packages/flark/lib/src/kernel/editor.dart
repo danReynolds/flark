@@ -2205,7 +2205,7 @@ final class FlarkEditor implements FlarkDocumentState {
     // block's boundary. Only an empty line or a rule directly above can go.
     if (row.fenced && row.text.isNotEmpty) {
       return row.index > 0 &&
-          _removeLineAbove(projection.rows[row.index - 1], row);
+          _removeLineAbove(projection.rows[row.index - 1], row) is _Committed;
     }
     final i = row.nearestLineIndexOf(_doc.model, selection.extent);
     final line = row.firstLine + i;
@@ -2263,7 +2263,7 @@ final class FlarkEditor implements FlarkDocumentState {
       // The blocks after the rule stay in containers of the same kinds, and
       // keep their kinds.
       final start = row.sourceStart, end = row.sourceEnd;
-      if (_commit(
+      final removed = _attempt(
         source.replaceRange(start, end, ''),
         FlarkSelection.collapsed(start),
         coalesce: false,
@@ -2275,9 +2275,8 @@ final class FlarkEditor implements FlarkDocumentState {
           movesText: false,
           shells: true,
         ),
-      )) {
-        return true;
-      }
+      );
+      if (removed is _Committed) return true;
       // A blank line belongs to whichever container its neighbors give it,
       // so the first row that is not one is the block that counts.
       final following = projection.rows
@@ -2290,8 +2289,8 @@ final class FlarkEditor implements FlarkDocumentState {
       // move into it. The rule's whole line goes instead, marker and all, as
       // Delete on the rule takes it.
       return following?.index == 1 &&
-          _lastRejection == null &&
-          _removeLineAbove(row, following!);
+          removed is! _Refused &&
+          _removeLineAbove(row, following!) is _Committed;
     }
     final prev = projection.rows[row.index - 1];
     return _joinRows(prev, row);
@@ -2330,7 +2329,7 @@ final class FlarkEditor implements FlarkDocumentState {
     final next = projection.rows[row.index + 1];
     // As in _joinBackward, no join crosses the opening fence of code.
     if (next.fenced && next.text.isNotEmpty) {
-      return _removeLineAbove(row, next);
+      return _removeLineAbove(row, next) is _Committed;
     }
     return _joinRows(row, next);
   }
@@ -2375,11 +2374,12 @@ final class FlarkEditor implements FlarkDocumentState {
     // its own containers. A row that displays nothing joins as usual, which
     // removes that row.
     if (empty(left) && (right.text.isNotEmpty || right.fenced)) {
-      if (_removeLineAbove(left, right)) return true;
+      final removed = _removeLineAbove(left, right);
+      if (removed is _Committed) return true;
       // A rule that opens an item takes the item's marker with its line, so
       // the next row joins the rule's line instead, staying in that item.
       return left.kind == RowKind.thematicBreak &&
-          _lastRejection == null &&
+          removed is! _Refused &&
           _joinContent(left.sourceStart, to, _checkedKind(right.kind), {
             left.index,
           });
@@ -2433,16 +2433,16 @@ final class FlarkEditor implements FlarkDocumentState {
   /// same kinds keeps its text: its own lines are untouched, and only the
   /// line opening an item could change their columns, which takes the code
   /// out of that item.
-  bool _removeLineAbove(ProjectedRow above, ProjectedRow row) {
+  _Outcome _removeLineAbove(ProjectedRow above, ProjectedRow row) {
     if ((above.kind != RowKind.blank && above.kind != RowKind.thematicBreak) ||
         above.firstLine + above.lineCount != row.firstLine) {
-      return false;
+      return const _NotKept();
     }
     final m = _doc.model;
     final start = lineStartPastMark(source, m, above.firstLine);
     final end = m.lineStartUtf16(row.firstLine);
     final caret = _firstCaretStart(row) - (end - start);
-    return _commit(
+    return _attempt(
       source.replaceRange(start, end, ''),
       FlarkSelection.collapsed(caret),
       coalesce: false,
