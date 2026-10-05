@@ -1093,6 +1093,7 @@ final class _Author {
         expect(matrix.stateOf(editor), before, reason: '$label: withdrawn');
       } else if (composed.isNotEmpty) {
         final typed = InsertText(composed);
+        matrix.checkStructure(start, typed, editor, label, backend);
         checkCaretInEdit(start, typed, editor, label);
         checkVisibleEdit(start, typed, editor, label);
         checkEditKeepsRows(start, typed, editor, label);

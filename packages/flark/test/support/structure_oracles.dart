@@ -253,6 +253,9 @@ void checkStructure(
   FlarkParseBackend backend,
 ) {
   if (before is! FlarkLiveSnapshot || editor.sourceMode) return;
+  // A preedit keeps Markdown's literal meaning until its composition
+  // commits, which is checked then as the typing it is.
+  if (editor.composing) return;
   final old = before.document, next = editor.document;
   // History restores a state the sequence already reached, which the
   // history walk checks; it is not an edit with a locality of its own.
