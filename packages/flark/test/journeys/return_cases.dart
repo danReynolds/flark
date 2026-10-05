@@ -11,6 +11,17 @@ void _returnCases(FlarkParseBackend backend) {
   ];
 
   group('rows', () {
+    test('Return before a heading\'s closing sequence in an item', () {
+      // An escape the split tried fell in the closing sequence it moved;
+      // that spelling is passed over and the item continues after it.
+      const source =
+          '  10.  foo[\r\n\r\n  11. ##### *&amp;😀\t😀 #\r\n\r\n'
+          '           bar\r\n';
+      for (var caret = 36; caret <= 41; caret++) {
+        _Session(backend, source: source, caret: caret).act(const Newline());
+      }
+    });
+
     test('return on an empty item with nested items leaves no line deeper', () {
       // Leaving the empty item would leave its nested items to the item
       // before it, and the line Return makes between them: nested deeper

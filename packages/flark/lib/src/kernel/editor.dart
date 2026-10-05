@@ -3245,7 +3245,10 @@ final class FlarkEditor implements FlarkDocumentState {
       bool plain = false,
     }) {
       if (!_disjoint(list)) {
-        assert(false, 'Return spliced overlapping edits $list');
+        // An alternative's escape can fall in what the split moves (`#` of
+        // a heading's closing sequence): that spelling is passed over. The
+        // plain split's own edits never overlap.
+        assert(!plain, 'Return spliced overlapping edits $list');
         return false;
       }
       final out = StringBuffer();
