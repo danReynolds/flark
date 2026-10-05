@@ -1770,9 +1770,8 @@ final class FlarkEditor implements FlarkDocumentState {
     bool typing,
   ) {
     final row = _doc.rowAt(start), m = _doc.model, rows = projection.rows;
-    int lineOf(int offset) =>
-        (m.lineOfUtf16(offset) - row.firstLine).clamp(0, row.lineCount - 1);
-    final top = lineOf(start), bottom = lineOf(end);
+    final top = row.nearestLineIndexOf(m, start),
+        bottom = row.nearestLineIndexOf(m, end);
     final at = lineStartPastMark(source, m, row.firstLine + top);
     final cs = row.contentStarts[top], ce = row.contentEnds[bottom];
     final a = row.displayForSource(start).$1, b = row.displayForSource(end).$1;
@@ -1944,7 +1943,7 @@ final class FlarkEditor implements FlarkDocumentState {
         // container prefix, which would otherwise follow it as text.
         if (text.codeUnitAt(first++) != 0x0A) continue;
         final row = _doc.rowAt(o.start);
-        final l = _doc.model.lineOfUtf16(first + removed) - row.firstLine;
+        final l = row.lineIndexOf(_doc.model, first + removed);
         final resume = l >= 0 && l < row.lineCount
             ? row.contentStarts[l] - removed
             : -1;
@@ -2110,10 +2109,7 @@ final class FlarkEditor implements FlarkDocumentState {
       return row.index > 0 &&
           _removeLineAbove(projection.rows[row.index - 1], row);
     }
-    final i = (_doc.model.lineOfUtf16(selection.extent) - row.firstLine).clamp(
-      0,
-      row.contentStarts.length - 1,
-    );
+    final i = row.nearestLineIndexOf(_doc.model, selection.extent);
     final line = row.firstLine + i;
     final prefixStart = row.prefixStarts[i],
         contentStart = row.contentStarts[i];
@@ -2888,7 +2884,7 @@ final class FlarkEditor implements FlarkDocumentState {
     if (m.lineOfUtf16(end) != line) {
       return _splitInline(row, start, end, separator);
     }
-    final first = m.lineOfUtf16(start) - row.firstLine;
+    final first = row.lineIndexOf(m, start);
     // Text on the split's first line before it, and text after it. Display
     // offsets count what is shown, so hidden delimiters are neither.
     final before =
@@ -2987,8 +2983,6 @@ final class FlarkEditor implements FlarkDocumentState {
     final left = <String>[], right = <String>[];
     var leftSpace = '', rightSpace = '';
     final m = _doc.model;
-    int lineOf(int offset) =>
-        (m.lineOfUtf16(offset) - row.firstLine).clamp(0, row.lineCount - 1);
     String? lazyPrefix;
     // The line break before line [i] of the row and its container prefix,
     // from [a] to [b]. A lazy line has no prefix of its own: it gets the
@@ -3026,7 +3020,7 @@ final class FlarkEditor implements FlarkDocumentState {
       // delimiters stay on their text's lines.
       if (shared.isNotEmpty && shared.last.kind != RunKind.code) {
         while (from > shared.first.contentStart) {
-          final i = lineOf(from);
+          final i = row.nearestLineIndexOf(m, from);
           if (from > row.contentStarts[i] && _isBlank(source, from - 1)) {
             leftSpace = source.substring(from - 1, from) + leftSpace;
             from--;
@@ -3042,7 +3036,7 @@ final class FlarkEditor implements FlarkDocumentState {
           grew = true;
         }
         while (to < shared.first.contentEnd) {
-          final i = lineOf(to);
+          final i = row.nearestLineIndexOf(m, to);
           if (to < row.contentEnds[i] && _isBlank(source, to)) {
             rightSpace += source.substring(to, to + 1);
             to++;
@@ -3124,8 +3118,7 @@ final class FlarkEditor implements FlarkDocumentState {
   }) {
     final m = _doc.model, at = split.first, rows = projection.rows;
     final offset = caret ?? at.$3.length;
-    final first = m.lineOfUtf16(start) - row.firstLine,
-        last = m.lineOfUtf16(end) - row.firstLine;
+    final first = row.lineIndexOf(m, start), last = row.lineIndexOf(m, end);
     int shown(int offset) => row.displayForSource(offset).$1;
     final prefix = row.shells.isEmpty ? '' : _rowPrefix(row, row.firstLine);
     final lazy = [

@@ -641,8 +641,8 @@ extension _CodeEditing on FlarkEditor {
       outdent ? CodeEditingAction.outdent : CodeEditingAction.indent,
     );
     if (delegated != null) return delegated;
-    final first = _doc.model.lineOfUtf16(selection.start) - row.firstLine;
-    var last = _doc.model.lineOfUtf16(selection.end) - row.firstLine;
+    final first = row.lineIndexOf(_doc.model, selection.start);
+    var last = row.lineIndexOf(_doc.model, selection.end);
     if (row.contentStarts[first] < 0 || row.contentStarts[last] < 0) {
       return false;
     }

@@ -62,6 +62,17 @@ extension RowQueries on ProjectedRow {
     return true;
   }
 
+  /// The index into this row's per-line lists ([ProjectedRow.contentStarts]
+  /// and the others) of the line of [model] that holds source [offset]:
+  /// negative before the row's first line, [ProjectedRow.lineCount] or more
+  /// after its last.
+  int lineIndexOf(RenderModel model, int offset) =>
+      model.lineOfUtf16(offset) - firstLine;
+
+  /// [lineIndexOf], held to the row's own lines.
+  int nearestLineIndexOf(RenderModel model, int offset) =>
+      lineIndexOf(model, offset).clamp(0, lineCount - 1);
+
   /// Whether this row's containers, outermost first, are of the kinds that
   /// [other]'s start with. [other] has at least as many.
   bool _kindsLead(ProjectedRow other) {

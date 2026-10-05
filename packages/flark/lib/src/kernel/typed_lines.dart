@@ -670,7 +670,7 @@ extension _TypedLines on FlarkEditor {
     final from = projection.isBarePrefix(row) ? row.sourceStart : typedAt;
     // Only a paragraph's line reads on lazily: any other row in a container
     // carries its prefix.
-    final k = next.model.lineOfUtf16(caret) - typedRow.firstLine;
+    final k = typedRow.lineIndexOf(next.model, caret);
     final prefixed =
         typedRow.kind != RowKind.paragraph ||
         k >= 0 &&
@@ -764,7 +764,7 @@ extension _TypedLines on FlarkEditor {
     int filled,
   ) {
     if (filled < 0 || holder.shells.length <= old.shells.length) return false;
-    final k = next.model.lineOfUtf16(at) - holder.firstLine;
+    final k = holder.lineIndexOf(next.model, at);
     if (holder.kind == RowKind.paragraph &&
         (k < 0 ||
             k >= holder.prefixStarts.length ||
