@@ -275,4 +275,60 @@ void main() {
     await t.pumpWidget(const SizedBox());
     c.dispose();
   });
+
+  // The toolbar reads the FlarkState a consumer is given. Without a session,
+  // the paragraph style menu followed the caret's row alone, and applied a
+  // heading to it from a selection across rows that the state refuses.
+  for (final (rows, source, label) in [
+    ('two paragraphs', 'one\n\ntwo', 'Paragraph'),
+    ('a heading and a paragraph', '# one\n\ntwo', 'Mixed'),
+  ]) {
+    testWidgets(
+      'a selection across $rows leaves the paragraph style menu off',
+      (t) async {
+        final c = FlarkController(FlarkEditor(backend, text: source));
+        await t.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: FlarkEditorWidget(controller: c)),
+          ),
+        );
+        c.command(SetSelection(0, source.length));
+        await t.pump();
+        expect(
+          t
+              .widget<PopupMenuButton<int>>(find.byType(PopupMenuButton<int>))
+              .enabled,
+          isFalse,
+        );
+        expect(find.text(label), findsOneWidget);
+        await t.pumpWidget(const SizedBox());
+        c.dispose();
+      },
+    );
+  }
+
+  testWidgets(
+    'a selection reaching into a fence leaves its language menu off',
+    (t) async {
+      const source = 'intro\n\n```dart\nmain\n```';
+      final inside = source.indexOf('main') + 2;
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FlarkEditorWidget(controller: c)),
+        ),
+      );
+      PopupMenuButton<String> menu() => t.widget<PopupMenuButton<String>>(
+        find.byType(PopupMenuButton<String>),
+      );
+      c.command(SetSelection(0, inside));
+      await t.pump();
+      expect(menu().enabled, isFalse);
+      c.command(SetSelection.caret(inside));
+      await t.pump();
+      expect(menu().enabled, isTrue);
+      await t.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
 }

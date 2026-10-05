@@ -1325,12 +1325,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     super.dispose();
   }
 
-  Widget _styleButton(String label, IconData icon, int style) {
-    final publicStyle = FlarkStyle.values.firstWhere(
-      (value) => value.kernelStyle == style,
-    );
-    final state =
-        widget.actions?.state.styles[publicStyle] ?? c.styleState(style);
+  Widget _styleButton(
+    String label,
+    IconData icon,
+    FlarkStyle style,
+    FlarkStyleState state,
+  ) {
     final colors = Theme.of(context).colorScheme;
     return MergeSemantics(
       child: Semantics(
@@ -1369,7 +1369,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
             onPressed: widget.readOnly || !state.canToggle
                 ? null
                 : () {
-                    _command(SetStyle(style, enabled: !state.isOn));
+                    _command(SetStyle(style.kernelStyle, enabled: !state.isOn));
                     _focus.requestFocus();
                   },
             icon: state.isMixed
@@ -1399,13 +1399,23 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       overrides: widget.theme,
       bodyStyle: widget.style,
     );
-    final codeRow = !e.sourceMode ? e.document.rowAt(e.selection.extent) : null;
-    final info = codeRow?.fenced == true
-        ? e.source.substring(codeRow!.codeInfoStart, codeRow.codeInfoEnd)
-        : '';
-    final codeLanguage = codeMirrorLanguageName(info);
-    final detected = codeRow?.fenced == true && codeLanguage.isEmpty
-        ? e.codeEditing?.resolveLanguage(codeRow!.text, info)
+    // The toolbar's one model of what it can do: the session's publication
+    // when there is one, otherwise the same state built from the editor, so
+    // its availability never differs from what a consumer is told.
+    final state =
+        widget.session?.state ??
+        FlarkState(
+          markdown: e.source,
+          revision: e.revision,
+          status: FlarkStatus.ready,
+          error: null,
+          editor: e,
+        );
+    // The caret's fence's info string, or null outside fenced code.
+    final info = state.code.language;
+    final codeLanguage = codeMirrorLanguageName(info ?? '');
+    final detected = info != null && codeLanguage.isEmpty
+        ? e.codeEditing?.resolveLanguage(e.document.caretRow.text, info)
         : null;
     // The languages the editor's delegate highlights, or every ported one.
     final delegate = e.codeEditing;
@@ -1418,11 +1428,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
       'text': 'Plain text',
     };
     final detectedLabel = codeLanguages[detected];
-    final headingFormatting =
-        codeRow != null &&
-        (codeRow.kind == RowKind.paragraph ||
-            codeRow.kind == RowKind.heading ||
-            (codeRow.kind == RowKind.blank && e.selection.isCollapsed));
+    final heading = state.heading;
     void captureMenu() => _toolbarMenuTarget = (c, e.revision, e.selection);
     bool menuActive() {
       final target = _toolbarMenuTarget;
@@ -1448,9 +1454,10 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
             child: Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (codeRow?.fenced == true)
+                if (info != null)
                   PopupMenuButton<String>(
                     tooltip: 'Code language',
+                    enabled: state.code.canSetLanguage,
                     onOpened: captureMenu,
                     initialValue: codeLanguage,
                     onSelected: (language) {
@@ -1499,9 +1506,8 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 PopupMenuButton<int>(
                   tooltip: 'Paragraph style',
                   onOpened: captureMenu,
-                  enabled:
-                      widget.actions?.state.heading.canSet ?? headingFormatting,
-                  initialValue: codeRow?.headingLevel ?? 0,
+                  enabled: heading.canSet,
+                  initialValue: heading.level,
                   onSelected: (level) {
                     if (menuActive()) _command(SetHeadingLevel(level));
                     _focus.requestFocus();
@@ -1522,31 +1528,33 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          codeRow?.kind == RowKind.heading
-                              ? 'Heading ${codeRow!.headingLevel}'
-                              : 'Paragraph',
-                        ),
+                        Text(switch (heading.level) {
+                          final level? when level > 0 => 'Heading $level',
+                          _ when heading.isMixed => 'Mixed',
+                          _ => 'Paragraph',
+                        }),
                         const Icon(Icons.arrow_drop_down, size: 18),
                       ],
                     ),
                   ),
                 ),
-                _styleButton('Bold', Icons.format_bold, Style.strong),
-                _styleButton('Italic', Icons.format_italic, Style.emphasis),
-                _styleButton(
-                  'Strikethrough',
-                  Icons.format_strikethrough,
-                  Style.strikethrough,
-                ),
-                _styleButton('Inline code', Icons.code, Style.code),
+                for (final (label, icon, style) in const [
+                  ('Bold', Icons.format_bold, FlarkStyle.bold),
+                  ('Italic', Icons.format_italic, FlarkStyle.italic),
+                  (
+                    'Strikethrough',
+                    Icons.format_strikethrough,
+                    FlarkStyle.strikethrough,
+                  ),
+                  ('Inline code', Icons.code, FlarkStyle.inlineCode),
+                ])
+                  _styleButton(label, icon, style, state.styles[style]),
                 IconButton(
                   tooltip: 'Link',
                   icon: const Icon(Icons.link, size: 20),
-                  onPressed:
-                      !(widget.actions?.state.link.canSet ?? e.canSetResource())
-                      ? null
-                      : () => _editResource(false),
+                  onPressed: state.link.canSet
+                      ? () => _editResource(false)
+                      : null,
                 ),
                 IconButton(
                   tooltip: 'Image',
@@ -1557,8 +1565,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 ),
                 IconButton(
                   tooltip: 'Undo',
-                  onPressed:
-                      (widget.actions?.state.canUndo ?? e.history.canUndo)
+                  onPressed: state.canUndo
                       ? () {
                           _command(const Undo());
                           _focus.requestFocus();
@@ -1568,8 +1575,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 ),
                 IconButton(
                   tooltip: 'Redo',
-                  onPressed:
-                      (widget.actions?.state.canRedo ?? e.history.canRedo)
+                  onPressed: state.canRedo
                       ? () {
                           _command(const Redo());
                           _focus.requestFocus();
