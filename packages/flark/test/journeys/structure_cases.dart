@@ -1791,5 +1791,28 @@ void _structureCases(FlarkParseBackend backend) {
       session.act(const Indent(), applied: false, source: '> - a\n>-');
       expect(session.editor.lastRejection, isNull);
     });
+
+    test('a heading cleared of its level is a paragraph, or keeps it', () {
+      // Without its marker the heading's text must read as a paragraph in
+      // the same containers. Under a table it would be the table's next row,
+      // and `---`, `<div>`, a fence or a definition would be blocks of their
+      // own: as `# >` does, the heading keeps its level.
+      for (final (source, caret) in [
+        ('| a |\n| - |\n| b |\n# x', 20),
+        ('> | a |\n> | - |\n> | b |\n> # x', 28),
+        ('# ---', 2),
+        ('# <div>', 2),
+        ('a\n\n# ```', 5),
+        ('# [a]: /u', 2),
+      ]) {
+        for (final command in [
+          const DeleteBackward(),
+          const SetHeadingLevel(0),
+        ]) {
+          final session = _Session(backend, source: source, caret: caret);
+          session.act(command, applied: false, source: source);
+        }
+      }
+    });
   });
 }

@@ -3603,11 +3603,19 @@ final class FlarkEditor implements FlarkDocumentState {
       ],
       FlarkSelection(move(selection.base), move(selection.extent)),
       blockStart,
-      // The row stays in its containers: `# >` made a paragraph is a quote.
-      (next) =>
-          (next.rowAt(move(selection.extent)).kind == RowKind.heading) ==
-              (level > 0) &&
-          next.rowAt(move(selection.extent)).sameContainerKinds(row),
+      // A level makes the row a heading, and clearing one a paragraph, or an
+      // empty line where the heading had no text, in the same containers:
+      // `# >` made a paragraph is a quote, `# ---` a rule, and `# x` under a
+      // table the table's next row.
+      (next) {
+        final now = next.rowAt(move(selection.extent));
+        return (level > 0
+                ? now.kind == RowKind.heading
+                : now.kind == RowKind.paragraph ||
+                      now.kind == RowKind.blank &&
+                          (row.text.isEmpty || _isBareHeading(row))) &&
+            now.sameContainerKinds(row);
+      },
     );
   }
 
