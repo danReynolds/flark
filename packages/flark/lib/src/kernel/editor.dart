@@ -2584,23 +2584,25 @@ final class FlarkEditor implements FlarkDocumentState {
     if (b > textEnd) return false;
     final markup = kept == null ? '' : source.substring(kept.$1, kept.$2);
     final gap = markup.isEmpty || _isSpace(markup, 0) ? '' : ' ';
+    // The text moves ahead of [left]'s markup.
     final edits = Edits([(a, b, ''), (textEnd, lineEnd, '$gap$markup')]);
-    // The text moves ahead of [left]'s markup, which sorted edits can only
-    // count as new text, and the check passes over new text. Mapped back to
-    // where it was, the markup is checked like the text: hidden source the
-    // join must not paint.
+    // Sorted splices count one side of a move as new text, which the check
+    // passes over. Read with the markup in place and the text new instead,
+    // the markup maps back to where it was, and is checked like the text:
+    // hidden source the join must not paint.
+    final inPlace = kept == null
+        ? edits
+        : Edits([
+            (a, kept.$1, '${source.substring(b, textEnd)}$gap'),
+            (kept.$2, lineEnd, ''),
+          ]);
     int old(int offset) {
-      final o = offset - a, text = textEnd - b;
-      if (o < 0) return offset;
-      if (o < text) return b + o;
-      final m = o - text - gap.length;
-      if (m < 0) return -1;
-      return m < markup.length ? kept!.$1 + m : lineEnd + m - markup.length;
+      final text = edits.back(offset);
+      return text >= 0 ? text : inPlace.back(offset);
     }
 
     return _commit(
-      '${source.substring(0, a)}${source.substring(b, textEnd)}$gap$markup'
-      '${source.substring(lineEnd)}',
+      edits.apply(source),
       FlarkSelection.collapsed(a),
       coalesce: false,
       acceptSourceMode: true,
