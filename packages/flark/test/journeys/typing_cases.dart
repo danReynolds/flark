@@ -584,6 +584,29 @@ void _typingCases(FlarkParseBackend backend) {
       }
     });
 
+    test(
+      'ordinary text typed on a lazy line commits as on its other lines',
+      () {
+        // A backslash or backtick that changes a span is typed as it is on a
+        // lazy line, as on the paragraph's first line: the row stays the
+        // paragraph it was, in its containers, even as the span's delimiters
+        // show. The first case has no lazy line, for comparison.
+        for (final (source, caret, typed, edited, shown) in [
+          ('~~a\nb~~', 5, r'\', '~~a\nb\\~~', '~~a\nb~~'),
+          ('> ~~a\nb~~', 7, r'\', '> ~~a\nb\\~~', '~~a\nb~~'),
+          ('- ~~a\nb~~', 7, r'\', '- ~~a\nb\\~~', '~~a\nb~~'),
+          ('> *a\nb*', 6, r'\', '> *a\nb\\*', '*a\nb*'),
+          ('> `a\nb`', 6, '`', '> `a\nb``', '`a\nb``'),
+        ]) {
+          _Session(
+            backend,
+            source: source,
+            caret: caret,
+          ).act(InsertText(typed), source: edited, rows: [shown]);
+        }
+      },
+    );
+
     test('a heading level after definitions keeps them', () {
       // A paragraph whose block opens with definitions starts its row, and
       // so its heading, on its own first line.

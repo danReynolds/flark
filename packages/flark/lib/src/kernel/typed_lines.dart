@@ -97,7 +97,7 @@ extension _TypedLines on FlarkEditor {
     final nl = _lineBreakAt(at);
     final hasNext = line + 1 < m.lineCount;
     final spellings = <_Spelling>[];
-    var sameKind = false, quick = false, apart = false;
+    var sameKind = false, ordinary = false, apart = false;
     // Whether only the plain spelling must keep the row's kind.
     var plainKind = false;
     // [inserted] replaces [lineStart]..[at] with [before], [lead] and [after]
@@ -294,8 +294,11 @@ extension _TypedLines on FlarkEditor {
     } else if (lazy) {
       // A lazy line shows inside its containers without their prefix, so
       // block syntax typed on it would open the block outside them. Its
-      // ordinary text commits as it is; text that would move a block gets
-      // the prefix of the paragraph's first line.
+      // ordinary text commits as it is, as on the paragraph's other lines,
+      // even where it changes a span (a backslash before a closing `~~`):
+      // as typed, it need only leave the caret's row the paragraph it was,
+      // in its containers. Text that would move a block gets the prefix of
+      // the paragraph's first line.
       // The paragraph's first line is its block's, which can be earlier
       // than its row's when the block opens with link reference definitions
       // its row leaves out.
@@ -317,7 +320,7 @@ extension _TypedLines on FlarkEditor {
           ],
           typedAt: at + prefix.length,
         ));
-      quick = true;
+      ordinary = true;
     } else if (leading) {
       // Whitespace typed where a line's content starts is indentation or
       // marker padding Markdown does not show; it may not move a block.
@@ -363,7 +366,7 @@ extension _TypedLines on FlarkEditor {
       bool keeps(FlarkDocument next, List<(int, int, int)> edits, int caret) {
         read = true;
         return (wraps == null || wraps(next, s.typedAt)) &&
-            (quick &&
+            (ordinary &&
                     identical(s, spellings.first) &&
                     _sameRow(next, row, caret) ||
                 _keepsTyped(
