@@ -2003,7 +2003,8 @@ final class FlarkEditor implements FlarkDocumentState {
   // ---------------------------------------------------------- structure
 
   /// Backspace at a row start: lift the line's innermost prefix, else join
-  /// the previous row.
+  /// the previous row. Only a table row's cells share a line, and no join
+  /// reaches a cell, so the rows a join meets lie on lines of their own.
   bool _joinBackward(ProjectedRow row) {
     if (row.kind == RowKind.tableCell) return false;
     if (row.kind == RowKind.heading || _isBareHeading(row)) {
@@ -2016,9 +2017,7 @@ final class FlarkEditor implements FlarkDocumentState {
         return false;
       }
       final prev = projection.rows[row.index - 1];
-      return prev.kind != RowKind.tableCell &&
-          prev.firstLine + prev.lineCount <= row.firstLine &&
-          _joinRows(prev, row);
+      return prev.kind != RowKind.tableCell && _joinRows(prev, row);
     }
     if (row.fenced && row.text.isEmpty) {
       final block = _doc.model.blockAt(row.block);
@@ -2098,15 +2097,13 @@ final class FlarkEditor implements FlarkDocumentState {
                   now.shells.length <= row.shells.length;
         },
       );
-      if (lifted || _inert || _lastRejection != null) return lifted;
+      if (lifted || _lastRejection != null) return lifted;
       // An empty line whose prefix cannot go alone (without its `>`, the
       // line between two items of a quoted list would end the quote) goes
       // whole, as an empty line without a prefix joins the row before it.
       if (row.kind != RowKind.blank || row.index == 0) return false;
       final above = projection.rows[row.index - 1];
-      return above.kind != RowKind.tableCell &&
-          above.firstLine + above.lineCount <= row.firstLine &&
-          _joinRows(above, row);
+      return above.kind != RowKind.tableCell && _joinRows(above, row);
     }
     if (row.index == 0) {
       // Nothing precedes this row to join onto. A thematic break is the one
@@ -2149,17 +2146,16 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     final prev = projection.rows[row.index - 1];
     if (prev.kind == RowKind.tableCell) return false;
-    if (prev.firstLine + prev.lineCount > row.firstLine) return false;
     return _joinRows(prev, row);
   }
 
-  /// Delete at a row end: join the next row onto this one.
+  /// Delete at a row end: join the next row onto this one. [_delete] answers
+  /// the end of the last row as the document's edge ([_atDocumentEdge]), so
+  /// a next row follows.
   bool _joinForward(ProjectedRow row) {
     if (row.kind == RowKind.tableCell) return false;
-    if (row.index + 1 >= projection.rows.length) return false;
     final next = projection.rows[row.index + 1];
     if (next.kind == RowKind.tableCell) return false;
-    if (next.firstLine < row.firstLine + row.lineCount) return false;
     // As in _joinBackward, no join crosses the opening fence of code.
     if (next.fenced && next.text.isNotEmpty) {
       return _removeLineAbove(row, next);
