@@ -419,15 +419,20 @@ final class FlarkEditor implements FlarkDocumentState {
         : old.start >= end
         ? FlarkSelection(old.base + delta, old.extent + delta)
         : FlarkSelection.collapsed(start + text.length);
+    // As with any edit, a splice that leaves the source as it is has nothing
+    // to parse or undo: at most it moves the selection, and when it does not
+    // even do that it changes nothing, a pending style included.
+    if (nextSource == source) {
+      final moved = sourceMode
+          ? _selectSource(nextSelection)
+          : _select(nextSelection);
+      if (moved) _notify();
+      return moved;
+    }
     // Admission happens before composition/history changes. A rejected edit
     // must not commit a preedit or consume an undo step.
     final next = _admitSource(nextSource, nextSelection);
     if (next == null) return false;
-    if (nextSource == source &&
-        next.selection == selection &&
-        _pending == null) {
-      return false;
-    }
     // The splice's offsets are in the composed text as it stands.
     _endComposition(retype: false);
     history.recordState(
