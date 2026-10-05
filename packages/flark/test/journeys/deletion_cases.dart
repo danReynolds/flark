@@ -567,5 +567,67 @@ void _deletionCases(FlarkParseBackend backend) {
         expect(_shellsOf(session.editor), ['blockQuote', 'blockQuote']);
       },
     );
+
+    test('a byte order mark before an empty first row stays', () {
+      // comrak skips a leading byte order mark, so it is the document's, not
+      // a prefix of the first line: Backspace at that row's start has
+      // nothing to delete, as at the start of any first row.
+      final bom = String.fromCharCode(0xfeff);
+      for (final source in ['$bom\nb', bom]) {
+        final session = _Session(backend, source: source, caret: 1);
+        session.act(const DeleteBackward(), applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
+    });
+
+    test('a word deleted over an autolink takes its delimiters', () {
+      // The address is the word, and the hidden `<` and `>` go with it, as
+      // deleting all of an owner's text takes its delimiters.
+      final session = _Session(
+        backend,
+        source: 'see <http://a.b> now',
+        caret: 17,
+      );
+      session.act(
+        const DeleteBackward(word: true),
+        source: 'see now',
+        rows: ['see now'],
+      );
+      session.act(const Undo(), source: 'see <http://a.b> now');
+    });
+
+    test('deleting a paragraph\'s line break keeps it a paragraph', () {
+      // Without its line break, `[a]` and `: /u` would read as a link
+      // reference definition: the row would change kind, so Delete refuses.
+      final session = _Session(backend, source: '[a]\n: /u', caret: 3);
+      session.act(const DeleteForward(), applied: false, source: '[a]\n: /u');
+    });
+
+    test('emptying the last line of a quoted span takes its line break', () {
+      // Left on its line, the span's closing `*` would follow the quote's
+      // `>` and show as text, with the span's opening one. The emptied line
+      // goes with its line break instead, and the span closes after `foo`.
+      for (final (source, caret, deleted) in [
+        ('> *foo\n> b*', 11, '> *foo*'),
+        ('> **foo\n> b**', 13, '> **foo**'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteBackward(), source: deleted, rows: ['foo']);
+      }
+    });
+
+    test('emptying a definition goes ahead as Markdown reads the rest', () {
+      // Definitions are literal source, as HTML is: where no spelling keeps
+      // the rest as it was, a deletion that empties one goes ahead, here
+      // taking the definition that read on in the item out of it.
+      final session = _Session(backend, source: '- [a]: /u\n[b]: /v');
+      session.act(const SetSelection(2, 9));
+      session.act(
+        const DeleteBackward(),
+        source: '- \n[b]: /v',
+        rows: ['', '[b]: /v'],
+      );
+      expect(_shellsOf(session.editor), ['list/item', '']);
+    });
   });
 }

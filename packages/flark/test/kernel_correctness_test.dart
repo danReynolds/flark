@@ -60,6 +60,32 @@ final class _FailOnMarker implements FlarkParseBackend {
   void dispose() => delegate.dispose();
 }
 
+/// Reports an extraction deviation for one source, as the parse crate does
+/// for a document whose model it cannot verify against comrak.
+final class _DeviatesOn implements FlarkParseBackend {
+  _DeviatesOn(this.delegate, this.source);
+
+  final FlarkParseBackend delegate;
+  final String source;
+
+  @override
+  int get schemaVersion => delegate.schemaVersion;
+
+  @override
+  RenderModel parse(String text) {
+    if (text == source) {
+      throw const FlarkParseException(
+        FlarkParseException.extractionDeviationCode,
+        'synthetic extraction deviation',
+      );
+    }
+    return delegate.parse(text);
+  }
+
+  @override
+  void dispose() => delegate.dispose();
+}
+
 void main() {
   late FlarkParseBackend backend;
   setUpAll(() => backend = createParseBackend());
@@ -124,6 +150,21 @@ void main() {
       );
       editor.commitComposition();
       expect((editor.source, editor.history.canUndo), ('abck', true));
+    });
+
+    test('a deletion the parser cannot read is refused, not respelled', () {
+      // An extraction deviation refuses the edit as asked
+      // (EP1-RESULT-PRESENTATION-001). A respelling that would read (a blank
+      // line making `b` a paragraph of its own) is no way around it.
+      final editor = FlarkEditor(
+        _DeviatesOn(backend, 'a\nb'),
+        text: 'a\nbc',
+        caret: 4,
+      );
+      expect(editor.apply(const DeleteBackward()), isFalse);
+      expect(editor.lastRejection, FlarkRejection.extractionDeviation);
+      expect(editor.source, 'a\nbc');
+      expect(editor.history.canUndo, isFalse);
     });
 
     test('a published live snapshot cannot be mutated by its host', () {

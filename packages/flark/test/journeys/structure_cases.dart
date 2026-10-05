@@ -1723,5 +1723,73 @@ void _structureCases(FlarkParseBackend backend) {
         expect(session.editor.history.canUndo, isFalse, reason: source);
       }
     });
+
+    test('lifting an item\'s marker lifts the blocks inside it too', () {
+      // The blocks indented under the item leave it with its marker, as the
+      // profile lets them; no other block moves, so the lift goes ahead.
+      for (final (source, lifted, shells) in [
+        ('- a\n\n  b', 'a\n\n  b', ['', '', '']),
+        ('- a\n  - b', 'a\n  - b', ['', 'list/item']),
+      ]) {
+        final session = _Session(backend, source: source, caret: 2);
+        session.act(const DeleteBackward(), source: lifted);
+        expect(_shellsOf(session.editor), shells, reason: source);
+      }
+    });
+
+    test('removing the empty line above indented code keeps it code', () {
+      // Without the line, `    b` would read on as part of the paragraph
+      // above, and the code would change kind: Delete refuses.
+      final session = _Session(backend, source: 'a\n\n    b', caret: 2);
+      session.act(const DeleteForward(), applied: false, source: 'a\n\n    b');
+    });
+
+    test('delete at the end of code removes an empty fence after it', () {
+      // Joined onto the closing fence, the empty fence's lines would run
+      // the two fences together: it goes whole instead.
+      final session = _Session(
+        backend,
+        source: '```\na\n```\n```\n```\n',
+        caret: 5,
+      );
+      session.act(
+        const DeleteForward(),
+        source: '```\na\n```\n',
+        rows: ['a', ''],
+      );
+    });
+
+    test('delete on the empty line before an empty fence removes the line', () {
+      // Joined into the fence instead, the line break would take the
+      // opening fence's line with it.
+      for (final (source, removed) in [
+        ('a\n\n~~~\n\n~~~\n', 'a\n~~~\n\n~~~\n'),
+        ('a\n\n~~~\n', 'a\n~~~\n'),
+      ]) {
+        final session = _Session(backend, source: source, caret: 2);
+        session.act(const DeleteForward(), source: removed);
+      }
+    });
+
+    test('a join that would show a setext underline refuses', () {
+      // Joined after `## `, `Foo` would be the ATX heading's text, and its
+      // `=` underline a paragraph of its own, painted.
+      for (final (source, caret) in [
+        ('## \nFoo\n=\n', 3),
+        ('> ## \n> Foo\n> =\n', 5),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteForward(), applied: false, source: source);
+      }
+    });
+
+    test('indent that would not nest an empty item does nothing', () {
+      // `>-` gives its quote no space after the marker, so the columns
+      // Indent adds leave the empty item in its own list rather than under
+      // `a`: the key does nothing, with no refusal to report.
+      final session = _Session(backend, source: '> - a\n>-', caret: 8);
+      session.act(const Indent(), applied: false, source: '> - a\n>-');
+      expect(session.editor.lastRejection, isNull);
+    });
   });
 }

@@ -579,5 +579,36 @@ void _returnCases(FlarkParseBackend backend) {
         }
       }
     });
+
+    test('on an empty heading in a container opens a line after it', () {
+      // The empty heading's own marker is part of its line's prefix, so
+      // leaving the container, as on an empty line, would delete the heading.
+      for (final (source, continued) in [
+        ('> # ', '> # \n> '),
+        ('- # ', '- # \n- '),
+      ]) {
+        final session = _Session(backend, source: source, caret: source.length);
+        session.act(const Newline(), source: continued);
+      }
+    });
+
+    test('at the last row of a table in a container refuses', () {
+      // A table ends at a blank line, which would end the quote or item
+      // around it too, so Return there refuses rather than leave both.
+      for (final source in [
+        '> | a |\n> | - |\n> | b |',
+        '- | a |\n  | - |\n  | b |',
+      ]) {
+        final session = _Session(backend, source: source, caret: 22);
+        session.act(const Newline(), applied: false, source: source);
+      }
+    });
+
+    test('refuses where the new line would leave the row\'s containers', () {
+      // From inside a lazy line's leading spaces, the split would leave an
+      // empty line outside the quote and move `b` into other containers.
+      final session = _Session(backend, source: '> - > a\n  b', caret: 9);
+      session.act(const Newline(), applied: false, source: '> - > a\n  b');
+    });
   });
 }
