@@ -1934,7 +1934,14 @@ final class FlarkEditor implements FlarkDocumentState {
     // The deletion as asked, read as the removal of [start]..[end]: the
     // whitespace it moves out of a span's delimiters keeps the length.
     final asked = Edits([(start, end, '')]),
-        made = Edits.between(source, plain.text);
+        // The normalization moves whitespace only within the row and the
+        // range it deletes, so the comparison need not go past them.
+        made = Edits.between(
+          source,
+          plain.text,
+          from: start < row.sourceStart ? start : row.sourceStart,
+          to: end > row.sourceEnd ? end : row.sourceEnd,
+        );
     final deletion = Spelling(
       made,
       FlarkSelection.collapsed(plain.caret),

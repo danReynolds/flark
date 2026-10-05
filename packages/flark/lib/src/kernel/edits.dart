@@ -21,14 +21,22 @@ final class Edits {
   }
 
   /// The one edit that makes [now] from [was]: from where the two first
-  /// differ to where they last do.
-  factory Edits.between(String was, String now) {
+  /// differ to where they last do. A caller that knows the two agree before
+  /// [from] of [was] and from [to] of it on (with the rest of [now]) saves
+  /// comparing them there: on a long document, an edit within one row need
+  /// not compare the whole source.
+  factory Edits.between(String was, String now, {int from = 0, int? to}) {
     final shorter = was.length < now.length ? was.length : now.length;
-    var head = 0;
+    var head = from < shorter ? from : shorter;
+    assert(was.substring(0, head) == now.substring(0, head));
     while (head < shorter && was.codeUnitAt(head) == now.codeUnitAt(head)) {
       head++;
     }
-    var tail = 0;
+    var tail = to == null ? 0 : was.length - to;
+    if (tail > shorter - head) tail = shorter - head;
+    assert(
+      was.substring(was.length - tail) == now.substring(now.length - tail),
+    );
     while (tail < shorter - head &&
         was.codeUnitAt(was.length - 1 - tail) ==
             now.codeUnitAt(now.length - 1 - tail)) {
