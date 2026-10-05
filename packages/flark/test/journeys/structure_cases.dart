@@ -1607,6 +1607,21 @@ void _structureCases(FlarkParseBackend backend) {
       expect(inert.editor.lastRejection, isNull);
     });
 
+    test('outdenting code that steps by a tab takes a tab\'s columns', () {
+      // A snippet indented with tabs steps by a tab, which Markdown counts
+      // as four columns, as the code delegate does: a line indented with
+      // spaces loses up to four of them, not one.
+      const source = '```\n\tx\n      y\n```\n';
+      final session = _Session(backend, source: source);
+      session.act(const SetSelection(4, 14));
+      session.act(
+        const Outdent(),
+        source: '```\nx\n  y\n```\n',
+        rows: ['x\n  y', ''],
+        selection: const FlarkSelection(4, 9),
+      );
+    });
+
     test('indenting lines of code leaves their blank lines as they are', () {
       // A blank line in a quote or list item can lack part of the
       // container's prefix, which would absorb the indentation, so no blank

@@ -657,9 +657,10 @@ extension _CodeEditing on FlarkEditor {
         source.substring(at, row.contentEnds[i]),
       );
       if (leading.isEmpty) continue;
+      // A tab, or up to the step's columns of spaces: a tab step is four.
       final length = leading.startsWith('\t')
           ? 1
-          : leading.length.clamp(0, unit.length);
+          : leading.length.clamp(0, FlarkEditor._columns(unit, 0, unit.length));
       edits.add((at, at + length, ''));
     }
     // Indenting only blank lines changes nothing. Like every Indent or
