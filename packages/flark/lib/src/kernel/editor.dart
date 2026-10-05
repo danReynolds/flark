@@ -801,7 +801,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// respelling was passed over at a limit. What a spelling the parser
   /// refuses does to the search is [refusals]'s to say.
   _Outcome _commitSpellings(
-    List<Spelling> spellings,
+    Iterable<Spelling> spellings,
     bool Function(FlarkDocument next, Spelling spelling, Edits edits) keep, {
     required bool coalesce,
     _Tier tier = _Tier.asAsked,
@@ -3391,11 +3391,16 @@ final class FlarkEditor implements FlarkDocumentState {
     }
     // Failing faithful spellings, the caret can go before the delimiters the
     // split reopens, to the nearest place before its own where the line
-    // starts: the plain split at each place, nearest first.
-    final lineStarts = [
-      for (var o = offset - 1; o >= at.$3.lastIndexOf('\n') + 1; o--)
-        ?spellingOf(edits, at, o, asAsked: true),
-    ];
+    // starts. The plain split's check finds that place in the document it
+    // reads, where it fails for its caret alone; the split is then tried
+    // once more with its caret there.
+    int? lineStartAt;
+    Iterable<Spelling> candidates() sync* {
+      yield* spellings;
+      if (lineStartAt case final o?) {
+        if (spellingOf(edits, at, o, asAsked: true) case final s?) yield s;
+      }
+    }
 
     bool keeps(FlarkDocument next, Spelling spelling, Edits edits) {
       // Whether [caret] is in containers of the kinds of the line split. A
@@ -3436,29 +3441,26 @@ final class FlarkEditor implements FlarkDocumentState {
           )) {
         return false;
       }
-      // A place before the plain split's caret serves only where the plain
-      // split failed for its caret alone, in the containers but starting no
-      // line, and only the nearest place before it that starts one.
-      if (lineStarts.contains(spelling)) {
-        final own = plain!.selection.extent;
-        if (!contained(own)) return false;
-        for (var c = caret + 1; c <= own; c++) {
-          if (startsLine(c)) return false;
-        }
-      }
       if (defined) return true;
       // The caret starts the line Return made: a delimiter the split
       // reopens can pair with literal ones after it otherwise and leave
       // them before the caret (`*foo**bar*` split before the `**`).
-      if (!startsLine(caret)) return false;
+      if (!startsLine(caret)) {
+        if (identical(spelling, plain)) {
+          final floor = at.$3.lastIndexOf('\n') + 1;
+          for (var o = offset - 1; o >= floor; o--) {
+            if (startsLine(caret - (offset - o))) {
+              lineStartAt = o;
+              break;
+            }
+          }
+        }
+        return false;
+      }
       return showsBreak(next, apart: identical(spelling, apart));
     }
 
-    return _commitSpellings(
-      [...spellings, ...lineStarts],
-      keeps,
-      coalesce: false,
-    );
+    return _commitSpellings(candidates(), keeps, coalesce: false);
   }
 
   /// The marker line for the item after [item]: the same outer prefixes,
