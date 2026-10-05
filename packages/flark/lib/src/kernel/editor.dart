@@ -357,7 +357,7 @@ final class FlarkEditor implements FlarkDocumentState {
     ToggleTask() => _toggleTask(),
     ToggleStyle(:final style) => _setStyle(style, !styleState(style).isOn),
     SetStyle(:final style, :final enabled) => _setStyle(style, enabled),
-    SetHeadingLevel(:final level) => _setHeading(level),
+    SetHeadingLevel(:final level) => _setHeading(level) is _Committed,
     SetCodeLanguage(:final language) => _setCodeLanguage(language),
     SetLink(:final destination, :final text, :final title) => _setResource(
       false,
@@ -2156,12 +2156,13 @@ final class FlarkEditor implements FlarkDocumentState {
   bool _joinBackward(ProjectedRow row) {
     if (row.kind == RowKind.tableCell) return false;
     if (row.kind == RowKind.heading || _isBareHeading(row)) {
-      if (_setHeading(0)) return true;
+      final lifted = _setHeading(0);
+      if (lifted is _Committed) return true;
       // An empty heading whose marker cannot go without changing the block
       // before it (in a list, the emptied item's `- ` would underline the
       // paragraph above) goes with its line instead, as Delete at the end
       // of that paragraph takes it.
-      if (row.text.isNotEmpty || row.index == 0 || _lastRejection != null) {
+      if (row.text.isNotEmpty || row.index == 0 || lifted is _Refused) {
         return false;
       }
       final prev = projection.rows[row.index - 1];
@@ -2235,7 +2236,8 @@ final class FlarkEditor implements FlarkDocumentState {
                   now.shells.length <= row.shells.length;
         },
       );
-      if (lifted || _lastRejection != null) return lifted;
+      if (lifted is _Committed) return true;
+      if (lifted is _Refused) return false;
       // An empty line whose prefix cannot go alone (without its `>`, the
       // line between two items of a quoted list would end the quote) goes
       // whole, as an empty line without a prefix joins the row before it.
@@ -3651,31 +3653,31 @@ final class FlarkEditor implements FlarkDocumentState {
       projection.isBarePrefix(row) &&
       _doc.model.blockKind(row.block) == BlockKind.heading;
 
-  bool _setHeading(int level) {
-    if (level < 0 || level > 6) return false;
+  _Outcome _setHeading(int level) {
+    if (level < 0 || level > 6) return const _NotKept();
     final row = _doc.caretRow;
     if (row.kind == RowKind.blank && selection.isCollapsed) {
       // An empty line is no heading already: clearing its level has
       // nothing to do, as on a paragraph.
       if (level == 0) {
         _inert = true;
-        return false;
+        return const _Unchanged();
       }
       return _emptyLineHeading(row, level);
     }
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
-      return false;
+      return const _NotKept();
     }
     // A heading already at [level] needs nothing, however it is spelled:
     // rewriting a setext or closed heading as plain ATX would respell source
     // the user wrote and record an undo step that changes nothing shown.
     if (row.kind == RowKind.heading && row.headingLevel == level) {
       _inert = true;
-      return false;
+      return const _Unchanged();
     }
     final heading = row.kind == RowKind.heading || _isBareHeading(row);
     if (level > 0 && row.contentStarts.where((s) => s >= 0).length > 1) {
-      return !heading && _headFirstLine(row, level);
+      return heading ? const _NotKept() : _headFirstLine(row, level);
     }
     final m = _doc.model;
     // A paragraph whose block opens with link reference definitions starts
@@ -3721,7 +3723,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// whitespace, else the prefix that continues the containers (an item runs
   /// on over unindented empty lines), else goes on a line after this one
   /// (HTML runs to an empty line); the parser must show every row as it was.
-  bool _emptyLineHeading(ProjectedRow row, int level) {
+  _Outcome _emptyLineHeading(ProjectedRow row, int level) {
     final m = _doc.model, start = lineStartPastMark(source, m, row.firstLine);
     final end = row.sourceEnd, text = source.substring(start, end);
     String marked(String p) =>
@@ -3735,137 +3737,127 @@ final class FlarkEditor implements FlarkDocumentState {
       '$text${_lineBreakAt(end)}${marked(text.trimRight())}',
     };
     return _commitSpellings(
-          [
-            for (final (i, line) in lines.indexed)
-              Spelling.carrying(
-                Edits([(start, end, line)]),
-                selection,
-                pending: _pending,
-                asAsked: i == 0,
-              ),
-          ],
-          (next, _, edits) {
-            final now = next.rowAt(edits.forward(end, caret: true));
-            return (now.kind, now.headingLevel, now.text) ==
-                    (RowKind.heading, level, '') &&
-                now.sameContainersAs(row, next.model, _doc.model) &&
-                _showsRows(next, edits, added: 1);
-          },
-          coalesce: false,
-        )
-        is _Committed;
+      [
+        for (final (i, line) in lines.indexed)
+          Spelling.carrying(
+            Edits([(start, end, line)]),
+            selection,
+            pending: _pending,
+            asAsked: i == 0,
+          ),
+      ],
+      (next, _, edits) {
+        final now = next.rowAt(edits.forward(end, caret: true));
+        return (now.kind, now.headingLevel, now.text) ==
+                (RowKind.heading, level, '') &&
+            now.sameContainersAs(row, next.model, _doc.model) &&
+            _showsRows(next, edits, added: 1);
+      },
+      coalesce: false,
+    );
   }
 
   /// A heading is one line: a level set on a paragraph of several heads the
   /// first, where the caret must be, and the rest stays a paragraph in the
   /// same containers, its first line respelled with the containers' prefix
   /// if lazy or indented as code. Parts showing other text (a span) refuse.
-  bool _headFirstLine(ProjectedRow row, int level) {
+  _Outcome _headFirstLine(ProjectedRow row, int level) {
     final m = _doc.model;
     // Where the first line's text ends, or -1 for a row of one line.
     final (_, firstEnd) = row.displayLineAt(0);
     final split = firstEnd < row.text.length ? firstEnd : -1;
     final starts = row.contentStarts.where((s) => s >= 0).toList();
     final at = starts[0], line = m.lineOfUtf16(at);
-    if (m.lineOfUtf16(selection.extent) != line || split < 0) return false;
+    if (m.lineOfUtf16(selection.extent) != line || split < 0) {
+      return const _NotKept();
+    }
     final marker = (at, at, '${'#' * level} '), prefix = _continuing(row.block);
     final lazy = lineStartPastMark(source, m, m.lineOfUtf16(starts[1]));
     var next = starts[1];
     for (; _isSpace(source, next); next++) {}
     return _commitSpellings(
-          [
-            Spelling.carrying(Edits([marker]), selection, asAsked: true),
-            if (source.substring(lazy, next) != prefix)
-              Spelling.carrying(
-                Edits([marker, (lazy, next, prefix)]),
-                selection,
-              ),
-          ],
-          (doc, _, edits) {
-            final now = doc.rowAt(edits.forward(selection.extent, caret: true));
-            final rest =
-                doc.projection.rows.elementAtOrNull(now.index + 1) ?? now;
-            final head = row.text.substring(0, split);
-            final tail = row.text.substring(split + 1).trimLeft();
-            List<ShellKind>? others(ProjectedRow r) =>
-                r == row ? null : r.containerKinds;
-            return (now.kind, now.headingLevel) == (RowKind.heading, level) &&
-                now.sameContainersAs(row, doc.model, _doc.model) &&
-                now.text.trimRight() == head.trimRight() &&
-                (rest.kind, rest.text.trimLeft()) ==
-                    (RowKind.paragraph, tail) &&
-                rest.sameContainersAs(row, doc.model, _doc.model) &&
-                _showsRows(doc, edits, added: 2, shells: others);
-          },
-          coalesce: false,
-        )
-        is _Committed;
+      [
+        Spelling.carrying(Edits([marker]), selection, asAsked: true),
+        if (source.substring(lazy, next) != prefix)
+          Spelling.carrying(Edits([marker, (lazy, next, prefix)]), selection),
+      ],
+      (doc, _, edits) {
+        final now = doc.rowAt(edits.forward(selection.extent, caret: true));
+        final rest = doc.projection.rows.elementAtOrNull(now.index + 1) ?? now;
+        final head = row.text.substring(0, split);
+        final tail = row.text.substring(split + 1).trimLeft();
+        List<ShellKind>? others(ProjectedRow r) =>
+            r == row ? null : r.containerKinds;
+        return (now.kind, now.headingLevel) == (RowKind.heading, level) &&
+            now.sameContainersAs(row, doc.model, _doc.model) &&
+            now.text.trimRight() == head.trimRight() &&
+            (rest.kind, rest.text.trimLeft()) == (RowKind.paragraph, tail) &&
+            rest.sameContainersAs(row, doc.model, _doc.model) &&
+            _showsRows(doc, edits, added: 2, shells: others);
+      },
+      coalesce: false,
+    );
   }
 
   /// Commit [edits] to the current source in [row] (a lifted container
-  /// marker, or a heading's markup), when [accept] holds and
-  /// [_keepsStructure] does: rows elsewhere keep their kinds and no hidden
-  /// markup is painted. The block after the row can instead join it lazily:
-  /// `1. a` lifted above `2. b` would read as the paragraph `a 2. b`, and
-  /// `### a` turned into a paragraph above indented code would absorb the
-  /// code. A blank line after the row keeps that block apart when the parser
-  /// agrees; it carries the row's container prefix up to [prefixEnd], without
-  /// the markers of containers that open on that line. Otherwise the edit is
-  /// refused.
-  bool _commitApart(
+  /// marker, or a heading's markup), with [selected] after them, when
+  /// [accept] holds and [_keepsStructure] does: rows elsewhere keep their
+  /// kinds and no hidden markup is painted. The block after the row can
+  /// instead join it lazily: `1. a` lifted above `2. b` would read as the
+  /// paragraph `a 2. b`, and `### a` turned into a paragraph above indented
+  /// code would absorb the code. A blank line after the row keeps that block
+  /// apart when the parser agrees; it carries the row's container prefix up
+  /// to [prefixEnd], without the markers of containers that open on that
+  /// line. Otherwise the edit is refused.
+  _Outcome _commitApart(
     ProjectedRow row,
     Edits edits,
     FlarkSelection selected,
     int prefixEnd,
     bool Function(FlarkDocument) accept,
   ) {
-    final candidate = edits.apply(source);
-    bool keeps(FlarkDocument next, Edits edits) =>
-        accept(next) &&
-        _keepsStructure(
-          next,
-          edits,
-          {row.index},
-          movesText: row.text.isNotEmpty,
-          shells: true,
-        );
-    if (_commit(
-      candidate,
-      selected,
-      coalesce: false,
-      acceptSourceMode: true,
-      accept: (next) => keeps(next, edits),
-    )) {
-      return true;
-    }
-    if (_inert || _lastRejection != null || row.text.isEmpty || row.block < 0) {
-      return false;
-    }
     final m = _doc.model;
     final last = row.firstLine + row.lineCount - 1;
     final rowEnd = projection.lineContentEnd(last);
-    if (rowEnd < edits.list.last.$2 || last + 1 >= m.lineCount) return false;
-    var at = rowEnd;
-    for (final (start, end, length) in edits.lengths) {
-      at += length - (end - start);
+    final spellings = [Spelling(edits, selected, asAsked: true)];
+    if (row.text.isNotEmpty &&
+        row.block >= 0 &&
+        rowEnd >= edits.list.last.$2 &&
+        last + 1 < m.lineCount) {
+      final outer = continuationPrefix(
+        source,
+        m,
+        m.lineOfUtf16(prefixEnd),
+        prefixEnd,
+        row.block,
+      );
+      final blank = '${_lineBreakAt(rowEnd)}${outer.trimRight()}';
+      // The blank line goes where the edit as asked leaves the row's end,
+      // and a selection past it moves on with the text.
+      final at = edits.forward(rowEnd);
+      final after = Edits([(at, at, blank)]);
+      spellings.add(
+        Spelling(
+          Edits([...edits.list, (rowEnd, rowEnd, blank)]),
+          FlarkSelection(
+            after.forward(selected.base),
+            after.forward(selected.extent),
+          ),
+        ),
+      );
     }
-    final outer = continuationPrefix(
-      source,
-      m,
-      m.lineOfUtf16(prefixEnd),
-      prefixEnd,
-      row.block,
-    );
-    final blank = '${_lineBreakAt(rowEnd)}${outer.trimRight()}';
-    int after(int offset) => offset > at ? offset + blank.length : offset;
-    // The blank line must keep the edit in the live tier, where it is
-    // checked; only [candidate] itself may leave it.
-    return _commit(
-      candidate.replaceRange(at, at, blank),
-      FlarkSelection(after(selected.base), after(selected.extent)),
+    return _commitSpellings(
+      spellings,
+      (next, _, edits) =>
+          accept(next) &&
+          _keepsStructure(
+            next,
+            edits,
+            {row.index},
+            movesText: row.text.isNotEmpty,
+            shells: true,
+          ),
       coalesce: false,
-      accept: (next) =>
-          keeps(next, Edits([...edits.list, (rowEnd, rowEnd, blank)])),
     );
   }
 
