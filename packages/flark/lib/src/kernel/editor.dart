@@ -1381,9 +1381,11 @@ final class FlarkEditor implements FlarkDocumentState {
           return false;
         }
         if (gap.isNotEmpty &&
-            !_keepsStructure(next, [
-              (start, end, inserted.length + gap.length),
-            ], const {})) {
+            !_keepsStructure(
+              next,
+              Edits([(start, end, '$inserted$gap')]),
+              const {},
+            )) {
           return false;
         }
         if (!wraps(next, at)) return false;
@@ -1882,7 +1884,7 @@ final class FlarkEditor implements FlarkDocumentState {
       final shown = cells == null
           ? !emptied || !_paints(next.rowAt(caret), map(at), map(cs))
           : _showsTableRow(next, caret, row.column, cells, edited: true);
-      final e = [for (final (x, y, text) in edits) (x, y, text.length)];
+      final e = Edits(edits);
       // The row's remaining text, before the deletion, after it or on the
       // next line, keeps its containers, and its kind unless it moved up
       // onto the emptied line: left below it, the line after a setext
@@ -2180,12 +2182,9 @@ final class FlarkEditor implements FlarkDocumentState {
           // The blocks around it must stay as they were. A fence at a column
           // outside a list or quote ends that container, and once it is gone
           // what follows can run on into the container instead.
-          accept: (next) => _keepsStructure(
-            next,
-            [(start, end, 0)],
-            {row.index},
-            shells: true,
-          ),
+          accept: (next) => _keepsStructure(next, Edits([(start, end, '')]), {
+            row.index,
+          }, shells: true),
         );
       }
     }
@@ -2219,8 +2218,7 @@ final class FlarkEditor implements FlarkDocumentState {
       final caret = prefixStart + replacement.length;
       final lifted = _commitApart(
         row,
-        source.replaceRange(prefixStart, contentStart, replacement),
-        [(prefixStart, contentStart, replacement.length)],
+        Edits([(prefixStart, contentStart, replacement)]),
         FlarkSelection.collapsed(caret),
         prefixStart,
         // The lifted line keeps its kind: lifting `> ` from `> foo` above
@@ -2261,7 +2259,7 @@ final class FlarkEditor implements FlarkDocumentState {
         acceptSourceMode: true,
         accept: (next) => _keepsStructure(
           next,
-          [(start, end, 0)],
+          Edits([(start, end, '')]),
           {row.index},
           movesText: false,
           shells: true,
@@ -2447,7 +2445,7 @@ final class FlarkEditor implements FlarkDocumentState {
         // and pair delimiters with it, painting markup that closed a span.
         return _keepsStructure(
           next,
-          [(start, end, 0)],
+          Edits([(start, end, '')]),
           {above.index, row.index},
           movesText: row.text.isNotEmpty,
           shells: true,
@@ -2511,7 +2509,7 @@ final class FlarkEditor implements FlarkDocumentState {
             now.text.isEmpty &&
             _keepsStructure(
               next,
-              [(atx.start, atx.end, replaced.length)],
+              Edits([(atx.start, atx.end, replaced)]),
               {row.index},
               movesText: false,
               shells: true,
@@ -2586,7 +2584,7 @@ final class FlarkEditor implements FlarkDocumentState {
     if (b > textEnd) return false;
     final markup = kept == null ? '' : source.substring(kept.$1, kept.$2);
     final gap = markup.isEmpty || _isSpace(markup, 0) ? '' : ' ';
-    final edits = [(a, b, 0), (textEnd, lineEnd, gap.length + markup.length)];
+    final edits = Edits([(a, b, ''), (textEnd, lineEnd, '$gap$markup')]);
     // The text moves ahead of [left]'s markup, which sorted edits can only
     // count as new text, and the check passes over new text. Mapped back to
     // where it was, the markup is checked like the text: hidden source the
@@ -2644,7 +2642,7 @@ final class FlarkEditor implements FlarkDocumentState {
           (kind == null || next.rowAt(caret).kind == kind) &&
           _keepsStructure(
             next,
-            [(from, to, 0)],
+            Edits([(from, to, '')]),
             rows,
             movesText: movesText,
             shown: shown,
@@ -2653,38 +2651,10 @@ final class FlarkEditor implements FlarkDocumentState {
     );
   }
 
-  /// Where [offset] of the current source is in the source [edits] make
-  /// (sorted replacements: start, end, and the length of what replaced
-  /// them), or -1 inside a replacement. An offset at a replacement's start
-  /// stays before it: a block that starts where an edit does starts there
-  /// still.
-  static int _afterEdits(List<(int, int, int)> edits, int offset) {
-    var shift = 0;
-    for (final (start, end, length) in edits) {
-      if (offset <= start) break;
-      if (offset < end) return -1;
-      shift += length - (end - start);
-    }
-    return offset + shift;
-  }
-
-  /// Where [offset] of the source [edits] make was in the current source,
-  /// or -1 in text an edit put there.
-  static int _beforeEdits(List<(int, int, int)> edits, int offset) {
-    var shift = 0;
-    for (final (start, end, length) in edits) {
-      if (offset < start + shift) break;
-      if (offset < start + shift + length) return -1;
-      shift += length - (end - start);
-    }
-    return offset - shift;
-  }
-
-  /// Whether [next], a join or lift of [rows] made by [edits] (sorted
-  /// replacements of current source: start, end, and the length of what
-  /// replaced it), keeps what the user sees elsewhere. A reparse can
-  /// otherwise turn it into a structural change. Every other row keeps its
-  /// kind: removing the blank line between `a` and `---` makes `a` a setext
+  /// Whether [next], a join or lift of [rows] made by [edits] of the current
+  /// source, keeps what the user sees elsewhere. A reparse can otherwise
+  /// turn it into a structural change. Every other row keeps its kind:
+  /// removing the blank line between `a` and `---` makes `a` a setext
   /// heading that swallows the rule, and lifting an item's marker can turn
   /// the item's later blocks into indented code. When the edit [movesText]
   /// onto another line, nothing the projection hides is painted either: text
@@ -2694,15 +2664,12 @@ final class FlarkEditor implements FlarkDocumentState {
   /// stays in containers of the same kinds.
   bool _keepsStructure(
     FlarkDocument next,
-    List<(int, int, int)> edits,
+    Edits edits,
     Set<int> rows, {
     bool movesText = true,
     (int, int)? shown,
     bool shells = false,
   }) {
-    int forward(int offset) => _afterEdits(edits, offset);
-    int back(int offset) => _beforeEdits(edits, offset);
-
     // Rows inside a container whose marker the edit removed, from its line
     // (a lift) or before text the line keeps (an item joined up), leave it;
     // others can be carried from a join, even past an empty row it removed.
@@ -2710,7 +2677,7 @@ final class FlarkEditor implements FlarkDocumentState {
       final at = _doc.model.blockStart(shell.block);
       final line = _doc.model.lineOfUtf16(at);
       return shell.kind != ShellKind.list &&
-          edits.any(
+          edits.list.any(
             (e) =>
                 e.$1 <= at &&
                 at < e.$2 &&
@@ -2726,7 +2693,7 @@ final class FlarkEditor implements FlarkDocumentState {
     var j = 0;
     for (final row in projection.rows) {
       if (row.kind == RowKind.blank || rows.contains(row.index)) continue;
-      final at = forward(row.sourceStart);
+      final at = edits.forward(row.sourceStart);
       if (at < 0) continue;
       while (j + 1 < now.length && now[j + 1].sourceStart <= at) {
         j++;
@@ -2739,7 +2706,7 @@ final class FlarkEditor implements FlarkDocumentState {
         if (holder.kind != row.kind || !lifted(row)) return false;
       }
     }
-    return !movesText || !_revealsHiddenText(next, back, shown: shown);
+    return !movesText || !_revealsHiddenText(next, edits.back, shown: shown);
   }
 
   /// Joining physical lines also joins matching boundary owners. Leaving
@@ -2932,7 +2899,7 @@ final class FlarkEditor implements FlarkDocumentState {
             next.rowAt(caret).withinContainerKindsOf(row) &&
             _keepsStructure(
               next,
-              [(prefixStart, contentStart, replacement.length)],
+              Edits([(prefixStart, contentStart, replacement)]),
               {row.index},
               movesText: false,
               shells: true,
@@ -3065,12 +3032,9 @@ final class FlarkEditor implements FlarkDocumentState {
             FlarkSelection.collapsed(end + nl.length),
             coalesce: false,
             acceptSourceMode: true,
-            accept: (next) => _keepsStructure(
-              next,
-              [(end, end, nl.length)],
-              {row.index},
-              shells: true,
-            ),
+            accept: (next) => _keepsStructure(next, Edits([(end, end, nl)]), {
+              row.index,
+            }, shells: true),
           );
     }
     for (var i = row.index + 1; i < projection.rows.length; i++) {
@@ -3368,7 +3332,7 @@ final class FlarkEditor implements FlarkDocumentState {
           if (!now.sameContainerKinds(row) && !pending ||
               !_keepsStructure(
                 next,
-                [for (final (from, to, text) in list) (from, to, text.length)],
+                Edits(list),
                 {row.index},
                 shown: defined ? (row.sourceStart, start) : null,
                 shells: true,
@@ -3720,23 +3684,17 @@ final class FlarkEditor implements FlarkDocumentState {
             : row.contentStarts[0],
         blockEnd = m.blockEnd(row.block);
     final prefix = level == 0 ? '' : '${'#' * level} ';
-    var s = source;
-    if (row.kind == RowKind.heading && blockEnd > row.sourceEnd) {
-      s = s.replaceRange(row.sourceEnd, blockEnd, '');
-    }
     // The bare marker is the row's own text, so it is what the prefix replaces.
     final contentStart = _isBareHeading(row) ? row.sourceEnd : row.sourceStart;
-    s = s.replaceRange(blockStart, contentStart, prefix);
     final shift = prefix.length - (contentStart - blockStart);
     int move(int o) => o >= contentStart ? o + shift : o;
     return _commitApart(
       row,
-      s,
-      [
-        (blockStart, contentStart, prefix.length),
+      Edits([
+        (blockStart, contentStart, prefix),
         if (row.kind == RowKind.heading && blockEnd > row.sourceEnd)
-          (row.sourceEnd, blockEnd, 0),
-      ],
+          (row.sourceEnd, blockEnd, ''),
+      ]),
       FlarkSelection(move(selection.base), move(selection.extent)),
       blockStart,
       // A level makes the row a heading, and clearing one a paragraph, or an
@@ -3842,25 +3800,25 @@ final class FlarkEditor implements FlarkDocumentState {
         is _Committed;
   }
 
-  /// Commit [candidate], which made [edits] to the current source in [row]
-  /// (a lifted container marker, or a heading's markup), when [accept]
-  /// holds and [_keepsStructure] does: rows elsewhere keep their kinds and
-  /// no hidden markup is painted. The block after the row can instead join
-  /// it lazily: `1. a` lifted above `2. b` would read as the paragraph
-  /// `a 2. b`, and `### a` turned into a paragraph above indented code would
-  /// absorb the code. A blank line after the row keeps that block apart when
-  /// the parser agrees; it carries the row's container prefix up to
-  /// [prefixEnd], without the markers of containers that open on that line.
-  /// Otherwise the edit is refused.
+  /// Commit [edits] to the current source in [row] (a lifted container
+  /// marker, or a heading's markup), when [accept] holds and
+  /// [_keepsStructure] does: rows elsewhere keep their kinds and no hidden
+  /// markup is painted. The block after the row can instead join it lazily:
+  /// `1. a` lifted above `2. b` would read as the paragraph `a 2. b`, and
+  /// `### a` turned into a paragraph above indented code would absorb the
+  /// code. A blank line after the row keeps that block apart when the parser
+  /// agrees; it carries the row's container prefix up to [prefixEnd], without
+  /// the markers of containers that open on that line. Otherwise the edit is
+  /// refused.
   bool _commitApart(
     ProjectedRow row,
-    String candidate,
-    List<(int, int, int)> edits,
+    Edits edits,
     FlarkSelection selected,
     int prefixEnd,
     bool Function(FlarkDocument) accept,
   ) {
-    bool keeps(FlarkDocument next, List<(int, int, int)> edits) =>
+    final candidate = edits.apply(source);
+    bool keeps(FlarkDocument next, Edits edits) =>
         accept(next) &&
         _keepsStructure(
           next,
@@ -3884,9 +3842,9 @@ final class FlarkEditor implements FlarkDocumentState {
     final m = _doc.model;
     final last = row.firstLine + row.lineCount - 1;
     final rowEnd = projection.lineContentEnd(last);
-    if (rowEnd < edits.last.$2 || last + 1 >= m.lineCount) return false;
+    if (rowEnd < edits.list.last.$2 || last + 1 >= m.lineCount) return false;
     var at = rowEnd;
-    for (final (start, end, length) in edits) {
+    for (final (start, end, length) in edits.lengths) {
       at += length - (end - start);
     }
     final outer = continuationPrefix(
@@ -3904,7 +3862,8 @@ final class FlarkEditor implements FlarkDocumentState {
       candidate.replaceRange(at, at, blank),
       FlarkSelection(after(selected.base), after(selected.extent)),
       coalesce: false,
-      accept: (next) => keeps(next, [...edits, (rowEnd, rowEnd, blank.length)]),
+      accept: (next) =>
+          keeps(next, Edits([...edits.list, (rowEnd, rowEnd, blank)])),
     );
   }
 

@@ -605,12 +605,9 @@ extension _CodeEditing on FlarkEditor {
                     now.withinContainerKindsOf(row) ||
                 now.kind == RowKind.codeBlock && now.sameContainerKinds(row);
           }) &&
-          _keepsStructure(
-            next,
-            [(start, to, inserted.length)],
-            {row.index},
-            shells: true,
-          ),
+          _keepsStructure(next, Edits([(start, to, inserted)]), {
+            row.index,
+          }, shells: true),
     );
   }
 

@@ -76,7 +76,7 @@ extension _ResourceEditing on FlarkEditor {
           doc.rowAt(at).sameContainerKinds(row) &&
           _keepsStructure(
             doc,
-            [(at, at + end - start, replacement.length + gap.length)],
+            Edits([(at, at + end - start, '$replacement$gap')]),
             {row.index},
             shells: true,
           ),
@@ -133,13 +133,13 @@ extension _ResourceEditing on FlarkEditor {
     final resource = _doc.resourceAt(selection, image: image);
     if (resource == null) return false;
     final row = _doc.rowAt(resource.start);
-    bool keeps(FlarkDocument next, int caret, (int, int, int) edit) {
+    bool keeps(FlarkDocument next, int caret, Edit edit) {
       final now = next.rowAt(caret);
       return (now.kind == row.kind ||
               now.kind == RowKind.blank && (image || row.text.isEmpty)) &&
           now.sameContainerKinds(row) &&
           (image || now.text == row.text) &&
-          _keepsStructure(next, [edit], {row.index}, shells: true);
+          _keepsStructure(next, Edits([edit]), {row.index}, shells: true);
     }
 
     if (image) {
@@ -203,7 +203,7 @@ extension _ResourceEditing on FlarkEditor {
         ends[spelling] = end;
       }
       return _commitSpellings([...ends.keys], (next, spelling, _) {
-            final removed = (range.start, ends[spelling]!, 0);
+            final removed = (range.start, ends[spelling]!, '');
             return keeps(next, spelling.selection.extent, removed);
           }, coalesce: false)
           is _Committed;
@@ -259,7 +259,7 @@ extension _ResourceEditing on FlarkEditor {
           ],
           (next, spelling, edits) {
             final caret = spelling.selection.extent;
-            return keeps(next, caret, edits.lengths.single) &&
+            return keeps(next, caret, edits.list.single) &&
                 !next.resources.any(
                   (r) =>
                       !r.isImage && r.start < caret && r.end > resource.start,
