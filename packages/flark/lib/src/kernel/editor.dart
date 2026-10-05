@@ -1879,12 +1879,14 @@ final class FlarkEditor implements FlarkDocumentState {
     // A table row is checked whole, its cells' text by [_showsTableRow].
     final cell0 = row.index - (cells == null ? 0 : row.column);
     final edited = {for (var c = 0; c < (cells?.length ?? 1); c++) cell0 + c};
-    (bool, bool) check(FlarkDocument next, List<(int, int, String)> edits) {
-      final map = _edited(edits).$2, caret = next.selection.extent;
+    // Whether [next], which [edits] made, keeps every other row, and its own
+    // rows as the deletion must.
+    (bool, bool) check(FlarkDocument next, Edits edits) {
+      int map(int offset) => edits.forward(offset, caret: true);
+      final caret = next.selection.extent;
       final shown = cells == null
           ? !emptied || !_paints(next.rowAt(caret), map(at), map(cs))
           : _showsTableRow(next, caret, row.column, cells, edited: true);
-      final e = Edits(edits);
       // The row's remaining text, before the deletion, after it or on the
       // next line, keeps its containers, and its kind unless it moved up
       // onto the emptied line: left below it, the line after a setext
@@ -1906,7 +1908,7 @@ final class FlarkEditor implements FlarkDocumentState {
         shown &&
             _keepsStructure(
               next,
-              e,
+              edits,
               edited,
               movesText: cells != null || onward && !up,
               shown: cells == null ? null : (row.sourceStart, row.sourceEnd),
@@ -1919,30 +1921,6 @@ final class FlarkEditor implements FlarkDocumentState {
       );
     }
 
-    // Only the deletion as asked may leave the live tier, into source mode:
-    // a respelling past it is passed over, as it could not be checked.
-    bool commit(
-      String text,
-      int caret, [
-      bool Function(FlarkDocument)? ok,
-      bool respelled = false,
-    ]) => _commit(
-      text,
-      FlarkSelection.collapsed(caret),
-      coalesce: typing,
-      pending: plain.pending,
-      acceptSourceMode: !respelled,
-      accept: ok,
-    );
-    var damage = false;
-    if (commit(plain.text, plain.caret, (next) {
-      final (kept, own) = check(next, [(start, end, '')]);
-      damage = !kept;
-      return kept && own;
-    })) {
-      return true;
-    }
-    if (_lastRejection != null) return false;
     var spaced = end, k = row.index + 1;
     while (spaced < ce && _isSpace(source, spaced)) {
       spaced++;
@@ -1967,33 +1945,64 @@ final class FlarkEditor implements FlarkDocumentState {
     final apart = (at, at, '$prefix${_lineBreakAt(at)}'),
         cut = (start, end, '');
     final above = top > 0 ? row.contentEnds[top - 1] : -1;
-    for (final edits in [
-      if (cells != null) ...[
-        if (emptied) [(start, end, '|')],
-        if (emptied) [(start, end, '||')],
-      ] else ...[
-        if (spaced > end && !emptied && ls == a) [(start, spaced, '')],
-        if (gap != null) [cut, gap],
-        if (emptied && below >= 0) [(start, below, '')],
-        if (emptied && below < 0 && above >= 0) [(above, end, '')],
-        if (row.firstLine + top > 0 && cs >= 0) [apart, cut],
-        if (gap != null && row.firstLine + top > 0) [apart, cut, gap],
-      ],
-    ]) {
-      final (text, map) = _edited(edits);
-      if (commit(
-        text,
-        map(start),
-        (n) => check(n, edits) == (true, true),
-        true,
-      )) {
-        return true;
-      }
-    }
-    _lastRejection = null;
+    // The deletion as asked, read as the removal of [start]..[end]: the
+    // whitespace it moves out of a span's delimiters keeps the length.
+    final asked = Edits([(start, end, '')]),
+        made = Edits.between(source, plain.text);
+    final deletion = Spelling(
+      made,
+      FlarkSelection.collapsed(plain.caret),
+      pending: plain.pending,
+      asAsked: true,
+    );
+    // Failing every spelling, the deletion as asked goes ahead as Markdown
+    // reads it, unless it empties its line or a cell and changes another
+    // row: literal HTML and definitions go ahead even then.
     final literal = row.kind == RowKind.htmlBlock || row.block < 0;
-    return !(damage && (emptied || cells != null) && !literal) &&
-        commit(plain.text, plain.caret);
+    final readAsIs = Spelling(
+      made,
+      FlarkSelection.collapsed(plain.caret),
+      pending: plain.pending,
+      asAsked: true,
+    );
+    return _commitSpellings(
+          [
+            deletion,
+            for (final edits in [
+              if (cells != null) ...[
+                if (emptied) [(start, end, '|')],
+                if (emptied) [(start, end, '||')],
+              ] else ...[
+                if (spaced > end && !emptied && ls == a) [(start, spaced, '')],
+                if (gap != null) [cut, gap],
+                if (emptied && below >= 0) [(start, below, '')],
+                if (emptied && below < 0 && above >= 0) [(above, end, '')],
+                if (row.firstLine + top > 0 && cs >= 0) [apart, cut],
+                if (gap != null && row.firstLine + top > 0) [apart, cut, gap],
+              ],
+            ])
+              Spelling.carrying(
+                Edits(edits),
+                FlarkSelection.collapsed(start),
+                pending: plain.pending,
+              ),
+            readAsIs,
+          ],
+          (next, spelling, edits) {
+            if (identical(spelling, readAsIs)) {
+              final (kept, _) = check(next, asked);
+              return kept || !(emptied || cells != null) || literal;
+            }
+            final (kept, own) = check(
+              next,
+              identical(spelling, deletion) ? asked : edits,
+            );
+            return kept && own;
+          },
+          coalesce: typing,
+          refusals: _Refusals.passRespellings,
+        )
+        is _Committed;
   }
 
   /// Whether [row] paints source between [start] and [end].
