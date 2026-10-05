@@ -1107,9 +1107,11 @@ final class FlarkEditor implements FlarkDocumentState {
       if (code != null) return code;
     }
     // Typed text goes to the code delegate first. What it does not propose,
-    // and pasted or composed text, is literal code.
+    // and pasted text, is literal code. Composed text reaches this path only
+    // through [_typeComposed], which sets the composition aside; in code it
+    // stays literal (see [_compose]).
     final code =
-        (typing && !composing
+        (typing
             ? _delegateCodeEdit(CodeEditingAction.insert, text: text)
             : null) ??
         _pasteCode(
@@ -1203,14 +1205,12 @@ final class FlarkEditor implements FlarkDocumentState {
     final one = typing && typed != '\n' && typed.characters.length == 1;
     final fence =
         typing &&
-        !composing &&
         sel.isCollapsed &&
         inserted == text &&
         (text == '`' || text == '```' || text == '~' || text == '~~~') &&
         row.kind != RowKind.codeBlock;
     final underline =
         typing &&
-            !composing &&
             sel.isCollapsed &&
             inserted == text &&
             row.text.isEmpty &&
