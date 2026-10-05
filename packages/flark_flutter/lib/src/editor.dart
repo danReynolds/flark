@@ -29,7 +29,6 @@ class FlarkEditorWidget extends StatefulWidget {
   const FlarkEditorWidget({
     super.key,
     required this.controller,
-    this.actions,
     this.session,
     this.autofocus = false,
     this.readOnly = false,
@@ -51,7 +50,9 @@ class FlarkEditorWidget extends StatefulWidget {
     color: Color(0xff253047),
   );
   final FlarkController controller;
-  final FlarkActions? actions;
+
+  /// The consumer session this widget edits, if any: the toolbar reads its
+  /// published state, and its link and image editors open here.
   final FlarkSession? session;
   final bool autofocus, readOnly, showToolbar;
   final FocusNode? focusNode;
@@ -1585,9 +1586,7 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                 ),
                 TextButton(
                   onPressed: () {
-                    widget.actions == null
-                        ? c.sourceMode(!e.sourceMode)
-                        : widget.actions!.setSourceMode(!e.sourceMode);
+                    c.sourceMode(!e.sourceMode);
                     _focus.requestFocus();
                   },
                   child: Text(e.sourceMode ? 'Rendered' : 'Source'),

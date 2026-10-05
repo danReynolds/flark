@@ -64,14 +64,19 @@ void main() {
     await t.pump();
     expect(find.byType(FlarkEditorWidget), findsOneWidget);
     var host = t.widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget));
-    host.actions!.replaceMarkdown('edited');
+    host.session!.replaceSourceRange(
+      0,
+      host.session!.state.markdown.length,
+      'edited',
+      replaceAll: true,
+    );
     await t.pumpWidget(view('ignored seed', 'a'));
     host = t.widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget));
-    expect(host.actions!.markdown, 'edited');
+    expect(host.session!.state.markdown, 'edited');
     await t.pumpWidget(view('second', 'b'));
     await t.pump();
     host = t.widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget));
-    expect(host.actions!.markdown, 'second');
+    expect(host.session!.state.markdown, 'second');
     await t.pumpWidget(const SizedBox());
     expect(t.takeException(), isNull);
   });
@@ -120,6 +125,39 @@ void main() {
       c.dispose();
     },
   );
+
+  testWidgets('the Source button takes the notice away, as it does alone', (
+    t,
+  ) async {
+    // Given a session, the button switched modes through the session and
+    // left the rendered mode's notice in place of the source mode banner.
+    final c = FlarkController(markdown: 'abc');
+    await t.runAsync(() => c.ready);
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: FlarkEditor(controller: c)),
+      ),
+    );
+    expect(c.insertText('\uD800').reason, FlarkEditRejection.invalidSource);
+    await t.pump();
+    expect(
+      find.text('The inserted text is not valid Unicode text.'),
+      findsOneWidget,
+    );
+    await t.tap(find.text('Source'));
+    await t.pump();
+    expect(c.state.mode, FlarkMode.source);
+    expect(
+      find.text('The inserted text is not valid Unicode text.'),
+      findsNothing,
+    );
+    expect(
+      find.text('Source mode · exact Markdown remains editable'),
+      findsOneWidget,
+    );
+    await t.pumpWidget(const SizedBox());
+    c.dispose();
+  });
 
   testWidgets(
     'dedicated Markdown updates source and has no editing view or input',
