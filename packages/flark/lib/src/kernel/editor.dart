@@ -12,6 +12,7 @@ import 'calls.dart';
 import 'commands.dart';
 import 'continuation.dart';
 import 'document.dart';
+import 'edits.dart';
 import 'history.dart';
 import 'notify.dart';
 import 'projection.dart';
@@ -662,12 +663,40 @@ final class FlarkEditor implements FlarkDocumentState {
     );
   }
 
-  /// Parse, admit and project before publishing source or history.
-  /// [coalesce] lets history join the commit to the typing before it, as it
-  /// joins one keystroke ([_keystroke]). [acceptCompleted] checks the source
-  /// that completes a typed fence in [newSource] by inserting `length`
-  /// characters at `at` of it; without it the completion commits unchecked.
+  /// Parse, admit and project before publishing source or history: whether
+  /// [_attempt] committed.
   bool _commit(
+    String newSource,
+    FlarkSelection sel, {
+    required bool coalesce,
+    bool completeTypedFence = false,
+    PendingStyle? pending,
+    bool Function(FlarkDocument)? accept,
+    bool Function(FlarkDocument next, int at, int length)? acceptCompleted,
+    bool acceptSourceMode = false,
+  }) =>
+      _attempt(
+            newSource,
+            sel,
+            coalesce: coalesce,
+            completeTypedFence: completeTypedFence,
+            pending: pending,
+            accept: accept,
+            acceptCompleted: acceptCompleted,
+            acceptSourceMode: acceptSourceMode,
+          )
+          is _Committed;
+
+  /// Parse, admit and project [newSource] with [sel], and when [accept]
+  /// holds for the result, publish it with its history step. [coalesce]
+  /// lets history join the commit to the typing before it, as it joins one
+  /// keystroke ([_keystroke]). Past the live tier no parse checks [accept],
+  /// and the source commits only with [acceptSourceMode].
+  /// [acceptCompleted] checks the source that completes a typed fence in
+  /// [newSource] by inserting `length` characters at `at` of it; without it
+  /// the completion commits unchecked. A refusal also sets [_lastRejection],
+  /// the call's outcome.
+  _Outcome _attempt(
     String newSource,
     FlarkSelection sel, {
     required bool coalesce,
@@ -684,10 +713,10 @@ final class FlarkEditor implements FlarkDocumentState {
     if (newSource == source && _cellOrigin == null) {
       final moved = sourceMode ? _selectSource(sel) : _select(sel);
       _inert = !moved;
-      return moved;
+      return moved ? const _Committed() : const _Unchanged();
     }
     final live = _admits(newSource);
-    if (live == null) return false;
+    if (live == null) return _Refused(_lastRejection!);
     late FlarkEditorSnapshot next;
     try {
       RenderModel? parsed;
@@ -696,7 +725,7 @@ final class FlarkEditor implements FlarkDocumentState {
         final completed = _completeTypedFence(newSource, sel.extent, parsed);
         if (completed != null) {
           final length = completed.source.length - newSource.length;
-          return _commit(
+          return _attempt(
             completed.source,
             FlarkSelection.collapsed(completed.caret),
             coalesce: false,
@@ -718,13 +747,14 @@ final class FlarkEditor implements FlarkDocumentState {
     } on FlarkParseException catch (error) {
       if (error.code != FlarkParseException.extractionDeviationCode) rethrow;
       _lastRejection = FlarkRejection.extractionDeviation;
-      return false;
+      return const _Refused(FlarkRejection.extractionDeviation);
     }
-    if (accept != null &&
-        (next is FlarkLiveSnapshot
-            ? !accept(next.document)
-            : !acceptSourceMode)) {
-      return false;
+    if (accept != null) {
+      if (next is FlarkLiveSnapshot) {
+        if (!accept(next.document)) return const _NotKept();
+      } else if (!acceptSourceMode) {
+        return const _NotKept(passedOver: true);
+      }
     }
     if (!composing) {
       history.recordState(
@@ -738,7 +768,102 @@ final class FlarkEditor implements FlarkDocumentState {
     _snapshot = next;
     _pending = next is FlarkLiveSnapshot ? pending : null;
     _goalColumn = null;
-    return true;
+    return const _Committed();
+  }
+
+  /// Commits the first of [spellings], in their order, that the parser reads
+  /// as [keep] says it must, and says what became of the edit. [keep] gets
+  /// the spelling and the edits that made the document it reads: the
+  /// spelling's own, or with the typed fence it completed
+  /// ([completeTypedFence]) put in them.
+  ///
+  /// A spelling past the live tier, where no parse checks it, commits
+  /// unchecked only when it is the edit as asked
+  /// (EP1-RESULT-PRESENTATION-001); a respelling there is passed over. The
+  /// typed-line [tier] instead commits the first spelling past the tier when
+  /// none qualifies (see [_Tier.firstPast]), or before it [atLimit], when a
+  /// respelling was passed over at a limit. What a spelling the parser
+  /// refuses does to the search is [refusals]'s to say.
+  _Outcome _commitSpellings(
+    List<Spelling> spellings,
+    bool Function(FlarkDocument next, Spelling spelling, Edits edits) keep, {
+    required bool coalesce,
+    _Tier tier = _Tier.asAsked,
+    _Refusals refusals = _Refusals.stop,
+    bool completeTypedFence = false,
+    Spelling? atLimit,
+  }) {
+    // A refusal the search passes over is no outcome of the call.
+    final before = _lastRejection;
+    FlarkRejection? asked;
+    Spelling? past;
+    var passedOver = false;
+    for (final spelling in spellings) {
+      final edits = spelling.edits;
+      final outcome = _attempt(
+        edits.apply(source),
+        spelling.selection,
+        coalesce: coalesce,
+        pending: spelling.pending,
+        completeTypedFence: completeTypedFence,
+        acceptSourceMode: tier == _Tier.asAsked && spelling.asAsked,
+        accept: (next) => keep(next, spelling, edits),
+        acceptCompleted: (next, at, length) => keep(
+          next,
+          spelling,
+          edits.withInsertion(at, next.source.substring(at, at + length)),
+        ),
+      );
+      switch (outcome) {
+        case _Committed() || _Unchanged():
+          return outcome;
+        case _NotKept(passedOver: true):
+          past ??= spelling;
+          if (!spelling.asAsked) passedOver = true;
+        case _NotKept():
+          break;
+        case _Refused(:final reason):
+          final passes = switch (refusals) {
+            _Refusals.stop => false,
+            _Refusals.passRespellings => !spelling.asAsked,
+            _Refusals.passAll => true,
+          };
+          if (!passes) return outcome;
+          if (spelling.asAsked) {
+            asked ??= reason;
+          } else {
+            passedOver = true;
+          }
+          _lastRejection = before;
+      }
+    }
+    if (asked != null) {
+      _lastRejection = asked;
+      return _Refused(asked);
+    }
+    if (tier == _Tier.firstPast) {
+      if (atLimit != null && passedOver) {
+        return _attempt(
+          atLimit.edits.apply(source),
+          atLimit.selection,
+          coalesce: coalesce,
+          pending: atLimit.pending,
+        );
+      }
+      if (past != null) {
+        return _attempt(
+          past.edits.apply(source),
+          past.selection,
+          coalesce: coalesce,
+          pending: past.pending,
+          completeTypedFence: completeTypedFence,
+          acceptSourceMode: true,
+          accept: (_) => false,
+          acceptCompleted: (_, _, _) => false,
+        );
+      }
+    }
+    return _NotKept(passedOver: passedOver);
   }
 
   /// Whether [text], typed, is one keystroke, which history joins to the
@@ -3425,12 +3550,14 @@ final class FlarkEditor implements FlarkDocumentState {
 
     edits.sort((a, b) => a.$1 == b.$1 ? a.$2 - b.$2 : a.$1 - b.$1);
     return edits.isNotEmpty &&
-        _commitFirst(
-          [edits],
-          (next, map) =>
-              _showsRows(next, map, shells: moved) &&
-              next.caretRow.hasContainerKinds(moved(row)),
-        );
+        _commitSpellings(
+              [Spelling.carrying(Edits(edits), selection, asAsked: true)],
+              (next, _, edits) =>
+                  _showsRows(next, edits, shells: moved) &&
+                  next.caretRow.hasContainerKinds(moved(row)),
+              coalesce: false,
+            )
+            is _Committed;
   }
 
   /// The visual column after [text] from [from] to [to], tabs counted to
@@ -3472,14 +3599,14 @@ final class FlarkEditor implements FlarkDocumentState {
     return shifted == width ? null : (a, b, ' ' * shifted);
   }
 
-  /// Whether [next] shows each row of the current projection that shows
-  /// anything as it was (but those [shells] gives none for): the row where
-  /// [map] moves its start has its kind, level and text, in containers of
-  /// the kinds [shells] gives (by default the row's own), and nothing else
-  /// shows but [added] rows.
+  /// Whether [next], which [edits] made, shows each row of the current
+  /// projection that shows anything as it was (but those [shells] gives none
+  /// for): the row where its start goes, as a caret would, has its kind,
+  /// level and text, in containers of the kinds [shells] gives (by default
+  /// the row's own), and nothing else shows but [added] rows.
   bool _showsRows(
     FlarkDocument next,
-    int Function(int) map, {
+    Edits edits, {
     int added = 0,
     List<ShellKind>? Function(ProjectedRow)? shells,
   }) {
@@ -3489,7 +3616,7 @@ final class FlarkEditor implements FlarkDocumentState {
       final kinds = shells == null ? row.containerKinds : shells(row);
       if (row.kind == RowKind.blank || kinds == null) continue;
       count++;
-      final at = map(row.sourceStart);
+      final at = edits.forward(row.sourceStart, caret: true);
       for (; j + 1 < now.length && now[j + 1].sourceStart <= at; j++) {}
       final r = now[j];
       if ((r.sourceStart, r.kind, r.text, r.headingLevel) !=
@@ -3501,64 +3628,16 @@ final class FlarkEditor implements FlarkDocumentState {
     return now.where((r) => r.kind != RowKind.blank).length == count;
   }
 
-  /// Commit the first of [candidates] (sorted edits) whose parse [accept]
-  /// holds for, given their offset map; a rejected source ends the search.
-  /// Only the first, the edit as asked, may leave the live tier: a later
-  /// respelling past it is passed over, as it could not be checked.
-  bool _commitFirst(
-    List<List<(int, int, String)>> candidates,
-    bool Function(FlarkDocument next, int Function(int) map) accept, {
-    PendingStyle? pending,
-  }) {
-    for (final edits in candidates) {
-      final (s, map) = _edited(edits);
-      if (_commit(
-        s,
-        FlarkSelection(map(selection.base), map(selection.extent)),
-        coalesce: false,
-        pending: pending,
-        acceptSourceMode: identical(edits, candidates.first),
-        accept: (next) => accept(next, map),
-      )) {
-        return true;
-      }
-      if (_lastRejection != null) return false;
-    }
-    return false;
-  }
-
   /// Whether [edits] are sorted and none overlaps the next, so they splice
   /// the source in order.
-  static bool _disjoint(List<(int, int, String)> edits) {
-    for (var i = 1; i < edits.length; i++) {
-      if (edits[i].$1 < edits[i - 1].$2) return false;
-    }
-    return true;
-  }
+  static bool _disjoint(List<(int, int, String)> edits) =>
+      Edits.isDisjoint(edits);
 
   /// Apply sorted, non-overlapping edits; returns the new source and a map
-  /// from old offsets to new ones.
+  /// from old offsets to new ones, as a caret goes ([Edits.forward]).
   (String, int Function(int)) _edited(List<(int, int, String)> edits) {
-    assert(_disjoint(edits), 'overlapping edits $edits');
-    final out = StringBuffer();
-    var last = 0;
-    for (final (a, b, text) in edits) {
-      out.write(source.substring(last, a));
-      out.write(text);
-      last = b;
-    }
-    out.write(source.substring(last));
-    int map(int o) {
-      var d = 0;
-      for (final (a, b, text) in edits) {
-        if (o < a) break;
-        if (o < b) return a + d;
-        d += text.length - (b - a);
-      }
-      return o + d;
-    }
-
-    return (out.toString(), map);
+    final made = Edits(edits);
+    return (made.apply(source), (o) => made.forward(o, caret: true));
   }
 
   bool _toggleTask() {
@@ -3668,26 +3747,33 @@ final class FlarkEditor implements FlarkDocumentState {
     String marked(String p) =>
         '$p${p.isEmpty || _isSpace(p, p.length - 1) ? '' : ' '}${'#' * level} ';
     final child = row.shells.isEmpty ? m.blockCount : row.shells.last.block + 1;
-    return _commitFirst(
-      [
-        for (final line in {
-          marked(text),
-          marked(text.trimRight()),
-          if (child < m.blockCount && m.blockParent(child) == child - 1)
-            marked(_continuing(child)),
-          '$text${_lineBreakAt(end)}${marked(text.trimRight())}',
-        })
-          [(start, end, line)],
-      ],
-      (next, map) {
-        final now = next.rowAt(map(end));
-        return (now.kind, now.headingLevel, now.text) ==
-                (RowKind.heading, level, '') &&
-            now.sameContainersAs(row, next.model, _doc.model) &&
-            _showsRows(next, map, added: 1);
-      },
-      pending: _pending,
-    );
+    final lines = {
+      marked(text),
+      marked(text.trimRight()),
+      if (child < m.blockCount && m.blockParent(child) == child - 1)
+        marked(_continuing(child)),
+      '$text${_lineBreakAt(end)}${marked(text.trimRight())}',
+    };
+    return _commitSpellings(
+          [
+            for (final (i, line) in lines.indexed)
+              Spelling.carrying(
+                Edits([(start, end, line)]),
+                selection,
+                pending: _pending,
+                asAsked: i == 0,
+              ),
+          ],
+          (next, _, edits) {
+            final now = next.rowAt(edits.forward(end, caret: true));
+            return (now.kind, now.headingLevel, now.text) ==
+                    (RowKind.heading, level, '') &&
+                now.sameContainersAs(row, next.model, _doc.model) &&
+                _showsRows(next, edits, added: 1);
+          },
+          coalesce: false,
+        )
+        is _Committed;
   }
 
   /// A heading is one line: a level set on a paragraph of several heads the
@@ -3706,27 +3792,34 @@ final class FlarkEditor implements FlarkDocumentState {
     final lazy = lineStartPastMark(source, m, m.lineOfUtf16(starts[1]));
     var next = starts[1];
     for (; _isSpace(source, next); next++) {}
-    return _commitFirst(
-      [
-        [marker],
-        if (source.substring(lazy, next) != prefix)
-          [marker, (lazy, next, prefix)],
-      ],
-      (doc, map) {
-        final now = doc.rowAt(map(selection.extent));
-        final rest = doc.projection.rows.elementAtOrNull(now.index + 1) ?? now;
-        final head = row.text.substring(0, split);
-        final tail = row.text.substring(split + 1).trimLeft();
-        List<ShellKind>? others(ProjectedRow r) =>
-            r == row ? null : r.containerKinds;
-        return (now.kind, now.headingLevel) == (RowKind.heading, level) &&
-            now.sameContainersAs(row, doc.model, _doc.model) &&
-            now.text.trimRight() == head.trimRight() &&
-            (rest.kind, rest.text.trimLeft()) == (RowKind.paragraph, tail) &&
-            rest.sameContainersAs(row, doc.model, _doc.model) &&
-            _showsRows(doc, map, added: 2, shells: others);
-      },
-    );
+    return _commitSpellings(
+          [
+            Spelling.carrying(Edits([marker]), selection, asAsked: true),
+            if (source.substring(lazy, next) != prefix)
+              Spelling.carrying(
+                Edits([marker, (lazy, next, prefix)]),
+                selection,
+              ),
+          ],
+          (doc, _, edits) {
+            final now = doc.rowAt(edits.forward(selection.extent, caret: true));
+            final rest =
+                doc.projection.rows.elementAtOrNull(now.index + 1) ?? now;
+            final head = row.text.substring(0, split);
+            final tail = row.text.substring(split + 1).trimLeft();
+            List<ShellKind>? others(ProjectedRow r) =>
+                r == row ? null : r.containerKinds;
+            return (now.kind, now.headingLevel) == (RowKind.heading, level) &&
+                now.sameContainersAs(row, doc.model, _doc.model) &&
+                now.text.trimRight() == head.trimRight() &&
+                (rest.kind, rest.text.trimLeft()) ==
+                    (RowKind.paragraph, tail) &&
+                rest.sameContainersAs(row, doc.model, _doc.model) &&
+                _showsRows(doc, edits, added: 2, shells: others);
+          },
+          coalesce: false,
+        )
+        is _Committed;
   }
 
   /// Commit [candidate], which made [edits] to the current source in [row]
@@ -4069,6 +4162,67 @@ final class FlarkEditor implements FlarkDocumentState {
 
   FlarkEditorSnapshot _restoreSnapshot(HistoryEntry entry) =>
       _buildSnapshot(entry.source, entry.selection, previous: _liveDocument);
+}
+
+/// What became of an edit ([FlarkEditor._attempt],
+/// [FlarkEditor._commitSpellings]), so that no caller reads it back from the
+/// editor's state.
+sealed class _Outcome {
+  const _Outcome();
+}
+
+/// The edit was committed, or, changing no source, moved the selection.
+final class _Committed extends _Outcome {
+  const _Committed();
+}
+
+/// The edit asked for what the editor already has: a successful no-op that
+/// publishes nothing.
+final class _Unchanged extends _Outcome {
+  const _Unchanged();
+}
+
+/// No spelling read as it must, and none the parser refused stopped the
+/// search. [passedOver]: a spelling went unchecked past the live tier, or,
+/// from the search, a respelling past the live tier or a refused one.
+final class _NotKept extends _Outcome {
+  const _NotKept({this.passedOver = false});
+
+  final bool passedOver;
+}
+
+/// The parser refused the edit: its source was not valid, past the
+/// writable limit, or read with an extraction deviation.
+final class _Refused extends _Outcome {
+  const _Refused(this.reason);
+
+  final FlarkRejection reason;
+}
+
+/// Which spelling may leave the live tier, where no parse checks it.
+enum _Tier {
+  /// The edit as asked, unchecked; respellings past the tier are passed over
+  /// (EP1-RESULT-PRESENTATION-001).
+  asAsked,
+
+  /// None while the search runs. Text put where it changes its line's block
+  /// structure may have no spelling as asked: when none qualifies, the first
+  /// spelling past the tier enters source mode, as ordinary text does.
+  firstPast,
+}
+
+/// What a spelling the parser refuses does to the search. The edits that
+/// search spellings refuse differently for now; each says which it does.
+enum _Refusals {
+  /// It refuses the edit: no later spelling is tried.
+  stop,
+
+  /// A respelling is passed over; only the edit as asked refuses the edit.
+  passRespellings,
+
+  /// Every refused spelling is passed over. When none commits, the edit is
+  /// refused for the reason the edit as asked was, if it was.
+  passAll,
 }
 
 /// Characters that can underline a setext heading.
