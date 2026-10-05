@@ -70,8 +70,7 @@ final class FlarkDocument {
     this.source,
     this.selection,
     this.model,
-    this.projection,
-    this.normalizedLineEndings, {
+    this.projection, {
     FlarkDocument? positions,
   }) : _positions = positions;
 
@@ -96,7 +95,6 @@ final class FlarkDocument {
       const FlarkSelection.collapsed(0),
       model,
       Projection.of(model, text, options: options),
-      false,
     );
     return doc.withSelection(FlarkSelection.collapsed(caret));
   }
@@ -105,7 +103,6 @@ final class FlarkDocument {
   final FlarkSelection selection;
   final RenderModel model;
   final Projection projection;
-  final bool normalizedLineEndings;
 
   late final List<InlineResource> resources =
       _positions?.resources ??
@@ -150,29 +147,6 @@ final class FlarkDocument {
     ].join('\n');
   }
 
-  /// The same document with [source] replaced: one parse, one projection.
-  FlarkDocument withSource(
-    String newSource,
-    FlarkSelection newSelection,
-    FlarkParseBackend backend,
-  ) {
-    validateFlarkSource(newSource);
-    final model = backend.parse(newSource);
-    final doc = FlarkDocument._(
-      newSource,
-      const FlarkSelection.collapsed(0),
-      model,
-      Projection.of(
-        model,
-        newSource,
-        options: projection.options,
-        previous: projection,
-      ),
-      normalizedLineEndings,
-    );
-    return doc.withSelection(newSelection);
-  }
-
   /// Preserve an explicit whole-source range; legalize ordinary caret endpoints.
   FlarkDocument withSelection(FlarkSelection s) => FlarkDocument._(
     source,
@@ -185,7 +159,6 @@ final class FlarkDocument {
         : FlarkSelection(legalize(s.base), legalize(s.extent)),
     model,
     projection,
-    normalizedLineEndings,
     positions: _positions ?? this,
   );
 
@@ -695,7 +668,6 @@ FlarkDocument projectFlarkDocument(
     options: options,
     previous: previous?.projection,
   ),
-  false,
 ).withSelection(selection);
 
 /// Package-internal source preflight shared by the document and editor.
