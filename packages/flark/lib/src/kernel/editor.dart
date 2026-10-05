@@ -15,6 +15,7 @@ import 'document.dart';
 import 'history.dart';
 import 'notify.dart';
 import 'projection.dart';
+import 'resource.dart';
 import 'row_queries.dart';
 import 'style_state.dart';
 

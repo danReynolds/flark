@@ -7,16 +7,15 @@ extension _ResourceEditing on FlarkEditor {
     String? label,
     String? title,
   ) {
-    final existing = _doc.resourceAt(selection, image: image);
-    final start = existing?.start ?? selection.start;
-    final end = existing?.end ?? selection.end;
-    if (!_canSetResource(image) ||
+    final target = _resourceTarget(image);
+    if (target == null ||
         destination.isEmpty ||
         _resourceControl(destination) ||
         (label != null && _resourceControl(label)) ||
         (title != null && _resourceControl(title))) {
       return false;
     }
+    final (:existing, :start, :end) = target;
     // Asking a link or image for the destination and title it already has
     // changes nothing. Rewriting it anyway would respell parser-authenticated
     // source: an inline destination gains angle brackets, and a reference or
@@ -84,11 +83,17 @@ extension _ResourceEditing on FlarkEditor {
     );
   }
 
-  bool _canSetResource(bool image) {
+  bool _canSetResource(bool image) => _resourceTarget(image) != null;
+
+  /// What SetLink or SetImage edits: the resource of its kind around the
+  /// selection, or the selection to make one of; null where neither can be.
+  ({InlineResource? existing, int start, int end})? _resourceTarget(
+    bool image,
+  ) {
     final existing = _doc.resourceAt(selection, image: image);
     final start = existing?.start ?? selection.start;
     final end = existing?.end ?? selection.end;
-    if (!_supportedRange(start, end)) return false;
+    if (!_supportedRange(start, end)) return null;
     final row = _doc.rowAt(start);
     // Code shows its source; so do a link reference definition, whose label
     // a link would end, and a rule, whose dashes text beside it would paint.
@@ -96,7 +101,7 @@ extension _ResourceEditing on FlarkEditor {
         row.kind == RowKind.definition ||
         row.kind == RowKind.thematicBreak ||
         _doc.rowAt(end).index != row.index) {
-      return false;
+      return null;
     }
     if (existing == null &&
         _doc.resources.any(
@@ -104,10 +109,11 @@ extension _ResourceEditing on FlarkEditor {
               start < r.end && end > r.start ||
               start == end && r.contentStart <= start && start <= r.contentEnd,
         )) {
-      return false;
+      return null;
     }
     final from = existing?.contentStart ?? start;
-    return !_doc.ownersAt(from).any((o) => o.kind == RunKind.code);
+    if (_doc.ownersAt(from).any((o) => o.kind == RunKind.code)) return null;
+    return (existing: existing, start: start, end: end);
   }
 
   /// RemoveLink keeps the link's text as text, RemoveImage deletes the
