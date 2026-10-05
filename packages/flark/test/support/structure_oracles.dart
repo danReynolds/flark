@@ -561,6 +561,17 @@ final class _Check {
           openedBlocks.any((b) => next.model.blockStart(b) < mapped)) {
         continue;
       }
+      // comrak opens no table in a paragraph once one of its lines was
+      // shaped like a delimiter row its header line did not match (it marks
+      // the paragraph `table_visited`), so an edit of characters that makes
+      // such a line takes the tables after it, in the same paragraph, as
+      // text.
+      if (editsCharacters &&
+          row.kind == RowKind.tableCell &&
+          now.kind == RowKind.paragraph &&
+          newRowTouched(now)) {
+        continue;
+      }
       // Openers interrupt the table they are typed in, and a new fence pairs
       // with the next fence line, releasing what a later fence held.
       if (openedBlocks.isNotEmpty &&
@@ -758,6 +769,13 @@ final class _Check {
         openedBlocks.any(
           (b) => next.model.blockStart(b) <= edit.forward(was),
         )) {
+      return true;
+    }
+    // A table the edited paragraph took as text (see [_checkRowsKept]).
+    if (editsCharacters &&
+        from.kind == RowKind.tableCell &&
+        row.kind == RowKind.paragraph &&
+        newRowTouched(row)) {
       return true;
     }
     if (editsHtml && was >= edit.start) return true;
