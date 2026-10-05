@@ -319,6 +319,30 @@ void _compositionCases(FlarkParseBackend backend) {
       expect((editor.composing, editor.history.canUndo), (false, false));
     });
 
+    test('a host command that ends a refused composition reports it', () {
+      // Committing the composition withdraws it, as typing refuses it, and
+      // the command the host made applies after it: lastRejection says why
+      // the composed text went.
+      const table = '| a | b |\n| - | - |\n| 1| 2 |';
+      final session = _Session(backend, source: table, caret: 23);
+      final editor = session.editor..beginComposition();
+      session.act(
+        const InsertText('x'),
+        source: '| a | b |\n| - | - |\n| 1x| 2 |',
+      );
+      session.act(
+        const ReplaceRange(23, 24, r'\'),
+        source: '| a | b |\n| - | - |\n| 1\\| 2 |',
+      );
+      expect(
+        editor.applyAfterComposition(const MoveCaret(MoveDirection.backward)),
+        isTrue,
+      );
+      session.expectState(source: table, anchor: 22);
+      expect(editor.lastRejection, FlarkRejection.unsupportedEdit);
+      expect((editor.composing, editor.history.canUndo), (false, false));
+    });
+
     test('Redo during a composition does nothing', () {
       // Redo has nothing to redo once the composition commits. Made while it
       // composes, it would replace the text under the composition.
