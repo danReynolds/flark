@@ -120,12 +120,14 @@ extension _ResourceEditing on FlarkEditor {
   /// image, each checked as SetLink and SetImage are: every other row keeps
   /// its kind and containers, the edited row its containers and its kind
   /// (or none, left with nothing to show), and nothing hidden shows. The
-  /// unlinked text shows exactly as the link did. Where Markdown would read
-  /// the result otherwise, a faithful respelling is tried before refusing:
-  /// unlinked text that would start a block at its line's start (`1. Intro`
-  /// under an item's marker) escapes its first punctuation, and an image
-  /// that starts its line's text takes the whitespace after it, which would
-  /// otherwise indent the line (into code, or out of its table).
+  /// unlinked text shows exactly as the link did, and no link is left over
+  /// it. Where Markdown would read the result otherwise, a faithful
+  /// respelling is tried before refusing: unlinked text that would start a
+  /// block at its line's start (`1. Intro` under an item's marker) escapes
+  /// its first punctuation, text GFM would read as an address escapes its
+  /// punctuation, and an image that starts its line's text takes the
+  /// whitespace after it, which would otherwise indent the line (into code,
+  /// or out of its table).
   bool _removeResource(bool image) {
     final resource = _doc.resourceAt(selection, image: image);
     if (resource == null) return false;
@@ -203,23 +205,31 @@ extension _ResourceEditing on FlarkEditor {
       }
       return false;
     }
-    var content = source.substring(resource.contentStart, resource.contentEnd);
-    if (_doc.model.runAt(resource.run).kind == RunKind.autolink) {
-      content = _literalResourceText(resource.text);
-    } else {
-      // Unwrapping a URL label must not immediately turn it into a GFM
-      // automatic link. Escape punctuation in parser-owned text leaves only;
-      // retain inline formatting, code, images and already escaped text.
+    // The text as written goes first: only the parser knows whether GFM
+    // reads an automatic link in it, alone or with the text beside it. The
+    // fallback escapes where an address could be read: `:`, `@` and `.` in
+    // the label's text (not its formatting, code, images or escapes), or all
+    // of an automatic link's punctuation.
+    final autolink = _doc.model.runAt(resource.run).kind == RunKind.autolink;
+    final written = autolink
+        ? resource.text
+        : source.substring(resource.contentStart, resource.contentEnd);
+    var escaped = autolink ? _literalResourceText(written) : written;
+    if (!autolink) {
       final runs = _doc.model.runsOfBlock(resource.block).toList();
       for (final run in runs.reversed) {
+        // An escape's character is a text run of its own, already escaped.
+        final parent = run.parent;
         if (run.kind != RunKind.text ||
+            parent != noParent &&
+                _doc.model.runKind(parent) == RunKind.escape ||
             run.startUtf16 < resource.contentStart ||
             run.endUtf16 > resource.contentEnd) {
           continue;
         }
         final a = run.startUtf16 - resource.contentStart;
         final b = run.endUtf16 - resource.contentStart;
-        content = content.replaceRange(
+        escaped = escaped.replaceRange(
           a,
           b,
           source
@@ -228,24 +238,33 @@ extension _ResourceEditing on FlarkEditor {
         );
       }
     }
-    final first = _firstEscapable.matchAsPrefix(content);
-    for (final text in [
-      content,
-      if (first != null)
-        content.replaceRange(first.end - 1, first.end - 1, r'\'),
-    ]) {
-      final caret = resource.start + text.length;
-      if (_commit(
-        source.replaceRange(resource.start, resource.end, text),
-        FlarkSelection.collapsed(caret),
-        coalesce: false,
-        acceptSourceMode: true,
-        accept: (next) =>
-            keeps(next, caret, (resource.start, resource.end, text.length)),
-      )) {
-        return true;
+    final link = source.substring(resource.start, resource.end);
+    for (final content in {written, escaped}) {
+      final first = _firstEscapable.matchAsPrefix(content);
+      for (final text in [
+        content,
+        if (first != null)
+          content.replaceRange(first.end - 1, first.end - 1, r'\'),
+      ]) {
+        // A bare address written as it is would only move the caret, which
+        // _commit takes without its check, and the link would stay.
+        if (text == link) continue;
+        final caret = resource.start + text.length;
+        if (_commit(
+          source.replaceRange(resource.start, resource.end, text),
+          FlarkSelection.collapsed(caret),
+          coalesce: false,
+          acceptSourceMode: true,
+          accept: (next) =>
+              keeps(next, caret, (resource.start, resource.end, text.length)) &&
+              !next.resources.any(
+                (r) => !r.isImage && r.start < caret && r.end > resource.start,
+              ),
+        )) {
+          return true;
+        }
+        if (_lastRejection != null) return false;
       }
-      if (_lastRejection != null) return false;
     }
     return false;
   }
