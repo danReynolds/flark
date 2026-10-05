@@ -167,6 +167,31 @@ void main() {
       expect(editor.history.canUndo, isFalse);
     });
 
+    test('a respelling the parser cannot read is passed over', () {
+      // At the end of an autolink's text Return breaks the line after the
+      // autolink, from the caret's other anchor; a body that already holds
+      // a run as long as its fence keeps the fences while the parser reads
+      // the block as it was. Both are respellings, passed over when the
+      // parser cannot read them: the code edit grows the fences, as asked,
+      // and Return, kept nowhere else, is unsupported.
+      final autolink = FlarkEditor(
+        _DeviatesOn(backend, '<http://a.b>\n'),
+        text: '<http://a.b>',
+        caret: 11,
+      );
+      expect(autolink.apply(const Newline()), isFalse);
+      expect(autolink.lastRejection, FlarkRejection.unsupportedEdit);
+      expect(autolink.source, '<http://a.b>');
+      final code = FlarkEditor(
+        _DeviatesOn(backend, '```\n    ```\nabx\n```'),
+        text: '```\n    ```\nab\n```',
+        caret: 14,
+      );
+      expect(code.apply(const Paste('x')), isTrue);
+      expect(code.lastRejection, isNull);
+      expect(code.source, '````\n    ```\nabx\n````');
+    });
+
     test('a span continuation the parser cannot read is passed over', () {
       // Moving a span's delimiter past the word typed beside it is a
       // respelling of that word: refused, it is passed over, and the word
