@@ -1,9 +1,17 @@
-import 'package:flark/code.dart';
-import 'package:flark_flutter/code.dart';
-import 'package:flark_flutter/flark_flutter_legacy.dart';
-import 'package:flutter_test/flutter_test.dart';
+/// The kernel's code editing with this package's delegate: a fence written
+/// from empty, automatic Bash, and every editing case in tool/edit_cases.dart
+/// inside a fence at the top level, in a quote's list item and in a nested
+/// quote with CRLF, each followed by the next typed character, Undo and
+/// Redo. The kernel owns the container prefixes and line endings, the
+/// delegate only the code.
+library;
 
-import '../../flark_codemirror/tool/edit_cases.dart';
+import 'package:flark/code.dart';
+import 'package:flark/flark.dart';
+import 'package:flark_codemirror/flark_codemirror.dart';
+import 'package:test/test.dart';
+
+import '../tool/edit_cases.dart';
 
 ({String source, FlarkSelection selection}) marked(String text) {
   final out = StringBuffer();
@@ -23,7 +31,6 @@ import '../../flark_codemirror/tool/edit_cases.dart';
 }
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
   final backend = createParseBackend();
   final code = FlarkCodeMirror();
 
