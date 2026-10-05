@@ -157,6 +157,33 @@ void main() {
     },
   );
 
+  testWidgets(
+    'the session opens no resource editor where the kernel cannot set one',
+    (t) async {
+      // Its presenter follows the kernel's canSetResource, as the toolbar's
+      // buttons do, rather than opening a form whose Save can only fail.
+      final c = FlarkController(markdown: 'one\n\ntwo');
+      await t.runAsync(() => c.ready);
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FlarkEditor(controller: c)),
+        ),
+      );
+      c.setSelection(0, 8);
+      await t.pump();
+      expect(c.state.link.canSet, isFalse);
+      for (final open in [c.showLinkEditor, c.showImageEditor]) {
+        final result = open();
+        await t.pump();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect((await result).reason, FlarkEditRejection.unavailable);
+      }
+      expect(c.markdown, 'one\n\ntwo');
+      await t.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
+
   testWidgets('read-only fallback is identified and offers complete source', (
     t,
   ) async {

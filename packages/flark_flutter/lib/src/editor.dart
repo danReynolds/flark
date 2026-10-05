@@ -116,11 +116,6 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     if (widget.readOnly) {
       return const FlarkEditResult.rejected(FlarkEditRejection.readOnly);
     }
-    if (_resourceDialogOpen ||
-        c.editor.sourceMode ||
-        c.editor.document.caretRow.kind == RowKind.codeBlock) {
-      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
-    }
     return _editResource(image);
   }
 
@@ -826,12 +821,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
     }
   }
 
+  /// Opens the link or image editor where the kernel can set one: the same
+  /// test that enables the toolbar's buttons, so Command-K and the session's
+  /// presenter never open a form whose Save can only fail.
   Future<FlarkEditResult> _editResource(bool image) async {
     if (_resourceDialogOpen ||
         widget.readOnly ||
-        c.editor.sourceMode ||
-        c.editor.document.rowAt(c.editor.selection.extent).kind ==
-            RowKind.codeBlock) {
+        !c.editor.canSetResource(image: image)) {
       return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
     }
     _dismissLink();

@@ -245,4 +245,34 @@ void main() {
       focus.dispose();
     },
   );
+
+  test(
+    'the session opens no resource editor where the kernel cannot set one',
+    () async {
+      // Its presenter follows the kernel's canSetResource, as the toolbar's
+      // buttons do, rather than opening a form whose Save can only fail.
+      final c = FlarkController(markdown: 'one\n\ntwo');
+      await c.ready;
+      final tester = FleuryTester(viewportSize: const CellSize(60, 20));
+      tester.pumpWidget(
+        FleuryApp(
+          title: 'Resources',
+          home: FlarkEditor(controller: c),
+        ),
+      );
+      tester.render();
+      c.setSelection(0, 8);
+      tester.render();
+      expect(c.state.link.canSet, isFalse);
+      for (final open in [c.showLinkEditor, c.showImageEditor]) {
+        final result = open();
+        tester.render();
+        expect(tester.renderToString(), isNot(contains('Insert')));
+        expect((await result).reason, FlarkEditRejection.unavailable);
+      }
+      expect(c.markdown, 'one\n\ntwo');
+      tester.dispose();
+      c.dispose();
+    },
+  );
 }

@@ -359,4 +359,48 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  // Command-K follows the kernel's canSetResource, as the toolbar's Link
+  // button does, rather than opening a form whose Save can only fail.
+  for (final (name, source, selection) in [
+    (
+      'a selection across two paragraphs',
+      'one\n\ntwo',
+      const SetSelection(0, 8),
+    ),
+    (
+      'a link reference definition',
+      '[a]: /u\n\ntext',
+      const SetSelection.caret(2),
+    ),
+  ]) {
+    testWidgets('Command-K opens no link editor on $name', (tester) async {
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      c.command(selection);
+      await tester.pump();
+      expect(c.editor.canSetResource(), isFalse);
+      expect(
+        tester
+            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.link))
+            .onPressed,
+        isNull,
+      );
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(c.text, source);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  }
 }
