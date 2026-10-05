@@ -74,6 +74,36 @@ void _typingCases(FlarkParseBackend backend) {
       expect(shells(indented.editor), 'list/item');
     });
 
+    test('text typed into an empty item takes back its indented blocks', () {
+      // An empty item ends at the blank line after it, so the paragraph
+      // indented for it reads outside it; the text that fills the item
+      // takes it back, as the item had it before it was emptied.
+      final session = _Session(backend, source: '- \n\n  b\n', caret: 2);
+      expect(session.editor.projection.rows[2].shells, isEmpty);
+      session.act(
+        const InsertText('x'),
+        source: '- x\n\n  b\n',
+        rows: ['x', '', 'b', ''],
+      );
+      expect(shellsOf(session.editor.projection.rows[2]), 'list/item');
+    });
+
+    test('text typed on an empty row joins no span with the row below', () {
+      // The typed line would join the paragraph below and pair with its
+      // delimiters, which then hide and change what that paragraph shows:
+      // a blank line after the text keeps them apart.
+      for (final (source, typed, edited, rows) in [
+        ('a\n\nb*\n', '*x', 'a\n*x\n\nb*\n', ['a\n*x', '', 'b*', '']),
+        ('a\n\nb`\n', '`x', 'a\n`x\n\nb`\n', ['a\n`x', '', 'b`', '']),
+      ]) {
+        _Session(
+          backend,
+          source: source,
+          caret: 2,
+        ).act(Paste(typed), source: edited, rows: rows);
+      }
+    });
+
     test('text typed between blocks keeps the block after it', () {
       const p = RowKind.paragraph, b = RowKind.blank;
       for (final (source, caret, typed, rows, kinds) in [

@@ -36,6 +36,17 @@ void main() {
       '---\n```\n\n```\n\n',
       8,
     ),
+    // The fence closes before the text, which is past the tier; typed as it
+    // is, inside the tier, the text would be the fence's code.
+    (
+      'the row under a fence with no body',
+      '```\n',
+      4,
+      const InsertText('b'),
+      7,
+      '```\n```\nb',
+      9,
+    ),
   ]) {
     test('${command.runtimeType} on $label past the live tier', () {
       final e = FlarkEditor(
@@ -51,6 +62,21 @@ void main() {
       expect(e.selection, FlarkSelection.collapsed(at));
     });
   }
+
+  test('text typed on an empty row past the source limit reports it', () {
+    // Every spelling of the text is past the source limit, the one as typed
+    // first: the edit is refused for that reason, as ordinary text is.
+    final e = FlarkEditor(
+      backend,
+      text: 'para\n\nb',
+      caret: 5,
+      syncLimit: 8,
+      sourceLimit: 8,
+    );
+    expect(e.apply(const InsertText('xy')), isFalse);
+    expect(e.lastRejection, FlarkRejection.sourceLimit);
+    expect(e.source, 'para\n\nb');
+  });
 
   test('a spelling inside the tier still commits live', () {
     // Text under a table takes an empty line before it; with room for it
