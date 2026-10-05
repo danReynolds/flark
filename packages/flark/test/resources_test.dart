@@ -174,6 +174,27 @@ void main() {
     expect(limited.apply(const RemoveLink()), isTrue);
     expect((limited.source, limited.sourceMode), ('a.b.c.d.e.f.g.h', false));
   });
+  test('an unlink respelled out of the live tier is refused', () {
+    // Both addresses in the label still link when written as they were.
+    // Escaped, they push the document past the sync limit, where no parse
+    // checks a respelling: it is passed over, as respellings elsewhere are,
+    // rather than committed unchecked into source mode.
+    const source = '[a@b.c.d.e.f.g.h.i d@e.f](/u)';
+    final e = FlarkEditor(
+      backend,
+      text: source,
+      caret: 2,
+      syncLimit: source.length,
+    );
+    final snapshot = e.snapshot;
+    expect(e.apply(const RemoveLink()), isFalse);
+    expect(identical(e.snapshot, snapshot), isTrue);
+    expect(e.history.canUndo, isFalse);
+    // Within the limit the same unlink goes ahead, escaped.
+    final roomy = FlarkEditor(backend, text: source, caret: 2);
+    expect(roomy.apply(const RemoveLink()), isTrue);
+    expect(roomy.source, r'a\@b\.c\.d\.e\.f\.g\.h\.i d\@e\.f');
+  });
   test('remove image empties its formatting owner coherently', () {
     final e = FlarkEditor(backend, text: '**![cat](/cat.png)**', caret: 5);
     expect(e.apply(const RemoveImage()), isTrue);

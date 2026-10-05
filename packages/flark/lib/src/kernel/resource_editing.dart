@@ -127,7 +127,8 @@ extension _ResourceEditing on FlarkEditor {
   /// its first punctuation, text GFM would read as an address escapes its
   /// punctuation, and an image that starts its line's text takes the
   /// whitespace after it, which would otherwise indent the line (into code,
-  /// or out of its table).
+  /// or out of its table). Only the removal as asked may leave the live
+  /// tier, as with other respellings: past it, a respelling is not checked.
   bool _removeResource(bool image) {
     final resource = _doc.resourceAt(selection, image: image);
     if (resource == null) return false;
@@ -195,7 +196,7 @@ extension _ResourceEditing on FlarkEditor {
           FlarkSelection.collapsed(normalized.caret),
           coalesce: false,
           pending: normalized.pending,
-          acceptSourceMode: true,
+          acceptSourceMode: end == range.end,
           accept: (next) =>
               keeps(next, normalized.caret, (range.start, end, 0)),
         )) {
@@ -254,7 +255,7 @@ extension _ResourceEditing on FlarkEditor {
           source.replaceRange(resource.start, resource.end, text),
           FlarkSelection.collapsed(caret),
           coalesce: false,
-          acceptSourceMode: true,
+          acceptSourceMode: text == written,
           accept: (next) =>
               keeps(next, caret, (resource.start, resource.end, text.length)) &&
               !next.resources.any(
