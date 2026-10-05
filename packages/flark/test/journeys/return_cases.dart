@@ -11,6 +11,35 @@ void _returnCases(FlarkParseBackend backend) {
   ];
 
   group('rows', () {
+    test('Return before literal delimiters starts the new line there', () {
+      // The reopened delimiter pairs with the literal ones after it, which
+      // a caret after it would leave before the caret: the caret goes where
+      // the line starts, or an escape keeps the style faithful.
+      for (final (source, caret, paragraph, edited, at) in [
+        ('*foo**bar*', 4, false, '*foo*\n***bar*', const DisplayPosition(0, 4)),
+        (
+          '_fo_bar_baz_',
+          3,
+          false,
+          '_fo_\n_\\_bar_baz_',
+          const DisplayPosition(0, 3),
+        ),
+        (
+          '__foo__bar__baz__',
+          5,
+          true,
+          '__foo__\n\n____bar__baz__',
+          const DisplayPosition(2, 0),
+        ),
+      ]) {
+        _Session(backend, source: source, caret: caret).act(
+          Newline(paragraph: paragraph),
+          source: edited,
+          caret: at,
+        );
+      }
+    });
+
     test('Return before a heading\'s closing sequence in an item', () {
       // An escape the split tried fell in the closing sequence it moved;
       // that spelling is passed over and the item continues after it.

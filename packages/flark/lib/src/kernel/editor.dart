@@ -3237,6 +3237,10 @@ final class FlarkEditor implements FlarkDocumentState {
           '$lead${join(now)}$trail'.replaceAll(_breakSpace, '\n');
     }
 
+    // Where in the split's edit a caret would start the new line, when the
+    // plain split's own caret does not (see the check below).
+    int? lineStartOffset;
+
     bool attempt(
       List<(int, int, String)> list,
       (int, int, String) caretEdit,
@@ -3292,7 +3296,34 @@ final class FlarkEditor implements FlarkDocumentState {
               )) {
             return false;
           }
-          return defined || showsBreak(next, apart: apart);
+          if (defined) return true;
+          // The caret starts the line Return made: a delimiter the split
+          // reopens can pair with literal ones after it otherwise and leave
+          // them before the caret (`*foo**bar*` split before the `**`).
+          bool startsLine(int offset) {
+            final shownAt = next.displayOf(offset);
+            return shownAt.offset == 0 ||
+                next.projection.rows[shownAt.row].text.codeUnitAt(
+                      shownAt.offset - 1,
+                    ) ==
+                    0x0A;
+          }
+
+          if (!startsLine(caret)) {
+            if (plain) {
+              // Failing faithful spellings, the caret can go before the
+              // reopened delimiters, where the line starts.
+              final lineFrom = caretEdit.$3.lastIndexOf('\n') + 1;
+              for (var o = offset - 1; o >= lineFrom; o--) {
+                if (startsLine(caret - (offset - o))) {
+                  lineStartOffset = o;
+                  break;
+                }
+              }
+            }
+            return false;
+          }
+          return showsBreak(next, apart: apart);
         },
       );
     }
@@ -3300,6 +3331,12 @@ final class FlarkEditor implements FlarkDocumentState {
     if (attempt(edits, at, offset, plain: true) || _lastRejection != null) {
       return _lastRejection == null;
     }
+    // The plain split with its caret where the line starts.
+    bool atLineStart() {
+      final o = lineStartOffset;
+      return o != null && attempt(edits, at, o, plain: true);
+    }
+
     final lineStart = row.contentStarts[first];
     final moved = _firstEscapable.matchAsPrefix(source, at.$2);
     final kept = _lastEscapable.firstMatch(
@@ -3348,20 +3385,25 @@ final class FlarkEditor implements FlarkDocumentState {
         !following.shells.any((s) => s.block == item!.block) ||
         shown(end) < row.text.length ||
         start != end && (split.length > 1 || !at.$3.endsWith(separator))) {
-      return false;
+      return atLineStart();
     }
     final lineAt = m.lineStartUtf16(following.firstLine);
     final marker = separator.substring(separator.indexOf('\n') + 1);
     final edit = (lineAt, lineAt, '$marker${_lineBreakAt(lineAt)}');
     return attempt(
-      [
-        if (start != end)
-          (at.$1, at.$2, at.$3.substring(0, at.$3.length - separator.length)),
-        edit,
-      ],
-      edit,
-      marker.length,
-    );
+          [
+            if (start != end)
+              (
+                at.$1,
+                at.$2,
+                at.$3.substring(0, at.$3.length - separator.length),
+              ),
+            edit,
+          ],
+          edit,
+          marker.length,
+        ) ||
+        _lastRejection == null && atLineStart();
   }
 
   /// The marker line for the item after [item]: the same outer prefixes,
