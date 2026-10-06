@@ -137,4 +137,15 @@ void main() {
     document.update('fine');
     expect(document.sourceMode, isFalse);
   });
+
+  test('the source preview cuts between characters, never inside one', () {
+    expect(flarkSourcePreview('short'), 'short');
+    expect(flarkSourcePreview('x' * 1024), 'x' * 1024);
+    expect(flarkSourcePreview('x' * 1025), '${'x' * 1024}…');
+    // An emoji straddling the cut is kept whole rather than halved.
+    final emoji = '${'x' * 1023}\u{1F600}${'x' * 9}';
+    expect(flarkSourcePreview(emoji), '${'x' * 1023}\u{1F600}…');
+    // An unpaired surrogate, which the reader shows as source, is U+FFFD.
+    expect(flarkSourcePreview('a\uD800b\uDC00'), 'a�b�');
+  });
 }
