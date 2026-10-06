@@ -201,7 +201,7 @@ void _checkBodyKept(
               block.kind == BlockKind.codeBlock &&
               block.flags == flags &&
               block.startUtf16 == start &&
-              (flags & 2 == 0 || block.endUtf16 == end + delta),
+              (flags & BlockFlag.closed == 0 || block.endUtf16 == end + delta),
         ),
     isTrue,
     reason:

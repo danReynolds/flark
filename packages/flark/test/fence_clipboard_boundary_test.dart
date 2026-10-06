@@ -1,4 +1,5 @@
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart' show BlockFlag;
 import 'package:test/test.dart';
 
 void main() {
@@ -258,7 +259,7 @@ void main() {
       expect(e.source, '````text\n```\ninside');
       final row = e.document.rowAt(e.selection.extent);
       expect(row.text, '```\ninside');
-      expect(e.document.model.blockAt(row.block).flags & 2, 0);
+      expect(e.document.model.blockAt(row.block).flags & BlockFlag.closed, 0);
     },
   );
 

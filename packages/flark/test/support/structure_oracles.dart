@@ -243,7 +243,7 @@ bool inReference(FlarkDocument doc, int offset) {
     final kind = m.runKind(r);
     final reference =
         (kind == RunKind.link || kind == RunKind.image) &&
-            m.runFlags(r) & 1 != 0 ||
+            m.runFlags(r) & RunFlag.reference != 0 ||
         kind == RunKind.footnoteRef;
     if (reference && m.runStart(r) <= offset && offset <= m.runEnd(r)) {
       return true;
@@ -629,7 +629,9 @@ final class _Check {
   late final bool releasesFences = openedBlocks.any((b) {
     final start = next.model.blockStart(b), end = next.model.blockEnd(b);
     return old.model.blocks.any((f) {
-      if (f.kind != BlockKind.codeBlock || f.flags & 1 == 0) return false;
+      if (f.kind != BlockKind.codeBlock || f.flags & BlockFlag.fenced == 0) {
+        return false;
+      }
       final at = edit.forward(f.startUtf16);
       return at >= start && at < end;
     });
@@ -639,12 +641,12 @@ final class _Check {
   /// is whitespace, which the profile has typing paint and advance past, and
   /// a setext heading's syntax is the underline below its first line.
   static bool _opens(int kind, int flags) =>
-      kind == BlockKind.codeBlock && flags & 1 != 0 ||
+      kind == BlockKind.codeBlock && flags & BlockFlag.fenced != 0 ||
       kind == BlockKind.htmlBlock ||
       kind == BlockKind.item ||
       kind == BlockKind.blockQuote ||
       kind == BlockKind.footnoteDefinition ||
-      kind == BlockKind.heading && flags & 1 == 0 ||
+      kind == BlockKind.heading && flags & BlockFlag.setext == 0 ||
       kind == BlockKind.thematicBreak ||
       kind == BlockKind.table;
 
@@ -792,7 +794,7 @@ final class _Check {
                   openedBlocks.any(
                     (b) =>
                         next.model.blockKind(b) == BlockKind.codeBlock &&
-                        next.model.blockFlags(b) & 1 != 0 &&
+                        next.model.blockFlags(b) & BlockFlag.fenced != 0 &&
                         next.model.blockStart(b) < mapped,
                   ))) {
         continue;

@@ -11,6 +11,7 @@ import 'dart:convert';
 
 import 'package:characters/characters.dart';
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart' show BlockFlag;
 import 'package:test/test.dart';
 
 import 'support/host.dart';
@@ -438,7 +439,7 @@ String? _withoutCaretFences(FlarkDocument? doc) {
   final model = doc.model, block = model.blockAt(row.block);
   final marker = doc.source.codeUnitAt(block.startUtf16);
   var source = doc.source;
-  if (block.flags & 2 != 0) {
+  if (block.flags & BlockFlag.closed != 0) {
     // The closing run ends before any trailing spaces or tabs on its line.
     final lineStart = model.lineStartUtf16(
       block.firstLine + block.lineCount - 1,

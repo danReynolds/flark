@@ -162,13 +162,9 @@ final class RenderModel {
       _block(index, BlockField.kindFlags) >> BlockKindFlags.flagsShift &
       BlockKindFlags.flagsMask;
 
-  /// Block flags bit 23, on any leaf: its inline extraction could not be
-  /// verified against the parser, so it publishes no runs and displays its
-  /// source as plain text while the rest of the document renders.
-  static const int sourceOnlyFlag = 1 << 23;
-
   /// Whether block [index] shows its source because its runs were withheld.
-  bool blockSourceOnly(int index) => blockFlags(index) & sourceOnlyFlag != 0;
+  bool blockSourceOnly(int index) =>
+      blockFlags(index) & BlockFlag.sourceOnly != 0;
 
   /// The parent block's index, or [noParent] for the document.
   int blockParent(int index) => _block(index, BlockField.parent);
@@ -372,11 +368,12 @@ final class RenderModel {
   );
 
   /// Display text for a run whose content is not a source slice: replacement
-  /// runs always, code runs when flags bit 1 is set.
+  /// runs always, code runs with [RunFlag.displayFromStrings].
   String? displayOverride(int index) {
     final kind = runKind(index);
     if (kind != RunKind.replacement &&
-        (kind != RunKind.code || runFlags(index) & 2 == 0)) {
+        (kind != RunKind.code ||
+            runFlags(index) & RunFlag.displayFromStrings == 0)) {
       return null;
     }
     final offset = _runKindExtra(index);
@@ -427,6 +424,52 @@ final class RenderModel {
 
 /// Sentinel for "no parent" in block and run parent fields.
 const int noParent = 0xFFFFFFFF;
+
+/// The named bits of a block's flags ([RenderModel.blockFlags]). A bit means
+/// something only for the kinds that name it; the schema's `block_attrs`
+/// (`native/flark_parse/schema/render_model_v5.json`, and `SCHEMA.md`) is
+/// their source.
+abstract final class BlockFlag {
+  /// A heading underlined (setext) rather than opened with `#`.
+  static const int setext = 1 << 0;
+
+  /// A code block opened by a fence line rather than indented.
+  static const int fenced = 1 << 0;
+
+  /// A fenced code block closed by a fence line.
+  static const int closed = 1 << 1;
+
+  /// A list whose items are not separated by blank lines.
+  static const int tight = 1 << 0;
+
+  /// An ordered list.
+  static const int ordered = 1 << 1;
+
+  /// A task item.
+  static const int task = 1 << 0;
+
+  /// A task item that is checked.
+  static const int checked = 1 << 1;
+
+  /// On any leaf: its inline extraction could not be verified against the
+  /// parser, so it publishes no runs and displays its source as plain text
+  /// while the rest of the document renders.
+  static const int sourceOnly = 1 << 23;
+}
+
+/// The named bits of a run's flags ([RenderModel.runFlags]); the schema's
+/// `run_attrs` are their source.
+abstract final class RunFlag {
+  /// A link or image written by reference.
+  static const int reference = 1 << 0;
+
+  /// A code run that displays from the string table rather than its source
+  /// slice (escaped pipes inside table cells).
+  static const int displayFromStrings = 1 << 1;
+
+  /// A run that spans more than one line.
+  static const int spansLines = 1 << 2;
+}
 
 extension type const BlockView._((RenderModel, int) _rec) {
   const BlockView(RenderModel model, int index) : this._((model, index));
@@ -479,7 +522,7 @@ extension type const RunView._((RenderModel, int) _rec) {
   int get contentStartUtf16 => model.runContentStart(index);
   int get contentEndUtf16 => model.runContentEnd(index);
   int get flags => model.runFlags(index);
-  bool get spansLines => flags & 4 != 0;
+  bool get spansLines => flags & RunFlag.spansLines != 0;
 
   /// Comrak's resolved values, including references, escapes and entities.
   /// Only meaningful for link, image and autolink runs.
@@ -586,7 +629,7 @@ bool sameRunRecords(
     final flags =
         packed >> RunKindFlagsParent.flagsShift & RunKindFlagsParent.flagsMask;
     if ((kind == RunKind.replacement ||
-            kind == RunKind.code && flags & 2 != 0) &&
+            kind == RunKind.code && flags & RunFlag.displayFromStrings != 0) &&
         a.displayOverride(r) != b.displayOverride(q)) {
       return false;
     }

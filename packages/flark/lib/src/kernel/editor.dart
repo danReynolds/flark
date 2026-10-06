@@ -1590,7 +1590,7 @@ final class FlarkEditor implements FlarkDocumentState {
     final line = model.lineOfUtf16(caret);
     for (final block in model.blocks) {
       if (block.kind != BlockKind.codeBlock ||
-          block.flags & 1 == 0 ||
+          block.flags & BlockFlag.fenced == 0 ||
           block.attr != 3 ||
           block.firstLine != line ||
           caret <= block.startUtf16 ||
@@ -2174,7 +2174,7 @@ final class FlarkEditor implements FlarkDocumentState {
       // Only a closed fence's block range is the whole construct. An unclosed
       // one ends at its opening line, so deleting that range leaves any
       // closing delimiter behind as a new unclosed block.
-      if (block.flags & 2 != 0) {
+      if (block.flags & BlockFlag.closed != 0) {
         final start = block.startUtf16, end = block.endUtf16;
         return _commit(
           source.replaceRange(start, end, ''),

@@ -186,7 +186,7 @@ extension _TypedLines on FlarkEditor {
       final above = row.index > 0 ? projection.rows[row.index - 1] : null;
       if (above != null &&
           above.bodyless &&
-          m.blockFlags(above.block) & 2 == 0 &&
+          m.blockFlags(above.block) & BlockFlag.closed == 0 &&
           above.firstLine + above.lineCount == line) {
         final fenceAt = m.blockStart(above.block);
         final closer =

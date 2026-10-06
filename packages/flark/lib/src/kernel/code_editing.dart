@@ -233,7 +233,7 @@ extension _CodeEditing on FlarkEditor {
     var prefix = _continuing(row.block);
     // The body line ends the way the opening fence's line does.
     final newline = _lineBreakAt(block.startUtf16);
-    final closed = block.flags & 2 != 0;
+    final closed = block.flags & BlockFlag.closed != 0;
     final at = closed
         ? model.lineStartUtf16(block.firstLine + block.lineCount - 1)
         : block.endUtf16;
@@ -352,7 +352,9 @@ extension _CodeEditing on FlarkEditor {
       }
       final nextBlock = next.model.blockAt(nextRow.block);
       if (nextBlock.startUtf16 != block.startUtf16 ||
-          nextBlock.flags & 3 != block.flags & 3) {
+          (nextBlock.flags ^ block.flags) &
+                  (BlockFlag.fenced | BlockFlag.closed) !=
+              0) {
         return false;
       }
       for (var i = 0; i < row.shells.length; i++) {
@@ -376,7 +378,7 @@ extension _CodeEditing on FlarkEditor {
     final openingGrowth = length - block.attr;
     final fenceCharacter = String.fromCharCode(marker);
     String? grown = candidate;
-    if (block.flags & 2 != 0) {
+    if (block.flags & BlockFlag.closed != 0) {
       // The model identifies the closing line. Preserve its container prefix,
       // existing longer marker run, and trailing horizontal whitespace exactly.
       final lineStart = _doc.model.lineStartUtf16(
@@ -494,7 +496,7 @@ extension _CodeEditing on FlarkEditor {
     final newline = source.substring(row.contentEnds[i - 1], lineStart);
     final edits = <(int, int, String)>[];
     late int destination;
-    if (block.flags & 2 != 0) {
+    if (block.flags & BlockFlag.closed != 0) {
       final closingLine = block.firstLine + block.lineCount - 1;
       edits.add((lineStart, model.lineStartUtf16(closingLine), ''));
       final after = closingLine + 1;

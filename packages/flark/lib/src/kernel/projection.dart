@@ -1020,12 +1020,13 @@ final class _Builder {
       }
       if (kind == BlockKind.item) {
         final flags = m.blockFlags(b);
-        final task = flags & 1 != 0;
+        final task = flags & BlockFlag.task != 0;
         // The checkbox is the task symbol with its ASCII brackets.
         final s = m.itemTaskStart(b), e = m.itemTaskEnd(b);
         final list = m.blockParent(b);
         final itemIndex = _itemIndexOf[b];
-        final ordered = list != noParent && m.blockFlags(list) & 2 != 0;
+        final ordered =
+            list != noParent && m.blockFlags(list) & BlockFlag.ordered != 0;
         chain.add(
           Shell(
             kind: ShellKind.item,
@@ -1033,7 +1034,7 @@ final class _Builder {
             ordered: ordered,
             start: ordered ? m.blockAttr(list) : 1,
             task: task,
-            checked: task && flags & 2 != 0,
+            checked: task && flags & BlockFlag.checked != 0,
             checkboxStart: task && s > 0 ? s - 1 : -1,
             checkboxEnd: task && e > 0 ? e + 1 : -1,
             itemIndex: itemIndex,
@@ -1046,9 +1047,9 @@ final class _Builder {
           Shell(
             kind: ShellKind.list,
             block: b,
-            ordered: flags & 2 != 0,
+            ordered: flags & BlockFlag.ordered != 0,
             start: m.blockAttr(b),
-            tight: flags & 1 != 0,
+            tight: flags & BlockFlag.tight != 0,
           ),
         );
       }
@@ -1622,11 +1623,12 @@ final class _Builder {
     final flags = m.blockFlags(block);
     // Fence lines hold no caret: an edit there would be invisible. The info
     // string is a host affordance, not a caret position.
-    if (kind == BlockKind.codeBlock && flags & 1 != 0 && starts.isNotEmpty) {
+    final fenced = kind == BlockKind.codeBlock && flags & BlockFlag.fenced != 0;
+    if (fenced && starts.isNotEmpty) {
       starts[0] = -1;
       ends[0] = -1;
       prefixes[0] = -1;
-      if (flags & 2 != 0 && starts.length > 1) {
+      if (flags & BlockFlag.closed != 0 && starts.length > 1) {
         starts[starts.length - 1] = -1;
         ends[ends.length - 1] = -1;
         prefixes[prefixes.length - 1] = -1;
@@ -1646,13 +1648,9 @@ final class _Builder {
       contentStarts: starts,
       contentEnds: ends,
       prefixStarts: prefixes,
-      fenced: kind == BlockKind.codeBlock && flags & 1 != 0,
-      codeInfoStart: kind == BlockKind.codeBlock && flags & 1 != 0
-          ? m.codeInfoStart(block)
-          : -1,
-      codeInfoEnd: kind == BlockKind.codeBlock && flags & 1 != 0
-          ? m.codeInfoEnd(block)
-          : -1,
+      fenced: fenced,
+      codeInfoStart: fenced ? m.codeInfoStart(block) : -1,
+      codeInfoEnd: fenced ? m.codeInfoEnd(block) : -1,
     );
   }
 }
@@ -1777,7 +1775,7 @@ final class _Reuse {
       return false;
     }
     if (kind == BlockKind.codeBlock &&
-        flags & 1 != 0 &&
+        flags & BlockFlag.fenced != 0 &&
         (m.codeInfoStart(b) - base != old.codeInfoStart(ob) - oldBase ||
             m.codeInfoEnd(b) - base != old.codeInfoEnd(ob) - oldBase)) {
       return false;
