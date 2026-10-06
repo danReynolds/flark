@@ -131,7 +131,7 @@ The audits found the same five shapes in every area.
   caret left past a removed fence; the link dialog that could only fail; and
   Fleury's source fallback splitting a surrogate pair.
 
-| Measure | `c3ae214c` | Cleanup head |
+| Measure | `c3ae214c` | Cleanup head (`7f68cece`) |
 | --- | ---: | ---: |
 | `packages/flark/lib` production lines | 10,452 | 10,410 |
 | `editor.dart` / `typed_lines.dart` | 3,462 / 691 | 3,291 / 563 |
@@ -174,9 +174,14 @@ home, and a second home shows up in review as a second import.
 
 **Owner decision, 2026-10-06:** no large re-architecture. The layer
 reorganization (steps 1 to 3, 6 and 7) is not planned; small cleanups that
-need no restructuring go ahead instead: named flag bits, kernel availability
-queries for the hosts, session fixes, refreshed documentation. The steps are
-kept as a record of what the structure would take.
+need no restructuring went ahead instead, in this PR: named flag bits; the
+kernel answering the hosts' availability questions (`canSetHeading`,
+`FlarkDocument.codeInfo`, `ProjectedRow.samePresentation`, the source
+preview) and Fleury's toolbar reading one `FlarkState` through one command
+path; the session's source-mode request and one refusal check; the code
+editing profile rewritten against the CodeMirror delegate. The kernel gained
+75 lines from them and the hosts lost 117. The steps are kept as a record of
+what the structure would take.
 
 Each step keeps every suite green, is gated by the fingerprint, and lands
 as its own PR.
