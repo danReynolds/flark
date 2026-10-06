@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
-First public preview, to be released as 0.5.0. This entry is named for the
-version in the commit that pins the parser libraries (see RELEASING.md).
+First public preview. The parser libraries are those of release
+`flark_parse-v0.1.0`.
 
 - Parses Markdown with unmodified [comrak](https://github.com/kivikakk/comrak)
   0.54 (CommonMark 0.31.2 and GitHub Flavored Markdown) into a flat render
