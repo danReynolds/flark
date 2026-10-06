@@ -119,3 +119,44 @@ final class FlarkCodeMirror implements CodeEditingDelegate {
     }
   }
 }
+
+/// What a fence's language menu offers, which the hosts' toolbars present
+/// each in their own way: the language the fence's info string names, the
+/// one detection picks while it names none, and the languages to choose
+/// from, those the editor's [FlarkCodeMirror] highlights or every ported one.
+final class CodeMirrorLanguageMenu {
+  /// The menu for a fence with [info] whose body is [code], edited with
+  /// [delegate].
+  factory CodeMirrorLanguageMenu(
+    CodeEditingDelegate? delegate, {
+    required String info,
+    required String code,
+  }) {
+    final value = codeMirrorLanguageName(info);
+    final labels = {
+      for (final language
+          in delegate is FlarkCodeMirror
+              ? delegate.languages
+              : CodeMirrorLanguages.all)
+        language.name: language.label,
+    };
+    return CodeMirrorLanguageMenu._(
+      value,
+      value.isEmpty ? labels[delegate?.resolveLanguage(code, info)] : null,
+      Map.unmodifiable(labels),
+    );
+  }
+
+  const CodeMirrorLanguageMenu._(this.value, this.detected, this.labels);
+
+  /// The language the info string names, as `SetCodeLanguage` takes it:
+  /// empty for Automatic, `text` for plain text, or a name as written.
+  final String value;
+
+  /// The label of the language detection picks for Automatic, or null when
+  /// the fence names one or detection recognizes none.
+  final String? detected;
+
+  /// The languages to offer, by name, with their labels.
+  final Map<String, String> labels;
+}

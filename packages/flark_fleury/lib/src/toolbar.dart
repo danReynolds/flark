@@ -62,16 +62,13 @@ extension _EditorToolbar on _EditorState {
 
     // The caret's fence's info string, or null outside fenced code.
     final info = state.code.language;
-    final language = codeMirrorLanguageName(info ?? '');
-    final code = editor.codeEditing;
-    final detected = info != null && language.isEmpty
-        ? code?.resolveLanguage(editor.document.caretRow.text, info)
-        : null;
-    final labels = {
-      for (final choice
-          in code is FlarkCodeMirror ? code.languages : CodeMirrorLanguages.all)
-        choice.name: choice.label,
-    };
+    final languages = info == null
+        ? null
+        : CodeMirrorLanguageMenu(
+            editor.codeEditing,
+            info: info,
+            code: editor.document.caretRow.text,
+          );
     return Padding(
       padding: const EdgeInsets.only(bottom: 1),
       child: Wrap(
@@ -112,30 +109,34 @@ extension _EditorToolbar on _EditorState {
                 ? () => _editLink(image: true)
                 : null,
           ),
-          if (info != null)
+          if (languages != null)
             Select<String>(
               // Replace an open picker if its target changes. A dropdown must
               // never apply an old choice to a different fence or document.
               key: ValueKey(('language', editor, revision, selection)),
               semanticLabel: 'Code language',
-              value: language,
+              value: languages.value,
               options: [
                 SelectOption(
                   value: '',
                   label:
-                      'Automatic${labels[detected] == null ? '' : ' · ${labels[detected]}'}',
+                      'Automatic${languages.detected == null ? '' : ' · ${languages.detected}'}',
                 ),
                 const SelectOption(value: 'text', label: 'Plain text'),
-                if (language.isNotEmpty &&
-                    language != 'text' &&
-                    !labels.containsKey(language))
-                  SelectOption(value: language, label: language),
-                for (final MapEntry(key: name, value: label) in labels.entries)
+                // A language the menu does not offer keeps its written name.
+                if (languages.value.isNotEmpty &&
+                    languages.value != 'text' &&
+                    !languages.labels.containsKey(languages.value))
+                  SelectOption(value: languages.value, label: languages.value),
+                for (final MapEntry(key: name, value: label)
+                    in languages.labels.entries)
                   SelectOption(value: name, label: label),
               ],
               onChanged: state.code.canSetLanguage
                   ? (value) {
-                      if (value != language) command(SetCodeLanguage(value));
+                      if (value != languages.value) {
+                        command(SetCodeLanguage(value));
+                      }
                       if (mounted) _focus.requestFocus();
                     }
                   : null,

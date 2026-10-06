@@ -1414,21 +1414,13 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
         );
     // The caret's fence's info string, or null outside fenced code.
     final info = state.code.language;
-    final codeLanguage = codeMirrorLanguageName(info ?? '');
-    final detected = info != null && codeLanguage.isEmpty
-        ? e.codeEditing?.resolveLanguage(e.document.caretRow.text, info)
-        : null;
-    // The languages the editor's delegate highlights, or every ported one.
-    final delegate = e.codeEditing;
-    final codeLanguages = {
-      for (final language
-          in delegate is FlarkCodeMirror
-              ? delegate.languages
-              : CodeMirrorLanguages.all)
-        language.name: language.label,
-      'text': 'Plain text',
-    };
-    final detectedLabel = codeLanguages[detected];
+    final languages = info == null
+        ? null
+        : CodeMirrorLanguageMenu(
+            e.codeEditing,
+            info: info,
+            code: e.document.caretRow.text,
+          );
     final heading = state.heading;
     void captureMenu() => _toolbarMenuTarget = (c, e.revision, e.selection);
     bool menuActive() {
@@ -1455,14 +1447,14 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
             child: Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (info != null)
+                if (languages != null)
                   PopupMenuButton<String>(
                     tooltip: 'Code language',
                     enabled: state.code.canSetLanguage,
                     onOpened: captureMenu,
-                    initialValue: codeLanguage,
+                    initialValue: languages.value,
                     onSelected: (language) {
-                      if (menuActive() && language != codeLanguage) {
+                      if (menuActive() && language != languages.value) {
                         _command(SetCodeLanguage(language));
                       }
                       _focus.requestFocus();
@@ -1473,12 +1465,9 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                         value: 'text',
                         child: Text('Plain text'),
                       ),
-                      for (final entry in codeLanguages.entries)
-                        if (entry.key != 'text')
-                          PopupMenuItem(
-                            value: entry.key,
-                            child: Text(entry.value),
-                          ),
+                      for (final MapEntry(key: name, value: label)
+                          in languages.labels.entries)
+                        PopupMenuItem(value: name, child: Text(label)),
                     ],
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
@@ -1492,9 +1481,12 @@ class _FlarkEditorWidgetState extends State<FlarkEditorWidget> {
                           // first word, which can be any length.
                           Flexible(
                             child: Text(
-                              codeLanguage.isEmpty
-                                  ? 'Auto${detectedLabel == null ? '' : ' · $detectedLabel'}'
-                                  : codeLanguages[codeLanguage] ?? codeLanguage,
+                              switch (languages.value) {
+                                '' =>
+                                  'Auto${languages.detected == null ? '' : ' · ${languages.detected}'}',
+                                'text' => 'Plain text',
+                                final name => languages.labels[name] ?? name,
+                              },
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),

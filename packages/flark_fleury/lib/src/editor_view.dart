@@ -10,7 +10,7 @@ import 'package:fleury/fleury_core.dart';
 import 'package:fleury_widgets/fleury_widgets_web.dart'
     show Select, SelectOption;
 import 'package:flark_codemirror/flark_codemirror.dart'
-    show CodeMirrorLanguages, FlarkCodeMirror, codeMirrorLanguageName;
+    show CodeMirrorLanguageMenu;
 
 import 'cell_layout.dart';
 import 'image_previews.dart';

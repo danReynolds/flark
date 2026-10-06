@@ -403,6 +403,23 @@ void main() {
     expect(code.resolveLanguage('', 'kotlin'), 'kotlin');
   });
 
+  test('a language menu offers the delegate languages and names detection', () {
+    final only = FlarkCodeMirror.only([
+      CodeMirrorLanguages.python,
+      CodeMirrorLanguages.ruby,
+    ]);
+    const ruby = 'def greet(name)\n  puts "Hello, #{name}"\nend';
+    final automatic = CodeMirrorLanguageMenu(only, info: '', code: ruby);
+    expect((automatic.value, automatic.detected), ('', 'Ruby'));
+    expect(automatic.labels, {'python': 'Python', 'ruby': 'Ruby'});
+    final named = CodeMirrorLanguageMenu(only, info: 'py title=x', code: ruby);
+    expect((named.value, named.detected), ('python', null));
+    // Without a FlarkCodeMirror, every ported language, and no detection.
+    final plain = CodeMirrorLanguageMenu(null, info: '', code: ruby);
+    expect((plain.value, plain.detected), ('', null));
+    expect(plain.labels.length, CodeMirrorLanguages.all.length);
+  });
+
   group('proposals', () {
     CodeEditProposal? propose(
       String source,
