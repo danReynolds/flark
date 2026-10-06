@@ -36,6 +36,27 @@ void main() {
   });
 
   test(
+    'Undo during a first composition undoes it, as the editor does',
+    () async {
+      // Undo commits an open composition and takes it back, also when no
+      // step came before it: then the composition is the step to undo.
+      final session = FlarkSession(markdown: 'abc');
+      await session.ready;
+      addTearDown(session.dispose);
+      final editor = session.engine!;
+      editor.apply(const SetSelection(3, 3));
+      editor.beginComposition();
+      editor.apply(const InsertText('k'));
+      expect(session.state.canUndo, isFalse);
+      expect(session.command(const Undo()).changed, isTrue);
+      expect((session.state.markdown, editor.composing), ('abc', false));
+      expect(session.command(const Redo()).changed, isTrue);
+      expect(session.state.markdown, 'abck');
+      expect(session.command(const Redo()).outcome, FlarkEditOutcome.unchanged);
+    },
+  );
+
+  test(
     'latest loading seed, save stream, reset and undoable replacement',
     () async {
       final gate = Completer<FlarkBackendLease>();
@@ -192,6 +213,26 @@ void main() {
     expect(c.state.selection.start, 4);
     expect(c.state.selection.end, 8);
   });
+  test('source mode asked for stays when the document shrinks', () async {
+    // A document past the live tier shows its source anyway, and asking for
+    // rendered mode there changes nothing. Asking for source mode is still a
+    // request: when the document shrinks to fit the tier, it stays.
+    final session = FlarkSession(markdown: 'x' * 20, syncLimit: 10);
+    addTearDown(session.dispose);
+    await session.ready;
+    final editor = session.engine!;
+    expect(editor.sourceMode, isTrue);
+    final revision = session.state.revision;
+    expect(session.setSourceMode(false).outcome, FlarkEditOutcome.unchanged);
+    expect(session.state.revision, revision);
+    expect(session.setSourceMode(true).changed, isTrue);
+    expect(session.replaceSourceRange(0, 20, 'x').changed, isTrue);
+    expect(editor.sourceMode, isTrue);
+    expect(session.setSourceMode(true).outcome, FlarkEditOutcome.unchanged);
+    expect(session.setSourceMode(false).changed, isTrue);
+    expect(editor.sourceMode, isFalse);
+  });
+
   test('rejected callable commands preserve IME undo state', () async {
     final c = Controller(markdown: 'abc');
     addTearDown(c.session.dispose);
@@ -226,6 +267,36 @@ void main() {
     }
     expect(c.markdown, 'kept');
     expect(c.state.revision, revision);
+  });
+
+  test('the writable limit counts a document in UTF-8 bytes', () async {
+    // Text of two-, three- or four-byte characters that fills the 1 MiB
+    // limit exactly opens and loads; one byte more is refused, whether the
+    // session has its editor or not.
+    const limit = 1024 * 1024;
+    for (final (char, bytes) in [('é', 2), ('€', 3), ('😀', 4)]) {
+      final fits = '${char * (limit ~/ bytes)}${'x' * (limit % bytes)}';
+      final over = '${fits}x';
+      final opened = Controller(markdown: fits);
+      addTearDown(opened.session.dispose);
+      await opened.ready;
+      expect(
+        opened.loadMarkdown(over).reason,
+        FlarkEditRejection.sourceLimit,
+        reason: char,
+      );
+      final refused = Controller(markdown: over);
+      addTearDown(refused.session.dispose);
+      await expectLater(refused.ready, throwsArgumentError, reason: char);
+      expect(
+        refused.loadMarkdown(over).reason,
+        FlarkEditRejection.sourceLimit,
+        reason: char,
+      );
+      expect(refused.loadMarkdown(fits).changed, isTrue, reason: char);
+      await refused.retryLoading();
+      expect(refused.markdown, fits, reason: char);
+    }
   });
 
   test('a load refused while loading leaves the seed to open', () async {

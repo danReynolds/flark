@@ -107,8 +107,30 @@ class InputContext {
     final selection = source.selection;
     final selectionStart = _withoutCrs(crs, selection.start - start);
     final selectionEnd = _withoutCrs(crs, selection.end - start);
+    // A deletion beside the caret it was sent is read there too: Backspace
+    // ends at it, Delete starts at it. Matched from either end, a line break
+    // deleted before others read as the last of them, which with mixed line
+    // endings is another one, away from the caret.
+    final removed = sent.length - next.length;
+    final caret = selectionStart;
+    bool deletes(int from) =>
+        from >= 0 &&
+        from + removed <= sent.length &&
+        next.startsWith(sent.substring(0, from)) &&
+        next.endsWith(sent.substring(from + removed));
     var a = 0, s = 0;
     if (selection.isValid &&
+        selection.isCollapsed &&
+        local.selection.isCollapsed &&
+        removed > 0 &&
+        caret >= 0 &&
+        caret <= sent.length &&
+        ((local.selection.extentOffset == caret - removed &&
+                deletes(caret - removed)) ||
+            (local.selection.extentOffset == caret && deletes(caret)))) {
+      a = local.selection.extentOffset;
+      s = sent.length - a - removed;
+    } else if (selection.isValid &&
         selectionStart >= 0 &&
         selectionEnd <= sent.length &&
         selectionStart + sent.length - selectionEnd <= next.length &&
@@ -116,6 +138,20 @@ class InputContext {
         next.endsWith(sent.substring(selectionEnd))) {
       a = selectionStart;
       s = sent.length - selectionEnd;
+      // Narrow a selection's replacement to the text it changed. A value
+      // that only moved the selection returns the selected text as it was,
+      // and its line breaks keep their CRs.
+      while (a < sent.length - s &&
+          a < next.length - s &&
+          sent.codeUnitAt(a) == next.codeUnitAt(a)) {
+        a++;
+      }
+      while (a < sent.length - s &&
+          a < next.length - s &&
+          sent.codeUnitAt(sent.length - 1 - s) ==
+              next.codeUnitAt(next.length - 1 - s)) {
+        s++;
+      }
     } else {
       final shorter = math.min(sent.length, next.length);
       while (a < shorter && sent.codeUnitAt(a) == next.codeUnitAt(a)) {

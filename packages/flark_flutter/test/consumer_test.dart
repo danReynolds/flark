@@ -64,14 +64,19 @@ void main() {
     await t.pump();
     expect(find.byType(FlarkEditorWidget), findsOneWidget);
     var host = t.widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget));
-    host.actions!.replaceMarkdown('edited');
+    host.session!.replaceSourceRange(
+      0,
+      host.session!.state.markdown.length,
+      'edited',
+      replaceAll: true,
+    );
     await t.pumpWidget(view('ignored seed', 'a'));
     host = t.widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget));
-    expect(host.actions!.markdown, 'edited');
+    expect(host.session!.state.markdown, 'edited');
     await t.pumpWidget(view('second', 'b'));
     await t.pump();
     host = t.widget<FlarkEditorWidget>(find.byType(FlarkEditorWidget));
-    expect(host.actions!.markdown, 'second');
+    expect(host.session!.state.markdown, 'second');
     await t.pumpWidget(const SizedBox());
     expect(t.takeException(), isNull);
   });
@@ -122,6 +127,61 @@ void main() {
   );
 
   testWidgets(
+    'a refused consumer command shows the notice a refused key does',
+    (t) async {
+      // The session hands the controller's commands to the view's input
+      // controller, which says why the kernel refused one, whatever sent it.
+      final c = FlarkController(markdown: '```\ncode\n```');
+      await t.runAsync(() => c.ready);
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FlarkEditor(controller: c)),
+        ),
+      );
+      c.setSelection(5, 5);
+      expect(c.setHeading(1).reason, FlarkEditRejection.unsupportedEdit);
+      await t.pump();
+      expect(find.text('This edit needs source mode.'), findsOneWidget);
+      expect(c.markdown, '```\ncode\n```');
+      await t.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+  );
+
+  testWidgets('the Source button takes the notice away, as it does alone', (
+    t,
+  ) async {
+    // Given a session, the button switched modes through the session and
+    // left the rendered mode's notice in place of the source mode banner.
+    final c = FlarkController(markdown: 'abc');
+    await t.runAsync(() => c.ready);
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: FlarkEditor(controller: c)),
+      ),
+    );
+    expect(c.insertText('\uD800').reason, FlarkEditRejection.invalidSource);
+    await t.pump();
+    expect(
+      find.text('The inserted text is not valid Unicode text.'),
+      findsOneWidget,
+    );
+    await t.tap(find.text('Source'));
+    await t.pump();
+    expect(c.state.mode, FlarkMode.source);
+    expect(
+      find.text('The inserted text is not valid Unicode text.'),
+      findsNothing,
+    );
+    expect(
+      find.text('Source mode · exact Markdown remains editable'),
+      findsOneWidget,
+    );
+    await t.pumpWidget(const SizedBox());
+    c.dispose();
+  });
+
+  testWidgets(
     'dedicated Markdown updates source and has no editing view or input',
     (t) async {
       Widget view(String text) => MaterialApp(
@@ -154,6 +214,33 @@ void main() {
       expect(surface.controller.editor.source, '# Changed');
       await t.pumpWidget(const SizedBox());
       expect(t.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'the session opens no resource editor where the kernel cannot set one',
+    (t) async {
+      // Its presenter follows the kernel's canSetResource, as the toolbar's
+      // buttons do, rather than opening a form whose Save can only fail.
+      final c = FlarkController(markdown: 'one\n\ntwo');
+      await t.runAsync(() => c.ready);
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FlarkEditor(controller: c)),
+        ),
+      );
+      c.setSelection(0, 8);
+      await t.pump();
+      expect(c.state.link.canSet, isFalse);
+      for (final open in [c.showLinkEditor, c.showImageEditor]) {
+        final result = open();
+        await t.pump();
+        expect(find.byType(AlertDialog), findsNothing);
+        expect((await result).reason, FlarkEditRejection.unavailable);
+      }
+      expect(c.markdown, 'one\n\ntwo');
+      await t.pumpWidget(const SizedBox());
+      c.dispose();
     },
   );
 

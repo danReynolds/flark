@@ -58,6 +58,13 @@ class _ResourceDialogState extends State<ResourceDialog> {
             TextField(
               controller: destination,
               autofocus: true,
+              // A destination is a URL, not prose: iOS would turn `--` into a
+              // dash and straight quotes into curly ones, and autocorrect
+              // would respell its words. The label and title stay prose.
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              smartDashesType: SmartDashesType.disabled,
+              smartQuotesType: SmartQuotesType.disabled,
               decoration: InputDecoration(
                 labelText: widget.session.destinationField,
               ),

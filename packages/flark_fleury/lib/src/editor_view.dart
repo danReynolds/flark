@@ -7,10 +7,8 @@ import 'dart:math' as math;
 import 'package:flark/flark.dart';
 import 'package:flark/resources.dart';
 import 'package:fleury/fleury_core.dart';
-import 'package:fleury_widgets/fleury_widgets_web.dart'
-    show Select, SelectOption;
 import 'package:flark_codemirror/flark_codemirror.dart'
-    show CodeMirrorLanguages, FlarkCodeMirror, codeMirrorLanguageName;
+    show CodeMirrorLanguageMenu;
 
 import 'cell_layout.dart';
 import 'image_previews.dart';
@@ -30,7 +28,6 @@ class FlarkEditorView extends StatefulWidget {
   const FlarkEditorView({
     super.key,
     required this.controller,
-    this.actions,
     this.session,
     this.theme,
     this.focusNode,
@@ -47,7 +44,9 @@ class FlarkEditorView extends StatefulWidget {
   });
 
   final FlarkFleuryController controller;
-  final FlarkActions? actions;
+
+  /// The consumer session this view edits, if any: the toolbar reads its
+  /// published state, and its link and image editors open here.
   final FlarkSession? session;
   final FlarkCellTheme? theme;
   final FocusNode? focusNode;
@@ -111,8 +110,12 @@ class _EditorState extends State<FlarkEditorView>
     );
   }
 
-  int? _goalColumn, _compositionStart, _compositionEnd;
-  int? _pasteId, _pasteRevision;
+  int? _goalColumn, _pasteId, _pasteRevision;
+  var _composing = false;
+
+  /// Where the last preedit is in the source, and the source it is a range
+  /// of. Null when the next preedit cannot replace it there.
+  ({int start, int end, String source})? _preedit;
   StringBuffer? _paste;
   InlineResource? _link;
   FlarkEditor? _linkEditor;
@@ -136,26 +139,8 @@ class _EditorState extends State<FlarkEditorView>
     if (mounted) setState(() {});
   }
 
-  InlineResource? _linkAt(int col, int row) {
-    final layout = _inputLayout;
-    if (layout == null || _editor.sourceMode) return null;
-    final index = row - _viewport.origin.row + _viewport.top;
-    if (index < 0 || index >= layout.lines.length) return null;
-    final x = col - _viewport.origin.col;
-    final line = layout.lines[index].cellAt(x);
-    if (line.image != null) return line.image;
-    if (!line.labelVisible(_editor.selection)) return null;
-    for (final glyph in line.glyphs) {
-      if (x < glyph.col || x >= glyph.col + glyph.width) continue;
-      final source = line.sourceAt(glyph.start);
-      for (final resource in _editor.document.resources) {
-        if (resource.contentStart <= source && source < resource.contentEnd) {
-          return resource;
-        }
-      }
-    }
-    return null;
-  }
+  InlineResource? _linkAt(int col, int row) =>
+      _inputLayout == null ? null : _viewport.resourceAt(_editor, col, row);
 
   void _pointerDown(int col, int row, Set<KeyModifier> modifiers) {
     final resource = _linkAt(col, row);
@@ -206,12 +191,13 @@ class _EditorState extends State<FlarkEditorView>
     setState(() {});
   }
 
+  /// Opens the link or image editor where the kernel can set one: the same
+  /// test that enables the toolbar's buttons, so Command-K and the session's
+  /// presenter never open a form whose Save can only fail.
   Future<FlarkEditResult> _editLink({bool image = false}) async {
     if (_dialogOpen ||
         widget.readOnly ||
-        _editor.sourceMode ||
-        _editor.document.rowAt(_editor.selection.extent).kind ==
-            RowKind.codeBlock) {
+        !_editor.canSetResource(image: image)) {
       return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
     }
     final navigator = Navigator.maybeOf(context);
@@ -270,11 +256,6 @@ class _EditorState extends State<FlarkEditorView>
   Future<FlarkEditResult> _presentResource(bool image) async {
     if (widget.readOnly) {
       return const FlarkEditResult.rejected(FlarkEditRejection.readOnly);
-    }
-    if (_dialogOpen ||
-        _editor.sourceMode ||
-        _editor.document.caretRow.kind == RowKind.codeBlock) {
-      return const FlarkEditResult.rejected(FlarkEditRejection.unavailable);
     }
     return _editLink(image: image);
   }
@@ -336,7 +317,8 @@ class _EditorState extends State<FlarkEditorView>
   }
 
   void _resetInput() {
-    _compositionStart = _compositionEnd = null;
+    _composing = false;
+    _preedit = null;
     _paste = null;
     _pasteId = _pasteRevision = null;
     _goalColumn = null;
@@ -402,27 +384,63 @@ class _EditorState extends State<FlarkEditorView>
   @override
   KeyEventResult onTextCompositionUpdate(String text) {
     if (widget.readOnly) return KeyEventResult.handled;
-    if (_compositionStart == null) {
-      _finishInput();
-      _editor.beginComposition();
-      _compositionStart = _editor.selection.start;
-      _compositionEnd = _editor.selection.end;
+    // Only the last preedit counts, as if typed where the composition began.
+    // The kernel holds composed text as it is, so a preedit replaces the
+    // last where it stands: cancelling and composing again from the start
+    // rebuilt the document twice for every preedit.
+    final last = _preedit;
+    if (_composing &&
+        _editor.composing &&
+        last != null &&
+        identical(last.source, _editor.source) &&
+        (last.source.substring(last.start, last.end) == text ||
+            (text.isNotEmpty &&
+                _composePreedit(
+                  ReplaceRange(last.start, last.end, text),
+                  last.start,
+                  last.end,
+                  text,
+                )))) {
+      return KeyEventResult.handled;
     }
-    if (_editor.apply(
-      ReplaceRange(_compositionStart!, _compositionEnd!, text),
-    )) {
-      // The kernel legalizes and may widen a replacement, so the preedit does
-      // not always land at start + text.length. Take the range it reports, or
-      // the next update overwrites whatever moved into it.
-      _compositionStart = _editor.selection.start - text.length >= 0
-          ? _editor.selection.extent - text.length
-          : _editor.selection.start;
-      _compositionEnd = _editor.selection.extent;
-      if (_compositionStart! > _compositionEnd!) {
-        _compositionStart = _compositionEnd;
-      }
+    // A first preedit is typed where the composition began, and so is one
+    // that cannot replace the last: an empty one, which gives back a
+    // selection the last replaced; one the kernel did not put in as it is;
+    // one the kernel refused. One the kernel ended starts again.
+    if (_composing && _editor.composing) {
+      _editor.cancelComposition();
+    } else {
+      _finishInput();
+      _composing = true;
+    }
+    _editor.beginComposition();
+    _preedit = null;
+    final at = _editor.selection;
+    if (text.isNotEmpty) {
+      _composePreedit(InsertText(text), at.start, at.end, text);
     }
     return KeyEventResult.handled;
+  }
+
+  /// Applies [command], which composes [text] over [start]..[end], and
+  /// records where the text is when the kernel put it in as it is: in a live
+  /// document, outside code it reshapes (an empty fence's first body line).
+  /// In source mode a replacement widens to whole graphemes, and a preedit
+  /// can join the text after it (a variation selector), so there the next
+  /// preedit is not put over this one's range. False when the kernel refused
+  /// the text.
+  bool _composePreedit(FlarkCommand command, int start, int end, String text) {
+    final before = _editor.source;
+    if (!_editor.apply(command)) return false;
+    final after = _editor.source;
+    _preedit =
+        !_editor.sourceMode &&
+            after.length == before.length - (end - start) + text.length &&
+            after.startsWith(text, start) &&
+            after == before.replaceRange(start, end, text)
+        ? (start: start, end: start + text.length, source: after)
+        : null;
+    return true;
   }
 
   @override
@@ -455,6 +473,9 @@ class _EditorState extends State<FlarkEditorView>
     final caret = _viewport.caret;
     _goalColumn ??= caret.col;
     final index = (caret.row + delta).clamp(0, layout.lines.length - 1);
+    // Up on the first line or Down on the last has nowhere to go. It is no
+    // press: a pending style and the typing's undo step outlast it.
+    if (index == caret.row && !extend) return;
     final line = layout.lineAt(index, _goalColumn!, direction: delta);
     final hit = line.hit(_goalColumn!);
     if (line.row case final row?) {
@@ -657,7 +678,8 @@ class _EditorState extends State<FlarkEditorView>
           event.consume();
           return;
         case TextEditingKeyAction.backspace:
-          command = const DeleteBackward();
+        case TextEditingKeyAction.killWordLeft:
+          command = DeleteBackward(word: event.hasAlt || event.hasCtrl);
         case TextEditingKeyAction.deleteForward:
           command = const DeleteForward();
         case TextEditingKeyAction.insertNewline:
@@ -669,6 +691,8 @@ class _EditorState extends State<FlarkEditorView>
           event.consume();
           return;
         default:
+          // A key the editor ignores, such as a lone Shift before Shift+Down.
+          _goalColumn = goal;
           return;
       }
     }

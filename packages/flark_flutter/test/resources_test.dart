@@ -172,6 +172,57 @@ void main() {
   );
 
   testWidgets(
+    'the link dialog takes its destination as a URL, with plain dashes',
+    (tester) async {
+      // iOS turned `--` in a destination into a dash and straight quotes
+      // into curly ones, as it does in prose, and autocorrected its words.
+      final c = FlarkController(
+        FlarkEditor(backend, text: 'before read after'),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      c.command(const SetSelection(7, 11));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Link'));
+      await tester.pumpAndSettle();
+      expect(find.text('Insert link'), findsOneWidget);
+      // The destination field has focus, and the input connection.
+      final destination = tester.testTextInput.setClientArgs!;
+      expect((destination['inputType'] as Map)['name'], 'TextInputType.url');
+      expect(destination['autocorrect'], isFalse);
+      expect(
+        destination['smartDashesType'],
+        '${SmartDashesType.disabled.index}',
+      );
+      expect(
+        destination['smartQuotesType'],
+        '${SmartQuotesType.disabled.index}',
+      );
+      // The link's text stays prose.
+      await tester.tap(find.widgetWithText(TextField, 'Text'));
+      await tester.pump();
+      final label = tester.testTextInput.setClientArgs!;
+      expect(label['smartDashesType'], '${SmartDashesType.enabled.index}');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Destination'),
+        'https://example.com/a--b',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(c.text, 'before [read](<https://example.com/a--b>) after');
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
     'dialog cancellation and stale submissions preserve newer source',
     (tester) async {
       final c = FlarkController(FlarkEditor(backend, text: 'hello'));
@@ -308,4 +359,48 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  // Command-K follows the kernel's canSetResource, as the toolbar's Link
+  // button does, rather than opening a form whose Save can only fail.
+  for (final (name, source, selection) in [
+    (
+      'a selection across two paragraphs',
+      'one\n\ntwo',
+      const SetSelection(0, 8),
+    ),
+    (
+      'a link reference definition',
+      '[a]: /u\n\ntext',
+      const SetSelection.caret(2),
+    ),
+  ]) {
+    testWidgets('Command-K opens no link editor on $name', (tester) async {
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      c.command(selection);
+      await tester.pump();
+      expect(c.editor.canSetResource(), isFalse);
+      expect(
+        tester
+            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.link))
+            .onPressed,
+        isNull,
+      );
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(c.text, source);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  }
 }

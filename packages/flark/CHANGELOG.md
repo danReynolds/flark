@@ -27,3 +27,7 @@ version in the commit that pins the parser libraries (see RELEASING.md).
 - The build hook downloads the native parser for the build's target, checks it
   against the SHA-256 pinned in this package, and caches it. `prebuilt_dir`
   builds without network access. Android, iOS, macOS, Linux and Windows.
+- `package:flark/recorder.dart`: a `FlarkEditRecorder` attached to an editor
+  (`FlarkEditRecorder(editor)`, through `FlarkEditor.onCall`) records its
+  calls and writes them as a Dart repro that replays the session, for turning
+  a dogfooding surprise into a test.

@@ -1,6 +1,5 @@
 import 'package:flark/resources.dart';
 import 'package:fleury/fleury_core.dart';
-import 'package:fleury_widgets/fleury_widgets_web.dart' show Button, Dialog;
 
 export 'package:flark/resources.dart'
     show FlarkResourceSession, FlarkLinkActions;

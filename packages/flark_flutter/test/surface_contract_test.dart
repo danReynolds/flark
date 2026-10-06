@@ -271,6 +271,19 @@ void main() {
     expect(t.text, '| a | b | c |\n| --- | --- | --- |\n| x | Z|\n');
     await tester.pumpWidget(const SizedBox());
     t.dispose();
+    // Dictated at the caret, text takes the style chosen for it, as typing
+    // does: placing the caret there first, as a press does, dropped it.
+    final styled = FlarkController(
+      FlarkEditor(backend, text: 'say ', caret: 4),
+    );
+    final caret = await mountForSemantics(tester, styled);
+    expect(styled.command(const ToggleStyle(Style.emphasis)), isTrue);
+    await tester.pump();
+    setText(tester, caret, 'say hi');
+    await tester.pump();
+    expect(styled.text, 'say *hi*');
+    await tester.pumpWidget(const SizedBox());
+    styled.dispose();
     semantics.dispose();
   });
 

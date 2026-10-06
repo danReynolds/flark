@@ -45,4 +45,26 @@ void main() {
       expect(e.source, '*x*');
     },
   );
+
+  test('a pending style that would pair with a run beside it types plain', () {
+    // Its delimiters would join the run (`*~😀***é**` paints the emphasis's
+    // delimiters) or pair with literal ones (`*foo bar *é**` hides them), so
+    // the row would show more than the typed text; the text goes in alone.
+    for (final (source, caret, style, text, typed) in [
+      ('*~😀*', 5, Style.strong, 'é', '*~😀*é'),
+      ('*foo bar *', 9, Style.emphasis, 'é', '*foo bar é*'),
+      ('# *[**', 6, Style.strong, 'a', '# *[**a'),
+    ]) {
+      final e = FlarkEditor(backend, text: source, caret: caret);
+      expect(e.apply(ToggleStyle(style)), isTrue, reason: source);
+      expect(e.apply(InsertText(text)), isTrue, reason: source);
+      expect(e.source, typed, reason: source);
+    }
+    // Where the style pairs on its own, it wraps the text.
+    final wrapped = FlarkEditor(backend, text: 'a **b** c', caret: 7);
+    expect(wrapped.apply(const ToggleStyle(Style.emphasis)), isTrue);
+    expect(wrapped.apply(const InsertText('x')), isTrue);
+    expect(wrapped.source, 'a **b***x* c');
+    expect(wrapped.document.caretRow.text, 'a bx c');
+  });
 }

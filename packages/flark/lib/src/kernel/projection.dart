@@ -9,7 +9,9 @@
 /// row's text does not represent — a fence, a setext underline, a blank line
 /// inside indented code — carries -1 and holds no caret: an edit there would
 /// be invisible, or would paint at another line's position. Bare empty
-/// heading/item prefixes remain literal authoring text until completed.
+/// heading/item prefixes remain literal authoring text until completed, and
+/// in the editing view so does the delimiter row of a table without body
+/// rows.
 library;
 
 import 'dart:collection';
@@ -18,6 +20,8 @@ import 'package:characters/characters.dart';
 
 import '../parse/render_model.dart';
 import '../parse/schema.g.dart';
+import 'continuation.dart';
+import 'row_queries.dart';
 
 /// Inline style bits carried by a segment.
 abstract final class Style {
@@ -150,6 +154,7 @@ final class ProjectedRow {
     this.header = false,
     this.alignment = 0,
   }) : _index = index,
+       _origin = -1,
        segments = UnmodifiableListView(segments),
        shells = UnmodifiableListView(shells),
        contentStarts = UnmodifiableListView(contentStarts),
@@ -177,6 +182,7 @@ final class ProjectedRow {
     final moved = delta != 0 || runDelta != 0;
     return ProjectedRow._copy(
       index: index,
+      origin: _index,
       kind: kind,
       block: block,
       firstLine: firstLine,
@@ -223,6 +229,7 @@ final class ProjectedRow {
 
   ProjectedRow._copy({
     required int index,
+    required int origin,
     required this.kind,
     required this.block,
     required this.firstLine,
@@ -244,14 +251,23 @@ final class ProjectedRow {
     required this.column,
     required this.header,
     required this.alignment,
-  }) : _index = index;
+  }) : _index = index,
+       _origin = origin;
 
   /// Position in [Projection.rows], assigned once rows are ordered.
   int _index;
   int get index => _index;
+
+  /// For a row reused from the projection its own was built from, that
+  /// row's index there; -1 for a row built anew. Provenance, not content: a
+  /// reused row and a rebuilt one show the same, so comparisons of rows
+  /// leave it out. Read it through [Projection.reusedFrom].
+  final int _origin;
   final RowKind kind;
 
-  /// The block this row projects, or -1 for a blank row; definitions use -1 too.
+  /// The block this row projects; for a bare prefix shown as text, the
+  /// heading or item it starts. -1 for a blank row, a definition and a
+  /// table's delimiter line shown as its source.
   final int block;
   final int firstLine, lineCount;
   final String text;
@@ -264,9 +280,9 @@ final class ProjectedRow {
   /// Per line of the row (index = line - firstLine): where the caret may sit
   /// on that line, and where the innermost container prefix begins (equal to
   /// the content start when the line has none). All three are -1 for a line
-  /// the row owns but cannot show — a fence's delimiters, a setext underline,
-  /// the definition lines a paragraph swallowed — so every reader must treat a
-  /// negative entry as "no caret here" rather than as an offset.
+  /// the row owns but cannot show — a fence's delimiters, a setext underline —
+  /// so every reader must treat a negative entry as "no caret here" rather
+  /// than as an offset.
   final List<int> contentStarts, contentEnds, prefixStarts;
   final int headingLevel;
   final bool fenced;
@@ -275,14 +291,41 @@ final class ProjectedRow {
   final bool header;
   final int alignment;
 
+  /// Whether this row presents as [other] does, so that a host's layout of
+  /// one paints the other: the same kind, text, heading level, table header
+  /// and alignment, quote, and segments over the same display ranges with
+  /// the same styles. Source offsets may differ. What else a host lays a row
+  /// out from, a fence's info string or its container markers, it compares
+  /// itself.
+  bool samePresentation(ProjectedRow other) {
+    bool quoted(ProjectedRow row) =>
+        row.shells.any((shell) => shell.kind == ShellKind.blockQuote);
+    if (kind != other.kind ||
+        text != other.text ||
+        headingLevel != other.headingLevel ||
+        header != other.header ||
+        alignment != other.alignment ||
+        quoted(this) != quoted(other) ||
+        segments.length != other.segments.length) {
+      return false;
+    }
+    for (var i = 0; i < segments.length; i++) {
+      final a = segments[i], b = other.segments[i];
+      if (a.displayStart != b.displayStart ||
+          a.displayEnd != b.displayEnd ||
+          a.styles != b.styles) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Source offset for a display offset. At a boundary where hidden bytes
   /// lie between two segments, [anchor] picks the side; that choice is the
   /// caret's typing context.
   int sourceForDisplay(int offset, {Anchor anchor = Anchor.after}) {
     if (segments.isEmpty) {
-      return fenced && contentStarts.every((start) => start < 0)
-          ? sourceEnd
-          : sourceStart;
+      return bodyless ? sourceEnd : sourceStart;
     }
     final o = offset.clamp(0, text.length);
     for (var i = 0; i < segments.length; i++) {
@@ -332,11 +375,19 @@ final class ProjectedRow {
 }
 
 final class ProjectionOptions {
-  const ProjectionOptions({this.softBreakAsNewline = true});
+  const ProjectionOptions({
+    this.softBreakAsNewline = true,
+    this.editableDelimiterRows = true,
+  });
 
   /// Editing view: a source newline inside a paragraph stays a line break.
   /// A read-only view may set false to join lines with a space.
   final bool softBreakAsNewline;
+
+  /// Editing view: a table with no body rows shows its delimiter row as its
+  /// source, so the row being typed keeps a caret. A read-only view sets
+  /// false and shows only the header.
+  final bool editableDelimiterRows;
 }
 
 final class Projection {
@@ -346,6 +397,7 @@ final class Projection {
     List<ProjectedRow> rows,
     this._rowsByLine,
     this.options,
+    this._builtFrom,
   ) : rows = UnmodifiableListView(rows);
 
   final RenderModel model;
@@ -353,6 +405,14 @@ final class Projection {
   final List<ProjectedRow> rows;
   final List<List<int>> _rowsByLine;
   final ProjectionOptions options;
+
+  /// Names this projection to the ones built from it, without holding on
+  /// to its rows the way a reference to the projection itself would.
+  final Object _generation = Object();
+
+  /// The [_generation] of the projection whose rows this one reused, or
+  /// null when it built every row.
+  final Object? _builtFrom;
 
   /// Project [model] of [source]. [previous], a projection of an earlier
   /// version of the source, lets rows of blocks an edit did not touch be
@@ -367,10 +427,21 @@ final class Projection {
     source,
     options,
     previous != null &&
-            previous.options.softBreakAsNewline == options.softBreakAsNewline
+            previous.options.softBreakAsNewline == options.softBreakAsNewline &&
+            previous.options.editableDelimiterRows ==
+                options.editableDelimiterRows
         ? _Reuse(previous, model, source)
         : null,
   ).build();
+
+  /// The row of [previous] that [row], a row of this projection, carries
+  /// over: the same text and segments with source offsets moved, because the
+  /// edit between the two left its block alone. Null for a row built anew,
+  /// or when this projection was not built from [previous].
+  ProjectedRow? reusedFrom(ProjectedRow row, Projection previous) =>
+      row._origin >= 0 && identical(_builtFrom, previous._generation)
+      ? previous.rows[row._origin]
+      : null;
 
   /// Rows that own [line] (a table line holds one per cell).
   List<int> rowsOnLine(int line) =>
@@ -407,9 +478,7 @@ final class Projection {
       if (s >= 0) out.add((s, e < s ? s : e));
       // An imported fence may have no body line. Give its empty displayed row
       // one anchor; its first insertion creates the body transactionally.
-      if (row.fenced &&
-          row.contentStarts.every((start) => start < 0) &&
-          line == model.lineOfUtf16(row.sourceEnd)) {
+      if (row.bodyless && line == model.lineOfUtf16(row.sourceEnd)) {
         out.add((row.sourceEnd, row.sourceEnd));
       }
     }
@@ -417,18 +486,7 @@ final class Projection {
     return out;
   }
 
-  int _lineEnd(int l) {
-    final start = model.lineStartUtf16(l);
-    var e = l + 1 < model.lineCount
-        ? model.lineStartUtf16(l + 1)
-        : source.length;
-    while (e > start &&
-        (source.codeUnitAt(e - 1) == 0x0A ||
-            source.codeUnitAt(e - 1) == 0x0D)) {
-      e--;
-    }
-    return e;
-  }
+  int _lineEnd(int l) => _lineEndOf(model, source, l);
 
   /// Whether the parser supplied a cell absent from the source row.
   bool isMissingCell(int? index) {
@@ -476,6 +534,17 @@ final class Projection {
     final (offset, snapped) = rows[best].displayForSource(source);
     return DisplayPosition(best, offset, snapped: snapped);
   }
+}
+
+/// Where line [l] of [src] ends, excluding its terminator.
+int _lineEndOf(RenderModel m, String src, int l) {
+  final start = m.lineStartUtf16(l);
+  var e = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : src.length;
+  while (e > start &&
+      (src.codeUnitAt(e - 1) == 0x0A || src.codeUnitAt(e - 1) == 0x0D)) {
+    e--;
+  }
+  return e;
 }
 
 final class _Builder {
@@ -662,6 +731,15 @@ final class _Builder {
           for (var l = first; l < first + n && l < lineCount; l++) {
             claimed[l] = true;
           }
+          // A table of only a header line and its delimiter line shows the
+          // delimiter line as the source it is, so the row being typed keeps
+          // a caret until the first body row hides it.
+          if (options.editableDelimiterRows &&
+              n == 2 &&
+              first + 1 < lineCount) {
+            final row = _delimiterRow(rows.length, b, first + 1, containerOf);
+            if (row != null) addRow(row);
+          }
         default:
           break;
       }
@@ -788,7 +866,14 @@ final class _Builder {
         }
       }
     }
-    return Projection._(m, src, ordered, rowsByLine, options);
+    return Projection._(
+      m,
+      src,
+      ordered,
+      rowsByLine,
+      options,
+      _reuse?.previous._generation,
+    );
   }
 
   /// A table cell's place in its table, which its row carries but its own
@@ -813,7 +898,7 @@ final class _Builder {
   ProjectedRow? _reusedRow(int index, int b, List<int> containerOf) {
     final match = _reuse?.match(b);
     if (match == null) return null;
-    final first = m.blockFirstLine(b);
+    final (first, _) = _rowLines(b);
     final cell = m.blockKind(b) == BlockKind.tableCell ? _cellFields(b) : null;
     return match.row._reused(
       index: index,
@@ -866,6 +951,65 @@ final class _Builder {
     prefixStarts: [start],
   );
 
+  /// The delimiter line [line] of [table], a table without body rows, as one
+  /// row of its source: a table row of its own (no row block) in the first
+  /// column. Inside containers the line must start with the prefix that
+  /// continues the header line's containers (an item's marker as spaces),
+  /// which then stays out of the row; otherwise the row stays hidden. The
+  /// parser identifies the table and its lines; nothing here reads the
+  /// delimiters.
+  ProjectedRow? _delimiterRow(
+    int index,
+    int table,
+    int line,
+    List<int> containerOf,
+  ) {
+    final lineStart = m.lineStartUtf16(line), end = _lineEnd(line);
+    var start = lineStart;
+    final container = containerOf[line];
+    if (container >= 0) {
+      final prefix = continuationPrefix(
+        src,
+        m,
+        m.blockFirstLine(table),
+        m.blockStart(table),
+        table,
+      );
+      if (!src.startsWith(prefix, lineStart) ||
+          lineStart + prefix.length > end) {
+        return null;
+      }
+      start += prefix.length;
+    }
+    return ProjectedRow(
+      index: index,
+      kind: RowKind.tableCell,
+      block: -1,
+      firstLine: line,
+      lineCount: 1,
+      text: src.substring(start, end),
+      segments: [
+        if (end > start)
+          Segment(
+            displayStart: 0,
+            displayEnd: end - start,
+            sourceStart: start,
+            sourceEnd: end,
+            styles: 0,
+            exact: true,
+          ),
+      ],
+      shells: _shellsFor(container),
+      sourceStart: start,
+      sourceEnd: end,
+      contentStarts: [start],
+      contentEnds: [end],
+      prefixStarts: [start],
+      tableBlock: table,
+      column: 0,
+    );
+  }
+
   /// Styles of the runs from [first] to [end], one block's: a run's own style
   /// over its parent's. A parent precedes its children in the same block.
   void _computeStyles(int first, int end) {
@@ -905,12 +1049,13 @@ final class _Builder {
       }
       if (kind == BlockKind.item) {
         final flags = m.blockFlags(b);
-        final task = flags & 1 != 0;
+        final task = flags & BlockFlag.task != 0;
         // The checkbox is the task symbol with its ASCII brackets.
         final s = m.itemTaskStart(b), e = m.itemTaskEnd(b);
         final list = m.blockParent(b);
         final itemIndex = _itemIndexOf[b];
-        final ordered = list != noParent && m.blockFlags(list) & 2 != 0;
+        final ordered =
+            list != noParent && m.blockFlags(list) & BlockFlag.ordered != 0;
         chain.add(
           Shell(
             kind: ShellKind.item,
@@ -918,7 +1063,7 @@ final class _Builder {
             ordered: ordered,
             start: ordered ? m.blockAttr(list) : 1,
             task: task,
-            checked: task && flags & 2 != 0,
+            checked: task && flags & BlockFlag.checked != 0,
             checkboxStart: task && s > 0 ? s - 1 : -1,
             checkboxEnd: task && e > 0 ? e + 1 : -1,
             itemIndex: itemIndex,
@@ -931,9 +1076,9 @@ final class _Builder {
           Shell(
             kind: ShellKind.list,
             block: b,
-            ordered: flags & 2 != 0,
+            ordered: flags & BlockFlag.ordered != 0,
             start: m.blockAttr(b),
-            tight: flags & 1 != 0,
+            tight: flags & BlockFlag.tight != 0,
           ),
         );
       }
@@ -971,13 +1116,30 @@ final class _Builder {
     return out;
   }
 
+  /// The lines leaf [block]'s row shows. comrak starts a paragraph, and a
+  /// setext heading made of one, at the link reference definitions it took
+  /// from its start. Their rows show those lines, so the leaf's row starts at
+  /// its first content record and rows stay in line order.
+  (int, int) _rowLines(int block) {
+    final first = m.blockFirstLine(block), n = m.blockLineCount(block);
+    final kind = m.blockKind(block);
+    if (kind != BlockKind.paragraph && kind != BlockKind.heading ||
+        m.blockContentCount(block) == 0) {
+      return (first, n);
+    }
+    final line = m.contentLine(m.blockContentOffset(block));
+    return line > first && line < first + n
+        ? (line, first + n - line)
+        : (first, n);
+  }
+
   ProjectedRow _inlineRow(
     int index,
     int block,
     int kind,
     List<int> containerOf,
   ) {
-    final first = m.blockFirstLine(block), n = m.blockLineCount(block);
+    final (first, n) = _rowLines(block);
     final co = m.blockContentOffset(block), cn = m.blockContentCount(block);
     final hidden = _hiddenIntervals(block);
     // Text comes from runs without children (a link's or autolink's text is
@@ -1225,7 +1387,47 @@ final class _Builder {
 
         final style = _styleOf[r];
         final override = m.displayOverride(r);
-        if (override != null && rs >= cs && re <= ce) {
+        final units =
+            override != null &&
+                rs >= cs &&
+                re <= ce &&
+                m.runKind(r) == RunKind.code
+            ? _alignedCode(rs, re, override)
+            : null;
+        if (units != null) {
+          // A code span in a table cell shows its source less the backslash
+          // of each escaped pipe. The rest maps one to one, and a dropped
+          // backslash goes with its pipe as one unit, so a caret can sit
+          // between the span's other characters.
+          var u = 0;
+          while (u < units.length) {
+            final (from, to) = units[u];
+            if (to - from > 1) {
+              final d0 = text.length;
+              text.write(src.substring(to - 1, to));
+              segments.add(
+                Segment(
+                  displayStart: d0,
+                  displayEnd: text.length,
+                  sourceStart: from,
+                  sourceEnd: to,
+                  styles: style,
+                  exact: false,
+                  run: r,
+                ),
+              );
+              u++;
+              continue;
+            }
+            var v = u;
+            while (v + 1 < units.length &&
+                units[v + 1].$2 - units[v + 1].$1 == 1) {
+              v++;
+            }
+            emitExact(from, units[v].$2, style, r);
+            u = v + 1;
+          }
+        } else if (override != null && rs >= cs && re <= ce) {
           final d0 = text.length;
           text.write(override);
           segments.add(
@@ -1249,10 +1451,9 @@ final class _Builder {
       if (p < ce) emitGap(p, ce);
     }
     // An inline leaf's lines without a record are never the row's to show: a
-    // paragraph's are the definition lines a definition row already covers,
-    // and a setext underline is markup this row hides. Giving either a caret
-    // would paint it at the end of the heading or the line above, where the
-    // next character silently rewrites markup the user cannot see.
+    // setext underline is markup this row hides. Giving it a caret would
+    // paint it at the end of the heading, where the next character silently
+    // rewrites markup the user cannot see.
     final shells = _shellsFor(containerOf[first]);
     switch (kind) {
       case BlockKind.heading:
@@ -1328,6 +1529,28 @@ final class _Builder {
     }
   }
 
+  /// [shown], a code span's display, aligned with its source [start]..[end]:
+  /// one source range per displayed code unit, each one unit long or two
+  /// when the source has a character the display drops before it. Null when
+  /// the display is not the source less such characters.
+  List<(int, int)>? _alignedCode(int start, int end, String shown) {
+    final units = <(int, int)>[];
+    var i = start;
+    for (var j = 0; j < shown.length; j++) {
+      final unit = shown.codeUnitAt(j);
+      if (i < end && src.codeUnitAt(i) == unit) {
+        units.add((i, i + 1));
+        i++;
+      } else if (i + 1 < end && src.codeUnitAt(i + 1) == unit) {
+        units.add((i, i + 2));
+        i += 2;
+      } else {
+        return null;
+      }
+    }
+    return i == end ? units : null;
+  }
+
   /// A line the leaf owns but has no content record for keeps the caret at its
   /// end, so it stays reachable: a fence's body line that carries only a
   /// container prefix, a blank line comrak folded into the block. The rows that
@@ -1349,16 +1572,7 @@ final class _Builder {
     }
   }
 
-  /// Line end excluding the terminator.
-  int _lineEnd(int l) {
-    final start = m.lineStartUtf16(l);
-    var e = l + 1 < m.lineCount ? m.lineStartUtf16(l + 1) : src.length;
-    while (e > start &&
-        (src.codeUnitAt(e - 1) == 0x0A || src.codeUnitAt(e - 1) == 0x0D)) {
-      e--;
-    }
-    return e;
-  }
+  int _lineEnd(int l) => _lineEndOf(m, src, l);
 
   List<int> _lineEnds(int first, int n) => [
     for (var l = first; l < first + n && l < m.lineCount; l++) _lineEnd(l),
@@ -1438,11 +1652,12 @@ final class _Builder {
     final flags = m.blockFlags(block);
     // Fence lines hold no caret: an edit there would be invisible. The info
     // string is a host affordance, not a caret position.
-    if (kind == BlockKind.codeBlock && flags & 1 != 0 && starts.isNotEmpty) {
+    final fenced = kind == BlockKind.codeBlock && flags & BlockFlag.fenced != 0;
+    if (fenced && starts.isNotEmpty) {
       starts[0] = -1;
       ends[0] = -1;
       prefixes[0] = -1;
-      if (flags & 2 != 0 && starts.length > 1) {
+      if (flags & BlockFlag.closed != 0 && starts.length > 1) {
         starts[starts.length - 1] = -1;
         ends[ends.length - 1] = -1;
         prefixes[prefixes.length - 1] = -1;
@@ -1462,13 +1677,9 @@ final class _Builder {
       contentStarts: starts,
       contentEnds: ends,
       prefixStarts: prefixes,
-      fenced: kind == BlockKind.codeBlock && flags & 1 != 0,
-      codeInfoStart: kind == BlockKind.codeBlock && flags & 1 != 0
-          ? m.codeInfoStart(block)
-          : -1,
-      codeInfoEnd: kind == BlockKind.codeBlock && flags & 1 != 0
-          ? m.codeInfoEnd(block)
-          : -1,
+      fenced: fenced,
+      codeInfoStart: fenced ? m.codeInfoStart(block) : -1,
+      codeInfoEnd: fenced ? m.codeInfoEnd(block) : -1,
     );
   }
 }
@@ -1593,7 +1804,7 @@ final class _Reuse {
       return false;
     }
     if (kind == BlockKind.codeBlock &&
-        flags & 1 != 0 &&
+        flags & BlockFlag.fenced != 0 &&
         (m.codeInfoStart(b) - base != old.codeInfoStart(ob) - oldBase ||
             m.codeInfoEnd(b) - base != old.codeInfoEnd(ob) - oldBase)) {
       return false;

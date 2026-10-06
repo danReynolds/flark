@@ -1198,3 +1198,90 @@ fn the_texts_of_one_long_paragraph_extract_in_linear_time() {
         assert!(large < small * 16, "{name}: {small:?} for {} bytes, {large:?} for {}", shape(2).len(), shape(16).len());
     }
 }
+
+#[test]
+fn a_table_that_could_gain_millions_of_cells_is_refused_before_comrak_parses_it() {
+    // comrak gives every body row its header's columns and never applies its
+    // own cap on the cells it adds: a 2,048-column header over 2,046 rows of
+    // one character, 12 KB within the editor's live limits, made 4.2 million
+    // cells, 2.2 s and 2 GB, and more rows only add to it.
+    let wide = |columns: usize, rows: usize| "a|".repeat(columns) + "\n" + &"-|".repeat(columns) + &"\nx".repeat(rows);
+    let src = wide(2048, 2046);
+    let (w, devs) = Extractor::extract_with_report(&src);
+    check_invariants(&src, &w).unwrap();
+    assert_eq!(devs.iter().map(|d| (d.rule, d.leaf)).collect::<Vec<_>>(), [("table-cells", None)]);
+    // Under a quote and in a list item too; a blank line or a line of quote
+    // markers ends a table, so rows past one add nothing.
+    for prefix in ["> ", "- "] {
+        let quoted: String = wide(2048, 100).lines().enumerate().map(|(i, l)| format!("{}{l}\n", if i == 0 || prefix == "> " { prefix } else { "  " })).collect();
+        assert!(Extractor::extract(&quoted).is_err(), "{prefix:?}");
+    }
+    assert!(Extractor::extract(&(wide(100, 1) + "\n\n" + &"x\n".repeat(2_000))).is_ok());
+    assert!(Extractor::extract(&(wide(100, 1) + "\n>\n" + &"x\n".repeat(2_000))).is_ok());
+    // The densest honest tables, and sparse ones, parse.
+    let dense = "a|".repeat(1_000) + "\n" + &"-|".repeat(1_000) + "\n" + &("a|".repeat(1_000) + "\n").repeat(16);
+    let m = M::of(&dense); m.clean();
+    assert_eq!(m.blocks_of(block_kind::TABLE_CELL).len(), 17_000);
+    let sparse = "| a | b | c | d |\n|---|---|---|---|\n".to_string() + &"| x |\n".repeat(2_000);
+    let m = M::of(&sparse); m.clean();
+    assert_eq!(m.blocks_of(block_kind::TABLE_CELL).len(), 4 * 2_001);
+}
+
+#[test]
+fn escaped_pipes_shift_a_cells_inlines_in_time_linear_in_its_width() {
+    // Every inline position of a cell, or of a paragraph a table header
+    // splits, moves past the escaped pipes before it on its line; counting
+    // them from the line's start for each made a cell quadratic in its
+    // width: 36 KB of `\|*a*` cells took a third of a second.
+    // Eight lines each, up to the editor's line width: comrak itself grows
+    // faster than linearly past a hundred thousand nodes or so.
+    let shapes: [(&str, fn(usize) -> String); 3] = [
+        ("escaped pipes and emphasis", |n| "|a|\n|-|\n".to_string() + &format!("|{}|\n", "\\|*a*".repeat(n)).repeat(8)),
+        ("escapes", |n| "|a|\n|-|\n".to_string() + &format!("|{}|\n", "\\*".repeat(2 * n)).repeat(8)),
+        ("a split paragraph", |n| format!("{}\n", "\\*".repeat(2 * n)).repeat(8) + "a|b\n-|-\n"),
+    ];
+    for (name, shape) in shapes {
+        let (small, large) = (extract_time(&shape(100)), extract_time(&shape(800)));
+        assert!(large < small * 16, "{name}: {small:?} for {} bytes, {large:?} for {}", shape(100).len(), shape(800).len());
+    }
+}
+
+#[test]
+fn inlines_crossing_lines_extract_in_time_linear_in_their_paragraph() {
+    // A code span crossing lines gathered every content record of its
+    // paragraph, a tag crossing lines searched them for its last line, and a
+    // link repair rebuilt the paragraph's text from its own bracket on: each
+    // quadratic in a paragraph of them, 36 ms for 32 KB of link titles.
+    let shapes: [(&str, fn(usize) -> String); 4] = [
+        ("code spans", |n| "`a\nb` x ".repeat(n)),
+        ("quoted code spans", |n| "> `a\n> b` x\n".repeat(n)),
+        ("tags", |n| "<a\nb='c'> x ".repeat(n)),
+        ("link titles", |n| "[a](/u \"t\nu\") x ".repeat(n)),
+    ];
+    for (name, shape) in shapes {
+        let (small, large) = (extract_time(&shape(250)), extract_time(&shape(2_000)));
+        assert!(large < small * 16, "{name}: {small:?} for {} bytes, {large:?} for {}", shape(250).len(), shape(2_000).len());
+    }
+}
+
+#[test]
+fn texts_comrak_misplaced_cost_no_more_than_their_neighbours() {
+    // After a link whose parentheses span lines comrak numbers a paragraph
+    // a line early, and with a definition stripped from the paragraph every
+    // text of a long line lands at its end. A text decoding references is
+    // then looked for in a few hundred windows near where comrak put it,
+    // each read through its pieces; most cannot hold the text, and one read
+    // from each start tells which. Walking every window, and every resync at
+    // each mismatch, made such a line cost fifteen times the same line where
+    // comrak placed its texts (158 ms for 8 KB of the worst shapes found).
+    let shapes: [(&str, fn(usize) -> String); 2] = [
+        ("numeric references and emphasis", |n| (0..n).map(|i| format!("a&#{};b *x* ", 256 + i)).collect()),
+        ("named references and emphasis", |n| "&amp;&lt;&gt; *x* ".repeat(n)),
+    ];
+    for (name, shape) in shapes {
+        let placed = shape(500);
+        let misplaced = format!("[a]: /u\n[](\n)\n{placed}");
+        let (t, base) = (extract_time(&misplaced), extract_time(&placed));
+        assert!(t < base * 4, "{name}: {t:?} misplaced, {base:?} placed");
+    }
+}

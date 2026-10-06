@@ -1,4 +1,5 @@
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart' show BlockFlag;
 import 'package:test/test.dart';
 
 void main() {
@@ -19,7 +20,8 @@ void main() {
       expect(e.document.rowAt(4).kind, RowKind.codeBlock);
       expect(e.document.rowAt(4).text, '');
       final block = e.document.model.blockAt(e.document.rowAt(4).block);
-      expect(block.flags & 3, 3);
+      expect(block.flags & BlockFlag.fenced, isNot(0));
+      expect(block.flags & BlockFlag.closed, isNot(0));
       expect(e.apply(const InsertText('hello')), isTrue);
       expect(e.document.rowAt(e.selection.extent).text, 'hello');
       expect(e.apply(const Undo()), isTrue);

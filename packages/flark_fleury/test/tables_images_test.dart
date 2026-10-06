@@ -373,4 +373,25 @@ void main() {
       expect(tester.renderToString(), contains('text !'));
     },
   );
+
+  test(
+    'a caret at either edge of a standalone image shows the alt text it is on',
+    () {
+      const source = '![Photo label](demo.png)\n\nafter';
+      mount(source, images: (_, _, _) => const Text('PREVIEW'));
+      // The document start, and the row end Left reaches from below.
+      for (final caret in [0, source.indexOf('\n')]) {
+        editor.apply(SetSelection.caret(caret));
+        expect(editor.selection.extent, caret);
+        final frame = tester.render();
+        expect(tester.renderToString(), contains('Photo label'));
+        final rect = focus.caretRect!;
+        expect(
+          frame.atColRow(rect.left, rect.top).style.inverse,
+          isTrue,
+          reason: 'caret $caret is painted where it is reported',
+        );
+      }
+    },
+  );
 }

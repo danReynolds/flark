@@ -43,6 +43,8 @@ class _ReadSurfaceController extends ChangeNotifier
   @override
   String get text => editor.source;
   @override
+  bool get composing => false;
+  @override
   void sourceMode(bool enabled) {}
   @override
   bool command(FlarkCommand command, {int? expectedRevision}) {
@@ -72,30 +74,6 @@ class _ReadSurfaceController extends ChangeNotifier
     reader.removeListener(notifyListeners);
     super.dispose();
   }
-}
-
-/// The opening of [markdown] that the source fallback shows, about 1,024
-/// code units. Flutter refuses to lay out malformed UTF-16, and the fallback
-/// is also where text with an unpaired surrogate ends up, so the cut never
-/// splits a surrogate pair and an unpaired one shows as U+FFFD. Copying still
-/// takes the source exactly as written.
-String _sourcePreview(String markdown) {
-  const limit = 1024;
-  final preview = StringBuffer();
-  var i = 0;
-  while (i < markdown.length && i < limit) {
-    final unit = markdown.codeUnitAt(i);
-    final next = i + 1 < markdown.length ? markdown.codeUnitAt(i + 1) : 0;
-    if (unit >= 0xD800 && unit <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF) {
-      preview.writeCharCode(0x10000 + ((unit - 0xD800) << 10) + next - 0xDC00);
-      i += 2;
-    } else {
-      preview.writeCharCode(unit >= 0xD800 && unit <= 0xDFFF ? 0xFFFD : unit);
-      i++;
-    }
-  }
-  if (i < markdown.length) preview.write('…');
-  return preview.toString();
 }
 
 class _MarkdownState extends State<FlarkMarkdown> {
@@ -163,7 +141,7 @@ class _MarkdownState extends State<FlarkMarkdown> {
             onPressed: _copy,
             child: const Text('Copy complete Markdown'),
           ),
-          Text(_sourcePreview(widget.markdown)),
+          Text(flarkSourcePreview(widget.markdown)),
         ],
       );
     }

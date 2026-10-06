@@ -49,14 +49,11 @@ dart pub add flark_fleury
 ## Develop and run
 
 In this repository the packages form one pub workspace, resolved from the
-repository root with `flutter pub get`. Until fleury 0.1 is on pub.dev, the
-root pubspec resolves fleury and fleury_widgets to Git revision
-`13367b0fb0deda3d3df44e5c03b20ab63d12738f`, Fleury's main after
-[Fleury #283](https://github.com/danReynolds/fleury/pull/283). The controllers
-are Fleury `Notifier`s, and widgets observe them with `context.listen`.
-
-The pinned framework includes the image-composition and block-frame fixes.
-No local Fleury checkout or ignored dependency override is required. See the
+repository root with `flutter pub get`. Fleury resolves from pub.dev, as it
+does for an app. The controllers are Fleury `Notifier`s, and widgets observe
+them with `context.listen`. No local Fleury checkout or dependency override is
+required; `dart tool/use_local_fleury.dart <path>` points the workspace at a
+local checkout when you work on both. See the
 [implementation and validation notes](../../docs/architecture/v5/fleury_tables_images_2026_09_15.md).
 
 ```sh

@@ -137,6 +137,33 @@ void main() {
     );
   });
 
+  test('a paragraph after link reference definitions shows after them', () {
+    // comrak starts the paragraph, and a setext heading made of one, at the
+    // definitions it took from its start. Its row starts where its text does,
+    // after the definition rows, in quotes and items too.
+    for (final (source, lines) in [
+      (
+        '[docs]: https://example.com/docs\n[home]: https://example.com\n'
+            'More text',
+        [0, 1, 2],
+      ),
+      ('[a]: /u\r\n[b]: /v\r\nTitle\r\n===\r\n', [0, 1, 2, 4]),
+      ('> [a]: /u\n> [b]: /v\n> text', [0, 1, 2]),
+      ('- [a]: /u\n  [b]: /v\n  text', [0, 1, 2]),
+    ]) {
+      final p = project(source);
+      checkInvariants(source, p.model, p, source);
+      expect(p.rows.map((r) => r.firstLine), lines, reason: source);
+      final leaf = p.rows.firstWhere((r) => r.kind != RowKind.definition);
+      expect(
+        (leaf.lineCount, leaf.contentStarts.first >= 0),
+        (leaf.kind == RowKind.heading ? 2 : 1, true),
+        reason: source,
+      );
+      expect(p.rowsOnLine(0), [0], reason: source);
+    }
+  });
+
   test('an escaped table pipe is one mapped rendered grapheme', () {
     const src = '| a |\n|---|\n| \\|*x* |\n';
     final p = project(src);
@@ -201,6 +228,24 @@ void main() {
     expect(headerCells.last.column, columns - 1);
     expect(bodyCells.first.column, 0);
     expect(bodyCells.last.column, columns - 1);
+  });
+
+  test('a row presents the same wherever its source moved', () {
+    // Hosts keep a row's shaped text while it presents the same.
+    // A table cell's text keeps the cell's padding.
+    ProjectedRow rowOf(String src, String text) =>
+        project(src).rows.firstWhere((row) => row.text.trim() == text);
+    final plain = rowOf('say hi', 'say hi');
+    expect(plain.samePresentation(rowOf('x\n\nsay hi', 'say hi')), isTrue);
+    for (final src in ['say *hi*', '# say hi', '> say hi']) {
+      expect(plain.samePresentation(rowOf(src, 'say hi')), isFalse);
+    }
+    expect(plain.samePresentation(rowOf('say ho', 'say ho')), isFalse);
+    // A table cell's header and alignment.
+    final cell = rowOf('| a |\n| - |\n| b |', 'b');
+    expect(cell.samePresentation(rowOf('| x |\n| - |\n| b |', 'b')), isTrue);
+    expect(cell.samePresentation(rowOf('| a |\n| :-: |\n| b |', 'b')), isFalse);
+    expect(cell.samePresentation(rowOf('| b |\n| - |\n| a |', 'b')), isFalse);
   });
 
   test('projection invariants hold across the conformance corpora', () {

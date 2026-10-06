@@ -41,6 +41,51 @@ final class _SwitchableFaultBackend implements FlarkParseBackend {
   void dispose() => delegate.dispose();
 }
 
+/// A parser that fails on any source holding [marker].
+final class _FailOnMarker implements FlarkParseBackend {
+  _FailOnMarker(this.delegate, this.marker);
+
+  final FlarkParseBackend delegate;
+  final String marker;
+
+  @override
+  int get schemaVersion => delegate.schemaVersion;
+
+  @override
+  RenderModel parse(String source) => source.contains(marker)
+      ? throw StateError('synthetic parse failure')
+      : delegate.parse(source);
+
+  @override
+  void dispose() => delegate.dispose();
+}
+
+/// Reports an extraction deviation for one source, as the parse crate does
+/// for a document whose model it cannot verify against comrak.
+final class _DeviatesOn implements FlarkParseBackend {
+  _DeviatesOn(this.delegate, this.source);
+
+  final FlarkParseBackend delegate;
+  final String source;
+
+  @override
+  int get schemaVersion => delegate.schemaVersion;
+
+  @override
+  RenderModel parse(String text) {
+    if (text == source) {
+      throw const FlarkParseException(
+        FlarkParseException.extractionDeviationCode,
+        'synthetic extraction deviation',
+      );
+    }
+    return delegate.parse(text);
+  }
+
+  @override
+  void dispose() => delegate.dispose();
+}
+
 void main() {
   late FlarkParseBackend backend;
   setUpAll(() => backend = createParseBackend());
@@ -78,6 +123,98 @@ void main() {
       expect(editor.source, 'ab');
       expect(editor.history.canUndo, isTrue);
       expect(editor.history.canRedo, isFalse);
+    });
+
+    test('a host command that fails after ending a composition keeps it', () {
+      // applyAfterComposition ends the composition before its command runs.
+      // A command that then fails before publishing anything (here the
+      // parser fails on its text) fails the call whole: the composition is
+      // open again over the text it composed, with no undo step.
+      final editor = FlarkEditor(
+        _FailOnMarker(backend, '!'),
+        text: 'abc',
+        caret: 3,
+      );
+      final revision = editor.revision;
+      editor.beginComposition();
+      expect(editor.apply(const InsertText('k')), isTrue);
+
+      expect(
+        () => editor.applyAfterComposition(const InsertText('!')),
+        throwsStateError,
+      );
+      expect(editor.revision, revision + 1);
+      expect(
+        (editor.source, editor.composing, editor.history.canUndo),
+        ('abck', true, false),
+      );
+      editor.commitComposition();
+      expect((editor.source, editor.history.canUndo), ('abck', true));
+    });
+
+    test('a deletion the parser cannot read is refused, not respelled', () {
+      // An extraction deviation refuses the edit as asked
+      // (EP1-RESULT-PRESENTATION-001). A respelling that would read (a blank
+      // line making `b` a paragraph of its own) is no way around it.
+      final editor = FlarkEditor(
+        _DeviatesOn(backend, 'a\nb'),
+        text: 'a\nbc',
+        caret: 4,
+      );
+      expect(editor.apply(const DeleteBackward()), isFalse);
+      expect(editor.lastRejection, FlarkRejection.extractionDeviation);
+      expect(editor.source, 'a\nbc');
+      expect(editor.history.canUndo, isFalse);
+    });
+
+    test('a respelling the parser cannot read is passed over', () {
+      // At the end of an autolink's text Return breaks the line after the
+      // autolink, from the caret's other anchor; a body that already holds
+      // a run as long as its fence keeps the fences while the parser reads
+      // the block as it was. Both are respellings, passed over when the
+      // parser cannot read them: the code edit grows the fences, as asked,
+      // and Return, kept nowhere else, is unsupported.
+      final autolink = FlarkEditor(
+        _DeviatesOn(backend, '<http://a.b>\n'),
+        text: '<http://a.b>',
+        caret: 11,
+      );
+      expect(autolink.apply(const Newline()), isFalse);
+      expect(autolink.lastRejection, FlarkRejection.unsupportedEdit);
+      expect(autolink.source, '<http://a.b>');
+      final code = FlarkEditor(
+        _DeviatesOn(backend, '```\n    ```\nabx\n```'),
+        text: '```\n    ```\nab\n```',
+        caret: 14,
+      );
+      expect(code.apply(const Paste('x')), isTrue);
+      expect(code.lastRejection, isNull);
+      expect(code.source, '````\n    ```\nabx\n````');
+    });
+
+    test('a span continuation the parser cannot read is passed over', () {
+      // Moving a span's delimiter past the word typed beside it is a
+      // respelling of that word: refused, it is passed over, and the word
+      // takes a pair of its own, with no refusal to report.
+      for (final (source, caret, deletions, word, deviates, typed) in [
+        ('plain ', 6, 0, 'one t', 'plain **one t**', 'plain **one** **t**'),
+        ('x **one two**', 7, 3, 'n', 'x **n two**', 'x **n** **two**'),
+      ]) {
+        final editor = FlarkEditor(
+          _DeviatesOn(backend, deviates),
+          text: source,
+          caret: caret,
+        );
+        if (deletions == 0) editor.apply(const ToggleStyle(Style.strong));
+        for (var i = 0; i < deletions; i++) {
+          editor.apply(const DeleteBackward());
+        }
+        for (final char in word.characters) {
+          expect(editor.apply(InsertText(char)), isTrue, reason: deviates);
+        }
+        expect(editor.lastRejection, isNull, reason: deviates);
+        expect(editor.source, typed);
+      }
     });
 
     test('a published live snapshot cannot be mutated by its host', () {
@@ -197,9 +334,6 @@ void main() {
   });
 
   group('bounded logical history', () {
-    FlarkDocument document(String source) =>
-        FlarkDocument.load(source, backend, caret: source.length);
-
     test('navigation closes the current typing group', () {
       final editor = FlarkEditor(backend);
       editor.apply(const InsertText('a'), at: Duration.zero);
@@ -274,74 +408,46 @@ void main() {
     });
 
     test('joined typing retains only the group entry needed by undo', () {
-      final history = History(maxEntries: 1);
-      history.record(
-        document(''),
-        pending: null,
-        typing: true,
-        at: Duration.zero,
-      );
-      history.record(
-        document('a'),
-        pending: null,
-        typing: true,
-        at: const Duration(milliseconds: 100),
-      );
-
-      expect(history.undo(document('ab'), null)?.source, isEmpty);
-      expect(history.canUndo, isFalse);
+      // A run of typing longer than the editor's 100-entry cap is still one
+      // undo step back to where it began: joined keystrokes add no entries
+      // that the cap would evict in place of the run's first state.
+      final editor = FlarkEditor(backend);
+      for (var i = 0; i < 150; i++) {
+        editor.apply(InsertText('a'), at: Duration(milliseconds: i * 10));
+      }
+      expect(editor.apply(const Undo()), isTrue);
+      expect(editor.source, isEmpty);
+      expect(editor.history.canUndo, isFalse);
     });
 
     test('entry cap evicts the oldest undo state', () {
-      final history = History(maxEntries: 2);
-      history.record(
-        document('0'),
-        pending: null,
-        typing: false,
-        at: Duration.zero,
-      );
-      history.record(
-        document('1'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 1),
-      );
-      history.record(
-        document('2'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 2),
-      );
-
-      expect(history.undo(document('3'), null)?.source, '2');
-      expect(history.undo(document('2'), null)?.source, '1');
-      expect(history.undo(document('1'), null), isNull);
+      // 101 steps under a cap of 100 entries: the state before the first
+      // is the one evicted.
+      final editor = FlarkEditor(backend);
+      for (var i = 0; i < 101; i++) {
+        editor.apply(const Paste('a'), at: Duration(seconds: i * 2));
+      }
+      for (var i = 100; i > 0; i--) {
+        expect(editor.apply(const Undo()), isTrue);
+        expect(editor.source, 'a' * i);
+      }
+      expect(editor.history.canUndo, isFalse);
     });
 
     test('source budget evicts whole snapshots', () {
-      final history = History(maxEntries: 10, maxSourceCodeUnits: 5);
-      history.record(
-        document('0'),
-        pending: null,
-        typing: false,
-        at: Duration.zero,
-      );
-      history.record(
-        document('11'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 1),
-      );
-      history.record(
-        document('222'),
-        pending: null,
-        typing: false,
-        at: const Duration(seconds: 2),
-      );
-
-      expect(history.undo(document('3333'), null)?.source, '222');
-      expect(history.undo(document('222'), null)?.source, '11');
-      expect(history.undo(document('11'), null), isNull);
+      // Five snapshots of a document of a million characters pass the
+      // 4 Mi code-unit budget: the oldest goes whole, the four after it
+      // stay whole.
+      final start = 'x' * 1000000;
+      final editor = FlarkEditor(backend, text: start, caret: start.length);
+      for (var i = 0; i < 5; i++) {
+        editor.apply(Paste('$i'), at: Duration(seconds: i * 2));
+      }
+      for (var i = 4; i > 0; i--) {
+        expect(editor.apply(const Undo()), isTrue);
+        expect(editor.source, '$start${'01234'.substring(0, i)}');
+      }
+      expect(editor.history.canUndo, isFalse);
     });
   });
 }

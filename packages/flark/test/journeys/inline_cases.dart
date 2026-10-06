@@ -2,6 +2,92 @@ part of '../journey_test.dart';
 
 void _inlineCases(FlarkParseBackend backend) {
   group('inline', () {
+    test('a range at an autolink\'s hidden edges edits its address', () {
+      // Its `<` and `>` are hidden like a span's delimiters: part of the
+      // address edits the address, all of it replaces the link.
+      for (final (start, end, text, edited, rows) in [
+        (14, 16, 'Zz', 'x <https://a.bZz> y', ['x https://a.bZz y']),
+        (14, 16, '', 'x <https://a.b> y', ['x https://a.b y']),
+        (3, 16, 'Zz', 'x Zz y', ['x Zz y']),
+        (2, 15, 'Zz', 'x Zz y', ['x Zz y']),
+      ]) {
+        _Session(
+          backend,
+          source: 'x <https://a.bk> y',
+        ).act(ReplaceRange(start, end, text), source: edited, rows: rows);
+      }
+      final selected = _Session(backend, source: 'x <b@c.dk> y');
+      selected.act(const SetSelection(8, 10));
+      selected.act(const InsertText('Zz'), source: 'x <b@c.dZz> y');
+    });
+
+    test('a link or image keeps the blocks around it', () {
+      // A link wrapped in a definition's label would end the definition, one
+      // after a rule's dashes would paint them, and an image on the empty
+      // line before indented code would make the code its paragraph.
+      for (final (source, base, extent, command) in [
+        ("[spec]: /s 'S'\n[docs]: /d", 0, 7, const SetLink('https://x')),
+        ('a\n\n---\n\nb', 6, 6, const SetLink('https://x')),
+        ('web\n\n    code', 4, 4, const SetImage('i.png', alt: 'you')),
+      ]) {
+        final session = _Session(backend, source: source);
+        session.act(SetSelection(base, extent));
+        session.act(command, applied: false, source: source);
+      }
+      // A definition or a rule offers no link or image at all.
+      final definition = _Session(backend, source: '[a]: /u\nb', caret: 1);
+      expect(definition.editor.canSetResource(), isFalse);
+      final rule = _Session(backend, source: 'a\n\n---\n\nb', caret: 6);
+      expect(rule.editor.document.caretRow.kind, RowKind.thematicBreak);
+      expect(rule.editor.canSetResource(), isFalse);
+      expect(rule.editor.canSetResource(image: true), isFalse);
+    });
+
+    test('removing a link or image keeps the blocks around it', () {
+      // Unlinked text shows as the link did, or the unlink is refused: here
+      // the strong delimiters after the link could no longer open, and
+      // would show.
+      const strong = '[lbl](<u>)**[(**';
+      _Session(
+        backend,
+        source: strong,
+        caret: 2,
+      ).act(const RemoveLink(), applied: false, source: strong);
+      // Text that would start a block at its line's start escapes its first
+      // punctuation.
+      for (final (source, unlinked, rows, at) in [
+        ('- [1. Intro](#intro)', r'- 1\. Intro', ['1. Intro'], 8),
+        ('[# a](u)', r'\# a', ['# a'], 3),
+      ]) {
+        final session = _Session(
+          backend,
+          source: source,
+          caret: source.indexOf('](') - 1,
+        );
+        session.act(
+          const RemoveLink(),
+          source: unlinked,
+          rows: rows,
+          caret: DisplayPosition(0, at),
+        );
+        expect(session.editor.document.caretRow.kind, RowKind.paragraph);
+      }
+      // An image that starts its line takes the whitespace after it, which
+      // would indent the line out of its table, as indented code.
+      final image = _Session(
+        backend,
+        source: '![a](<i.png>)\ta|b\n-|-',
+        caret: 2,
+      );
+      image.act(
+        const RemoveImage(),
+        source: 'a|b\n-|-',
+        rows: ['a', 'b', '-|-'],
+        caret: const DisplayPosition(0, 0),
+      );
+      expect(image.editor.document.caretRow.kind, RowKind.tableCell);
+    });
+
     test('typing inside emphasis continues it', () {
       final session = _Session(backend, source: 'say *hi* now', caret: 7);
       session.expectState(context: Style.emphasis);
@@ -263,6 +349,32 @@ void _inlineCases(FlarkParseBackend backend) {
       session.act(const InsertText('d'), source: 'ab**c**d', rows: ['abcd']);
     });
 
+    test(
+      'toggling a style off at the caret refuses an unwrap that re-pairs delimiters',
+      () {
+        // Unwrapped, the emphasis's text would run into the strikethrough's
+        // opener, which then could not open.
+        final strike = _Session(backend, source: '*bm*~~😀~~', caret: 2);
+        strike.act(
+          const ToggleStyle(Style.emphasis),
+          applied: false,
+          source: '*bm*~~😀~~',
+          rows: ['bm😀'],
+        );
+        // Unwrapped, the code's tilde would pair with the ones around it.
+        final code = _Session(backend, source: '~`r~`~', caret: 3);
+        code.act(const ToggleStyle(Style.code), applied: false);
+        // A span that unwraps cleanly still does.
+        final plain = _Session(backend, source: 'a *bc* d', caret: 4);
+        plain.act(
+          const ToggleStyle(Style.emphasis),
+          source: 'a bc d',
+          rows: ['a bc d'],
+          context: 0,
+        );
+      },
+    );
+
     test('a phrase typed with strong on stays one span', () {
       final session = _Session(backend, source: 'plain ', caret: 6);
       session.act(const ToggleStyle(Style.strong), context: Style.strong);
@@ -375,6 +487,22 @@ void _inlineCases(FlarkParseBackend backend) {
           caret: const DisplayPosition(0, 5),
         );
       }
+    });
+
+    test('deleting a span\'s first word after a shown line feed keeps the '
+        'gap', () {
+      // `&#10;` shows a line feed inside the line, so the space the deletion
+      // leaves before the span shows, as it does after any other text: the
+      // caret stays before it, in the span's intent.
+      final session = _Session(backend, source: 'x&#10;*one two*', caret: 10);
+      session.act(
+        const DeleteBackward(word: true),
+        source: 'x&#10; *two*',
+        caret: const DisplayPosition(0, 2),
+        context: Style.emphasis,
+      );
+      // The word rejoins the span rather than fusing with the next one.
+      session.act(const InsertText('z'), source: 'x&#10;*z two*');
     });
 
     test('word backspace over a styled first word keeps the gap', () {

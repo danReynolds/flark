@@ -69,6 +69,28 @@ void _navigationCases(FlarkParseBackend backend) {
       );
     });
 
+    test('a press where the caret is takes its context and ends the step', () {
+      // A pending style is the intent chosen at a caret. A press starts over
+      // from where it lands, as in common editors, even where the caret
+      // already was; a browser's double click that selected a word in
+      // between had dropped the style, and a single press had kept it.
+      final session = _Session(backend, source: 'plain', caret: 5);
+      session.act(const ToggleStyle(Style.emphasis), context: Style.emphasis);
+      session.act(const PlaceCaret(0, 5), anchor: 5, context: 0);
+      session.act(
+        const InsertText('x'),
+        source: 'plainx',
+        rows: ['plainx'],
+        context: 0,
+      );
+      // Nothing pending, the press changes nothing it shows, but typing
+      // after it is an undo step of its own.
+      session.act(const PlaceCaret(0, 6), applied: false, anchor: 6);
+      session.act(const InsertText('y'), source: 'plainxy');
+      session.act(const Undo(), source: 'plainx');
+      session.act(const Undo(), source: 'plain');
+    });
+
     test('up and down move between rows at the same offset', () {
       final session = _Session(
         backend,

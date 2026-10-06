@@ -89,9 +89,81 @@ additional product principles or testing layers.
   hidden markup with no caret position, sending the next character to the
   heading's line. The kernel inserts a blank line (keeping container markers)
   before the typed line instead, so it starts its own block: the bare marker
-  above, a paragraph, or a thematic break for `---`. The parser identifies the
-  underline and confirms the separation. Paste, IME preedit and source mode
-  keep Markdown's literal meaning.
+  above, a paragraph, or a thematic break for `---`. The separated line is
+  checked as any text put on an empty row is (below), so where the block after
+  it would read it otherwise (indented code as the content of the empty item
+  `-` starts, a rule as the underline of `=`, a paragraph after a quote as the
+  lazy line of the quoted `=`) an empty line after it keeps that block apart
+  too. Pasted text there is checked the same way, and composed text when its
+  composition commits; multi-line paste and source mode keep Markdown's
+  literal meaning, as an IME preedit does until it commits.
+- Text typed, pasted or put (one line) on an empty row starts a block on that
+  line, in the containers the row shows. An empty line in a list item or
+  footnote may lack their indentation, so the line gets the innermost
+  container's continuation prefix; an item marker the projection hides with
+  no space after it (`1.`, `-` after another item, `- [ ]`) gets the
+  separating space, so the item keeps the text; and an empty line after or
+  before the typed line keeps the blocks around it apart where Markdown would
+  read the text into them (a paragraph in another container read on lazily, a
+  table with body rows as its next row, literal HTML as more of itself) or
+  them into the text (indented code, an empty item, a definition, a setext
+  underline or rule, a footnote's lazy line). Whitespace after the row's
+  container prefix, which the row does not show, stays unshown: where text
+  run into it would show it (a tab's columns before the code its indentation
+  makes of the text, or a line of code the text joins), the text goes where
+  the prefix ends, an empty item's marker padded with one space. Typing
+  never shortens the source: the
+  whitespace becomes spaces a paragraph does not show, or the blank line after
+  or before the text. An empty item stays one rather than underlining the
+  text, and under a fence with no body and no closing fence the fence closes
+  first, so the text is not its code. The kernel commits the first spelling
+  the parser reads with every other row keeping its kind, the kinds of its
+  containers and its shown text, nothing the projection hid painted, and the
+  typed text in the row's containers or in containers it opened (or whose
+  prefix the line already carries, as Return leaves a footnote's next line).
+  A paragraph in the same containers may take the typed line as a line of its
+  own, as Return then typing continues it, a line under a table with no body
+  row may start that row, and text that fills an empty item takes back the
+  blocks indented for it, which the empty item had left out (a lazy paragraph
+  does not count). A typed fence run is completed (see Typed fence creation)
+  in whichever spelling commits, and the completed block is checked the same
+  way. Where no spelling qualifies the edit is refused; at a limit a typed
+  underline is typed as it is. Past the live tier no spelling can be read, so
+  for text put on any row these rules cover (an empty row, a rule, a bare or
+  hidden marker, a lazy line, leading whitespace or indentation) the first
+  spelling that would leave the tier enters source mode, as ordinary text
+  does (EP1-RESULT-PRESENTATION-001).
+- Text typed on a thematic break starts a block on the line after it, in the
+  rule's containers; the rule stays a rule. Text typed beside a bare marker
+  shown as text joins it as paragraph text, with an empty line after it when
+  the block after would otherwise read on as part of it (`-` over `b` typed
+  `a` gives `-a`, an empty line, `b`).
+- A lazy line shows inside its containers without their prefix. Text typed on
+  it commits as it is unless it would open or move a block, which then gets
+  the prefix of the paragraph's first line, so a typed `# ` makes a heading in
+  the item rather than ending the list.
+- A space or tab typed where a line's content starts (alone, inside the
+  hidden syntax that starts it, or over a selection from there, even one
+  reaching the row's later lines) is indentation or marker padding Markdown
+  does not show; where it would move a block (an item's content column
+  re-nesting its children, a paragraph becoming indented code, an emptied
+  item dropping the blocks after it) it is refused.
+- Other text that starts with spaces or tabs and puts them where a line's
+  content starts (pasted there, or over the whole of a span that starts the
+  line, whose leading whitespace moves out before the span's delimiters) goes
+  in as it is where the row keeps its kind and every other row its kind,
+  containers and text; otherwise it goes in without that indentation, which
+  shows the same, so it never makes the row code (`    x` before a setext
+  heading's text) or moves an item's content column and the blocks nested at
+  it. The text's own markup still applies (`  # x` makes a heading).
+- A pending style's delimiters must pair around the typed text and hide;
+  where they cannot (after a backslash, inside an autolink, against another
+  delimiter run) the text is typed without the style.
+- Typed text can complete block markup that hides the caret's own line. A
+  table delimiter row gets a line break after it when the lines below would
+  become its rows (see the table rules), and a fence marker that would make a
+  line with text after it an opening fence, hiding that text in its info
+  string and turning what follows into code, is escaped.
 - A heading's opening separator belongs to its hidden prefix, including when
   it has no content yet. Its empty rendered row is exactly empty and its caret
   sits at the content origin; first-frame checks must not trim away a misplaced
@@ -120,11 +192,32 @@ additional product principles or testing layers.
 - A replacement crossing unsupported owners fails before mutation rather than
   guessing at Markdown closure.
 
+### Links and images
+
+- SetLink and SetImage write the resource the parser must read back, with
+  every other row keeping its kind and containers, the edited row its kind
+  (an empty row only its containers), and nothing hidden shown. A definition
+  or a rule offers no link.
+- RemoveLink keeps the link's text as text, shown exactly as the link showed
+  it (a URL label escaped so that it does not become an automatic link);
+  RemoveImage deletes the image, with the formatting it empties. Both are
+  checked as SetLink is, the edited row left empty allowed when it shows
+  nothing else. Where Markdown would read the result otherwise, unlinked text
+  that would start a block at its line's start escapes its first punctuation
+  (`- [1. Intro](#intro)` gives `- 1\. Intro`), and an image that starts its
+  line's text takes the whitespace after it, which would otherwise indent the
+  line into code or out of its table. Where no spelling keeps the rest (strong
+  delimiters after the link that could no longer open) the command refuses.
+
 ### Backspace and Delete
 
 - Backspace removes the previous rendered grapheme; Delete removes the next
   rendered grapheme.
 - Hidden opening and closing delimiters are never separate deletion steps.
+- Backspace before the first row's text, where no heading marker, rule, empty
+  fence, container or indentation is left to lift, and Delete after the last
+  row's text have nothing to delete, hidden markup beside the caret (a closing
+  `**` or `#`, a fence, a cell's pipe) included: they are inert, not refused.
 - Deleting content from a styled span preserves unaffected surrounding source,
   styling, and block presentation.
 - Word deletion uses the same word boundaries as word navigation. It is one
@@ -138,15 +231,41 @@ additional product principles or testing layers.
   the heading (after Return, on the new line). The parser must keep the other
   blocks where they were. Other text typed or pasted over all of it keeps the
   heading and its underline.
+- A deletion inside a row changes that row only: every other row keeps its
+  kind and containers, the row's remaining text its kind and containers, a
+  table row its cells, and an emptied line shows none of its prefix. Where
+  Markdown would read the result otherwise, the deletion respells what it
+  emptied, and the parser must confirm the respelling: text deleted at a
+  line's start takes the spaces after it, so an item's content column and the
+  blocks nested at it stay put (`- The plan` less `The` is `- plan`); an
+  emptied line of a longer row goes with its line break (deleting `b` from a
+  setext heading `a`, `b` keeps `a` above its underline; an emptied lazy line
+  goes); an item's emptied first line takes the blank lines after it, as an
+  item can start with at most one, so its later blocks stay in it; an emptied
+  item under a paragraph's line, which can neither interrupt the paragraph
+  nor be its underline, takes a blank line in the outer containers before
+  it, as does a line a deletion leaves as a setext underline (`-` under `a`);
+  and an emptied cell of a table row written without its leading or trailing
+  pipe keeps one (`| | Value`, `D||`, a body row `||`), the caret in it. When
+  no spelling keeps the structure, a deletion that empties its line or a cell
+  and would change another row, show its line's prefix or change its table
+  row refuses (`#` between `- b` and `  [` stays: `[` would join the item);
+  any other goes ahead as Markdown reads it, literal HTML and definitions
+  included, so Backspace from the end and Delete from the start still empty a
+  document. Emptying a longer row's first line keeps the text below it in the
+  row (deleting `a` from `a`, `    b`, `===` leaves the heading `b`: under an
+  empty line, `    b` would read as code and the underline as text).
 - If deletion exposes whitespace against emphasis/strong/strike delimiters,
   move that whitespace outside the owner so surviving words retain their
   style, and retain typing intent when deletion exits an owner's trailing
-  whitespace. Deleting an owner's first word leaves the caret at the visible
-  deletion point, before the whitespace that now leads the owner, with the
-  owner's typing intent: a word typed there joins the owner (`**new two**`,
-  not `**new** **two**`), and erasing that whitespace returns into it. At a
-  line start, where Markdown displays no leading whitespace, the caret stays
-  in the surviving content.
+  whitespace. Past a line break the opening syntax moves after the next
+  line's container prefix, which would otherwise follow it as text. Deleting
+  an owner's first word leaves the caret at the visible deletion point,
+  before the whitespace that now leads the owner, with the owner's typing
+  intent: a word typed there joins the owner (`**new two**`, not
+  `**new** **two**`), and erasing that whitespace returns into it. At a line
+  start, where Markdown displays no leading whitespace, the caret stays in the
+  surviving content.
 
 ### EP1-DELETE-TO-EMPTY-001
 
@@ -175,8 +294,12 @@ the smallest mounted regression case.
   choose that word's formatting, including when the hit falls slightly across
   the painted caret. Clicking after the following space chooses its own
   context. Between adjacent non-whitespace glyphs with different formatting,
-  the glyph half distinguishes their targets. Keyboard navigation keeps its
-  separate context-preserving rules and explicit formatting toggles.
+  the glyph half distinguishes their targets. A press takes the context
+  where it lands even when it leaves the caret where it was, as in common
+  editors: a pending formatting toggle does not outlast it, and typing after
+  it starts a new undo step. Keyboard navigation keeps its separate
+  context-preserving rules and explicit formatting toggles, Up on the first
+  line and Down on the last included.
 - Selection direction and affinity survive controller, platform-input, layout,
   and paint mapping.
 - Double-click selects the laid-out visible word. Replacement and Undo use
@@ -208,12 +331,45 @@ Return and Backspace operate on the visible block structure:
   is continued at its indent (a footnote's four columns, counted from the end
   of the containers around it rather than from an indented label) rather than
   by repeating its marker, which would open another;
+- Return shows only its line break. Over a selection it continues the
+  containers as at the selection's start; a lazy line takes the prefix it
+  lacks where it would otherwise leave its quote. Text moved to the new line
+  or left before it stays text: a marker that would start a block there, or
+  syntax that would end one (`> b`, `1. b`, `=`, `a\`, `# a #`), is escaped,
+  and a hard break before the caret gives way to the new break. A blank line
+  keeps the next block apart from the text of a split heading, now a
+  paragraph, as for a lift, and an item whose later blocks follow blank lines
+  continues after them, where an empty item would drop them from the list.
+  A span split beside a line break inside it closes after the text before
+  the split and reopens where the text after it starts, past that line's
+  container prefix (a lazy line's is the row's); Return before the break
+  leaves the caret on the new line, and after it, in the moved text's span.
+  Where nothing keeps what it splits (an autolink, a reference's label,
+  delimiters that would pair anew) Return refuses, as it does when leaving an
+  empty container line would move the block after it into another container;
 - Return, including in code, inserts the line ending of the caret's line, so a
   CRLF document stays CRLF;
 - terminal Return creates one writable following paragraph;
 - table Return moves to the next row in the same column, then exits the table;
-  a typed `|` is escaped as cell text; cell-boundary deletion rejects
-  atomically, and table restructuring uses source mode;
+  a typed `|` is escaped as cell text, and a typed `\` that would escape a
+  cell's delimiter (GFM reads any backslash before a pipe as escaping it) is
+  refused; other text typed, pasted or put on one line in a cell keeps its
+  row's cells (whitespace that would indent the row out of its table, or a
+  pasted or replacing pipe that would split it, is refused); cell-boundary
+  deletion rejects atomically, a deletion in a cell shows none of its row's
+  other source (one that would leave a backslash escaping the cell's delimiter
+  refuses), emptying a cell keeps its row's cells (a pipe spells the empty
+  cell, so a cell the table drops stays dropped), text put in a cell a short
+  row never wrote adds the pipes it needs right after the row's last cell
+  (which shows no new space; after a backslash, which would escape a pipe, a
+  space goes first), and table restructuring uses source mode. In the editing
+  view a table without body rows shows its delimiter row as its source, a row
+  of its own under the header: the row being typed keeps the caret, edits that
+  would dissolve the table (typed, deleted, replaced or pasted, lines
+  included) are refused, Return or Tab anywhere on it opens the next line
+  after it in its containers (a break inside it would split it), with every
+  other row kept in its containers, and the first body row typed there hides
+  it. Read-only views show only the header;
 - Backspace at a supported block start merges, lifts, or removes the structural
   boundary users see. A lifted line stays in its outer containers, and when
   the block after it would read on as part of it (a list numbered past 1,
@@ -225,17 +381,29 @@ Return and Backspace operate on the visible block structure:
   moves that markup after the joined text; and removing the empty line after
   a heading or code leaves the caret at the end of its text, not past its
   hidden underline or closing fence. Backspace at the start of a heading makes
-  it a paragraph; an empty heading whose marker cannot go without changing
-  the block before it (an emptied item's `- ` would underline a paragraph
-  above) goes with its line, as Delete at the end of that block takes it.
-  No join crosses a fence line: Backspace at the start of code removes an
-  empty line or rule above it and otherwise refuses, and nothing joins onto a
-  closing fence. A join or lift whose result would change another block's kind
-  or paint markup the projection hid (removing the blank line between a
-  paragraph and `---` would make a setext heading) refuses, as does removing an
-  empty line or rule that would move the block after it into or out of a quote
-  or list item (`b` after `> a` and an empty line would read on lazily inside
-  the quote); and
+  it a paragraph in the same containers (a blank line keeps the line after
+  it from reading on into a quote's new paragraph; `# >` keeps its heading,
+  as its text would open a quote); an empty heading whose marker cannot go
+  without changing the block before it (an emptied item's `- ` would
+  underline a paragraph above) goes with its line, as Delete at the end of
+  that block takes it. Indented code lifted becomes the paragraph its text
+  reads as, in no new container (`>a` would be a quote, `- a` an item, so
+  those refuse). No join crosses a fence line: Backspace at the start of code
+  removes an empty line or rule above it and otherwise refuses, and nothing
+  joins onto a closing fence. A join or lift whose result would change
+  another block's kind or paint markup the projection hid (removing the blank
+  line between a paragraph and `---` would make a setext heading) refuses, as
+  does one that would move any other block, however far after it, into or out
+  of a quote or list item (`b` after `> a` and an empty line would read on
+  lazily inside the quote; `c` after `- # a`, `b` and an empty line would
+  join the item once `b` joins `a`), except the blocks of a container whose
+  marker the lift removes, which leave it with that marker;
+- Tab on a list item nests it under the item before it, past that item's
+  content offset; Shift-Tab lifts it to its parent item's column, however
+  deep it was nested (four spaces or a tab), onto a line of its own if it
+  opens on the parent's. Every row must show as it was, the item's a list
+  deeper or shallower; otherwise the key does nothing, with no refusal to
+  report; and
 - repeated Return or Backspace followed immediately by typing must leave one
   live caret and accept the next input.
 
@@ -245,11 +413,15 @@ intentionally literal or incomplete syntax remains visible authoring content.
 ### Typed fence creation
 
 In rendered mode, typing the third backtick (or tilde) on an otherwise bare
-opening-fence line immediately creates one empty code line and a matching
-closing fence. The caret starts inside that line. A writable gap follows the
+opening-fence line, before, between or after the other two, immediately
+creates one empty code line and a matching closing fence. The caret starts inside that line. A writable gap follows the
 block; existing following prose, headings and code blocks stay outside it.
 The parser authenticates the opener and the completed Markdown before the
 single publication. Quotes and list items retain their continuation prefixes.
+A run typed on an empty row, a rule or a lazy line is completed in the
+spelling such text takes there (an item's empty line without its indentation
+gets it, a lazy line its paragraph's prefix), and the completed block must
+keep every other row's kind and containers, or the next spelling is tried.
 
 Enter continues code, including on an empty line inside a quote or list. Down
 from the last code line reaches the following gap, where typing creates prose.
@@ -257,10 +429,11 @@ Backspace in an empty closed code block removes the fences and retains its
 container context. Completion is its own Undo step: Undo restores the two
 typed markers and their caret; Redo restores the empty bounded block.
 
-This is a typing convenience. Paste, range replacement, source mode and IME
-preedit preserve their literal input. Existing language tags are preserved;
-under immediate creation, characters typed after the third marker enter the
-code body. Opening-line padding and CRLF at the insertion site are retained.
+This is a typing convenience. Paste, range replacement and source mode
+preserve their literal input, as an IME preedit does until it commits.
+Existing language tags are preserved; under immediate creation, characters
+typed after the third marker enter the code body. Opening-line padding and
+CRLF at the insertion site are retained.
 
 ### Code editing
 
@@ -272,11 +445,19 @@ Code is literal: edits the code delegate does not propose (typing it
 declines, deletion, replacement, paste and composition) change the projected
 body as given. Every code edit gives new lines the edited line's container
 prefix, and text put on an empty line that omits the indentation of its list
-item or footnote takes the prefix the fence's own lines continue with. When an
-edit leaves a body line the parser would read as the closing fence (a typed
-or pasted fence character, a run a deletion joins, an outdented run), the
-fences grow past the body's longest run of their character instead; while the
-parser still reads the block unchanged, they keep their length.
+item or footnote takes the prefix the fence's own lines continue with. Text
+typed on an empty line of indented code that lacks the code's indentation
+takes the indentation of the block's first line, so it stays code. Return at
+the end of indented code that ends its list item or footnote makes a blank
+line Markdown reads outside them, and no spelling keeps it inside: that line
+shows in their outer containers, carrying their prefix and the code's
+indentation, so text typed on it continues the code (as Return leaves a
+footnote's next line), and Return again leaves the code. A new line in any
+other containers refuses. When an edit leaves a body line the parser would
+read as the closing fence (a typed or pasted fence character, a run a
+deletion joins, an outdented run), the fences grow past the body's longest
+run of their character instead; while the parser still reads the block
+unchanged, they keep their length.
 
 Untagged fences receive automatic syntax coloring without changing Markdown.
 When the caret is inside a fence, the toolbar offers Automatic, Plain text and
@@ -296,34 +477,43 @@ replacement, paste, composition and source-mode input retain literal breaks.
 Exiting an imported unclosed fence adds its matching closer. Each exit is one
 atomic Undo action and preserves following content and existing fence metadata.
 
-An opening brace, bracket or parenthesis increases the indentation, and Enter
-between a matching pair puts the closer on its own line. Python's trailing
-colon also increases indentation. Recognized comments, strings and regex literals do not
-trigger those rules. The step is two spaces, four for Python, or an existing
-tab. Tab/Shift-Tab indent/outdent selected code lines without touching their
-container prefixes, and without the code delegate Tab leaves blank lines as
-they are; a collapsed Tab inserts a step at the caret. Commands
-crossing a code-block boundary reject atomically.
+With the CodeMirror delegate, Enter indents the new line as the language's
+CodeMirror mode does (`newlineAndIndent`): after an opening brace, bracket or
+parenthesis where the mode counts them, after Python's trailing colon, and
+inside a Ruby or Bash block. Enter between `{}` or `[]` also opens an indented
+empty line and puts the closer on the line after it. An opener inside a
+comment, string or regular expression does neither. The step is two spaces,
+four for Python, or an existing tab. Tab/Shift-Tab indent/outdent selected
+code lines without touching their container prefixes; Shift-Tab removes a tab
+or up to one step of spaces, a tab step counting four columns. Without the
+code delegate Tab leaves blank lines as they are; a collapsed Tab inserts a
+step at the caret. Commands crossing a code-block boundary reject atomically.
 
-Typing `}`, `]` or `)` on an indented, otherwise blank code line aligns it with
-its matching opener's leading whitespace. A shared balanced-delimiter scan
-skips literal token ranges, including enclosing string/comment/regex ancestry.
-It operates on parser-owned code content and preserves quote/list prefixes.
-The closer and whitespace change publish together as one Undo action. Inline
-closers, unmatched/mismatched pairs, selected replacement, paste, composition
-and source-mode input retain literal behavior. Unknown and Plain text languages
-also retain literal indentation. The current YAML grammar marks flow punctuation
-as string text, so its automatic closer falls back to literal input. The twelve
-registered grammars each have a declared regression case; these examples are
-coverage boundaries, not a guarantee for every construct in those languages.
-This is a bounded editing aid, not a formatter or arbitrary-language parser.
+Typed text re-indents its line where the mode asks for it: a closing `}`, a
+closing word such as Ruby's `end` or Bash's `fi`, an XML closing tag, or a `)`
+or `]` typed first on its line. The line takes the mode's indentation, which
+for a closer is usually its opener's line; a word that goes on past a closing
+word (`fi` into `fix`) is indented again. The change operates on parser-owned
+code content and preserves quote/list prefixes. The closer and whitespace
+change publish together as one Undo action. Paste, range replacement,
+composition and source-mode input retain literal behavior. Plain text, and an
+untagged fence that detection cannot place, keep the leading whitespace of
+the line Enter splits; a language without a ported mode indents by its
+brackets. This is a bounded editing aid, not a formatter or arbitrary-language
+parser.
 
-Syntax decoration is pure Dart and theme-free. The initial grammar set is Dart,
-Python, JavaScript, TypeScript, Rust, Go, JSON, YAML, SQL, shell, HTML/XML and CSS.
-Detection examines at most 1,024 UTF-16 units. Blocks above 8,192 units fall back
-to plain text; the host's narrower admission envelope still applies. Cached
-tokens are bounded and must reconstruct the exact projected body text.
-Decoration failures cannot alter or reject source input.
+Syntax decoration is pure Dart and theme-free. The CodeMirror delegate
+(`flark_codemirror`) ports 25 of CodeMirror's language modes: JavaScript,
+TypeScript, JSON, Python, C, C++, Java, C#, Kotlin, Dart, Bash, YAML, Go, Ruby,
+Rust, PowerShell, XML, HTML, SQL, PostgreSQL, MySQL, CSS, SCSS, Less and PHP;
+an app can build in fewer. Detection reads at most the first 512 UTF-16 units
+of an untagged fence, back to a line end, and leaves the fence plain when that
+sample reads as prose or no language's signs reach the threshold. Bodies above
+8,192 units are plain and receive no proposals; the kernel's live limits apply
+as to any block. Cached tokens are bounded and must reconstruct the exact
+projected body text. Decoration failures cannot alter or reject source input:
+a mode that fails leaves the rest of its snippet plain and declines the edit,
+which then goes through Flark's own code editing.
 
 ## History and platform input
 
@@ -334,8 +524,23 @@ Decoration failures cannot alter or reject source input.
   heading level in any spelling, the current code language, a link's own
   destination) is an inert, successful no-op, like a repeated SetStyle: it
   publishes nothing, records no history and is not reported as refused.
+  Undo or Redo with nothing to undo or redo is one too.
 - Equivalent full-value, delta, key, paste, and composition delivery routes
   produce the same accepted logical command.
+- While an input method composes, its text goes into the source as it is,
+  where the platform holds it, so each preedit and the commit edit the text
+  the platform knows. What typing makes of text (a pending style's
+  delimiters, an escaped pipe in a table cell, the typed fence and setext
+  completions, the wrappers a replaced selection keeps) is made once, when
+  the composition commits, through the typing path the parser validates; a
+  composition over more than typing over its selection supports is refused.
+  Text composed in more than one place (an input method correcting a word
+  beside the one it composes) stays as composed, as the platform holds it:
+  typed as one span, the text between the places would be typed over as
+  text. Composed text typing refuses is withdrawn with typing's reason. A
+  committed composition is one undo step, and a cancelled one restores the
+  source, selection and typing intent it began with. Code keeps composed
+  text literal.
 - Duplicate platform callbacks must not duplicate source mutations.
 - Browser copy/cut exports visible selected text in rendered mode and exact
   selected source in source mode. Copy Markdown remains the full-source export.
@@ -353,11 +558,19 @@ Inside the live tier, every accepted source mutation returns enough parser-owned
 information to paint the complete current result. That result is bound to the
 committed source revision. Outside the configured UTF-8 byte-and-shape
 admission envelope, the editor publishes a source-mode snapshot and does not
-retain a full parsed projection. A typed extraction deviation also keeps an
-initially opened or already-source-mode document in source mode rather than
-publishing an untrustworthy projection; the same deviation rejects an edit to
-an existing live snapshot atomically. M2 implements the byte gate; M3 adds
-shape admission before this becomes a product-qualified live boundary.
+retain a full parsed projection. A spelling the kernel chooses in place of
+the edit as given (a blank line that keeps blocks apart, an escape, a
+respelled prefix) must keep the result inside the envelope, where the parser
+checks it: past it that spelling is passed over, and only the edit as given
+may leave the live tier. Text put where it changes its line's block structure
+(see Insertion), which may have no spelling as given, is the exception: when
+no spelling of it stays inside the envelope, it enters source mode in the
+first that leaves it rather than being refused. A typed extraction deviation
+also keeps an initially opened or already-source-mode document in source mode
+rather than publishing an untrustworthy projection; the same deviation
+rejects an edit to an existing live snapshot atomically. M2 implements the
+byte gate; M3 adds shape admission before this becomes a product-qualified
+live boundary.
 
 Flutter may validate and render this information. It may not reconstruct the
 result with delimiter scans, character allowlists, or stale row structure.

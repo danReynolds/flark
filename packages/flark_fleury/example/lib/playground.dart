@@ -2,7 +2,7 @@ import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
 import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:fleury/fleury_core.dart';
-import 'package:fleury_widgets/fleury_widgets_web.dart';
+import 'package:fleury/fleury.dart';
 
 import 'theme_palette.dart';
 

@@ -342,6 +342,16 @@ void _structureCases(FlarkParseBackend backend) {
       session.act(const ToggleTask(), source: '- [ ] a');
     });
 
+    test('a task toggle off any task item does nothing quietly', () {
+      // There is no checkbox to toggle: nothing to do, which a host does not
+      // report as a refused edit.
+      for (final (source, caret) in [('a', 1), ('- a', 3), ('> b', 3)]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const ToggleTask(), applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
+    });
+
     test('heading level is set and cleared on the caret\'s row', () {
       final session = _Session(backend, source: 'title', caret: 5);
       session.act(
@@ -356,6 +366,20 @@ void _structureCases(FlarkParseBackend backend) {
         rows: ['title'],
         caret: const DisplayPosition(0, 5),
       );
+    });
+
+    test('clearing the level of a line that is no heading does nothing', () {
+      // An empty line, like a paragraph, is at level 0 already: the command
+      // is inert, with no refusal for a host to report.
+      for (final (source, caret) in [
+        ('a\n\nb', 2),
+        ('- a\n\n  b', 4),
+        ('a', 1),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const SetHeadingLevel(0), applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
     });
 
     test('backspace joins a quote line into the previous quote line', () {
@@ -398,6 +422,220 @@ void _structureCases(FlarkParseBackend backend) {
         session.act(const Indent(), source: '1. a\n   1. b', rows: ['a', 'b']);
       },
     );
+
+    test(
+      'outdent lifts an item that opens on its parent\'s line onto a line of its own',
+      () {
+        // Merging the markers (`-- a`) would paint them as text.
+        final session = _Session(backend, source: '- - a\n    b', caret: 4);
+        session.act(
+          const Outdent(),
+          source: '-\n- a\n  b',
+          rows: ['', 'a\nb'],
+          caret: const DisplayPosition(1, 0),
+        );
+        expect(session.editor.document.caretRow.shells.map((s) => s.kind), [
+          ShellKind.list,
+          ShellKind.item,
+        ]);
+        final ordered = _Session(backend, source: '1. 2. ', caret: 6);
+        ordered.act(const Outdent(), source: '1.\n2. ', rows: ['', '']);
+      },
+    );
+
+    test('outdent refuses when the emptied parent would show its marker', () {
+      // Alone in its list, a bare `-` is presented as the text it is.
+      final session = _Session(backend, source: '- 1. ', caret: 5);
+      session.act(const Outdent(), applied: false, source: '- 1. ');
+    });
+
+    test('outdent shifts tab-indented lines by the columns they show', () {
+      // Two columns of the tab go, not the one space before the item's
+      // column, so the code keeps its own indentation.
+      final code = _Session(
+        backend,
+        source: '- a\n  - b\n\n\t      code',
+        caret: 8,
+      );
+      code.act(
+        const Outdent(),
+        source: '- a\n- b\n\n        code',
+        rows: ['a', 'b', '', '  code'],
+      );
+      // An item that opens on its parent's line keeps a tab-indented child.
+      final child = _Session(backend, source: '- -\n\tz', caret: 3);
+      child.act(const Outdent(), source: '-\n-\n  z', rows: ['', '', 'z']);
+      expect(child.editor.projection.rows.last.shells.length, 2);
+    });
+
+    test('outdent lifts an item nested past its parent\'s content to the '
+        'parent\'s column', () {
+      // Four spaces or a tab nest an item past its parent's content offset.
+      // Lifted by that offset it stayed nested, so the shift was refused and
+      // Shift-Tab did nothing.
+      for (final (source, caret, outdented, rows) in [
+        ('- a\n    - b', 10, '- a\n- b', ['a', 'b']),
+        ('- a\n\t- b', 7, '- a\n- b', ['a', 'b']),
+        ('> - a\n>     - b', 14, '> - a\n> - b', ['a', 'b']),
+        ('- a\n    - b\n      c', 10, '- a\n- b\n  c', ['a', 'b\nc']),
+        ('- a\n    - b\n        - c', 10, '- a\n- b\n    - c', ['a', 'b', 'c']),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final depth = session.editor.document.caretRow.shells.length;
+        session.act(
+          const Outdent(),
+          source: outdented,
+          rows: rows,
+          caret: const DisplayPosition(1, 0),
+        );
+        expect(
+          session.editor.document.caretRow.shells.length,
+          depth - 2,
+          reason: source,
+        );
+      }
+      // The item's own child moves with it and stays its child.
+      final child = _Session(
+        backend,
+        source: '- a\n    - b\n        - c',
+        caret: 10,
+      )..act(const Outdent());
+      expect(child.editor.projection.rows.last.shells.length, 4);
+    });
+
+    test('indent refuses when it would move a block after the item', () {
+      // A sibling short of the nested item's column would nest with it.
+      final sibling = _Session(backend, source: '- a\n - b\n  - c', caret: 8);
+      sibling.act(const Indent(), applied: false, source: '- a\n - b\n  - c');
+      // The first item would no longer end at its empty line, and the code
+      // after the list would become its paragraph.
+      final code = _Session(backend, source: '-\n-\n\n    a', caret: 3);
+      code.act(const Indent(), applied: false, source: '-\n-\n\n    a');
+    });
+
+    test('indent refuses to paint a marker the item above would take', () {
+      // An HTML block in the previous item reads the marker as its text.
+      final html = _Session(backend, source: '- <v>\n-', caret: 7);
+      html.act(const Indent(), applied: false, source: '- <v>\n-');
+      // An empty item cannot interrupt a paragraph: nested under one, its
+      // marker would underline the paragraph as a heading.
+      final empty = _Session(backend, source: '- a\n- ', caret: 6);
+      empty.act(const Indent(), applied: false, source: '- a\n- ');
+      // Tab that cannot indent does nothing, with no reason a host would
+      // show: source mode is no way to indent the item.
+      expect(empty.editor.lastRejection, isNull);
+      final first = _Session(backend, source: '- a', caret: 3);
+      first.act(const Indent(), applied: false, source: '- a');
+      expect(first.editor.lastRejection, isNull);
+    });
+
+    test(
+      'a heading level on an empty line keeps the pending style for its text',
+      () {
+        final session = _Session(backend, source: 'a\n\n\nb', caret: 3);
+        session.act(
+          const ToggleStyle(Style.strikethrough),
+          context: Style.strikethrough,
+        );
+        session.act(
+          const SetHeadingLevel(3),
+          source: 'a\n\n### \nb',
+          rows: ['a', '', '', 'b'],
+          context: Style.strikethrough,
+        );
+        session.act(
+          const InsertText('x'),
+          source: 'a\n\n### ~~x~~\nb',
+          rows: ['a', '', 'x', 'b'],
+        );
+        expect(session.editor.document.caretRow.headingLevel, 3);
+      },
+    );
+
+    test('a heading level on an empty line keeps it in its containers', () {
+      // An item runs on over an empty line without its indentation, which
+      // the heading takes.
+      final item = _Session(backend, source: '- a\n\n  b', caret: 4);
+      item.act(
+        const SetHeadingLevel(2),
+        source: '- a\n  ## \n  b',
+        rows: ['a', '', 'b'],
+      );
+      expect(item.editor.projection.rows.map((r) => r.shells.length), [
+        2,
+        2,
+        2,
+      ]);
+      // An empty item's marker is spaced from the heading's.
+      final empty = _Session(backend, source: '-\n      a', caret: 1);
+      empty.act(
+        const SetHeadingLevel(4),
+        source: '- #### \n      a',
+        rows: ['', 'a'],
+      );
+      expect(empty.editor.projection.rows.map((r) => r.kind), [
+        RowKind.heading,
+        RowKind.codeBlock,
+      ]);
+    });
+
+    test(
+      'a heading level on an empty line drops indentation and leaves HTML apart',
+      () {
+        final tab = _Session(backend, source: 'a\n\n\t', caret: 4);
+        tab.act(
+          const SetHeadingLevel(2),
+          source: 'a\n\n## ',
+          rows: ['a', '', ''],
+        );
+        expect(tab.editor.document.caretRow.headingLevel, 2);
+        // An HTML block runs on to an empty line, so the heading takes the
+        // line after this one.
+        final html = _Session(backend, source: '<v>\n\n_', caret: 4);
+        html.act(
+          const SetHeadingLevel(1),
+          source: '<v>\n\n# \n_',
+          rows: ['<v>', '', '', '_'],
+        );
+        expect(html.editor.document.caretRow.kind, RowKind.heading);
+      },
+    );
+
+    test(
+      'a heading level on a paragraph with a lazy line keeps the rest in its item',
+      () {
+        final session = _Session(backend, source: '- a\nb\n\n  c', caret: 2);
+        session.act(
+          const SetHeadingLevel(1),
+          source: '- # a\n  b\n\n  c',
+          rows: ['a', 'b', '', 'c'],
+          caret: const DisplayPosition(0, 0),
+        );
+        expect(session.editor.projection.rows.map((r) => r.shells.length), [
+          2,
+          2,
+          2,
+          2,
+        ]);
+        // A heading is the paragraph's first line, so the level refuses from
+        // a later one, and where it would cut a span in two.
+        final later = _Session(backend, source: '- b\nc\n- ', caret: 4);
+        later.act(const SetHeadingLevel(1), applied: false);
+        final span = _Session(backend, source: '*a\nb*', caret: 1);
+        span.act(const SetHeadingLevel(1), applied: false);
+      },
+    );
+
+    test('a heading level heads a first line whose text shows a line feed', () {
+      // `&#10;` displays a line feed inside the paragraph's first line; the
+      // paragraph's own line break is the one after it.
+      final session = _Session(backend, source: 'a&#10;b\nc', caret: 0);
+      session.act(
+        const SetHeadingLevel(1),
+        source: '# a&#10;b\nc',
+        rows: ['a\nb', 'c'],
+      );
+    });
 
     test('backspace at a nested item start keeps the outer containers', () {
       final nested = _Session(backend, source: '- a\n  - b', caret: 8);
@@ -889,13 +1127,13 @@ void _structureCases(FlarkParseBackend backend) {
         );
         expect(session.editor.projection.rows.first.kind, RowKind.heading);
       }
-      // The heading keeps a list item's content where it was, so a block
-      // after it stays in the item.
+      // The heading keeps a list item's content where it was, and the next
+      // item, which Return opens, takes the block after it.
       final item = _Session(backend, source: '- abc\n  ===\n\n  para');
       item.act(const SetSelection(2, 5));
       item.act(
         const Newline(),
-        source: '- # \n\n\n  para',
+        source: '- # \n\n- \n  para',
         rows: ['', '', '', 'para'],
       );
       expect(item.editor.projection.rows.last.shells.map((s) => s.kind), [
@@ -1071,21 +1309,32 @@ void _structureCases(FlarkParseBackend backend) {
         );
         expect(session.editor.projection.rows.first.headingLevel, 2);
       }
-      // So does a preedit that passes through empty on its way to new text.
-      final composed = _Session(backend, source: 'abc\n---\n\np');
-      composed.act(const SetSelection(0, 3));
-      composed.editor.beginComposition();
-      composed.act(const ReplaceRange(0, 3, 'x'), source: 'x\n---\n\np');
-      composed.act(const ReplaceRange(0, 1, ''), source: '## \n\np');
-      final caret = composed.editor.selection.extent;
-      composed.act(
-        ReplaceRange(caret, caret, 'z'),
-        source: '## z\n\np',
-        rows: ['z', '', 'p'],
-      );
-      composed.editor.commitComposition();
-      expect(composed.editor.projection.rows.first.kind, RowKind.heading);
-      composed.act(const Undo(), source: 'abc\n---\n\np');
+      // A preedit that passes through empty on its way to new text is held
+      // as the platform holds it, and the text it commits keeps the
+      // heading; committed empty, it is deleted as Backspace deletes.
+      for (final last in ['z', '']) {
+        final composed = _Session(backend, source: 'abc\n---\n\np');
+        composed.act(const SetSelection(0, 3));
+        composed.editor.beginComposition();
+        composed.act(const ReplaceRange(0, 3, 'x'), source: 'x\n---\n\np');
+        composed.act(const ReplaceRange(0, 1, ''), source: '\n---\n\np');
+        if (last.isNotEmpty) {
+          final caret = composed.editor.selection.extent;
+          composed.act(
+            ReplaceRange(caret, caret, last),
+            source: '$last\n---\n\np',
+            rows: [last, '', 'p'],
+          );
+        }
+        composed.editor.commitComposition();
+        composed.expectState(
+          source: last.isEmpty ? '## \n\np' : 'z\n---\n\np',
+          rows: [last, '', 'p'],
+          caret: DisplayPosition(0, last.length),
+        );
+        expect(composed.editor.projection.rows.first.headingLevel, 2);
+        composed.act(const Undo(), source: 'abc\n---\n\np');
+      }
     });
 
     test('typing over all of a setext heading\'s text keeps its underline', () {
@@ -1358,6 +1607,21 @@ void _structureCases(FlarkParseBackend backend) {
       expect(inert.editor.lastRejection, isNull);
     });
 
+    test('outdenting code that steps by a tab takes a tab\'s columns', () {
+      // A snippet indented with tabs steps by a tab, which Markdown counts
+      // as four columns, as the code delegate does: a line indented with
+      // spaces loses up to four of them, not one.
+      const source = '```\n\tx\n      y\n```\n';
+      final session = _Session(backend, source: source);
+      session.act(const SetSelection(4, 14));
+      session.act(
+        const Outdent(),
+        source: '```\nx\n  y\n```\n',
+        rows: ['x\n  y', ''],
+        selection: const FlarkSelection(4, 9),
+      );
+    });
+
     test('indenting lines of code leaves their blank lines as they are', () {
       // A blank line in a quote or list item can lack part of the
       // container's prefix, which would absorb the indentation, so no blank
@@ -1473,6 +1737,169 @@ void _structureCases(FlarkParseBackend backend) {
         session.editor.commitComposition();
         expect(session.editor.history.canUndo, isFalse, reason: source);
       }
+    });
+
+    test('lifting an item\'s marker lifts the blocks inside it too', () {
+      // The blocks indented under the item leave it with its marker, as the
+      // profile lets them; no other block moves, so the lift goes ahead.
+      for (final (source, lifted, shells) in [
+        ('- a\n\n  b', 'a\n\n  b', ['', '', '']),
+        ('- a\n  - b', 'a\n  - b', ['', 'list/item']),
+      ]) {
+        final session = _Session(backend, source: source, caret: 2);
+        session.act(const DeleteBackward(), source: lifted);
+        expect(_shellsOf(session.editor), shells, reason: source);
+      }
+    });
+
+    test('removing the empty line above indented code keeps it code', () {
+      // Without the line, `    b` would read on as part of the paragraph
+      // above, and the code would change kind: Delete refuses.
+      final session = _Session(backend, source: 'a\n\n    b', caret: 2);
+      session.act(const DeleteForward(), applied: false, source: 'a\n\n    b');
+    });
+
+    test('delete at the end of code removes an empty fence after it', () {
+      // Joined onto the closing fence, the empty fence's lines would run
+      // the two fences together: it goes whole instead, and the caret stays
+      // at the end of the code rather than past its hidden closer.
+      final session = _Session(
+        backend,
+        source: '```\na\n```\n```\n```\n',
+        caret: 5,
+      );
+      session.act(
+        const DeleteForward(),
+        source: '```\na\n```\n',
+        rows: ['a', ''],
+        caret: const DisplayPosition(0, 1),
+      );
+    });
+
+    test('delete on the empty line before an empty fence removes the line', () {
+      // Joined into the fence instead, the line break would take the
+      // opening fence's line with it.
+      for (final (source, removed) in [
+        ('a\n\n~~~\n\n~~~\n', 'a\n~~~\n\n~~~\n'),
+        ('a\n\n~~~\n', 'a\n~~~\n'),
+      ]) {
+        final session = _Session(backend, source: source, caret: 2);
+        session.act(const DeleteForward(), source: removed);
+      }
+    });
+
+    test('a join that would show a setext underline refuses', () {
+      // Joined after `## `, `Foo` would be the ATX heading's text, and its
+      // `=` underline a paragraph of its own, painted.
+      for (final (source, caret) in [
+        ('## \nFoo\n=\n', 3),
+        ('> ## \n> Foo\n> =\n', 5),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteForward(), applied: false, source: source);
+      }
+    });
+
+    test('indent that would not nest an empty item does nothing', () {
+      // `>-` gives its quote no space after the marker, so the columns
+      // Indent adds leave the empty item in its own list rather than under
+      // `a`: the key does nothing, with no refusal to report.
+      final session = _Session(backend, source: '> - a\n>-', caret: 8);
+      session.act(const Indent(), applied: false, source: '> - a\n>-');
+      expect(session.editor.lastRejection, isNull);
+    });
+
+    test('a heading cleared of its level is a paragraph, or keeps it', () {
+      // Without its marker the heading's text must read as a paragraph in
+      // the same containers. Under a table it would be the table's next row,
+      // and `---`, `<div>`, a fence or a definition would be blocks of their
+      // own: as `# >` does, the heading keeps its level.
+      for (final (source, caret) in [
+        ('| a |\n| - |\n| b |\n# x', 20),
+        ('> | a |\n> | - |\n> | b |\n> # x', 28),
+        ('# ---', 2),
+        ('# <div>', 2),
+        ('a\n\n# ```', 5),
+        ('# [a]: /u', 2),
+      ]) {
+        for (final command in [
+          const DeleteBackward(),
+          const SetHeadingLevel(0),
+        ]) {
+          final session = _Session(backend, source: source, caret: caret);
+          session.act(command, applied: false, source: source);
+        }
+      }
+    });
+
+    test('return beside a heading\'s text that shows nothing keeps it', () {
+      // An image without alt text, or a link without text, shows nothing but
+      // is the heading's text, as deleting reads it. Return after it opens a
+      // line below the underline, and before it moves the heading down;
+      // respelling the heading as an empty one would lose it.
+      for (final (source, caret, split) in [
+        ('![](u)\n===', 6, '![](u)\n===\n'),
+        ('![](u)\n===', 0, '\n![](u)\n==='),
+        ('[](u)\n===', 5, '[](u)\n===\n'),
+        ('> ![](u)\n> ===', 8, '> ![](u)\n> ===\n> '),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const Newline(), source: split, rows: ['', '']);
+        expect(
+          session.editor.projection.rows.map((r) => r.kind),
+          contains(RowKind.heading),
+          reason: source,
+        );
+      }
+    });
+
+    test('backspace removes an empty line or a rule after a table', () {
+      // A row that shows nothing joins the table's last row whole, which
+      // keeps its cells, so Backspace erases on into the table.
+      for (final (source, caret, removed) in [
+        ('| a |\n| - |\n| b |\n', 18, '| a |\n| - |\n| b |'),
+        ('| a |\n| - |\n| b |\n---', 21, '| a |\n| - |\n| b |'),
+        ('| a | b |\n| - | - |\n| c |\n', 26, '| a | b |\n| - | - |\n| c |'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const DeleteBackward(), source: removed);
+      }
+    });
+
+    test('a join never runs a line into a table row', () {
+      // What a join puts on a table row's line is read as one of its cells,
+      // or as one the table drops from view: text, or the fence of code with
+      // no body. Only an empty line or a rule joins, going whole.
+      for (final (source, caret, command) in <(String, int, FlarkCommand)>[
+        ('| a |\n| - |\n| b |\n<div>', 18, const DeleteBackward()),
+        ('| a |\n| - |\n| b |\n~~~', 18, const DeleteBackward()),
+        ('x\n| a |\n| - |', 1, const DeleteForward()),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, applied: false, source: source);
+      }
+      // An empty line before a table goes whole, as before any row.
+      final session = _Session(backend, source: 'x\n\n| a |\n| - |', caret: 2);
+      session.act(const DeleteForward(), source: 'x\n| a |\n| - |');
+    });
+    test('choosing automatic keeps a fence\'s metadata in its place', () {
+      // Automatic removes the language. With metadata after it, the fence
+      // takes the `auto` tag instead: with the language gone, the
+      // metadata's first word would be read as the language.
+      const tagged = '```ruby title="x"\nputs 1\n```';
+      _Session(backend, source: tagged, caret: tagged.indexOf('puts')).act(
+        const SetCodeLanguage(''),
+        source: '```auto title="x"\nputs 1\n```',
+        rows: ['puts 1'],
+        anchor: tagged.indexOf('puts'),
+      );
+      const bare = '```ruby\nputs 1\n```';
+      _Session(backend, source: bare, caret: bare.indexOf('puts')).act(
+        const SetCodeLanguage(''),
+        source: '```\nputs 1\n```',
+        rows: ['puts 1'],
+        anchor: 4,
+      );
     });
   });
 }

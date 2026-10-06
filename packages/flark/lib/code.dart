@@ -9,6 +9,20 @@ abstract interface class CodeEditingDelegate {
   String resolveLanguage(String source, String info);
   CodeHighlight highlight(String source, String info);
 
+  /// The edit [action] makes of the code body [source], whose selection runs
+  /// from [base] to [extent], or null to leave it to Flark's literal code
+  /// editing. [text] is what [CodeEditingAction.insert] types, and
+  /// [indentUnit] the step Tab inserts.
+  ///
+  /// A proposal replaces [CodeEditProposal.start]..[CodeEditProposal.end] of
+  /// [source], which must be a range of it, with LF text, and selects
+  /// [CodeEditProposal.base]..[CodeEditProposal.extent] of the result, which
+  /// must lie within it. One for [CodeEditingAction.indent] or
+  /// [CodeEditingAction.outdent] keeps [source]'s number of lines. Flark
+  /// refuses text with a carriage return as invalid source, and writes the
+  /// rest into the fence with its container prefixes, as other code edits.
+  /// A proposal outside these bounds is a delegate error: the command that
+  /// asked for it throws a [StateError].
   CodeEditProposal? propose(
     String source, {
     required String language,
@@ -21,6 +35,20 @@ abstract interface class CodeEditingDelegate {
 }
 
 enum CodeEditingAction { insert, newline, indent, outdent }
+
+/// The info-string language that asks for detection, as an untagged fence
+/// does. Clearing a fence's language writes it where metadata follows, so the
+/// metadata keeps its place instead of being read as the language.
+const codeAutoLanguage = 'auto';
+
+/// The first word of a fence's info string, everything before its first
+/// whitespace, as written: the word CommonMark reads as the language.
+String codeInfoLanguage(String info) {
+  final end = info.indexOf(_whitespace);
+  return end < 0 ? info : info.substring(0, end);
+}
+
+final _whitespace = RegExp(r'\s');
 
 final class CodeEditProposal {
   const CodeEditProposal(

@@ -383,6 +383,103 @@ void main() {
     variant: TargetPlatformVariant.all(),
   );
 
+  testWidgets(
+    'a rebuild with another controller or read-only dismisses the link popover',
+    (tester) async {
+      // didUpdateWidget dismissed an open popover by hiding its overlay
+      // portal while the framework built the editor, which asserts.
+      for (final readOnly in [false, true]) {
+        const source = '[hello](/old) tail';
+        final c = FlarkController(FlarkEditor(backend, text: source, caret: 3));
+        final next = FlarkController(FlarkEditor(backend, text: 'next'));
+        Widget app(FlarkController controller, {bool readOnly = false}) =>
+            MaterialApp(
+              home: Scaffold(
+                body: FlarkEditorWidget(
+                  controller: controller,
+                  autofocus: true,
+                  readOnly: readOnly,
+                ),
+              ),
+            );
+        await tester.pumpWidget(app(c));
+        await tester.pump();
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.f10);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
+        expect(find.byType(FlarkLinkPopover), findsOneWidget);
+        await tester.pumpWidget(readOnly ? app(c, readOnly: true) : app(next));
+        expect(tester.takeException(), isNull);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(FlarkLinkPopover), findsNothing);
+        expect(c.text, source);
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+        next.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'a mouse press takes focus and input from a focused text field',
+    (tester) async {
+      // The field unfocuses itself when a mouse presses outside it, after
+      // the editor asked for focus. The field's scope kept the focus while
+      // the editor held the input connection: typed text arrived, but no
+      // caret was drawn and keys went nowhere.
+      final c = FlarkController(FlarkEditor(backend, text: 'abc', caret: 0));
+      final field = FocusNode(), editor = FocusNode();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                TextField(focusNode: field),
+                Expanded(
+                  child: FlarkEditorWidget(
+                    controller: c,
+                    focusNode: editor,
+                    showToolbar: false,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      field.requestFocus();
+      await tester.pump();
+      await tester.tapAt(
+        tester.getCenter(find.byType(FlarkEditorWidget)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(kDoubleTapTimeout);
+      expect(editor.hasPrimaryFocus, isTrue);
+      expect(c.editor.selection, const FlarkSelection.collapsed(3));
+      // Keys reach it as well as typed text.
+      await tester.sendKeyEvent(LogicalKeyboardKey.home);
+      expect(c.editor.selection, const FlarkSelection.collapsed(0));
+      final platform = TextEditingValue.fromJSON(
+        tester.testTextInput.editingState!,
+      );
+      expect(platform.selection, const TextSelection.collapsed(offset: 0));
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text: '!${platform.text}',
+          selection: const TextSelection.collapsed(offset: 1),
+        ),
+      );
+      expect(c.text, '!abc');
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      field.dispose();
+      editor.dispose();
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
   // Android composes the word being typed.
   void composeWord(WidgetTester tester) =>
       tester.testTextInput.updateEditingValue(
@@ -489,4 +586,29 @@ void main() {
     c.dispose();
     next.dispose();
   });
+
+  testWidgets(
+    'input asks for plain dashes and quotes, which Markdown needs',
+    (tester) async {
+      final c = FlarkController(FlarkEditor(backend, text: '| a |', caret: 5));
+      final focus = FocusNode();
+      await tester.pumpWidget(focusedEditor(c, focus));
+      await tester.pump();
+      // `--` turned into a dash breaks a rule or a table's delimiter row, and a
+      // curly quote no longer delimits a link's title.
+      final configuration = tester.testTextInput.setClientArgs!;
+      expect(
+        configuration['smartDashesType'],
+        '${SmartDashesType.disabled.index}',
+      );
+      expect(
+        configuration['smartQuotesType'],
+        '${SmartQuotesType.disabled.index}',
+      );
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      focus.dispose();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }

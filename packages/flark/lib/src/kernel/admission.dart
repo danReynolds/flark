@@ -38,18 +38,10 @@ final class FlarkLiveLimits {
   bool _admitsStats(_SourceStats stats) =>
       stats.lines <= lines && stats.widestLine <= lineCodeUnits;
 
-  bool _admitsSource(String source) {
-    var lineCount = 1, width = 0;
-    for (var i = 0; i < source.length; i++) {
-      if (source.codeUnitAt(i) == 10) {
-        if (++lineCount > lines) return false;
-        width = 0;
-      } else if (++width > lineCodeUnits) {
-        return false;
-      }
-    }
-    return lineCount <= lines;
-  }
+  /// Whether a source of [stats] is rendered live: within [syncLimit] UTF-8
+  /// bytes and this shape.
+  bool _admitsLive(_SourceStats stats, int syncLimit) =>
+      stats.utf8Bytes <= syncLimit && _admitsStats(stats);
 }
 
 /// Throw an [ArgumentError] for the limits [FlarkEditor]'s constructor
@@ -82,6 +74,27 @@ void checkFlarkLimits({
       'liveLimits',
     );
   }
+}
+
+/// Why [FlarkEditor]'s constructor refuses [text], with the error it throws,
+/// or null when it takes [text]: a bare CR or malformed UTF-16, or more than
+/// [sourceLimit] UTF-8 bytes. An owner that holds a document before it has
+/// an editor reports the refusal rather than throwing it.
+(FlarkRejection, Object)? flarkSourceRefusal(
+  String text, {
+  int sourceLimit = FlarkEditor.defaultSourceLimit,
+}) {
+  try {
+    validateFlarkSource(text);
+  } on FormatException catch (error) {
+    return (FlarkRejection.invalidSource, error);
+  }
+  return _withinLiveByteLimit(text, sourceLimit)
+      ? null
+      : (
+          FlarkRejection.sourceLimit,
+          ArgumentError('document exceeds writable source limit'),
+        );
 }
 
 /// Everything a commit checks before parsing, gathered in one pass over the
@@ -132,6 +145,10 @@ final class _SourceStats {
   final bool valid;
   final int utf8Bytes, lines, widestLine;
 }
+
+/// Whether [source] fits [limit] UTF-8 bytes.
+bool _withinLiveByteLimit(String source, int limit) =>
+    _SourceStats.of(source).utf8Bytes <= limit;
 
 enum FlarkRejection {
   staleRevision,

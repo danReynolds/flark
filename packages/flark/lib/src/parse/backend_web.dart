@@ -44,11 +44,10 @@ const int _initialInputCapacity = 4096;
 /// dart2wasm (Flutter web). Creation is asynchronous; parsing is synchronous.
 ///
 /// wasm32 aborts on panic, so a native fault traps out of the call instead of
-/// returning a code. Under dart2js the trap is reported as
-/// [FlarkParseException] with [FlarkParseException.faultCode]; dart2wasm
-/// cannot catch a trap at all, so it reaches the browser as an uncaught
-/// error. Either way the instance is discarded and re-created from the
-/// compiled module before the next parse.
+/// returning a code. The trap is reported as [FlarkParseException] with
+/// [FlarkParseException.faultCode], as the FFI transport reports a contained
+/// panic, under dart2js and dart2wasm alike, and the instance is discarded
+/// and re-created from the compiled module.
 final class WasmParseBackend implements FlarkParseBackend {
   WasmParseBackend._(this._module) {
     _instantiate();
@@ -72,10 +71,10 @@ final class WasmParseBackend implements FlarkParseBackend {
 
   bool _disposed = false;
 
-  /// Set while [parse] calls into the instance. dart2js catches a trap where
-  /// it happens, but under dart2wasm a trap unwinds past every catch and
-  /// finally in [parse] to the browser and leaves this set, so that [parse]
-  /// rebuilds the instance before calling into it again.
+  /// Set while [parse] calls into the instance. Should a call ever unwind
+  /// past [parse]'s catch and finally, as a trap outside [_contained] would
+  /// under dart2wasm, this stays set, so that [parse] rebuilds the instance
+  /// before calling into it again.
   bool _entered = false;
 
   @override
@@ -183,11 +182,46 @@ final class WasmParseBackend implements FlarkParseBackend {
     return (_versionFn!.callAsFunction(null) as JSNumber).toDartInt;
   }
 
+  /// The result of [call], made inside a promise executor: JavaScript that
+  /// the promise constructor runs synchronously, catching whatever it throws.
+  /// A Wasm trap unwinds through Wasm frames without stopping at their
+  /// handlers, so under dart2wasm no Dart catch or finally sees one; it would
+  /// reach the event loop and abandon the host's handler mid-update. Throws
+  /// what [call] threw where Dart can catch it (any error under dart2js), and
+  /// a [_WasmTrap] when only the executor could.
+  static int _contained(int Function() call) {
+    int? result;
+    Object? error;
+    StackTrace? stack;
+    var returned = false;
+    void executor(JSFunction resolve, JSFunction reject) {
+      try {
+        result = call();
+      } catch (e, s) {
+        error = e;
+        stack = s;
+      }
+      returned = true;
+    }
+
+    final promise = JSPromise<JSAny?>(executor.toJS);
+    if (!returned) {
+      // The trap rejected the promise. Handle it, so the page does not
+      // report a rejection nobody awaits.
+      promise.callMethod<JSAny?>('catch'.toJS, _ignore);
+      throw const _WasmTrap();
+    }
+    if (error case final thrown?) Error.throwWithStackTrace(thrown, stack!);
+    return result!;
+  }
+
+  static final JSFunction _ignore = ((JSAny? _) {}).toJS;
+
   @override
   RenderModel parse(String source) {
     if (_disposed) throw StateError('WasmParseBackend used after dispose');
     validateFlarkSourceText(source);
-    // A trap that dart2wasm could not catch left the instance mid-call.
+    // A call that never returned left the instance mid-call.
     if (_entered) _instantiate();
     _entered = true;
     try {
@@ -206,7 +240,7 @@ final class WasmParseBackend implements FlarkParseBackend {
         // Allocate before freeing: a trap here (memory cannot grow) must not
         // leave the old buffer freed while it is still the input, or record
         // a capacity no allocation backs.
-        final input = _alloc(capacity);
+        final input = _contained(() => _alloc(capacity));
         _free(_input, _inputCapacity);
         _input = input;
         _inputCapacity = capacity;
@@ -236,16 +270,18 @@ final class WasmParseBackend implements FlarkParseBackend {
     final length = encoded.written.toDartInt;
     final int rc;
     try {
-      rc =
-          (_parseFn!.callAsFunction(
-                    null,
-                    _input.toJS,
-                    length.toJS,
-                    _outCell.toJS,
-                    (_outCell + 8).toJS,
-                  )
-                  as JSNumber)
-              .toDartInt;
+      rc = _contained(
+        () =>
+            (_parseFn!.callAsFunction(
+                      null,
+                      _input.toJS,
+                      length.toJS,
+                      _outCell.toJS,
+                      (_outCell + 8).toJS,
+                    )
+                    as JSNumber)
+                .toDartInt,
+      );
     } catch (e) {
       // A trap: the instance is no longer trustworthy. Rebuild it from the
       // compiled module so the next parse starts clean.
@@ -271,6 +307,13 @@ final class WasmParseBackend implements FlarkParseBackend {
     _free(outPtr, outLen);
     return RenderModel(words.buffer.asUint8List());
   }
+}
+
+/// A call into the parser that trapped where only JavaScript could catch it.
+final class _WasmTrap implements Exception {
+  const _WasmTrap();
+  @override
+  String toString() => 'RuntimeError (a Wasm trap)';
 }
 
 /// On the web the backend is created with [WasmParseBackend.load] or

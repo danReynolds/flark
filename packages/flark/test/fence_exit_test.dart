@@ -96,6 +96,43 @@ void main() {
     }
   }
 
+  test('a blank line without its containers\' indentation exits into them', () {
+    // A blank line in an item's fence needs no indentation; the lines the
+    // exit writes take the fence's, so text typed next stays in the item.
+    for (final (source, exited, typed) in [
+      (
+        '- a\n- ```\n  b\n\n  ```\n- c\n',
+        '- a\n- ```\n  b\n  ```\n  \n  \n- c\n',
+        '- a\n- ```\n  b\n  ```\n  x\n  \n- c\n',
+      ),
+      ('- ```\n  b\n\n', '- ```\n  b\n  ```\n  \n', '- ```\n  b\n  ```\n  x\n'),
+      (
+        '> ```\n> b\n>\n> ```\n\nc\n',
+        '> ```\n> b\n> ```\n> \n\nc\n',
+        '> ```\n> b\n> ```\n> x\n\nc\n',
+      ),
+    ]) {
+      final blank = source.indexOf('b\n') + 2;
+      final e = FlarkEditor(
+        backend,
+        text: source,
+        caret: source.indexOf('\n', blank),
+      );
+      final shells = e.document.caretRow.shells.map((s) => s.kind).toList();
+      expect(e.apply(const Newline()), isTrue, reason: source);
+      expect(e.source, exited, reason: source);
+      expect(e.document.caretRow.kind, RowKind.blank, reason: source);
+      expect(e.apply(const InsertText('x')), isTrue, reason: source);
+      expect(e.source, typed, reason: source);
+      expect(e.document.caretRow.kind, RowKind.paragraph, reason: source);
+      expect(
+        e.document.caretRow.shells.map((s) => s.kind),
+        shells,
+        reason: source,
+      );
+    }
+  });
+
   test('newly empty fence needs two Enters and remains as an empty fence', () {
     final e = FlarkEditor(backend);
     for (var i = 0; i < 3; i++) {

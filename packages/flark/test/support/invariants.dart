@@ -24,6 +24,19 @@ void checkInvariants(String src, RenderModel m, Projection p, String label) {
     }
   }
   bool inHidden(int a, int b) => hidden.any((h) => h.$1 < b && h.$2 > a);
+  // Rows show in source order: each starts on the line of the row before it
+  // or later, and at its source start or later.
+  for (var i = 1; i < p.rows.length; i++) {
+    final a = p.rows[i - 1], b = p.rows[i];
+    expect(
+      b.firstLine >= a.firstLine && b.sourceStart >= a.sourceStart,
+      isTrue,
+      reason:
+          '$label: row $i (line ${b.firstLine}, source ${b.sourceStart}) '
+          'shows after row ${i - 1} (line ${a.firstLine}, source '
+          '${a.sourceStart})',
+    );
+  }
   final ownedLines = <int>{};
   for (final row in p.rows) {
     // Segment geometry is contiguous. Content checks use source or parser
@@ -53,7 +66,15 @@ void checkInvariants(String src, RenderModel m, Projection p, String label) {
       if (!s.exact && s.run >= 0) {
         final run = m.runs.elementAt(s.run);
         final replacement = run.displayOverride;
-        if (replacement != null) {
+        // A code span's payload is its source less escaped pipes'
+        // backslashes, shown one escaped pipe per segment.
+        if (replacement != null && run.kind == RunKind.code) {
+          expect(
+            replacement.contains(piece),
+            isTrue,
+            reason: '$label: parser code payload',
+          );
+        } else if (replacement != null) {
           expect(
             piece,
             replacement,

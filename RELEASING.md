@@ -12,10 +12,9 @@ deletes a version; it can only retract one.
 Two requirements for rk:
 
 - **A version with what this release relies on.** The `parser` unit publishes
-  what its own build script writes. The workspace root pins Fleury by Git for
-  `flark_fleury` alone, which earlier rk versions refused for every package.
-  And one `rk release` has to pass over `parser`, released a commit before the
-  packages. All of this is on rk's `main` until it ships in an rk release.
+  what its own build script writes, and one `rk release` has to pass over
+  `parser`, released a commit before the packages. Both are on rk's `main`
+  after 0.1.13, until they ship in an rk release.
 - **The Flutter SDK's `dart`.** Put Flutter's `bin` first on `PATH`. The
   workspace has Flutter packages, which only a Flutter SDK's pub resolves, so rk
   refuses a standalone Dart SDK.
@@ -28,10 +27,9 @@ Two requirements for rk:
   pinned (step 3). CI fails a `flark` changelog that names the version while
   `hook/prebuilt.json` pins nothing. rk refuses to release `flark` without that
   entry. Together they keep an unpinned `flark` off pub.dev.
-- `flark_fleury` needs the fleury and fleury_widgets versions it declares live
-  on pub.dev. Until then, rk refuses to stage it, because the root's Git
-  overrides reach its dependencies. Remove the root pubspec's
-  `dependency_overrides` once those versions are live.
+- `flark_fleury` depends on fleury 0.1 from pub.dev, where it is published.
+  The root pubspec overrides nothing; keep it that way, since rk refuses to
+  stage a package that an override reaches.
 - Merge to `main` and let CI pass. That run's `windows-kernel` job does the
   following for the Windows parser libraries:
   - builds them with the C runtime linked in;

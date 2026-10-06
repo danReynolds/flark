@@ -137,6 +137,11 @@ class _ResourceSheetState extends State<_ResourceSheet> {
           TextField(
             controller: url,
             autofocus: true,
+            // A URL is not prose: no dashes or curly quotes from iOS.
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            smartDashesType: SmartDashesType.disabled,
+            smartQuotesType: SmartQuotesType.disabled,
             decoration: const InputDecoration(labelText: 'URL'),
           ),
           TextField(

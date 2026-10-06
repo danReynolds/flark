@@ -265,4 +265,50 @@ void main() {
       expect(tester.semantics().byLabel('Bold'), isEmpty);
     },
   );
+
+  // The toolbar reads the FlarkState a consumer is given, whose heading
+  // availability is the kernel's canSetHeading. Without a session it read
+  // the caret's row alone and offered levels on a paragraph's second line,
+  // where SetHeadingLevel applies none.
+  for (final (where, source, base, extent, enabled) in [
+    ('a selection across two paragraphs', 'one\n\ntwo', 0, 8, true),
+    ('the second line of a paragraph', 'one\ntwo', 6, 6, false),
+  ]) {
+    test('the paragraph style menu on $where follows the kernel', () {
+      mount(source);
+      editor.apply(SetSelection(base, extent));
+      tester.render();
+      expect(editor.canSetHeading(), enabled);
+      expect(
+        tester.semantics().byLabel('Paragraph style').single.enabled,
+        enabled,
+      );
+    });
+  }
+
+  test('a selection reaching into a fence leaves its language menu off', () {
+    mount('intro\n\n```dart\nmain\n```');
+    final inside = editor.source.indexOf('main') + 2;
+    editor.apply(SetSelection(0, inside));
+    tester.render();
+    expect(tester.semantics().byLabel('Code language').single.enabled, isFalse);
+    editor.apply(SetSelection.caret(inside));
+    tester.render();
+    expect(tester.semantics().byLabel('Code language').single.enabled, isTrue);
+  });
+
+  test('a style chosen during a composition takes the text after it', () async {
+    // A toolbar command ends the composition before it applies, as a
+    // consumer's does. Applied during the composition, the style went when
+    // the composition committed.
+    mount('ab');
+    editor.apply(const SetSelection.caret(2));
+    tester.render();
+    focus.textCompositionClaimant!.onTextCompositionUpdate('k');
+    expect(editor.composing, isTrue);
+    await press('Bold');
+    expect((editor.source, editor.composing), ('abk', false));
+    tester.type('x');
+    expect(editor.source, 'abk**x**');
+  });
 }

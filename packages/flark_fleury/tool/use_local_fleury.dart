@@ -5,10 +5,9 @@ import 'dart:io';
 ///
 /// The packages resolve as one pub workspace. Pub applies any member's
 /// overrides to the whole workspace but lets each package be overridden only
-/// once, and the root already overrides Fleury, so this writes the root's
-/// `pubspec_overrides.yaml`. That file is ignored by Git and replaces the root
-/// pubspec's own overrides while it exists; delete it to return to the pinned
-/// revision. No local absolute path belongs in a tracked pubspec.
+/// once, so this writes the root's `pubspec_overrides.yaml`. That file is
+/// ignored by Git; delete it to return to Fleury from pub.dev. No local
+/// absolute path belongs in a tracked pubspec.
 void main(List<String> args) {
   if (args.length != 1) {
     stderr.writeln('Usage: dart tool/use_local_fleury.dart /path/to/fleury');
@@ -16,7 +15,7 @@ void main(List<String> args) {
     return;
   }
   final fleury = Directory(args.single).absolute.path;
-  const names = ['fleury', 'fleury_web', 'fleury_widgets'];
+  const names = ['fleury', 'fleury_web'];
   for (final name in names) {
     if (!File('$fleury/packages/$name/pubspec.yaml').existsSync()) {
       stderr.writeln('Missing $name under $fleury/packages');

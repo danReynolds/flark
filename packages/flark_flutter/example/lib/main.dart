@@ -3,66 +3,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' show AppExitResponse;
 import 'package:flark_flutter/flark_flutter_legacy.dart';
+import 'package:flark/recorder.dart';
 import 'package:flark_flutter/code.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'backend.dart';
+import 'presets.dart';
 import 'qualification.dart';
 import 'theme_playground.dart';
 
-const tour = '''# A place to think
-
-Flark is a live Markdown notebook. Write naturally, and your Markdown stays with you.
-
-## Try the editing loop
-
-Move through **bold**, *emphasis*, ~~strikethrough~~ and `inline code`. Delete a styled word, then keep typing. Use ⌘B or ⌘I to change formatting.
-
-- Return continues a list
-- Return again on an empty item leaves it
-- [ ] A task to finish
-- [x] A task completed
-
-> A quote can hold **formatted words**.
-> Return continues the quote.
-
-## A small table
-
-| Idea | State |
-| --- | --- |
-| Clear source | **Always** |
-| Fast feedback | In progress |
-
-```dart
-final thought = 'Keep it simple';
-```
-
----
-
-[Markdown reference](https://commonmark.org/help/)
-
-Your edits are saved locally. The Source button opens exact Markdown for edits that need it.
-''';
-
-String dense(int bytes) {
-  final b = StringBuffer();
-  for (var i = 0; b.length < bytes; i++) {
-    b.write(
-      '## Section $i\n\nSome **strong words** with *emphasis*, `code`, and a [link](https://example.com). A paragraph to write in.\n\n- first item\n- [x] another item\n\n> a short quote\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n',
-    );
-  }
-  return b.toString().substring(0, bytes);
-}
-
-final presets = <String, String>{
-  'Draft': '',
-  'Tour': tour,
-  'Dense 16 KiB': dense(16 * 1024),
-  'Dense 32 KiB': dense(32 * 1024),
-  'Long line': 'word ' * 1000,
-};
+export 'presets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -137,6 +89,9 @@ class Workbench extends StatefulWidget {
 
 class _WorkbenchState extends State<Workbench> {
   late FlarkController c;
+
+  /// The session of [c]'s editor, for Copy repro.
+  late FlarkEditRecorder _recorder;
   String active = 'Tour';
   final Map<String, String> _pendingSaves = {};
   bool _saving = false, inspect = false;
@@ -175,6 +130,9 @@ class _WorkbenchState extends State<Workbench> {
       liveLimits: candidateLiveLimits,
       sourceLimit: candidateSourceBytes,
     );
+    // The workbench is for dogfooding: every document records its session,
+    // so that Copy repro can turn a surprise into a test.
+    _recorder = FlarkEditRecorder(editor);
     c = FlarkController(editor);
     _lastQueuedSource = source;
     c.addListener(_changed);
@@ -290,11 +248,19 @@ class _WorkbenchState extends State<Workbench> {
                   onPressed: () => setState(() => inspect = !inspect),
                   icon: Icon(inspect ? Icons.code_off : Icons.code),
                 ),
-                IconButton(
-                  tooltip: 'Copy Markdown',
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: c.text)),
+                // One menu keeps the header within a phone's width.
+                PopupMenuButton<bool>(
+                  tooltip: 'Copy',
                   icon: const Icon(Icons.copy_outlined, size: 20),
+                  onSelected: (repro) => Clipboard.setData(
+                    ClipboardData(
+                      text: repro ? _recorder.repro : c.text,
+                    ),
+                  ),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: false, child: Text('Copy Markdown')),
+                    PopupMenuItem(value: true, child: Text('Copy repro')),
+                  ],
                 ),
               ],
             ),

@@ -70,8 +70,7 @@ final class FlarkDocument {
     this.source,
     this.selection,
     this.model,
-    this.projection,
-    this.normalizedLineEndings, {
+    this.projection, {
     FlarkDocument? positions,
   }) : _positions = positions;
 
@@ -96,7 +95,6 @@ final class FlarkDocument {
       const FlarkSelection.collapsed(0),
       model,
       Projection.of(model, text, options: options),
-      false,
     );
     return doc.withSelection(FlarkSelection.collapsed(caret));
   }
@@ -105,7 +103,6 @@ final class FlarkDocument {
   final FlarkSelection selection;
   final RenderModel model;
   final Projection projection;
-  final bool normalizedLineEndings;
 
   late final List<InlineResource> resources =
       _positions?.resources ??
@@ -150,28 +147,11 @@ final class FlarkDocument {
     ].join('\n');
   }
 
-  /// The same document with [source] replaced: one parse, one projection.
-  FlarkDocument withSource(
-    String newSource,
-    FlarkSelection newSelection,
-    FlarkParseBackend backend,
-  ) {
-    validateFlarkSource(newSource);
-    final model = backend.parse(newSource);
-    final doc = FlarkDocument._(
-      newSource,
-      const FlarkSelection.collapsed(0),
-      model,
-      Projection.of(
-        model,
-        newSource,
-        options: projection.options,
-        previous: projection,
-      ),
-      normalizedLineEndings,
-    );
-    return doc.withSelection(newSelection);
-  }
+  /// The info string of the fenced code block [row] belongs to (`dart` in a
+  /// fence opened with three backticks and `dart`), or null for a row
+  /// outside fenced code.
+  String? codeInfo(ProjectedRow row) =>
+      row.fenced ? source.substring(row.codeInfoStart, row.codeInfoEnd) : null;
 
   /// Preserve an explicit whole-source range; legalize ordinary caret endpoints.
   FlarkDocument withSelection(FlarkSelection s) => FlarkDocument._(
@@ -185,7 +165,6 @@ final class FlarkDocument {
         : FlarkSelection(legalize(s.base), legalize(s.extent)),
     model,
     projection,
-    normalizedLineEndings,
     positions: _positions ?? this,
   );
 
@@ -381,6 +360,10 @@ final class FlarkDocument {
     // This is a linear merge over three ordered interval streams. Calling an
     // interval scan for every grapheme made dense 64 KiB documents quadratic.
     final blocked = _blockedPairs;
+    // A projection without a caret span keeps the source's end legal, here
+    // and in [isLegal], so the caret keeps a place. None is known to occur:
+    // every kind of row holds a caret, an inline leaf's on the content lines
+    // the model gives it, and the model does not promise to give them.
     final caretSpans = projection.hasCaretSpans
         ? _mergePairs([
             _sortPairs([
@@ -560,14 +543,36 @@ final class FlarkDocument {
     model.runContentEnd(r),
   );
 
+  /// The runs of the leaf block [row] projects: (first, end).
+  (int, int) _runsOf(ProjectedRow row) => row.block < 0
+      ? (0, 0)
+      : (
+          model.firstRunOfBlock(row.block),
+          model.firstRunOfBlock(row.block + 1),
+        );
+
   /// The runs of the leaf block projected at [offset]: (first, end).
-  (int, int) _runsNear(int offset) {
-    final row = rowAt(offset);
-    if (row.block < 0) return (0, 0);
-    return (
-      model.firstRunOfBlock(row.block),
-      model.firstRunOfBlock(row.block + 1),
-    );
+  (int, int) _runsNear(int offset) => _runsOf(rowAt(offset));
+
+  /// Styled owners in the leaf block [row] projects, in source order.
+  List<Owner> ownersOf(ProjectedRow row) {
+    final (first, end) = _runsOf(row);
+    return [
+      for (var r = first; r < end; r++)
+        if (_owns(model.runKind(r)) && model.runKind(r) != RunKind.escape)
+          _owner(r),
+    ];
+  }
+
+  /// The hard breaks in the leaf block [row] projects, in source order. A
+  /// break's run spans its marker (a backslash, or the spaces it keeps as
+  /// its content) and the line ending after it.
+  List<RunView> hardBreaksOf(ProjectedRow row) {
+    final (first, end) = _runsOf(row);
+    return [
+      for (var r = first; r < end; r++)
+        if (model.runKind(r) == RunKind.hardBreak) model.runAt(r),
+    ];
   }
 
   /// Styled owners whose content contains [offset], outermost first. An
@@ -583,6 +588,20 @@ final class FlarkDocument {
             offset <= model.runContentEnd(r))
           _owner(r),
     ];
+  }
+
+  /// The autolink whose source, delimiters included, holds [start, end],
+  /// as an [Owner] of no style; null when none does.
+  Owner? autolinkAround(int start, int end) {
+    final (first, last) = _runsNear(start);
+    for (var r = first; r < last; r++) {
+      if (model.runKind(r) == RunKind.autolink &&
+          model.runStart(r) <= start &&
+          end <= model.runEnd(r)) {
+        return _owner(r);
+      }
+    }
+    return null;
   }
 
   /// Owners whose content is exactly [start, end): emptied by deleting it.
@@ -659,7 +678,6 @@ FlarkDocument projectFlarkDocument(
     options: options,
     previous: previous?.projection,
   ),
-  false,
 ).withSelection(selection);
 
 /// Package-internal source preflight shared by the document and editor.

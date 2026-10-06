@@ -137,6 +137,64 @@ void main() {
       expect(e.source, source);
     });
   }
+  test('unlinked text keeps its spelling unless the parser reads a link', () {
+    // GFM's automatic links are the parser's to read: the text goes in as
+    // it was written, and is escaped only where an address would be read.
+    for (final (source, unlinked) in [
+      ('[Mr. Smith](/u)', 'Mr. Smith'),
+      ('[e.g. this](/u)', 'e.g. this'),
+      ('[https://x.y](/u)', r'https\://x.y'),
+      ('<https://example.com>', r'https\://example.com'),
+      ('https://example.com', r'https\://example.com'),
+      // Escapes the label already has stay as they are, as SetLink at a
+      // caret writes them, rather than being escaped again and shown.
+      (r'[http\:\/\/e\.x](<http://e.x>)', r'http\:\/\/e\.x'),
+      (r'[a\. https://x.y](/u)', r'a\. https\://x\.y'),
+    ]) {
+      final e = FlarkEditor(backend, text: source, caret: 2);
+      final shown = e.projection.rows.single.text;
+      expect(e.apply(const RemoveLink()), isTrue, reason: source);
+      expect(e.source, unlinked, reason: source);
+      expect(e.document.resources, isEmpty, reason: source);
+      expect(e.projection.rows.single.text, shown, reason: source);
+    }
+    // No spelling of the word keeps the address after it from linking it.
+    const joined = '[www](/u).example.com';
+    final e = FlarkEditor(backend, text: joined, caret: 2);
+    expect(e.apply(const RemoveLink()), isFalse);
+    expect(e.source, joined);
+    // Escaped, these dots would push the document out of the live tier.
+    const dotted = '[a.b.c.d.e.f.g.h](/u)';
+    final limited = FlarkEditor(
+      backend,
+      text: dotted,
+      caret: 2,
+      syncLimit: dotted.length,
+    );
+    expect(limited.apply(const RemoveLink()), isTrue);
+    expect((limited.source, limited.sourceMode), ('a.b.c.d.e.f.g.h', false));
+  });
+  test('an unlink respelled out of the live tier is refused', () {
+    // Both addresses in the label still link when written as they were.
+    // Escaped, they push the document past the sync limit, where no parse
+    // checks a respelling: it is passed over, as respellings elsewhere are,
+    // rather than committed unchecked into source mode.
+    const source = '[a@b.c.d.e.f.g.h.i d@e.f](/u)';
+    final e = FlarkEditor(
+      backend,
+      text: source,
+      caret: 2,
+      syncLimit: source.length,
+    );
+    final snapshot = e.snapshot;
+    expect(e.apply(const RemoveLink()), isFalse);
+    expect(identical(e.snapshot, snapshot), isTrue);
+    expect(e.history.canUndo, isFalse);
+    // Within the limit the same unlink goes ahead, escaped.
+    final roomy = FlarkEditor(backend, text: source, caret: 2);
+    expect(roomy.apply(const RemoveLink()), isTrue);
+    expect(roomy.source, r'a\@b\.c\.d\.e\.f\.g\.h\.i d\@e\.f');
+  });
   test('remove image empties its formatting owner coherently', () {
     final e = FlarkEditor(backend, text: '**![cat](/cat.png)**', caret: 5);
     expect(e.apply(const RemoveImage()), isTrue);

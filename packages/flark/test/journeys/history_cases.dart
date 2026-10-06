@@ -2,6 +2,27 @@ part of '../journey_test.dart';
 
 void _historyCases(FlarkParseBackend backend) {
   group('history', () {
+    test('undo or redo with nothing to undo or redo does nothing quietly', () {
+      // Command-Z on a fresh document is no refused edit for a host to
+      // report, in source mode too.
+      final session = _Session(backend, source: 'abc', caret: 3);
+      void quiet(FlarkCommand command, String source) {
+        session.act(command, applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: '$command');
+      }
+
+      quiet(const Undo(), 'abc');
+      quiet(const Redo(), 'abc');
+      session.act(const InsertText('d'), source: 'abcd');
+      quiet(const Redo(), 'abcd');
+      session.act(const Undo(), source: 'abc');
+      quiet(const Undo(), 'abc');
+      session.editor.setSourceMode(true);
+      expect(session.editor.apply(const Redo()), isTrue);
+      expect(session.editor.apply(const Redo()), isFalse);
+      expect(session.editor.lastRejection, isNull);
+    });
+
     test('consecutive typing is one undo group', () {
       final session = _Session(backend, source: 'abc', caret: 3);
       session.act(const InsertText('d'), source: 'abcd');
@@ -112,6 +133,29 @@ void _historyCases(FlarkParseBackend backend) {
         expect(session.editor.revision, revision, reason: source);
         expect(session.editor.history.canUndo, isFalse, reason: source);
       }
+    });
+
+    test('a source splice that changes no source records no step', () {
+      // An exact splice that leaves the source as it is has nothing to undo,
+      // as any such edit: with only a pending style to drop it does nothing,
+      // and otherwise it at most moves the selection.
+      final session = _Session(backend, source: 'abc', caret: 3);
+      final editor = session.editor;
+      session.act(const ToggleStyle(Style.strong), context: Style.strong);
+      final revision = editor.revision;
+      expect(editor.replaceSourceRange(3, 3, ''), isFalse);
+      expect((editor.lastRejection, editor.revision), (null, revision));
+      session.expectState(source: 'abc', anchor: 3, context: Style.strong);
+      session.act(
+        const SetSelection(1, 3),
+        selection: const FlarkSelection(1, 3),
+      );
+      expect(editor.replaceSourceRange(2, 3, 'c'), isTrue);
+      session.expectState(
+        source: 'abc',
+        selection: const FlarkSelection.collapsed(3),
+      );
+      expect(editor.history.canUndo, isFalse);
     });
   });
 }

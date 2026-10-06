@@ -58,7 +58,9 @@ final class SelectAll extends FlarkCommand {
 }
 
 /// Place the caret from a display position, taking the anchor from the
-/// glyph half the host reports ([leadingHalf]).
+/// glyph half the host reports ([leadingHalf]). Placed where the caret
+/// already is, it still takes that context: a pending style ends, and
+/// typing after it is an undo step of its own.
 final class PlaceCaret extends FlarkCommand {
   const PlaceCaret(
     this.row,

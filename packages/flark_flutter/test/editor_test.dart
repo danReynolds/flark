@@ -1,4 +1,6 @@
 import 'package:flark_flutter/flark_flutter_legacy.dart';
+import 'package:flark_flutter/src/surface.dart';
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -408,23 +410,20 @@ void main() {
     () {
       final c = FlarkController(FlarkEditor(backend));
       c.command(const ToggleStyle(Style.emphasis));
-      expect(
-        c.receive(
-          const TextEditingValue(
-            text: 'n',
-            selection: TextSelection.collapsed(offset: 1),
-            composing: TextRange(start: 0, end: 1),
-          ),
-        ),
-        isTrue,
+      const composed = TextEditingValue(
+        text: 'n',
+        selection: TextSelection.collapsed(offset: 1),
+        composing: TextRange(start: 0, end: 1),
       );
-      expect(c.text, '*n*');
-      expect(c.value.composing, const TextRange(start: 1, end: 2));
+      expect(c.receive(composed), isTrue);
+      // The platform's text stays as it composed it.
+      expect(c.value, composed);
+      expect(c.editor.typingContext, Style.emphasis);
       expect(
         c.receive(
           const TextEditingValue(
-            text: '**',
-            selection: TextSelection.collapsed(offset: 1),
+            text: '',
+            selection: TextSelection.collapsed(offset: 0),
           ),
         ),
         isTrue,
@@ -438,6 +437,315 @@ void main() {
       c.dispose();
     },
   );
+  test('composed text takes pending formatting when it commits', () {
+    // Wrapped as it was composed, the platform's text changed under its
+    // input method, and the next preedit or the commit landed after the
+    // delimiters (`**n日本**`).
+    final c = FlarkController(FlarkEditor(backend, text: 'abc', caret: 3));
+    c.command(const ToggleStyle(Style.strong));
+    final values = <TextEditingValue>[];
+    c.addListener(() => values.add(c.value));
+    for (final preedit in ['n', 'に', '日本']) {
+      final value = TextEditingValue(
+        text: 'abc$preedit',
+        selection: TextSelection.collapsed(offset: 3 + preedit.length),
+        composing: TextRange(start: 3, end: 3 + preedit.length),
+      );
+      expect(c.receive(value), isTrue);
+      expect(c.value, value);
+    }
+    expect(
+      c.receive(
+        const TextEditingValue(
+          text: 'abc日本',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      ),
+      isTrue,
+    );
+    expect(c.text, 'abc**日本**');
+    expect(c.value.selection, const TextSelection.collapsed(offset: 7));
+    expect(c.value.composing, TextRange.empty);
+    expect(c.editor.composing, isFalse);
+    expect(values.last, c.value);
+    expect(c.command(const Undo()), isTrue);
+    expect(c.text, 'abc');
+    expect(c.editor.typingContext, Style.strong);
+    c.dispose();
+  });
+  test('a commit that typing refuses is withdrawn with a notice', () {
+    // Composed before a cell's delimiter, a backslash would escape it, which
+    // typing refuses.
+    const table = '| a | b |\n| - | - |\n| 1| 2 |';
+    final c = FlarkController(FlarkEditor(backend, text: table, caret: 23));
+    for (final preedit in ['x', r'\']) {
+      expect(
+        c.receive(
+          TextEditingValue(
+            text: table.replaceRange(23, 23, preedit),
+            selection: const TextSelection.collapsed(offset: 24),
+            composing: const TextRange(start: 23, end: 24),
+          ),
+        ),
+        isTrue,
+      );
+    }
+    expect(
+      c.receive(
+        TextEditingValue(
+          text: table.replaceRange(23, 23, r'\'),
+          selection: const TextSelection.collapsed(offset: 24),
+        ),
+      ),
+      isTrue,
+    );
+    expect((c.text, c.editor.composing), (table, false));
+    expect(c.value.selection, const TextSelection.collapsed(offset: 23));
+    expect(c.notice, 'This edit needs source mode.');
+    expect(c.editor.history.canUndo, isFalse);
+    c.dispose();
+  });
+
+  for (final ending in ['a toolbar button', 'a click']) {
+    testWidgets('a composition that $ending ends says why typing withdrew it', (
+      tester,
+    ) async {
+      // As above, typing refuses the backslash composed before the cell's
+      // delimiter. Here a command ends the composition and applies, and the
+      // notice still says why the composed text went.
+      const table = '| a | b |\n| - | - |\n| 1| 2 |';
+      final c = FlarkController(FlarkEditor(backend, text: table, caret: 23));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (final preedit in ['x', r'\']) {
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: table.replaceRange(23, 23, preedit),
+            selection: const TextSelection.collapsed(offset: 24),
+            composing: const TextRange(start: 23, end: 24),
+          ),
+        );
+        await tester.pump();
+      }
+      expect(c.editor.composing, isTrue);
+      expect(c.notice, isNull);
+      if (ending == 'a toolbar button') {
+        await tester.tap(find.byTooltip('Bold'));
+      } else {
+        final surface = tester.renderObject<RenderFlarkSurface>(
+          find.byType(FlarkSurface),
+        );
+        await tester.tapAt(
+          surface.localToGlobal(surface.caretRectAt(2).center),
+        );
+      }
+      // Past the double tap's timeout, which a lone tap leaves running.
+      await tester.pump(kDoubleTapTimeout);
+      expect((c.text, c.editor.composing), (table, false));
+      expect(c.notice, 'This edit needs source mode.');
+      expect(find.text('This edit needs source mode.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  }
+
+  TextEditingValue composing(String text, int caret, [TextRange? range]) =>
+      TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: caret),
+        composing: range ?? TextRange.empty,
+      );
+
+  for (final before in ['', 'x ']) {
+    test('a syllable committed inside a composition stays when the next '
+        'letter is deleted "$before"', () {
+      // A Korean input method commits 한 and composes ㄱ in one update
+      // (Android's batch edit, iOS's deltas of one run loop turn), then
+      // Backspace takes the ㄱ and ends the composition. Read as a cancel of
+      // the whole composition, that deleted the committed syllable too.
+      final c = FlarkController(
+        FlarkEditor(backend, text: before, caret: before.length),
+      );
+      final p = before.length;
+      for (final value in [
+        composing('$beforeㅎ', p + 1, TextRange(start: p, end: p + 1)),
+        composing('$before한', p + 1, TextRange(start: p, end: p + 1)),
+        composing('$before한ㄱ', p + 2, TextRange(start: p + 1, end: p + 2)),
+      ]) {
+        expect(c.receive(value), isTrue);
+        // The platform's text is the document's while it composes.
+        expect(c.value, value);
+      }
+      expect(c.receive(composing('$before한', p + 1)), isTrue);
+      expect(c.text, '$before한');
+      expect(c.value.selection, TextSelection.collapsed(offset: p + 1));
+      expect(c.editor.composing, isFalse);
+      // What the input method composed is one undo step.
+      expect(c.command(const Undo()), isTrue);
+      expect(c.text, before);
+      expect(c.editor.history.canUndo, isFalse);
+      c.dispose();
+    });
+  }
+  test(
+    'a clause committed in a delta batch stays when the rest is deleted',
+    () {
+      // Mozc converts きょう to 今日 and commits it, keeping は composing, in
+      // one batch; Backspace then deletes は.
+      final c = FlarkController(FlarkEditor(backend));
+      expect(
+        c.receiveDeltas([
+          const TextEditingDeltaInsertion(
+            oldText: '',
+            textInserted: 'きょうは',
+            insertionOffset: 0,
+            selection: TextSelection.collapsed(offset: 4),
+            composing: TextRange(start: 0, end: 4),
+          ),
+        ]),
+        isTrue,
+      );
+      expect(
+        c.receiveDeltas([
+          const TextEditingDeltaReplacement(
+            oldText: 'きょうは',
+            replacementText: '今日',
+            replacedRange: TextRange(start: 0, end: 3),
+            selection: TextSelection.collapsed(offset: 2),
+            composing: TextRange.empty,
+          ),
+          const TextEditingDeltaNonTextUpdate(
+            oldText: '今日は',
+            selection: TextSelection.collapsed(offset: 3),
+            composing: TextRange(start: 2, end: 3),
+          ),
+        ]),
+        isTrue,
+      );
+      expect(c.value, composing('今日は', 3, const TextRange(start: 2, end: 3)));
+      expect(
+        c.receiveDeltas([
+          const TextEditingDeltaDeletion(
+            oldText: '今日は',
+            deletedRange: TextRange(start: 2, end: 3),
+            selection: TextSelection.collapsed(offset: 2),
+            composing: TextRange.empty,
+          ),
+        ]),
+        isTrue,
+      );
+      expect(c.text, '今日');
+      expect(c.editor.composing, isFalse);
+      expect(c.command(const Undo()), isTrue);
+      expect(c.text, '');
+      c.dispose();
+    },
+  );
+  test('a correction before the composing range stays when the composition '
+      'is removed', () {
+    // The input method corrects the word before the one it composes, which
+    // moves its composing range, then removes the composed word.
+    final c = FlarkController(FlarkEditor(backend, text: 'teh ', caret: 4));
+    expect(
+      c.receive(composing('teh wor', 7, const TextRange(start: 4, end: 7))),
+      isTrue,
+    );
+    expect(
+      c.receive(composing('thee wor', 8, const TextRange(start: 5, end: 8))),
+      isTrue,
+    );
+    expect(c.receive(composing('thee ', 5)), isTrue);
+    expect(c.text, 'thee ');
+    expect(c.editor.composing, isFalse);
+    c.dispose();
+  });
+  test('a pending style takes all that a partly committed composition '
+      'composed', () {
+    // Committing the first syllable as it was committed would have wrapped
+    // it while the input method still composed the next, changing the text
+    // under it.
+    final c = FlarkController(FlarkEditor(backend));
+    c.command(const ToggleStyle(Style.strong));
+    for (final value in [
+      composing('한', 1, const TextRange(start: 0, end: 1)),
+      composing('한ㄱ', 2, const TextRange(start: 1, end: 2)),
+      composing('한글', 2, const TextRange(start: 1, end: 2)),
+    ]) {
+      expect(c.receive(value), isTrue);
+      expect(c.value, value);
+    }
+    expect(c.receive(composing('한글', 2)), isTrue);
+    expect(c.text, '**한글**');
+    expect(c.command(const Undo()), isTrue);
+    expect(c.text, '');
+    c.dispose();
+  });
+  for (final (source, selected, steps, committed) in [
+    (
+      '',
+      const FlarkSelection.collapsed(0),
+      [
+        composing('ㅎ', 1, const TextRange(start: 0, end: 1)),
+        composing('한', 1, const TextRange(start: 0, end: 1)),
+        composing('한ㄱ', 2, const TextRange(start: 1, end: 2)),
+      ],
+      '한',
+    ),
+    (
+      '',
+      const FlarkSelection.collapsed(0),
+      [
+        composing('きょうは', 4, const TextRange(start: 0, end: 4)),
+        composing('今日は', 3, const TextRange(start: 2, end: 3)),
+      ],
+      '今日',
+    ),
+    // Composed over a selection, which the committed syllable replaces.
+    (
+      'say cat',
+      const FlarkSelection(4, 7),
+      [
+        composing('say 한', 5, const TextRange(start: 4, end: 5)),
+        composing('say 한ㄱ', 6, const TextRange(start: 5, end: 6)),
+      ],
+      'say 한',
+    ),
+  ]) {
+    testWidgets('Escape after a partial commit cancels only what still '
+        'composes: $committed', (tester) async {
+      // Off the web the editor sees Escape before the input method and
+      // cancels the composition itself.
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      c.command(SetSelection(selected.base, selected.extent));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FlarkEditorWidget(controller: c, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      for (final value in steps) {
+        tester.testTextInput.updateEditingValue(value);
+        await tester.pump();
+      }
+      expect(c.editor.composing, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      expect(c.text, committed);
+      expect(c.editor.composing, isFalse);
+      expect(c.value.composing, TextRange.empty);
+      expect(c.command(const Undo()), isTrue);
+      expect(c.text, source);
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+    });
+  }
 
   for (final (typed, committed) in [('milk', 'milk'), ('teh', 'the')]) {
     for (final batched in [false, true]) {
@@ -493,6 +801,144 @@ void main() {
       });
     }
   }
+  test(
+    'a composition that ends with the source it began with keeps the platform caret',
+    () {
+      // Read as a cancel, the platform's caret was ignored and the state
+      // before the composition restored: retyping a selected word left it
+      // selected, so the next key replaced it, and Gboard finishing a
+      // composed word as the caret moved on kept the caret behind.
+      const source = 'say cat now';
+      final retyped = FlarkController(FlarkEditor(backend, text: source));
+      retyped.command(const SetSelection(4, 7));
+      for (final (text, end) in [('say c now', 5), ('say cat now', 7)]) {
+        retyped.receive(
+          TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: end),
+            composing: TextRange(start: 4, end: end),
+          ),
+        );
+      }
+      retyped.receive(
+        const TextEditingValue(
+          text: source,
+          selection: TextSelection.collapsed(offset: 7),
+        ),
+      );
+      expect(retyped.text, source);
+      expect(retyped.editor.selection, const FlarkSelection.collapsed(7));
+      expect(retyped.editor.composing, isFalse);
+      retyped.dispose();
+
+      final moved = FlarkController(
+        FlarkEditor(backend, text: source, caret: 7),
+      );
+      // Gboard composes the word before the caret, then the caret moves.
+      moved.receive(
+        const TextEditingValue(
+          text: source,
+          selection: TextSelection.collapsed(offset: 7),
+          composing: TextRange(start: 4, end: 7),
+        ),
+      );
+      expect(moved.editor.composing, isTrue);
+      moved.receive(
+        const TextEditingValue(
+          text: source,
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      expect(moved.editor.selection, const FlarkSelection.collapsed(1));
+      expect(moved.editor.composing, isFalse);
+      moved.dispose();
+    },
+  );
+  test(
+    'a platform update at the caret keeps it in an unwritten table cell',
+    () {
+      // An unwritten cell shares its source offset with the end of the cell
+      // before it. A value that only set a composing region (Gboard
+      // composing the word before its caret) applied those offsets again,
+      // which moved the caret into the cell before, where typing then went.
+      const source = '| a | b |\n| --- | --- |\n| x |\n';
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      c.command(SetSelection.caret(source.indexOf('x')));
+      c.command(const MoveTableCell());
+      final cell = c.editor.selection;
+      expect(cell.tableCell, isNotNull);
+      final caret = cell.extent;
+      c.receive(
+        c.value.copyWith(
+          composing: TextRange(start: caret - 1, end: caret),
+        ),
+      );
+      expect(c.editor.selection, cell);
+      c.receive(c.value.copyWith(composing: TextRange.empty));
+      expect(c.editor.selection, cell);
+      expect(c.command(const InsertText('Z')), isTrue);
+      expect(c.editor.document.caretRow.column, 1);
+      expect(c.editor.document.caretRow.text.trim(), 'Z');
+      c.dispose();
+    },
+  );
+  test(
+    'a platform deletion of half a surrogate pair deletes its character',
+    () {
+      // iOS deletes one UTF-16 unit before the caret unless its code point is
+      // an emoji, so Backspace after a supplementary character that is not
+      // one (CJK Extension B, mathematical letters) leaves half of it. That
+      // was refused as invalid Unicode: the character could not be deleted.
+      for (final character in ['\u{20000}', '\u{1D4B3}']) {
+        final source = 'a$character b';
+        final c = FlarkController(FlarkEditor(backend, text: source, caret: 3));
+        final half = source.replaceRange(2, 3, '');
+        expect(
+          c.receive(
+            TextEditingValue(
+              text: half,
+              selection: const TextSelection.collapsed(offset: 2),
+            ),
+          ),
+          isTrue,
+        );
+        expect(c.text, 'a b');
+        expect(c.editor.selection, const FlarkSelection.collapsed(1));
+        expect(c.notice, isNull);
+        c.dispose();
+      }
+    },
+  );
+  test(
+    'a cancelled composition leaves no trace where typing added a line break',
+    () {
+      // Typing at the end of an empty fenced block's opening line starts its
+      // first body line, and the platform is sent that line break too. An
+      // input method that cancels removes only the text it composed; that
+      // was read as deleting it, which kept the line break and an undo step.
+      final c = FlarkController(FlarkEditor(backend, text: '```\n', caret: 3));
+      c.receive(
+        const TextEditingValue(
+          text: '```t\n',
+          selection: TextSelection.collapsed(offset: 4),
+          composing: TextRange(start: 3, end: 4),
+        ),
+      );
+      expect(c.text, '```\nt\n');
+      expect(c.value.composing, const TextRange(start: 4, end: 5));
+      c.receive(
+        const TextEditingValue(
+          text: '```\n\n',
+          selection: TextSelection.collapsed(offset: 4),
+        ),
+      );
+      expect(c.text, '```\n');
+      expect(c.editor.selection, const FlarkSelection.collapsed(3));
+      expect(c.editor.composing, isFalse);
+      expect(c.editor.history.canUndo, isFalse);
+      c.dispose();
+    },
+  );
   test(
     'a composition opened by a rejected platform value does not stay open',
     () {

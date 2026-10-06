@@ -26,8 +26,10 @@ pub const PARSE_EXTRACTION_DEVIATION: i32 = 4;
 /// extraction panicked, and 4 when it refused to publish: a derived range or
 /// value failed validation, a line holds more possible email addresses than
 /// comrak can link without overflowing the stack
-/// (`model::MAX_EMAIL_AUTOLINKS_PER_LINE`), or the model would not fit the
-/// 32-bit `out_len`.
+/// (`model::MAX_EMAIL_AUTOLINKS_PER_LINE`), tables could gain more cells
+/// than comrak creates in bounded time and memory
+/// (`model::MAX_FILLED_TABLE_CELLS`), or the model would not fit the 32-bit
+/// `out_len`.
 ///
 /// Panic containment is native-only: `wasm32-unknown-unknown` aborts on
 /// panic, so on the web a panic traps out of this call and the host must

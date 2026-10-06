@@ -10,8 +10,10 @@ import 'support/invariants.dart';
 void main() {
   final backend = createParseBackend();
 
+  // The last cell of a table row: a delimiter row the editor shows as its
+  // source, under a table without body rows, is none.
   String cellText(FlarkEditor e) => e.projection.rows
-      .lastWhere((r) => r.kind == RowKind.tableCell)
+      .lastWhere((r) => r.kind == RowKind.tableCell && r.tableRowBlock >= 0)
       .text
       .trim();
 
@@ -55,6 +57,8 @@ void main() {
         (RowKind.paragraph, '---'),
         (RowKind.tableCell, 'a'),
         (RowKind.tableCell, 'b'),
+        // A table without body rows shows its delimiter row as its source.
+        (RowKind.tableCell, '|---|---|'),
       ],
     );
   });
@@ -88,6 +92,33 @@ void main() {
       );
       // A line of `@` signs as wide as the editor takes links nothing.
       expect(FlarkEditor(backend, text: '${'@' * 4000}\n').sourceMode, isFalse);
+    },
+  );
+
+  test(
+    'tables that could gain more cells than comrak creates safely are refused',
+    () {
+      // comrak gives every body row its header's columns, creating the cells
+      // a row lacks without the cap it means to apply: this 12 KB table, in
+      // the editor's live limits even on a phone, made 4.2 million cells and
+      // took 2 GB. It is refused before comrak parses it and opens as source.
+      String wide(int columns, int rows) =>
+          '${'a|' * columns}\n${'-|' * columns}${'\nx' * rows}';
+      final huge = wide(2048, 2046);
+      expect(
+        () => backend.parse(huge),
+        throwsA(
+          isA<FlarkParseException>().having(
+            (e) => e.code,
+            'code',
+            FlarkParseException.extractionDeviationCode,
+          ),
+        ),
+      );
+      expect(FlarkEditor(backend, text: huge).sourceMode, isTrue);
+      // A table whose rows fill their columns stays live.
+      final full = '| a | b |\n|---|---|\n${'| x | y |\n' * 100}';
+      expect(FlarkEditor(backend, text: full).sourceMode, isFalse);
     },
   );
 

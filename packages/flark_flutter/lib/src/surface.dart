@@ -4,7 +4,7 @@ import 'package:flark/flark.dart';
 import 'package:flark/code.dart';
 
 import 'package:flutter/rendering.dart';
-import 'package:flutter/foundation.dart' show mapEquals;
+import 'package:flutter/foundation.dart' show kIsWeb, mapEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -285,6 +285,7 @@ class RenderFlarkSurface extends RenderBox
     }
     if (next != controller) {
       controller.removeListener(_changed);
+      _described = null;
       _needsReveal = true;
       _images.clear();
       controller = next;
@@ -344,6 +345,17 @@ class RenderFlarkSurface extends RenderBox
     markNeedsLayout();
     markNeedsSemanticsUpdate();
   }
+
+  /// The snapshot the semantics last described. Flutter's web engine moves
+  /// DOM focus to a focused text field's semantics element whenever that
+  /// node changes, and a browser ends its composition when the input element
+  /// loses focus. With accessibility on, every composed update was committed
+  /// and the next one appended ("nににほ日本" for 日本). While the platform
+  /// composes on the web, the semantics keep describing the document as it
+  /// was before, so that the node does not change until the composition ends.
+  FlarkEditorSnapshot? _described;
+
+  bool get _composingOnWeb => kIsWeb && controller.composing;
 
   void _clearRows() {
     _layoutContent = null;
@@ -443,29 +455,13 @@ class RenderFlarkSurface extends RenderBox
     null => null,
   };
 
-  /// Whether a layout shaped for [before] can paint [after]: the same text,
-  /// segment styles and every input of [_rowStyle].
-  bool _samePresentation(ProjectedRow? before, ProjectedRow? after) {
-    if (before == null || after == null) return before == after;
-    if (before.kind != after.kind ||
-        _quoted(before) != _quoted(after) ||
-        before.headingLevel != after.headingLevel ||
-        before.header != after.header ||
-        before.alignment != after.alignment ||
-        before.text != after.text ||
-        before.segments.length != after.segments.length) {
-      return false;
-    }
-    for (var i = 0; i < before.segments.length; i++) {
-      final a = before.segments[i], b = after.segments[i];
-      if (a.displayStart != b.displayStart ||
-          a.displayEnd != b.displayEnd ||
-          a.styles != b.styles) {
-        return false;
-      }
-    }
-    return true;
-  }
+  /// Whether a layout shaped for [before] can paint [after]: the text, its
+  /// segment styles and every input of [_rowStyle] and the text's alignment
+  /// are the same. Source rows (null) are compared by their text alone.
+  static bool _samePresentation(ProjectedRow? before, ProjectedRow? after) =>
+      before == null || after == null
+      ? before == after
+      : before.samePresentation(after);
 
   @override
   void performLayout() {
@@ -533,9 +529,10 @@ class RenderFlarkSurface extends RenderBox
     final count = projected?.length ?? sourceLines!.length;
     String textAt(int i) =>
         projected?[i].text ?? sourceLines![i].replaceAll('\r', '');
-    String codeInfoOf(ProjectedRow? row) => row?.fenced == true
-        ? _snapshot.source.substring(row!.codeInfoStart, row.codeInfoEnd)
-        : '';
+    // Projected rows exist only in a live snapshot.
+    String codeInfoOf(ProjectedRow? row) => row == null
+        ? ''
+        : (_snapshot as FlarkLiveSnapshot).document.codeInfo(row) ?? '';
     // A code row's colors follow from its text and info string alone.
     bool reusable(int previous, int i) {
       final layout = old[previous], row = projected?[i];
@@ -1131,6 +1128,14 @@ class RenderFlarkSurface extends RenderBox
       }
     }
     final adjacent = line + (down ? 1 : -1);
+    // Up on the first line or Down on the last has nowhere to go. It is no
+    // press: a pending style and the typing's undo step outlast it, as they
+    // do Left at the document's start.
+    if (!extend &&
+        (adjacent < 0 || adjacent >= lines.length) &&
+        (down ? index == _rows.length - 1 : index == 0)) {
+      return false;
+    }
     final double y;
     if (adjacent >= 0 && adjacent < lines.length) {
       final next = lines[adjacent];
@@ -1537,7 +1542,10 @@ class RenderFlarkSurface extends RenderBox
     }
     config.isMultiline = true;
     config.textDirection = TextDirection.ltr;
-    final current = controller.editor.snapshot;
+    final current = _composingOnWeb
+        ? _described ?? controller.editor.snapshot
+        : controller.editor.snapshot;
+    _described = current;
     final rows = current is FlarkLiveSnapshot ? current.projection.rows : null;
     final window = current is FlarkSourceSnapshot
         ? SourceWindow.at(current.source, current.selection.extent)
@@ -1650,9 +1658,15 @@ class RenderFlarkSurface extends RenderBox
         if (edit.start == edit.end) {
           // Inserted text goes where typing it at that visible offset would:
           // a caret is placed there as a pointer places one, then the text is
-          // typed, so a list continues and a missing table cell fills.
-          final (row, offset) = rowAt(edit.start);
-          controller.command(PlaceCaret(row.index, offset, leadingHalf: false));
+          // typed, so a list continues and a missing table cell fills. At the
+          // caret it is typed there, in the caret's context: a press would
+          // drop a style chosen for the next text.
+          if (!current.selection.isCollapsed || edit.start != caret) {
+            final (row, offset) = rowAt(edit.start);
+            controller.command(
+              PlaceCaret(row.index, offset, leadingHalf: false),
+            );
+          }
           controller.command(
             edit.text == '\n' ? const Newline() : InsertText(edit.text),
           );

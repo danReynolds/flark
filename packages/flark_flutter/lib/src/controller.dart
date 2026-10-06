@@ -10,11 +10,56 @@ import 'package:flutter/services.dart';
 bool _oneGrapheme(String text, int start, int end) =>
     end > start && text.substring(start, end).characters.length == 1;
 
+/// [text] without the halves of surrogate pairs it splits.
+String _paired(String text) {
+  bool high(int unit) => unit >= 0xd800 && unit <= 0xdbff;
+  bool low(int unit) => unit >= 0xdc00 && unit <= 0xdfff;
+  if (!text.codeUnits.any((unit) => high(unit) || low(unit))) return text;
+  final out = StringBuffer();
+  for (var i = 0; i < text.length; i++) {
+    final unit = text.codeUnitAt(i);
+    if (high(unit) && i + 1 < text.length && low(text.codeUnitAt(i + 1))) {
+      out.write(text.substring(i, i + 2));
+      i++;
+    } else if (!high(unit) && !low(unit)) {
+      out.writeCharCode(unit);
+    }
+  }
+  return out.toString();
+}
+
+/// What an open composition's composing range holds. An input method can
+/// commit part of what it composes and compose on in the same composition
+/// (a Korean syllable as the next one's first letter is typed, a Japanese
+/// clause converted ahead of the rest), and so move its composing range off
+/// text the composition inserted.
+enum _Composing {
+  /// Text that was there before the composition began.
+  existing,
+
+  /// All that the composition inserted at a caret.
+  inserted,
+
+  /// All that the composition put in place of a selection.
+  replaced,
+
+  /// The end of what the composition inserted or put in place of a
+  /// selection: the input method committed the rest, before the range.
+  rest,
+
+  /// Text elsewhere: the range moved off what the composition inserted.
+  moved,
+}
+
 /// One Flutter-facing publication of the kernel. Platform values are input
 /// messages; the editor's snapshot remains the sole document authority.
 abstract interface class FlarkSurfaceController implements Listenable {
   FlarkDocumentState get editor;
   String get text;
+
+  /// Whether an input method is composing in the document. A reader never
+  /// composes.
+  bool get composing;
   bool command(FlarkCommand command, {int? expectedRevision});
   void sourceMode(bool enabled);
 }
@@ -28,6 +73,12 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
 
   TextRange _composing = TextRange.empty;
   String? _compositionSource;
+
+  /// What the open composition's composing range holds.
+  _Composing _compositionHolds = _Composing.existing;
+
+  /// The selection the open composition replaced, if it began over one.
+  (int, int)? _compositionReplaced;
   TextEditingValue? _lastReceived;
   int _lastReceivedRevision = -1;
   String? notice;
@@ -35,6 +86,8 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   bool _batching = false;
   @override
   String get text => editor.source;
+  @override
+  bool get composing => editor.composing;
 
   /// Current selection/typing style. Re-read when this controller notifies.
   FlarkStyleState styleState(int style) => editor.styleState(style);
@@ -85,6 +138,12 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   bool command(FlarkCommand command, {int? expectedRevision}) =>
       _batch(() => _command(command, expectedRevision: expectedRevision));
   bool _command(FlarkCommand command, {int? expectedRevision}) {
+    // Undo with nothing to undo (Command-Z on a fresh document) is no edit
+    // refused: it said "This edit needs source mode."
+    final nothing =
+        (command is Undo && !editor.history.canUndo) ||
+        (command is Redo && !editor.history.canRedo);
+    final ended = editor.composing;
     final changed = editor.applyAfterComposition(
       command,
       expectedRevision: expectedRevision,
@@ -93,7 +152,13 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       _composing = TextRange.empty;
       _compositionSource = null;
     }
-    notice = changed ? null : _rejectionNotice;
+    // A command that applied can still have withdrawn the composition it
+    // ended (typing refused what was composed).
+    notice = changed
+        ? (ended ? _rejectionNotice : null)
+        : nothing
+        ? notice
+        : _rejectionNotice;
     _changed();
     return changed;
   }
@@ -121,16 +186,47 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       }
       next = delta.apply(next);
     }
-    return receive(next);
+    return receive(next, authenticated: true);
   }
 
-  bool receive(TextEditingValue next, {int? expectedRevision}) =>
-      _batch(() => _receive(next, expectedRevision: expectedRevision));
-  bool _receive(TextEditingValue next, {int? expectedRevision}) {
+  /// Applies a platform value. An [authenticated] value is known to edit the
+  /// text this controller last gave the platform, as a delta batch whose old
+  /// text matched does: a replacement away from the selection is then the
+  /// platform's own correction, not a stale value from an older connection.
+  /// A [resynchronized] platform was given this controller's value since its
+  /// last input, so a value repeating that input is a new edit, not a copy.
+  bool receive(
+    TextEditingValue next, {
+    int? expectedRevision,
+    bool authenticated = false,
+    bool resynchronized = false,
+  }) => _batch(
+    () => _receive(
+      next,
+      expectedRevision: expectedRevision,
+      authenticated: authenticated,
+      resynchronized: resynchronized,
+    ),
+  );
+  bool _receive(
+    TextEditingValue next, {
+    int? expectedRevision,
+    required bool authenticated,
+    required bool resynchronized,
+  }) {
     if (expectedRevision != null && expectedRevision != editor.revision) {
       return false;
     }
-    if (_lastReceived == next && _lastReceivedRevision == editor.revision) {
+    // A full value received again before anything changed is a duplicate.
+    // An authenticated value edits the value the platform holds now, and so
+    // does a full value from a platform given this controller's value since:
+    // after the kernel reshaped an edit and the platform was resynchronized,
+    // a new edit can produce the earlier value again (Return, Backspace,
+    // Return; or Android's Chrome deleting a list item's tab, then "-").
+    if (!authenticated &&
+        !resynchronized &&
+        _lastReceived == next &&
+        _lastReceivedRevision == editor.revision) {
       return false;
     }
     final before = value;
@@ -142,21 +238,84 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
     final opened = isComposing && !editor.composing;
     if (opened) {
       _compositionSource = text;
+      final selection = editor.selection;
+      _compositionHolds =
+          next.composing.start != selection.start ||
+              next.text.length - before.text.length !=
+                  next.composing.end -
+                      next.composing.start -
+                      (selection.end - selection.start)
+          ? _Composing.existing
+          : selection.isCollapsed
+          ? _Composing.inserted
+          : _Composing.replaced;
+      _compositionReplaced = editor.selection.isCollapsed
+          ? null
+          : (editor.selection.start, editor.selection.end);
       editor.beginComposition();
+    } else if (isComposing && editor.composing) {
+      _composingMoved(before, next);
     }
-    if (editor.composing && !isComposing && next.text == _compositionSource) {
+    // An input method that cancels removes the text it composed. Typing it
+    // can have added structure around it (a fenced block's first line
+    // break), which the platform then holds too; removing only the composed
+    // text still restores the state before the composition. Once the input
+    // method committed some of it, removing what it still composes is no
+    // cancel.
+    final cancelled =
+        editor.composing &&
+        !isComposing &&
+        (next.text == _compositionSource ||
+            (_compositionHolds == _Composing.inserted &&
+                _composing.isValid &&
+                !_composing.isCollapsed &&
+                next.text ==
+                    text.replaceRange(_composing.start, _composing.end, '')));
+    if (cancelled) {
       _composing = TextRange.empty;
       _compositionSource = null;
       editor.cancelComposition();
+      // The source is as it was, but the caret is where the platform put it:
+      // after a word typed over its own selection, or where Gboard moved it
+      // as it finished composing.
+      if (text == next.text && !_atPlatformSelection(next)) {
+        editor.apply(
+          SetSelection(next.selection.baseOffset, next.selection.extentOffset),
+        );
+      }
+      _lastReceived = next;
+      _lastReceivedRevision = editor.revision;
+      return true;
+    }
+    // A composition over a selection replaced it, and cancelling leaves the
+    // selected text deleted, as a platform text field does. Read it so:
+    // removing the composed text by range can be refused for what it made
+    // (a backtick composed after another closes a code span, whose closer is
+    // hidden), which kept the cancelled text.
+    final replaced = _compositionReplaced, source = _compositionSource;
+    if (editor.composing &&
+        !isComposing &&
+        replaced != null &&
+        source != null &&
+        next.text == source.replaceRange(replaced.$1, replaced.$2, '')) {
+      _composing = TextRange.empty;
+      _compositionSource = null;
+      editor.cancelComposition();
+      editor.apply(const DeleteBackward());
       _lastReceived = next;
       _lastReceivedRevision = editor.revision;
       return true;
     }
     var changed = false, committedWord = false;
     if (next.text == before.text) {
-      changed = editor.apply(
-        SetSelection(next.selection.baseOffset, next.selection.extentOffset),
-      );
+      // A value that keeps the selection's offsets (one that only sets a
+      // composing region) keeps the selection as it is: a caret in an
+      // unwritten table cell shares its offset with the cell before it.
+      if (!_atPlatformSelection(next)) {
+        changed = editor.apply(
+          SetSelection(next.selection.baseOffset, next.selection.extentOffset),
+        );
+      }
     } else {
       var start = 0;
       var end = before.text.length, nextEnd = next.text.length;
@@ -213,14 +372,19 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
         nextEnd += widened - end;
         end = widened;
       }
-      var inserted = next.text.substring(start, nextEnd);
+      // A platform can split a surrogate pair: iOS deletes one UTF-16 unit
+      // before the caret unless its code point is an emoji, which leaves
+      // half of a CJK Extension B or mathematical letter. That half is not
+      // text the kernel can take; read the edit without it.
+      var inserted = _paired(next.text.substring(start, nextEnd));
       // An input method may finish its word and type Return in one value:
       // Android's LatinIME commits the composed word and "\n" inside one
-      // batch edit. That break is a typed Return, not composed text. Commit
-      // the word as the composition, then apply Return as when they arrive
-      // apart, so lists, quotes, fences and tables continue after it.
+      // batch edit, and iOS sends its autocorrection of the word with the
+      // line break Return inserts. That break is a typed Return, not text.
+      // Apply the word (committing a composition), then Return as when they
+      // arrive apart, so lists, quotes, fences and tables continue after it.
       final typedReturn =
-          editor.composing &&
+          (editor.composing || start < end) &&
           !isComposing &&
           inserted.endsWith('\n') &&
           sel.isCollapsed &&
@@ -236,7 +400,7 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
                 : ReplaceRange(start, end, inserted),
           );
         }
-        _endComposition();
+        if (editor.composing) _endComposition();
       }
       final FlarkCommand command;
       if (typedReturn) {
@@ -262,8 +426,19 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       } else {
         // Replacements may originate in IME/autocorrect, but cannot silently
         // replace unrelated text from an older full-value input connection.
+        // An authenticated delta edits the text the platform was sent.
         final related = start <= sel.end && end >= sel.start;
-        if (!related) {
+        // A full value's difference leaves out the unchanged text between a
+        // correction and the caret: the space typed after a word autocorrect
+        // replaces, or the one the double-space period turns into ". ". The
+        // platform keeps its caret past that text, on the caret's line.
+        final beforeCaret =
+            sel.isCollapsed &&
+            next.selection.isCollapsed &&
+            end <= sel.start &&
+            next.selection.extentOffset - nextEnd == sel.start - end &&
+            !before.text.substring(end, sel.start).contains('\n');
+        if (!related && !beforeCaret && !authenticated) {
           if (opened) _abandonComposition();
           notice = 'Input was resynchronized.';
           _changed();
@@ -272,36 +447,102 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
         command = ReplaceRange(start, end, inserted);
       }
       changed = editor.apply(command);
+      // A replacement ends the kernel's caret at its text, but a correction
+      // away from the caret (autocorrect fixing the word before a space the
+      // platform already holds) leaves the platform's caret where it was.
+      // When the kernel made exactly the platform's edit, keep its selection.
+      if (changed &&
+          command is ReplaceRange &&
+          text == next.text &&
+          !_atPlatformSelection(next)) {
+        editor.apply(
+          SetSelection(next.selection.baseOffset, next.selection.extentOffset),
+        );
+      }
     }
     if (changed || next.text == text) {
-      final shift = editor.selection.extent - next.selection.extentOffset;
+      // The kernel composes text as the platform holds it, so the platform's
+      // composing range is the kernel's, wherever the caret was legalized.
+      // Text the kernel reshaped (code opening its first body line) moved
+      // the range with the caret.
+      final shift = next.text == text
+          ? 0
+          : editor.selection.extent - next.selection.extentOffset;
       _composing = isComposing
           ? TextRange(
               start: (next.composing.start + shift).clamp(0, text.length),
               end: (next.composing.end + shift).clamp(0, text.length),
             )
           : TextRange.empty;
-      notice = null;
+      // A notice stays while the platform composes: taking it away moves
+      // the document, and a browser with accessibility on ends its
+      // composition when the editor's semantics move.
+      if (!isComposing) notice = null;
     } else {
       notice = _rejectionNotice ?? 'This edit needs source mode.';
       if (opened) _abandonComposition();
     }
+    // A commit types what was composed, which can change the document.
+    final revision = editor.revision;
     if (!isComposing && editor.composing) _endComposition();
     _lastReceived = next;
     _lastReceivedRevision = editor.revision;
     _changed();
-    return changed || committedWord;
+    return changed || committedWord || editor.revision != revision;
   }
 
-  /// The platform ended its composition. Keep what it composed as one history
-  /// step, or restore the exact prior state when it left the source as it was.
+  /// Whether the editor's selection has the offsets of [next]'s.
+  bool _atPlatformSelection(TextEditingValue next) =>
+      editor.selection.base == next.selection.baseOffset &&
+      editor.selection.extent == next.selection.extentOffset;
+
+  /// Follows what the composing range holds as [next] continues the open
+  /// composition. An input method that commits part of it and composes on,
+  /// in one update (Android's batch edit, iOS's deltas of one run loop
+  /// turn), starts its composing range past what it committed; the
+  /// composition goes on, but removing that range no longer cancels it. A
+  /// start the platform reported before stands: a browser keeps reporting
+  /// where its composition began after the editor moved the composed text
+  /// (code opening its first body line).
+  void _composingMoved(TextEditingValue before, TextEditingValue next) {
+    final from = _composing, start = next.composing.start;
+    final reported = _lastReceived?.composing;
+    if (!from.isValid ||
+        from.isCollapsed ||
+        start == from.start ||
+        (reported != null && reported.isValid && start == reported.start)) {
+      return;
+    }
+    // A later start at the same end, with the text around the composition as
+    // it was, leaves the input method composing the end of what it composed.
+    final grown = next.text.length - before.text.length;
+    final rest =
+        _compositionHolds != _Composing.existing &&
+        _compositionHolds != _Composing.moved &&
+        start > from.start &&
+        next.composing.end == from.end + grown &&
+        next.text.startsWith(before.text.substring(0, from.start)) &&
+        next.text.endsWith(before.text.substring(from.end));
+    _compositionHolds = rest ? _Composing.rest : _Composing.moved;
+  }
+
+  /// The platform ended its composition. Keep what it composed, typed, as one
+  /// history step, or restore the exact prior state when it left the source
+  /// as it was.
   void _endComposition() {
     if (editor.source == _compositionSource) {
       editor.cancelComposition();
     } else {
-      editor.commitComposition();
+      _commitComposition();
     }
     _compositionSource = null;
+  }
+
+  /// Typing can refuse what was composed, which withdraws it: say why.
+  void _commitComposition() {
+    if (!editor.composing) return;
+    editor.commitComposition();
+    if (editor.lastRejection != null) notice = _rejectionNotice;
   }
 
   /// Ends a composition that a rejected platform value opened. The platform
@@ -313,16 +554,31 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
     _compositionSource = null;
   }
 
+  /// Ends the composition. Cancelled, it leaves what the input method
+  /// committed of it: only the text it still composes goes, or, when its
+  /// composing range moved to other text, nothing.
   void finishComposition({bool cancel = false}) =>
       _batch(() => _finishComposition(cancel: cancel));
   void _finishComposition({bool cancel = false}) {
+    final composing = _composing;
     _composing = TextRange.empty;
-    _compositionSource = null;
-    if (cancel) {
+    if (!cancel) {
+      _commitComposition();
+    } else if (_compositionHolds != _Composing.rest &&
+        _compositionHolds != _Composing.moved) {
       editor.cancelComposition();
     } else {
-      editor.commitComposition();
+      // The input method committed what it composed before its range.
+      if (editor.composing &&
+          _compositionHolds == _Composing.rest &&
+          composing.isValid &&
+          !composing.isCollapsed &&
+          composing.end <= text.length) {
+        editor.apply(ReplaceRange(composing.start, composing.end, ''));
+      }
+      if (editor.composing) _endComposition();
     }
+    _compositionSource = null;
     _changed();
   }
 

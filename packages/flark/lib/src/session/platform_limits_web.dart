@@ -5,13 +5,15 @@ import 'browser_limits.dart';
 /// 16 KiB on phones and tablets.
 int get flarkDefaultLiveBytes => _bytes;
 
+// A JavaScript runtime without a navigator (an older node, server-side
+// rendering) is not a phone.
 final int _bytes = browserLiveBytes(
-  _navigator.userAgent,
-  _navigator.maxTouchPoints?.toDartInt ?? 0,
+  _navigator?.userAgent ?? '',
+  _navigator?.maxTouchPoints?.toDartInt ?? 0,
 );
 
 @JS('navigator')
-external _Navigator get _navigator;
+external _Navigator? get _navigator;
 
 extension type _Navigator._(JSObject _) implements JSObject {
   external String get userAgent;

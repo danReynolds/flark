@@ -63,6 +63,41 @@ jobs:
       - name: Consumer without Rust on PATH downloads a verified library
         run: packages/flark/tool/verify_download_consumer.sh
 
+  web-kernel:
+    name: flark · dart2js and dart2wasm agree with the VM
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain from rust-toolchain.toml
+        run: |
+          TOOLCHAIN="$(grep -E '^channel' rust-toolchain.toml | cut -d'"' -f2)"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The Flutter whose flutter_test the lockfile's package:test resolves
+      # against: package:test before 1.31.2 cannot load a newer SDK's
+      # dart2wasm output under node ("instantiate is not a function").
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: stable
+      - name: Resolve the workspace
+        run: flutter pub get
+      - name: A Wasm trap reaches Dart under both web compilers
+        working-directory: packages/flark
+        run: |
+          dart test -p node test/wasm_backend_test.dart
+          dart test -p node -c dart2wasm test/wasm_backend_test.dart
+      # The VM runs the FFI parser and the web runs the bundled Wasm module, so
+      # behavior that differs anywhere from the model to the commands shows up
+      # as a sequence whose digests disagree. --contract also runs the matrix
+      # and the corpus contract under both web compilers.
+      - name: Command sequences behave the same on the web and the VM
+        working-directory: packages/flark
+        run: tool/web_differential.sh -n 1000 -j 2 --contract
+
   windows-kernel:
     name: flark · Windows parser libraries and kernel tests
     runs-on: windows-latest
@@ -169,6 +204,9 @@ jobs:
       - name: Example
         working-directory: packages/flark_flutter/example
         run: flutter analyze && flutter test
+      - name: Example input through a browser's text field
+        working-directory: packages/flark_flutter/example
+        run: flutter test --platform chrome test/web_input_test.dart test/semantics_composition_web_test.dart
 
   fleury-host:
     name: flark_fleury · analyze, host and example tests

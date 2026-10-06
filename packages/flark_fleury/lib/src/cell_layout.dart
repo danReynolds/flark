@@ -62,10 +62,16 @@ final class CellLine {
   bool caretLine = true;
   InlineResource? image;
   InlineResource? imageLabel;
-  bool labelVisible(FlarkSelection selection) =>
+
+  /// Whether this line shows: a standalone image's label shows while the
+  /// selection reaches its image. A collapsed selection reaches it only
+  /// where a [caret] is painted: the reader paints none, and its selection
+  /// rests at the document's start, before a first image.
+  bool labelVisible(FlarkSelection selection, {bool caret = true}) =>
       imageLabel == null ||
-      (selection.start <= imageLabel!.contentEnd &&
-          selection.end >= imageLabel!.contentStart);
+      ((caret || !selection.isCollapsed) &&
+          selection.start <= imageLabel!.end &&
+          selection.end >= imageLabel!.start);
   Iterable<CellLine> get fragments => cells ?? [this];
   bool get editable =>
       rule == null && image == null && codeEdgeTop == null && !headingRule;
@@ -329,31 +335,11 @@ final class CellDocumentLayout {
     );
   }
 
-  static bool _quoted(ProjectedRow row) =>
-      row.shells.any((s) => s.kind == ShellKind.blockQuote);
-
-  /// Whether [cached] was laid out from the same text, segments and styles.
-  static bool _sameText(_RowText? cached, ProjectedRow row) {
-    if (cached == null) return false;
-    final before = cached.row;
-    if (before.text != row.text ||
-        before.kind != row.kind ||
-        before.headingLevel != row.headingLevel ||
-        before.header != row.header ||
-        _quoted(before) != _quoted(row) ||
-        before.segments.length != row.segments.length) {
-      return false;
-    }
-    for (var i = 0; i < row.segments.length; i++) {
-      final a = before.segments[i], b = row.segments[i];
-      if (a.displayStart != b.displayStart ||
-          a.displayEnd != b.displayEnd ||
-          a.styles != b.styles) {
-        return false;
-      }
-    }
-    return true;
-  }
+  /// Whether [cached] was laid out from a row that presents as [row] does.
+  /// The comparison includes a table cell's alignment, which no cached row
+  /// depends on here: table cells are laid out again every time.
+  static bool _sameText(_RowText? cached, ProjectedRow row) =>
+      cached != null && cached.row.samePresentation(row);
 
   final FlarkCellController controller;
   final String source;
@@ -560,11 +546,11 @@ final class CellDocumentLayout {
           : _widths.widthOfText(safe, policy);
       if (width == 0) {
         safe = '◌$safe';
-        width = 1;
+        width = _widths.widthOfText(safe, policy);
       }
       final capacity = math.max(cols - prefix.length - 1, 1);
       if (width > capacity) {
-        safe = _tooWide;
+        safe = grapheme == '\t' ? safe : _tooWide;
         width = 1;
       }
       if (col + width > cols - 1 && line.glyphs.isNotEmpty) {

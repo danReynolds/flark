@@ -12,3 +12,7 @@ parser as Wasm and mounts a local Fleury DOM host. Both color and indent code
 fences with `flark_codemirror`, in Dart, with no snippet library or worker.
 Neither entry point imports Flutter. Documents are session-only; this is not a
 persistent workbench.
+
+Dogfooding: `dart run bin/main.dart --repro=repro.dart` records the session
+and writes it on exit as a Dart test that replays it
+(`package:flark/recorder.dart`).

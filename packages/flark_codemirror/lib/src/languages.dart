@@ -1,3 +1,5 @@
+import 'package:flark/code.dart';
+
 import 'mode.dart';
 import 'modes/blocks.dart';
 import 'modes/clike.dart';
@@ -258,11 +260,11 @@ Mode<Object?> _typescript(ModeConfig config) =>
 Mode<Object?> _json(ModeConfig config) =>
     JavaScriptMode(config, const JavaScriptOptions(json: true));
 
-/// The canonical name for a fence's info string: its first word, lowercased,
-/// through [codeMirrorAliases]. Empty for none or `auto`. Names without an
-/// alias are returned as written.
+/// The canonical name for a fence's info string: its first word
+/// ([codeInfoLanguage]), lowercased, through [codeMirrorAliases]. Empty for
+/// none or [codeAutoLanguage]. Names without an alias are returned as written.
 String codeMirrorLanguageName(String info) {
-  final name = info.trim().split(RegExp(r'\s+')).first.toLowerCase();
+  final name = codeInfoLanguage(info.trim()).toLowerCase();
   return codeMirrorAliases[name] ?? name;
 }
 
@@ -270,7 +272,7 @@ String codeMirrorLanguageName(String info) {
 /// extensions, and close relatives a language's mode reads well (JSX as
 /// JavaScript). `text` and its aliases name plain text.
 const codeMirrorAliases = {
-  'auto': '',
+  codeAutoLanguage: '',
   'js': 'javascript',
   'mjs': 'javascript',
   'cjs': 'javascript',

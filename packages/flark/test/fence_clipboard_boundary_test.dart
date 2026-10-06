@@ -1,4 +1,5 @@
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart' show BlockFlag;
 import 'package:test/test.dart';
 
 void main() {
@@ -258,7 +259,7 @@ void main() {
       expect(e.source, '````text\n```\ninside');
       final row = e.document.rowAt(e.selection.extent);
       expect(row.text, '```\ninside');
-      expect(e.document.model.blockAt(row.block).flags & 2, 0);
+      expect(e.document.model.blockAt(row.block).flags & BlockFlag.closed, 0);
     },
   );
 
@@ -331,5 +332,29 @@ void main() {
         expect(e.lastRejection, FlarkRejection.invalidSource);
       },
     );
+  }
+
+  for (final newline in ['\n', '\r\n']) {
+    test('a carriage return put at a code line\'s end is refused '
+        '${newline.length}', () {
+      // The body's lines end in LF. A carriage return before the source's
+      // own line break would join it and change the line's ending, which
+      // shows nothing, instead of the code: refused on any line, as other
+      // invalid text is.
+      final before = '```text${newline}ab${newline}cd$newline```\n\nafter';
+      for (final at in [before.indexOf('b') + 1, before.indexOf('d') + 1]) {
+        for (final command in <FlarkCommand>[
+          const Paste('\r'),
+          ReplaceRange(at, at, '\r'),
+        ]) {
+          final e = FlarkEditor(backend, text: before, caret: at);
+          final snapshot = e.snapshot;
+          expect(e.apply(command), isFalse, reason: '$command at $at');
+          expect(identical(e.snapshot, snapshot), isTrue);
+          expect(e.history.canUndo, isFalse);
+          expect(e.lastRejection, FlarkRejection.invalidSource);
+        }
+      }
+    });
   }
 }

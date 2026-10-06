@@ -8,11 +8,13 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:characters/characters.dart';
 import 'package:flark/flark.dart';
+import 'package:flark/render_model.dart' show BlockFlag;
 import 'package:test/test.dart';
+
+import 'support/host.dart';
 
 final failures = <String, List<String>>{};
 void fail_(String rule, String detail) =>
@@ -339,8 +341,11 @@ void checkErasure(String label, FlarkEditor e) {
     // grows nothing but the fences around it, so that a body line left as a
     // fence's run stays code, or removes a row and keeps the source's length:
     // text joined into an empty closed heading (`# #` and `bar`) takes a
-    // space of its own before the sequence. The bound stops a refusal from
-    // hanging the suite.
+    // space of its own before the sequence, or shows less: a deletion that
+    // keeps what it empties (an item or an underline under a paragraph, a
+    // cell of a row without its outer pipe) adds a blank line or a pipe, and
+    // the source can keep its length or grow by that line break. The bound
+    // stops a refusal from hanging the suite.
     var steps = 0;
     while (editor.source.isNotEmpty && steps <= src.length + 2) {
       final before = editor.source;
@@ -348,6 +353,10 @@ void checkErasure(String label, FlarkEditor e) {
       editor.apply(SetSelection.caret(backward ? editor.source.length : 0));
       final document = editor.sourceMode ? null : editor.document;
       final rows = document?.projection.rows.length;
+      final shown = document?.projection.rows.fold(
+        0,
+        (length, row) => length + row.text.length,
+      );
       if (!editor.apply(
         backward ? const DeleteBackward() : const DeleteForward(),
       )) {
@@ -368,15 +377,12 @@ void checkErasure(String label, FlarkEditor e) {
         final hiddenLeaf =
             backward && row.index == 0 && row.block >= 0 && row.text.isEmpty;
         // Forward delete has nothing to take from a row that displays nothing,
-        // and neither direction may lift a pipe or a delimiter row, so a
-        // document ending in a table stops here (see the review note).
-        final previous = row.index > 0
-            ? editor.projection.rows[row.index - 1]
-            : null;
+        // and a cell's boundary refuses deletion, which would lift a pipe, so
+        // a document ending in a table stops at the start of its last cell.
         final atEnd =
             (!backward &&
                 (editor.selection.extent == last || row.text.isEmpty)) ||
-            (backward && previous?.kind == RowKind.tableCell) ||
+            (backward && row.kind == RowKind.tableCell) ||
             openFence ||
             hiddenLeaf;
         if (!atEnd) {
@@ -394,8 +400,14 @@ void checkErasure(String label, FlarkEditor e) {
           rows != null &&
           !editor.sourceMode &&
           editor.projection.rows.length < rows;
+      final showsLess =
+          shown != null &&
+          !editor.sourceMode &&
+          editor.projection.rows.fold(0, (n, row) => n + row.text.length) <
+              shown;
       if (editor.source.length >= before.length &&
           !joinedRows &&
+          !showsLess &&
           !_onlyDeletes(
             _withoutCaretFences(document),
             _withoutCaretFences(editor.sourceMode ? null : editor.document),
@@ -427,7 +439,7 @@ String? _withoutCaretFences(FlarkDocument? doc) {
   final model = doc.model, block = model.blockAt(row.block);
   final marker = doc.source.codeUnitAt(block.startUtf16);
   var source = doc.source;
-  if (block.flags & 2 != 0) {
+  if (block.flags & BlockFlag.closed != 0) {
     // The closing run ends before any trailing spaces or tabs on its line.
     final lineStart = model.lineStartUtf16(
       block.firstLine + block.lineCount - 1,
@@ -696,16 +708,19 @@ void checkCommands(String label, FlarkEditor e) {
 late FlarkParseBackend Function() createBackend;
 
 void main() {
-  final backend = createParseBackend();
-  createBackend = () => backend;
-  final corpus = <String>[];
-  for (final name in ['common_mark_tests.json', 'gfm_tests.json']) {
-    final f = File('../../test/fixtures/commonmark/upstream/$name');
-    if (!f.existsSync()) continue;
-    for (final c in (jsonDecode(f.readAsStringSync()) as List)) {
-      corpus.add((c as Map)['markdown'] as String);
-    }
-  }
+  // The FFI parser on the Dart VM, the bundled Wasm parser under node.
+  late final FlarkParseBackend backend;
+  setUpAll(() async {
+    backend = await loadTestBackend();
+    createBackend = () => backend;
+  });
+  final corpus = [
+    for (final name in ['common_mark_tests.json', 'gfm_tests.json'])
+      if (readHostFile('../../test/fixtures/commonmark/upstream/$name')
+          case final json?)
+        for (final c in jsonDecode(json) as List)
+          (c as Map)['markdown'] as String,
+  ];
 
   test('empty closed headings erase from either end', () {
     // No corpus document has an empty closed heading before more text,

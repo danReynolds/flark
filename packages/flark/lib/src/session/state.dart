@@ -75,7 +75,11 @@ final class FlarkHeadingState {
 
   /// Zero means paragraph; null means unavailable or mixed (see isMixed).
   final int? level;
-  final bool isMixed, canSet;
+  final bool isMixed;
+
+  /// Whether setting a level could change the caret's block
+  /// ([FlarkEditor.canSetHeading]).
+  final bool canSet;
 }
 
 final class FlarkLinkState {
@@ -132,10 +136,7 @@ final class FlarkState {
     return FlarkHeadingState(
       levels.length == 1 ? levels.single : null,
       levels.length > 1,
-      first.index == last.index &&
-          (first.kind == RowKind.paragraph ||
-              first.kind == RowKind.heading ||
-              (first.kind == RowKind.blank && e.selection.isCollapsed)),
+      e.canSetHeading(),
     );
   }
 
@@ -149,12 +150,9 @@ final class FlarkState {
 
   static FlarkCodeState _code(FlarkEditor? e) {
     if (e == null || e.sourceMode) return const FlarkCodeState(null, false);
-    final row = e.document.caretRow;
     return FlarkCodeState(
-      row.fenced
-          ? e.source.substring(row.codeInfoStart, row.codeInfoEnd)
-          : null,
-      row.fenced && e.document.rowAt(e.selection.base).index == row.index,
+      e.document.codeInfo(e.document.caretRow),
+      e.canSetCodeLanguage(),
     );
   }
 }

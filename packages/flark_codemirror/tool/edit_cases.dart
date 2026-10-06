@@ -1,8 +1,8 @@
 // Flark's hand-authored JavaScript, TypeScript and JSON editing scenarios,
 // first written for flark_tree_sitter, as CodeMirror's modes answer them.
-// test/edit_cases_test.dart runs them through the delegate and the Flutter
-// host's code editing test through its containers. The caret is marked with
-// a broken bar; guillemets mark base and extent.
+// test/edit_cases_test.dart runs them through the delegate, and
+// test/code_editing_test.dart through the kernel inside containers. The caret
+// is marked with a broken bar; guillemets mark base and extent.
 import 'package:flark/code.dart';
 
 const enter = CodeEditingAction.newline,

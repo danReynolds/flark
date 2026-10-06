@@ -442,4 +442,30 @@ void main() {
     expect(editor.source, '${'line\n' * 18}hello');
     expect(tester.renderToString(), contains('hello'));
   });
+
+  // Cmd-K follows the kernel's canSetResource, as the toolbar's Link button
+  // does, rather than opening a form whose Save can only fail.
+  for (final (name, source, selection) in [
+    (
+      'a selection across two paragraphs',
+      'one\n\ntwo',
+      const SetSelection(0, 8),
+    ),
+    (
+      'a link reference definition',
+      '[a]: /u\n\ntext',
+      const SetSelection.caret(2),
+    ),
+  ]) {
+    test('Cmd-K opens no link editor on $name', () {
+      mount(source);
+      editor.apply(selection);
+      tester.render();
+      expect(editor.canSetResource(), isFalse);
+      key(KeyCode.k, cmd: true);
+      expect(tester.renderToString(), isNot(contains('Insert link')));
+      expect(tester.renderToString(), isNot(contains('Edit link')));
+      expect(editor.source, source);
+    });
+  }
 }

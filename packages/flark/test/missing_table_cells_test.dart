@@ -123,7 +123,9 @@ void main() {
         e.apply(ReplaceRange(e.selection.extent, e.selection.extent, '中')),
         isTrue,
       );
-      expect(e.document.caretRow.text.trim(), '中');
+      // The platform holds the composed text at the caret's source offset,
+      // the end of the last written cell, and so does the source.
+      expect(e.source, table.replaceFirst('| x |', '| x 中|'));
       e.cancelComposition();
       expect(e.source, table);
       expect(e.selection, before);
@@ -140,6 +142,15 @@ void main() {
       expect(e.document.caretRow.text.trim(), 'Dart');
       e.apply(const Undo());
       expect(e.source, table);
+      // Committed, the composed text is typed into the unwritten cell.
+      e.apply(PlaceCaret(target, 0));
+      e.beginComposition();
+      expect(e.apply(const InsertText('中')), isTrue);
+      e.commitComposition();
+      expect(e.document.caretRow.column, 2);
+      expect(e.document.caretRow.text.trim(), '中');
+      e.apply(const Undo());
+      expect((e.source, e.selection), (table, before));
     },
   );
 

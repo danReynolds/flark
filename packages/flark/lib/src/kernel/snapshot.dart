@@ -64,25 +64,45 @@ final class FlarkSourceSnapshot extends FlarkEditorSnapshot {
   }
 }
 
-/// True when [source] fits [limit] UTF-8 bytes. Stops as soon as the limit is
-/// crossed and never allocates a full encoded copy of an oversized source.
-bool _withinLiveByteLimit(String source, int limit) {
-  var bytes = 0;
-  for (var i = 0; i < source.length; i++) {
-    final unit = source.codeUnitAt(i);
-    if (unit <= 0x7F) {
-      bytes++;
-    } else if (unit <= 0x7FF) {
-      bytes += 2;
-    } else if (unit >= 0xD800 && unit <= 0xDBFF) {
-      bytes += 4;
-      i++;
-    } else {
-      bytes += 3;
-    }
-    if (bytes > limit) return false;
+/// The snapshot of [text] with [selected]: live, parsed and projected, when
+/// source mode is not forced, [text] is within the live tier ([live], the
+/// admission a caller already computed, or else [syncLimit] and
+/// [liveLimits]) and so is its parse; otherwise source. An extraction
+/// deviation makes a source snapshot too, unless [rejectDeviation], when it
+/// is thrown. [previous], the live document being replaced, lends the new
+/// projection the rows the edit did not touch.
+FlarkEditorSnapshot _projectSnapshot(
+  FlarkParseBackend backend,
+  String text,
+  FlarkSelection selected,
+  ProjectionOptions options,
+  FlarkLiveLimits liveLimits,
+  int syncLimit, {
+  bool forceSourceMode = false,
+  bool rejectDeviation = false,
+  RenderModel? parsed,
+  bool? live,
+  FlarkDocument? previous,
+}) {
+  if (forceSourceMode ||
+      !(live ?? liveLimits._admitsLive(_SourceStats.of(text), syncLimit))) {
+    return FlarkSourceSnapshot._(text, selected);
   }
-  return true;
+  try {
+    final model = parsed ?? backend.parse(text);
+    if (!liveLimits._admitsModel(model)) {
+      return FlarkSourceSnapshot._(text, selected);
+    }
+    return FlarkLiveSnapshot._(
+      projectFlarkDocument(text, model, selected, options, previous: previous),
+    );
+  } on FlarkParseException catch (error) {
+    if (error.code != FlarkParseException.extractionDeviationCode ||
+        rejectDeviation) {
+      rethrow;
+    }
+    return FlarkSourceSnapshot._(text, selected);
+  }
 }
 
 int _legalSourceOffset(String source, int offset) {

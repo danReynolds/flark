@@ -1,5 +1,16 @@
 part of 'editor.dart';
 
+/// The styles a pair of delimiters spells, outermost first where they nest:
+/// pending strong emphasis opens with `***`.
+const _delimitedStyles = [
+  Style.strong,
+  Style.emphasis,
+  Style.strikethrough,
+  Style.code,
+];
+
+/// The delimiter that spells [style] on each side of its text, or null for a
+/// style no delimiter pair spells.
 String? _styleDelimiter(int style) => switch (style) {
   Style.emphasis => '*',
   Style.strong => '**',
@@ -43,28 +54,11 @@ extension _InlineFormatting on FlarkEditor {
     );
   }
 
-  List<Owner> _styleOwners(ProjectedRow row, int style) {
-    if (row.block < 0) return [];
-    final model = _doc.model;
-    final owners = <Owner>[];
-    for (
-      var r = model.firstRunOfBlock(row.block),
-          end = model.firstRunOfBlock(row.block + 1);
-      r < end;
-      r++
-    ) {
-      final owner = Owner(
-        r,
-        model.runKind(r),
-        model.runStart(r),
-        model.runEnd(r),
-        model.runContentStart(r),
-        model.runContentEnd(r),
-      );
-      if (owner.style == style) owners.add(owner);
-    }
-    return owners;
-  }
+  /// The owners of [style] in [row]'s block, in source order.
+  List<Owner> _styleOwners(ProjectedRow row, int style) => [
+    for (final owner in _doc.ownersOf(row))
+      if (owner.style == style) owner,
+  ];
 
   FlarkStyleState _styleState(int style) {
     if (sourceMode || _styleDelimiter(style) == null) {
@@ -137,6 +131,13 @@ extension _InlineFormatting on FlarkEditor {
 
   bool _setStyle(int style, bool enabled) {
     final state = styleState(style);
+    // SetStyle asking for the formatting the caret or selection already has
+    // changes nothing: a successful no-op, which records no step.
+    if (_styleDelimiter(style) != null &&
+        state.value == (enabled ? FlarkStyleValue.on : FlarkStyleValue.off)) {
+      _inert = true;
+      return false;
+    }
     if (!(enabled ? state.canEnable : state.canDisable)) return false;
     if (selection.isCollapsed) return _toggleCaretStyle(style);
     final range = _styleRange();
@@ -179,12 +180,67 @@ extension _InlineFormatting on FlarkEditor {
     return _commit(
       source.replaceRange(start, end, content),
       nextSelection,
-      typing: false,
+      coalesce: false,
       accept: (next) =>
           _selectedStyleValue(next, style) ==
               (enabled ? FlarkStyleValue.on : FlarkStyleValue.off) &&
           _sameFormattingContent(before, _formattingContent(next, style)),
     );
+  }
+
+  /// SetStyle at a caret: across an owner of [style] at its edge, unwrapping
+  /// one around the caret, or toggling [style] in the pending style the next
+  /// typed text takes.
+  bool _toggleCaretStyle(int style) {
+    final sel = selection;
+    final caret = sel.extent;
+    // At an edge of an owner, step across its delimiter: out when inside,
+    // in when outside. Strictly inside, unwrap it if what it held still
+    // shows as it did, as a selection's toggle requires.
+    for (final o in sel.tableCell == null ? _doc.ownersAt(caret) : <Owner>[]) {
+      if (o.style != style) continue;
+      if (caret == o.contentEnd) {
+        return _select(FlarkSelection.collapsed(o.end));
+      }
+      if (caret == o.contentStart) {
+        return _select(FlarkSelection.collapsed(o.start));
+      }
+      final s = source
+          .replaceRange(o.contentEnd, o.end, '')
+          .replaceRange(o.start, o.contentStart, '');
+      final before = _formattingContent(_doc, style);
+      return _commit(
+        s,
+        FlarkSelection.collapsed(caret - (o.contentStart - o.start)),
+        coalesce: false,
+        accept: (next) =>
+            _sameFormattingContent(before, _formattingContent(next, style)),
+      );
+    }
+    for (final o
+        in sel.tableCell == null ? _doc.ownersTouching(caret) : <Owner>[]) {
+      if (o.style != style) continue;
+      return _select(
+        FlarkSelection.collapsed(
+          caret == o.end ? o.contentEnd : o.contentStart,
+        ),
+      );
+    }
+    final mask = (_pending?.styles ?? 0) ^ style;
+    // Recombine the supported formatting intents before materializing them.
+    // Link/image destinations are separate pending closures, not style bits we
+    // can reconstruct without their original owner records.
+    if (_delimitedStyles.fold(mask, (rest, s) => rest & ~s) != 0) return false;
+    final delimiters = [
+      for (final s in _delimitedStyles)
+        if (mask & s != 0) _styleDelimiter(s)!,
+    ];
+    _pending = mask == 0
+        ? null
+        : PendingStyle(delimiters.join(), delimiters.reversed.join(), mask);
+    history.breakCoalescing();
+    _goalColumn = null;
+    return true;
   }
 }
 
