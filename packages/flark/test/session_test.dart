@@ -213,6 +213,26 @@ void main() {
     expect(c.state.selection.start, 4);
     expect(c.state.selection.end, 8);
   });
+  test('source mode asked for stays when the document shrinks', () async {
+    // A document past the live tier shows its source anyway, and asking for
+    // rendered mode there changes nothing. Asking for source mode is still a
+    // request: when the document shrinks to fit the tier, it stays.
+    final session = FlarkSession(markdown: 'x' * 20, syncLimit: 10);
+    addTearDown(session.dispose);
+    await session.ready;
+    final editor = session.engine!;
+    expect(editor.sourceMode, isTrue);
+    final revision = session.state.revision;
+    expect(session.setSourceMode(false).outcome, FlarkEditOutcome.unchanged);
+    expect(session.state.revision, revision);
+    expect(session.setSourceMode(true).changed, isTrue);
+    expect(session.replaceSourceRange(0, 20, 'x').changed, isTrue);
+    expect(editor.sourceMode, isTrue);
+    expect(session.setSourceMode(true).outcome, FlarkEditOutcome.unchanged);
+    expect(session.setSourceMode(false).changed, isTrue);
+    expect(editor.sourceMode, isFalse);
+  });
+
   test('rejected callable commands preserve IME undo state', () async {
     final c = Controller(markdown: 'abc');
     addTearDown(c.session.dispose);

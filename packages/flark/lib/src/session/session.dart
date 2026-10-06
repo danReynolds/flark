@@ -330,7 +330,9 @@ final class FlarkSession {
   FlarkEditResult setSourceMode(bool enabled, {int? expectedRevision}) {
     final rejected = _guard(expectedRevision);
     if (rejected != null) return rejected;
-    if (enabled == _editor!.sourceMode) {
+    // A document past the live tier shows its source either way; what the
+    // call changes is whether source mode was asked for.
+    if (enabled == _editor!.sourceModeForced) {
       return const FlarkEditResult.unchanged();
     }
     _editor!.setSourceMode(enabled);
