@@ -392,6 +392,18 @@ final class FlarkEditor implements FlarkDocumentState {
             plan != _HeadingPlan.refused && plan != _HeadingPlan.unchanged,
       );
 
+  /// Whether [SetCodeLanguage] would set a fence's language: the selection
+  /// lies on one fenced code block's row, the caret's.
+  bool canSetCodeLanguage() => !sourceMode && _languageRow() != null;
+
+  /// The fenced row whose language [SetCodeLanguage] sets, or null.
+  ProjectedRow? _languageRow() {
+    final row = _doc.rowAt(selection.extent);
+    return row.fenced && _doc.rowAt(selection.base).index == row.index
+        ? row
+        : null;
+  }
+
   /// Exact UTF-16 source splice. Unlike input replacement this never snaps
   /// the supplied range or preserves surrounding Markdown wrappers.
   bool replaceSourceRange(

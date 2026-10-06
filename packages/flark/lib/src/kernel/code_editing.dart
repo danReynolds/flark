@@ -436,9 +436,10 @@ extension _CodeEditing on FlarkEditor {
   }
 
   bool _setCodeLanguage(String language) {
-    final row = _doc.rowAt(selection.extent);
-    final info = _doc.codeInfo(row);
-    if (info == null ||
+    final row = _languageRow();
+    final info = row == null ? null : _doc.codeInfo(row);
+    if (row == null ||
+        info == null ||
         (language.isNotEmpty &&
             !RegExp(r'^[a-zA-Z0-9_+.#-]{1,40}$').hasMatch(language))) {
       return false;
