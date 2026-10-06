@@ -114,10 +114,32 @@ extension _Composition on FlarkEditor {
       b--;
     }
     final text = now.substring(a, now.length - b);
-    final over = a == at.start && began.length - b == at.end
+    var over = a == at.start && began.length - b == at.end
         ? at
         : FlarkSelection(a, began.length - b);
-    final restored = _buildSnapshot(began, over, previous: _liveDocument);
+    var restored = _buildSnapshot(began, over, previous: _liveDocument);
+    if (restored is FlarkLiveSnapshot && restored.selection != over) {
+      // A span that ends inside the space before a cell's closing pipe (the
+      // pipe's separator) leaves that space be, as typing does: the text is
+      // typed at the end of the cell's text, which reads the same.
+      final document = restored.document;
+      var end = over.end;
+      while (end > over.start &&
+          !document.isLegal(end) &&
+          (began.codeUnitAt(end - 1) == 0x20 ||
+              began.codeUnitAt(end - 1) == 0x09)) {
+        end--;
+      }
+      if (end != over.end &&
+          (end > over.start || text.isNotEmpty) &&
+          document.isLegal(end) &&
+          document.rowAt(end).kind == RowKind.tableCell) {
+        over = over.start == at.start && end == at.end
+            ? at
+            : FlarkSelection(over.start, end);
+        restored = FlarkLiveSnapshot._(document.withSelection(over));
+      }
+    }
     if (restored is! FlarkLiveSnapshot ||
         restored.selection != over ||
         restored.document.rowAt(over.start).fenced ||

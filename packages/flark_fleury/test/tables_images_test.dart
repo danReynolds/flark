@@ -367,10 +367,12 @@ void main() {
       expect(l.positionFor(editor.source.indexOf('text')).row, 3);
       expect(l.positionFor(editor.source.indexOf('text') + 4).row, 3);
       expect(tester.renderToString(), contains('PREVIEW'));
+      // Past the cell's text the caret is at its end, not after the space
+      // before the pipe, which is the pipe's.
       click(22, 6);
       tester.type('!');
-      expect(editor.source, contains('text !'));
-      expect(tester.renderToString(), contains('text !'));
+      expect(editor.source, contains('| text! |'));
+      expect(tester.renderToString(), contains('text!'));
     },
   );
 

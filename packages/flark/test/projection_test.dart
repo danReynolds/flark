@@ -167,7 +167,7 @@ void main() {
   test('an escaped table pipe is one mapped rendered grapheme', () {
     const src = '| a |\n|---|\n| \\|*x* |\n';
     final p = project(src);
-    final row = p.rows.firstWhere((r) => r.text == '|x ');
+    final row = p.rows.firstWhere((r) => r.text == '|x');
     final slash = src.indexOf(r'\|');
     expect(row.sourceForDisplay(0, anchor: Anchor.after), slash);
     expect(row.sourceForDisplay(1, anchor: Anchor.before), slash + 2);
@@ -179,7 +179,7 @@ void main() {
     const src = '| a \\| b |\n|---|\n| c |\n';
     final document = FlarkDocument.load(src, backend);
     final row = document.projection.rows.firstWhere(
-      (row) => row.text == 'a | b ',
+      (row) => row.text == 'a | b',
     );
     final slash = src.indexOf(r'\|');
 

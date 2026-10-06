@@ -118,7 +118,7 @@ void _compositionCases(FlarkParseBackend backend) {
       session.editor.commitComposition();
       session.expectState(
         source: '| a | b |\n| - | - |\n| 1\\| | 2 |',
-        rows: ['a ', 'b ', '1| ', '2 '],
+        rows: ['a', 'b', '1|', '2'],
         caret: const DisplayPosition(2, 2),
       );
       session.act(
@@ -276,7 +276,9 @@ void _compositionCases(FlarkParseBackend backend) {
       // the row, so the commit retypes all that changed. The two emoji share
       // their first code unit; from there the change would start inside a
       // pair, and the text would not be typed at all. Retyped from the
-      // pair's start, the composed pipe is escaped as typed pipes are.
+      // pair's start, the composed pipe is escaped as typed pipes are. The
+      // paste landed after the space before the cell's closing pipe, which
+      // is the pipe's: the text is typed in the cell and the space stays.
       final session = _Session(
         backend,
         source: '| a | b |\n| - | - |\n| 😀 | c |',
@@ -294,8 +296,8 @@ void _compositionCases(FlarkParseBackend backend) {
       );
       editor.commitComposition();
       session.expectState(
-        source: '| a | b |\n| - | - |\n| 😁\\| !| c |',
-        rows: ['a ', 'b ', '😁| !', 'c '],
+        source: '| a | b |\n| - | - |\n| 😁\\| ! | c |',
+        rows: ['a', 'b', '😁| !', 'c'],
       );
     });
 

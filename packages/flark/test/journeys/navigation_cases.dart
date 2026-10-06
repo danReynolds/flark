@@ -153,23 +153,26 @@ void _navigationCases(FlarkParseBackend backend) {
         source: '| a | b |\n| - | - |\n| c | d |',
       );
       session.expectState(
-        rows: ['a ', 'b ', 'c ', 'd '],
+        rows: ['a', 'b', 'c', 'd'],
         caret: const DisplayPosition(0, 0),
       );
+      // A cell's text ends at its last character: the space before the
+      // pipe is the pipe's, so the caret steps from after it to the next
+      // cell.
       session.act(
         const MoveCaret(MoveDirection.forward),
-        times: 3,
+        times: 2,
         caret: const DisplayPosition(1, 0),
       );
       session.act(
         const MoveCaret(MoveDirection.forward),
-        times: 3,
+        times: 2,
         caret: const DisplayPosition(2, 0),
       );
       session.act(
         const InsertText('x'),
         source: '| a | b |\n| - | - |\n| xc | d |',
-        rows: ['a ', 'b ', 'xc ', 'd '],
+        rows: ['a', 'b', 'xc', 'd'],
       );
     });
 

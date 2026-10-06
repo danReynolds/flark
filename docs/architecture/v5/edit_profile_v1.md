@@ -58,8 +58,10 @@ additional product principles or testing layers.
   pointer hit, or preceding navigation command.
 - Typing a space advances the source and painted caret; the next word stays
   after that space. Editable trailing whitespace, including table-cell padding,
-  remains represented. A parser-authenticated hard break stays one atomic
-  rendered unit when moving or deleting across the break.
+  remains represented. The one space or tab before a cell's closing pipe is the
+  pipe's, as an ATX closing sequence keeps one, so whitespace typed against the
+  pipe takes a separator after it. A parser-authenticated hard break stays one
+  atomic rendered unit when moving or deleting across the break.
 - Typing ordinary whitespace after an emptied inline owner exits that owner
   unless a supported construct explicitly retains whitespace.
 - Typing whitespace at an existing emphasis/strong/strike content edge moves

@@ -96,19 +96,20 @@ final class _Session {
 
   void _check(String label) {
     final document = editor.document;
+    // The whole source and an unwritten cell, which the caret names by its
+    // index, are not ordinary endpoints.
+    final ordinary =
+        !(!document.selection.isCollapsed &&
+            document.selection.start == 0 &&
+            document.selection.end == document.source.length) &&
+        !document.projection.isMissingCell(document.selection.tableCell);
     expect(
-      (!document.selection.isCollapsed &&
-              document.selection.start == 0 &&
-              document.selection.end == document.source.length) ||
-          document.isLegal(document.selection.base),
+      !ordinary || document.isLegal(document.selection.base),
       isTrue,
       reason: '$label: legal selection base',
     );
     expect(
-      (!document.selection.isCollapsed &&
-              document.selection.start == 0 &&
-              document.selection.end == document.source.length) ||
-          document.isLegal(document.selection.extent),
+      !ordinary || document.isLegal(document.selection.extent),
       isTrue,
       reason: '$label: legal selection extent',
     );

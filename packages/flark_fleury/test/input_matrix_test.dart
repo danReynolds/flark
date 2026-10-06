@@ -114,7 +114,13 @@ void main() {
                   !editor.selection.isCollapsed &&
                   editor.selection.start == 0 &&
                   editor.selection.end == editor.source.length;
-              if (!whole && !editor.document.isLegal(editor.selection.extent)) {
+              // A caret in an unwritten cell names the cell by its index.
+              final cell = editor.projection.isMissingCell(
+                editor.selection.tableCell,
+              );
+              if (!whole &&
+                  !cell &&
+                  !editor.document.isLegal(editor.selection.extent)) {
                 fail_(
                   'illegal-caret',
                   'seed $seed step $step '

@@ -259,15 +259,18 @@ void main() {
       }
     }
   }
-  for (final initial in [
-    '# alpha #',
-    'alpha\n=====',
-    '| alpha |\n| --- |',
-    '|alpha|\n|---|',
-    '**alpha**',
-    'alpha\nnext',
-    'alpha\r\nnext',
-    '> alpha\n> next',
+  // Against a cell's closing pipe, the first space typed takes one after it:
+  // the parser reads one space before the pipe as the pipe's separator.
+  for (final (initial, separator) in [
+    ('# alpha #', ''),
+    ('alpha\n=====', ''),
+    ('| alpha |\n| --- |', ''),
+    ('|alpha|\n|---|', ' '),
+    ('| alpha|\n| --- |', ' '),
+    ('**alpha**', ''),
+    ('alpha\nnext', ''),
+    ('alpha\r\nnext', ''),
+    ('> alpha\n> next', ''),
   ]) {
     test('space then next word stays ordered in $initial', () {
       final caret = initial.startsWith('**')
@@ -278,14 +281,17 @@ void main() {
       for (final character in [' ', ' ', 'b', 'e', 't', 'a']) {
         typed += character;
         expect(e.apply(InsertText(character)), isTrue);
-        expect(e.source, initial.replaceRange(caret, caret, typed));
+        expect(
+          e.source,
+          initial.replaceRange(caret, caret, '$typed$separator'),
+        );
         expect(e.selection.extent, caret + typed.length);
       }
       expect(e.apply(const Undo()), isTrue);
       expect(e.source, initial);
       expect(e.apply(const Redo()), isTrue);
       expect(e.apply(const InsertText('!')), isTrue);
-      expect(e.source, initial.replaceRange(caret, caret, '  beta!'));
+      expect(e.source, initial.replaceRange(caret, caret, '  beta!$separator'));
     });
   }
   for (final prefix in ['', '- ', '> ', '# ', '> - ']) {

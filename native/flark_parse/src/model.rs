@@ -1034,9 +1034,17 @@ impl<'a> Extractor<'a> {
                 rec[block::END_BYTE] = ce as u32; rec[block::END_UTF16] = self.li.u16(ce);
                 let mut a = cs;
                 while a < ce && bytes[a] == b' ' { a += 1; }
-                // Trailing cell padding is editable whitespace. Trimming it
-                // reorders the next typed word, just as in a paragraph.
-                self.push_content(l0, a, ce, 0, a);
+                // One space or tab before a closing pipe is the pipe's
+                // separator, as a closing heading sequence keeps its own: the
+                // cell's text, and a caret at its end, stop after its last
+                // character. Whitespace before that is the cell's text, so
+                // editing gives whitespace typed against the pipe a
+                // separator after it, and what was typed stays the cell's.
+                let mut e = ce;
+                if e > a && e < le && bytes[e] == b'|' && matches!(bytes[e - 1], b' ' | b'\t') {
+                    e -= 1;
+                }
+                self.push_content(l0, a, e, 0, a);
                 self.walk_inlines(leaf.node, idx as u32, Some(Cell { start: cs, column_delta }), None);
             }
             NodeValue::Heading(h) if !h.setext => {

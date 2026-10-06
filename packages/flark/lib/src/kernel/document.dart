@@ -12,8 +12,11 @@ import 'resource.dart';
 /// A selection in source UTF-16 offsets. Collapsed when base == extent.
 /// Ordinary endpoints are legal caret positions: never strictly inside a hidden
 /// range, always on a row's content. Which of several legal offsets a display
-/// position holds is the typing context. Unwritten table cells additionally
-/// carry a projected cell address because they share a source boundary.
+/// position holds is the typing context. A caret in an unwritten table cell
+/// is no ordinary endpoint: its offset is where its row's written cells end
+/// (the closing pipe or the line's end), which several unwritten cells share
+/// and which is no caret position of its own, so it carries the cell's
+/// projected address.
 /// A noncollapsed 0..source.length range explicitly selects the
 /// whole source, including block syntax outside the first/last caret spans.
 final class FlarkSelection {

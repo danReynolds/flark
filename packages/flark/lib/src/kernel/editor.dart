@@ -1453,7 +1453,25 @@ final class FlarkEditor implements FlarkDocumentState {
   /// keep the sequence on the heading's line. A placement with the space
   /// commits only when [_keepsStructure] holds, so a sequence it still paints
   /// is refused.
+  ///
+  /// A cell's closing pipe likewise: the parser reads one space or tab before
+  /// it as the pipe's separator, outside the cell's text, so text that ends
+  /// in whitespace right against the pipe takes a space after it. Alone,
+  /// the whitespace typed would become the separator, and the next word
+  /// would go before it.
   (int, String) _sequencePlace(ProjectedRow row, int at, String text) {
+    if (row.kind == RowKind.tableCell) {
+      final againstPipe =
+          !row.delimiterSource &&
+          at == row.sourceEnd &&
+          at < source.length &&
+          source.codeUnitAt(at) == 0x7C;
+      return againstPipe &&
+              (text.endsWith(' ') || text.endsWith('\t')) &&
+              (row.text.isNotEmpty || text.trim().isNotEmpty)
+          ? (at, ' ')
+          : (at, '');
+    }
     final trail = _headingTrail(row);
     if (trail == null ||
         trail.$1 != at ||

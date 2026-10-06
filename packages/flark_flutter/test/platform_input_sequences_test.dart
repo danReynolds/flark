@@ -2429,13 +2429,15 @@ class _Sequence {
       final doc = e.document;
       final whole =
           !sel.isCollapsed && sel.start == 0 && sel.end == text.length;
+      // A caret in an unwritten cell names the cell by its index.
+      final unwritten = doc.projection.isMissingCell(sel.tableCell);
       expect(
-        whole || doc.isLegal(sel.base),
+        whole || unwritten || doc.isLegal(sel.base),
         isTrue,
         reason: '$label: base $sel legal',
       );
       expect(
-        whole || doc.isLegal(sel.extent),
+        whole || unwritten || doc.isLegal(sel.extent),
         isTrue,
         reason: '$label: extent $sel legal',
       );

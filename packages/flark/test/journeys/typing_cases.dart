@@ -299,7 +299,7 @@ void _typingCases(FlarkParseBackend backend) {
       session.act(
         const InsertText('x'),
         source: '| a |\n| - |\nx\n\nnext\n',
-        rows: ['a ', 'x', '', 'next', ''],
+        rows: ['a', 'x', '', 'next', ''],
       );
       expect(session.editor.document.caretRow.kind, RowKind.tableCell);
       expect(session.editor.projection.rows[3].kind, RowKind.paragraph);
@@ -315,14 +315,14 @@ void _typingCases(FlarkParseBackend backend) {
           '| a |\n| - |\n| b |\n',
           18,
           '| a |\n| - |\n| b |\n\nx',
-          ['a ', 'b ', '', 'x'],
+          ['a', 'b', '', 'x'],
           const DisplayPosition(3, 1),
         ),
         (
           '> | a |\n> | - |\n> | b |\n>',
           24,
           '> | a |\n> | - |\n> | b |\n>\n>x',
-          ['a ', 'b ', '', 'x'],
+          ['a', 'b', '', 'x'],
           const DisplayPosition(3, 1),
         ),
         (
@@ -785,12 +785,12 @@ void _typingCases(FlarkParseBackend backend) {
         kept.act(
           const ReplaceRange(12, 13, ''),
           source: '| a | b |\n| - | - |',
-          rows: ['a ', 'b ', '| - | - |'],
+          rows: ['a', 'b', '| - | - |'],
         );
         kept.act(
           const ReplaceRange(11, 12, ':'),
           source: '| a | b |\n|:- | - |',
-          rows: ['a ', 'b ', '|:- | - |'],
+          rows: ['a', 'b', '|:- | - |'],
         );
         final row = _Session(
           backend,
@@ -800,7 +800,7 @@ void _typingCases(FlarkParseBackend backend) {
         row.act(
           const Paste('\n| c | d |'),
           source: '| a | b |\n| - | - |\n| c | d |',
-          rows: ['a ', 'b ', 'c ', 'd '],
+          rows: ['a', 'b', 'c', 'd'],
         );
       },
     );
@@ -827,17 +827,17 @@ void _typingCases(FlarkParseBackend backend) {
       final typed = _Session(
         backend,
         source: '| a | b |\n| - | - |\n| c | d |',
-        caret: 24,
+        caret: 23,
       );
       typed.act(
         const InsertText('\t'),
-        source: '| a | b |\n| - | - |\n| c \t| d |',
-        rows: ['a ', 'b ', 'c \t', 'd '],
+        source: '| a | b |\n| - | - |\n| c\t | d |',
+        rows: ['a', 'b', 'c\t', 'd'],
       );
       typed.act(
         const ReplaceRange(22, 23, 'x'),
-        source: '| a | b |\n| - | - |\n| x \t| d |',
-        rows: ['a ', 'b ', 'x \t', 'd '],
+        source: '| a | b |\n| - | - |\n| x\t | d |',
+        rows: ['a', 'b', 'x\t', 'd'],
       );
     });
 
@@ -849,17 +849,17 @@ void _typingCases(FlarkParseBackend backend) {
         (
           '| abc | def |\n| --- | --- |\n!:',
           '| abc | def |\n| --- | --- |\n!:| b|',
-          ['abc ', 'def ', '!:', 'b'],
+          ['abc', 'def', '!:', 'b'],
         ),
         (
           '| a | b |\n| - | - |\n| ~baz\n',
           '| a | b |\n| - | - |\n| ~baz| b|\n',
-          ['a ', 'b ', '~baz', 'b', ''],
+          ['a', 'b', '~baz', 'b', ''],
         ),
         (
           '| a | b |\n| - | - |\nc\\',
           '| a | b |\n| - | - |\nc\\ | b|',
-          ['a ', 'b ', 'c\\ ', 'b'],
+          ['a', 'b', 'c\\', 'b'],
         ),
       ]) {
         final session = _Session(backend, source: source);
@@ -941,7 +941,7 @@ void _typingCases(FlarkParseBackend backend) {
       session.act(
         const InsertText('-'),
         source: '| a | b |\n| - | -',
-        rows: ['a ', 'b ', '| - | -'],
+        rows: ['a', 'b', '| - | -'],
         anchor: 17,
       );
       session.act(const InsertText(' '), source: '| a | b |\n| - | - ');
@@ -958,7 +958,7 @@ void _typingCases(FlarkParseBackend backend) {
       session.act(
         const InsertText('c'),
         source: '| a | b |\n| - | - |\nc',
-        rows: ['a ', 'b ', 'c', ''],
+        rows: ['a', 'b', 'c', ''],
         anchor: 21,
       );
       expect(session.editor.document.caretRow.kind, RowKind.tableCell);
@@ -971,7 +971,7 @@ void _typingCases(FlarkParseBackend backend) {
       followed.act(
         const InsertText('-'),
         source: '| a | b |\n| - | -\n\nnext',
-        rows: ['a ', 'b ', '| - | -', '', 'next'],
+        rows: ['a', 'b', '| - | -', '', 'next'],
         anchor: 17,
       );
       // An edit of that row keeps the table, or is refused: restructuring a
@@ -1000,7 +1000,7 @@ void _typingCases(FlarkParseBackend backend) {
         ('- > | a |\n  > | - |', '  > '),
       ]) {
         final session = _Session(backend, source: source);
-        session.expectState(rows: ['a ', '| - |']);
+        session.expectState(rows: ['a', '| - |']);
         final shells = session.editor.projection.rows.first.shells.length;
         expect(session.editor.projection.rows[1].shells.length, shells);
         session.act(SetSelection.caret(source.length));
@@ -1012,7 +1012,7 @@ void _typingCases(FlarkParseBackend backend) {
         session.act(
           const InsertText('b'),
           source: '$source\n${prefix}b',
-          rows: ['a ', 'b'],
+          rows: ['a', 'b'],
           caret: const DisplayPosition(1, 1),
         );
         expect(session.editor.document.caretRow.kind, RowKind.tableCell);
@@ -1022,7 +1022,7 @@ void _typingCases(FlarkParseBackend backend) {
           source,
           options: const ProjectionOptions(editableDelimiterRows: false),
         );
-        expect([for (final row in read.rows) row.text], ['a ']);
+        expect([for (final row in read.rows) row.text], ['a']);
       }
     });
 
