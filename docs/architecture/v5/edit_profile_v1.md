@@ -477,34 +477,43 @@ replacement, paste, composition and source-mode input retain literal breaks.
 Exiting an imported unclosed fence adds its matching closer. Each exit is one
 atomic Undo action and preserves following content and existing fence metadata.
 
-An opening brace, bracket or parenthesis increases the indentation, and Enter
-between a matching pair puts the closer on its own line. Python's trailing
-colon also increases indentation. Recognized comments, strings and regex literals do not
-trigger those rules. The step is two spaces, four for Python, or an existing
-tab. Tab/Shift-Tab indent/outdent selected code lines without touching their
-container prefixes, and without the code delegate Tab leaves blank lines as
-they are; a collapsed Tab inserts a step at the caret. Commands
-crossing a code-block boundary reject atomically.
+With the CodeMirror delegate, Enter indents the new line as the language's
+CodeMirror mode does (`newlineAndIndent`): after an opening brace, bracket or
+parenthesis where the mode counts them, after Python's trailing colon, and
+inside a Ruby or Bash block. Enter between `{}` or `[]` also opens an indented
+empty line and puts the closer on the line after it. An opener inside a
+comment, string or regular expression does neither. The step is two spaces,
+four for Python, or an existing tab. Tab/Shift-Tab indent/outdent selected
+code lines without touching their container prefixes; Shift-Tab removes a tab
+or up to one step of spaces, a tab step counting four columns. Without the
+code delegate Tab leaves blank lines as they are; a collapsed Tab inserts a
+step at the caret. Commands crossing a code-block boundary reject atomically.
 
-Typing `}`, `]` or `)` on an indented, otherwise blank code line aligns it with
-its matching opener's leading whitespace. A shared balanced-delimiter scan
-skips literal token ranges, including enclosing string/comment/regex ancestry.
-It operates on parser-owned code content and preserves quote/list prefixes.
-The closer and whitespace change publish together as one Undo action. Inline
-closers, unmatched/mismatched pairs, selected replacement, paste, composition
-and source-mode input retain literal behavior. Unknown and Plain text languages
-also retain literal indentation. The current YAML grammar marks flow punctuation
-as string text, so its automatic closer falls back to literal input. The twelve
-registered grammars each have a declared regression case; these examples are
-coverage boundaries, not a guarantee for every construct in those languages.
-This is a bounded editing aid, not a formatter or arbitrary-language parser.
+Typed text re-indents its line where the mode asks for it: a closing `}`, a
+closing word such as Ruby's `end` or Bash's `fi`, an XML closing tag, or a `)`
+or `]` typed first on its line. The line takes the mode's indentation, which
+for a closer is usually its opener's line; a word that goes on past a closing
+word (`fi` into `fix`) is indented again. The change operates on parser-owned
+code content and preserves quote/list prefixes. The closer and whitespace
+change publish together as one Undo action. Paste, range replacement,
+composition and source-mode input retain literal behavior. Plain text, and an
+untagged fence that detection cannot place, keep the leading whitespace of
+the line Enter splits; a language without a ported mode indents by its
+brackets. This is a bounded editing aid, not a formatter or arbitrary-language
+parser.
 
-Syntax decoration is pure Dart and theme-free. The initial grammar set is Dart,
-Python, JavaScript, TypeScript, Rust, Go, JSON, YAML, SQL, shell, HTML/XML and CSS.
-Detection examines at most 1,024 UTF-16 units. Blocks above 8,192 units fall back
-to plain text; the host's narrower admission envelope still applies. Cached
-tokens are bounded and must reconstruct the exact projected body text.
-Decoration failures cannot alter or reject source input.
+Syntax decoration is pure Dart and theme-free. The CodeMirror delegate
+(`flark_codemirror`) ports 25 of CodeMirror's language modes: JavaScript,
+TypeScript, JSON, Python, C, C++, Java, C#, Kotlin, Dart, Bash, YAML, Go, Ruby,
+Rust, PowerShell, XML, HTML, SQL, PostgreSQL, MySQL, CSS, SCSS, Less and PHP;
+an app can build in fewer. Detection reads at most the first 512 UTF-16 units
+of an untagged fence, back to a line end, and leaves the fence plain when that
+sample reads as prose or no language's signs reach the threshold. Bodies above
+8,192 units are plain and receive no proposals; the kernel's live limits apply
+as to any block. Cached tokens are bounded and must reconstruct the exact
+projected body text. Decoration failures cannot alter or reject source input:
+a mode that fails leaves the rest of its snippet plain and declines the edit,
+which then goes through Flark's own code editing.
 
 ## History and platform input
 
