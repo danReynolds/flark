@@ -9,12 +9,7 @@ dependencies:
   flark_codemirror: ^0.5.0
   flark_fleury: ^0.5.0
   fleury: ^0.1.0
-  fleury_web:
-    git:
-      url: https://github.com/danReynolds/fleury.git
-      ref: 13367b0fb0deda3d3df44e5c03b20ab63d12738f
-      path: packages/fleury_web
-  fleury_widgets: ^0.1.0
+  fleury_web: ^0.1.0
   web: ^1.1.1
 dev_dependencies:
   lints: ^6.0.0

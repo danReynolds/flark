@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flark/flark.dart';
 import 'package:fleury/fleury_core.dart';
-import 'package:fleury_widgets/fleury_widgets_web.dart' as widgets;
+import 'package:fleury/fleury.dart' as widgets;
 import 'package:http/http.dart' as http;
 import 'image_decode.dart';
 

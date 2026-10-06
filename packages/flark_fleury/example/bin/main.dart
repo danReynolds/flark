@@ -4,7 +4,7 @@ import 'package:flark/recorder.dart';
 import 'package:flark_codemirror/flark_codemirror.dart';
 import 'package:flark_fleury/flark_fleury_legacy.dart';
 import 'package:fleury/fleury.dart';
-import 'package:fleury_widgets/fleury_widgets_web.dart' as widgets;
+import 'package:fleury/fleury.dart' as widgets;
 import 'package:flark_fleury_example/playground.dart';
 
 Future<void> main(List<String> args) async {

@@ -28,10 +28,9 @@ Two requirements for rk:
   pinned (step 3). CI fails a `flark` changelog that names the version while
   `hook/prebuilt.json` pins nothing. rk refuses to release `flark` without that
   entry. Together they keep an unpinned `flark` off pub.dev.
-- `flark_fleury` needs the fleury and fleury_widgets versions it declares live
-  on pub.dev. Until then, rk refuses to stage it, because the root's Git
-  overrides reach its dependencies. Remove the root pubspec's
-  `dependency_overrides` once those versions are live.
+- `flark_fleury` depends on fleury 0.1 from pub.dev, where it is published.
+  The root pubspec overrides nothing; keep it that way, since rk refuses to
+  stage a package that an override reaches.
 - Merge to `main` and let CI pass. That run's `windows-kernel` job does the
   following for the Windows parser libraries:
   - builds them with the C runtime linked in;

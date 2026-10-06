@@ -713,6 +713,10 @@ void main() {
         ),
       ),
     );
+    // Fleury scrolls the focused editor into view as it mounts. Back at the
+    // top, its last row is below the viewport until scrolling reveals it.
+    expect(scroll.offset, 1);
+    scroll.jumpTo(0);
     expect(lines()[4], 'first');
     expect(lines()[5], 'second');
     scroll.jumpTo(2);

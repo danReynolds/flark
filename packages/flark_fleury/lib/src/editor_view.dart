@@ -7,8 +7,6 @@ import 'dart:math' as math;
 import 'package:flark/flark.dart';
 import 'package:flark/resources.dart';
 import 'package:fleury/fleury_core.dart';
-import 'package:fleury_widgets/fleury_widgets_web.dart'
-    show Select, SelectOption;
 import 'package:flark_codemirror/flark_codemirror.dart'
     show CodeMirrorLanguageMenu;
 

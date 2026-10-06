@@ -22,7 +22,6 @@ dependencies:
   flark: ^0.5.0
   flark_codemirror: ^0.5.0
   fleury: ^0.1.0
-  fleury_widgets: ^0.1.0
 
 dev_dependencies:
   lints: ^6.0.0
