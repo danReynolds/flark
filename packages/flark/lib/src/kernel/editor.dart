@@ -1971,6 +1971,13 @@ final class FlarkEditor implements FlarkDocumentState {
       pending: plain.pending,
       asAsked: true,
     );
+    // Text a deletion leaves at the start of its line can open a block of its
+    // own (`>`, `#`, `-`, a fence) that reads the rows after it anew: an
+    // escape before its first punctuation keeps it the text it showed.
+    final lead = ls == a
+        ? _leadingPunctuation.matchAsPrefix(source, end)
+        : null;
+    final escape = lead == null ? null : (lead.end - 1, lead.end - 1, r'\');
     // Failing every spelling, the deletion as asked goes ahead as Markdown
     // reads it, unless it empties its line or a cell and changes another
     // row: literal HTML and definitions go ahead even then.
@@ -1995,6 +2002,7 @@ final class FlarkEditor implements FlarkDocumentState {
                 if (emptied && below < 0 && above >= 0) [(above, end, '')],
                 if (row.firstLine + top > 0 && cs >= 0) [apart, cut],
                 if (gap != null && row.firstLine + top > 0) [apart, cut, gap],
+                if (escape != null && !emptied) [cut, escape],
               ],
             ])
               Spelling.carrying(
@@ -4282,4 +4290,8 @@ final _breakSpace = RegExp(r'[ \t]*\n[ \t]*');
 /// The first ASCII punctuation, which a backslash escapes, of the first word
 /// at a position, and the last of the last word before an end.
 final _firstEscapable = RegExp(r'[ \t]*[^\s!-/:-@\[-`{-~]*[!-/:-@\[-`{-~]');
+
+/// ASCII punctuation, after spaces or tabs, that starts what follows: the
+/// character that could open a block where a deletion leaves it first.
+final _leadingPunctuation = RegExp(r'[ \t]*[!-/:-@\[-`{-~]');
 final _lastEscapable = RegExp(r'[!-/:-@\[-`{-~][^\s!-/:-@\[-`{-~]*[ \t]*$');

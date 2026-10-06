@@ -568,6 +568,35 @@ void _deletionCases(FlarkParseBackend backend) {
       },
     );
 
+    test(
+      'a deletion that leaves block syntax first on its line escapes it',
+      () {
+        // The text left at the line's start showed as text, and stays text: a
+        // backslash keeps `#`, `>`, `-` or a fence from opening a block that
+        // would take the line, or the rows after it, as something else.
+        for (final (source, caret, deleted, row) in [
+          ('x # y', 2, r'\# y', '# y'),
+          ('ab > c\n\nd', 3, '\\> c\n\nd', '> c'),
+          ('word - item\n\nnext', 5, '\\- item\n\nnext', '- item'),
+          ('x ```\n\ny', 2, '\\```\n\ny', '```'),
+        ]) {
+          final session = _Session(backend, source: source, caret: caret);
+          session.act(const DeleteBackward(word: true), source: deleted);
+          expect(
+            (
+              session.editor.projection.rows.first.kind,
+              session.editor.projection.rows.first.text,
+            ),
+            (RowKind.paragraph, row),
+            reason: source,
+          );
+        }
+        // Where the deletion as asked keeps every row, nothing is escaped.
+        final session = _Session(backend, source: 'one *two* three', caret: 4);
+        session.act(const DeleteBackward(word: true), source: '*two* three');
+      },
+    );
+
     test('a byte order mark before an empty first row stays', () {
       // comrak skips a leading byte order mark, so it is the document's, not
       // a prefix of the first line: Backspace at that row's start has
