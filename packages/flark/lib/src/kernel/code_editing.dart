@@ -445,8 +445,7 @@ extension _CodeEditing on FlarkEditor {
       return false;
     }
     final info = _codeInfo(row);
-    final tokenEnd = info.indexOf(RegExp(r'\s'));
-    final end = tokenEnd < 0 ? info.length : tokenEnd;
+    final end = codeInfoLanguage(info).length;
     // Keep any info-string metadata. An explicit auto tag preserves its
     // position when clearing the first token would reinterpret it as a language.
     final replacement = language.isEmpty && end < info.length

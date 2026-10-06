@@ -41,6 +41,15 @@ enum CodeEditingAction { insert, newline, indent, outdent }
 /// metadata keeps its place instead of being read as the language.
 const codeAutoLanguage = 'auto';
 
+/// The first word of a fence's info string, everything before its first
+/// whitespace, as written: the word CommonMark reads as the language.
+String codeInfoLanguage(String info) {
+  final end = info.indexOf(_whitespace);
+  return end < 0 ? info : info.substring(0, end);
+}
+
+final _whitespace = RegExp(r'\s');
+
 final class CodeEditProposal {
   const CodeEditProposal(
     this.start,
