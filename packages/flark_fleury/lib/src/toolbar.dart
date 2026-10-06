@@ -4,14 +4,21 @@ extension _EditorToolbar on _EditorState {
   Widget _buildToolbar() {
     final editor = _editor;
     final revision = editor.revision, selection = editor.selection;
+    // The toolbar's one model of what it can do: the session's publication
+    // when there is one, otherwise the same state built from the editor, so
+    // its availability never differs from what a consumer is told.
+    final state =
+        widget.session?.state ??
+        FlarkState(
+          markdown: editor.source,
+          revision: revision,
+          status: FlarkStatus.ready,
+          error: null,
+          editor: editor,
+        );
     final row = editor.sourceMode
         ? null
         : editor.document.rowAt(selection.extent);
-    final heading =
-        row != null &&
-        (row.kind == RowKind.paragraph ||
-            row.kind == RowKind.heading ||
-            (row.kind == RowKind.blank && selection.isCollapsed));
     bool active() =>
         mounted &&
         identical(editor, _editor) &&
@@ -45,20 +52,17 @@ extension _EditorToolbar on _EditorState {
       _focus.requestFocus();
     }
 
-    Widget toggle(String label, String text, int style) {
-      final state =
-          widget.actions?.state.styles[FlarkStyle.values.firstWhere(
-            (s) => s.kernelStyle == style,
-          )] ??
-          widget.controller.styleState(style);
-      final selected = state.isOn;
-      final enabled = state.canToggle;
-      void activate() => command(SetStyle(style, enabled: !selected));
+    Widget toggle(String label, String text, FlarkStyle style) {
+      final styled = state.styles[style];
+      final selected = styled.isOn;
+      final enabled = styled.canToggle;
+      void activate() =>
+          command(SetStyle(style.kernelStyle, enabled: !selected));
       return Semantics(
         role: SemanticRole.button,
         label: label,
-        value: state.isMixed ? 'Mixed' : null,
-        hint: state.isMixed ? 'Mixed formatting' : (selected ? 'On' : 'Off'),
+        value: styled.isMixed ? 'Mixed' : null,
+        hint: styled.isMixed ? 'Mixed formatting' : (selected ? 'On' : 'Off'),
         selected: selected,
         enabled: enabled,
         includeChildren: false,
@@ -67,18 +71,19 @@ extension _EditorToolbar on _EditorState {
           if (enabled && action == SemanticAction.activate) activate();
         },
         child: Button(
-          text: state.isMixed ? '$text−' : text,
+          text: styled.isMixed ? '$text−' : text,
           style: CellStyle(inverse: selected),
           onPressed: enabled ? activate : null,
         ),
       );
     }
 
-    final info = row == null ? '' : editor.document.codeInfo(row) ?? '';
-    final language = codeMirrorLanguageName(info);
+    // The caret's fence's info string, or null outside fenced code.
+    final info = state.code.language;
+    final language = codeMirrorLanguageName(info ?? '');
     final code = editor.codeEditing;
-    final detected = row?.fenced == true && language.isEmpty
-        ? code?.resolveLanguage(row!.text, info)
+    final detected = info != null && language.isEmpty
+        ? code?.resolveLanguage(editor.document.caretRow.text, info)
         : null;
     final labels = {
       for (final choice
@@ -92,15 +97,11 @@ extension _EditorToolbar on _EditorState {
         children: [
           Button(
             text: 'Undo',
-            onPressed: (widget.actions?.state.canUndo ?? editor.history.canUndo)
-                ? () => command(const Undo())
-                : null,
+            onPressed: state.canUndo ? () => command(const Undo()) : null,
           ),
           Button(
             text: 'Redo',
-            onPressed: (widget.actions?.state.canRedo ?? editor.history.canRedo)
-                ? () => command(const Redo())
-                : null,
+            onPressed: state.canRedo ? () => command(const Redo()) : null,
           ),
           Select<int>(
             key: ValueKey(('block', editor, revision, selection)),
@@ -111,18 +112,17 @@ extension _EditorToolbar on _EditorState {
               for (var level = 1; level <= 6; level++)
                 SelectOption(value: level, label: 'Heading $level'),
             ],
-            onChanged: (widget.actions?.state.heading.canSet ?? heading)
+            onChanged: state.heading.canSet
                 ? (level) => command(SetHeadingLevel(level))
                 : null,
           ),
-          toggle('Bold', 'B', Style.strong),
-          toggle('Italic', 'I', Style.emphasis),
-          toggle('Strikethrough', 'S', Style.strikethrough),
-          toggle('Inline code', '`code`', Style.code),
+          toggle('Bold', 'B', FlarkStyle.bold),
+          toggle('Italic', 'I', FlarkStyle.italic),
+          toggle('Strikethrough', 'S', FlarkStyle.strikethrough),
+          toggle('Inline code', '`code`', FlarkStyle.inlineCode),
           Button(
             text: 'Link',
-            onPressed:
-                (widget.actions?.state.link.canSet ?? editor.canSetResource())
+            onPressed: state.link.canSet
                 ? () => widget.actions?.showLinkEditor() ?? _editLink()
                 : null,
           ),
@@ -134,7 +134,7 @@ extension _EditorToolbar on _EditorState {
                       _editLink(image: true)
                 : null,
           ),
-          if (row?.fenced == true)
+          if (info != null)
             Select<String>(
               // Replace an open picker if its target changes. A dropdown must
               // never apply an old choice to a different fence or document.
@@ -155,10 +155,12 @@ extension _EditorToolbar on _EditorState {
                 for (final MapEntry(key: name, value: label) in labels.entries)
                   SelectOption(value: name, label: label),
               ],
-              onChanged: (value) {
-                if (value != language) command(SetCodeLanguage(value));
-                if (mounted) _focus.requestFocus();
-              },
+              onChanged: state.code.canSetLanguage
+                  ? (value) {
+                      if (value != language) command(SetCodeLanguage(value));
+                      if (mounted) _focus.requestFocus();
+                    }
+                  : null,
             ),
           Button(
             text: editor.sourceMode ? 'Rendered' : 'Source',
