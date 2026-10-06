@@ -381,6 +381,17 @@ final class FlarkEditor implements FlarkDocumentState {
   bool canSetResource({bool image = false}) =>
       !sourceMode && _canSetResource(image);
 
+  /// Whether [SetHeadingLevel] would try to change the caret's block at some
+  /// level: the checks the command makes before the parser validates its
+  /// edit, as [canSetResource] makes a link's. The command sets the caret's
+  /// block alone, so a selection's other rows do not count.
+  bool canSetHeading() =>
+      !sourceMode &&
+      Iterable.generate(7, _headingPlan).any(
+        (plan) =>
+            plan != _HeadingPlan.refused && plan != _HeadingPlan.unchanged,
+      );
+
   /// Exact UTF-16 source splice. Unlike input replacement this never snaps
   /// the supplied range or preserves surrounding Markdown wrappers.
   bool replaceSourceRange(
@@ -3655,7 +3666,7 @@ final class FlarkEditor implements FlarkDocumentState {
       _doc.model.blockKind(row.block) == BlockKind.heading;
 
   /// What [SetHeadingLevel] makes of [level] at the caret before the parser
-  /// has a say.
+  /// has a say, which [canSetHeading] reports.
   _HeadingPlan _headingPlan(int level) {
     if (level < 0 || level > 6) return _HeadingPlan.refused;
     final row = _doc.caretRow;

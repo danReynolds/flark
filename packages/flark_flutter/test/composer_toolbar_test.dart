@@ -276,35 +276,52 @@ void main() {
     c.dispose();
   });
 
-  // The toolbar reads the FlarkState a consumer is given. Without a session,
-  // the paragraph style menu followed the caret's row alone, and applied a
-  // heading to it from a selection across rows that the state refuses.
-  for (final (rows, source, label) in [
-    ('two paragraphs', 'one\n\ntwo', 'Paragraph'),
-    ('a heading and a paragraph', '# one\n\ntwo', 'Mixed'),
+  // The toolbar reads the FlarkState a consumer is given, whose heading
+  // availability is the kernel's canSetHeading: the menu is on exactly where
+  // SetHeadingLevel would change the caret's block. That block alone, so a
+  // selection across paragraphs heads the caret's; and only a paragraph's
+  // first line can be headed.
+  for (final (where, source, base, extent, enabled, label) in [
+    (
+      'a selection across two paragraphs',
+      'one\n\ntwo',
+      0,
+      8,
+      true,
+      'Paragraph',
+    ),
+    (
+      'a selection across a heading and a paragraph',
+      '# one\n\ntwo',
+      0,
+      10,
+      true,
+      'Mixed',
+    ),
+    ('the second line of a paragraph', 'one\ntwo', 6, 6, false, 'Paragraph'),
   ]) {
-    testWidgets(
-      'a selection across $rows leaves the paragraph style menu off',
-      (t) async {
-        final c = FlarkController(FlarkEditor(backend, text: source));
-        await t.pumpWidget(
-          MaterialApp(
-            home: Scaffold(body: FlarkEditorWidget(controller: c)),
-          ),
-        );
-        c.command(SetSelection(0, source.length));
-        await t.pump();
-        expect(
-          t
-              .widget<PopupMenuButton<int>>(find.byType(PopupMenuButton<int>))
-              .enabled,
-          isFalse,
-        );
-        expect(find.text(label), findsOneWidget);
-        await t.pumpWidget(const SizedBox());
-        c.dispose();
-      },
-    );
+    testWidgets('the paragraph style menu on $where follows the kernel', (
+      t,
+    ) async {
+      final c = FlarkController(FlarkEditor(backend, text: source));
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: FlarkEditorWidget(controller: c)),
+        ),
+      );
+      c.command(SetSelection(base, extent));
+      await t.pump();
+      expect(c.editor.canSetHeading(), enabled);
+      expect(
+        t
+            .widget<PopupMenuButton<int>>(find.byType(PopupMenuButton<int>))
+            .enabled,
+        enabled,
+      );
+      expect(find.text(label), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+      c.dispose();
+    });
   }
 
   testWidgets(
