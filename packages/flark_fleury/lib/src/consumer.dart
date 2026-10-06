@@ -147,7 +147,6 @@ class _FlarkEditorState extends State<FlarkEditor> {
     return host.FlarkEditorView(
       key: ValueKey(_controller),
       controller: _controller._bridge,
-      actions: _controller,
       session: _controller.session,
       autofocus: widget.autofocus || (widget.focusNode?.hasFocus ?? false),
       readOnly: widget.readOnly,

@@ -25,30 +25,12 @@ extension _EditorToolbar on _EditorState {
         !widget.readOnly &&
         editor.revision == revision &&
         editor.selection == selection;
+    // A command ends a composition before it applies, as a consumer's does:
+    // applied during one, a style chosen for the next text went when the
+    // composition committed.
     void command(FlarkCommand command) {
       if (!active()) return;
-      final actions = widget.actions;
-      if (actions == null) {
-        _apply(command);
-      } else {
-        switch (command) {
-          case SetStyle(:final style, :final enabled):
-            actions.setStyle(
-              FlarkStyle.values.firstWhere((s) => s.kernelStyle == style),
-              enabled: enabled,
-            );
-          case SetHeadingLevel(:final level):
-            actions.setHeading(level);
-          case SetCodeLanguage(:final language):
-            actions.setCodeLanguage(language);
-          case Undo():
-            actions.undo();
-          case Redo():
-            actions.redo();
-          default:
-            _apply(command);
-        }
-      }
+      editor.applyAfterComposition(command);
       _focus.requestFocus();
     }
 
@@ -122,16 +104,12 @@ extension _EditorToolbar on _EditorState {
           toggle('Inline code', '`code`', FlarkStyle.inlineCode),
           Button(
             text: 'Link',
-            onPressed: state.link.canSet
-                ? () => widget.actions?.showLinkEditor() ?? _editLink()
-                : null,
+            onPressed: state.link.canSet ? () => _editLink() : null,
           ),
           Button(
             text: 'Image',
             onPressed: editor.canSetResource(image: true)
-                ? () =>
-                      widget.actions?.showImageEditor() ??
-                      _editLink(image: true)
+                ? () => _editLink(image: true)
                 : null,
           ),
           if (info != null)
@@ -166,9 +144,7 @@ extension _EditorToolbar on _EditorState {
             text: editor.sourceMode ? 'Rendered' : 'Source',
             onPressed: () {
               _finishInput();
-              widget.actions == null
-                  ? editor.setSourceMode(!editor.sourceMode)
-                  : widget.actions!.setSourceMode(!editor.sourceMode);
+              editor.setSourceMode(!editor.sourceMode);
               _focus.requestFocus();
             },
           ),

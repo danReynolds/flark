@@ -30,7 +30,6 @@ class FlarkEditorView extends StatefulWidget {
   const FlarkEditorView({
     super.key,
     required this.controller,
-    this.actions,
     this.session,
     this.theme,
     this.focusNode,
@@ -47,7 +46,9 @@ class FlarkEditorView extends StatefulWidget {
   });
 
   final FlarkFleuryController controller;
-  final FlarkActions? actions;
+
+  /// The consumer session this view edits, if any: the toolbar reads its
+  /// published state, and its link and image editors open here.
   final FlarkSession? session;
   final FlarkCellTheme? theme;
   final FocusNode? focusNode;

@@ -296,4 +296,19 @@ void main() {
     tester.render();
     expect(tester.semantics().byLabel('Code language').single.enabled, isTrue);
   });
+
+  test('a style chosen during a composition takes the text after it', () async {
+    // A toolbar command ends the composition before it applies, as a
+    // consumer's does. Applied during the composition, the style went when
+    // the composition committed.
+    mount('ab');
+    editor.apply(const SetSelection.caret(2));
+    tester.render();
+    focus.textCompositionClaimant!.onTextCompositionUpdate('k');
+    expect(editor.composing, isTrue);
+    await press('Bold');
+    expect((editor.source, editor.composing), ('abk', false));
+    tester.type('x');
+    expect(editor.source, 'abk**x**');
+  });
 }
