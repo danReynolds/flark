@@ -172,6 +172,12 @@ home, and a second home shows up in review as a second import.
 
 ## Sequence
 
+**Owner decision, 2026-10-06:** no large re-architecture. The layer
+reorganization (steps 1 to 3, 6 and 7) is not planned; small cleanups that
+need no restructuring go ahead instead: named flag bits, kernel availability
+queries for the hosts, session fixes, refreshed documentation. The steps are
+kept as a record of what the structure would take.
+
 Each step keeps every suite green, is gated by the fingerprint, and lands
 as its own PR.
 

@@ -17,11 +17,11 @@ Cross-cutting rules: no concept without a direct case, a conformance case, or a
 named consumer (Dune, Fleury); no performance claim without a receipt; no
 test that settles before asserting on the edited frame.
 
-The separate [flark_tree_sitter workstream](../../../packages/flark_tree_sitter/PLAN.md)
-owns snippet highlighting and indentation, with a pure Dart API over a shared
-Rust engine. Its package/transport checkpoint precedes four-language authoring,
-Flark host adoption and twenty-language qualification. It does not close the
-editor or platform gates below.
+Code-block highlighting and indentation come from
+[flark_codemirror](../../../packages/flark_codemirror), CodeMirror's language
+modes ported to pure Dart, which replaced the earlier Tree-sitter workstream
+(see the [performance review](performance_review_2026_09_22.md)). It does not
+close the editor or platform gates below.
 
 ## Current implementation sequence
 
