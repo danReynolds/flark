@@ -151,9 +151,7 @@ final class FlarkState {
     if (e == null || e.sourceMode) return const FlarkCodeState(null, false);
     final row = e.document.caretRow;
     return FlarkCodeState(
-      row.fenced
-          ? e.source.substring(row.codeInfoStart, row.codeInfoEnd)
-          : null,
+      e.document.codeInfo(row),
       row.fenced && e.document.rowAt(e.selection.base).index == row.index,
     );
   }

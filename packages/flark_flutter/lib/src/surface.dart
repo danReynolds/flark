@@ -545,9 +545,10 @@ class RenderFlarkSurface extends RenderBox
     final count = projected?.length ?? sourceLines!.length;
     String textAt(int i) =>
         projected?[i].text ?? sourceLines![i].replaceAll('\r', '');
-    String codeInfoOf(ProjectedRow? row) => row?.fenced == true
-        ? _snapshot.source.substring(row!.codeInfoStart, row.codeInfoEnd)
-        : '';
+    // Projected rows exist only in a live snapshot.
+    String codeInfoOf(ProjectedRow? row) => row == null
+        ? ''
+        : (_snapshot as FlarkLiveSnapshot).document.codeInfo(row) ?? '';
     // A code row's colors follow from its text and info string alone.
     bool reusable(int previous, int i) {
       final layout = old[previous], row = projected?[i];

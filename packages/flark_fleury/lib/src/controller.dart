@@ -30,9 +30,7 @@ final class FlarkFleuryController extends Notifier
   bool _closed = false;
 
   @override
-  String languageInfo(ProjectedRow row) => row.codeInfoStart < 0
-      ? ''
-      : editor.source.substring(row.codeInfoStart, row.codeInfoEnd);
+  String languageInfo(ProjectedRow row) => editor.document.codeInfo(row) ?? '';
 
   /// Colors to paint for [row] from the editor's code delegate, or null
   /// without one. Layout keeps a fence's colors until its text or info string

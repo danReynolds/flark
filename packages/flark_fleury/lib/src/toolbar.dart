@@ -74,9 +74,7 @@ extension _EditorToolbar on _EditorState {
       );
     }
 
-    final info = row?.fenced == true
-        ? editor.source.substring(row!.codeInfoStart, row.codeInfoEnd)
-        : '';
+    final info = row == null ? '' : editor.document.codeInfo(row) ?? '';
     final language = codeMirrorLanguageName(info);
     final code = editor.codeEditing;
     final detected = row?.fenced == true && language.isEmpty

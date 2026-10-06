@@ -13,7 +13,10 @@ extension _CodeEditing on FlarkEditor {
     // Virtual spaces inside a container tab have no independent source range.
     // Keep the existing conservative path for that projection.
     if (row.segments.any((s) => !s.exact && !s.lineBreak)) return null;
-    final language = delegate.resolveLanguage(row.text, _codeInfo(row));
+    final language = delegate.resolveLanguage(
+      row.text,
+      _doc.codeInfo(row) ?? '',
+    );
     final edit = delegate.propose(
       row.text,
       language: language,
@@ -432,19 +435,14 @@ extension _CodeEditing on FlarkEditor {
         is _Committed;
   }
 
-  String _codeInfo(ProjectedRow row) => row.codeInfoStart < 0
-      ? ''
-      : source.substring(row.codeInfoStart, row.codeInfoEnd);
-
   bool _setCodeLanguage(String language) {
     final row = _doc.rowAt(selection.extent);
-    if (!row.fenced ||
-        row.codeInfoStart < 0 ||
+    final info = _doc.codeInfo(row);
+    if (info == null ||
         (language.isNotEmpty &&
             !RegExp(r'^[a-zA-Z0-9_+.#-]{1,40}$').hasMatch(language))) {
       return false;
     }
-    final info = _codeInfo(row);
     final end = codeInfoLanguage(info).length;
     // Keep any info-string metadata. An explicit auto tag preserves its
     // position when clearing the first token would reinterpret it as a language.
@@ -630,7 +628,7 @@ extension _CodeEditing on FlarkEditor {
     }
     final unit = codeIndentUnit(
       row.text,
-      codeEditing?.resolveLanguage(row.text, _codeInfo(row)) ?? '',
+      codeEditing?.resolveLanguage(row.text, _doc.codeInfo(row) ?? '') ?? '',
     );
     if (!outdent && selection.isCollapsed) {
       final at = selection.extent;

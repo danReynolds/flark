@@ -147,6 +147,12 @@ final class FlarkDocument {
     ].join('\n');
   }
 
+  /// The info string of the fenced code block [row] belongs to (`dart` in a
+  /// fence opened with three backticks and `dart`), or null for a row
+  /// outside fenced code.
+  String? codeInfo(ProjectedRow row) =>
+      row.fenced ? source.substring(row.codeInfoStart, row.codeInfoEnd) : null;
+
   /// Preserve an explicit whole-source range; legalize ordinary caret endpoints.
   FlarkDocument withSelection(FlarkSelection s) => FlarkDocument._(
     source,
