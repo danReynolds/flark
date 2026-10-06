@@ -1,10 +1,24 @@
 ---
 title: Release readiness
-description: Implemented APIs and the remaining gates before package publication.
+description: What the 0.5 preview on pub.dev covers, and the qualification still open.
 ---
 
-Flark is a development package, not a published stable release. The homepage
-and usage guide exercise the widget/controller API from this repository.
+Flark 0.5.0 is a preview, published on pub.dev as four packages:
+[flark](https://pub.dev/packages/flark), the editing kernel;
+[flark_codemirror](https://pub.dev/packages/flark_codemirror), code-block
+highlighting and indentation; and the hosts
+[flark_flutter](https://pub.dev/packages/flark_flutter) and
+[flark_fleury](https://pub.dev/packages/flark_fleury). Add a host to your app:
+
+```yaml
+dependencies:
+  flark_flutter: ^0.5.0
+```
+
+The parser is a native library on Android, iOS, macOS, Linux and Windows,
+downloaded for the target you build and checked against the SHA-256 the package
+pins, and a Wasm module bundled in the package on the web. No Rust toolchain is
+needed.
 
 ## Implemented
 
@@ -14,35 +28,21 @@ and usage guide exercise the widget/controller API from this repository.
 - Dedicated read-only widgets sharing parsing and host rendering primitives.
 - A live homepage composer, plus native and browser consumer entry points.
 
-The source remains bounded: the default rich-rendering limit is 16 KiB of UTF-8
-plus shape limits. Bigger or unsupported documents fall back explicitly. The
+The source remains bounded: the default rich-rendering limit is 32 KiB of UTF-8
+on desktop and in desktop browsers and 16 KiB on phones and tablets, plus shape
+limits. Bigger or unsupported documents fall back explicitly. The
 read-only fallback offers the complete Markdown for copying.
 
-## Existing integrations
+## Before a stable release
 
-The default host imports now expose the new widget/controller names. Existing
-advanced integrations can retain their API by importing
-`flark_flutter_legacy.dart` or `flark_fleury_legacy.dart`. These are unpublished
-development packages; no stable-version compatibility claim is made.
+1. **Platform qualification:** attended native input methods, screen readers
+   (VoiceOver, TalkBack), focus and lifecycle, and terminal gates. A browser
+   test is not proof of those platform behaviours.
+2. **Performance qualification:** frame budgets on phones and other intended
+   production targets, including layout, paint and memory after unmount.
+3. **Known editing residuals:** rare edge cases recorded in the repository's
+   hardening review, each with a reproduction.
 
-## Before package publication
-
-1. **Distribution:** replace development path/Git dependencies with published
-   compatible versions. Ship and verify native parser artifacts for each claimed
-   target; a local Cargo build does not prove a registry download works without Rust.
-   The macOS consumer build also reports architecture-dependent framework-name
-   warnings for parser/snippet assets; resolve those before distributing binaries.
-2. **Platform qualification:** close the remaining attended native IME,
-   accessibility, focus/lifecycle and terminal gates. A browser test is not proof
-   of those platform behaviors.
-3. **Performance qualification:** retain the measured live-document bounds.
-   Dedicated rendering avoids editing state; it does not establish faster parsing
-   or larger-document support. Profile layout, paint, and memory after unmount on
-   intended production targets before making those claims.
-4. **Release:** select a version, review the exact package archives, run clean
-   native/web consumer checks against those archives, then tag and publish.
-
-Local tests, repository merging, website deployment and package publication are
-separate outcomes. The packages retain `publish_to: none` until distribution is
-ready. The implementation/review receipts live under `docs/architecture/v5/` in
-the repository.
+Existing advanced integrations can keep their API by importing
+`flark_flutter_legacy.dart` or `flark_fleury_legacy.dart`. 0.x releases make no
+stable-version compatibility claim.
