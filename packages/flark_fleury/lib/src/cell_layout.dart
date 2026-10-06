@@ -335,31 +335,11 @@ final class CellDocumentLayout {
     );
   }
 
-  static bool _quoted(ProjectedRow row) =>
-      row.shells.any((s) => s.kind == ShellKind.blockQuote);
-
-  /// Whether [cached] was laid out from the same text, segments and styles.
-  static bool _sameText(_RowText? cached, ProjectedRow row) {
-    if (cached == null) return false;
-    final before = cached.row;
-    if (before.text != row.text ||
-        before.kind != row.kind ||
-        before.headingLevel != row.headingLevel ||
-        before.header != row.header ||
-        _quoted(before) != _quoted(row) ||
-        before.segments.length != row.segments.length) {
-      return false;
-    }
-    for (var i = 0; i < row.segments.length; i++) {
-      final a = before.segments[i], b = row.segments[i];
-      if (a.displayStart != b.displayStart ||
-          a.displayEnd != b.displayEnd ||
-          a.styles != b.styles) {
-        return false;
-      }
-    }
-    return true;
-  }
+  /// Whether [cached] was laid out from a row that presents as [row] does.
+  /// The comparison includes a table cell's alignment, which no cached row
+  /// depends on here: table cells are laid out again every time.
+  static bool _sameText(_RowText? cached, ProjectedRow row) =>
+      cached != null && cached.row.samePresentation(row);
 
   final FlarkCellController controller;
   final String source;

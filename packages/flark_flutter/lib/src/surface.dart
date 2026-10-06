@@ -455,29 +455,13 @@ class RenderFlarkSurface extends RenderBox
     null => null,
   };
 
-  /// Whether a layout shaped for [before] can paint [after]: the same text,
-  /// segment styles and every input of [_rowStyle].
-  bool _samePresentation(ProjectedRow? before, ProjectedRow? after) {
-    if (before == null || after == null) return before == after;
-    if (before.kind != after.kind ||
-        _quoted(before) != _quoted(after) ||
-        before.headingLevel != after.headingLevel ||
-        before.header != after.header ||
-        before.alignment != after.alignment ||
-        before.text != after.text ||
-        before.segments.length != after.segments.length) {
-      return false;
-    }
-    for (var i = 0; i < before.segments.length; i++) {
-      final a = before.segments[i], b = after.segments[i];
-      if (a.displayStart != b.displayStart ||
-          a.displayEnd != b.displayEnd ||
-          a.styles != b.styles) {
-        return false;
-      }
-    }
-    return true;
-  }
+  /// Whether a layout shaped for [before] can paint [after]: the text, its
+  /// segment styles and every input of [_rowStyle] and the text's alignment
+  /// are the same. Source rows (null) are compared by their text alone.
+  static bool _samePresentation(ProjectedRow? before, ProjectedRow? after) =>
+      before == null || after == null
+      ? before == after
+      : before.samePresentation(after);
 
   @override
   void performLayout() {

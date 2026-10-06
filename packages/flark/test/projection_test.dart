@@ -230,6 +230,24 @@ void main() {
     expect(bodyCells.last.column, columns - 1);
   });
 
+  test('a row presents the same wherever its source moved', () {
+    // Hosts keep a row's shaped text while it presents the same.
+    // A table cell's text keeps the cell's padding.
+    ProjectedRow rowOf(String src, String text) =>
+        project(src).rows.firstWhere((row) => row.text.trim() == text);
+    final plain = rowOf('say hi', 'say hi');
+    expect(plain.samePresentation(rowOf('x\n\nsay hi', 'say hi')), isTrue);
+    for (final src in ['say *hi*', '# say hi', '> say hi']) {
+      expect(plain.samePresentation(rowOf(src, 'say hi')), isFalse);
+    }
+    expect(plain.samePresentation(rowOf('say ho', 'say ho')), isFalse);
+    // A table cell's header and alignment.
+    final cell = rowOf('| a |\n| - |\n| b |', 'b');
+    expect(cell.samePresentation(rowOf('| x |\n| - |\n| b |', 'b')), isTrue);
+    expect(cell.samePresentation(rowOf('| a |\n| :-: |\n| b |', 'b')), isFalse);
+    expect(cell.samePresentation(rowOf('| b |\n| - |\n| a |', 'b')), isFalse);
+  });
+
   test('projection invariants hold across the conformance corpora', () {
     final dir = Directory(
       '${Directory.current.path}/../../test/fixtures/commonmark/upstream',

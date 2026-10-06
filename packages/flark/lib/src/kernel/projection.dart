@@ -291,6 +291,35 @@ final class ProjectedRow {
   final bool header;
   final int alignment;
 
+  /// Whether this row presents as [other] does, so that a host's layout of
+  /// one paints the other: the same kind, text, heading level, table header
+  /// and alignment, quote, and segments over the same display ranges with
+  /// the same styles. Source offsets may differ. What else a host lays a row
+  /// out from, a fence's info string or its container markers, it compares
+  /// itself.
+  bool samePresentation(ProjectedRow other) {
+    bool quoted(ProjectedRow row) =>
+        row.shells.any((shell) => shell.kind == ShellKind.blockQuote);
+    if (kind != other.kind ||
+        text != other.text ||
+        headingLevel != other.headingLevel ||
+        header != other.header ||
+        alignment != other.alignment ||
+        quoted(this) != quoted(other) ||
+        segments.length != other.segments.length) {
+      return false;
+    }
+    for (var i = 0; i < segments.length; i++) {
+      final a = segments[i], b = other.segments[i];
+      if (a.displayStart != b.displayStart ||
+          a.displayEnd != b.displayEnd ||
+          a.styles != b.styles) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// Source offset for a display offset. At a boundary where hidden bytes
   /// lie between two segments, [anchor] picks the side; that choice is the
   /// caret's typing context.
