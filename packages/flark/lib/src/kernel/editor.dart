@@ -3654,31 +3654,58 @@ final class FlarkEditor implements FlarkDocumentState {
       projection.isBarePrefix(row) &&
       _doc.model.blockKind(row.block) == BlockKind.heading;
 
-  _Outcome _setHeading(int level) {
-    if (level < 0 || level > 6) return const _NotKept();
+  /// What [SetHeadingLevel] makes of [level] at the caret before the parser
+  /// has a say.
+  _HeadingPlan _headingPlan(int level) {
+    if (level < 0 || level > 6) return _HeadingPlan.refused;
     final row = _doc.caretRow;
     if (row.kind == RowKind.blank && selection.isCollapsed) {
       // An empty line is no heading already: clearing its level has
       // nothing to do, as on a paragraph.
-      if (level == 0) {
-        _inert = true;
-        return const _Unchanged();
-      }
-      return _emptyLineHeading(row, level);
+      return level == 0 ? _HeadingPlan.unchanged : _HeadingPlan.emptyLine;
     }
     if (row.kind != RowKind.paragraph && row.kind != RowKind.heading) {
-      return const _NotKept();
+      return _HeadingPlan.refused;
     }
     // A heading already at [level] needs nothing, however it is spelled:
     // rewriting a setext or closed heading as plain ATX would respell source
-    // the user wrote and record an undo step that changes nothing shown.
-    if (row.kind == RowKind.heading && row.headingLevel == level) {
-      _inert = true;
-      return const _Unchanged();
+    // the user wrote and record an undo step that changes nothing shown. A
+    // paragraph has level 0 already, unless it is a bare `#`, which the
+    // parser reads as a heading.
+    if (row.kind == RowKind.heading
+        ? row.headingLevel == level
+        : level == 0 && !_isBareHeading(row)) {
+      return _HeadingPlan.unchanged;
     }
-    final heading = row.kind == RowKind.heading || _isBareHeading(row);
-    if (level > 0 && row.contentStarts.where((s) => s >= 0).length > 1) {
-      return heading ? const _NotKept() : _headFirstLine(row, level);
+    final starts = row.contentStarts.where((s) => s >= 0);
+    if (level == 0 || starts.length < 2) return _HeadingPlan.block;
+    // A heading is one line. Of a paragraph of several, the first is headed,
+    // and the caret must be on it; a heading of several takes no new level.
+    if (row.kind == RowKind.heading || _isBareHeading(row)) {
+      return _HeadingPlan.refused;
+    }
+    final m = _doc.model;
+    final (_, firstEnd) = row.displayLineAt(0);
+    return firstEnd < row.text.length &&
+            m.lineOfUtf16(selection.extent) == m.lineOfUtf16(starts.first)
+        ? _HeadingPlan.firstLine
+        : _HeadingPlan.refused;
+  }
+
+  _Outcome _setHeading(int level) {
+    final row = _doc.caretRow;
+    switch (_headingPlan(level)) {
+      case _HeadingPlan.refused:
+        return const _NotKept();
+      case _HeadingPlan.unchanged:
+        _inert = true;
+        return const _Unchanged();
+      case _HeadingPlan.emptyLine:
+        return _emptyLineHeading(row, level);
+      case _HeadingPlan.firstLine:
+        return _headFirstLine(row, level);
+      case _HeadingPlan.block:
+        break;
     }
     final m = _doc.model;
     // A paragraph whose block opens with link reference definitions starts
@@ -3759,19 +3786,16 @@ final class FlarkEditor implements FlarkDocumentState {
   }
 
   /// A heading is one line: a level set on a paragraph of several heads the
-  /// first, where the caret must be, and the rest stays a paragraph in the
-  /// same containers, its first line respelled with the containers' prefix
-  /// if lazy or indented as code. Parts showing other text (a span) refuse.
+  /// first, where [_headingPlan] has found the caret, and the rest stays a
+  /// paragraph in the same containers, its first line respelled with the
+  /// containers' prefix if lazy or indented as code. Parts showing other
+  /// text (a span) refuse.
   _Outcome _headFirstLine(ProjectedRow row, int level) {
     final m = _doc.model;
-    // Where the first line's text ends, or -1 for a row of one line.
-    final (_, firstEnd) = row.displayLineAt(0);
-    final split = firstEnd < row.text.length ? firstEnd : -1;
+    // Where the first line's text ends.
+    final (_, split) = row.displayLineAt(0);
     final starts = row.contentStarts.where((s) => s >= 0).toList();
-    final at = starts[0], line = m.lineOfUtf16(at);
-    if (m.lineOfUtf16(selection.extent) != line || split < 0) {
-      return const _NotKept();
-    }
+    final at = starts[0];
     final marker = (at, at, '${'#' * level} '), prefix = _continuing(row.block);
     final lazy = lineStartPastMark(source, m, m.lineOfUtf16(starts[1]));
     var next = starts[1];
@@ -4202,6 +4226,28 @@ enum _Tier {
   /// structure may have no spelling as asked: when none qualifies, the first
   /// spelling past the tier enters source mode, as ordinary text does.
   firstPast,
+}
+
+/// What [FlarkEditor._setHeading] makes of a level at the caret before the
+/// parser has a say ([FlarkEditor._headingPlan]).
+enum _HeadingPlan {
+  /// The row takes no such level: it is no paragraph, heading or empty line,
+  /// it is a heading of several lines, or the caret is past the first line
+  /// of a paragraph of several.
+  refused,
+
+  /// The row has the level already.
+  unchanged,
+
+  /// An empty line becomes an empty heading ([FlarkEditor._emptyLineHeading]).
+  emptyLine,
+
+  /// A paragraph of several lines has its first line headed
+  /// ([FlarkEditor._headFirstLine]).
+  firstLine,
+
+  /// The row's block takes the level, or loses it, whole.
+  block,
 }
 
 /// Characters that can underline a setext heading.
