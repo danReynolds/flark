@@ -963,17 +963,6 @@ final class _EditorSession {
       case 'remount':
         await remount(p);
     }
-    if (mount != _Mount.bare) {
-      // A toolbar picker that a change replaces while open must be disposed
-      // by frames before more input: fleury_widgets' Select otherwise closes
-      // itself from its deactivated or disposed state and throws (open
-      // "Paragraph style", apply a command, click outside). Bare editors,
-      // without pickers, keep input between frames.
-      tester.render();
-      if (tester.semantics().byRole(SemanticRole.menuItem).isNotEmpty) {
-        tester.render();
-      }
-    }
     if (_trace) {
       print('$index $step: ${jsonEncode(editor.source)} ${editor.selection}');
     }
@@ -1714,59 +1703,6 @@ final class _ReaderSession {
   }
 }
 
-/// The known Fleury defect [error] is, or null for any other error. Both are
-/// in Fleury code this package does not own, to be fixed there, and each is
-/// matched by its error and the frames that throw it:
-///
-///  * a toolbar picker outliving the state it was built for (open
-///    "Paragraph style", change the document, click outside or pick by key):
-///    fleury_widgets' `Select` closes itself from its deactivated state,
-///    where `FocusManager.of` finds no manager, or its disposed one, where
-///    `State.context` throws;
-///  * the app's text selection over toolbar labels outliving the text it was
-///    built for (drag across labels, change the document, press Shift with
-///    an arrow): `SelectableTextMixin.nextGraphemeBoundary` clamps a column
-///    to a label left with no width, which throws an `ArgumentError`.
-///
-/// Any other error, in Fleury code or not, fails the session. A session that
-/// stops at a known defect does not fail; the test prints how many did.
-String? _upstream(Object error, StackTrace stack) {
-  final frames = stack.toString().split('\n');
-  final own = frames.indexWhere(
-    (frame) =>
-        frame.contains('package:flark_fleury/') ||
-        frame.contains('terminal_fuzz_test.dart'),
-  );
-  final fleury = frames.take(own < 0 ? frames.length : own).toList();
-  // Whether the innermost frames are [callers], in order.
-  bool thrownBy(List<String> callers) {
-    if (fleury.length < callers.length) return false;
-    for (var i = 0; i < callers.length; i++) {
-      if (!fleury[i].contains(callers[i])) return false;
-    }
-    return true;
-  }
-
-  const close = '_SelectState._close (package:fleury_widgets/src/select.dart:';
-  if (error is StateError &&
-      ((error.message.startsWith('No FocusManager found in this context') &&
-              thrownBy(['FocusManager.of (package:fleury/', close])) ||
-          (error.message.startsWith('State.context accessed before') &&
-              thrownBy(['State.context (package:fleury/', close])))) {
-    return 'a Select closed from a replaced state';
-  }
-  if (error is ArgumentError &&
-      thrownBy([
-        '.clamp (dart:core',
-        'SelectableTextMixin.nextGraphemeBoundary (package:fleury/',
-        'SelectionContainerDelegate.findNextGraphemeBoundary (package:fleury/',
-        '_SelectionAreaState._extendCursor (package:fleury/',
-      ])) {
-    return 'a SelectionArea extended over a rebuilt label';
-  }
-  return null;
-}
-
 /// Greedily drops steps while [fails] still fails, for a readable repro.
 Future<List<_Step>> _minimize(
   List<_Step> steps,
@@ -1801,16 +1737,6 @@ void main() {
   String runs(int sessions) =>
       only == null ? 'seed $seed, $sessions sessions' : 'session $only';
 
-  final upstream = <String>{};
-  tearDownAll(() {
-    if (upstream.isEmpty) return;
-    // ignore: avoid_print
-    print(
-      '${upstream.length} sessions stopped at known Fleury defects:\n'
-      '  ${upstream.join('\n  ')}',
-    );
-  });
-
   /// Runs [sessions] sessions of [what], drawn from the master seed and
   /// [stream], a constant of each fuzzer's own: a string's hash code may
   /// differ between SDKs.
@@ -1831,10 +1757,7 @@ void main() {
         } on _Failure catch (failure) {
           return failure.message;
         } catch (error, stack) {
-          final defect = _upstream(error, stack);
-          if (defect == null) return 'threw $error\n$stack';
-          upstream.add('$what session $session, $defect: $error');
-          return null;
+          return 'threw $error\n$stack';
         }
       }
 
