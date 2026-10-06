@@ -269,6 +269,36 @@ void main() {
     expect(c.state.revision, revision);
   });
 
+  test('the writable limit counts a document in UTF-8 bytes', () async {
+    // Text of two-, three- or four-byte characters that fills the 1 MiB
+    // limit exactly opens and loads; one byte more is refused, whether the
+    // session has its editor or not.
+    const limit = 1024 * 1024;
+    for (final (char, bytes) in [('é', 2), ('€', 3), ('😀', 4)]) {
+      final fits = '${char * (limit ~/ bytes)}${'x' * (limit % bytes)}';
+      final over = '${fits}x';
+      final opened = Controller(markdown: fits);
+      addTearDown(opened.session.dispose);
+      await opened.ready;
+      expect(
+        opened.loadMarkdown(over).reason,
+        FlarkEditRejection.sourceLimit,
+        reason: char,
+      );
+      final refused = Controller(markdown: over);
+      addTearDown(refused.session.dispose);
+      await expectLater(refused.ready, throwsArgumentError, reason: char);
+      expect(
+        refused.loadMarkdown(over).reason,
+        FlarkEditRejection.sourceLimit,
+        reason: char,
+      );
+      expect(refused.loadMarkdown(fits).changed, isTrue, reason: char);
+      await refused.retryLoading();
+      expect(refused.markdown, fits, reason: char);
+    }
+  });
+
   test('a load refused while loading leaves the seed to open', () async {
     final gate = Completer<FlarkBackendLease>();
     final c = Controller(markdown: 'seed', loader: () => gate.future);

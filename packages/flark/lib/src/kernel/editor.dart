@@ -50,9 +50,9 @@ final class FlarkEditor implements FlarkDocumentState {
       sourceLimit: sourceLimit,
       liveLimits: liveLimits,
     );
-    validateFlarkSource(text);
-    if (!_withinLiveByteLimit(text, sourceLimit)) {
-      throw ArgumentError('document exceeds writable source limit');
+    if (flarkSourceRefusal(text, sourceLimit: sourceLimit)
+        case (_, final error)?) {
+      throw error;
     }
     _snapshot = _buildSnapshot(text, FlarkSelection.collapsed(caret));
   }

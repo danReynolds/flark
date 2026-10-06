@@ -76,6 +76,27 @@ void checkFlarkLimits({
   }
 }
 
+/// Why [FlarkEditor]'s constructor refuses [text], with the error it throws,
+/// or null when it takes [text]: a bare CR or malformed UTF-16, or more than
+/// [sourceLimit] UTF-8 bytes. An owner that holds a document before it has
+/// an editor reports the refusal rather than throwing it.
+(FlarkRejection, Object)? flarkSourceRefusal(
+  String text, {
+  int sourceLimit = FlarkEditor.defaultSourceLimit,
+}) {
+  try {
+    validateFlarkSource(text);
+  } on FormatException catch (error) {
+    return (FlarkRejection.invalidSource, error);
+  }
+  return _withinLiveByteLimit(text, sourceLimit)
+      ? null
+      : (
+          FlarkRejection.sourceLimit,
+          ArgumentError('document exceeds writable source limit'),
+        );
+}
+
 /// Everything a commit checks before parsing, gathered in one pass over the
 /// candidate: the source contract (no bare CR, well-formed UTF-16), UTF-8
 /// size, line count and widest line in code units. Separate checks walked the

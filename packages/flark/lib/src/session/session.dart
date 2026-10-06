@@ -1,6 +1,5 @@
 import 'dart:async';
 import '../kernel/commands.dart';
-import '../kernel/document.dart' show validateFlarkSource;
 import '../kernel/editor.dart';
 import '../kernel/notify.dart';
 import 'backend_loader.dart';
@@ -130,7 +129,7 @@ final class FlarkSession {
     // A refused document fails the attempt before a parser loads, since the
     // editor would only throw the same refusal once one had. Each retry
     // checks again, so content that loadMarkdown() set in between can open.
-    if (_refusal(_markdown) case (_, final error)?) {
+    if (flarkSourceRefusal(_markdown) case (_, final error)?) {
       _status = FlarkStatus.failed;
       _error = error;
       _publish();
@@ -183,42 +182,6 @@ final class FlarkSession {
     return ready;
   }
 
-  /// Why the editor would refuse [markdown] as its document, with the error
-  /// it would throw, or null when it admits it. The session holds content
-  /// before its editor exists, so it makes the same checks itself and reports
-  /// a refusal as a rejection or a failed state rather than throwing.
-  static (FlarkEditRejection, Object)? _refusal(String markdown) {
-    try {
-      validateFlarkSource(markdown);
-    } on FormatException catch (error) {
-      return (FlarkEditRejection.invalidSource, error);
-    }
-    if (!_fitsWritableLimit(markdown)) {
-      return (
-        FlarkEditRejection.sourceLimit,
-        ArgumentError('document exceeds writable source limit'),
-      );
-    }
-    return null;
-  }
-
-  /// Whether [markdown], already validated, fits the writable limit. It counts
-  /// UTF-8 bytes without encoding a copy of a document that may be far
-  /// larger; each half of a surrogate pair is two of the pair's four bytes.
-  static bool _fitsWritableLimit(String markdown) {
-    var bytes = 0;
-    for (var i = 0; i < markdown.length; i++) {
-      final unit = markdown.codeUnitAt(i);
-      bytes += unit < 0x80
-          ? 1
-          : (unit < 0x800 || (unit >= 0xD800 && unit <= 0xDFFF))
-          ? 2
-          : 3;
-      if (bytes > FlarkEditor.defaultSourceLimit) return false;
-    }
-    return true;
-  }
-
   FlarkEditResult? _guard(int? expectedRevision, {bool allowLoading = false}) {
     if (_status == FlarkStatus.disposed) {
       return const FlarkEditResult.rejected(FlarkEditRejection.disposed);
@@ -237,16 +200,18 @@ final class FlarkSession {
     final reason = _editor!.lastRejection;
     return reason == null
         ? const FlarkEditResult.unchanged()
-        : FlarkEditResult.rejected(switch (reason) {
-            FlarkRejection.staleRevision => FlarkEditRejection.staleRevision,
-            FlarkRejection.unsupportedEdit =>
-              FlarkEditRejection.unsupportedEdit,
-            FlarkRejection.invalidSource => FlarkEditRejection.invalidSource,
-            FlarkRejection.sourceLimit => FlarkEditRejection.sourceLimit,
-            FlarkRejection.extractionDeviation =>
-              FlarkEditRejection.extractionDeviation,
-          });
+        : FlarkEditResult.rejected(_rejection(reason));
   }
+
+  static FlarkEditRejection _rejection(FlarkRejection reason) =>
+      switch (reason) {
+        FlarkRejection.staleRevision => FlarkEditRejection.staleRevision,
+        FlarkRejection.unsupportedEdit => FlarkEditRejection.unsupportedEdit,
+        FlarkRejection.invalidSource => FlarkEditRejection.invalidSource,
+        FlarkRejection.sourceLimit => FlarkEditRejection.sourceLimit,
+        FlarkRejection.extractionDeviation =>
+          FlarkEditRejection.extractionDeviation,
+      };
 
   FlarkEditResult command(FlarkCommand command, {int? expectedRevision}) {
     final rejected = _guard(expectedRevision);
@@ -281,8 +246,8 @@ final class FlarkSession {
   FlarkEditResult loadMarkdown(String markdown, {int? expectedRevision}) {
     final rejected = _guard(expectedRevision, allowLoading: true);
     if (rejected != null) return rejected;
-    if (_refusal(markdown) case (final reason, _)?) {
-      return FlarkEditResult.rejected(reason);
+    if (flarkSourceRefusal(markdown) case (final reason, _)?) {
+      return FlarkEditResult.rejected(_rejection(reason));
     }
     if (_status != FlarkStatus.ready) {
       _markdown = markdown;
