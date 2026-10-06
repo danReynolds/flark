@@ -12,10 +12,9 @@ deletes a version; it can only retract one.
 Two requirements for rk:
 
 - **A version with what this release relies on.** The `parser` unit publishes
-  what its own build script writes. The workspace root pins Fleury by Git for
-  `flark_fleury` alone, which earlier rk versions refused for every package.
-  And one `rk release` has to pass over `parser`, released a commit before the
-  packages. All of this is on rk's `main` until it ships in an rk release.
+  what its own build script writes, and one `rk release` has to pass over
+  `parser`, released a commit before the packages. Both are on rk's `main`
+  after 0.1.13, until they ship in an rk release.
 - **The Flutter SDK's `dart`.** Put Flutter's `bin` first on `PATH`. The
   workspace has Flutter packages, which only a Flutter SDK's pub resolves, so rk
   refuses a standalone Dart SDK.
