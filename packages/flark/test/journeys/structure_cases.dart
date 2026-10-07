@@ -858,6 +858,52 @@ void _structureCases(FlarkParseBackend backend) {
       );
     });
 
+    test('a space typed before a heading\'s last `#` leaves it text', () {
+      // After whitespace, a `#` that ends a heading's text would read as its
+      // closing sequence: hidden, with the caret back before the space, so
+      // the next word would go there. Escaped, the `#` stays the heading's
+      // text, as a pipe typed in a cell does, and the word follows the space.
+      for (final (source, caret, column, spaced, typed, shown) in [
+        ('# alpha#', 7, 6, r'# alpha \#', r'# alpha b\#', 'alpha b#'),
+        ('# alpha##', 7, 6, r'# alpha \##', r'# alpha b\##', 'alpha b##'),
+        ('> # a#', 5, 2, r'> # a \#', r'> # a b\#', 'a b#'),
+        ('# *alpha*#', 9, 6, r'# *alpha* \#', r'# *alpha* b\#', 'alpha b#'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const InsertText(' '),
+          source: spaced,
+          caret: DisplayPosition(0, column),
+        );
+        session.act(const InsertText('b'), source: typed, rows: [shown]);
+        session.act(const Undo(), source: source);
+      }
+      // A typed tab, or typed text that ends in whitespace, escapes it too.
+      for (final (text, typed, shown) in [
+        ('\t', '# alpha\t\\#', 'alpha\t#'),
+        ('x ', r'# alphax \#', 'alphax #'),
+      ]) {
+        _Session(
+          backend,
+          source: '# alpha#',
+          caret: 7,
+        ).act(InsertText(text), source: typed, rows: [shown]);
+      }
+      // A `#` that stays text after the space goes in as it is, and a paste
+      // keeps Markdown's literal meaning.
+      for (final (source, command, typed, shown) in [
+        ('# alpha#b', const InsertText(' '), '# alpha #b', 'alpha #b'),
+        ('# alpha# #', const InsertText(' '), '# alpha # #', 'alpha #'),
+        ('# alpha#', const Paste(' '), '# alpha #', 'alpha'),
+      ]) {
+        _Session(
+          backend,
+          source: source,
+          caret: 7,
+        ).act(command, source: typed, rows: [shown]);
+      }
+    });
+
     test('setting a link in an empty closed heading hides its sequence', () {
       // A new link or image goes where typed text would, so the closing
       // sequence is not run into its markup and painted after it.

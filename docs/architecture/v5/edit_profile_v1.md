@@ -60,8 +60,11 @@ additional product principles or testing layers.
   after that space. Editable trailing whitespace, including table-cell padding,
   remains represented. The one space or tab before a cell's closing pipe is the
   pipe's, as an ATX closing sequence keeps one, so whitespace typed against the
-  pipe takes a separator after it. A parser-authenticated hard break stays one
-  atomic rendered unit when moving or deleting across the break.
+  pipe takes a separator after it. Typed before a `#` that ends a heading's
+  text, whitespace would make that `#` the heading's closing sequence, so the
+  `#` is escaped and stays text (`# alpha \#`), as a pipe typed in a cell is.
+  A parser-authenticated hard break stays one atomic rendered unit when moving
+  or deleting across the break.
 - Typing ordinary whitespace after an emptied inline owner exits that owner
   unless a supported construct explicitly retains whitespace.
 - Typing whitespace at an existing emphasis/strong/strike content edge moves

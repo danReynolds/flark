@@ -1408,13 +1408,24 @@ final class FlarkEditor implements FlarkDocumentState {
           row.kind == RowKind.tableCell ||
           next.model.lineOfUtf16(next.selection.extent) ==
               next.model.lineOfUtf16(normalized.caret);
+      // A space or tab typed before a `#` the heading shows can make that
+      // `#`, with any after it, the heading's closing sequence: hidden, and
+      // the caret back before the space, where the next word would go
+      // (`# alpha#` typed ` b` would be `# alphab #`). Escaped, the `#` stays
+      // the heading's text, as a pipe typed in a cell does; failing that,
+      // the text is refused.
+      final hash = typing && collapsed ? _hashAfter(row, start, text) : -1;
+      final hashAt = hash + normalized.text.length - source.length;
+      bool showsHash(FlarkDocument next, int at) =>
+          hash < 0 || _paints(next.rowAt(row.sourceStart), at, at + 1);
 
       outcome = _attempt(
         normalized.text,
         FlarkSelection.collapsed(normalized.caret),
         pending: normalized.pending,
         coalesce: one,
-        accept: (next) => accept(next) && keepsLine(next),
+        accept: (next) =>
+            accept(next) && keepsLine(next) && showsHash(next, hashAt),
         acceptSourceMode: cells == null,
         completeTypedFence: fence,
       );
@@ -1431,6 +1442,17 @@ final class FlarkEditor implements FlarkDocumentState {
             accept: accept,
           );
         }
+      } else if (read != null && !showsHash(read, hashAt)) {
+        outcome = _attempt(
+          normalized.text.replaceRange(hashAt, hashAt, r'\'),
+          FlarkSelection.collapsed(normalized.caret),
+          pending: normalized.pending,
+          coalesce: one,
+          accept: (next) =>
+              accept(next) &&
+              next.selection.extent == normalized.caret &&
+              showsHash(next, hashAt + 1),
+        );
       }
     }
     // Text the pending style's delimiters cannot wrap goes in without them,
@@ -1504,6 +1526,22 @@ final class FlarkEditor implements FlarkDocumentState {
       at > 1 && _isSpace(source, at - 1) && _isSpace(source, at - 2)
       ? at - 1
       : at;
+
+  /// The source offset of the `#` that [row], a heading, shows right after
+  /// [at], where [text] ending in a space or tab is typed: after whitespace,
+  /// Markdown can read that `#`, with any after it, as the heading's closing
+  /// sequence. -1 when there is none, or it is escaped.
+  int _hashAfter(ProjectedRow row, int at, String text) {
+    if (row.kind != RowKind.heading ||
+        text.isEmpty ||
+        !_isBlank(text, text.length - 1)) {
+      return -1;
+    }
+    final d = row.displayForSource(at).$1;
+    if (d >= row.text.length || row.text.codeUnitAt(d) != 0x23) return -1;
+    final hash = row.sourceForDisplay(d);
+    return source.codeUnitAt(hash) == 0x23 ? hash : -1;
+  }
 
   /// [typed], text with a line break, put over [start]..[end] of [row], a
   /// heading, before the closing sequence or setext underline that ends it
