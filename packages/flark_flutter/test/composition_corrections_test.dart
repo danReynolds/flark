@@ -96,4 +96,24 @@ void main() {
       });
     }
   }
+
+  test('a source the app changes under a composition keeps it updating', () {
+    final c = FlarkController(
+      FlarkEditor(backend, text: 'hello world', caret: 11),
+    );
+    c.receive(
+      composing('hello worldabc', 14, const TextRange(start: 11, end: 14)),
+    );
+    // An edit that goes past the controller while the input method composes
+    // leaves the composing range beyond the text.
+    c.editor.apply(const ReplaceRange(0, 6, ''));
+    expect(
+      () => c.receive(
+        composing('worldabcd', 9, const TextRange(start: 5, end: 9)),
+      ),
+      returnsNormally,
+    );
+    expect(c.text, 'worldabcd');
+    c.dispose();
+  });
 }

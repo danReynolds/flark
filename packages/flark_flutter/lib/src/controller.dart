@@ -316,9 +316,29 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       // composing region) keeps the selection as it is: a caret in an
       // unwritten table cell shares its offset with the cell before it.
       if (!_atPlatformSelection(next)) {
+        final was = editor.selection;
         changed = editor.apply(
           SetSelection(next.selection.baseOffset, next.selection.extentOffset),
         );
+        // A caret the platform steps onto no caret position of its own
+        // (between one table cell's text and the next) goes back where it
+        // was, so the keyboard's cursor control could not leave the cell:
+        // it moves on as an arrow would, the way the platform moved it.
+        final to = next.selection.extentOffset;
+        if (was.isCollapsed &&
+            next.selection.isCollapsed &&
+            to != was.extent &&
+            editor.selection == was) {
+          changed =
+              editor.apply(
+                MoveCaret(
+                  to < was.extent
+                      ? MoveDirection.backward
+                      : MoveDirection.forward,
+                ),
+              ) ||
+              changed;
+        }
       }
     } else {
       var start = 0;
@@ -519,6 +539,13 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
             reported != null &&
             reported.isValid &&
             start == reported.start)) {
+      return;
+    }
+    // A source the app changed under the composition, past this controller,
+    // can leave the range beyond its text: what the range held is unknown,
+    // so a cancel keeps it, as when the range moves.
+    if (from.end > before.text.length) {
+      _compositionHolds = _Composing.moved;
       return;
     }
     final head = before.text.substring(0, from.start);
