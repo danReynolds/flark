@@ -381,6 +381,30 @@ void _returnCases(FlarkParseBackend backend) {
       );
     });
 
+    test('before the whitespace that ends a line breaks after it', () {
+      // The spaces of a hard break, or any whitespace that ends the line,
+      // stay where they show, as Return at the line's end leaves them.
+      // Carried to the new line, they would follow an item's marker there,
+      // unshown, and the text typed next would put them on a blank line of
+      // their own between the item's lines.
+      for (final (source, caret, split, first) in [
+        ('- **a  \n  b**', 5, '- **a**  \n- \n  **b**', 'a  '),
+        ('- **a  \r\n  b**', 5, '- **a**  \r\n- \r\n  **b**', 'a  '),
+        ('- a  \n  b', 3, '- a  \n- \n  b', 'a  '),
+        ('- a  \n  b', 4, '- a  \n- \n  b', 'a  '),
+        ('- a \n  b', 3, '- a \n- \n  b', 'a '),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const Newline(),
+          source: split,
+          rows: [first, '', 'b'],
+          caret: const DisplayPosition(1, 0),
+        );
+        session.act(const InsertText('x'), rows: [first, 'x\nb']);
+      }
+    });
+
     test('refuses where no spelling keeps what it splits', () {
       // An autolink and a reference label hold no line break, and closing
       // and reopening `__` beside a literal `__` would pair them anew.

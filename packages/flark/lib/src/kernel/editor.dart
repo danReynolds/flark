@@ -3110,7 +3110,9 @@ final class FlarkEditor implements FlarkDocumentState {
         ? _nextMarker(inner)
         : _rowPrefix(row, line);
     final separator = '$nl$continued';
-    final split = _splitRow(row, start, end, separator);
+    // A caret's break goes past the whitespace that ends its line.
+    final at = start == end ? _pastEndingSpace(row, start) : start;
+    final split = _splitRow(row, at, start == end ? at : end, separator);
     if (split is _Committed) return true;
     if (split is _Refused || start != end) return false;
     // A caret beside hidden syntax shows the same place from the anchors
@@ -3119,12 +3121,34 @@ final class FlarkEditor implements FlarkDocumentState {
     // `>`), the break goes beside the construct instead: a respelling,
     // passed over when the parser refuses it.
     final before = _lastRejection;
-    for (final other in _doc.anchorsAt(start)) {
-      if (other == start) continue;
+    for (final other in _doc.anchorsAt(at)) {
+      if (other == at) continue;
       if (_splitRow(row, other, other, separator) is _Committed) return true;
       _lastRejection = before;
     }
     return false;
+  }
+
+  /// Where Return at [caret] in [row] breaks the line: past spaces and tabs
+  /// that end a paragraph's line after the caret, a hard break's among
+  /// them. That whitespace shows where it is, so it stays there, as Return
+  /// at the line's end leaves it. Carried to the new line, it would follow
+  /// the containers' prefix there, unshown, and the text typed next would
+  /// put it on a blank line of its own. A code span's or inline HTML's
+  /// whitespace is their text, and an entity's a character of its own.
+  int _pastEndingSpace(ProjectedRow row, int caret) {
+    if (row.kind != RowKind.paragraph) return caret;
+    final from = row.displayForSource(caret).$1;
+    final to = row.displayLineAt(from).$2;
+    if (to <= from || !_blanks(row.text, from, to)) return caret;
+    for (final s in row.segments) {
+      if (s.displayEnd > from &&
+          s.displayStart < to &&
+          (!s.exact || s.styles & (Style.code | Style.htmlInline) != 0)) {
+        return caret;
+      }
+    }
+    return row.sourceForDisplay(to, anchor: Anchor.before);
   }
 
   /// The prefix that continues [row]'s containers after [line]: the line's
