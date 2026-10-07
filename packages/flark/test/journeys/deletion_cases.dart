@@ -248,7 +248,7 @@ void _deletionCases(FlarkParseBackend backend) {
           4,
           const DeleteBackward(),
           '| | Value\n--- | ---\nfoo | 1',
-          ['', 'Value', 'foo ', '1'],
+          ['', 'Value', 'foo', '1'],
           const DisplayPosition(0, 0),
         ),
         (
@@ -303,7 +303,7 @@ void _deletionCases(FlarkParseBackend backend) {
           17,
           const DeleteBackward(word: true),
           'a|b\n-|-\nbar | |',
-          ['a', 'b', 'bar ', ''],
+          ['a', 'b', 'bar', ''],
           const DisplayPosition(3, 0),
         ),
       ]) {
@@ -331,12 +331,15 @@ void _deletionCases(FlarkParseBackend backend) {
     test('a deletion in a cell shows none of its row\'s other source', () {
       // A backslash a deletion leaves before the cell's closing pipe would
       // escape it, painting the pipe as the cell's text: refused, as a typed
-      // backslash there is. An emptied first cell of a row without its
-      // leading pipe would make that pipe lead the row, showing the cell
-      // the table drops: the emptied cell keeps a pipe of its own instead.
+      // backslash there is. (A space or tab before the pipe is the pipe's,
+      // outside the cell's text, so only a deletion of it, or in a cell
+      // written against its pipe, can leave one there.) An emptied first
+      // cell of a row without its leading pipe would make that pipe lead the
+      // row, showing the cell the table drops: the emptied cell keeps a pipe
+      // of its own instead.
       for (final (source, caret, command) in [
         ('| a |\n| - |\n| #\\ |', 16, const DeleteForward()),
-        ('\n| a#}<\\\t|\n| - |\n| b|', 9, const DeleteBackward()),
+        ('| a |\n| - |\n| x\\b|', 17, const DeleteBackward()),
       ]) {
         final session = _Session(backend, source: source, caret: caret);
         session.act(command, applied: false, source: source);
@@ -347,14 +350,14 @@ void _deletionCases(FlarkParseBackend backend) {
           20,
           const DeleteBackward(),
           '| a |\n| - |\n| b|\nc\n||~~.\n',
-          ['a ', 'b', 'c', '', ''],
+          ['a', 'b', 'c', '', ''],
         ),
         (
           '| a{ |\n| - |\n| -)_\nb |bbb\n',
           19,
           const DeleteForward(),
           '| a{ |\n| - |\n| -)_\n| |bbb\n',
-          ['a{ ', '-)_', '', ''],
+          ['a{', '-)_', '', ''],
         ),
       ]) {
         final session = _Session(backend, source: source, caret: caret);

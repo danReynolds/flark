@@ -218,13 +218,15 @@ void checkStep(FlarkEditor editor, String label) {
       !doc.selection.isCollapsed &&
       doc.selection.start == 0 &&
       doc.selection.end == doc.source.length;
+  // A caret in an unwritten cell names the cell by its index.
+  final unwritten = doc.projection.isMissingCell(doc.selection.tableCell);
   expect(
-    wholeSource || doc.isLegal(doc.selection.base),
+    wholeSource || unwritten || doc.isLegal(doc.selection.base),
     isTrue,
     reason: '$label: base ${doc.selection.base} legal',
   );
   expect(
-    wholeSource || doc.isLegal(doc.selection.extent),
+    wholeSource || unwritten || doc.isLegal(doc.selection.extent),
     isTrue,
     reason: '$label: extent ${doc.selection.extent} legal',
   );

@@ -467,10 +467,14 @@ final class Projection {
   /// Where the caret may sit on [line]: one (start, end) span per row on the
   /// line, sorted. Empty for a line with no caret positions (a fence line, a
   /// table's delimiter line). A bodyless fence has one anchor at its source end.
+  /// A cell the source never wrote has none: its offset is its row's closing
+  /// pipe, where typed text would join the cell before it, so only a
+  /// selection naming the cell ([FlarkSelection.tableCell]) addresses it.
   List<(int, int)> lineSpans(int line) {
     final out = <(int, int)>[];
     if (line < 0 || line >= _rowsByLine.length) return out;
     for (final r in _rowsByLine[line]) {
+      if (isMissingCell(r)) continue;
       final row = rows[r];
       final i = line - row.firstLine;
       if (i < 0 || i >= row.contentStarts.length) continue;
@@ -488,7 +492,9 @@ final class Projection {
 
   int _lineEnd(int l) => _lineEndOf(model, source, l);
 
-  /// Whether the parser supplied a cell absent from the source row.
+  /// Whether the parser supplied a cell absent from the source row: an empty
+  /// cell where the cell before it ends, padding included (the space before
+  /// a closing pipe is the pipe's, outside the cell's text).
   bool isMissingCell(int? index) {
     if (index == null || index <= 0 || index >= rows.length) return false;
     final row = rows[index], previous = rows[index - 1];
@@ -497,7 +503,7 @@ final class Projection {
         row.tableRowBlock == previous.tableRowBlock &&
         row.sourceStart == row.sourceEnd &&
         row.text.isEmpty &&
-        row.sourceStart == previous.sourceEnd;
+        row.sourceStart == model.blockEnd(previous.block);
   }
 
   /// Display position of a UTF-16 source offset; snapped out of hidden bytes.
@@ -521,9 +527,12 @@ final class Projection {
       }
       return rows.isEmpty ? null : DisplayPosition(0, 0, snapped: true);
     }
-    // Several rows on a line (table cells): the one whose source spans the offset, else the nearest.
+    // Several rows on a line (table cells): the one whose source spans the
+    // offset, else the nearest. A cell the source never wrote spans only
+    // when the selection names it (above).
     int best = candidates.first;
     for (final r in candidates) {
+      if (isMissingCell(r)) continue;
       final row = rows[r];
       if (source >= row.sourceStart && source <= row.sourceEnd) {
         best = r;

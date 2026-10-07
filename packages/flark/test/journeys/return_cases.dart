@@ -571,7 +571,7 @@ void _returnCases(FlarkParseBackend backend) {
           session.act(
             command,
             source: '> | a |\n> | - |\n> \na',
-            rows: ['a ', '| - |', '', 'a'],
+            rows: ['a', '| - |', '', 'a'],
             anchor: 18,
           );
           expect(shells(session), [ShellKind.blockQuote]);

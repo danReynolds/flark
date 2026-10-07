@@ -195,7 +195,7 @@ Magic `FLK5` (u32 `0x354B4C46` little-endian). Sections follow the header in thi
 
 ## Invariants
 
-- Leaf content retains editable trailing whitespace: paragraph and setext content reaches physical line ends, table cells retain trailing padding, and ATX closing markers keep one required separator outside content. Space-based hard-break runs expose their spaces as content; deleting across the break removes the full source range of its marker and newline. Backslash hard breaks and soft breaks have empty content ranges.
+- Leaf content retains editable trailing whitespace: paragraph and setext content reaches physical line ends, table cells retain trailing padding, and ATX closing markers keep one required separator outside content, as a cell's closing pipe keeps the one space or tab before it. Space-based hard-break runs expose their spaces as content; deleting across the break removes the full source range of its marker and newline. Backslash hard breaks and soft breaks have empty content ranges.
 - Blocks are in document order; a block's parent index is smaller than its own index or 0xFFFFFFFF for the document.
 - Runs are in document order and contiguous per block: block b owns runs [first_run(b), first_run(b + 1)), where first_run is non-decreasing and first_run(block_count) is run_count. A run's parent is an earlier run of the same block.
 - content_start >= start and content_end <= end and content_start <= content_end for every run.

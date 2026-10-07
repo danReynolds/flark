@@ -263,10 +263,11 @@ void main() {
     final t = FlarkController(FlarkEditor(backend, text: table));
     final cells = await mountForSemantics(tester, t);
     final value = cells.getSemanticsData().value;
-    // Cells keep their padding; the two missing cells and the blank line
-    // after the table follow.
-    expect(value, 'a \nb \nc \nx \n\n\n');
-    setText(tester, cells, value.replaceRange(12, 12, 'Z'));
+    // Cells read as their text, without the space before each pipe (the
+    // pipe's); the two missing cells and the blank line after the table
+    // follow.
+    expect(value, 'a\nb\nc\nx\n\n\n');
+    setText(tester, cells, value.replaceRange(8, 8, 'Z'));
     await tester.pump();
     expect(t.text, '| a | b | c |\n| --- | --- | --- |\n| x | Z|\n');
     await tester.pumpWidget(const SizedBox());

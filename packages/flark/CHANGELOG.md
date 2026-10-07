@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- A table cell's text ends before the space or tab that pads its closing
+  pipe, so the caret at the end of a cell sits after its last character
+  rather than after the padding. Whitespace typed against a closing pipe stays
+  the cell's text: typing gives the pipe a separator of its own.
+
 ## 0.5.0
 
 First public preview. The parser libraries are those of release

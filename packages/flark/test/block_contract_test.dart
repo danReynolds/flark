@@ -141,13 +141,13 @@ void main() {
   // cells hold no content: a `|` row or a row whose text is a line break
   // paints a delimiter as if it were the author's text.
   for (final (body, cells) in [
-    ('| c |', ['c ', '']),
+    ('| c |', ['c', '']),
     ('| c', ['c', '']),
-    ('c |', ['c ', '']),
-    ('| c |   ', ['c ', '']),
+    ('c |', ['c', '']),
+    ('| c |   ', ['c', '']),
     ('|  |  |', ['', '']),
-    ('| c ||', ['c ', '']),
-    ('| c | d |', ['c ', 'd ']),
+    ('| c ||', ['c', '']),
+    ('| c | d |', ['c', 'd']),
   ]) {
     for (final outer in ['', '> ', '- ']) {
       final next = outer == '- ' ? '  ' : outer;
@@ -176,7 +176,7 @@ void main() {
     final body = e.projection.rows
         .where((r) => r.kind == RowKind.tableCell && r.firstLine == 2)
         .toList();
-    expect(body.map((r) => r.text), ['x ', '', '']);
+    expect(body.map((r) => r.text), ['x', '', '']);
     for (final row in body.skip(1)) {
       expect(
         row.sourceStart,

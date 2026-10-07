@@ -180,9 +180,21 @@ fn editing_content_retains_trailing_whitespace() {
     let src = "# alpha  #";
     let m = M::of(src); m.clean();
     assert_eq!(m.contents(src), ["alpha "]);
-    for src in ["| alpha  |\n| --- |", "|alpha  |\n|---|"] {
+    // A cell, likewise: one space or tab before its closing pipe is the
+    // pipe's, and further padding stays editable.
+    for (src, cells) in [
+        ("| alpha |\n| --- |", &["alpha"][..]),
+        ("| alpha\t|\n| --- |", &["alpha"]),
+        ("| alpha  |\n| --- |", &["alpha "]),
+        ("|alpha|\n|---|", &["alpha"]),
+        ("|alpha |\n|---|", &["alpha"]),
+        ("|alpha \t|\n|---|", &["alpha "]),
+        ("| a | b |\n| - | - |", &["a", "b"]),
+        ("alpha | beta\n--- | ---", &["alpha", "beta"]),
+        ("| a |  |\n| - | - |", &["a", ""]),
+    ] {
         let m = M::of(src); m.clean();
-        assert_eq!(m.contents(src), ["alpha  "], "for {src:?}");
+        assert_eq!(m.contents(src), cells, "for {src:?}");
     }
     let src = "alpha  \r\nnext";
     let m = M::of(src); m.clean();
@@ -782,12 +794,12 @@ fn definitions_a_setext_underline_resolved_stay_out_of_a_paragraph_a_table_split
     // table that later splits the paragraph numbers the split paragraph and
     // its own header from the definitions' stale start line.
     for (src, contents, defs) in [
-        ("[r]: /ref\n---\n| a | b |\n|---|---|\n| c | d |\n", vec!["---", "a ", "b ", "c ", "d "], vec!["[r]: /ref\n"]),
+        ("[r]: /ref\n---\n| a | b |\n|---|---|\n| c | d |\n", vec!["---", "a", "b", "c", "d"], vec!["[r]: /ref\n"]),
         ("[r]: /ref\n===\na|b\n-|-", vec!["===", "a", "b"], vec!["[r]: /ref\n"]),
-        ("> [r]: /ref\n> ===\n> x\n> | a |\n> |---|\n", vec!["===", "x", "a "], vec!["[r]: /ref\n"]),
-        ("- [r]: /ref\n  ---\n  | a |\n  |---|\n", vec!["---", "a "], vec!["[r]: /ref\n"]),
-        ("[a]: /a\n[b]:\n/b\n\"t\"\n---\nmore *x*\n| a \\| b |\n|---|\n", vec!["---", "more *x*", "a \\| b "], vec!["[a]: /a\n", "[b]:\n/b\n\"t\"\n"]),
-        ("[r]: /ref\r\n---\r\n| a |\r\n|---|\r\n", vec!["---", "a "], vec!["[r]: /ref\r\n"]),
+        ("> [r]: /ref\n> ===\n> x\n> | a |\n> |---|\n", vec!["===", "x", "a"], vec!["[r]: /ref\n"]),
+        ("- [r]: /ref\n  ---\n  | a |\n  |---|\n", vec!["---", "a"], vec!["[r]: /ref\n"]),
+        ("[a]: /a\n[b]:\n/b\n\"t\"\n---\nmore *x*\n| a \\| b |\n|---|\n", vec!["---", "more *x*", "a \\| b"], vec!["[a]: /a\n", "[b]:\n/b\n\"t\"\n"]),
+        ("[r]: /ref\r\n---\r\n| a |\r\n|---|\r\n", vec!["---", "a"], vec!["[r]: /ref\r\n"]),
     ] {
         let m = M::of(src); m.clean();
         assert_eq!(m.contents(src), contents, "for {src:?}");
@@ -796,7 +808,7 @@ fn definitions_a_setext_underline_resolved_stay_out_of_a_paragraph_a_table_split
     // Without the underline the split paragraph keeps the definition as text.
     let src = "[r]: /ref\n| a |\n|---|\n";
     let m = M::of(src); m.clean();
-    assert_eq!(m.contents(src), ["[r]: /ref", "a "]);
+    assert_eq!(m.contents(src), ["[r]: /ref", "a"]);
 }
 
 #[test]
@@ -805,12 +817,12 @@ fn a_table_after_a_blank_line_is_not_moved_as_if_it_split_the_paragraph() {
     // One after a blank line came from a paragraph of its own; moving it down
     // as well left its header line in no block and refused the document.
     for (src, contents, defs) in [
-        ("[r]: /ref\n---\n\n| a |\n|---|\n", vec!["---", "a "], vec!["[r]: /ref\n"]),
-        ("[home]: https://example.com\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n", vec!["---", "a ", "b ", "1 ", "2 "], vec!["[home]: https://example.com\n"]),
-        ("[r]: /ref\n===\n\n\n| a |\n|---|\n", vec!["===", "a "], vec!["[r]: /ref\n"]),
-        ("> [r]: /ref\n> ---\n>\n> | a |\n> |---|\n", vec!["", "---", "a "], vec!["[r]: /ref\n"]),
-        ("[a]: /a\n[b]: /b\n---\n\n| a |\n|---|\n| b |\n", vec!["---", "a ", "b "], vec!["[a]: /a\n", "[b]: /b\n"]),
-        ("[r]: /ref\r\n---\r\n\r\n| a |\r\n|---|\r\n", vec!["---", "a "], vec!["[r]: /ref\r\n"]),
+        ("[r]: /ref\n---\n\n| a |\n|---|\n", vec!["---", "a"], vec!["[r]: /ref\n"]),
+        ("[home]: https://example.com\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n", vec!["---", "a", "b", "1", "2"], vec!["[home]: https://example.com\n"]),
+        ("[r]: /ref\n===\n\n\n| a |\n|---|\n", vec!["===", "a"], vec!["[r]: /ref\n"]),
+        ("> [r]: /ref\n> ---\n>\n> | a |\n> |---|\n", vec!["", "---", "a"], vec!["[r]: /ref\n"]),
+        ("[a]: /a\n[b]: /b\n---\n\n| a |\n|---|\n| b |\n", vec!["---", "a", "b"], vec!["[a]: /a\n", "[b]: /b\n"]),
+        ("[r]: /ref\r\n---\r\n\r\n| a |\r\n|---|\r\n", vec!["---", "a"], vec!["[r]: /ref\r\n"]),
     ] {
         let m = M::of(src); m.clean();
         assert_eq!(m.contents(src), contents, "for {src:?}");
