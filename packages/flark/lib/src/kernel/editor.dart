@@ -1371,6 +1371,14 @@ final class FlarkEditor implements FlarkDocumentState {
             wraps: wrapAt < 0 ? null : wraps,
           )
         : null;
+    outcome ??= _linesInHeading(
+      row,
+      at,
+      at + end - start,
+      text,
+      normalized,
+      one,
+    );
     if (outcome == null) {
       // Text completing block markup can hide the caret's own line, which
       // sends the caret to another: a table's delimiter row, or a fence's
@@ -1496,6 +1504,86 @@ final class FlarkEditor implements FlarkDocumentState {
       at > 1 && _isSpace(source, at - 1) && _isSpace(source, at - 2)
       ? at - 1
       : at;
+
+  /// [typed], text with a line break, put over [start]..[end] of [row], a
+  /// heading, before the closing sequence or setext underline that ends it
+  /// ([_headingTrail]); [plain] is the source with the text in as asked. As
+  /// asked, that markup follows the last line the text adds, where it may end
+  /// no heading: a closing sequence shows as that line's text (`# a` and
+  /// `b #`), and an underline under an empty line shows as text, or reads as
+  /// a rule. Where it still ends a heading (under paragraph lines, after
+  /// `# b`), the text goes in as asked; otherwise the markup stays on the
+  /// line the text's first line break ends, as Return leaves it (`# a #` and
+  /// `b`), with a space before a closing sequence the text would run into.
+  /// The parser must read the markup as a heading's in either spelling, or
+  /// the edit is refused. Null when this does not apply.
+  _Outcome? _linesInHeading(
+    ProjectedRow row,
+    int start,
+    int end,
+    String typed,
+    ({String text, int caret, PendingStyle? pending}) plain,
+    bool coalesce,
+  ) {
+    if (!typed.contains('\n') && !typed.contains('\r')) return null;
+    final trail = _headingTrail(row);
+    if (trail == null || end > trail.$1) return null;
+    final text = plain.text, shift = text.length - source.length;
+    // Where the markup is in [plain]: the edit, and any delimiters it moved,
+    // lie before it.
+    final asked = trail.$1 + shift;
+    // The text's first line break, which ends the heading's line.
+    var lineEnd = start;
+    while (lineEnd < asked &&
+        text.codeUnitAt(lineEnd) != 0x0A &&
+        text.codeUnitAt(lineEnd) != 0x0D) {
+      lineEnd++;
+    }
+    if (lineEnd == asked) return null;
+    final markup = source.substring(trail.$1, trail.$2);
+    final gap = _isSpace(markup, 0) ? '' : ' ', moved = '$gap$markup';
+    // The whitespace and line break the markup starts with, which a heading
+    // whose text ends in spaces may show.
+    var blank = 0;
+    while (blank < markup.length && _isSpace(markup, blank)) {
+      blank++;
+    }
+    // Whether [next] reads the markup, from [at], as a heading's: it ends
+    // that heading's last line, after the heading's text.
+    bool ends(FlarkDocument next, int at) {
+      final kept = _headingTrail(next.rowAt(at), within: next.projection);
+      return kept != null &&
+          kept.$2 == at + markup.length &&
+          kept.$1 <= at + blank;
+    }
+
+    final caret = plain.caret;
+    final asAsked = Spelling(
+      Edits.between(source, text, from: row.sourceStart, to: trail.$2),
+      FlarkSelection.collapsed(caret),
+      pending: plain.pending,
+      asAsked: true,
+    );
+    final kept = Spelling(
+      Edits.between(
+        source,
+        '${text.substring(0, lineEnd)}$moved'
+        '${text.substring(lineEnd, asked)}${text.substring(asked + markup.length)}',
+        from: row.sourceStart,
+        to: trail.$2,
+      ),
+      FlarkSelection.collapsed(caret > lineEnd ? caret + moved.length : caret),
+      pending: plain.pending,
+    );
+    return _commitSpellings(
+      [asAsked, kept],
+      (next, spelling, _) => ends(
+        next,
+        identical(spelling, asAsked) ? asked : lineEnd + gap.length,
+      ),
+      coalesce: coalesce,
+    );
+  }
 
   /// A word typed after the spaces that left an emphasis, strong or
   /// strikethrough span continues that span: its closing syntax moves past
@@ -2500,11 +2588,12 @@ final class FlarkEditor implements FlarkDocumentState {
 
   /// The markup a heading keeps after its content on its last line: a setext
   /// underline with the line break before it, or an ATX closing sequence.
-  /// Null when the heading's last line ends with its content.
-  (int, int)? _headingTrail(ProjectedRow row) {
+  /// Null when the heading's last line ends with its content. [row] is one
+  /// of [within]'s rows, by default the current projection's.
+  (int, int)? _headingTrail(ProjectedRow row, {Projection? within}) {
     if (row.kind != RowKind.heading) return null;
     final end = _lastContentEnd(row);
-    final lineEnd = projection.lineContentEnd(
+    final lineEnd = (within ?? projection).lineContentEnd(
       row.firstLine + row.lineCount - 1,
     );
     return end >= 0 && lineEnd > end ? (end, lineEnd) : null;

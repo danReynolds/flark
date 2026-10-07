@@ -1106,6 +1106,63 @@ void _structureCases(FlarkParseBackend backend) {
       );
     });
 
+    test('lines put in a heading leave its markup with the first line', () {
+      // As pasted, a closing sequence or underline would follow the last line
+      // the text adds, where it ends no heading: the sequence shows as that
+      // line's text, and an underline under an empty line as text, or as a
+      // rule. It stays on the line the text's first line break ends, as
+      // Return leaves it, with a space of its own after an empty heading.
+      for (final (source, caret, command, edited, rows) in [
+        ('# h #', 3, const Paste('x\ny'), '# hx #\ny', ['hx', 'y']),
+        ('# ab ##', 3, const Paste('x\ny'), '# ax ##\nyb', ['ax', 'yb']),
+        ('# h #', 3, const InsertText('x\n'), '# hx #\n', ['hx', '']),
+        (
+          '# h #\r\n',
+          3,
+          const Paste('x\r\ny'),
+          '# hx #\r\ny\r\n',
+          ['hx', 'y', ''],
+        ),
+        (
+          '> # h #',
+          5,
+          const ReplaceRange(5, 5, '\ny'),
+          '> # h #\ny',
+          ['h', 'y'],
+        ),
+        ('# #', 2, const Paste('x\ny'), '# x #\ny', ['x', 'y']),
+        ('h\n===', 1, const Paste('x\n'), 'hx\n===\n', ['hx', '']),
+        ('h\n---', 1, const Paste('x\n# y'), 'hx\n---\n# y', ['hx', 'y']),
+        (
+          'a\nb\n===',
+          3,
+          const Paste('x\n- y'),
+          'a\nbx\n===\n- y',
+          ['a\nbx', 'y'],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final level = session.editor.projection.rows.first.headingLevel;
+        session.act(command, source: edited, rows: rows);
+        final heading = session.editor.projection.rows.first;
+        expect(heading.kind, RowKind.heading, reason: source);
+        expect(heading.headingLevel, level, reason: source);
+        session.act(const Undo(), source: source);
+      }
+      // Where the markup ends a heading after the lines as well, they go in
+      // as pasted: the underline takes the paragraph lines above it, and a
+      // closing sequence ends the heading the last line opens.
+      final setext = _Session(backend, source: 'h\n===', caret: 1);
+      setext.act(const Paste('x\ny'), source: 'hx\ny\n===', rows: ['hx\ny']);
+      final atx = _Session(backend, source: '# h #', caret: 3);
+      atx.act(const Paste('x\n# y'), source: '# hx\n# y #', rows: ['hx', 'y']);
+      // An underline cannot go up from an emptied last line to the lines
+      // above it, as Return over that line cannot take it there.
+      final last = _Session(backend, source: 'a\nbc\n===');
+      last.act(const SetSelection(2, 4));
+      last.act(const Paste('\n'), applied: false, source: 'a\nbc\n===');
+    });
+
     test('return over all of a setext heading\'s text leaves it empty', () {
       // A setext heading cannot be empty: left behind, `===` would be painted
       // as text and `---` would be read as a rule. The text goes as with a

@@ -170,6 +170,13 @@ additional product principles or testing layers.
   it has no content yet. Its empty rendered row is exactly empty and its caret
   sits at the content origin; first-frame checks must not trim away a misplaced
   separator or merely assert that a caret exists.
+- Text with line breaks put in a heading's text, typed, pasted or replacing,
+  leaves the heading's closing sequence or setext underline after the last
+  line it adds. Where the parser reads it there as no heading's markup (`b #`
+  shown as text, an underline under an empty line shown as text or read as a
+  rule), it stays on the line the text's first line break ends, as Return
+  leaves it (`# a #` and `b`); where it is a heading's markup neither way (an
+  underline left under an emptied last line), the edit is refused.
 
 ### Replacement
 
