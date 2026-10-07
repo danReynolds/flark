@@ -94,12 +94,12 @@ final class _Viewport {
   }
 
   /// The image preview or resource text painted at screen cell ([col], [row]),
-  /// in a view that paints a [caret] or, the reader, none.
+  /// in a view that paints a [caret] (an editor with focus) or none.
   InlineResource? resourceAt(
     FlarkDocumentState editor,
     int col,
     int row, {
-    bool caret = true,
+    required bool caret,
   }) {
     final layout = this.layout;
     if (layout == null || editor.sourceMode) return null;
@@ -190,14 +190,16 @@ class _RenderSurface extends RenderObject implements CaretHost {
     markNeedsLayout();
   }
 
+  /// Whether this surface paints a caret: an editor's does while it has
+  /// focus, the reader's never. A standalone image's label, which a caret at
+  /// the image shows, goes with it.
+  bool get _paintsCaret => !widget.fullDocument && widget.focus.hasFocus;
+
   @override
   CellRect? get localCaretRect {
     final layout = widget.viewport.layout;
     final selection = widget.controller.editor.selection;
-    if (widget.fullDocument ||
-        layout == null ||
-        !widget.focus.hasFocus ||
-        !selection.isCollapsed) {
+    if (!_paintsCaret || layout == null || !selection.isCollapsed) {
       return null;
     }
     final caret = widget.viewport.caret;
@@ -360,9 +362,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
         continue;
       }
       for (final line in visual.fragments) {
-        if (!line.labelVisible(selection, caret: !widget.fullDocument)) {
-          continue;
-        }
+        if (!line.labelVisible(selection, caret: _paintsCaret)) continue;
         if (line.image != null) {
           for (var x = 0; x < line.prefix.length; x++) {
             write(x, y, line.prefix[x], background.merge(widget.theme.marker));
@@ -423,8 +423,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
               selectedRange.$1 < glyph.end &&
               selectedRange.$2 > glyph.start;
           if (selected) style = highlight(style, widget.theme.selection);
-          if (!widget.fullDocument &&
-              widget.focus.hasFocus &&
+          if (_paintsCaret &&
               selection.isCollapsed &&
               caret.row == y + viewport.top &&
               caret.col == glyph.col) {
@@ -444,8 +443,7 @@ class _RenderSurface extends RenderObject implements CaretHost {
             }
           }
         }
-        if (!widget.fullDocument &&
-            widget.focus.hasFocus &&
+        if (_paintsCaret &&
             selection.isCollapsed &&
             caret.row == y + viewport.top) {
           if (caret.col == line.endColumn) {

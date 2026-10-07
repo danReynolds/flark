@@ -480,28 +480,31 @@ bool _onlyDeletes(String? before, String? after) {
 
 void checkExtension(String label, FlarkEditor e) {
   final src = e.source;
-  // 18. Extending a selection one grapheme and back leaves it collapsed where
-  //     it started.
-  for (var o = 0; o <= src.length; o++) {
-    if (!e.document.isLegal(o)) continue;
-    e.apply(SetSelection.caret(o));
-    if (!e.apply(const MoveCaret(MoveDirection.forward, extend: true))) {
-      continue;
-    }
-    if (e.selection.base != o) {
-      fail_('extend-moved-base', '$label from $o: ${e.selection}');
-    }
-    e.apply(const MoveCaret(MoveDirection.backward, extend: true));
-    // Several legal offsets share one display position; coming back to the
-    // same place, with a different typing context, is the model. Coming back
-    // to a different place is not.
-    final back = e.document.displayOf(e.selection.extent);
-    final from = e.document.displayOf(o);
-    if (back.row != from.row || back.offset != from.offset) {
+  // 18. Extending a selection one grapheme and back, either way, leaves it
+  //     collapsed where it started.
+  for (final there in MoveDirection.values) {
+    final back = MoveDirection.values[1 - there.index];
+    for (var o = 0; o <= src.length; o++) {
+      if (!e.document.isLegal(o)) continue;
+      e.apply(SetSelection.caret(o));
+      if (!e.apply(MoveCaret(there, extend: true))) continue;
+      if (e.selection.base != o) {
+        fail_('extend-moved-base', '$label from $o: ${e.selection}');
+      }
+      e.apply(MoveCaret(back, extend: true));
+      if (e.selection == FlarkSelection.collapsed(o)) continue;
+      // Several legal offsets share one display position, with only hidden
+      // syntax between them. Coming back to a different place is not
+      // symmetric; a selection from one of them to another shows nothing
+      // selected, and typing could not replace it.
+      final at = e.document.displayOf(e.selection.extent);
+      final from = e.document.displayOf(o);
       fail_(
-        'extend-not-symmetric',
-        '$label from $o (${from.row},'
-            '${from.offset}): ${e.selection} at (${back.row},${back.offset})',
+        at.row != from.row || at.offset != from.offset
+            ? 'extend-not-symmetric'
+            : 'extend-selects-hidden',
+        '$label ${there.name} from $o (${from.row},${from.offset}): '
+        '${e.selection} at (${at.row},${at.offset})',
       );
     }
   }
@@ -737,6 +740,27 @@ void main() {
       '> # #\n> bar',
     ]) {
       checkErasure(
+        jsonEncode(source),
+        FlarkEditor(backend, text: source, caret: 0),
+      );
+    }
+    expect(failures, isEmpty);
+  });
+
+  test('selections come back where hidden syntax ends a document', () {
+    // Every corpus case ends with a line break, so in none does hidden
+    // closing syntax end the document, where the last place the caret shows
+    // has an anchor on either side of it.
+    failures.clear();
+    for (final source in [
+      'a **b**',
+      '**b**',
+      'a\n**b**',
+      '# #\n*b*',
+      '[a]: /u\n\n[a]',
+      '> a *b*',
+    ]) {
+      checkExtension(
         jsonEncode(source),
         FlarkEditor(backend, text: source, caret: 0),
       );

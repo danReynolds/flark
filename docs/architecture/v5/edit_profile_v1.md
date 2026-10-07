@@ -59,9 +59,14 @@ additional product principles or testing layers.
 - Typing a space advances the source and painted caret; the next word stays
   after that space. Editable trailing whitespace, including table-cell padding,
   remains represented. The one space or tab before a cell's closing pipe is the
-  pipe's, as an ATX closing sequence keeps one, so whitespace typed against the
-  pipe takes a separator after it. A parser-authenticated hard break stays one
-  atomic rendered unit when moving or deleting across the break.
+  pipe's, as an ATX closing sequence keeps one, so whitespace an edit leaves
+  against the pipe (typed, pasted, moved out of a span or bared by a deletion)
+  takes a separator after it. Delete at a cell's end and Backspace at its start
+  do nothing, as at a document's edge. Typed before a `#` that ends a heading's
+  text, whitespace would make that `#` the heading's closing sequence, so the
+  `#` is escaped and stays text (`# alpha \#`), as a pipe typed in a cell is.
+  A parser-authenticated hard break stays one atomic rendered unit when moving
+  or deleting across the break.
 - Typing ordinary whitespace after an emptied inline owner exits that owner
   unless a supported construct explicitly retains whitespace.
 - Typing whitespace at an existing emphasis/strong/strike content edge moves
@@ -170,6 +175,13 @@ additional product principles or testing layers.
   it has no content yet. Its empty rendered row is exactly empty and its caret
   sits at the content origin; first-frame checks must not trim away a misplaced
   separator or merely assert that a caret exists.
+- Text with line breaks put in a heading's text, typed, pasted or replacing,
+  leaves the heading's closing sequence or setext underline after the last
+  line it adds. Where the parser reads it there as no heading's markup (`b #`
+  shown as text, an underline under an empty line shown as text or read as a
+  rule), it stays on the line the text's first line break ends, as Return
+  leaves it (`# a #` and `b`); where it is a heading's markup neither way (an
+  underline left under an emptied last line), the edit is refused.
 
 ### Replacement
 
@@ -288,6 +300,11 @@ the smallest mounted regression case.
 ## Caret, selection, and boundaries
 
 - Arrow movement advances by visible caret targets, not hidden source offsets.
+  Shift extends a selection by the same targets. An extension that comes back
+  to where its base shows (past the closing syntax that ends a document, or
+  back over what it selected) collapses there, in the base's context: a
+  selection of hidden syntax alone would show nothing, and typing could not
+  replace it.
 - Up and Down cross every empty visual line and row boundary in both directions,
   preserving the horizontal goal through short lines. Shift extends the original
   selection base, and the next key edits at the reached line.
@@ -332,15 +349,25 @@ Return and Backspace operate on the visible block structure:
   quote markers; an item or footnote definition that opens on the caret's line
   is continued at its indent (a footnote's four columns, counted from the end
   of the containers around it rather than from an indented label) rather than
-  by repeating its marker, which would open another;
+  by repeating its marker, which would open another. A footnote's new line
+  holds only that indentation: Markdown reads it in no footnote while nothing
+  follows it there, nor in an item or footnote around the footnote, which
+  indentation continues too, and text typed on it continues the footnote;
 - Return shows only its line break. Over a selection it continues the
   containers as at the selection's start; a lazy line takes the prefix it
   lacks where it would otherwise leave its quote. Text moved to the new line
   or left before it stays text: a marker that would start a block there, or
   syntax that would end one (`> b`, `1. b`, `=`, `a\`, `# a #`), is escaped,
-  and a hard break before the caret gives way to the new break. A blank line
-  keeps the next block apart from the text of a split heading, now a
-  paragraph, as for a lift, and an item whose later blocks follow blank lines
+  and a hard break before the caret gives way to the new break. Spaces and
+  tabs that end the caret's line after it, a hard break's among them, stay
+  where they show: the line breaks after them, as at the line's end, so the
+  new line does not carry them past its prefix, where text typed next would
+  put them on a blank line of their own. An empty new line ends the
+  paragraph, so its next line starts a block: indentation Markdown did not
+  show there, which would make that line code, goes, as pasted indentation
+  does (`> a` over `    b` gives `> a`, `> `, `> b`). A blank line keeps
+  the next block apart from the text of a split heading, now a paragraph,
+  as for a lift, and an item whose later blocks follow blank lines
   continues after them, where an empty item would drop them from the list.
   A span split beside a line break inside it closes after the text before
   the split and reopens where the text after it starts, past that line's
@@ -447,7 +474,10 @@ Code is literal: edits the code delegate does not propose (typing it
 declines, deletion, replacement, paste and composition) change the projected
 body as given. Every code edit gives new lines the edited line's container
 prefix, and text put on an empty line that omits the indentation of its list
-item or footnote takes the prefix the fence's own lines continue with. Text
+item or footnote takes the prefix the fence's own lines continue with. Where
+that prefix holds a tab, which can show columns past a container as code,
+the line takes the indentation of the item or footnote itself, a tab after
+its marker included, and the parser must read the body as edited. Text
 typed on an empty line of indented code that lacks the code's indentation
 takes the indentation of the block's first line, so it stays code. Return at
 the end of indented code that ends its list item or footnote makes a blank
@@ -489,7 +519,11 @@ four for Python, or an existing tab. Tab/Shift-Tab indent/outdent selected
 code lines without touching their container prefixes; Shift-Tab removes a tab
 or up to one step of spaces, a tab step counting four columns. Without the
 code delegate Tab leaves blank lines as they are; a collapsed Tab inserts a
-step at the caret. Commands crossing a code-block boundary reject atomically.
+step at the caret. Indented code is code by its indentation alone: a shift
+that would carry it into a list item before it (`    c` after `  1. b` and
+an empty line, an item that takes lines indented five columns or more), and
+the lines after it with it, does nothing, as Tab on an item it cannot nest
+does. Commands crossing a code-block boundary reject atomically.
 
 Typed text re-indents its line where the mode asks for it: a closing `}`, a
 closing word such as Ruby's `end` or Bash's `fi`, an XML closing tag, or a `)`

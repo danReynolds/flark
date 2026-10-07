@@ -35,6 +35,10 @@ const _documents = [
   '```\n```\n',
   '~~~\n~~~',
   '\t```\n\tx\n\t```\n',
+  // Empty code lines that lack the indentation a tab after the item's
+  // marker reaches.
+  '-\t```\n\n  ```',
+  '1.\t```js\n\n\t```\n',
   '1. ```dart\n   void main() {}\n   ```\n',
   '```json\n{"a": [1, 2]}\n```',
   '> - ```\n>   if (x) {\n>   }\n>   ```\n',

@@ -1192,6 +1192,20 @@ fn extract_time(src: &str) -> std::time::Duration {
     (0..5).map(|_| { let t = std::time::Instant::now(); std::hint::black_box(Extractor::extract(src).is_ok()); t.elapsed() }).min().unwrap()
 }
 
+/// The extraction times of [small] and of [large], eight times its size,
+/// measured again, up to three times, while [large] takes 16 times as long
+/// or more. A busy machine can slow one measurement past that (main once took
+/// 18.7 times locally, and a CI runner 16.1); a path quadratic in the source
+/// takes about 64 times every time.
+fn linear_times(small: &str, large: &str) -> (std::time::Duration, std::time::Duration) {
+    let mut times = (extract_time(small), extract_time(large));
+    for _ in 1..3 {
+        if times.1 < times.0 * 16 { break; }
+        times = (extract_time(small), extract_time(large));
+    }
+    times
+}
+
 #[test]
 fn the_texts_of_one_long_paragraph_extract_in_linear_time() {
     // Eight times the source should take about eight times as long; a path
@@ -1206,7 +1220,7 @@ fn the_texts_of_one_long_paragraph_extract_in_linear_time() {
         ("drifted texts", |n| format!("[](\n)\n{}", "zzzzz&amp;*a*\ny\n".repeat(250 * n))),
     ];
     for (name, shape) in shapes {
-        let (small, large) = (extract_time(&shape(2)), extract_time(&shape(16)));
+        let (small, large) = linear_times(&shape(2), &shape(16));
         assert!(large < small * 16, "{name}: {small:?} for {} bytes, {large:?} for {}", shape(2).len(), shape(16).len());
     }
 }
@@ -1253,7 +1267,7 @@ fn escaped_pipes_shift_a_cells_inlines_in_time_linear_in_its_width() {
         ("a split paragraph", |n| format!("{}\n", "\\*".repeat(2 * n)).repeat(8) + "a|b\n-|-\n"),
     ];
     for (name, shape) in shapes {
-        let (small, large) = (extract_time(&shape(100)), extract_time(&shape(800)));
+        let (small, large) = linear_times(&shape(100), &shape(800));
         assert!(large < small * 16, "{name}: {small:?} for {} bytes, {large:?} for {}", shape(100).len(), shape(800).len());
     }
 }
@@ -1271,7 +1285,7 @@ fn inlines_crossing_lines_extract_in_time_linear_in_their_paragraph() {
         ("link titles", |n| "[a](/u \"t\nu\") x ".repeat(n)),
     ];
     for (name, shape) in shapes {
-        let (small, large) = (extract_time(&shape(250)), extract_time(&shape(2_000)));
+        let (small, large) = linear_times(&shape(250), &shape(2_000));
         assert!(large < small * 16, "{name}: {small:?} for {} bytes, {large:?} for {}", shape(250).len(), shape(2_000).len());
     }
 }

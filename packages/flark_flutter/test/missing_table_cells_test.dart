@@ -96,4 +96,24 @@ void main() {
       },
     );
   }
+
+  test('platform cursor steps leave a table cell both ways', () {
+    // A keyboard's cursor control (Gboard's space bar, a browser's textarea)
+    // moves the caret a code unit at a time. A step onto no caret position of
+    // its own, between one cell's text and the next, goes on as an arrow
+    // would rather than back where it was.
+    const source = '| a | b |\n| - | - |\n| c | d |\n';
+    final c = FlarkController(
+      FlarkEditor(createParseBackend(), text: source, caret: 26),
+    );
+    TextEditingValue at(int offset) => TextEditingValue(
+      text: c.text,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+    c.receive(at(25));
+    expect(c.editor.selection.extent, 23);
+    c.receive(at(24));
+    expect(c.editor.selection.extent, 26);
+    c.dispose();
+  });
 }

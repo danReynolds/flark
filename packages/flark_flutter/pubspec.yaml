@@ -1,6 +1,6 @@
 name: flark_flutter
 description: "Live Markdown editor and viewer for Flutter and Flutter web: type Markdown, see it rendered, and keep the source exactly as written."
-version: 0.5.0
+version: 0.5.1
 repository: https://github.com/danReynolds/flark/tree/main/packages/flark_flutter
 issue_tracker: https://github.com/danReynolds/flark/issues
 topics:

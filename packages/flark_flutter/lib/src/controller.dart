@@ -43,11 +43,15 @@ enum _Composing {
   /// All that the composition put in place of a selection.
   replaced,
 
-  /// The end of what the composition inserted or put in place of a
-  /// selection: the input method committed the rest, before the range.
+  /// Part of what the composition inserted or put in place of a selection:
+  /// the input method also committed text outside the range, the start of
+  /// what it composed (before the range) or a correction of a word beside
+  /// it. A cancel removes only the range.
   rest,
 
-  /// Text elsewhere: the range moved off what the composition inserted.
+  /// Text elsewhere: the range moved off what the composition inserted, or
+  /// the input method corrected a word beside a range over text that was
+  /// there before.
   moved,
 }
 
@@ -312,9 +316,29 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
       // composing region) keeps the selection as it is: a caret in an
       // unwritten table cell shares its offset with the cell before it.
       if (!_atPlatformSelection(next)) {
+        final was = editor.selection;
         changed = editor.apply(
           SetSelection(next.selection.baseOffset, next.selection.extentOffset),
         );
+        // A caret the platform steps onto no caret position of its own
+        // (between one table cell's text and the next) goes back where it
+        // was, so the keyboard's cursor control could not leave the cell:
+        // it moves on as an arrow would, the way the platform moved it.
+        final to = next.selection.extentOffset;
+        if (was.isCollapsed &&
+            next.selection.isCollapsed &&
+            to != was.extent &&
+            editor.selection == was) {
+          changed =
+              editor.apply(
+                MoveCaret(
+                  to < was.extent
+                      ? MoveDirection.backward
+                      : MoveDirection.forward,
+                ),
+              ) ||
+              changed;
+        }
       }
     } else {
       var start = 0;
@@ -499,20 +523,48 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
   /// Follows what the composing range holds as [next] continues the open
   /// composition. An input method that commits part of it and composes on,
   /// in one update (Android's batch edit, iOS's deltas of one run loop
-  /// turn), starts its composing range past what it committed; the
-  /// composition goes on, but removing that range no longer cancels it. A
-  /// start the platform reported before stands: a browser keeps reporting
-  /// where its composition began after the editor moved the composed text
-  /// (code opening its first body line).
+  /// turn), starts its composing range past what it committed; one that
+  /// corrects a word beside it edits the text before or after the range,
+  /// whether or not that moves the range. The composition goes on, but
+  /// removing the range no longer cancels it. A start the platform reported
+  /// before stands: a browser keeps reporting where its composition began
+  /// after the editor moved the composed text (code opening its first body
+  /// line).
   void _composingMoved(TextEditingValue before, TextEditingValue next) {
     final from = _composing, start = next.composing.start;
     final reported = _lastReceived?.composing;
     if (!from.isValid ||
         from.isCollapsed ||
-        start == from.start ||
-        (reported != null && reported.isValid && start == reported.start)) {
+        (start != from.start &&
+            reported != null &&
+            reported.isValid &&
+            start == reported.start)) {
       return;
     }
+    // A source the app changed under the composition, past this controller,
+    // can leave the range beyond its text: what the range held is unknown,
+    // so a cancel keeps it, as when the range moves.
+    if (from.end > before.text.length) {
+      _compositionHolds = _Composing.moved;
+      return;
+    }
+    final head = before.text.substring(0, from.start);
+    final tail = before.text.substring(from.end);
+    if (next.text.length < head.length + tail.length ||
+        !next.text.startsWith(head) ||
+        !next.text.endsWith(tail)) {
+      // The text before or after the range changed: the input method
+      // corrected a word beside it. A cancel then removes only the range,
+      // and the correction stays. Over text that was there before, the range
+      // holds nothing of its own to remove, and a cancel keeps it all.
+      _compositionHolds =
+          _compositionHolds == _Composing.existing ||
+              _compositionHolds == _Composing.moved
+          ? _Composing.moved
+          : _Composing.rest;
+      return;
+    }
+    if (start == from.start) return;
     // A later start at the same end, with the text around the composition as
     // it was, leaves the input method composing the end of what it composed.
     final grown = next.text.length - before.text.length;
@@ -520,9 +572,7 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
         _compositionHolds != _Composing.existing &&
         _compositionHolds != _Composing.moved &&
         start > from.start &&
-        next.composing.end == from.end + grown &&
-        next.text.startsWith(before.text.substring(0, from.start)) &&
-        next.text.endsWith(before.text.substring(from.end));
+        next.composing.end == from.end + grown;
     _compositionHolds = rest ? _Composing.rest : _Composing.moved;
   }
 
@@ -568,7 +618,8 @@ class FlarkController extends ChangeNotifier implements FlarkSurfaceController {
         _compositionHolds != _Composing.moved) {
       editor.cancelComposition();
     } else {
-      // The input method committed what it composed before its range.
+      // The input method committed text outside its range: what it composed
+      // before it, or a correction beside it.
       if (editor.composing &&
           _compositionHolds == _Composing.rest &&
           composing.isValid &&

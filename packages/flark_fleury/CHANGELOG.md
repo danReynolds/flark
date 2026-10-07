@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A standalone image's label shows only where the editor paints a caret:
+  `FlarkView` and an editor without focus show a leading image without its
+  label, and no longer offer it to accessibility as a link or to a press.
+
 ## 0.5.0
 
 First public preview. Requires fleury 0.1.

@@ -49,4 +49,71 @@ void main() {
       c.dispose();
     });
   }
+
+  // A cancel after the correction, the input method removing the text it
+  // composes or Escape, removes that text only: the correction stays, one
+  // undo step. A correction the length of the word kept the composing range
+  // where it was, so the cancel took the correction back with the word; one
+  // that moved the range left Escape committing the word.
+  for (final (name, source, caret, fixed, at) in [
+    ('before the word', '*teh* ', 6, '*the* ', 6),
+    ('before the word, longer', '*teh* ', 6, '*thee* ', 7),
+    ('after the word', 'a teh', 1, 'a the', 1),
+    ('after the word, longer', 'a teh', 1, 'a thee', 1),
+  ]) {
+    for (final escape in [false, true]) {
+      test('${escape ? 'Escape' : 'a removal'} after a correction $name '
+          'keeps the correction', () {
+        final c = FlarkController(
+          FlarkEditor(backend, text: source, caret: caret),
+        );
+        c.receive(
+          composing(
+            source.replaceRange(caret, caret, 'wor'),
+            caret + 3,
+            TextRange(start: caret, end: caret + 3),
+          ),
+        );
+        c.receive(
+          composing(
+            fixed.replaceRange(at, at, 'wor'),
+            at + 3,
+            TextRange(start: at, end: at + 3),
+          ),
+        );
+        expect(c.text, fixed.replaceRange(at, at, 'wor'));
+        if (escape) {
+          c.finishComposition(cancel: true);
+        } else {
+          c.receive(composing(fixed, at));
+        }
+        expect(c.text, fixed);
+        expect(c.editor.selection, FlarkSelection.collapsed(at));
+        expect(c.editor.composing, isFalse);
+        c.command(const Undo());
+        expect(c.text, source);
+        c.dispose();
+      });
+    }
+  }
+
+  test('a source the app changes under a composition keeps it updating', () {
+    final c = FlarkController(
+      FlarkEditor(backend, text: 'hello world', caret: 11),
+    );
+    c.receive(
+      composing('hello worldabc', 14, const TextRange(start: 11, end: 14)),
+    );
+    // An edit that goes past the controller while the input method composes
+    // leaves the composing range beyond the text.
+    c.editor.apply(const ReplaceRange(0, 6, ''));
+    expect(
+      () => c.receive(
+        composing('worldabcd', 9, const TextRange(start: 5, end: 9)),
+      ),
+      returnsNormally,
+    );
+    expect(c.text, 'worldabcd');
+    c.dispose();
+  });
 }

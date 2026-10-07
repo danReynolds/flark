@@ -858,6 +858,52 @@ void _structureCases(FlarkParseBackend backend) {
       );
     });
 
+    test('a space typed before a heading\'s last `#` leaves it text', () {
+      // After whitespace, a `#` that ends a heading's text would read as its
+      // closing sequence: hidden, with the caret back before the space, so
+      // the next word would go there. Escaped, the `#` stays the heading's
+      // text, as a pipe typed in a cell does, and the word follows the space.
+      for (final (source, caret, column, spaced, typed, shown) in [
+        ('# alpha#', 7, 6, r'# alpha \#', r'# alpha b\#', 'alpha b#'),
+        ('# alpha##', 7, 6, r'# alpha \##', r'# alpha b\##', 'alpha b##'),
+        ('> # a#', 5, 2, r'> # a \#', r'> # a b\#', 'a b#'),
+        ('# *alpha*#', 9, 6, r'# *alpha* \#', r'# *alpha* b\#', 'alpha b#'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const InsertText(' '),
+          source: spaced,
+          caret: DisplayPosition(0, column),
+        );
+        session.act(const InsertText('b'), source: typed, rows: [shown]);
+        session.act(const Undo(), source: source);
+      }
+      // A typed tab, or typed text that ends in whitespace, escapes it too.
+      for (final (text, typed, shown) in [
+        ('\t', '# alpha\t\\#', 'alpha\t#'),
+        ('x ', r'# alphax \#', 'alphax #'),
+      ]) {
+        _Session(
+          backend,
+          source: '# alpha#',
+          caret: 7,
+        ).act(InsertText(text), source: typed, rows: [shown]);
+      }
+      // A `#` that stays text after the space goes in as it is, and a paste
+      // keeps Markdown's literal meaning.
+      for (final (source, command, typed, shown) in [
+        ('# alpha#b', const InsertText(' '), '# alpha #b', 'alpha #b'),
+        ('# alpha# #', const InsertText(' '), '# alpha # #', 'alpha #'),
+        ('# alpha#', const Paste(' '), '# alpha #', 'alpha'),
+      ]) {
+        _Session(
+          backend,
+          source: source,
+          caret: 7,
+        ).act(command, source: typed, rows: [shown]);
+      }
+    });
+
     test('setting a link in an empty closed heading hides its sequence', () {
       // A new link or image goes where typed text would, so the closing
       // sequence is not run into its markup and painted after it.
@@ -1104,6 +1150,63 @@ void _structureCases(FlarkParseBackend backend) {
         rows: ['Hel', 'lo'],
         caret: const DisplayPosition(1, 0),
       );
+    });
+
+    test('lines put in a heading leave its markup with the first line', () {
+      // As pasted, a closing sequence or underline would follow the last line
+      // the text adds, where it ends no heading: the sequence shows as that
+      // line's text, and an underline under an empty line as text, or as a
+      // rule. It stays on the line the text's first line break ends, as
+      // Return leaves it, with a space of its own after an empty heading.
+      for (final (source, caret, command, edited, rows) in [
+        ('# h #', 3, const Paste('x\ny'), '# hx #\ny', ['hx', 'y']),
+        ('# ab ##', 3, const Paste('x\ny'), '# ax ##\nyb', ['ax', 'yb']),
+        ('# h #', 3, const InsertText('x\n'), '# hx #\n', ['hx', '']),
+        (
+          '# h #\r\n',
+          3,
+          const Paste('x\r\ny'),
+          '# hx #\r\ny\r\n',
+          ['hx', 'y', ''],
+        ),
+        (
+          '> # h #',
+          5,
+          const ReplaceRange(5, 5, '\ny'),
+          '> # h #\ny',
+          ['h', 'y'],
+        ),
+        ('# #', 2, const Paste('x\ny'), '# x #\ny', ['x', 'y']),
+        ('h\n===', 1, const Paste('x\n'), 'hx\n===\n', ['hx', '']),
+        ('h\n---', 1, const Paste('x\n# y'), 'hx\n---\n# y', ['hx', 'y']),
+        (
+          'a\nb\n===',
+          3,
+          const Paste('x\n- y'),
+          'a\nbx\n===\n- y',
+          ['a\nbx', 'y'],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        final level = session.editor.projection.rows.first.headingLevel;
+        session.act(command, source: edited, rows: rows);
+        final heading = session.editor.projection.rows.first;
+        expect(heading.kind, RowKind.heading, reason: source);
+        expect(heading.headingLevel, level, reason: source);
+        session.act(const Undo(), source: source);
+      }
+      // Where the markup ends a heading after the lines as well, they go in
+      // as pasted: the underline takes the paragraph lines above it, and a
+      // closing sequence ends the heading the last line opens.
+      final setext = _Session(backend, source: 'h\n===', caret: 1);
+      setext.act(const Paste('x\ny'), source: 'hx\ny\n===', rows: ['hx\ny']);
+      final atx = _Session(backend, source: '# h #', caret: 3);
+      atx.act(const Paste('x\n# y'), source: '# hx\n# y #', rows: ['hx', 'y']);
+      // An underline cannot go up from an emptied last line to the lines
+      // above it, as Return over that line cannot take it there.
+      final last = _Session(backend, source: 'a\nbc\n===');
+      last.act(const SetSelection(2, 4));
+      last.act(const Paste('\n'), applied: false, source: 'a\nbc\n===');
     });
 
     test('return over all of a setext heading\'s text leaves it empty', () {
@@ -1576,6 +1679,66 @@ void _structureCases(FlarkParseBackend backend) {
       }
     });
 
+    test('text put on an empty code line after a tab marker stays in it', () {
+      // The empty line can lack the indentation a tab after the item's
+      // marker reaches; text put there takes the indentation the item's
+      // later lines take, tab and all, rather than leaving the item and
+      // splitting the code. A fence a tab indents past an item's content
+      // would show the rest of the tab as code on a line the tab starts:
+      // its lines take the item's own indentation instead.
+      for (final (source, caret, command, edited, rows) in [
+        (
+          '-\t```\n\n  ```',
+          6,
+          const InsertText('x'),
+          '-\t```\n \tx\n  ```',
+          ['x', ''],
+        ),
+        (
+          '1.\t```\n\n\t```',
+          7,
+          const Paste('x\ny'),
+          '1.\t```\n  \tx\n  \ty\n\t```',
+          ['x\ny'],
+        ),
+        (
+          '- -\t```\n\n    ```',
+          8,
+          const InsertText('x'),
+          '- -\t```\n   \tx\n    ```',
+          ['x'],
+        ),
+        (
+          '>\t-\t```\n>\n>\t \t```',
+          9,
+          const InsertText('x'),
+          '>\t-\t```\n>\t \tx\n>\t \t```',
+          ['x'],
+        ),
+        (
+          '- a\n\n\t```\n\n\t```',
+          10,
+          const InsertText('x'),
+          '- a\n\n\t```\n  x\n\t```',
+          ['a', '', 'x'],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, source: edited, rows: rows);
+        final row = session.editor.document.caretRow;
+        expect(row.kind, RowKind.codeBlock, reason: source);
+        expect(row.shells.last.kind, ShellKind.item, reason: source);
+      }
+      // A line in a quote carries the quote's marker, after which the text
+      // goes as it did.
+      final quoted = _Session(backend, source: '>\t```\n>\n>\t```', caret: 7);
+      quoted.act(
+        const InsertText('x'),
+        source: '>\t```\n>x\n>\t```',
+        rows: ['x'],
+      );
+    });
+
     test('an edit that leaves code as it is only moves the caret', () {
       // As in a paragraph, there is nothing to commit or undo, and nothing
       // that needs source mode: the caret goes where the edit puts it.
@@ -1680,6 +1843,34 @@ void _structureCases(FlarkParseBackend backend) {
       session.act(const SetSelection(8, 10));
       session.act(const Indent(), applied: false, source: blank);
       expect(session.editor.lastRejection, isNull);
+    });
+
+    test('indenting indented code keeps it out of the item before it', () {
+      // After an item whose content starts past four columns, four spaces
+      // make code. Indented to the item's column, the code would join the
+      // item as its paragraph, and the table after it would read on as that
+      // paragraph's text: Tab does nothing, with no refusal to report.
+      for (final (source, base, extent) in [
+        ('  1. b\n\n    c\n| d |\n| - |', 12, 12),
+        ('  1. b\n\n    c\n    e\n| d |\n| - |', 12, 19),
+      ]) {
+        final session = _Session(backend, source: source, caret: base);
+        if (extent != base) session.act(SetSelection(base, extent));
+        session.act(const Indent(), applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
+      // Where the code stays code, Tab indents it.
+      final kept = _Session(
+        backend,
+        source: 'b\n\n    c\n| d |\n| - |',
+        caret: 7,
+      );
+      kept.act(
+        const Indent(),
+        source: 'b\n\n      c\n| d |\n| - |',
+        rows: ['b', '', '  c', 'd', '| - |'],
+        anchor: 9,
+      );
     });
 
     test(

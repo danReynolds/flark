@@ -139,8 +139,9 @@ class _EditorState extends State<FlarkEditorView>
     if (mounted) setState(() {});
   }
 
-  InlineResource? _linkAt(int col, int row) =>
-      _inputLayout == null ? null : _viewport.resourceAt(_editor, col, row);
+  InlineResource? _linkAt(int col, int row) => _inputLayout == null
+      ? null
+      : _viewport.resourceAt(_editor, col, row, caret: _focus.hasFocus);
 
   void _pointerDown(int col, int row, Set<KeyModifier> modifiers) {
     final resource = _linkAt(col, row);
@@ -774,6 +775,7 @@ class _EditorState extends State<FlarkEditorView>
   Widget _buildEditor(BuildContext context) => _InteractiveSemantics(
     controller: widget.controller,
     viewport: _viewport,
+    focus: _focus,
     readOnly: widget.readOnly,
     onActivate: (col, row) {
       _pointerDown(col, row, const {});

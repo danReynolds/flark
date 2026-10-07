@@ -65,9 +65,10 @@ final class CellLine {
 
   /// Whether this line shows: a standalone image's label shows while the
   /// selection reaches its image. A collapsed selection reaches it only
-  /// where a [caret] is painted: the reader paints none, and its selection
-  /// rests at the document's start, before a first image.
-  bool labelVisible(FlarkSelection selection, {bool caret = true}) =>
+  /// where a [caret] is painted, in an editor with focus: the reader and an
+  /// editor without focus paint none, and a selection resting at the
+  /// document's start is before a first image.
+  bool labelVisible(FlarkSelection selection, {required bool caret}) =>
       imageLabel == null ||
       ((caret || !selection.isCollapsed) &&
           selection.start <= imageLabel!.end &&

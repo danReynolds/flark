@@ -381,6 +381,30 @@ void _returnCases(FlarkParseBackend backend) {
       );
     });
 
+    test('before the whitespace that ends a line breaks after it', () {
+      // The spaces of a hard break, or any whitespace that ends the line,
+      // stay where they show, as Return at the line's end leaves them.
+      // Carried to the new line, they would follow an item's marker there,
+      // unshown, and the text typed next would put them on a blank line of
+      // their own between the item's lines.
+      for (final (source, caret, split, first) in [
+        ('- **a  \n  b**', 5, '- **a**  \n- \n  **b**', 'a  '),
+        ('- **a  \r\n  b**', 5, '- **a**  \r\n- \r\n  **b**', 'a  '),
+        ('- a  \n  b', 3, '- a  \n- \n  b', 'a  '),
+        ('- a  \n  b', 4, '- a  \n- \n  b', 'a  '),
+        ('- a \n  b', 3, '- a \n- \n  b', 'a '),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const Newline(),
+          source: split,
+          rows: [first, '', 'b'],
+          caret: const DisplayPosition(1, 0),
+        );
+        session.act(const InsertText('x'), rows: [first, 'x\nb']);
+      }
+    });
+
     test('refuses where no spelling keeps what it splits', () {
       // An autolink and a reference label hold no line break, and closing
       // and reopening `__` beside a literal `__` would pair them anew.
@@ -420,6 +444,68 @@ void _returnCases(FlarkParseBackend backend) {
           reason: source,
         );
       }
+    });
+
+    test('before an indented line that would start a block splits it', () {
+      // Without its indentation the next line would start a block of its
+      // own, so no spelling keeps it a paragraph: Return splits the line as
+      // it does without that check, rather than refuse.
+      for (final (source, split) in [
+        ('a\n    - x', 'a\n\n    - x'),
+        ('a\n    # x', 'a\n\n    # x'),
+        ('> a\n    > x', '> a\n> \n>     > x'),
+      ]) {
+        final session = _Session(
+          backend,
+          source: source,
+          caret: source.indexOf('\n'),
+        );
+        session.act(const Newline(), source: split);
+      }
+    });
+
+    test('before an indented line keeps that line a paragraph', () {
+      // The empty line Return leaves ends the paragraph, so its next line
+      // starts a block of its own, which its indentation would make code.
+      // Markdown does not show that indentation, so it goes, as pasted
+      // indentation does where it would make the row code.
+      for (final (source, caret, split) in [
+        ('> a\n    b', 3, '> a\n> \n> b'),
+        ('> a\n>     b', 3, '> a\n> \n> b'),
+        ('> > a\n>     b', 5, '> > a\n> > \n> > b'),
+        ('a\n\tb', 1, 'a\n\nb'),
+        ('- a\n      b', 3, '- a\n- \n  b'),
+        ('> a\r\n    b', 3, '> a\r\n> \r\n> b'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const Newline(),
+          source: split,
+          rows: ['a', '', 'b'],
+          caret: const DisplayPosition(1, 0),
+        );
+        final rows = session.editor.projection.rows;
+        expect(rows.last.kind, RowKind.paragraph, reason: source);
+        expect(
+          rows.last.shells.map((s) => s.kind),
+          rows.first.shells.map((s) => s.kind),
+          reason: source,
+        );
+      }
+      // Text typed on the new line joins the paragraph again.
+      final session = _Session(backend, source: '> a\n    b', caret: 3);
+      session.act(const Newline());
+      session.act(
+        const InsertText('x'),
+        source: '> a\n> x\n> b',
+        rows: ['a\nx\nb'],
+      );
+      final paragraph = _Session(backend, source: 'a\n    b', caret: 1);
+      paragraph.act(
+        const Newline(paragraph: true),
+        source: 'a\n\n\nb',
+        rows: ['a', '', '', 'b'],
+      );
     });
 
     test('on a lazy line after a quoted definition stays in the quote', () {
@@ -498,6 +584,42 @@ void _returnCases(FlarkParseBackend backend) {
         ShellKind.blockQuote,
         ShellKind.footnoteDefinition,
       ]);
+    });
+
+    test('at the end of a footnote in an item or footnote continues it', () {
+      // The new line is a blank line Markdown reads outside the footnote and
+      // outside the item or footnote around it, while nothing follows it
+      // there. It carries their indentation, so text typed on it continues
+      // the footnote, as at the document's level.
+      for (final (source, caret, split, typed, kinds) in [
+        (
+          '- [^2]: a\n\nb[^2]',
+          9,
+          '- [^2]: a\n      \n\nb[^2]',
+          '- [^2]: a\n      x\n\nb[^2]',
+          [ShellKind.list, ShellKind.item, ShellKind.footnoteDefinition],
+        ),
+        (
+          '[^1]: [^2]: a\n\nb[^2] [^1]',
+          13,
+          '[^1]: [^2]: a\n        \n\nb[^2] [^1]',
+          '[^1]: [^2]: a\n        x\n\nb[^2] [^1]',
+          [ShellKind.footnoteDefinition, ShellKind.footnoteDefinition],
+        ),
+        (
+          '[^1]: x\n    [^2]: a\n[^3]: c',
+          19,
+          '[^1]: x\n    [^2]: a\n        \n[^3]: c',
+          '[^1]: x\n    [^2]: a\n        x\n[^3]: c',
+          [ShellKind.footnoteDefinition, ShellKind.footnoteDefinition],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const Newline(), source: split);
+        session.act(const InsertText('x'), source: typed);
+        expect(shells(session), kinds, reason: source);
+        expect(session.editor.document.caretRow.text, 'a\nx', reason: source);
+      }
     });
 
     test('in code on nested item lines indents past their markers', () {

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- An input method's correction of a word beside the one it composes (`teh`
+  to `the`) survives a cancel of the composed word, by the input method or
+  Escape, and Escape after such a correction removes only the composed word.
+
 ## 0.5.0
 
 First public preview.

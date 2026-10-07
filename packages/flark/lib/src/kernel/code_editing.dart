@@ -154,13 +154,30 @@ extension _CodeEditing on FlarkEditor {
     // indentation, so its source can lack the prefix that keeps text inside
     // the block. Text an edit puts on such a line, and lines it starts there,
     // take the prefix the fence's own lines continue with, as a new body does.
-    var from = start, lead = '';
+    var from = start, lead = '', checked = false;
     if ((edit.start == 0 || row.text.codeUnitAt(edit.start - 1) == 10) &&
         (edit.start == row.text.length ||
             row.text.codeUnitAt(edit.start) == 10)) {
-      final continued = _continuing(row.block);
-      // A tab's columns depend on where it lands; leave those prefixes be.
-      if (!continued.contains('\t')) {
+      String? continued = _continuing(row.block);
+      if (continued.contains('\t')) {
+        // comrak counts a fence's indentation in bytes, so where a container
+        // takes only some of a tab's columns before the fence (`>\t````), a
+        // body line starting with that tab shows the rest as code. The
+        // prefix that holds a later line of the fence's list item or
+        // footnote leaves out the fence's own indentation, which its lines
+        // need not repeat, and reaches the column the item's content starts
+        // at, a tab after its marker included (`-\t````); the parser must
+        // read the body as edited. A line in a quote carries the quote's
+        // marker already, and keeps its own prefix.
+        final parent = _doc.model.blockParent(row.block);
+        final kind = _doc.model.blockKind(parent);
+        continued =
+            kind == BlockKind.item || kind == BlockKind.footnoteDefinition
+            ? _innerPrefix(parent)
+            : null;
+        checked = continued != null;
+      }
+      if (continued != null) {
         prefix = continued;
         if (edit.start < body.length && body.codeUnitAt(edit.start) != 10) {
           (from, lead) = (lineStart, continued);
@@ -219,6 +236,7 @@ extension _CodeEditing on FlarkEditor {
       candidate,
       selected,
       typing: typing ?? ordinaryTyping(),
+      checked: checked,
     );
   }
 
@@ -322,12 +340,19 @@ extension _CodeEditing on FlarkEditor {
   static String Function(String) _codeLines(String newline, String prefix) =>
       (text) => text.replaceAll('\n', '$newline$prefix');
 
+  /// Commits [candidate], the source with [row]'s fenced body edited to
+  /// [body], and [selected]. Where the block had no body line, the fences
+  /// must grow past a run of their character in the body, or the row shows
+  /// columns of a tab a container takes only some of, and in any case with
+  /// [checked], the parser must read the block with that body, in the same
+  /// containers.
   bool _commitCodeEdit(
     ProjectedRow row,
     String body,
     String candidate,
     FlarkSelection selected, {
     required bool typing,
+    bool checked = false,
   }) {
     final block = _doc.model.blockAt(row.block);
     final marker = source.codeUnitAt(block.startUtf16);
@@ -339,7 +364,8 @@ extension _CodeEditing on FlarkEditor {
       run = body.codeUnitAt(i) == marker ? run + 1 : 0;
       if (run >= length) length = run + 1;
     }
-    if (length == block.attr &&
+    if (!checked &&
+        length == block.attr &&
         row.contentStarts.any((start) => start >= 0) &&
         !row.segments.any((s) => !s.exact && !s.lineBreak)) {
       return _commit(candidate, selected, coalesce: typing);
@@ -631,12 +657,31 @@ extension _CodeEditing on FlarkEditor {
       row.text,
       codeEditing?.resolveLanguage(row.text, _doc.codeInfo(row) ?? '') ?? '',
     );
+    // Indented code is code by its indentation alone. Shifted to the content
+    // column of a list item before it, a line would join the item, and the
+    // lines after it would read on as the item's text (`    c` after `  1. b`
+    // and an empty line). The shift must leave the code code in its
+    // containers and show every other row as it was, or Tab does nothing. A
+    // fence holds its body whatever its indentation.
+    bool keepsCode(FlarkDocument next, Edits edits) =>
+        next.caretRow.kind == RowKind.codeBlock &&
+        next.caretRow.sameContainerKinds(row) &&
+        _showsRows(
+          next,
+          edits,
+          added: 1,
+          shells: (other) =>
+              other.index == row.index ? null : other.containerKinds,
+        );
     if (!outdent && selection.isCollapsed) {
       final at = selection.extent;
+      final step = Edits([(at, at, unit)]);
       return _commit(
-        source.replaceRange(at, at, unit),
+        step.apply(source),
         FlarkSelection.collapsed(at + unit.length),
         coalesce: false,
+        acceptSourceMode: true,
+        accept: row.fenced ? null : (next) => keepsCode(next, step),
       );
     }
     if (!selection.isCollapsed &&
@@ -670,7 +715,15 @@ extension _CodeEditing on FlarkEditor {
     if (edits.isEmpty) return false;
     final (candidate, map) = _edited(edits);
     final shifted = FlarkSelection(map(selection.base), map(selection.extent));
-    if (!row.fenced) return _commit(candidate, shifted, coalesce: false);
+    if (!row.fenced) {
+      return _commit(
+        candidate,
+        shifted,
+        coalesce: false,
+        acceptSourceMode: true,
+        accept: (next) => keepsCode(next, Edits(edits)),
+      );
+    }
     // Outdented to three spaces, a body line of fence characters would close
     // the block, so the shifted body is committed as literal code.
     var body = row.text;

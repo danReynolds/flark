@@ -6,12 +6,17 @@ class _InteractiveSemantics extends ProxyWidget {
   const _InteractiveSemantics({
     required this.controller,
     required this.viewport,
+    required this.focus,
     required this.readOnly,
     required this.onActivate,
     required super.child,
   });
   final FlarkFleuryController controller;
   final _Viewport viewport;
+
+  /// The editor's focus: with it, the editor paints a caret, which shows the
+  /// label of a standalone image it is at.
+  final FocusNode focus;
   final bool readOnly;
   final void Function(int col, int row) onActivate;
 
@@ -77,13 +82,16 @@ class _InteractiveSemanticsElement extends ComponentElement
         );
       }
 
+      final caret = widget.focus.hasFocus;
       for (var y = 0; y < viewport.rows; y++) {
         final index = viewport.top + y;
         if (index >= layout.lines.length) break;
         final visual = layout.lines[index];
         for (final line in visual.fragments) {
-          if (line.image != null) continue;
-          if (!line.labelVisible(editor.selection)) continue;
+          if (line.image != null ||
+              !line.labelVisible(editor.selection, caret: caret)) {
+            continue;
+          }
           final task = line.taskColumn;
           if (task >= 0) {
             add(

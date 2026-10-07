@@ -317,4 +317,119 @@ void main() {
       });
     }
   }
+  // An edit that leaves whitespace against a cell's closing pipe, in a cell
+  // with no space before that pipe, gives the pipe a space of its own: the
+  // parser reads one space there as the pipe's, so the whitespace would
+  // vanish and the next word would go before it.
+  for (final (label, source, (base, extent), command, edited, shown) in [
+    (
+      'Backspace',
+      '|a|b|\n|-|-|\n|x y|dd|\n',
+      (16, 16),
+      const DeleteBackward(),
+      '|x  |dd|',
+      'x z',
+    ),
+    (
+      'a word Backspace',
+      '|a|b|\n|-|-|\n|x yy|dd|\n',
+      (17, 17),
+      const DeleteBackward(word: true),
+      '|x  |dd|',
+      'x z',
+    ),
+    (
+      'Delete',
+      '|a|b|\n|-|-|\n|x y|dd|\n',
+      (15, 15),
+      const DeleteForward(),
+      '|x  |dd|',
+      'x z',
+    ),
+    (
+      'a deleted selection',
+      '|a|b|\n|-|-|\n|x y|dd|\n',
+      (15, 16),
+      const DeleteBackward(),
+      '|x  |dd|',
+      'x z',
+    ),
+    (
+      'a removed range',
+      '|a|b|\n|-|-|\n|x y|dd|\n',
+      (16, 16),
+      const ReplaceRange(15, 16, ''),
+      '|x  |dd|',
+      'x z',
+    ),
+    (
+      'a space typed over a selection',
+      '|a|b|\n|-|-|\n|xa|dd|\n',
+      (14, 15),
+      const InsertText(' '),
+      '|x  |dd|',
+      'x z',
+    ),
+    (
+      'a paste over a selection',
+      '|a|b|\n|-|-|\n|xa|dd|\n',
+      (14, 15),
+      const Paste('q '),
+      '|xq  |dd|',
+      'xq z',
+    ),
+    (
+      'a header cell',
+      '|ab|c|\n|-|-|\n',
+      (2, 3),
+      const InsertText(' '),
+      '|a  |c|',
+      'a z',
+    ),
+    (
+      'a row without outer pipes',
+      'xa|b\n-|-\n',
+      (1, 2),
+      const InsertText(' '),
+      'x  |b',
+      'x z',
+    ),
+    (
+      'a space at the end of bold',
+      '|**a**|b|\n|-|-|\n',
+      (4, 4),
+      const InsertText(' '),
+      '|**a**  |b|',
+      'a z',
+    ),
+  ]) {
+    test('whitespace an edit leaves against a cell\'s pipe stays: $label', () {
+      final e = FlarkEditor(backend, text: source, caret: base);
+      if (base != extent) e.apply(SetSelection(base, extent));
+      expect(e.apply(command), isTrue);
+      expect(e.source, contains(edited));
+      expect(e.apply(const InsertText('z')), isTrue);
+      expect(
+        e.projection.rows.map((r) => r.text),
+        contains(shown),
+        reason: e.source,
+      );
+      while (e.apply(const Undo())) {}
+      expect(e.source, source);
+    });
+  }
+  test('Delete at a cell\'s end and Backspace at its start do nothing', () {
+    // The pipe beside the text, and the space the pipe keeps, are no
+    // grapheme of their own: as at a document's edge, nothing is refused.
+    for (final (source, caret, command) in [
+      ('| a | b |\n| - | - |\n| cc | dd |\n', 24, const DeleteForward()),
+      ('|a|b|\n|-|-|\n|cc|dd|\n', 15, const DeleteForward()),
+      ('| a | b |\n| - | - |\n| cc | dd |\n', 27, const DeleteBackward()),
+    ]) {
+      final e = FlarkEditor(backend, text: source, caret: caret);
+      expect(e.apply(command), isFalse, reason: source);
+      expect(e.lastRejection, isNull, reason: source);
+      expect(e.source, source);
+    }
+  });
 }

@@ -132,6 +132,95 @@ void _navigationCases(FlarkParseBackend backend) {
       );
     });
 
+    test(
+      'a shift press back where the selection started selects no syntax',
+      () {
+        // A press that extends the selection to another anchor of its base,
+        // past a closing `**` the document ends with, collapses where the
+        // selection started, as shift arrows do: the `**` alone shows nothing.
+        final session = _Session(backend, source: 'a **b**', caret: 7);
+        for (final leadingHalf in [false, true]) {
+          session.act(
+            PlaceCaret(0, 3, extend: true, leadingHalf: leadingHalf),
+            applied: false,
+            selection: const FlarkSelection.collapsed(7),
+          );
+        }
+      },
+    );
+
+    test('shift arrows at a document end select no syntax alone', () {
+      // After `b` the caret holds the span's context, and the document shows
+      // nothing past it. The closing `**` alone would be a selection that
+      // shows nothing, which typing could not replace.
+      final session = _Session(backend, source: 'a **b**', caret: 5);
+      session.act(
+        const MoveCaret(MoveDirection.forward, extend: true),
+        applied: false,
+        selection: const FlarkSelection.collapsed(5),
+        context: Style.strong,
+      );
+      session.act(
+        const MoveCaret(MoveDirection.backward, extend: true),
+        selection: const FlarkSelection(5, 4),
+      );
+      session.act(
+        const MoveCaret(MoveDirection.forward, extend: true),
+        selection: const FlarkSelection.collapsed(5),
+        context: Style.strong,
+      );
+      session.act(
+        const MoveCaret(
+          MoveDirection.forward,
+          unit: MoveUnit.line,
+          extend: true,
+        ),
+        applied: false,
+        selection: const FlarkSelection.collapsed(5),
+      );
+      // A selection that shows text takes the closing syntax with it, so
+      // typing replaces the whole span.
+      session.act(const SetSelection(0, 5));
+      session.act(
+        const MoveCaret(MoveDirection.forward, extend: true),
+        selection: const FlarkSelection(0, 7),
+      );
+      session.act(const InsertText('x'), source: 'x', rows: ['x']);
+    });
+
+    test('shift arrows back over a line break leave the caret in its span', () {
+      // Back at the end of `b`, the selection collapses where it started, in
+      // the span, rather than holding the closing `**` alone.
+      final session = _Session(backend, source: 'a **b**\nc', caret: 5);
+      session.act(
+        const MoveCaret(MoveDirection.forward, extend: true),
+        selection: const FlarkSelection(5, 8),
+      );
+      session.act(
+        const MoveCaret(MoveDirection.backward, extend: true),
+        selection: const FlarkSelection.collapsed(5),
+        context: Style.strong,
+      );
+      session.act(
+        const InsertText('x'),
+        source: 'a **bx**\nc',
+        rows: ['a bx\nc'],
+        context: Style.strong,
+      );
+      // Before a document's opening syntax, as after its closing syntax.
+      final start = _Session(backend, source: '**b** a', caret: 2);
+      start.act(
+        const MoveCaret(MoveDirection.backward, extend: true),
+        applied: false,
+        selection: const FlarkSelection.collapsed(2),
+        context: Style.strong,
+      );
+      start.act(
+        const MoveCaret(MoveDirection.forward, extend: true),
+        selection: const FlarkSelection(2, 3),
+      );
+    });
+
     test('a plain arrow collapses a selection to its edge', () {
       final session = _Session(backend, source: 'hello');
       session.act(const SetSelection(1, 4));
