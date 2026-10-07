@@ -3637,14 +3637,21 @@ final class FlarkEditor implements FlarkDocumentState {
     bool keeps(FlarkDocument next, Spelling spelling, Edits edits) {
       // Whether [caret] is in containers of the kinds of the line split. A
       // footnote's continuation line holds only its indentation, and is in
-      // no footnote yet while nothing follows it there.
+      // no footnote yet while nothing follows it there, nor in the items
+      // and footnotes around the footnote, which indentation continues as
+      // well; a quote's line carries its marker.
       bool contained(int caret) {
         final now = next.rowAt(caret);
-        return now.sameContainerKinds(row) ||
-            now.kind == RowKind.blank &&
-                row.shells.lastOrNull?.kind == ShellKind.footnoteDefinition &&
-                now.shells.length == row.shells.length - 1 &&
-                now.withinContainerKindsOf(row);
+        if (now.sameContainerKinds(row)) return true;
+        if (now.kind != RowKind.blank ||
+            row.shells.lastOrNull?.kind != ShellKind.footnoteDefinition ||
+            !now.withinContainerKindsOf(row)) {
+          return false;
+        }
+        for (var s = now.shells.length; s < row.shells.length - 1; s++) {
+          if (row.shells[s].kind == ShellKind.blockQuote) return false;
+        }
+        return true;
       }
 
       // Whether [offset] shows where a line starts.

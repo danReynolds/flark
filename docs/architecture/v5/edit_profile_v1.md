@@ -347,7 +347,10 @@ Return and Backspace operate on the visible block structure:
   quote markers; an item or footnote definition that opens on the caret's line
   is continued at its indent (a footnote's four columns, counted from the end
   of the containers around it rather than from an indented label) rather than
-  by repeating its marker, which would open another;
+  by repeating its marker, which would open another. A footnote's new line
+  holds only that indentation: Markdown reads it in no footnote while nothing
+  follows it there, nor in an item or footnote around the footnote, which
+  indentation continues too, and text typed on it continues the footnote;
 - Return shows only its line break. Over a selection it continues the
   containers as at the selection's start; a lazy line takes the prefix it
   lacks where it would otherwise leave its quote. Text moved to the new line

@@ -568,6 +568,42 @@ void _returnCases(FlarkParseBackend backend) {
       ]);
     });
 
+    test('at the end of a footnote in an item or footnote continues it', () {
+      // The new line is a blank line Markdown reads outside the footnote and
+      // outside the item or footnote around it, while nothing follows it
+      // there. It carries their indentation, so text typed on it continues
+      // the footnote, as at the document's level.
+      for (final (source, caret, split, typed, kinds) in [
+        (
+          '- [^2]: a\n\nb[^2]',
+          9,
+          '- [^2]: a\n      \n\nb[^2]',
+          '- [^2]: a\n      x\n\nb[^2]',
+          [ShellKind.list, ShellKind.item, ShellKind.footnoteDefinition],
+        ),
+        (
+          '[^1]: [^2]: a\n\nb[^2] [^1]',
+          13,
+          '[^1]: [^2]: a\n        \n\nb[^2] [^1]',
+          '[^1]: [^2]: a\n        x\n\nb[^2] [^1]',
+          [ShellKind.footnoteDefinition, ShellKind.footnoteDefinition],
+        ),
+        (
+          '[^1]: x\n    [^2]: a\n[^3]: c',
+          19,
+          '[^1]: x\n    [^2]: a\n        \n[^3]: c',
+          '[^1]: x\n    [^2]: a\n        x\n[^3]: c',
+          [ShellKind.footnoteDefinition, ShellKind.footnoteDefinition],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(const Newline(), source: split);
+        session.act(const InsertText('x'), source: typed);
+        expect(shells(session), kinds, reason: source);
+        expect(session.editor.document.caretRow.text, 'a\nx', reason: source);
+      }
+    });
+
     test('in code on nested item lines indents past their markers', () {
       // Copied, `- - -` would make the new line a rule.
       final session = _Session(backend, source: '- - -     a', caret: 11);
