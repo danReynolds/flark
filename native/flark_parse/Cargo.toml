@@ -1,6 +1,6 @@
 [package]
 name = "flark_parse"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 publish = false
 description = "Flark v5 parse crate: unmodified comrak plus a flat render-model extraction."
