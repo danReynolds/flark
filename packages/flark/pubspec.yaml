@@ -1,6 +1,6 @@
 name: flark
 description: "Live Markdown editing kernel: comrak's CommonMark and GFM parse through FFI or Wasm, with the projection, caret model and commands hosts render."
-version: 0.5.0
+version: 0.5.1
 repository: https://github.com/danReynolds/flark/tree/main/packages/flark
 issue_tracker: https://github.com/danReynolds/flark/issues
 topics:
