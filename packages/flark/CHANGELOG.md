@@ -6,6 +6,23 @@
   pipe, so the caret at the end of a cell sits after its last character
   rather than after the padding. Whitespace typed against a closing pipe stays
   the cell's text: typing gives the pipe a separator of its own.
+- Typing the character that completes a table's delimiter row keeps the caret
+  on that row when the lines below read as a table.
+- Tab and Shift-Tab in indented code do nothing where the shift would carry
+  the code into a list item before it.
+- Text with line breaks put in a closed or setext heading leaves the
+  heading's closing sequence or underline on its first line.
+- A space typed before a `#` that ends a heading's text escapes that `#`, so it
+  stays text and the next word follows the space.
+- Text typed on an empty line of fenced code after a tab list marker stays in
+  the code block.
+- Shift with an arrow, End or Up/Down no longer selects hidden syntax alone
+  (past a document's closing `**`): such an extension does nothing.
+- Return keeps the paragraph's next line a paragraph where its indentation
+  would have made it indented code, and breaks a line after the spaces that
+  end it, so they no longer follow a new item's marker onto a blank line.
+- Return at the end of a footnote definition inside a list item or another
+  footnote continues the footnote instead of being refused.
 
 ## 0.5.0
 
