@@ -4150,19 +4150,28 @@ final class FlarkEditor implements FlarkDocumentState {
           if (landing == null) return false;
           target = landing;
           final moved = _select(
-            extend
-                ? FlarkSelection(sel.base, target)
-                : FlarkSelection.collapsed(target),
+            extend ? _extendedTo(target) : FlarkSelection.collapsed(target),
           );
           _goalColumn = goal;
           return moved;
       }
     }
     return _select(
-      extend
-          ? FlarkSelection(sel.base, target)
-          : FlarkSelection.collapsed(target),
+      extend ? _extendedTo(target) : FlarkSelection.collapsed(target),
     );
+  }
+
+  /// The selection extended from its base to [extent]. Anchors of one place
+  /// differ only in hidden syntax, so from the base to another of its
+  /// anchors nothing shows selected, and typing could not replace it: an
+  /// extension that comes back to where its base shows (past the closing
+  /// syntax that ends a document, or back over what it selected) collapses
+  /// where the selection started, in its context.
+  FlarkSelection _extendedTo(int extent) {
+    final base = selection.base;
+    return _doc.anchorsAt(base).contains(extent)
+        ? FlarkSelection.collapsed(base)
+        : FlarkSelection(base, extent);
   }
 
   /// One grapheme step, continued until the caret actually moves. Virtual

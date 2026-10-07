@@ -298,6 +298,11 @@ the smallest mounted regression case.
 ## Caret, selection, and boundaries
 
 - Arrow movement advances by visible caret targets, not hidden source offsets.
+  Shift extends a selection by the same targets. An extension that comes back
+  to where its base shows (past the closing syntax that ends a document, or
+  back over what it selected) collapses there, in the base's context: a
+  selection of hidden syntax alone would show nothing, and typing could not
+  replace it.
 - Up and Down cross every empty visual line and row boundary in both directions,
   preserving the horizontal goal through short lines. Shift extends the original
   selection base, and the next key edits at the reached line.
