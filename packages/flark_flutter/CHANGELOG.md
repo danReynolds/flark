@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - An input method's correction of a word beside the one it composes (`teh`
   to `the`) survives a cancel of the composed word, by the input method or

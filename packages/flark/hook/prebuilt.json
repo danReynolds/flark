@@ -1,55 +1,55 @@
 {
-  "release": "flark_parse-v0.1.0",
-  "commit": "7e7bd4b11b93fd80110f6b48f8c2fff088f6575d",
-  "source": "e31b014df68ba6cb9007c1f9b2067287fcd4e7c29534ba7e144f095e84d072cc",
+  "release": "flark_parse-v0.1.1",
+  "commit": "d5e034d13b44e6fd29a43eaf321f33ee60307e1a",
+  "source": "8b611b04dd760a9f01199e9749759a716e903ae8a11823774af04da2744da842",
   "files": {
     "aarch64-apple-darwin": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/aarch64-apple-darwin-libflark_parse.dylib",
-      "sha256": "338513d55abcc595b426d7185e8fee960bbecb520a2568310d1319451d32eaeb"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/aarch64-apple-darwin-libflark_parse.dylib",
+      "sha256": "0b707e58ac0bb9e277e56c282d55893f3a32438a3b9e4cb45b03ced968917bca"
     },
     "aarch64-apple-ios": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/aarch64-apple-ios-libflark_parse.dylib",
-      "sha256": "0d55ad5d9bdcd98574453cf3555194590af6bbf802b07eadd3813f40a3797ad0"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/aarch64-apple-ios-libflark_parse.dylib",
+      "sha256": "03ec5e55ab24a05f65a8fc39578d1141b5022a8048f37376453825d20923d2ff"
     },
     "aarch64-apple-ios-sim": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/aarch64-apple-ios-sim-libflark_parse.dylib",
-      "sha256": "037ae9d9dcd732441a20f0f8e5fadfdb7810030207783c73114b50f51f20d76f"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/aarch64-apple-ios-sim-libflark_parse.dylib",
+      "sha256": "ea74c2ee59effe476e187afed4265102b336e38bfc232d7808b1ae9e9c2b4133"
     },
     "aarch64-linux-android": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/aarch64-linux-android-libflark_parse.so",
-      "sha256": "8de30a44412bb6fc28781d7fd9032fa7fd80161b4c1116e1dd676e559236d44e"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/aarch64-linux-android-libflark_parse.so",
+      "sha256": "726ee481dfc57c0c03523e3581c1db9485a5be4f53b47ef97fd88d909b0179a3"
     },
     "aarch64-pc-windows-msvc": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/aarch64-pc-windows-msvc-flark_parse.dll",
-      "sha256": "5b8489c2e34febc95000628716ceabdbcbfba054becf08a2163695a00453d38a"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/aarch64-pc-windows-msvc-flark_parse.dll",
+      "sha256": "c1fb0cfc88ec171fee84bb8fc77498fa0ce51c4abec31ae37778d2adf3aa55d8"
     },
     "aarch64-unknown-linux-gnu": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/aarch64-unknown-linux-gnu-libflark_parse.so",
-      "sha256": "6da9b38159fa050bad01631724af37458cd9a2db5ebf673ad274f39d7e50b7b3"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/aarch64-unknown-linux-gnu-libflark_parse.so",
+      "sha256": "df1cd818de6667115c47c229159c4c86c53d5a36654148a2aa4264377a9f6139"
     },
     "armv7-linux-androideabi": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/armv7-linux-androideabi-libflark_parse.so",
-      "sha256": "4c35078f1024e152a767b120c10c4ff950d2c40bbe0c0312a985641273aeb355"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/armv7-linux-androideabi-libflark_parse.so",
+      "sha256": "9ee5f68f954645bce411d57fccb0613170f32caaaf4d1db7d41240d3fb07df3c"
     },
     "x86_64-apple-darwin": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/x86_64-apple-darwin-libflark_parse.dylib",
-      "sha256": "ef996c72032d42449fb06d23a18dda5e4127249e1b077e4fa1659d09e84d75c9"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/x86_64-apple-darwin-libflark_parse.dylib",
+      "sha256": "e8c052c4e121a648bc8ada17b64e34eddf63a25807450812c665c2066ebe88d7"
     },
     "x86_64-apple-ios": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/x86_64-apple-ios-libflark_parse.dylib",
-      "sha256": "a860df3663eb2862e743bffec9340ef862d7094313c199cf6512aac162d63074"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/x86_64-apple-ios-libflark_parse.dylib",
+      "sha256": "f2dc768ff50048731e1667ac8d745136d18a94d471b491268b3d202b211c52c7"
     },
     "x86_64-linux-android": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/x86_64-linux-android-libflark_parse.so",
-      "sha256": "a4cdd25e03af11fecb8d4e61e6b531cef5cb22225e2cbce011448b22ab1ce77c"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/x86_64-linux-android-libflark_parse.so",
+      "sha256": "20419c63f9ca2577cb2295cdf99db035eaf2f040ceb7ae0dc76eed813528d036"
     },
     "x86_64-pc-windows-msvc": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/x86_64-pc-windows-msvc-flark_parse.dll",
-      "sha256": "0ad68be01997225141ae8233c7870f4f8d5d7de3f3fb23937b90467565788792"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/x86_64-pc-windows-msvc-flark_parse.dll",
+      "sha256": "b41c387138bfa4aa9905adc1a81726752ceca7092ffd03f4821f2f48ebb340f8"
     },
     "x86_64-unknown-linux-gnu": {
-      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.0/x86_64-unknown-linux-gnu-libflark_parse.so",
-      "sha256": "ecb260e64bbe06f63020beedee3cbe502c94726253cbdda1c8365c6048c0443e"
+      "url": "https://github.com/danReynolds/flark/releases/download/flark_parse-v0.1.1/x86_64-unknown-linux-gnu-libflark_parse.so",
+      "sha256": "3954f9a836dd35dfcf7d657ecd02e4aff1f8f95ba00729664dd3b40ebe8a7b43"
     }
   }
 }

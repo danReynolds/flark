@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
+
+The parser libraries are those of release `flark_parse-v0.1.1`.
 
 - A table cell's text ends before the space or tab that pads its closing
   pipe, so the caret at the end of a cell sits after its last character

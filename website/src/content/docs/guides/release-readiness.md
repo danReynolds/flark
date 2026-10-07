@@ -3,7 +3,7 @@ title: Release readiness
 description: What the 0.5 preview on pub.dev covers, and the qualification still open.
 ---
 
-Flark 0.5.0 is a preview, published on pub.dev as four packages:
+Flark 0.5 is a preview, published on pub.dev as four packages:
 [flark](https://pub.dev/packages/flark), the editing kernel;
 [flark_codemirror](https://pub.dev/packages/flark_codemirror), code-block
 highlighting and indentation; and the hosts

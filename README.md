@@ -36,11 +36,11 @@ the same component names and common controller API from its host package.
 
 ## Status and supported limits
 
-Flark 0.5.0 is a preview on pub.dev: [flark](https://pub.dev/packages/flark),
+Flark 0.5 is a preview on pub.dev: [flark](https://pub.dev/packages/flark),
 [flark_codemirror](https://pub.dev/packages/flark_codemirror),
 [flark_flutter](https://pub.dev/packages/flark_flutter) and
 [flark_fleury](https://pub.dev/packages/flark_fleury), with the native parser
-libraries of release `flark_parse-v0.1.0`. It is not a qualified stable release.
+libraries of release `flark_parse-v0.1.1`. It is not a qualified stable release.
 Fleury comes from pub.dev; no local override is required.
 
 The core defaults to a 16 KiB UTF-8 live limit with additional line, block, run

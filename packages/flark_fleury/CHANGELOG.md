@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - A standalone image's label shows only where the editor paints a caret:
   `FlarkView` and an editor without focus show a leading image without its
