@@ -489,7 +489,11 @@ four for Python, or an existing tab. Tab/Shift-Tab indent/outdent selected
 code lines without touching their container prefixes; Shift-Tab removes a tab
 or up to one step of spaces, a tab step counting four columns. Without the
 code delegate Tab leaves blank lines as they are; a collapsed Tab inserts a
-step at the caret. Commands crossing a code-block boundary reject atomically.
+step at the caret. Indented code is code by its indentation alone: a shift
+that would carry it into a list item before it (`    c` after `  1. b` and
+an empty line, an item that takes lines indented five columns or more), and
+the lines after it with it, does nothing, as Tab on an item it cannot nest
+does. Commands crossing a code-block boundary reject atomically.
 
 Typed text re-indents its line where the mode asks for it: a closing `}`, a
 closing word such as Ruby's `end` or Bash's `fi`, an XML closing tag, or a `)`

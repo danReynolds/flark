@@ -631,12 +631,31 @@ extension _CodeEditing on FlarkEditor {
       row.text,
       codeEditing?.resolveLanguage(row.text, _doc.codeInfo(row) ?? '') ?? '',
     );
+    // Indented code is code by its indentation alone. Shifted to the content
+    // column of a list item before it, a line would join the item, and the
+    // lines after it would read on as the item's text (`    c` after `  1. b`
+    // and an empty line). The shift must leave the code code in its
+    // containers and show every other row as it was, or Tab does nothing. A
+    // fence holds its body whatever its indentation.
+    bool keepsCode(FlarkDocument next, Edits edits) =>
+        next.caretRow.kind == RowKind.codeBlock &&
+        next.caretRow.sameContainerKinds(row) &&
+        _showsRows(
+          next,
+          edits,
+          added: 1,
+          shells: (other) =>
+              other.index == row.index ? null : other.containerKinds,
+        );
     if (!outdent && selection.isCollapsed) {
       final at = selection.extent;
+      final step = Edits([(at, at, unit)]);
       return _commit(
-        source.replaceRange(at, at, unit),
+        step.apply(source),
         FlarkSelection.collapsed(at + unit.length),
         coalesce: false,
+        acceptSourceMode: true,
+        accept: row.fenced ? null : (next) => keepsCode(next, step),
       );
     }
     if (!selection.isCollapsed &&
@@ -670,7 +689,15 @@ extension _CodeEditing on FlarkEditor {
     if (edits.isEmpty) return false;
     final (candidate, map) = _edited(edits);
     final shifted = FlarkSelection(map(selection.base), map(selection.extent));
-    if (!row.fenced) return _commit(candidate, shifted, coalesce: false);
+    if (!row.fenced) {
+      return _commit(
+        candidate,
+        shifted,
+        coalesce: false,
+        acceptSourceMode: true,
+        accept: (next) => keepsCode(next, Edits(edits)),
+      );
+    }
     // Outdented to three spaces, a body line of fence characters would close
     // the block, so the shifted body is committed as literal code.
     var body = row.text;

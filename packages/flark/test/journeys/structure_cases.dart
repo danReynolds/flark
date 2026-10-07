@@ -1682,6 +1682,34 @@ void _structureCases(FlarkParseBackend backend) {
       expect(session.editor.lastRejection, isNull);
     });
 
+    test('indenting indented code keeps it out of the item before it', () {
+      // After an item whose content starts past four columns, four spaces
+      // make code. Indented to the item's column, the code would join the
+      // item as its paragraph, and the table after it would read on as that
+      // paragraph's text: Tab does nothing, with no refusal to report.
+      for (final (source, base, extent) in [
+        ('  1. b\n\n    c\n| d |\n| - |', 12, 12),
+        ('  1. b\n\n    c\n    e\n| d |\n| - |', 12, 19),
+      ]) {
+        final session = _Session(backend, source: source, caret: base);
+        if (extent != base) session.act(SetSelection(base, extent));
+        session.act(const Indent(), applied: false, source: source);
+        expect(session.editor.lastRejection, isNull, reason: source);
+      }
+      // Where the code stays code, Tab indents it.
+      final kept = _Session(
+        backend,
+        source: 'b\n\n    c\n| d |\n| - |',
+        caret: 7,
+      );
+      kept.act(
+        const Indent(),
+        source: 'b\n\n      c\n| d |\n| - |',
+        rows: ['b', '', '  c', 'd', '| - |'],
+        anchor: 9,
+      );
+    });
+
     test(
       'a join of code lines that would take a tab\'s columns is refused',
       () {
