@@ -400,15 +400,13 @@ typedef _StateView = ({
 
 /// Finds which window of [page] (a fresh paint of every line of [layout])
 /// [frame] shows inside [region], comparing graphemes, then styles outside
-/// caret cells and image slots. The page's [blank] lines must be blank in
-/// the frame. Returns the window tops that match.
+/// caret cells and image slots. Returns the window tops that match.
 List<int> _matchWindow(
   CellBuffer frame,
   CellRect region,
   CellBuffer page,
-  CellDocumentLayout layout, {
-  Set<int> blank = const {},
-}) {
+  CellDocumentLayout layout,
+) {
   final cols = region.size.cols, rows = region.size.rows;
   final left = region.offset.col, top0 = region.offset.row;
   bool masked(int x, int pageRow) => layout.images.any(
@@ -425,9 +423,7 @@ List<int> _matchWindow(
   String key(CellBuffer b, int x0, int y, int pageRow) => [
     for (var x = 0; x < cols; x++)
       if (!slotRows.contains(pageRow) || !masked(x, pageRow))
-        identical(b, page) && blank.contains(pageRow)
-            ? '${CellRole.leading.index} '
-            : '${b.atColRow(x0 + x, y).role.index}${b.atColRow(x0 + x, y).grapheme ?? ''}',
+        '${b.atColRow(x0 + x, y).role.index}${b.atColRow(x0 + x, y).grapheme ?? ''}',
   ].join(',');
   final maxTop = max(0, layout.lines.length - rows);
   final tops = <int>[];
@@ -466,12 +462,7 @@ List<int> _matchWindow(
       for (var x = 0; x < cols; x++) {
         final a = frame.atColRow(left + x, top0 + y),
             b = page.atColRow(x, top + y);
-        if (_caretCell(a) ||
-            _caretCell(b) ||
-            masked(x, top + y) ||
-            blank.contains(top + y)) {
-          continue;
-        }
+        if (_caretCell(a) || _caretCell(b) || masked(x, top + y)) continue;
         if (a.style != b.style) {
           return 'cell ($x,$y) ${jsonEncode(a.grapheme)} is painted '
               '${a.style} where a fresh paint gives ${b.style}';
@@ -491,15 +482,19 @@ List<int> _matchWindow(
   return styled;
 }
 
-/// The fresh paint shows each layout glyph whole, at its cell.
+/// The fresh paint shows each layout glyph whole, at its cell. It paints a
+/// [caret] when it has focus.
 void _checkPagePaint(
   CellBuffer page,
   CellDocumentLayout layout,
-  FlarkSelection selection,
-) {
+  FlarkSelection selection, {
+  required bool caret,
+}) {
   for (var y = 0; y < layout.lines.length && y < page.size.rows; y++) {
     for (final line in layout.lines[y].fragments) {
-      if (line.image != null || !line.labelVisible(selection)) continue;
+      if (line.image != null || !line.labelVisible(selection, caret: caret)) {
+        continue;
+      }
       for (final glyph in line.glyphs) {
         final cell = page.atColRow(glyph.col, y);
         final expected = glyph.text == ' ' ? ' ' : glyph.text.characters.first;
@@ -1289,7 +1284,7 @@ final class _EditorSession {
       focused: focus.hasFocus,
       code: editor.codeEditing,
     );
-    _checkPagePaint(page, layout, editor.selection);
+    _checkPagePaint(page, layout, editor.selection, caret: focus.hasFocus);
     final tops = _matchWindow(frame, region, page, layout);
     _checkCaret(frame, region, (tops: tops, layout: layout));
   }
@@ -1634,18 +1629,10 @@ final class _ReaderSession {
         policy: tester.textPolicy,
         focused: false,
       );
-      _checkPagePaint(page, layout, selection);
-      // The reader paints no caret, so a collapsed selection shows no
-      // image's label, which the fresh editor shows at its caret.
-      final hidden = {
-        if (selection.isCollapsed)
-          for (var y = 0; y < layout.lines.length; y++)
-            if (layout.lines[y].fragments.any(
-              (line) => !line.labelVisible(selection, caret: false),
-            ))
-              y,
-      };
-      final tops = _matchWindow(frame, region, page, layout, blank: hidden);
+      // The reader paints no caret, as an editor without focus paints none:
+      // a collapsed selection shows no image's label in either.
+      _checkPagePaint(page, layout, selection, caret: false);
+      final tops = _matchWindow(frame, region, page, layout);
       if (!tops.contains(0)) {
         throw _Failure('the reader scrolled its own content to ${tops.first}');
       }

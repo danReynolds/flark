@@ -396,4 +396,48 @@ void main() {
       }
     },
   );
+
+  for (final surface in ['a view', 'a read-only editor', 'an editor']) {
+    test('$surface without focus shows a first image without its label', () {
+      // A standalone image's label shows while a painted caret is at the
+      // image. Without focus no caret is painted, and the selection rests at
+      // the document's start, before the image: the label showed, was a link
+      // for accessibility, and a press on it armed the image's actions.
+      const source = '![Photo label](demo.png)\n\nafter';
+      editor = FlarkEditor(createParseBackend(), text: source, caret: 0);
+      controller = FlarkFleuryController(editor);
+      Widget preview(BuildContext _, InlineResource _, Uri? _) =>
+          const Text('PREVIEW');
+      tester.pumpWidget(
+        Theme(
+          data: const ThemeData(),
+          child: Navigator(
+            home: surface == 'a view'
+                ? FlarkView(
+                    controller: controller,
+                    imagePreviewBuilder: preview,
+                  )
+                : FlarkEditorView(
+                    controller: controller,
+                    focusNode: focus,
+                    readOnly: surface == 'a read-only editor',
+                    imagePreviewBuilder: preview,
+                  ),
+          ),
+        ),
+      );
+      expect(editor.selection, const FlarkSelection.collapsed(0));
+      final frame = tester.renderToString();
+      expect(frame, contains('PREVIEW'));
+      expect(frame, isNot(contains('Photo label')));
+      expect(tester.semantics().byRole(SemanticRole.link), isEmpty);
+      // A press where the label would show places a caret there, which
+      // shows it, and opens nothing.
+      final label = layout().positionFor(source.indexOf('Photo label'));
+      click(label.col, label.row);
+      expect(tester.renderToString(), contains('Photo label'));
+      expect(tester.semantics().byLabel('Image actions'), isEmpty);
+      expect(tester.semantics().byRole(SemanticRole.link), isNotEmpty);
+    });
+  }
 }
