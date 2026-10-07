@@ -1679,6 +1679,66 @@ void _structureCases(FlarkParseBackend backend) {
       }
     });
 
+    test('text put on an empty code line after a tab marker stays in it', () {
+      // The empty line can lack the indentation a tab after the item's
+      // marker reaches; text put there takes the indentation the item's
+      // later lines take, tab and all, rather than leaving the item and
+      // splitting the code. A fence a tab indents past an item's content
+      // would show the rest of the tab as code on a line the tab starts:
+      // its lines take the item's own indentation instead.
+      for (final (source, caret, command, edited, rows) in [
+        (
+          '-\t```\n\n  ```',
+          6,
+          const InsertText('x'),
+          '-\t```\n \tx\n  ```',
+          ['x', ''],
+        ),
+        (
+          '1.\t```\n\n\t```',
+          7,
+          const Paste('x\ny'),
+          '1.\t```\n  \tx\n  \ty\n\t```',
+          ['x\ny'],
+        ),
+        (
+          '- -\t```\n\n    ```',
+          8,
+          const InsertText('x'),
+          '- -\t```\n   \tx\n    ```',
+          ['x'],
+        ),
+        (
+          '>\t-\t```\n>\n>\t \t```',
+          9,
+          const InsertText('x'),
+          '>\t-\t```\n>\t \tx\n>\t \t```',
+          ['x'],
+        ),
+        (
+          '- a\n\n\t```\n\n\t```',
+          10,
+          const InsertText('x'),
+          '- a\n\n\t```\n  x\n\t```',
+          ['a', '', 'x'],
+        ),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(command, source: edited, rows: rows);
+        final row = session.editor.document.caretRow;
+        expect(row.kind, RowKind.codeBlock, reason: source);
+        expect(row.shells.last.kind, ShellKind.item, reason: source);
+      }
+      // A line in a quote carries the quote's marker, after which the text
+      // goes as it did.
+      final quoted = _Session(backend, source: '>\t```\n>\n>\t```', caret: 7);
+      quoted.act(
+        const InsertText('x'),
+        source: '>\t```\n>x\n>\t```',
+        rows: ['x'],
+      );
+    });
+
     test('an edit that leaves code as it is only moves the caret', () {
       // As in a paragraph, there is nothing to commit or undo, and nothing
       // that needs source mode: the caret goes where the edit puts it.

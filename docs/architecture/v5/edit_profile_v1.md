@@ -457,7 +457,10 @@ Code is literal: edits the code delegate does not propose (typing it
 declines, deletion, replacement, paste and composition) change the projected
 body as given. Every code edit gives new lines the edited line's container
 prefix, and text put on an empty line that omits the indentation of its list
-item or footnote takes the prefix the fence's own lines continue with. Text
+item or footnote takes the prefix the fence's own lines continue with. Where
+that prefix holds a tab, which can show columns past a container as code,
+the line takes the indentation of the item or footnote itself, a tab after
+its marker included, and the parser must read the body as edited. Text
 typed on an empty line of indented code that lacks the code's indentation
 takes the indentation of the block's first line, so it stays code. Return at
 the end of indented code that ends its list item or footnote makes a blank
