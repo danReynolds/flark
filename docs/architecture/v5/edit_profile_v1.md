@@ -353,12 +353,15 @@ Return and Backspace operate on the visible block structure:
   lacks where it would otherwise leave its quote. Text moved to the new line
   or left before it stays text: a marker that would start a block there, or
   syntax that would end one (`> b`, `1. b`, `=`, `a\`, `# a #`), is escaped,
-  and a hard break before the caret gives way to the new break. A blank line
-  keeps the next block apart from the text of a split heading, now a
-  paragraph, as for a lift, and an item whose later blocks follow blank lines
-  continues after them, where an empty item would drop them from the list.
-  A span split beside a line break inside it closes after the text before
-  the split and reopens where the text after it starts, past that line's
+  and a hard break before the caret gives way to the new break. An empty new
+  line ends the paragraph, so its next line starts a block: indentation
+  Markdown did not show there, which would make that line code, goes, as
+  pasted indentation does (`> a` over `    b` gives `> a`, `> `, `> b`). A
+  blank line keeps the next block apart from the text of a split heading,
+  now a paragraph, as for a lift, and an item whose later blocks follow
+  blank lines continues after them, where an empty item would drop them from
+  the list. A span split beside a line break inside it closes after the text
+  before the split and reopens where the text after it starts, past that line's
   container prefix (a lazy line's is the row's); Return before the break
   leaves the caret on the new line, and after it, in the moved text's span.
   Where nothing keeps what it splits (an autolink, a reference's label,

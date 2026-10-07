@@ -422,6 +422,50 @@ void _returnCases(FlarkParseBackend backend) {
       }
     });
 
+    test('before an indented line keeps that line a paragraph', () {
+      // The empty line Return leaves ends the paragraph, so its next line
+      // starts a block of its own, which its indentation would make code.
+      // Markdown does not show that indentation, so it goes, as pasted
+      // indentation does where it would make the row code.
+      for (final (source, caret, split) in [
+        ('> a\n    b', 3, '> a\n> \n> b'),
+        ('> a\n>     b', 3, '> a\n> \n> b'),
+        ('> > a\n>     b', 5, '> > a\n> > \n> > b'),
+        ('a\n\tb', 1, 'a\n\nb'),
+        ('- a\n      b', 3, '- a\n- \n  b'),
+        ('> a\r\n    b', 3, '> a\r\n> \r\n> b'),
+      ]) {
+        final session = _Session(backend, source: source, caret: caret);
+        session.act(
+          const Newline(),
+          source: split,
+          rows: ['a', '', 'b'],
+          caret: const DisplayPosition(1, 0),
+        );
+        final rows = session.editor.projection.rows;
+        expect(rows.last.kind, RowKind.paragraph, reason: source);
+        expect(
+          rows.last.shells.map((s) => s.kind),
+          rows.first.shells.map((s) => s.kind),
+          reason: source,
+        );
+      }
+      // Text typed on the new line joins the paragraph again.
+      final session = _Session(backend, source: '> a\n    b', caret: 3);
+      session.act(const Newline());
+      session.act(
+        const InsertText('x'),
+        source: '> a\n> x\n> b',
+        rows: ['a\nx\nb'],
+      );
+      final paragraph = _Session(backend, source: 'a\n    b', caret: 1);
+      paragraph.act(
+        const Newline(paragraph: true),
+        source: 'a\n\n\nb',
+        rows: ['a', '', '', 'b'],
+      );
+    });
+
     test('on a lazy line after a quoted definition stays in the quote', () {
       // The paragraph's block opens with the definition, a line before its
       // row, whose first line reads on lazily: the new line takes the

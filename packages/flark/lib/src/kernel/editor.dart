@@ -3383,20 +3383,22 @@ final class FlarkEditor implements FlarkDocumentState {
   /// the caret [caret] units into the first one's text (by default after
   /// it), when the parser reads what Return promises: the new line in
   /// containers of the kinds of the line it split, other rows of the same
-  /// kinds in the same kinds of containers, nothing hidden painted, and the
-  /// text shown with only the line break, whitespace beside it aside. Lazy
-  /// lines, which have no prefix of their own, take [_rowPrefix] where the
-  /// split would leave them outside the row's containers: the split line
-  /// when nothing is left on it, the lines after it when nothing moves. When
-  /// the parser reads the plain split as other Markdown, these are tried in
-  /// turn, else Return refuses: escaping the first ASCII punctuation of the
-  /// first word moved (`> b`, `1. b`, `=`) or of the last word left (`a\`,
-  /// `# a #`, `a*b*`); dropping the backslash of a hard break the split
-  /// follows; a blank line after the row, as a lift keeps the next block
-  /// apart (a heading's text moved into a paragraph above indented code);
-  /// for an item whose later blocks follow blank lines, the next item's
-  /// marker after them, as an empty item would end at a blank line. Only the
-  /// plain split may leave the live tier.
+  /// kinds in the same kinds of containers, nothing hidden painted, the
+  /// text shown with only the line break, whitespace beside it aside, and
+  /// the row's line after the split no code. Lazy lines, which have no
+  /// prefix of their own, take [_rowPrefix] where the split would leave them
+  /// outside the row's containers: the split line when nothing is left on
+  /// it, the lines after it when nothing moves. When the parser reads the
+  /// plain split as other Markdown, these are tried in turn, else Return
+  /// refuses: escaping the first ASCII punctuation of the first word moved
+  /// (`> b`, `1. b`, `=`) or of the last word left (`a\`, `# a #`, `a*b*`);
+  /// dropping the backslash of a hard break the split follows; a blank line
+  /// after the row, as a lift keeps the next block apart (a heading's text
+  /// moved into a paragraph above indented code); when nothing moves, the
+  /// row's next line without the indentation that makes it code; for an
+  /// item whose later blocks follow blank lines, the next item's marker
+  /// after them, as an empty item would end at a blank line. Only the plain
+  /// split may leave the live tier.
   _Outcome _commitReturn(
     ProjectedRow row,
     int start,
@@ -3540,6 +3542,36 @@ final class FlarkEditor implements FlarkDocumentState {
       if (edit == blank) apart = respelled;
       spellings.add(respelled);
     }
+    // When nothing moves to the new line, that empty line ends the
+    // paragraph, and the row's next line starts a block of its own, which
+    // indentation Markdown did not show would make code. The indentation
+    // goes, as pasted indentation does where it would make the row code:
+    // the line keeps the row's prefix alone, which a lazy line gets as well.
+    final below = last + 1;
+    final belowShown =
+        row.kind == RowKind.paragraph &&
+            below < row.lineCount &&
+            row.contentStarts[below] >= 0
+        ? row.contentStarts[below] +
+              _TypedLines._leadingIndentation(source, row.contentStarts[below])
+        : -1;
+    Spelling? unindented;
+    if (belowShown >= 0 && shown(end) == shown(row.contentEnds[last])) {
+      final lineAt = m.lineStartUtf16(row.firstLine + below);
+      // The prefix a lazy line was given, which this edit takes over.
+      final given = (lineAt, row.contentStarts[below], prefix);
+      final rest = [
+        for (final e in edits)
+          if (e != given) e,
+      ];
+      final i = rest.lastIndexWhere((e) => e.$1 <= lineAt) + 1;
+      unindented = spellingOf(
+        [...rest.take(i), (lineAt, belowShown, prefix), ...rest.skip(i)],
+        at,
+        offset,
+      );
+      if (unindented != null) spellings.add(unindented);
+    }
     final item = row.shells.isEmpty ? null : row.shells.last;
     final following = rows
         .skip(row.index + 1)
@@ -3616,6 +3648,15 @@ final class FlarkEditor implements FlarkDocumentState {
             shells: true,
           )) {
         return false;
+      }
+      // The row's next line is no code, nor, without its indentation, out
+      // of the containers it was in ([unindented]).
+      if (belowShown >= 0) {
+        final now = next.rowAt(edits.forward(belowShown, caret: true));
+        if (now.kind == RowKind.codeBlock ||
+            identical(spelling, unindented) && !now.sameContainerKinds(row)) {
+          return false;
+        }
       }
       if (defined) return true;
       // The caret starts the line Return made: a delimiter the split
