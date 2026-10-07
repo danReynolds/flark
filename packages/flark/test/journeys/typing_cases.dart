@@ -988,6 +988,25 @@ void _typingCases(FlarkParseBackend backend) {
       edited.act(const DeleteBackward(word: true), applied: false);
     });
 
+    test('a typed delimiter row keeps the caret above lines that read as a '
+        'table', () {
+      // Kept apart by the line break, the lines below read as a table of
+      // their own. Its cell shows the escaped pipe without the backslash,
+      // as the paragraph did, so nothing hidden is painted and the caret
+      // stays on the typed row rather than going to the first body row.
+      final session = _Session(
+        backend,
+        source: '| a | b |\n| - | \n| c \\| d |\n| - |',
+        caret: 16,
+      );
+      session.act(
+        const InsertText('-'),
+        source: '| a | b |\n| - | -\n\n| c \\| d |\n| - |',
+        rows: ['a', 'b', '| - | -', '', 'c | d', '| - |'],
+        anchor: 17,
+      );
+    });
+
     test('a header-only table opening on a marker line shows its delimiter '
         'row', () {
       // The delimiter line continues the item or footnote with spaces where

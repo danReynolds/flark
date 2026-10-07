@@ -2839,8 +2839,23 @@ final class FlarkEditor implements FlarkDocumentState {
         continue;
       }
       for (final segment in row.segments) {
-        final a = segment.sourceStart, b = segment.sourceEnd;
+        var a = segment.sourceStart;
+        final b = segment.sourceEnd;
         if (segment.lineBreak || a >= b) continue;
+        // A segment that shows only the end of its source paints only that
+        // end: an escaped pipe in a table cell shows its pipe, not the
+        // backslash the cell drops.
+        if (!segment.exact) {
+          final shown = row.text.substring(
+            segment.displayStart,
+            segment.displayEnd,
+          );
+          if (shown.length < b - a &&
+              next.source.startsWith(shown, b - shown.length)) {
+            a = b - shown.length;
+            if (a == b) continue;
+          }
+        }
         final first = old(a), last = old(b - 1);
         if (first >= 0 && last - first == b - 1 - a && painted(first, last)) {
           continue;
