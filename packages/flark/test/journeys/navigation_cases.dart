@@ -132,6 +132,23 @@ void _navigationCases(FlarkParseBackend backend) {
       );
     });
 
+    test(
+      'a shift press back where the selection started selects no syntax',
+      () {
+        // A press that extends the selection to another anchor of its base,
+        // past a closing `**` the document ends with, collapses where the
+        // selection started, as shift arrows do: the `**` alone shows nothing.
+        final session = _Session(backend, source: 'a **b**', caret: 7);
+        for (final leadingHalf in [false, true]) {
+          session.act(
+            PlaceCaret(0, 3, extend: true, leadingHalf: leadingHalf),
+            applied: false,
+            selection: const FlarkSelection.collapsed(7),
+          );
+        }
+      },
+    );
+
     test('shift arrows at a document end select no syntax alone', () {
       // After `b` the caret holds the span's context, and the document shows
       // nothing past it. The closing `**` alone would be a selection that

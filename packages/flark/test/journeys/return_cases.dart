@@ -446,6 +446,24 @@ void _returnCases(FlarkParseBackend backend) {
       }
     });
 
+    test('before an indented line that would start a block splits it', () {
+      // Without its indentation the next line would start a block of its
+      // own, so no spelling keeps it a paragraph: Return splits the line as
+      // it does without that check, rather than refuse.
+      for (final (source, split) in [
+        ('a\n    - x', 'a\n\n    - x'),
+        ('a\n    # x', 'a\n\n    # x'),
+        ('> a\n    > x', '> a\n> \n>     > x'),
+      ]) {
+        final session = _Session(
+          backend,
+          source: source,
+          caret: source.indexOf('\n'),
+        );
+        session.act(const Newline(), source: split);
+      }
+    });
+
     test('before an indented line keeps that line a paragraph', () {
       // The empty line Return leaves ends the paragraph, so its next line
       // starts a block of its own, which its indentation would make code.

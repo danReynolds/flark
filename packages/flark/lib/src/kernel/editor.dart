@@ -1293,12 +1293,15 @@ final class FlarkEditor implements FlarkDocumentState {
     final (at, gap) = collapsed
         ? _sequencePlace(row, start, inserted)
         : (start, '');
-    final normalized = _normalizeInlineEdges(
-      at,
-      at + end - start,
-      '$inserted$gap',
-      caret + at - start,
-      pending: pending,
+    final normalized = _keepCellWhitespace(
+      row,
+      _normalizeInlineEdges(
+        at,
+        at + end - start,
+        '$inserted$gap',
+        caret + at - start,
+        pending: pending,
+      ),
     );
     // The escape must keep the row's cells: the edited cell shows exactly the
     // typed text, and every other cell is unchanged. Other text keeps them
@@ -1483,25 +1486,7 @@ final class FlarkEditor implements FlarkDocumentState {
   /// keep the sequence on the heading's line. A placement with the space
   /// commits only when [_keepsStructure] holds, so a sequence it still paints
   /// is refused.
-  ///
-  /// A cell's closing pipe likewise: the parser reads one space or tab before
-  /// it as the pipe's separator, outside the cell's text, so text that ends
-  /// in whitespace right against the pipe takes a space after it. Alone,
-  /// the whitespace typed would become the separator, and the next word
-  /// would go before it.
   (int, String) _sequencePlace(ProjectedRow row, int at, String text) {
-    if (row.kind == RowKind.tableCell) {
-      final againstPipe =
-          !row.delimiterSource &&
-          at == row.sourceEnd &&
-          at < source.length &&
-          source.codeUnitAt(at) == 0x7C;
-      return againstPipe &&
-              (text.endsWith(' ') || text.endsWith('\t')) &&
-              (row.text.isNotEmpty || text.trim().isNotEmpty)
-          ? (at, ' ')
-          : (at, '');
-    }
     final trail = _headingTrail(row);
     if (trail == null ||
         trail.$1 != at ||
@@ -1515,6 +1500,57 @@ final class FlarkEditor implements FlarkDocumentState {
     return placed != at || _isSpace(text, text.length - 1)
         ? (placed, '')
         : (at, ' ');
+  }
+
+  /// [plain], an edit of [row]'s text, with a space of its own before the
+  /// row's closing pipe where the edit leaves whitespace against it and the
+  /// row, a table cell, had none there: the parser reads one space or tab
+  /// before a closing pipe as the pipe's separator, outside the cell's text,
+  /// so the whitespace the edit left (typed, pasted, moved past a span's
+  /// closing delimiter, or bared by a deletion) would vanish, and the next
+  /// word would go before it. A caret at the pipe stays before the space.
+  ({String text, int caret, PendingStyle? pending}) _keepCellWhitespace(
+    ProjectedRow row,
+    ({String text, int caret, PendingStyle? pending}) plain,
+  ) {
+    final at = _cellSeparatorAt(row, plain.text);
+    return at < 0
+        ? plain
+        : (
+            text: plain.text.replaceRange(at, at, ' '),
+            caret: plain.caret > at ? plain.caret + 1 : plain.caret,
+            pending: plain.pending,
+          );
+  }
+
+  /// Where [text], an edit of [row]'s text, takes the space of its own that
+  /// [_keepCellWhitespace] gives it: the offset of [row]'s closing pipe in
+  /// [text], or -1 when it needs none.
+  int _cellSeparatorAt(ProjectedRow row, String text) {
+    if (row.kind != RowKind.tableCell || row.delimiterSource) return -1;
+    final m = _doc.model, pipe = m.blockEnd(row.block);
+    // A cell whose text reaches its pipe, or an empty one, has no separator.
+    if (row.sourceEnd != pipe ||
+        pipe >= source.length ||
+        source.codeUnitAt(pipe) != 0x7C) {
+      return -1;
+    }
+    final at = pipe + text.length - source.length;
+    bool blank(int i) =>
+        text.codeUnitAt(i) == 0x20 || text.codeUnitAt(i) == 0x09;
+    if (at <= 0 ||
+        at >= text.length ||
+        text.codeUnitAt(at) != 0x7C ||
+        !blank(at - 1)) {
+      return -1;
+    }
+    // Whitespace alone pads the cell, as before.
+    final start = m.blockStart(row.block);
+    var i = at - 1;
+    while (i >= start && blank(i)) {
+      i--;
+    }
+    return i < start ? -1 : at;
   }
 
   /// Where an empty heading's text goes when its closing sequence starts at
@@ -1857,6 +1893,13 @@ final class FlarkEditor implements FlarkDocumentState {
       return _deleteContent(range.start, range.end, typing: false);
     }
     if (backward ? d == 0 : d >= row.text.length) {
+      // A cell joins no neighbour: its pipe, and the space beside it, are
+      // no grapheme of their own. It does nothing, as at a document's edge,
+      // and is no refused edit a host would report.
+      if (row.kind == RowKind.tableCell) {
+        _inert = true;
+        return false;
+      }
       return backward ? _joinBackward(row) : _joinForward(row);
     }
     // The rendered grapheme's own source bytes, hidden neighbours excluded.
@@ -2017,6 +2060,10 @@ final class FlarkEditor implements FlarkDocumentState {
     bool typing,
   ) {
     final row = _doc.rowAt(start), m = _doc.model, rows = projection.rows;
+    // Whitespace the deletion bares against a cell's pipe keeps a space of
+    // its own after it ([_keepCellWhitespace]); the edit as asked has it too.
+    final separator = _cellSeparatorAt(row, plain.text);
+    plain = _keepCellWhitespace(row, plain);
     final top = row.nearestLineIndexOf(m, start),
         bottom = row.nearestLineIndexOf(m, end);
     final at = lineStartPastMark(source, m, row.firstLine + top);
@@ -2100,7 +2147,8 @@ final class FlarkEditor implements FlarkDocumentState {
     final above = top > 0 ? row.contentEnds[top - 1] : -1;
     // The deletion as asked, read as the removal of [start]..[end]: the
     // whitespace it moves out of a span's delimiters keeps the length.
-    final asked = Edits([(start, end, '')]),
+    final pipe = separator < 0 ? -1 : m.blockEnd(row.block);
+    final asked = Edits([(start, end, ''), if (pipe >= 0) (pipe, pipe, ' ')]),
         // The normalization moves whitespace only within the row and the
         // range it deletes, so the comparison need not go past them.
         made = Edits.between(
@@ -3580,6 +3628,9 @@ final class FlarkEditor implements FlarkDocumentState {
               _TypedLines._leadingIndentation(source, row.contentStarts[below])
         : -1;
     Spelling? unindented;
+    // Whether the row's next line may be left code, where no spelling keeps
+    // it apart (see the end).
+    var codeBelow = false;
     if (belowShown >= 0 && shown(end) == shown(row.contentEnds[last])) {
       final lineAt = m.lineStartUtf16(row.firstLine + below);
       // The prefix a lazy line was given, which this edit takes over.
@@ -3681,10 +3732,11 @@ final class FlarkEditor implements FlarkDocumentState {
         return false;
       }
       // The row's next line is no code, nor, without its indentation, out
-      // of the containers it was in ([unindented]).
+      // of the containers it was in ([unindented]); code only where no
+      // spelling keeps it apart ([codeBelow]).
       if (belowShown >= 0) {
         final now = next.rowAt(edits.forward(belowShown, caret: true));
-        if (now.kind == RowKind.codeBlock ||
+        if (now.kind == RowKind.codeBlock && !codeBelow ||
             identical(spelling, unindented) && !now.sameContainerKinds(row)) {
           return false;
         }
@@ -3708,6 +3760,14 @@ final class FlarkEditor implements FlarkDocumentState {
       return showsBreak(next, apart: identical(spelling, apart));
     }
 
+    final rejection = _lastRejection;
+    final outcome = _commitSpellings(candidates(), keeps, coalesce: false);
+    if (outcome is _Committed || belowShown < 0) return outcome;
+    // A next line that, without its indentation, would start a block of its
+    // own (`- x`, `# x`) has no spelling that keeps it a paragraph: Return
+    // splits the line as it would without that check, rather than refuse.
+    codeBelow = true;
+    _lastRejection = rejection;
     return _commitSpellings(candidates(), keeps, coalesce: false);
   }
 
@@ -4360,9 +4420,7 @@ final class FlarkEditor implements FlarkDocumentState {
         offset,
         leadingHalf: leadingHalf,
       );
-      placed = extend
-          ? FlarkSelection(selection.base, target)
-          : FlarkSelection.collapsed(target);
+      placed = extend ? _extendedTo(target) : FlarkSelection.collapsed(target);
     }
     if (_select(placed)) return true;
     // A press takes the context of where it lands, as in common editors,

@@ -59,8 +59,10 @@ additional product principles or testing layers.
 - Typing a space advances the source and painted caret; the next word stays
   after that space. Editable trailing whitespace, including table-cell padding,
   remains represented. The one space or tab before a cell's closing pipe is the
-  pipe's, as an ATX closing sequence keeps one, so whitespace typed against the
-  pipe takes a separator after it. Typed before a `#` that ends a heading's
+  pipe's, as an ATX closing sequence keeps one, so whitespace an edit leaves
+  against the pipe (typed, pasted, moved out of a span or bared by a deletion)
+  takes a separator after it. Delete at a cell's end and Backspace at its start
+  do nothing, as at a document's edge. Typed before a `#` that ends a heading's
   text, whitespace would make that `#` the heading's closing sequence, so the
   `#` is escaped and stays text (`# alpha \#`), as a pipe typed in a cell is.
   A parser-authenticated hard break stays one atomic rendered unit when moving

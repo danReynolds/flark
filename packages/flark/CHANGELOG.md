@@ -4,8 +4,9 @@
 
 - A table cell's text ends before the space or tab that pads its closing
   pipe, so the caret at the end of a cell sits after its last character
-  rather than after the padding. Whitespace typed against a closing pipe stays
-  the cell's text: typing gives the pipe a separator of its own.
+  rather than after the padding. Whitespace an edit leaves against a closing
+  pipe stays the cell's text: the pipe gets a separator of its own. Delete at a
+  cell's end and Backspace at its start do nothing, without a refusal.
 - Typing the character that completes a table's delimiter row keeps the caret
   on that row when the lines below read as a table.
 - Tab and Shift-Tab in indented code do nothing where the shift would carry

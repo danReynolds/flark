@@ -875,7 +875,18 @@ final class _Check {
     for (final row in next.projection.rows) {
       for (final s in row.segments) {
         if (s.lineBreak) continue;
-        for (var o = s.sourceStart; o < s.sourceEnd; o++) {
+        // A segment that shows only the end of its source paints only that
+        // end, as the kernel reads it: an escaped pipe shows its pipe, not
+        // the backslash it drops.
+        var from = s.sourceStart;
+        if (!s.exact) {
+          final shown = row.text.substring(s.displayStart, s.displayEnd);
+          if (shown.length < s.sourceEnd - from &&
+              b.startsWith(shown, s.sourceEnd - shown.length)) {
+            from = s.sourceEnd - shown.length;
+          }
+        }
+        for (var o = from; o < s.sourceEnd; o++) {
           if (_isSpace(b.codeUnitAt(o))) continue;
           final was = edit.back(o);
           if (was < 0 || painted[was]) continue;

@@ -1038,8 +1038,9 @@ impl<'a> Extractor<'a> {
                 // separator, as a closing heading sequence keeps its own: the
                 // cell's text, and a caret at its end, stop after its last
                 // character. Whitespace before that is the cell's text, so
-                // editing gives whitespace typed against the pipe a
-                // separator after it, and what was typed stays the cell's.
+                // an edit that leaves whitespace against the pipe gives the
+                // pipe a separator after it, and the whitespace stays the
+                // cell's.
                 let mut e = ce;
                 if e > a && e < le && bytes[e] == b'|' && matches!(bytes[e - 1], b' ' | b'\t') {
                     e -= 1;
