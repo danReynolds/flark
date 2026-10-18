@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 
 # Release units, in order: the native parser libraries, then the kernel, its
 # code engine and the two hosts. Before `rk release flark`, the libraries'
@@ -10,8 +10,8 @@ schema = 2
 path = "native/flark_parse"
 tag = "flark_parse-v{version}"
 publish = ["git-tag", "github-release"]
-build = ["tool/build_release_libraries.sh", "{out}"]
-assets = [
+assets.build = ["tool/build_release_libraries.sh", "{out}"]
+assets.files = [
   "assets/aarch64-apple-darwin-libflark_parse.dylib",
   "assets/x86_64-apple-darwin-libflark_parse.dylib",
   "assets/aarch64-apple-ios-libflark_parse.dylib",
